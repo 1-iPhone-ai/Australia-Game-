@@ -199,6 +199,16 @@ import {
   createEmptyBilateralCapacityRenewalGateSnapshot,
   bilateralCapacityRenewalGateExportScale,
 } from './bilateral-capacity-renewal-gate.ts';
+import {
+  computeCapacityRenewalPrimingSnapshot,
+  createEmptyCapacityRenewalPrimingSnapshot,
+  capacityRenewalPrimingExportScale,
+} from './capacity-renewal-priming.ts';
+import {
+  computeBilateralCycleReentryGateSnapshot,
+  createEmptyBilateralCycleReentryGateSnapshot,
+  bilateralCycleReentryGateExportScale,
+} from './bilateral-cycle-reentry-gate.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -1533,6 +1543,46 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       bilateralCapacityRenewalGateExportScale(renewed) >= bilateralCapacityRenewalGateExportScale(blocked),
       'expected renewal scale lift',
+    );
+  });
+
+  ok('capacity renewal priming improves when renewal gate is renewed', () => {
+    const gate = { ...createEmptyBilateralCapacityRenewalGateSnapshot(), score: 0.88, band: 'renewed' as const, readinessLift: 0.12 };
+    const sustainment = { ...createEmptyCertifiedThroughputSustainmentSnapshot(), score: 0.82, band: 'sustained' as const };
+    const primed = computeCapacityRenewalPrimingSnapshot({
+      bilateralCapacityRenewalGate: gate,
+      certifiedThroughputSustainment: sustainment,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const starved = computeCapacityRenewalPrimingSnapshot({
+      bilateralCapacityRenewalGate: { ...gate, score: 0.2, band: 'blocked', readinessLift: -0.08 },
+      certifiedThroughputSustainment: { ...sustainment, score: 0.18, band: 'exhausted' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(primed.score > starved.score, 'expected stronger priming when renewed');
+    gtelAssert(
+      capacityRenewalPrimingExportScale(primed) >= capacityRenewalPrimingExportScale(starved),
+      'expected priming scale lift',
+    );
+  });
+
+  ok('bilateral cycle reentry gate opens when priming is primed and books ready', () => {
+    const priming = { ...createEmptyCapacityRenewalPrimingSnapshot(), score: 0.89, band: 'primed' as const };
+    const readiness = { ...createEmptyAnchoredBookReadinessSnapshot(), score: 0.86, band: 'ready' as const };
+    const entered = computeBilateralCycleReentryGateSnapshot({
+      capacityRenewalPriming: priming,
+      anchoredBookReadiness: readiness,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const denied = computeBilateralCycleReentryGateSnapshot({
+      capacityRenewalPriming: { ...priming, score: 0.2, band: 'starved' },
+      anchoredBookReadiness: { ...readiness, score: 0.18, band: 'blocked' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(entered.score > denied.score, 'expected reentry when primed');
+    gtelAssert(
+      bilateralCycleReentryGateExportScale(entered) >= bilateralCycleReentryGateExportScale(denied),
+      'expected reentry scale lift',
     );
   });
 

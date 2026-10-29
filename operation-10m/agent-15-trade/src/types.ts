@@ -192,6 +192,8 @@ export interface GTELPersisted {
   bilateralTradeWindowContinuitySmoothing?: number;
   tradeCycleSealVerificationSmoothing?: number;
   bilateralCapacityRenewalGateSmoothing?: number;
+  capacityRenewalPrimingSmoothing?: number;
+  bilateralCycleReentryGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -253,6 +255,8 @@ export interface GTELState {
   bilateralTradeWindowContinuity: GTELBilateralTradeWindowContinuitySnapshot;
   tradeCycleSealVerification: GTELTradeCycleSealVerificationSnapshot;
   bilateralCapacityRenewalGate: GTELBilateralCapacityRenewalGateSnapshot;
+  capacityRenewalPriming: GTELCapacityRenewalPrimingSnapshot;
+  bilateralCycleReentryGate: GTELBilateralCycleReentryGateSnapshot;
   inputHash: string;
 }
 
@@ -857,6 +861,26 @@ export interface GTELBilateralCapacityRenewalGateSnapshot {
   band: GTELBilateralCapacityRenewalGateBand;
   sealSupport: number;
   readinessLift: number;
+  summary: string;
+}
+
+export type GTELCapacityRenewalPrimingBand = 'primed' | 'charging' | 'underfed' | 'starved';
+
+export interface GTELCapacityRenewalPrimingSnapshot {
+  score: number;
+  band: GTELCapacityRenewalPrimingBand;
+  renewalSupport: number;
+  sustainmentFeed: number;
+  summary: string;
+}
+
+export type GTELBilateralCycleReentryGateBand = 'entered' | 'approaching' | 'held' | 'denied';
+
+export interface GTELBilateralCycleReentryGateSnapshot {
+  score: number;
+  band: GTELBilateralCycleReentryGateBand;
+  primingSupport: number;
+  readinessAnchor: number;
   summary: string;
 }
 

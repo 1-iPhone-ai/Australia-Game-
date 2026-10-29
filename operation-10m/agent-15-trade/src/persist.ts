@@ -44,6 +44,8 @@ import { sanitizeCapacityHandoffAbsorptionSmoothing } from './capacity-handoff-a
 import { sanitizeBilateralTradeWindowContinuitySmoothing } from './bilateral-trade-window-continuity.ts';
 import { sanitizeTradeCycleSealVerificationSmoothing } from './trade-cycle-seal-verification.ts';
 import { sanitizeBilateralCapacityRenewalGateSmoothing } from './bilateral-capacity-renewal-gate.ts';
+import { sanitizeCapacityRenewalPrimingSmoothing } from './capacity-renewal-priming.ts';
+import { sanitizeBilateralCycleReentryGateSmoothing } from './bilateral-cycle-reentry-gate.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -106,6 +108,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     bilateralTradeWindowContinuitySmoothing: 0.52,
     tradeCycleSealVerificationSmoothing: 0.52,
     bilateralCapacityRenewalGateSmoothing: 0.52,
+    capacityRenewalPrimingSmoothing: 0.52,
+    bilateralCycleReentryGateSmoothing: 0.52,
   };
 }
 
@@ -333,6 +337,10 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   );
   base.bilateralCapacityRenewalGateSmoothing = sanitizeBilateralCapacityRenewalGateSmoothing(
     r.bilateralCapacityRenewalGateSmoothing,
+  );
+  base.capacityRenewalPrimingSmoothing = sanitizeCapacityRenewalPrimingSmoothing(r.capacityRenewalPrimingSmoothing);
+  base.bilateralCycleReentryGateSmoothing = sanitizeBilateralCycleReentryGateSmoothing(
+    r.bilateralCycleReentryGateSmoothing,
   );
   return base;
 }
