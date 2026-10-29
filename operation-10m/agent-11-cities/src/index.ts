@@ -70,5 +70,8 @@ export * from './settlement-permanent-depopulation-lock.ts';
 export * from './regional-total-collapse-singularity-pressure.ts';
 export * from './interregional-void-expansion-velocity.ts';
 export * from './settlement-existential-continuity-fracture.ts';
+export * from './regional-collapse-horizon-convergence.ts';
+export * from './interregional-void-totalization-surge.ts';
+export * from './settlement-existential-terminus-lock.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';

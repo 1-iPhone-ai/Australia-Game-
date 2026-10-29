@@ -215,7 +215,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.21' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.22' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -284,7 +284,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'permanent_depopulation_lock'
   | 'total_collapse_singularity_pressure'
   | 'void_expansion_velocity'
-  | 'existential_continuity_fracture';
+  | 'existential_continuity_fracture'
+  | 'collapse_horizon_convergence'
+  | 'void_totalization_surge'
+  | 'existential_terminus_lock';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -831,6 +834,36 @@ export interface OP10M_A11_ExistentialContinuityFractureRow {
   narrative: string;
 }
 
+export type OP10M_A11_CollapseHorizonConvergenceBand = 'distant' | 'narrowing' | 'imminent' | 'locked';
+
+export interface OP10M_A11_CollapseHorizonConvergenceRow {
+  regionId: OP10M_A11_RegionId;
+  convergenceScore: number;
+  band: OP10M_A11_CollapseHorizonConvergenceBand;
+  signals: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_VoidTotalizationSurgeBand = 'contained' | 'spreading' | 'totalizing' | 'absolute';
+
+export interface OP10M_A11_VoidTotalizationSurgeRow {
+  regionId: OP10M_A11_RegionId;
+  surgeScore: number;
+  band: OP10M_A11_VoidTotalizationSurgeBand;
+  fronts: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_ExistentialTerminusLockBand = 'open' | 'closing' | 'sealed' | 'terminal';
+
+export interface OP10M_A11_ExistentialTerminusLockRow {
+  regionId: OP10M_A11_RegionId;
+  terminusScore: number;
+  band: OP10M_A11_ExistentialTerminusLockBand;
+  seals: string[];
+  narrative: string;
+}
+
 export type OP10M_A11_MigrationPressureBand = 'stable' | 'elevated' | 'high' | 'surge';
 
 export interface OP10M_A11_MigrationPressureRow {
@@ -1049,6 +1082,12 @@ export interface OP10M_A11_CompositeState {
   nationalVoidExpansionVelocityIndex: number;
   existentialContinuityFracture: OP10M_A11_ExistentialContinuityFractureRow[];
   nationalExistentialContinuityFractureIndex: number;
+  collapseHorizonConvergence: OP10M_A11_CollapseHorizonConvergenceRow[];
+  nationalCollapseHorizonConvergenceIndex: number;
+  voidTotalizationSurge: OP10M_A11_VoidTotalizationSurgeRow[];
+  nationalVoidTotalizationSurgeIndex: number;
+  existentialTerminusLock: OP10M_A11_ExistentialTerminusLockRow[];
+  nationalExistentialTerminusLockIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -1112,5 +1151,8 @@ export interface OP10M_A11_CompositePersisted {
   lastTotalCollapseSingularityIndex: number;
   lastVoidExpansionVelocityIndex: number;
   lastExistentialContinuityFractureIndex: number;
+  lastCollapseHorizonConvergenceIndex: number;
+  lastVoidTotalizationSurgeIndex: number;
+  lastExistentialTerminusLockIndex: number;
   inputHash: string;
 }

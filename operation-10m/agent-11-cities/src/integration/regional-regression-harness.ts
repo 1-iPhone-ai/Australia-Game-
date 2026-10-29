@@ -60,6 +60,9 @@ export type OP10M_A11_RegressionTurnSnapshot = {
   totalCollapseSingularityIndex: number;
   voidExpansionVelocityIndex: number;
   existentialContinuityFractureIndex: number;
+  collapseHorizonConvergenceIndex: number;
+  voidTotalizationSurgeIndex: number;
+  existentialTerminusLockIndex: number;
   validationErrors: number;
 };
 
@@ -146,6 +149,9 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
       totalCollapseSingularityIndex: out.state.nationalTotalCollapseSingularityIndex,
       voidExpansionVelocityIndex: out.state.nationalVoidExpansionVelocityIndex,
       existentialContinuityFractureIndex: out.state.nationalExistentialContinuityFractureIndex,
+      collapseHorizonConvergenceIndex: out.state.nationalCollapseHorizonConvergenceIndex,
+      voidTotalizationSurgeIndex: out.state.nationalVoidTotalizationSurgeIndex,
+      existentialTerminusLockIndex: out.state.nationalExistentialTerminusLockIndex,
       validationErrors,
     });
   }
@@ -251,6 +257,15 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
   const continuityFractureStable = snapshots.every(
     (s) => s.existentialContinuityFractureIndex >= 8 && s.existentialContinuityFractureIndex <= 100,
   );
+  const horizonConvergenceStable = snapshots.every(
+    (s) => s.collapseHorizonConvergenceIndex >= 8 && s.collapseHorizonConvergenceIndex <= 100,
+  );
+  const voidTotalizationStable = snapshots.every(
+    (s) => s.voidTotalizationSurgeIndex >= 8 && s.voidTotalizationSurgeIndex <= 100,
+  );
+  const terminusLockStable = snapshots.every(
+    (s) => s.existentialTerminusLockIndex >= 8 && s.existentialTerminusLockIndex <= 100,
+  );
 
   const ok =
     monotonicRevision &&
@@ -305,10 +320,13 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
     depopulationLockStable &&
     collapseSingularityStable &&
     voidExpansionStable &&
-    continuityFractureStable;
+    continuityFractureStable &&
+    horizonConvergenceStable &&
+    voidTotalizationStable &&
+    terminusLockStable;
   const detail = ok
-    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, continuity fracture ${snapshots[snapshots.length - 1].existentialContinuityFractureIndex}`
-    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable} gridlock=${landUseGridlockStable} trap=${mobilityTrapStable} gap=${absorptionGapStable} relief=${reliefOverheadStable} drift=${corridorDriftStable} lag=${adaptationLagStable} fiscal=${fiscalCapacityStable} erosion=${networkErosionStable} horizon=${horizonRiskStable} integrity=${cohesionIntegrityStable} reliefEq=${reliefEquityGapStable} systemic=${systemicFragilityStable} govDecay=${governanceDecayStable} migStab=${migrationStabilityStable} ceiling=${adaptiveCeilingStable} fiscalGov=${fiscalGovernanceCouplingStable} netEq=${networkEquityTensionStable} frontier=${resilienceFrontierStable} metaGov=${metaGovernanceFatigueStable} capital=${capitalMobilityStable} compound=${compoundShockStable} trust=${institutionalTrustStable} liquidity=${liquidityFragmentationStable} cascade=${cascadingFailureStable} social=${socialContractStable} flight=${capitalFlightStable} irrecoverable=${irrecoverableCollapseStable} legitimacy=${legitimacyCollapseStable} contagion=${fiscalContagionStable} lockin=${terminalLockInStable} vacuum=${governanceVacuumStable} abandonment=${abandonmentSpiralStable} recovery=${recoveryImpossibilityStable} amplification=${cascadeAmplificationStable} hollow=${hollowContagionStable} depop=${depopulationLockStable} singularity=${collapseSingularityStable} void=${voidExpansionStable} continuity=${continuityFractureStable}`;
+    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, terminus lock ${snapshots[snapshots.length - 1].existentialTerminusLockIndex}`
+    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable} gridlock=${landUseGridlockStable} trap=${mobilityTrapStable} gap=${absorptionGapStable} relief=${reliefOverheadStable} drift=${corridorDriftStable} lag=${adaptationLagStable} fiscal=${fiscalCapacityStable} erosion=${networkErosionStable} horizon=${horizonRiskStable} integrity=${cohesionIntegrityStable} reliefEq=${reliefEquityGapStable} systemic=${systemicFragilityStable} govDecay=${governanceDecayStable} migStab=${migrationStabilityStable} ceiling=${adaptiveCeilingStable} fiscalGov=${fiscalGovernanceCouplingStable} netEq=${networkEquityTensionStable} frontier=${resilienceFrontierStable} metaGov=${metaGovernanceFatigueStable} capital=${capitalMobilityStable} compound=${compoundShockStable} trust=${institutionalTrustStable} liquidity=${liquidityFragmentationStable} cascade=${cascadingFailureStable} social=${socialContractStable} flight=${capitalFlightStable} irrecoverable=${irrecoverableCollapseStable} legitimacy=${legitimacyCollapseStable} contagion=${fiscalContagionStable} lockin=${terminalLockInStable} vacuum=${governanceVacuumStable} abandonment=${abandonmentSpiralStable} recovery=${recoveryImpossibilityStable} amplification=${cascadeAmplificationStable} hollow=${hollowContagionStable} depop=${depopulationLockStable} singularity=${collapseSingularityStable} void=${voidExpansionStable} continuity=${continuityFractureStable} horizon=${horizonConvergenceStable} totalization=${voidTotalizationStable} terminus=${terminusLockStable}`;
 
   return { ok, snapshots, detail };
 }

@@ -108,6 +108,9 @@ import { op10mA11ComputeSettlementPermanentDepopulationLock } from './settlement
 import { op10mA11ComputeRegionalTotalCollapseSingularityPressure } from './regional-total-collapse-singularity-pressure.ts';
 import { op10mA11ComputeInterregionalVoidExpansionVelocity } from './interregional-void-expansion-velocity.ts';
 import { op10mA11ComputeSettlementExistentialContinuityFracture } from './settlement-existential-continuity-fracture.ts';
+import { op10mA11ComputeRegionalCollapseHorizonConvergence } from './regional-collapse-horizon-convergence.ts';
+import { op10mA11ComputeInterregionalVoidTotalizationSurge } from './interregional-void-totalization-surge.ts';
+import { op10mA11ComputeSettlementExistentialTerminusLock } from './settlement-existential-terminus-lock.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -434,7 +437,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.21',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.22',
     composite.state.schemaVersion,
   );
 
@@ -573,7 +576,10 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastPermanentDepopulationLockIndex === composite.state.nationalPermanentDepopulationLockIndex &&
       composite.persisted.lastTotalCollapseSingularityIndex === composite.state.nationalTotalCollapseSingularityIndex &&
       composite.persisted.lastVoidExpansionVelocityIndex === composite.state.nationalVoidExpansionVelocityIndex &&
-      composite.persisted.lastExistentialContinuityFractureIndex === composite.state.nationalExistentialContinuityFractureIndex,
+      composite.persisted.lastExistentialContinuityFractureIndex === composite.state.nationalExistentialContinuityFractureIndex &&
+      composite.persisted.lastCollapseHorizonConvergenceIndex === composite.state.nationalCollapseHorizonConvergenceIndex &&
+      composite.persisted.lastVoidTotalizationSurgeIndex === composite.state.nationalVoidTotalizationSurgeIndex &&
+      composite.persisted.lastExistentialTerminusLockIndex === composite.state.nationalExistentialTerminusLockIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -2056,6 +2062,90 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_194',
     composite.state.existentialContinuityFracture.every((e) => e.narrative.includes('existential continuity fracture')),
     composite.state.existentialContinuityFracture[0]?.band ?? 'none',
+  );
+
+  const collapseHorizonConvergence = op10mA11ComputeRegionalCollapseHorizonConvergence({
+    totalCollapseSingularity: composite.state.totalCollapseSingularity,
+    voidExpansionVelocity: composite.state.voidExpansionVelocity,
+    existentialContinuityFracture: composite.state.existentialContinuityFracture,
+  });
+  push(
+    out,
+    'a11_195',
+    composite.state.collapseHorizonConvergence.length === 8 &&
+      composite.state.nationalCollapseHorizonConvergenceIndex === collapseHorizonConvergence.nationalIndex,
+    `horizon convergence ${composite.state.nationalCollapseHorizonConvergenceIndex}`,
+  );
+
+  const voidTotalizationSurge = op10mA11ComputeInterregionalVoidTotalizationSurge({
+    voidExpansionVelocity: composite.state.voidExpansionVelocity,
+    totalCollapseSingularity: composite.state.totalCollapseSingularity,
+    hollowRegionContagion: composite.state.hollowRegionContagion,
+  });
+  push(
+    out,
+    'a11_196',
+    composite.state.voidTotalizationSurge.length === 8 &&
+      composite.state.nationalVoidTotalizationSurgeIndex === voidTotalizationSurge.nationalIndex,
+    `void totalization ${composite.state.nationalVoidTotalizationSurgeIndex}`,
+  );
+
+  const existentialTerminusLock = op10mA11ComputeSettlementExistentialTerminusLock({
+    existentialContinuityFracture: composite.state.existentialContinuityFracture,
+    totalCollapseSingularity: composite.state.totalCollapseSingularity,
+    permanentDepopulationLock: composite.state.permanentDepopulationLock,
+  });
+  push(
+    out,
+    'a11_197',
+    composite.state.existentialTerminusLock.length === 8 &&
+      composite.state.nationalExistentialTerminusLockIndex === existentialTerminusLock.nationalIndex,
+    `terminus lock ${composite.state.nationalExistentialTerminusLockIndex}`,
+  );
+
+  push(
+    out,
+    'a11_198',
+    composite.state.collapseHorizonConvergence.every((c) => c.narrative.includes('collapse horizon convergence')),
+    composite.state.collapseHorizonConvergence[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_199',
+    composite.derived.some((d) => d.kind === 'collapse_horizon_convergence') ||
+      composite.state.collapseHorizonConvergence.some((c) => c.band === 'imminent' || c.band === 'locked'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_200',
+    composite.derived.some((d) => d.kind === 'void_totalization_surge') ||
+      composite.state.voidTotalizationSurge.some((v) => v.band === 'totalizing' || v.band === 'absolute'),
+    composite.state.voidTotalizationSurge[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_201',
+    composite.persisted.lastVoidTotalizationSurgeIndex === composite.state.nationalVoidTotalizationSurgeIndex,
+    `persisted totalization ${composite.persisted.lastVoidTotalizationSurgeIndex}`,
+  );
+
+  push(
+    out,
+    'a11_202',
+    composite.derived.some((d) => d.kind === 'existential_terminus_lock') ||
+      composite.state.existentialTerminusLock.some((t) => t.band === 'sealed' || t.band === 'terminal'),
+    composite.state.existentialTerminusLock[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_203',
+    composite.state.existentialTerminusLock.every((t) => t.narrative.includes('existential terminus lock')),
+    composite.state.existentialTerminusLock[0]?.band ?? 'none',
   );
 
   return out;
