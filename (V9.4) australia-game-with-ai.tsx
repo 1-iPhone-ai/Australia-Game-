@@ -135801,6 +135801,133 @@ export function runO111AccessibilitySelfTests(): V9SelfTestResult[] {
 
 // ============================================================================
 
+// SECTION 20P-A70: INTERACTION FEEDBACK — BLOCKED TAPS & IMMEDIATE ACKNOWLEDGEMENT (Agent 70)
+// ============================================================================
+// Presentation-only lane for direct player input (disabled action bar, guarded controls). Never persisted;
+// never changes legality. Complements deriveFeedbackEvents (state deltas) and UX-assist tooltips.
+
+export type UiInteractionKind = 'blocked_action';
+
+export interface UiInteractionFeedback {
+  id: string;
+  kind: UiInteractionKind;
+  /** Action bar / control id (matches getActionDisabledReason). */
+  actionId: string;
+  message: string;
+  createdAt: number;
+  expiresAt: number;
+}
+
+export const UI_INTERACTION_LIMITS = { queue: 4, dedupeMs: 1400, displayMs: 3200 };
+
+let V94_INTERACTION_SEQ = 0;
+
+export function createInteractionFeedback(kind: UiInteractionKind, actionId: string, message: string, now: number): UiInteractionFeedback {
+  V94_INTERACTION_SEQ += 1;
+  const text = String(message || 'Not available right now').trim() || 'Not available right now';
+  return {
+    id: `ix${V94_INTERACTION_SEQ}_${kind}_${actionId}`,
+    kind,
+    actionId: String(actionId || 'unknown'),
+    message: text.slice(0, 160),
+    createdAt: now,
+    expiresAt: now + UI_INTERACTION_LIMITS.displayMs
+  };
+}
+
+/** Bounded, de-duplicated queue: same action+kind within dedupeMs replaces nothing (drops spam). */
+export function pushInteractionFeedback(queue: UiInteractionFeedback[], incoming: UiInteractionFeedback, now: number): UiInteractionFeedback[] {
+  const live = queue.filter(e => e.expiresAt > now);
+  const dup = live.some(e => e.actionId === incoming.actionId && e.kind === incoming.kind && now - e.createdAt < UI_INTERACTION_LIMITS.dedupeMs);
+  if (dup) return live;
+  const next = [...live, incoming];
+  return next.length > UI_INTERACTION_LIMITS.queue ? next.slice(next.length - UI_INTERACTION_LIMITS.queue) : next;
+}
+
+export function pruneInteractionFeedback(queue: UiInteractionFeedback[], now: number): UiInteractionFeedback[] {
+  return queue.filter(e => e.expiresAt > now);
+}
+
+/** Canonical blocked-action copy (always uses gameplay rules, independent of UX-assist tooltip gating). */
+export function resolveBlockedActionMessage(actionId: string, context: ActionContext): string {
+  return getActionDisabledReason(actionId, context) || 'Not available right now';
+}
+
+export const InteractionFeedbackLane: React.FC<{ theme: any; items: UiInteractionFeedback[]; onDismiss: (id: string) => void }> = ({ theme, items, onDismiss }) => {
+  if (!items.length) return null;
+  return (
+    <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[60] flex flex-col items-center gap-1.5 pointer-events-none max-w-[min(100vw-1rem,28rem)] px-2" data-testid="v94-interaction-lane" aria-live="polite">
+      {items.map(item => (
+        <div key={item.id} role="status" className={`v94-pop pointer-events-auto ${theme.card} border border-amber-500/70 rounded-lg px-3 py-2 text-xs shadow-lg flex items-start gap-2 w-full`} data-testid="v94-interaction-toast" data-action-id={item.actionId}>
+          <span className="text-base leading-none" aria-hidden="true">{UI_TONE.warning.icon}</span>
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold">{item.message}</div>
+            <div className="opacity-70 sr-only">{UI_TONE.warning.label}</div>
+          </div>
+          <button type="button" className="underline opacity-80 pointer-events-auto shrink-0" onClick={() => onDismiss(item.id)}>Dismiss</button>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+export function runV94InteractionFeedbackSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const J = (v: unknown) => JSON.stringify(v);
+  const now = 2_000_000;
+  const ctx: ActionContext = {
+    isPlayerTurn: false,
+    isCompetitiveMode: true,
+    isTeamMode: false,
+    isShopRegion: true,
+    player: { money: 100, inventory: [], actionsUsedThisTurn: 0, overrideActionsGranted: 0, debuffs: [] } as any,
+    currentActor: null,
+    currentRegion: null,
+    selectedMode: 'ai',
+    settings: DEFAULT_GAME_SETTINGS,
+    day: 3,
+    totalDays: 30,
+    activeDebuffs: [],
+    availableChallenges: [],
+    inventoryCount: 0
+  };
+
+  check('v94_a70_message', 'Blocked actions resolve canonical disabled reasons (not color-only)', () => {
+    const travel = resolveBlockedActionMessage('travel', ctx);
+    const shop = resolveBlockedActionMessage('shop', { ...ctx, isPlayerTurn: true, isShopRegion: false });
+    return (travel === 'Only available on your turn' && shop === 'Only available in shop regions') || J({ travel, shop });
+  });
+  check('v94_a70_queue', 'Interaction queue is bounded and de-duplicates rapid repeats on the same action', () => {
+    let q: UiInteractionFeedback[] = [];
+    const a = createInteractionFeedback('blocked_action', 'travel', 'Only available on your turn', now);
+    q = pushInteractionFeedback(q, a, now);
+    q = pushInteractionFeedback(q, createInteractionFeedback('blocked_action', 'travel', 'Only available on your turn', now + 100), now + 100);
+    q = pushInteractionFeedback(q, createInteractionFeedback('blocked_action', 'market', 'No resources to sell', now + 200), now + 200);
+    for (let i = 0; i < 6; i++) q = pushInteractionFeedback(q, createInteractionFeedback('blocked_action', `a${i}`, `reason ${i}`, now + 300 + i), now + 300 + i);
+    return (q.length === UI_INTERACTION_LIMITS.queue && q.filter(x => x.actionId === 'travel').length === 1 && q.some(x => x.actionId === 'market')) || J({ len: q.length, travel: q.filter(x => x.actionId === 'travel').length });
+  });
+  check('v94_a70_expiry', 'Interaction toasts expire (presentation never sticks forever)', () => {
+    const q = [createInteractionFeedback('blocked_action', 'travel', 'x', now)];
+    return (pruneInteractionFeedback(q, now + UI_INTERACTION_LIMITS.displayMs + 1).length === 0 && q[0].expiresAt === now + UI_INTERACTION_LIMITS.displayMs) || 'expiry';
+  });
+  check('v94_a70_css', 'Blocked tap shake uses bounded local CSS with reduced-motion fallback', () => {
+    const css = V94_STYLESHEET;
+    return (/@keyframes v94-shake/.test(css) && /\.v94-shake/.test(css) && /\[data-motion="reduced"\] \.v94-shake/.test(css)) || 'css';
+  });
+  check('v94_a70_not_persisted', 'Interaction feedback is never stored on game state or settings', () => {
+    const settingsKeys = Object.keys(DEFAULT_GAME_SETTINGS).filter(k => /interactionFeedback|v94Interaction/i.test(k));
+    const stateKeys = Object.keys(initialGameState).filter(k => /interactionFeedback|v94Interaction/i.test(k));
+    return (settingsKeys.length === 0 && stateKeys.length === 0) || J({ settingsKeys, stateKeys });
+  });
+  return results;
+}
+
+// ============================================================================
+
 // SECTION 20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
 // ============================================================================
 // Local-only diagnostics. No network, workers, telemetry or storage writes happen in this section; every
@@ -138350,6 +138477,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
+  { id: 'v94_a70', label: 'V9.4 Interaction Feedback (Agent 70)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94InteractionFeedbackSelfTests() },
   { id: 'o111_a68', label: 'O111 Accessibility (Agent 68)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111AccessibilitySelfTests() },
   { id: 'o111_a67', label: 'O111 Agent 67 Contextual Information', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111ContextualInformationSelfTests() },
   { id: 'o111a66', label: 'O111 Agent 66 Data Viz', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111Agent66DataVizSelfTests() },
