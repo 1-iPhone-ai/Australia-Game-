@@ -403,8 +403,14 @@ export type AlpineSkiResortSupplyStagingPolicy = 'baseline' | 'surge';
 
 export type RailAutonomousShuntingLogisticsPolicy = 'baseline' | 'expand';
 
+export type BiomethaneGridExportPolicy = 'baseline' | 'accelerate';
+
+export type MiningCampResupplyStagingPolicy = 'baseline' | 'surge';
+
+export type PortContainerReeferLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/42';
+  schemaVersion: 'agent12/43';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -706,6 +712,14 @@ export interface TransportInfrastructureState {
   railAutonomousShuntingLogisticsShare: number;
   nationalRailAutonomousShuntingLogisticsThroughputIndex: number;
   railAutonomousShuntingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalBiomethaneGridExportIndex: number;
+  biomethaneGridExportByRegion: Record<AuRegionCode, number>;
+  miningCampResupplyStagingShare: number;
+  nationalMiningCampResupplyStagingIndex: number;
+  miningCampResupplyStagingByRegion: Record<AuRegionCode, number>;
+  portContainerReeferLogisticsShare: number;
+  nationalPortContainerReeferLogisticsThroughputIndex: number;
+  portContainerReeferLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -822,6 +836,9 @@ export interface TransportInfrastructureOptions {
   moltenSaltSolarExportPolicy?: MoltenSaltSolarExportPolicy;
   alpineSkiResortSupplyStagingPolicy?: AlpineSkiResortSupplyStagingPolicy;
   railAutonomousShuntingLogisticsPolicy?: RailAutonomousShuntingLogisticsPolicy;
+  biomethaneGridExportPolicy?: BiomethaneGridExportPolicy;
+  miningCampResupplyStagingPolicy?: MiningCampResupplyStagingPolicy;
+  portContainerReeferLogisticsPolicy?: PortContainerReeferLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -2603,6 +2620,48 @@ export const TRANSPORT_CORRIDORS_ROUND41: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round42.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND42: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_qld_nsw_biomethane_grid',
+    name: 'QLD–NSW Biomethane Grid',
+    networkKind: 'trade',
+    regionSequence: ['QLD', 'NSW'],
+    requiredTagsByRegion: {
+      QLD: ['biomethane_grid_export', 'anaerobic_digest_rail_feed', 'renewable_gas_logistics'],
+      NSW: ['biomethane_grid_export', 'anaerobic_digest_rail_feed', 'renewable_gas_logistics'],
+    },
+    productivitySynergyPoints: 6.6,
+    logisticsRelief: 0.043,
+  },
+  {
+    id: 'corr_wa_nt_mining_camp_resupply',
+    name: 'WA–NT Mining Camp Resupply',
+    networkKind: 'freight',
+    regionSequence: ['WA', 'NT'],
+    requiredTagsByRegion: {
+      WA: ['mining_camp_resupply', 'fly_in_fly_out_staging', 'remote_site_freight'],
+      NT: ['mining_camp_resupply', 'fly_in_fly_out_staging', 'remote_site_freight'],
+    },
+    productivitySynergyPoints: 6.4,
+    logisticsRelief: 0.037,
+  },
+  {
+    id: 'corr_vic_sa_port_container_reefer',
+    name: 'VIC–SA Port Container Reefer',
+    networkKind: 'trade',
+    regionSequence: ['VIC', 'SA'],
+    requiredTagsByRegion: {
+      VIC: ['port_container_reefer', 'cold_chain_teus', 'refrigerated_export_hub'],
+      SA: ['port_container_reefer', 'cold_chain_teus', 'refrigerated_export_hub'],
+    },
+    productivitySynergyPoints: 6.3,
+    logisticsRelief: 0.039,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -2791,6 +2850,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND39,
   ...TRANSPORT_CORRIDORS_ROUND40,
   ...TRANSPORT_CORRIDORS_ROUND41,
+  ...TRANSPORT_CORRIDORS_ROUND42,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -5119,6 +5179,62 @@ export const TRANSPORT_SCENARIOS_ROUND41: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round42.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND42: TransportStressScenario[] = [
+  {
+    id: 'scn_qld_biomethane_export_surge',
+    label: 'QLD Biomethane Export Surge',
+    description: 'Digest build overloads Gladstone gas berths.',
+    targetRegions: ['QLD', 'NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.3,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_nsw_renewable_gas_delay',
+    label: 'NSW Renewable Gas Delay',
+    description: 'Maintenance delays Hunter biomethane staging.',
+    targetRegions: ['NSW', 'QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'road'],
+  },
+  {
+    id: 'scn_wa_fifo_resupply_peak',
+    label: 'WA FIFO Resupply Peak',
+    description: 'Roster change peaks Hedland camp resupply.',
+    targetRegions: ['WA', 'NT'],
+    networkKind: 'freight',
+    utilizationAdd: 0.31,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics', 'port'],
+  },
+  {
+    id: 'scn_vic_reefer_export_peak',
+    label: 'Victoria Reefer Export Peak',
+    description: 'Harvest season peaks Dandenong reefer rail.',
+    targetRegions: ['VIC', 'SA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.28,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['rail', 'logistics'],
+  },
+  {
+    id: 'scn_sa_cold_chain_backlog',
+    label: 'SA Cold Chain Backlog',
+    description: 'Reefer plug shortage backs up Adelaide export.',
+    targetRegions: ['SA', 'VIC'],
+    networkKind: 'trade',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -5321,6 +5437,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND39,
   ...TRANSPORT_SCENARIOS_ROUND40,
   ...TRANSPORT_SCENARIOS_ROUND41,
+  ...TRANSPORT_SCENARIOS_ROUND42,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -15406,6 +15523,233 @@ export const SCALE_WAVE_ROUND41_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round42-assets.ts ---
+
+export const ROUND42_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_qld_gladstone_biomethane_haul',
+    category: 'road',
+    name: 'Gladstone Biomethane Haul',
+    description: 'QLD renewable gas export staging road.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['biomethane_grid_export', 'anaerobic_digest_rail_feed', 'renewable_gas_logistics'],
+    laneKilometres: 28,
+    designSpeedKmh: 85,
+    freightShare: 0.36,
+    urbanShare: 0.07,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_newcastle_biomethane_feed',
+    category: 'road',
+    name: 'Newcastle Biomethane Feed',
+    description: 'NSW anaerobic digest export connector.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['trade'],
+    tags: ['biomethane_grid_export', 'anaerobic_digest_rail_feed', 'renewable_gas_logistics'],
+    laneKilometres: 25,
+    designSpeedKmh: 82,
+    freightShare: 0.32,
+    urbanShare: 0.09,
+    tollRoad: false,
+  },
+  {
+    id: 'road_wa_pilbara_camp_access',
+    category: 'road',
+    name: 'Pilbara Camp Access',
+    description: 'WA fly-in fly-out staging road feed.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'NT'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['freight', 'mobility'],
+    tags: ['mining_camp_resupply', 'fly_in_fly_out_staging', 'remote_site_freight'],
+    laneKilometres: 21,
+    designSpeedKmh: 76,
+    freightShare: 0.22,
+    urbanShare: 0.08,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nt_darwin_camp_staging',
+    category: 'road',
+    name: 'Darwin Camp Staging',
+    description: 'NT remote site freight connector.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'WA'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['freight'],
+    tags: ['mining_camp_resupply', 'fly_in_fly_out_staging', 'remote_site_freight'],
+    laneKilometres: 20,
+    designSpeedKmh: 74,
+    freightShare: 0.2,
+    urbanShare: 0.1,
+    tollRoad: false,
+  },
+];
+
+export const ROUND42_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_qld_gladstone_biomethane_rail',
+    category: 'rail',
+    name: 'Gladstone Biomethane Rail',
+    description: 'QLD renewable gas rail export feed.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.7,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['biomethane_grid_export', 'anaerobic_digest_rail_feed', 'renewable_gas_logistics'],
+    trackKilometres: 44,
+    dualTrackShare: 0.49,
+    electrifiedShare: 0.57,
+    designFreightTonnesPerYear: 4_200_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_nsw_hunter_biomethane_link',
+    category: 'rail',
+    name: 'Hunter Biomethane Link',
+    description: 'NSW renewable gas export rail handoff.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade'],
+    tags: ['biomethane_grid_export', 'anaerobic_digest_rail_feed', 'renewable_gas_logistics'],
+    trackKilometres: 36,
+    dualTrackShare: 0.51,
+    electrifiedShare: 0.53,
+    designFreightTonnesPerYear: 3_300_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_vic_dandenong_reefer_rail',
+    category: 'rail',
+    name: 'Dandenong Reefer Rail',
+    description: 'VIC refrigerated export hub rail feed.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'SA'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['port_container_reefer', 'cold_chain_teus', 'refrigerated_export_hub'],
+    trackKilometres: 30,
+    dualTrackShare: 0.57,
+    electrifiedShare: 0.45,
+    designFreightTonnesPerYear: 2_800_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND42_PORTS: PortAsset[] = [
+  {
+    id: 'port_qld_gladstone_biomethane_export',
+    category: 'port',
+    name: 'Gladstone Biomethane Export',
+    description: 'Queensland renewable gas export port.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 6.0,
+    strategicNetworks: ['trade'],
+    tags: ['biomethane_grid_export', 'anaerobic_digest_rail_feed', 'renewable_gas_logistics'],
+    berthCount: 3,
+    maxDraftMetres: 13.3,
+    teuCapacityPerYear: 115_000,
+    automationLevel: 2,
+    bulkShare: 0.41,
+  },
+  {
+    id: 'port_wa_port_hedland_camp_resupply',
+    category: 'port',
+    name: 'Port Hedland Camp Resupply',
+    description: 'WA mining camp logistics port.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'NT'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['mining_camp_resupply', 'fly_in_fly_out_staging', 'remote_site_freight'],
+    berthCount: 3,
+    maxDraftMetres: 13.5,
+    teuCapacityPerYear: 125_000,
+    automationLevel: 2,
+    bulkShare: 0.28,
+  },
+  {
+    id: 'port_sa_adelaide_reefer_export',
+    category: 'port',
+    name: 'Adelaide Reefer Export',
+    description: 'SA cold chain TEU export port.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'VIC'],
+    baseProductivityPoints: 5.8,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_container_reefer', 'cold_chain_teus', 'refrigerated_export_hub'],
+    berthCount: 3,
+    maxDraftMetres: 12.7,
+    teuCapacityPerYear: 205_000,
+    automationLevel: 2,
+    bulkShare: 0.06,
+  },
+];
+
+export const ROUND42_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_nsw_newcastle_biomethane_stores',
+    category: 'logistics',
+    name: 'Newcastle Biomethane Stores',
+    description: 'NSW renewable gas consolidation yard.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade'],
+    tags: ['biomethane_grid_export', 'anaerobic_digest_rail_feed', 'renewable_gas_logistics'],
+    warehouseSqm: 48_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 40,
+  },
+  {
+    id: 'log_nt_alice_camp_stores',
+    category: 'logistics',
+    name: 'Alice Camp Stores',
+    description: 'NT remote site freight consolidation.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'WA'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['freight'],
+    tags: ['mining_camp_resupply', 'fly_in_fly_out_staging', 'remote_site_freight'],
+    warehouseSqm: 28_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 44,
+  },
+  {
+    id: 'log_vic_western_reefer_stores',
+    category: 'logistics',
+    name: 'Western Reefer Stores',
+    description: 'VIC refrigerated export staging yard.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'SA'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_container_reefer', 'cold_chain_teus', 'refrigerated_export_hub'],
+    warehouseSqm: 52_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 56,
+  },
+];
+
+export const SCALE_WAVE_ROUND42_ASSETS = [
+  ...ROUND42_ROADS,
+  ...ROUND42_RAIL,
+  ...ROUND42_PORTS,
+  ...ROUND42_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -15455,6 +15799,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND39_ASSETS,
     ...SCALE_WAVE_ROUND40_ASSETS,
     ...SCALE_WAVE_ROUND41_ASSETS,
+    ...SCALE_WAVE_ROUND42_ASSETS,
   ];
 }
 
@@ -17789,6 +18134,67 @@ export function moltenSaltSolarExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.035 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.038 + policyBoost, 0.93, 1.1);
+}
+
+
+// --- source: network/biomethane-grid-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type BiomethaneGridExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 biomethane grid export throughput by region. */
+export function computeBiomethaneGridExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) =>
+        t === 'biomethane_grid_export' ||
+        t === 'anaerobic_digest_rail_feed' ||
+        t === 'renewable_gas_logistics',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.9 + asset.maxDraftMetres * 0.35;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 69_000 + asset.intermodalLinks.length * 0.69;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 465;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 8_600_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalBiomethaneGridExportIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.49 + max * 0.51, 5, 72) * 10) / 10;
+}
+
+export function biomethaneGridExportProductivityMultiplier(
+  index: number,
+  policy: BiomethaneGridExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.034 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.037 + policyBoost, 0.93, 1.09);
 }
 
 
@@ -20842,6 +21248,96 @@ export function alpineSkiResortSupplyStagingProductivityMultiplier(
 ): number {
   const bias = policy === 'surge' ? 1.016 : 1;
   return (1 + (share - 0.044) * 0.021) * bias;
+}
+
+
+// --- source: operations/mining-camp-resupply-staging-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type MiningCampResupplyStagingPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 mining camp resupply staging readiness by region. */
+export function computeMiningCampResupplyStagingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'mining_camp_resupply' ||
+          t === 'fly_in_fly_out_staging' ||
+          t === 'remote_site_freight',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 62_000 + (asset.coldChainCapable ? 1.1 : 0.7);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 435;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.88;
+    }
+    if (asset.category === 'rail' && 'passengerCapable' in asset && asset.passengerCapable) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 265;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.033 - stress * 0.02), 5, 74) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalMiningCampResupplyStagingIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.52 + max * 0.48, 6, 72) * 10) / 10;
+}
+
+export function computeMiningCampResupplyStagingShare(
+  operationalAssets: TransportAsset[],
+  policy: MiningCampResupplyStagingPolicy = 'baseline',
+): number {
+  let campUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('mining_camp_resupply') || asset.tags.includes('remote_site_freight')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 57_000;
+        campUnits += (asset.warehouseSqm / 57_000) * 0.5;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 395;
+        campUnits += (asset.laneKilometres / 395) * 0.44;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.033;
+  const policyBoost = policy === 'surge' ? 0.023 : 0;
+  return Math.round(clamp(campUnits / totalUnits + policyBoost, 0.032, 0.21) * 1000) / 1000;
+}
+
+export function miningCampResupplyStagingProductivityMultiplier(
+  share: number,
+  policy: MiningCampResupplyStagingPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.015 : 1;
+  return (1 + (share - 0.042) * 0.02) * bias;
 }
 
 
@@ -24149,6 +24645,98 @@ export function nationalRailAutonomousShuntingLogisticsThroughputIndex(
 }
 
 
+// --- source: productivity/port-container-reefer-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type PortContainerReeferLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of port logistics supporting refrigerated container export. */
+export function computePortContainerReeferLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: PortContainerReeferLogisticsPolicy = 'baseline',
+): number {
+  let reeferUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) =>
+          t === 'port_container_reefer' ||
+          t === 'cold_chain_teus' ||
+          t === 'refrigerated_export_hub',
+      )
+    ) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.35 + asset.teuCapacityPerYear / 320_000;
+        reeferUnits += (asset.berthCount * 1.35) * 0.64;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 51_000;
+        reeferUnits += (asset.warehouseSqm / 51_000) * 0.59;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.035;
+  const policyBoost = policy === 'expand' ? 0.025 : 0;
+  return Math.round(clamp(reeferUnits / totalUnits + policyBoost, 0.034, 0.24) * 1000) / 1000;
+}
+
+export function portContainerReeferLogisticsProductivityMultiplier(
+  share: number,
+  policy: PortContainerReeferLogisticsPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.017 : 1;
+  return (1 + (share - 0.052) * 0.021) * bias;
+}
+
+export function computePortContainerReeferLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'port_container_reefer' ||
+          t === 'cold_chain_teus' ||
+          t === 'refrigerated_export_hub',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.75 + asset.teuCapacityPerYear / 290_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 52_000 + (asset.coldChainCapable ? 0.8 : 0.3);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 380;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalPortContainerReeferLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.53 + max * 0.47, 2, 50) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -24848,6 +25436,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalRailAutonomousShuntingLogisticsThroughputIndex,
   railAutonomousShuntingLogisticsProductivityMultiplier,
 } from './rail-autonomous-shunting-logistics-index.ts';
+  computeBiomethaneGridExportByRegion,
+  biomethaneGridExportProductivityMultiplier,
+  nationalBiomethaneGridExportIndex,
+} from '../network/biomethane-grid-export-index.ts';
+  computeMiningCampResupplyStagingByRegion,
+  computeMiningCampResupplyStagingShare,
+  miningCampResupplyStagingProductivityMultiplier,
+  nationalMiningCampResupplyStagingIndex,
+} from '../operations/mining-camp-resupply-staging-index.ts';
+  computePortContainerReeferLogisticsShare,
+  computePortContainerReeferLogisticsThroughputByRegion,
+  nationalPortContainerReeferLogisticsThroughputIndex,
+  portContainerReeferLogisticsProductivityMultiplier,
+} from './port-container-reefer-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -26203,6 +26805,35 @@ export function computeTransportInfrastructureState(
     railAutonomousShuntingLogisticsShare,
     options?.railAutonomousShuntingLogisticsPolicy ?? 'baseline',
   );
+  const biomethaneGridExportByRegion = computeBiomethaneGridExportByRegion(ops);
+  const nationalBiomethane = nationalBiomethaneGridExportIndex(biomethaneGridExportByRegion);
+  const biomethaneMult = biomethaneGridExportProductivityMultiplier(
+    nationalBiomethane,
+    options?.biomethaneGridExportPolicy ?? 'baseline',
+  );
+  const miningCampResupplyStagingByRegion = computeMiningCampResupplyStagingByRegion(ops, networkStress);
+  const nationalMiningCamp = nationalMiningCampResupplyStagingIndex(miningCampResupplyStagingByRegion);
+  const miningCampResupplyStagingShare = computeMiningCampResupplyStagingShare(
+    ops,
+    options?.miningCampResupplyStagingPolicy ?? 'baseline',
+  );
+  const miningCampMult = miningCampResupplyStagingProductivityMultiplier(
+    miningCampResupplyStagingShare,
+    options?.miningCampResupplyStagingPolicy ?? 'baseline',
+  );
+  const portContainerReeferLogisticsThroughputByRegion =
+    computePortContainerReeferLogisticsThroughputByRegion(ops);
+  const nationalContainerReefer = nationalPortContainerReeferLogisticsThroughputIndex(
+    portContainerReeferLogisticsThroughputByRegion,
+  );
+  const portContainerReeferLogisticsShare = computePortContainerReeferLogisticsShare(
+    ops,
+    options?.portContainerReeferLogisticsPolicy ?? 'baseline',
+  );
+  const containerReeferMult = portContainerReeferLogisticsProductivityMultiplier(
+    portContainerReeferLogisticsShare,
+    options?.portContainerReeferLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -26283,6 +26914,9 @@ export function computeTransportInfrastructureState(
     const moltenSaltBoost = (moltenSaltSolarExportByRegion[code] - 5) * 0.0027;
     const alpineSkiBoost = (alpineSkiResortSupplyStagingByRegion[code] - 6) * 0.0023;
     const railShuntingBoost = (railAutonomousShuntingLogisticsThroughputByRegion[code] - 2) * 0.0019;
+    const biomethaneBoost = (biomethaneGridExportByRegion[code] - 5) * 0.0026;
+    const miningCampBoost = (miningCampResupplyStagingByRegion[code] - 6) * 0.0022;
+    const containerReeferBoost = (portContainerReeferLogisticsThroughputByRegion[code] - 2) * 0.0018;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -26362,7 +26996,10 @@ export function computeTransportInfrastructureState(
         evFreightChargingBoost +
         moltenSaltBoost +
         alpineSkiBoost +
-        railShuntingBoost) *
+        railShuntingBoost +
+        biomethaneBoost +
+        miningCampBoost +
+        containerReeferBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -26440,7 +27077,10 @@ export function computeTransportInfrastructureState(
       evFreightChargingMult *
       moltenSaltMult *
       alpineSkiMult *
-      railShuntingMult;
+      railShuntingMult *
+      biomethaneMult *
+      miningCampMult *
+      containerReeferMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -26541,7 +27181,10 @@ export function computeTransportInfrastructureState(
     nationalEvFreightCharging * 0.003 +
     nationalMoltenSalt * 0.003 +
     nationalAlpineSki * 0.003 +
-    nationalRailShunting * 0.003;
+    nationalRailShunting * 0.003 +
+    nationalBiomethane * 0.003 +
+    nationalMiningCamp * 0.003 +
+    nationalContainerReefer * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -26556,7 +27199,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/42',
+    schemaVersion: 'agent12/43',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -26858,6 +27501,14 @@ export function computeTransportInfrastructureState(
     railAutonomousShuntingLogisticsShare,
     nationalRailAutonomousShuntingLogisticsThroughputIndex: nationalRailShunting,
     railAutonomousShuntingLogisticsThroughputByRegion,
+    nationalBiomethaneGridExportIndex: nationalBiomethane,
+    biomethaneGridExportByRegion,
+    miningCampResupplyStagingShare,
+    nationalMiningCampResupplyStagingIndex: nationalMiningCamp,
+    miningCampResupplyStagingByRegion,
+    portContainerReeferLogisticsShare,
+    nationalPortContainerReeferLogisticsThroughputIndex: nationalContainerReefer,
+    portContainerReeferLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -26940,7 +27591,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/42' &&
+      infra.schemaVersion === 'agent12/43' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -27090,8 +27741,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalMoltenSaltSolarExportIndex >= 5 &&
       infra.nationalAlpineSkiResortSupplyStagingIndex >= 6 &&
       infra.railAutonomousShuntingLogisticsShare >= 0.03 &&
-      infra.nationalRailAutonomousShuntingLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} csp=${infra.nationalMoltenSaltSolarExportIndex.toFixed(1)} ski=${infra.nationalAlpineSkiResortSupplyStagingIndex.toFixed(1)} shunt=${infra.nationalRailAutonomousShuntingLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalRailAutonomousShuntingLogisticsThroughputIndex >= 2 &&
+      infra.nationalBiomethaneGridExportIndex >= 5 &&
+      infra.nationalMiningCampResupplyStagingIndex >= 6 &&
+      infra.portContainerReeferLogisticsShare >= 0.03 &&
+      infra.nationalPortContainerReeferLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} bio=${infra.nationalBiomethaneGridExportIndex.toFixed(1)} camp=${infra.nationalMiningCampResupplyStagingIndex.toFixed(1)} reefer=${infra.nationalPortContainerReeferLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;
