@@ -193,6 +193,8 @@ export interface Agent17PlanningDepthSnapshot {
   handoffReadiness: Agent17HandoffReadinessSnapshot;
   commandPosture: Agent17CommandPostureSnapshot;
   governanceAudit: Agent17GovernanceAuditSnapshot;
+  escalationMatrix: Agent17EscalationMatrixSnapshot;
+  rollbackAssurance: Agent17RollbackAssuranceSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -306,6 +308,37 @@ export interface Agent17GovernanceAuditSnapshot {
   band: 'compliant' | 'review' | 'breach';
   findings: Agent17GovernanceAuditFinding[];
   openCriticalCount: number;
+  headline: string;
+}
+
+export interface Agent17EscalationMatrixRung {
+  id: string;
+  label: string;
+  triggered: boolean;
+  severity: 'low' | 'medium' | 'high';
+  detail: string;
+}
+
+export interface Agent17EscalationMatrixSnapshot {
+  escalationIndex: number;
+  band: 'none' | 'watch' | 'urgent';
+  rungs: Agent17EscalationMatrixRung[];
+  triggeredCount: number;
+  headline: string;
+}
+
+export interface Agent17RollbackAssuranceCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  weight: number;
+}
+
+export interface Agent17RollbackAssuranceSnapshot {
+  assuranceScore: number;
+  band: 'protected' | 'at_risk' | 'exposed';
+  checks: Agent17RollbackAssuranceCheck[];
+  restoreRecommended: boolean;
   headline: string;
 }
 
@@ -2787,6 +2820,179 @@ export function governanceAuditBlocksAutomation(snapshot: Agent17GovernanceAudit
 }
 
 
+// --- source: planning/escalation-matrix.ts ---
+  Agent17CommandPostureSnapshot,
+  Agent17EscalationMatrixSnapshot,
+  Agent17GovernanceAuditSnapshot,
+  Agent17HandoffReadinessSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17EscalationMatrixInputs {
+  commandPosture: Agent17CommandPostureSnapshot;
+  governanceAudit: Agent17GovernanceAuditSnapshot;
+  handoffReadiness: Agent17HandoffReadinessSnapshot;
+}
+
+export function buildAgent17EscalationMatrix(
+  inputs: Agent17EscalationMatrixInputs
+): Agent17EscalationMatrixSnapshot {
+  const rungs: Agent17EscalationMatrixSnapshot['rungs'] = [];
+
+  const postureStress = commandPostureNeedsEscalation(inputs.commandPosture)
+    ? 35
+    : inputs.commandPosture.band === 'contested'
+      ? 18
+      : 0;
+  rungs.push({
+    id: 'posture',
+    label: 'Command posture',
+    triggered: postureStress > 0,
+    severity: postureStress >= 35 ? 'high' : postureStress > 0 ? 'medium' : 'low',
+    detail: `${inputs.commandPosture.band} (${inputs.commandPosture.postureIndex}/100)`,
+  });
+
+  const govStress = governanceAuditBlocksAutomation(inputs.governanceAudit)
+    ? 40
+    : inputs.governanceAudit.band === 'review'
+      ? 15
+      : 0;
+  rungs.push({
+    id: 'governance',
+    label: 'Governance audit',
+    triggered: govStress > 0,
+    severity: govStress >= 40 ? 'high' : govStress > 0 ? 'medium' : 'low',
+    detail: `${inputs.governanceAudit.band} (${inputs.governanceAudit.auditScore}/100)`,
+  });
+
+  const handoffStress = handoffReadinessBlocked(inputs.handoffReadiness)
+    ? 25
+    : inputs.handoffReadiness.band === 'partial'
+      ? 12
+      : 0;
+  rungs.push({
+    id: 'handoff',
+    label: 'Team OS handoff',
+    triggered: handoffStress > 0,
+    severity: handoffStress >= 25 ? 'high' : handoffStress > 0 ? 'medium' : 'low',
+    detail: `${inputs.handoffReadiness.band} (${inputs.handoffReadiness.readinessScore}/100)`,
+  });
+
+  const escalationIndex = Math.max(
+    0,
+    Math.min(100, Math.round(postureStress + govStress + handoffStress))
+  );
+
+  const band: Agent17EscalationMatrixSnapshot['band'] =
+    escalationIndex >= 55 || inputs.governanceAudit.band === 'breach'
+      ? 'urgent'
+      : escalationIndex >= 20
+        ? 'watch'
+        : 'none';
+
+  const triggeredCount = rungs.filter(r => r.triggered).length;
+
+  return {
+    escalationIndex,
+    band,
+    rungs,
+    triggeredCount,
+    headline: `Escalation ${band} (${escalationIndex}/100) · ${triggeredCount} rungs`,
+  };
+}
+
+export function escalationMatrixBlocksAutomation(snapshot: Agent17EscalationMatrixSnapshot): boolean {
+  return snapshot.band === 'urgent' || snapshot.escalationIndex >= 55;
+}
+
+
+// --- source: planning/rollback-assurance.ts ---
+  Acc17CommandCenterOpsState,
+  Agent17GovernanceAuditSnapshot,
+  Agent17PlanHealthBand,
+  Agent17RollbackAssuranceSnapshot,
+} from '../types/command-center-types.ts';
+
+const MAX_VERIFICATION_LOG = 64;
+
+export function buildAgent17RollbackAssurance(
+  ops: Acc17CommandCenterOpsState,
+  planHealth: Agent17PlanHealthBand,
+  governanceAudit: Agent17GovernanceAuditSnapshot
+): Agent17RollbackAssuranceSnapshot {
+  const checks: Agent17RollbackAssuranceSnapshot['checks'] = [];
+
+  const hasPlan = !!ops.activePlan;
+  checks.push({
+    id: 'active_plan',
+    label: 'Active plan checkpoint anchor',
+    passed: hasPlan,
+    weight: 15,
+  });
+
+  const logOk = ops.verificationLog.length <= MAX_VERIFICATION_LOG;
+  checks.push({
+    id: 'verify_log',
+    label: 'Verification log bounded',
+    passed: logOk,
+    weight: 15,
+  });
+
+  const failedSteps = ops.activePlan?.steps.filter(s => s.status === 'failed').length ?? 0;
+  checks.push({
+    id: 'plan_integrity',
+    label: 'No failed plan steps',
+    passed: failedSteps === 0,
+    weight: 20,
+  });
+
+  const replanOk = (ops.activePlan?.replanCount ?? 0) <= 3;
+  checks.push({
+    id: 'replan_budget',
+    label: 'Replan count within budget',
+    passed: replanOk,
+    weight: 15,
+  });
+
+  const govOk = governanceAudit.band !== 'breach' && governanceAudit.openCriticalCount === 0;
+  checks.push({
+    id: 'governance_clear',
+    label: 'Governance not in breach',
+    passed: govOk,
+    weight: 20,
+  });
+
+  const healthOk = planHealth.band !== 'critical';
+  checks.push({
+    id: 'plan_health',
+    label: 'Plan health not critical',
+    passed: healthOk,
+    weight: 15,
+  });
+
+  const earned = checks.filter(c => c.passed).reduce((n, c) => n + c.weight, 0);
+  const totalWeight = checks.reduce((n, c) => n + c.weight, 0);
+  const assuranceScore = Math.round((earned / Math.max(1, totalWeight)) * 100);
+
+  const band: Agent17RollbackAssuranceSnapshot['band'] =
+    assuranceScore >= 80 && govOk ? 'protected' : assuranceScore >= 45 ? 'at_risk' : 'exposed';
+
+  const restoreRecommended =
+    band === 'exposed' || failedSteps > 0 || governanceAudit.band === 'breach';
+
+  return {
+    assuranceScore,
+    band,
+    checks,
+    restoreRecommended,
+    headline: `Rollback ${band} (${assuranceScore}/100) · ${checks.filter(c => c.passed).length}/${checks.length} checks`,
+  };
+}
+
+export function rollbackAssuranceNeedsRestore(snapshot: Agent17RollbackAssuranceSnapshot): boolean {
+  return snapshot.restoreRecommended || snapshot.band === 'exposed';
+}
+
+
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
   Acc17DelegateTargetKind,
@@ -2941,6 +3147,12 @@ export function buildAgent17PlanningDepthSnapshot(
     strategicAlignment,
   });
   const governanceAudit = buildAgent17GovernanceAudit(ops, settings, verificationPolicy);
+  const escalationMatrix = buildAgent17EscalationMatrix({
+    commandPosture,
+    governanceAudit,
+    handoffReadiness,
+  });
+  const rollbackAssurance = buildAgent17RollbackAssurance(ops, planHealth, governanceAudit);
   return {
     ...core,
     intentQueue,
@@ -2952,6 +3164,8 @@ export function buildAgent17PlanningDepthSnapshot(
     handoffReadiness,
     commandPosture,
     governanceAudit,
+    escalationMatrix,
+    rollbackAssurance,
   };
 }
 
@@ -3475,6 +3689,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Critical delegation breaches yield breach band or governanceAuditBlocksAutomation.',
     severity: 'major',
   },
+  {
+    id: 'G17-034',
+    title: 'Escalation matrix on planning depth',
+    category: 'telemetry',
+    acceptance: 'escalationMatrix reports escalationIndex 0–100 with none/watch/urgent band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-035',
+    title: 'Rollback assurance checklist complete',
+    category: 'rollback',
+    acceptance: 'rollbackAssurance exposes ≥4 weighted checks and assuranceScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-036',
+    title: 'Urgent escalation blocks automation',
+    category: 'integration',
+    acceptance: 'Governance breach yields urgent band or escalationMatrixBlocksAutomation.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -3501,6 +3736,9 @@ export function listAgent17GoalIds(): string[] {
   maybeApplyAgent17RecoveryPath,
   pickAgent17RecoveryTemplateId,
 } from '../planning/recovery-paths.ts';
+  buildAgent17EscalationMatrix,
+  escalationMatrixBlocksAutomation,
+} from '../planning/escalation-matrix.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -3964,6 +4202,49 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const matrix = depthEval.snapshot.planningDepth?.escalationMatrix;
+  goalResults.push(
+    result(
+      'G17-034',
+      !!matrix &&
+        matrix.escalationIndex >= 0 &&
+        matrix.escalationIndex <= 100 &&
+        (matrix.band === 'none' || matrix.band === 'watch' || matrix.band === 'urgent'),
+      `${matrix?.escalationIndex}/${matrix?.band}`
+    )
+  );
+
+  const rollbackAssurance = depthEval.snapshot.planningDepth?.rollbackAssurance;
+  goalResults.push(
+    result(
+      'G17-035',
+      !!rollbackAssurance &&
+        rollbackAssurance.checks.length >= 4 &&
+        rollbackAssurance.assuranceScore >= 0 &&
+        rollbackAssurance.assuranceScore <= 100,
+      `checks=${rollbackAssurance?.checks.length} score=${rollbackAssurance?.assuranceScore}`
+    )
+  );
+
+  const breachMatrix = buildAgent17EscalationMatrix({
+    commandPosture: posture!,
+    governanceAudit: breachAudit,
+    handoffReadiness: handoff!,
+  });
+  goalResults.push(
+    result(
+      'G17-036',
+      breachMatrix.band === 'urgent' || escalationMatrixBlocksAutomation(breachMatrix),
+      `${breachMatrix.band} idx=${breachMatrix.escalationIndex}`
+    )
+  );
+
+  void buildAgent17RollbackAssurance(
+    depthEval.ops,
+    assessAgent17PlanHealth(depthEval.ops.activePlan, baseState, 'player'),
+    govAudit!
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -4027,6 +4308,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-031',
     'G17-032',
     'G17-033',
+    'G17-034',
+    'G17-035',
+    'G17-036',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
@@ -5385,6 +5669,274 @@ export function runAgent17GovernanceDepthTests(): Agent17DevTestReport {
 }
 
 
+// --- source: harness/run-assurance-depth-tests.ts ---
+  createDefaultAcc17CommandCenterOpsState,
+  acc17CreateMultiStepPlanFromObjective,
+  defaultObjectiveResolver,
+} from '../planning/ops-state.ts';
+  buildAgent17GovernanceAudit,
+  governanceAuditBlocksAutomation,
+} from '../planning/governance-audit.ts';
+  buildAgent17EscalationMatrix,
+  escalationMatrixBlocksAutomation,
+} from '../planning/escalation-matrix.ts';
+  buildAgent17RollbackAssurance,
+  rollbackAssuranceNeedsRestore,
+} from '../planning/rollback-assurance.ts';
+  rankAgent17TemplateCandidates,
+  summarizeAgent17CatalogDepth,
+} from '../planning/template-selector.ts';
+
+export function runAgent17AssuranceDepthTests(): Agent17DevTestReport {
+  const start = Date.now();
+  const testResults: Agent17DevTestReport['testResults'] = [];
+  const push = (id: string, name: string, ok: boolean, detail?: string) => {
+    testResults.push({
+      id,
+      name,
+      status: ok ? 'passed' : 'failed',
+      durationMs: 0,
+      errorMessage: ok ? undefined : detail,
+    });
+  };
+
+  try {
+    const settings = {
+      commandCenterSettings: { enabled: true },
+      aiCommunicationAutonomyLevel: 'assisted' as const,
+    };
+    const actor = {
+      id: 'player',
+      money: 120,
+      netWorth: 2400,
+      currentRegion: 'QLD',
+      currentSupplies: 6,
+    };
+    const state: Agent17GameStateSlice = {
+      turnCounter: 24,
+      day: 24,
+      player: actor,
+      actorsById: { player: actor },
+      playerTrackedObjective: {
+        title: 'Expand trade network supply chain',
+        sourceType: 'contract',
+      },
+      gi3Strategy: { headline: 'Expand trade network resilience' },
+      strategyPlannerState: { activePlan: { title: 'Trade network supply expansion' } },
+      lastExecutedAction: { type: 'trade' },
+    };
+    const ops = createDefaultAcc17CommandCenterOpsState();
+    const plan = acc17CreateMultiStepPlanFromObjective(
+      state,
+      settings,
+      'player',
+      (s, st, id) => defaultObjectiveResolver(s, st, id)
+    );
+    const opsWithPlan = {
+      ...ops,
+      activePlan: plan ? { ...plan, title: plan.title || 'Trade supply chain plan' } : plan,
+    };
+    const health = assessAgent17PlanHealth(opsWithPlan.activePlan, state, 'player');
+    const intentQueue = buildAgent17IntentQueue(opsWithPlan, state, settings, 'player', health);
+    const alignment = buildAgent17StrategicAlignment(
+      opsWithPlan,
+      state,
+      settings,
+      'player',
+      intentQueue
+    );
+    const policy = buildAgent17VerificationPolicy(
+      { ...opsWithPlan, lastContextFingerprint: 'assurance_fp' },
+      state,
+      'player'
+    );
+    const pacing = buildAgent17ExecutionPacing(opsWithPlan, state, health, policy);
+    const scorecard = buildAgent17ResilienceScorecard(
+      opsWithPlan,
+      state,
+      'player',
+      health,
+      policy
+    );
+    const routing = rankAgent17TemplateCandidates(state, settings, 'player');
+    const delegationAnalytics = buildAgent17DelegationAnalytics(opsWithPlan, settings);
+    const core = {
+      turn: state.turnCounter || 1,
+      actorId: 'player',
+      planHealth: health,
+      suggestion: buildAgent17PlanningSuggestion(
+        opsWithPlan,
+        state,
+        settings,
+        'player',
+        'copilot'
+      ),
+      templateRouting: routing,
+      delegationAnalytics,
+      delegationLadder: buildAgent17DelegationLadder(delegationAnalytics, settings, 'copilot'),
+      planLedger: summarizeAgent17PlanLedger(opsWithPlan, state),
+      catalogDepth: summarizeAgent17CatalogDepth(),
+    };
+    const brief = buildAgent17CoordinationBrief(
+      core,
+      intentQueue,
+      policy,
+      opsWithPlan,
+      state,
+      settings
+    );
+    const handoff = buildAgent17HandoffReadiness({
+      coordinationBrief: brief,
+      verificationPolicy: policy,
+      executionPacing: pacing,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const posture = buildAgent17CommandPosture({
+      planHealth: health,
+      handoffReadiness: handoff,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const audit = buildAgent17GovernanceAudit(opsWithPlan, settings, policy);
+
+    const matrixClean = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: audit,
+      handoffReadiness: handoff,
+    });
+    push(
+      'asr_matrix_bounded',
+      'Escalation matrix index bounded with band',
+      matrixClean.escalationIndex >= 0 &&
+        matrixClean.escalationIndex <= 100 &&
+        (matrixClean.band === 'none' ||
+          matrixClean.band === 'watch' ||
+          matrixClean.band === 'urgent'),
+      `${matrixClean.escalationIndex}/${matrixClean.band}`
+    );
+
+    push(
+      'asr_matrix_rungs',
+      'Escalation matrix exposes posture/governance/handoff rungs',
+      matrixClean.rungs.length === 3 && matrixClean.rungs.every(r => r.id && r.severity),
+      `rungs=${matrixClean.rungs.length}`
+    );
+
+    const assuranceClean = buildAgent17RollbackAssurance(opsWithPlan, health, audit);
+    push(
+      'asr_rollback_checks',
+      'Rollback assurance exposes weighted checks',
+      assuranceClean.checks.length >= 4 &&
+        assuranceClean.assuranceScore >= 0 &&
+        assuranceClean.assuranceScore <= 100,
+      `checks=${assuranceClean.checks.length} score=${assuranceClean.assuranceScore}`
+    );
+
+    push(
+      'asr_rollback_band',
+      'Healthy ops yields protected or at_risk band',
+      assuranceClean.band === 'protected' || assuranceClean.band === 'at_risk',
+      assuranceClean.band
+    );
+
+    const breachOps = {
+      ...opsWithPlan,
+      delegatedProjects: [
+        {
+          id: 'dp1',
+          planId: 'p1',
+          title: 'Breach project',
+          delegateKind: 'team_os' as const,
+          delegateTargetId: 'team',
+          status: 'active' as const,
+          authorityCeiling: 'delegated' as const,
+          assignedTurn: 1,
+          assignedDay: 1,
+          lastVerifiedFingerprint: '',
+          notes: '',
+        },
+      ],
+    };
+    const advisorySettings = {
+      ...settings,
+      aiCommunicationAutonomyLevel: 'advisory' as const,
+    };
+    const auditBreach = buildAgent17GovernanceAudit(breachOps, advisorySettings, policy);
+    const matrixUrgent = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: auditBreach,
+      handoffReadiness: handoff,
+    });
+    push(
+      'asr_urgent_blocks',
+      'Governance breach triggers urgent escalation',
+      matrixUrgent.band === 'urgent' || escalationMatrixBlocksAutomation(matrixUrgent),
+      `${matrixUrgent.band} idx=${matrixUrgent.escalationIndex}`
+    );
+
+    const failedPlanOps = {
+      ...opsWithPlan,
+      activePlan: opsWithPlan.activePlan
+        ? {
+            ...opsWithPlan.activePlan,
+            steps: opsWithPlan.activePlan.steps.map((s, i) =>
+              i === 0 ? { ...s, status: 'failed' as const } : s
+            ),
+          }
+        : null,
+    };
+    const assuranceExposed = buildAgent17RollbackAssurance(
+      failedPlanOps,
+      assessAgent17PlanHealth(failedPlanOps.activePlan, state, 'player'),
+      audit
+    );
+    push(
+      'asr_restore_signal',
+      'Failed steps recommend restore',
+      assuranceExposed.restoreRecommended || rollbackAssuranceNeedsRestore(assuranceExposed),
+      `${assuranceExposed.band} restore=${assuranceExposed.restoreRecommended}`
+    );
+
+    push(
+      'asr_governance_link',
+      'Governance breach blocks automation in matrix path',
+      governanceAuditBlocksAutomation(auditBreach) || matrixUrgent.band === 'urgent',
+      auditBreach.band
+    );
+
+    const evalRes = evaluateAcc17CommandCenterOperations(state, settings, 'player', ops);
+    const depth = evalRes.snapshot.planningDepth;
+    push(
+      'asr_evaluator_depth',
+      'Evaluator attaches escalation matrix and rollback assurance',
+      !!depth?.escalationMatrix?.headline &&
+        !!depth?.rollbackAssurance?.headline &&
+        (depth.rollbackAssurance.checks?.length ?? 0) >= 4,
+      `${depth?.escalationMatrix?.band}/${depth?.rollbackAssurance?.band}`
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    push('asr_throw', 'Assurance harness did not throw', false, msg);
+  }
+
+  const passedCount = testResults.filter(t => t.status === 'passed').length;
+  const failedCount = testResults.filter(t => t.status === 'failed').length;
+  const overallStatus: 'passed' | 'failed' = failedCount === 0 ? 'passed' : 'failed';
+  return {
+    timestamp: Date.now(),
+    totalTests: testResults.length,
+    passedCount,
+    failedCount,
+    executionTimeMs: Date.now() - start,
+    overallStatus,
+    success: overallStatus === 'passed',
+    testResults,
+    summary: `Agent 17 Assurance Depth Tests: ${passedCount}/${testResults.length} Passed`,
+  };
+}
+
+
 export function runAgent17Op10mModuleSelfTests(): {
   acc17: ReturnType<typeof runAgent17Acc17DevTests>;
   recovery: ReturnType<typeof runAgent17RecoveryPathTests>;
@@ -5394,6 +5946,7 @@ export function runAgent17Op10mModuleSelfTests(): {
   execution: ReturnType<typeof runAgent17ExecutionDepthTests>;
   continuity: ReturnType<typeof runAgent17ContinuityDepthTests>;
   governance: ReturnType<typeof runAgent17GovernanceDepthTests>;
+  assurance: ReturnType<typeof runAgent17AssuranceDepthTests>;
   success: boolean;
 } {
   const acc17 = runAgent17Acc17DevTests();
@@ -5404,6 +5957,7 @@ export function runAgent17Op10mModuleSelfTests(): {
   const execution = runAgent17ExecutionDepthTests();
   const continuity = runAgent17ContinuityDepthTests();
   const governance = runAgent17GovernanceDepthTests();
+  const assurance = runAgent17AssuranceDepthTests();
   return {
     acc17,
     recovery,
@@ -5413,6 +5967,7 @@ export function runAgent17Op10mModuleSelfTests(): {
     execution,
     continuity,
     governance,
+    assurance,
     success:
       acc17.success &&
       recovery.success &&
@@ -5421,7 +5976,8 @@ export function runAgent17Op10mModuleSelfTests(): {
       coordination.success &&
       execution.success &&
       continuity.success &&
-      governance.success,
+      governance.success &&
+      assurance.success,
   };
 }
 

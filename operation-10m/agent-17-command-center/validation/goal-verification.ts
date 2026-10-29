@@ -33,6 +33,11 @@ import { buildAgent17ResilienceScorecard } from '../planning/resilience-scorecar
 import { buildAgent17HandoffReadiness, handoffReadinessBlocked } from '../planning/handoff-readiness.ts';
 import { buildAgent17GovernanceAudit, governanceAuditBlocksAutomation } from '../planning/governance-audit.ts';
 import {
+  buildAgent17EscalationMatrix,
+  escalationMatrixBlocksAutomation,
+} from '../planning/escalation-matrix.ts';
+import { buildAgent17RollbackAssurance } from '../planning/rollback-assurance.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -496,6 +501,49 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const matrix = depthEval.snapshot.planningDepth?.escalationMatrix;
+  goalResults.push(
+    result(
+      'G17-034',
+      !!matrix &&
+        matrix.escalationIndex >= 0 &&
+        matrix.escalationIndex <= 100 &&
+        (matrix.band === 'none' || matrix.band === 'watch' || matrix.band === 'urgent'),
+      `${matrix?.escalationIndex}/${matrix?.band}`
+    )
+  );
+
+  const rollbackAssurance = depthEval.snapshot.planningDepth?.rollbackAssurance;
+  goalResults.push(
+    result(
+      'G17-035',
+      !!rollbackAssurance &&
+        rollbackAssurance.checks.length >= 4 &&
+        rollbackAssurance.assuranceScore >= 0 &&
+        rollbackAssurance.assuranceScore <= 100,
+      `checks=${rollbackAssurance?.checks.length} score=${rollbackAssurance?.assuranceScore}`
+    )
+  );
+
+  const breachMatrix = buildAgent17EscalationMatrix({
+    commandPosture: posture!,
+    governanceAudit: breachAudit,
+    handoffReadiness: handoff!,
+  });
+  goalResults.push(
+    result(
+      'G17-036',
+      breachMatrix.band === 'urgent' || escalationMatrixBlocksAutomation(breachMatrix),
+      `${breachMatrix.band} idx=${breachMatrix.escalationIndex}`
+    )
+  );
+
+  void buildAgent17RollbackAssurance(
+    depthEval.ops,
+    assessAgent17PlanHealth(depthEval.ops.activePlan, baseState, 'player'),
+    govAudit!
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -559,6 +607,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-031',
     'G17-032',
     'G17-033',
+    'G17-034',
+    'G17-035',
+    'G17-036',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

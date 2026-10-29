@@ -19,6 +19,8 @@ export * from './planning/strategic-alignment.ts';
 export * from './planning/handoff-readiness.ts';
 export * from './planning/command-posture.ts';
 export * from './planning/governance-audit.ts';
+export * from './planning/escalation-matrix.ts';
+export * from './planning/rollback-assurance.ts';
 export * from './planning/planning-orchestrator.ts';
 export * from './planning/ops-state.ts';
 export * from './evaluation/operations-evaluator.ts';
@@ -32,6 +34,7 @@ export * from './harness/run-coordination-depth-tests.ts';
 export * from './harness/run-execution-depth-tests.ts';
 export * from './harness/run-continuity-depth-tests.ts';
 export * from './harness/run-governance-depth-tests.ts';
+export * from './harness/run-assurance-depth-tests.ts';
 
 export const AGENT17_MODULE_ROOT = 'operation-10m/agent-17-command-center';
 export const AGENT17_ASSEMBLY_ANCHOR = '// SECTION 15: AI COMMAND CENTER';

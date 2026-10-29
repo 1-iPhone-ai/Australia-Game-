@@ -189,6 +189,8 @@ export interface Agent17PlanningDepthSnapshot {
   handoffReadiness: Agent17HandoffReadinessSnapshot;
   commandPosture: Agent17CommandPostureSnapshot;
   governanceAudit: Agent17GovernanceAuditSnapshot;
+  escalationMatrix: Agent17EscalationMatrixSnapshot;
+  rollbackAssurance: Agent17RollbackAssuranceSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -302,6 +304,37 @@ export interface Agent17GovernanceAuditSnapshot {
   band: 'compliant' | 'review' | 'breach';
   findings: Agent17GovernanceAuditFinding[];
   openCriticalCount: number;
+  headline: string;
+}
+
+export interface Agent17EscalationMatrixRung {
+  id: string;
+  label: string;
+  triggered: boolean;
+  severity: 'low' | 'medium' | 'high';
+  detail: string;
+}
+
+export interface Agent17EscalationMatrixSnapshot {
+  escalationIndex: number;
+  band: 'none' | 'watch' | 'urgent';
+  rungs: Agent17EscalationMatrixRung[];
+  triggeredCount: number;
+  headline: string;
+}
+
+export interface Agent17RollbackAssuranceCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  weight: number;
+}
+
+export interface Agent17RollbackAssuranceSnapshot {
+  assuranceScore: number;
+  band: 'protected' | 'at_risk' | 'exposed';
+  checks: Agent17RollbackAssuranceCheck[];
+  restoreRecommended: boolean;
   headline: string;
 }
 

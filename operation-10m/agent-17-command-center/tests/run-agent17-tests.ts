@@ -7,6 +7,7 @@ import { runAgent17CoordinationDepthTests } from '../harness/run-coordination-de
 import { runAgent17ExecutionDepthTests } from '../harness/run-execution-depth-tests.ts';
 import { runAgent17ContinuityDepthTests } from '../harness/run-continuity-depth-tests.ts';
 import { runAgent17GovernanceDepthTests } from '../harness/run-governance-depth-tests.ts';
+import { runAgent17AssuranceDepthTests } from '../harness/run-assurance-depth-tests.ts';
 import { verifyAgent17Goals, validateGoalRegistryCoverage } from '../validation/goal-verification.ts';
 import { createAgent17RollbackController } from '../rollback/rollback-controller.ts';
 
@@ -19,6 +20,7 @@ const reports = [
   runAgent17ExecutionDepthTests(),
   runAgent17ContinuityDepthTests(),
   runAgent17GovernanceDepthTests(),
+  runAgent17AssuranceDepthTests(),
 ];
 
 const combinedSuccess = reports.every(r => r.success);
@@ -50,6 +52,7 @@ const payload = {
   executionReport: reports[5],
   continuityReport: reports[6],
   governanceReport: reports[7],
+  assuranceReport: reports[8],
   validationReport,
   goalRegistryCoverage: coverage,
   exitCode,

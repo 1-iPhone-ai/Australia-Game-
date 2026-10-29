@@ -29,6 +29,8 @@ import { buildAgent17StrategicAlignment } from './strategic-alignment.ts';
 import { buildAgent17HandoffReadiness } from './handoff-readiness.ts';
 import { buildAgent17CommandPosture } from './command-posture.ts';
 import { buildAgent17GovernanceAudit } from './governance-audit.ts';
+import { buildAgent17EscalationMatrix } from './escalation-matrix.ts';
+import { buildAgent17RollbackAssurance } from './rollback-assurance.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -168,6 +170,12 @@ export function buildAgent17PlanningDepthSnapshot(
     strategicAlignment,
   });
   const governanceAudit = buildAgent17GovernanceAudit(ops, settings, verificationPolicy);
+  const escalationMatrix = buildAgent17EscalationMatrix({
+    commandPosture,
+    governanceAudit,
+    handoffReadiness,
+  });
+  const rollbackAssurance = buildAgent17RollbackAssurance(ops, planHealth, governanceAudit);
   return {
     ...core,
     intentQueue,
@@ -179,6 +187,8 @@ export function buildAgent17PlanningDepthSnapshot(
     handoffReadiness,
     commandPosture,
     governanceAudit,
+    escalationMatrix,
+    rollbackAssurance,
   };
 }
 

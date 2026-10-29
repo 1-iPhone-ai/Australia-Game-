@@ -35,6 +35,8 @@ const FILES = [
   'planning/handoff-readiness.ts',
   'planning/command-posture.ts',
   'planning/governance-audit.ts',
+  'planning/escalation-matrix.ts',
+  'planning/rollback-assurance.ts',
   'planning/planning-orchestrator.ts',
   'evaluation/operations-evaluator.ts',
   'rollback/rollback-controller.ts',
@@ -48,6 +50,7 @@ const FILES = [
   'harness/run-execution-depth-tests.ts',
   'harness/run-continuity-depth-tests.ts',
   'harness/run-governance-depth-tests.ts',
+  'harness/run-assurance-depth-tests.ts',
 ];
 
 function stripModulePreamble(source) {
@@ -88,6 +91,7 @@ parts.push(`export function runAgent17Op10mModuleSelfTests(): {
   execution: ReturnType<typeof runAgent17ExecutionDepthTests>;
   continuity: ReturnType<typeof runAgent17ContinuityDepthTests>;
   governance: ReturnType<typeof runAgent17GovernanceDepthTests>;
+  assurance: ReturnType<typeof runAgent17AssuranceDepthTests>;
   success: boolean;
 } {
   const acc17 = runAgent17Acc17DevTests();
@@ -98,6 +102,7 @@ parts.push(`export function runAgent17Op10mModuleSelfTests(): {
   const execution = runAgent17ExecutionDepthTests();
   const continuity = runAgent17ContinuityDepthTests();
   const governance = runAgent17GovernanceDepthTests();
+  const assurance = runAgent17AssuranceDepthTests();
   return {
     acc17,
     recovery,
@@ -107,6 +112,7 @@ parts.push(`export function runAgent17Op10mModuleSelfTests(): {
     execution,
     continuity,
     governance,
+    assurance,
     success:
       acc17.success &&
       recovery.success &&
@@ -115,7 +121,8 @@ parts.push(`export function runAgent17Op10mModuleSelfTests(): {
       coordination.success &&
       execution.success &&
       continuity.success &&
-      governance.success,
+      governance.success &&
+      assurance.success,
   };
 }`);
 parts.push('');

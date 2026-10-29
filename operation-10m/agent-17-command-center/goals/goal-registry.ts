@@ -233,6 +233,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Critical delegation breaches yield breach band or governanceAuditBlocksAutomation.',
     severity: 'major',
   },
+  {
+    id: 'G17-034',
+    title: 'Escalation matrix on planning depth',
+    category: 'telemetry',
+    acceptance: 'escalationMatrix reports escalationIndex 0–100 with none/watch/urgent band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-035',
+    title: 'Rollback assurance checklist complete',
+    category: 'rollback',
+    acceptance: 'rollbackAssurance exposes ≥4 weighted checks and assuranceScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-036',
+    title: 'Urgent escalation blocks automation',
+    category: 'integration',
+    acceptance: 'Governance breach yields urgent band or escalationMatrixBlocksAutomation.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
