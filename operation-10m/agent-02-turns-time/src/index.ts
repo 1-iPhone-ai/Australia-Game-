@@ -85,4 +85,7 @@ export * from './batch-national-tick-session-wave-assembly-batch-export.js';
 export * from './batch-national-tick-session-wave-assembly-batch-export-compare.js';
 export * from './batch-national-tick-session-wave-assembly-batch-replay-parity.js';
 export * from './batch-national-tick-session-wave-assembly-batch-gate.js';
+export * from './batch-national-tick-session-wave-assembly-batch-gate-export.js';
+export * from './batch-national-tick-session-wave-assembly-batch-gate-export-compare.js';
+export * from './batch-national-tick-session-wave-assembly-batch-integration-audit.js';
 export * from './engine.js';
