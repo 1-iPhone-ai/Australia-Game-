@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 2a7ac3af08196277
+// content-sha256-prefix: 71206b1b4f5aa9b6
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -844,6 +844,9 @@ export interface EvolvingUiPersistedState {
   /** panel ids first unlocked on a given game day */
   unlockedByDay?: Record<string, string[]>;
   lastCoachPanelId?: string | null;
+  lastNavTarget?: string | null;
+  preferredDensity?: 'compact' | 'comfortable' | 'spacious' | null;
+  focusSessionSnoozedUntilDay?: number;
 }
 
 export interface DayAdvanceUiEvolutionResult {
@@ -1188,6 +1191,61 @@ export function panelsHighlightedByOnboarding(
 ): string[] {
   const active = listActiveOnboardingSteps(gameDay, dismissedKeys);
   return [...new Set(active.flatMap(s => s.unlocksPanelIds))];
+}
+
+// --- source: sim/session-ui-memory.ts ---
+export interface SessionUiMemory {
+  lastNavTarget: string | null;
+  recentPanelIds: string[];
+  preferredDensity?: UiDensityTier | null;
+}
+
+export function createDefaultSessionUiMemory(): SessionUiMemory {
+  return { lastNavTarget: null, recentPanelIds: [], preferredDensity: null };
+}
+
+export function recordNavSelection(memory: SessionUiMemory, navTarget: string): SessionUiMemory {
+  const panel = Object.values(EVOLVING_UI_PANEL_BY_ID).find(p => p.navTarget === navTarget);
+  const recent = panel ? [panel.id, ...memory.recentPanelIds.filter(id => id !== panel.id)] : memory.recentPanelIds;
+  return {
+    ...memory,
+    lastNavTarget: navTarget,
+    recentPanelIds: recent.slice(0, 6),
+  };
+}
+
+export function suggestResumeNavTarget(
+  memory: SessionUiMemory,
+  signals: ProgressionSignalSnapshot,
+  policy: EvolvingUiAccessPolicy
+): string | null {
+  if (memory.lastNavTarget) {
+    const panel = Object.values(EVOLVING_UI_PANEL_BY_ID).find(p => p.navTarget === memory.lastNavTarget);
+    if (panel && resolveEvolvingPanelVisibility(panel.id, signals, policy).state === 'visible') {
+      return memory.lastNavTarget;
+    }
+  }
+  for (const panelId of memory.recentPanelIds) {
+    const panel = EVOLVING_UI_PANEL_BY_ID[panelId];
+    if (panel?.navTarget && resolveEvolvingPanelVisibility(panelId, signals, policy).state === 'visible') {
+      return panel.navTarget;
+    }
+  }
+  return null;
+}
+
+export function mergeSessionMemoryIntoPersisted(
+  persisted: EvolvingUiPersistedState,
+  memory: SessionUiMemory
+): EvolvingUiPersistedState {
+  return {
+    ...persisted,
+    lastNavTarget: memory.lastNavTarget ?? persisted.lastNavTarget ?? null,
+    preferredDensity: memory.preferredDensity ?? persisted.preferredDensity ?? null,
+    rememberedPanelIds: [
+      ...new Set([...(persisted.rememberedPanelIds ?? []), ...memory.recentPanelIds]),
+    ],
+  };
 }
 
 // --- source: engine/layout-preset-evolution.ts ---
@@ -1637,6 +1695,231 @@ function resolveIntentNavToUiPatchInline(target: string): Record<string, boolean
   }
 }
 
+// --- source: engine/ui-density-progression.ts ---
+export type UiDensityTier = 'compact' | 'comfortable' | 'spacious';
+
+export interface UiDensityProfile {
+  tier: UiDensityTier;
+  gapScale: number;
+  railPaddingClass: string;
+  panelPaddingClass: string;
+  coachSummary: string;
+}
+
+const DENSITY_BY_TIER: Record<UiDensityTier, Omit<UiDensityProfile, 'tier'>> = {
+  compact: {
+    gapScale: 0.85,
+    railPaddingClass: 'px-1 py-0.5 gap-0.5',
+    panelPaddingClass: 'p-2 gap-1',
+    coachSummary: 'Compact density fits more panels on screen with tighter spacing.',
+  },
+  comfortable: {
+    gapScale: 1,
+    railPaddingClass: 'px-2 py-1 gap-1',
+    panelPaddingClass: 'p-3 gap-2',
+    coachSummary: 'Comfortable density balances readability and information density.',
+  },
+  spacious: {
+    gapScale: 1.15,
+    railPaddingClass: 'px-3 py-2 gap-2',
+    panelPaddingClass: 'p-4 gap-3',
+    coachSummary: 'Spacious density increases touch targets and breathing room.',
+  },
+};
+
+export function listEligibleDensityTiers(level: InterfaceExperienceLevel): UiDensityTier[] {
+  switch (level) {
+    case 'simple':
+      return ['comfortable', 'spacious'];
+    case 'guided':
+      return ['compact', 'comfortable', 'spacious'];
+    case 'advanced':
+    case 'expert':
+      return ['compact', 'comfortable', 'spacious'];
+    default:
+      return ['comfortable'];
+  }
+}
+
+export function resolveUiDensityProfile(input: {
+  interfaceLevel: InterfaceExperienceLevel;
+  layoutPreset?: V94LayoutPreset;
+  textScaleMultiplier?: number;
+  preferredTier?: UiDensityTier | null;
+}): UiDensityProfile {
+  const eligible = listEligibleDensityTiers(input.interfaceLevel);
+  let tier: UiDensityTier = input.preferredTier && eligible.includes(input.preferredTier)
+    ? input.preferredTier
+    : 'comfortable';
+
+  if (!input.preferredTier) {
+    if (input.interfaceLevel === 'simple') tier = 'spacious';
+    if (input.layoutPreset === 'Developer') tier = 'compact';
+    if ((input.textScaleMultiplier ?? 1) >= 1.2 && tier === 'compact') tier = 'comfortable';
+  }
+
+  if (!eligible.includes(tier)) tier = eligible[0] ?? 'comfortable';
+  return { tier, ...DENSITY_BY_TIER[tier] };
+}
+
+export function densityLayoutClassNames(profile: UiDensityProfile): {
+  container: string;
+  rail: string;
+  panel: string;
+} {
+  return {
+    container: `ui-density-${profile.tier} gap-[${Math.round(profile.gapScale * 100)}%]`,
+    rail: profile.railPaddingClass,
+    panel: profile.panelPaddingClass,
+  };
+}
+
+export function cycleUiDensityTier(current: UiDensityTier, level: InterfaceExperienceLevel): UiDensityTier {
+  const eligible = listEligibleDensityTiers(level);
+  const idx = eligible.indexOf(current);
+  if (idx < 0) return eligible[0] ?? 'comfortable';
+  return eligible[(idx + 1) % eligible.length] ?? 'comfortable';
+}
+
+// --- source: engine/focus-session-policy.ts ---
+const FOCUS_SUPPRESS_TAGS = new Set(['launcher', 'automation', 'diagnostics', 'strategic']);
+
+export interface FocusSessionContext {
+  phase: V94StandardizedGamePhase;
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  focusSessionSnoozedUntilDay?: number;
+}
+
+export function shouldActivateFocusSession(ctx: FocusSessionContext): boolean {
+  if (ctx.phase !== 'human_turn') return false;
+  if (ctx.focusSessionSnoozedUntilDay && ctx.signals.gameDay < ctx.focusSessionSnoozedUntilDay) return false;
+  const level = ctx.signals.interfaceLevel;
+  if (level !== 'simple' && level !== 'guided') return false;
+  if (ctx.signals.gameDay > 7) return false;
+  const coverage = computeProgressionCoverage(ctx.signals, ctx.policy);
+  return coverage.coverageRatio < 0.45;
+}
+
+export function focusSessionCoachCopy(ctx: FocusSessionContext): string {
+  if (!shouldActivateFocusSession(ctx)) return '';
+  return 'Focus session hides advanced launchers until you unlock more of the interface.';
+}
+
+export function applyFocusSessionToVisibility(
+  panelId: string,
+  base: PanelVisibilityResult,
+  focusActive: boolean
+): PanelVisibilityResult {
+  if (!focusActive || base.state !== 'visible') return base;
+  const panel = EVOLVING_UI_PANEL_BY_ID[panelId];
+  if (!panel || panel.essential) return base;
+  const tags = panel.tags ?? [];
+  if (!tags.some(t => FOCUS_SUPPRESS_TAGS.has(t))) return base;
+  return {
+    ...base,
+    state: 'preview',
+    reason: `${base.reason}|focus_session`,
+  };
+}
+
+export function resolveEvolvingPanelVisibilityWithFocusSession(
+  panelId: string,
+  signals: ProgressionSignalSnapshot,
+  policy: EvolvingUiAccessPolicy,
+  ctx: Omit<FocusSessionContext, 'signals' | 'policy'> & {
+    signals?: ProgressionSignalSnapshot;
+    policy?: EvolvingUiAccessPolicy;
+  }
+): PanelVisibilityResult {
+  const sig = ctx.signals ?? signals;
+  const pol = ctx.policy ?? policy;
+  const base = resolveEvolvingPanelVisibility(panelId, sig, pol);
+  const focusCtx: FocusSessionContext = {
+    phase: ctx.phase,
+    signals: sig,
+    policy: pol,
+    focusSessionSnoozedUntilDay: ctx.focusSessionSnoozedUntilDay,
+  };
+  return applyFocusSessionToVisibility(panelId, base, shouldActivateFocusSession(focusCtx));
+}
+
+export function snoozeFocusSessionUntilDay(currentDay: number, snoozeDays = 3): number {
+  return Math.max(1, currentDay + snoozeDays);
+}
+
+export function listPanelsSuppressedByFocusSession(
+  signals: ProgressionSignalSnapshot,
+  policy: EvolvingUiAccessPolicy,
+  phase: V94StandardizedGamePhase,
+  snoozedUntilDay?: number
+): string[] {
+  const focusCtx: FocusSessionContext = {
+    phase,
+    signals,
+    policy,
+    focusSessionSnoozedUntilDay: snoozedUntilDay,
+  };
+  if (!shouldActivateFocusSession(focusCtx)) return [];
+  const suppressed: string[] = [];
+  for (const id of Object.keys(EVOLVING_UI_PANEL_BY_ID)) {
+    const before = resolveEvolvingPanelVisibility(id, signals, policy);
+    const after = applyFocusSessionToVisibility(id, before, true);
+    if (before.state === 'visible' && after.state === 'preview') suppressed.push(id);
+  }
+  return suppressed;
+}
+
+// --- source: engine/responsive-layout-hints.ts ---
+export type ViewportBand = 'narrow' | 'medium' | 'wide';
+
+export interface ResponsiveLayoutHints {
+  band: ViewportBand;
+  collapseNavRail: boolean;
+  stackQuickActions: boolean;
+  maxVisibleRailItems: number;
+  showDensityControl: boolean;
+  coachSummary: string;
+}
+
+export function classifyViewportWidth(px: number): ViewportBand {
+  if (px < 720) return 'narrow';
+  if (px < 1100) return 'medium';
+  return 'wide';
+}
+
+export function deriveResponsiveLayoutHints(input: {
+  viewportWidthPx: number;
+  layoutPreset?: V94LayoutPreset;
+  densityTier?: UiDensityTier;
+}): ResponsiveLayoutHints {
+  const band = classifyViewportWidth(input.viewportWidthPx);
+  const preset = input.layoutPreset ?? 'Assisted';
+  const density = input.densityTier ?? 'comfortable';
+
+  const collapseNavRail = band === 'narrow' || (band === 'medium' && preset === 'Developer');
+  const stackQuickActions = band !== 'wide' || density === 'compact';
+  let maxVisibleRailItems = band === 'wide' ? 12 : band === 'medium' ? 8 : 5;
+  if (density === 'compact') maxVisibleRailItems += 1;
+  if (density === 'spacious' && band === 'narrow') maxVisibleRailItems = Math.max(4, maxVisibleRailItems - 1);
+
+  const coachSummary =
+    band === 'narrow'
+      ? 'Narrow viewport: navigation collapses into a compact rail.'
+      : band === 'medium'
+        ? 'Medium viewport: quick actions stack below the nav rail.'
+        : 'Wide viewport: full rail and quick-action row visible.';
+
+  return {
+    band,
+    collapseNavRail,
+    stackQuickActions,
+    maxVisibleRailItems,
+    showDensityControl: band !== 'narrow' || preset !== 'Clean',
+    coachSummary,
+  };
+}
+
 // --- source: engine/legacy-access.ts ---
 /** Mirrors V9.4 resolveIntentNavToUiPatch targets (standalone copy for module tests). */
 export function resolveIntentNavToUiPatch(target: string): Record<string, boolean | string> {
@@ -1982,6 +2265,136 @@ export function runAgent22Round3SelfTests(): {
     'r3_onboarding_active',
     'day 3 shows standing funnel step',
     listActiveOnboardingSteps(3, []).some(s => s.id === 'funnel_economy_basics')
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
+}
+
+// --- source: engine/round4-self-tests.ts ---
+export function runAgent22Round4SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r4_density_simple',
+    'simple level defaults to spacious density',
+    resolveUiDensityProfile({ interfaceLevel: 'simple' }).tier === 'spacious'
+  );
+
+  check(
+    'r4_density_cycle',
+    'density cycles within eligible tiers',
+    cycleUiDensityTier('spacious', 'simple') === 'comfortable'
+  );
+
+  check(
+    'r4_density_expert_compact',
+    'Developer preset implies compact when unset',
+    resolveUiDensityProfile({ interfaceLevel: 'expert', layoutPreset: 'Developer' }).tier === 'compact'
+  );
+
+  check(
+    'r4_focus_early_turn',
+    'focus session active on early guided human turn',
+    shouldActivateFocusSession({
+      phase: 'human_turn',
+      signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+      policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+    })
+  );
+
+  check(
+    'r4_focus_snooze',
+    'snooze disables focus until day',
+    !shouldActivateFocusSession({
+      phase: 'human_turn',
+      signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+      policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+      focusSessionSnoozedUntilDay: 5,
+    })
+  );
+
+  check(
+    'r4_focus_suppress',
+    'focus session suppresses launcher panels',
+    (() => {
+      const suppressed = listPanelsSuppressedByFocusSession(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        'human_turn'
+      );
+      return suppressed.some(id => id === 'quick_actions' || id.includes('ask_game'));
+    })()
+  );
+
+  check(
+    'r4_responsive_narrow',
+    'narrow viewport collapses nav rail',
+    deriveResponsiveLayoutHints({ viewportWidthPx: 640 }).collapseNavRail === true
+  );
+
+  check(
+    'r4_viewport_band',
+    'classifyViewportWidth medium band',
+    classifyViewportWidth(900) === 'medium'
+  );
+
+  check(
+    'r4_session_resume',
+    'session memory resumes last visible nav',
+    (() => {
+      const mem = recordNavSelection(createDefaultSessionUiMemory(), 'map');
+      return suggestResumeNavTarget(
+        mem,
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY
+      ) === 'map';
+    })()
+  );
+
+  check(
+    'r4_session_persist_merge',
+    'merge session memory into persisted slice',
+    (() => {
+      const merged = mergeSessionMemoryIntoPersisted(createDefaultEvolvingUiPersistedState(), {
+        ...recordNavSelection(createDefaultSessionUiMemory(), 'market'),
+        preferredDensity: 'compact',
+      });
+      return merged.lastNavTarget === 'market' && merged.preferredDensity === 'compact';
+    })()
+  );
+
+  check(
+    'r4_focus_visibility_hook',
+    'resolve with focus downgrades non-essential visible panels',
+    (() => {
+      const vis = resolveEvolvingPanelVisibilityWithFocusSession(
+        'ask_game',
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        { phase: 'human_turn' }
+      );
+      return vis.reason.includes('focus_session') || vis.state !== 'visible';
+    })()
+  );
+
+  check(
+    'r4_snooze_day',
+    'snoozeFocusSessionUntilDay advances calendar',
+    snoozeFocusSessionUntilDay(3, 2) === 5
+  );
+
+  check(
+    'r4_eligible_density',
+    'simple cannot select compact',
+    !listEligibleDensityTiers('simple').includes('compact')
   );
 
   const failed = results.filter(r => !r.passed).length;
@@ -2696,8 +3109,121 @@ export function KeyboardHintsOverlay({
   );
 }
 
+// --- source: react/UiDensitySelector.tsx ---
+export interface UiDensitySelectorProps {
+  interfaceLevel: InterfaceExperienceLevel;
+  layoutPreset?: V94LayoutPreset;
+  textScaleMultiplier?: number;
+  value?: UiDensityTier | null;
+  accessibility: AccessibilitySettingsSnapshot;
+  onChange?: (tier: UiDensityTier) => void;
+}
+
+export function UiDensitySelector({
+  interfaceLevel,
+  layoutPreset,
+  textScaleMultiplier,
+  value,
+  accessibility,
+  onChange,
+}: UiDensitySelectorProps): React.ReactElement {
+  const profile = useMemo(
+    () =>
+      resolveUiDensityProfile({
+        interfaceLevel,
+        layoutPreset,
+        textScaleMultiplier,
+        preferredTier: value,
+      }),
+    [interfaceLevel, layoutPreset, textScaleMultiplier, value]
+  );
+  const eligible = listEligibleDensityTiers(interfaceLevel);
+  const focusClass = buildFocusRingClassName({
+    highContrast: accessibility.highContrastFocusRings,
+    style: accessibility.focusRingStyle,
+  });
+
+  return (
+    <div data-testid="ui-density-selector" role="group" aria-label="Interface density" className="flex gap-1">
+      {eligible.map(tier => (
+        <button
+          key={tier}
+          type="button"
+          className={focusClass}
+          aria-pressed={profile.tier === tier}
+          data-testid={`density-${tier}`}
+          onClick={() => onChange?.(tier)}
+        >
+          {tier}
+        </button>
+      ))}
+      <button
+        type="button"
+        className={focusClass}
+        data-testid="density-cycle"
+        aria-label="Cycle density"
+        onClick={() => onChange?.(cycleUiDensityTier(profile.tier, interfaceLevel))}
+      >
+        Cycle
+      </button>
+    </div>
+  );
+}
+
+// --- source: react/FocusSessionBanner.tsx ---
+export interface FocusSessionBannerProps {
+  phase: V94StandardizedGamePhase;
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  focusSessionSnoozedUntilDay?: number;
+  accessibility: AccessibilitySettingsSnapshot;
+  onSnooze?: (untilDay: number) => void;
+}
+
+export function FocusSessionBanner({
+  phase,
+  signals,
+  policy,
+  focusSessionSnoozedUntilDay,
+  accessibility,
+  onSnooze,
+}: FocusSessionBannerProps): React.ReactElement | null {
+  const ctx = { phase, signals, policy, focusSessionSnoozedUntilDay };
+  if (!shouldActivateFocusSession(ctx)) return null;
+  const copy = focusSessionCoachCopy(ctx);
+  const suppressed = listPanelsSuppressedByFocusSession(signals, policy, phase, focusSessionSnoozedUntilDay);
+  const focusClass = buildFocusRingClassName({
+    highContrast: accessibility.highContrastFocusRings,
+    style: accessibility.focusRingStyle,
+  });
+
+  return (
+    <div
+      data-testid="focus-session-banner"
+      role="status"
+      aria-live="polite"
+      className="text-sm border border-amber-500/40 rounded p-2"
+    >
+      <p>{copy}</p>
+      {suppressed.length > 0 ? (
+        <p className="text-xs opacity-80" data-testid="focus-session-suppressed-count">
+          {suppressed.length} advanced panels tucked away for now.
+        </p>
+      ) : null}
+      <button
+        type="button"
+        className={focusClass}
+        data-testid="focus-session-snooze"
+        onClick={() => onSnooze?.(snoozeFocusSessionUntilDay(signals.gameDay))}
+      >
+        Snooze focus mode
+      </button>
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.3.0';
+export const AGENT_22_MODULE_VERSION = '1.4.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -2753,6 +3279,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round3 = runAgent22Round3SelfTests();
   for (const r of round3.results) {
     check(`agent22_round3_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round4 = runAgent22Round4SelfTests();
+  for (const r of round4.results) {
+    check(`agent22_round4_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;

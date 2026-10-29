@@ -7,3 +7,5 @@ export { EvolvingUiProgressLab } from './EvolvingUiProgressLab.js';
 export { ContextualQuickActionRail } from './ContextualQuickActionRail.js';
 export { KeyboardHintsOverlay } from './KeyboardHintsOverlay.js';
 export { SimulationUiEvolutionBridge } from './SimulationUiEvolutionBridge.js';
+export { UiDensitySelector } from './UiDensitySelector.js';
+export { FocusSessionBanner } from './FocusSessionBanner.js';

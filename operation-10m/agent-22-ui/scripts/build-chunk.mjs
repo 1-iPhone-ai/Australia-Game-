@@ -26,17 +26,22 @@ const FILES = [
   'engine/unlock-hint-formatter.ts',
   'engine/phase-panel-policy.ts',
   'sim/onboarding-funnel.ts',
+  'sim/session-ui-memory.ts',
   'engine/layout-preset-evolution.ts',
   'engine/notification-lane-progression.ts',
   'engine/resolve-panel-visibility.ts',
   'engine/layout-aware-visibility.ts',
   'engine/keyboard-shortcut-progression.ts',
   'engine/contextual-quick-actions.ts',
+  'engine/ui-density-progression.ts',
+  'engine/focus-session-policy.ts',
+  'engine/responsive-layout-hints.ts',
   'engine/legacy-access.ts',
   'engine/merge-with-v94-contextual-hiding.ts',
   'engine/progression-coach.ts',
   'engine/scale-wave-self-tests.ts',
   'engine/round3-self-tests.ts',
+  'engine/round4-self-tests.ts',
   'a11y/aria-builders.ts',
   'a11y/focus-management.ts',
   'a11y/live-region-controller.ts',
@@ -52,6 +57,8 @@ const FILES = [
   'react/SimulationUiEvolutionBridge.tsx',
   'react/ContextualQuickActionRail.tsx',
   'react/KeyboardHintsOverlay.tsx',
+  'react/UiDensitySelector.tsx',
+  'react/FocusSessionBanner.tsx',
 ];
 
 function stripModulePreamble(source) {
@@ -93,7 +100,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.3.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.4.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -151,6 +158,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
     check(\`agent22_round3_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
+  const round4 = runAgent22Round4SelfTests();
+  for (const r of round4.results) {
+    check(\`agent22_round4_\${r.id}\`, r.name, r.passed, r.detail);
+  }
+
   const failed = results.filter(r => !r.passed).length;
   return {
     passed: results.length - failed,
@@ -177,7 +189,7 @@ const manifest = {
   contentSha256,
   chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
   selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
-  moduleVersion: '1.3.0',
+  moduleVersion: '1.4.0',
 };
 fs.writeFileSync(
   path.join(outDir, 'module.manifest.json'),

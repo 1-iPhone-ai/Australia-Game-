@@ -13,6 +13,9 @@ export interface EvolvingUiPersistedState {
   /** panel ids first unlocked on a given game day */
   unlockedByDay?: Record<string, string[]>;
   lastCoachPanelId?: string | null;
+  lastNavTarget?: string | null;
+  preferredDensity?: 'compact' | 'comfortable' | 'spacious' | null;
+  focusSessionSnoozedUntilDay?: number;
 }
 
 export interface DayAdvanceUiEvolutionResult {
