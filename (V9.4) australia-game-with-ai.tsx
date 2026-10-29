@@ -6860,6 +6860,52 @@ export type IntentNavTarget =
   | 'automation'
   | 'diplomacy';
 
+/** Canonical route ids — keep in sync with `IntentNavTarget` and `resolveIntentNavToUiPatch`. */
+export const INTENT_NAV_TARGETS: readonly IntentNavTarget[] = [
+  'workshop', 'market', 'resource_market', 'map', 'travel', 'contracts', 'shop', 'investments',
+  'expeditions', 'infrastructure', 'settings', 'ask_game', 'ledger', 'assistant_advanced', 'replay',
+  'diagnostics', 'challenges', 'progress', 'loans', 'governance', 'sabotage', 'help', 'automation', 'diplomacy'
+] as const;
+
+export type IntentNavSurfaceKind = 'play_surface' | 'settings_hub' | 'intelligence_layer';
+
+export interface IntentNavRouteMeta {
+  kind: IntentNavSurfaceKind;
+  /** Default Settings Hub tab when this target opens the hub (if any). */
+  settingsTab?: string;
+}
+
+export const INTENT_NAV_ROUTE_META: Record<IntentNavTarget, IntentNavRouteMeta> = {
+  workshop: { kind: 'play_surface' },
+  market: { kind: 'play_surface' },
+  resource_market: { kind: 'play_surface' },
+  map: { kind: 'play_surface' },
+  travel: { kind: 'play_surface' },
+  contracts: { kind: 'play_surface' },
+  shop: { kind: 'play_surface' },
+  investments: { kind: 'play_surface' },
+  expeditions: { kind: 'play_surface' },
+  infrastructure: { kind: 'play_surface' },
+  settings: { kind: 'settings_hub', settingsTab: 'home' },
+  ask_game: { kind: 'intelligence_layer' },
+  ledger: { kind: 'play_surface' },
+  assistant_advanced: { kind: 'settings_hub', settingsTab: 'aiTeams' },
+  replay: { kind: 'settings_hub', settingsTab: 'replayDiag' },
+  diagnostics: { kind: 'settings_hub', settingsTab: 'replayDiag' },
+  challenges: { kind: 'play_surface' },
+  progress: { kind: 'play_surface' },
+  loans: { kind: 'play_surface' },
+  governance: { kind: 'settings_hub', settingsTab: 'oversight' },
+  sabotage: { kind: 'play_surface' },
+  help: { kind: 'play_surface' },
+  automation: { kind: 'settings_hub', settingsTab: 'automation' },
+  diplomacy: { kind: 'play_surface' }
+};
+
+export function isIntentNavTarget(value: unknown): value is IntentNavTarget {
+  return typeof value === 'string' && (INTENT_NAV_TARGETS as readonly string[]).includes(value);
+}
+
 export interface IntentNavAction {
   id: string;
   label: string;
@@ -67675,8 +67721,8 @@ export function resolveIntentNavToUiPatch(target: IntentNavTarget): Record<strin
     case 'investments': return { showInvestments: true };
     case 'expeditions': return { showExpeditionsRelicsModal: true };
     case 'infrastructure': return { showInfrastructureProjectsModal: true };
-    case 'settings':
-    case 'assistant_advanced': return { showSettings: true, settingsActiveTab: 'aiTeams' };
+    case 'settings': return { showSettings: true, settingsActiveTab: INTENT_NAV_ROUTE_META.settings.settingsTab || 'home' };
+    case 'assistant_advanced': return { showSettings: true, settingsActiveTab: INTENT_NAV_ROUTE_META.assistant_advanced.settingsTab || 'aiTeams' };
     case 'ask_game': return { showAskGameAi: true };
     case 'ledger': return { showGameActivityLedgerDashboard: true };
     case 'replay': return { showReplayViewer: true, showSettings: true, settingsActiveTab: 'replayDiag' };
@@ -67691,6 +67737,92 @@ export function resolveIntentNavToUiPatch(target: IntentNavTarget): Record<strin
     case 'diplomacy': return { showAiRivalryModal: true };
     default: return {};
   }
+}
+
+/** Pure PLAY/INTELLIGENCE navigation patch (Section 20B contract). Used by openIntentNav and Agent 62 UI overlays. */
+export function composeIntentNavUiStatePatch(
+  nav: IntentNavAction | null | undefined,
+  ctx?: { settingsActiveTab?: string }
+): Record<string, any> | null {
+  if (!nav) return null;
+  if (nav.target === 'ask_game') {
+    return { experienceLayer: 'intelligence' };
+  }
+  const patch = resolveIntentNavToUiPatch(nav.target);
+  if (!nav.section) return patch;
+  const meta = INTENT_NAV_ROUTE_META[nav.target];
+  const tabFromMeta = meta?.settingsTab;
+  const tabFromPatch = typeof patch.settingsActiveTab === 'string' ? patch.settingsActiveTab : undefined;
+  return {
+    ...patch,
+    settingsSectionTarget: nav.section,
+    settingsActiveTab: nav.target === 'assistant_advanced'
+      ? 'aiTeams'
+      : (tabFromMeta || tabFromPatch || ctx?.settingsActiveTab || 'home')
+  };
+}
+
+/** Merge base navigation patch with evolutionary UI emphasis (Agent 62); overlay wins on conflicts. */
+export function mergeIntentNavUiPatches(
+  navPatch: Record<string, any>,
+  momentPatch?: Record<string, any> | null
+): Record<string, any> {
+  if (!momentPatch || !Object.keys(momentPatch).length) return navPatch;
+  return { ...navPatch, ...momentPatch };
+}
+
+export function runIntentNavigationSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  check('nav_targets_complete', 'INTENT_NAV_TARGETS matches route registry', () => {
+    for (const t of INTENT_NAV_TARGETS) {
+      if (!INTENT_NAV_ROUTE_META[t]) return `missing meta for ${t}`;
+    }
+    return Object.keys(INTENT_NAV_ROUTE_META).length === INTENT_NAV_TARGETS.length || 'registry size mismatch';
+  });
+
+  check('nav_settings_home', 'Generic settings nav opens Settings Hub home tab', () => {
+    const p = resolveIntentNavToUiPatch('settings');
+    return (p.showSettings === true && p.settingsActiveTab === 'home') || JSON.stringify(p);
+  });
+
+  check('nav_assistant_ai_teams', 'Assistant advanced nav opens aiTeams tab', () => {
+    const p = resolveIntentNavToUiPatch('assistant_advanced');
+    return (p.showSettings === true && p.settingsActiveTab === 'aiTeams') || JSON.stringify(p);
+  });
+
+  check('nav_ask_intelligence', 'Ask Game uses intelligence layer (not orphan drawer flag)', () => {
+    const p = composeIntentNavUiStatePatch(navAction('ask_game', 'Ask'));
+    return (p?.experienceLayer === 'intelligence' && p.showAskGameAi !== true) || JSON.stringify(p);
+  });
+
+  check('nav_section_deep_link', 'Section payload preserves settingsSectionTarget', () => {
+    const p = composeIntentNavUiStatePatch(navAction('assistant_advanced', 'Co-Pilot', { section: 'aiTeams.coPilot' }));
+    return (p?.settingsSectionTarget === 'aiTeams.coPilot' && p?.settingsActiveTab === 'aiTeams') || JSON.stringify(p);
+  });
+
+  check('nav_play_surfaces', 'Primary PLAY targets expose a surface flag', () => {
+    for (const t of ['workshop', 'market', 'map', 'contracts'] as IntentNavTarget[]) {
+      const p = resolveIntentNavToUiPatch(t);
+      if (!Object.keys(p).length) return `empty patch for ${t}`;
+    }
+    return true;
+  });
+
+  check('nav_merge_overlay', 'mergeIntentNavUiPatches applies moment overlay', () => {
+    const merged = mergeIntentNavUiPatches({ showMarket: true }, { v94HeroMetric: 'cash' });
+    return merged.showMarket === true && merged.v94HeroMetric === 'cash';
+  });
+
+  return results;
 }
 
 export function classifyNotificationPriority(n: any): NotificationPriority {
@@ -137239,6 +137371,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
   { id: 'o111_a61', label: 'O111 Visual Design (Agent 61)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111VisualDesignSelfTests() },
+  { id: 'nav63', label: 'Intent Navigation (Agent 63)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runIntentNavigationSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
   { id: 'v91', label: 'V9.1 Strategic Balance', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicDepthBalanceSelfTests() },
@@ -191798,19 +191931,8 @@ function dispatchGameSettingsChange(
   }, [executeCoPilotRecommendationAsHuman, player, gameState, gameSettings, updateUiState]);
 
   const openIntentNav = useCallback((nav?: IntentNavAction | null) => {
-    if (!nav) return;
-    // V9: "Ask" destinations land in the unified Game Intelligence workspace (the legacy
-    // showAskGameAi flag opened nothing unless the optional drawer surface was enabled).
-    if (nav.target === 'ask_game') {
-      updateUiState({ experienceLayer: 'intelligence' });
-      return;
-    }
-    const patch = resolveIntentNavToUiPatch(nav.target);
-    if (nav.section) {
-      updateUiState({ ...patch, settingsSectionTarget: nav.section, settingsActiveTab: nav.target === 'assistant_advanced' ? 'aiTeams' : uiState.settingsActiveTab });
-    } else {
-      updateUiState(patch);
-    }
+    const patch = composeIntentNavUiStatePatch(nav, { settingsActiveTab: uiState.settingsActiveTab });
+    if (patch) updateUiState(patch);
   }, [updateUiState, uiState.settingsActiveTab]);
 
   const trackIntentGoal = useCallback((tracked: PlayerTrackedObjective | null) => {
