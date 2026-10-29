@@ -99734,12 +99734,13 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
           : 'border-slate-200 bg-slate-50 text-slate-900';
         return (
           <div
+            data-settings-hub-shell
             className={`${modalBgClass} border rounded-xl max-w-5xl w-full flex flex-col overflow-hidden shadow-2xl h-[calc(100dvh-1.5rem)] max-h-[calc(100dvh-1.5rem)] my-auto`}
             style={{ height: 'calc(100dvh - 1.5rem)', maxHeight: 'calc(100dvh - 1.5rem)' }}
             onClick={e => e.stopPropagation()}
           >
             {/* Top Header Navigation */}
-            <div className={`flex justify-between items-center px-3 sm:px-6 py-2 sm:py-4 border-b shrink-0 ${navBgClass}`}>
+            <div data-o111-stack-toolbar className={`flex justify-between items-center px-3 sm:px-6 py-2 sm:py-4 border-b shrink-0 ${navBgClass}`}>
               <div className="flex items-center gap-3">
                 <div className={`flex p-1 rounded-lg border ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
                   <button
@@ -133962,6 +133963,125 @@ export function runV94GameFeelPolishSelfTests(): V9SelfTestResult[] {
   return results;
 }
 
+// ============================================================================
+// SECTION 20P-A69: O111 RESPONSIVE UI (Agent 69) — VIEWPORT BANDS • ADAPTIVE SHELL
+// ============================================================================
+// Presentation only. Breakpoints drive root data attributes, bounded CSS, and optional
+// settings-hub category navigation overrides on narrow viewports. Never persisted.
+
+export type O111ViewportBand = 'compact' | 'cozy' | 'comfortable' | 'wide';
+
+export const O111_VIEWPORT_BREAKPOINTS = {
+  compactMax: 639,
+  cozyMax: 1023,
+  comfortableMax: 1439,
+} as const;
+
+export interface O111ViewportSnapshot {
+  width: number;
+  height: number;
+  band: O111ViewportBand;
+}
+
+export function classifyO111ViewportBand(width: number, _height?: number): O111ViewportBand {
+  const w = Math.max(0, Math.round(Number(width) || 0));
+  if (w <= O111_VIEWPORT_BREAKPOINTS.compactMax) return 'compact';
+  if (w <= O111_VIEWPORT_BREAKPOINTS.cozyMax) return 'cozy';
+  if (w <= O111_VIEWPORT_BREAKPOINTS.comfortableMax) return 'comfortable';
+  return 'wide';
+}
+
+export function readO111ViewportSnapshot(viewport?: { width: number; height: number }): O111ViewportSnapshot {
+  const width = viewport?.width ?? (typeof window !== 'undefined' ? window.innerWidth : 1920);
+  const height = viewport?.height ?? (typeof window !== 'undefined' ? window.innerHeight : 1080);
+  const safeW = width > 0 ? width : 1920;
+  const safeH = height > 0 ? height : 1080;
+  return { width: safeW, height: safeH, band: classifyO111ViewportBand(safeW, safeH) };
+}
+
+/** When auto-collapse is enabled, map wide "full" nav to compact-friendly modes on small bands. */
+export function resolveEffectiveSettingsCategoryNavMode(
+  settings: {
+    settingsCategoryNavigationMode?: SettingsCategoryNavigationMode;
+    autoCollapseCategoriesOnNarrow?: boolean;
+    rememberCategoryNavigationMode?: boolean;
+    allowSettingsCategoryCollapse?: boolean;
+  },
+  band: O111ViewportBand
+): SettingsCategoryNavigationMode {
+  const base = settings.settingsCategoryNavigationMode || 'full';
+  if (settings.rememberCategoryNavigationMode) return base;
+  if (!settings.autoCollapseCategoriesOnNarrow) return base;
+  if (settings.allowSettingsCategoryCollapse === false) return base;
+  if (band === 'compact') {
+    if (base === 'full' || base === 'full_categories') return 'category_dropdown';
+    return base;
+  }
+  if (band === 'cozy') {
+    if (base === 'full' || base === 'full_categories') return 'compact';
+    return base;
+  }
+  return base;
+}
+
+export const O111_RESPONSIVE_STYLESHEET = `
+:root { --o111-viewport-pad: 16px; --o111-shell-gap: 12px; }
+[data-o111-viewport="compact"] { --o111-viewport-pad: 8px; --o111-shell-gap: 6px; }
+[data-o111-viewport="cozy"] { --o111-viewport-pad: 12px; --o111-shell-gap: 8px; }
+[data-o111-viewport="compact"] [data-settings-hub-shell] { max-width: 100% !important; width: 100% !important; border-radius: 0.65rem; }
+[data-o111-viewport="compact"] [data-settings-hub-shell].max-w-5xl { max-width: 100% !important; }
+[data-o111-viewport="compact"] .fixed.inset-0.flex.items-center.justify-center { padding: var(--o111-viewport-pad) !important; }
+[data-o111-viewport="compact"] .fixed.inset-0.flex.items-center.justify-center > div { max-width: calc(100vw - var(--o111-viewport-pad) * 2) !important; }
+[data-o111-viewport="compact"] [data-o111-stack-toolbar] { flex-wrap: wrap !important; gap: var(--o111-shell-gap) !important; }
+[data-o111-viewport="compact"] button, [data-o111-viewport="cozy"] button { min-height: 40px; }
+[data-o111-viewport="compact"] [data-settings-category-nav] { padding-left: var(--o111-viewport-pad); padding-right: var(--o111-viewport-pad); }
+`;
+
+export function runO111ResponsiveUiSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  check('o111_a69_01_breakpoints', 'Viewport bands classify at documented width edges', () => {
+    return (
+      classifyO111ViewportBand(320) === 'compact'
+      && classifyO111ViewportBand(639) === 'compact'
+      && classifyO111ViewportBand(640) === 'cozy'
+      && classifyO111ViewportBand(1023) === 'cozy'
+      && classifyO111ViewportBand(1024) === 'comfortable'
+      && classifyO111ViewportBand(1440) === 'wide'
+    ) || 'band edges mismatch';
+  });
+  check('o111_a69_02_auto_collapse', 'Auto collapse maps full nav to dropdown/compact by band', () => {
+    const s = { settingsCategoryNavigationMode: 'full' as const, autoCollapseCategoriesOnNarrow: true, rememberCategoryNavigationMode: false, allowSettingsCategoryCollapse: true };
+    return resolveEffectiveSettingsCategoryNavMode(s, 'compact') === 'category_dropdown'
+      && resolveEffectiveSettingsCategoryNavMode(s, 'cozy') === 'compact'
+      && resolveEffectiveSettingsCategoryNavMode(s, 'wide') === 'full';
+  });
+  check('o111_a69_03_remember_mode', 'Remember navigation mode disables automatic override', () => {
+    const s = { settingsCategoryNavigationMode: 'full' as const, autoCollapseCategoriesOnNarrow: true, rememberCategoryNavigationMode: true, allowSettingsCategoryCollapse: true };
+    return resolveEffectiveSettingsCategoryNavMode(s, 'compact') === 'full';
+  });
+  check('o111_a69_04_stylesheet', 'Responsive stylesheet is self-contained and targets data-o111-viewport', () => {
+    const css = O111_RESPONSIVE_STYLESHEET;
+    return /\[data-o111-viewport="compact"\]/.test(css) && !/url\(|https?:|@import/.test(css);
+  });
+  check('o111_a69_05_not_persisted', 'Responsive engine adds no persisted settings keys', () => {
+    const keys = Object.keys(DEFAULT_GAME_SETTINGS).filter(k => /o111|viewportBand/i.test(k));
+    return keys.length === 0 || `unexpected keys: ${keys.join(',')}`;
+  });
+  check('o111_a69_06_read_snapshot', 'readO111ViewportSnapshot accepts explicit viewport sizes', () => {
+    const snap = readO111ViewportSnapshot({ width: 500, height: 800 });
+    return snap.band === 'compact' && snap.width === 500 && snap.height === 800;
+  });
+  return results;
+}
+
 
 // ============================================================================
 // SECTION 20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
@@ -136513,6 +136633,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
+  { id: 'o111_a69', label: 'O111 Responsive UI (Agent 69)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111ResponsiveUiSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
   { id: 'v91', label: 'V9.1 Strategic Balance', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicDepthBalanceSelfTests() },
@@ -215063,6 +215184,21 @@ function dispatchGameSettingsChange(
   // ---- V9.4 Game feel: presentation-only feedback derived from canonical deltas (never persisted) ----
   const v94MotionMode = resolveUiMotionMode(gameSettings);
   const v94FocusStrong = Boolean(gameSettings.accessibilitySettings?.highContrastFocusRings);
+  const [o111Viewport, setO111Viewport] = useState<O111ViewportSnapshot>(() => readO111ViewportSnapshot());
+  const o111ViewportBand = o111Viewport.band;
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let raf = 0;
+    const onResize = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => setO111Viewport(readO111ViewportSnapshot()));
+    };
+    window.addEventListener('resize', onResize, { passive: true });
+    return () => {
+      window.removeEventListener('resize', onResize);
+      cancelAnimationFrame(raf);
+    };
+  }, []);
   const [v94DebugSlow, setV94DebugSlow] = useState(false); // LAB-only; slows presentation, never gameplay
   const [v94Queue, setV94Queue] = useState<UiFeedbackEvent[]>([]);
   const [v94Now, setV94Now] = useState(() => Date.now());
@@ -217262,7 +217398,7 @@ function dispatchGameSettingsChange(
 
             {/* Task 10: 6 Category Navigation Modes */}
             {(() => {
-              const navMode: SettingsCategoryNavigationMode = gameSettings.settingsCategoryNavigationMode || 'full';
+              const navMode: SettingsCategoryNavigationMode = resolveEffectiveSettingsCategoryNavMode(gameSettings, o111ViewportBand);
 
               if (navMode === 'hidden' || navMode === 'hidden_navigation') {
                 return null;
@@ -242639,8 +242775,9 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
   }
 
   return (
-    <div className="font-sans" data-v94="" data-motion={v94MotionMode} data-focus={v94FocusStrong ? 'strong' : 'normal'} style={v94DebugSlow ? ({ ['--v94-speed' as any]: 6 } as React.CSSProperties) : undefined}>
+    <div className="font-sans" data-v94="" data-motion={v94MotionMode} data-focus={v94FocusStrong ? 'strong' : 'normal'} data-o111-viewport={o111ViewportBand} style={v94DebugSlow ? ({ ['--v94-speed' as any]: 6 } as React.CSSProperties) : undefined}>
       <style>{V94_STYLESHEET}</style>
+      <style>{O111_RESPONSIVE_STYLESHEET}</style>
       <style>{`
         @keyframes notificationSlideIn {
           from { opacity: 0; transform: translateY(-10px); }
