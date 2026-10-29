@@ -222,6 +222,10 @@ import { computeNationalInclusionFlexibilityCouplingBrief } from './inclusion-fl
 import { computeNationalFlexibilityFlowOutlook } from './flexibility-flow-outlook';
 import { computeNationalSubjectFlexibilityReadinessBrief } from './subject-flexibility-readiness-brief';
 import { computeNationalWorkforceFlexibilityIndex } from './national-workforce-flexibility-index';
+import { computeNationalFlexibilityCoordinationCouplingBrief } from './flexibility-coordination-coupling-brief';
+import { computeNationalCoordinationMeshOutlook } from './coordination-mesh-outlook';
+import { computeNationalSubjectCoordinationReadinessBrief } from './subject-coordination-readiness-brief';
+import { computeNationalWorkforceCoordinationIndex } from './national-workforce-coordination-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -2665,6 +2669,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'flexibility steward note'
   );
   check('R4216', flexibilityEaseForRegion('NSW', 'technology') > 0, 'flexibility ease for region');
+
+  check('R4301', Boolean(r1.state.flexibilityCoordinationCouplingBrief?.band), 'flexibility coordination on state');
+  check(
+    'R4302',
+    (r1.state.flexibilityCoordinationCouplingBrief?.flexibilityDrag ?? 0) >= 0,
+    'flexibility coordination drag'
+  );
+  check('R4303', Boolean(r1.state.coordinationMeshOutlook?.band), 'coordination mesh on state');
+  check(
+    'R4304',
+    (r1.state.coordinationMeshOutlook?.flexibilityDrag ?? 0) >= 0,
+    'coordination mesh flexibility drag'
+  );
+  check('R4305', Boolean(r1.state.subjectCoordinationReadinessBrief?.band), 'subject coordination on state');
+  check('R4306', Boolean(r1.state.nationalWorkforceCoordinationIndex?.band), 'workforce coordination on state');
+  check(
+    'R4307',
+    detectLaborDemographicsQuery('flexibility coordination coupling') === 'flexibility_coordination_coupling',
+    'GI flexibility coordination detect'
+  );
+  check(
+    'R4308',
+    detectLaborDemographicsQuery('coordination mesh') === 'coordination_mesh',
+    'GI coordination mesh detect'
+  );
+  check(
+    'R4309',
+    detectLaborDemographicsQuery('subject coordination readiness') === 'subject_coordination_readiness',
+    'GI subject coordination detect'
+  );
+  check(
+    'R4310',
+    detectLaborDemographicsQuery('workforce coordination') === 'workforce_coordination',
+    'GI workforce coordination detect'
+  );
+  check(
+    'R4311',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_coordination').headline.length > 5,
+    'GI workforce coordination answer'
+  );
+  const flexibilityCoordinationOnly = computeNationalFlexibilityCoordinationCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceFlexibilityIndex
+  );
+  check('R4312', flexibilityCoordinationOnly.summary.length > 10, 'flexibility coordination standalone summary');
+  const coordinationMeshOnly = computeNationalCoordinationMeshOutlook(
+    r1.state,
+    r1.state.flexibilityFlowOutlook
+  );
+  check('R4313', coordinationMeshOnly.band.length > 3, 'coordination mesh band string');
+  const subjectCoordinationOnly = computeNationalSubjectCoordinationReadinessBrief(
+    r1.state,
+    r1.state.subjectFlexibilityReadinessBrief,
+    r1.state.nationalWorkforceFlexibilityIndex
+  );
+  check('R4314', subjectCoordinationOnly.coordinationDrag >= 0, 'subject coordination drag');
+  check(
+    'R4315',
+    computeNationalWorkforceCoordinationIndex(
+      rHhBad.state,
+      rHhBad.state.flexibilityCoordinationCouplingBrief,
+      rHhBad.state.coordinationMeshOutlook,
+      rHhBad.state.subjectCoordinationReadinessBrief
+    ).stewardNote.length > 8,
+    'coordination steward note'
+  );
+  check('R4316', coordinationEaseForRegion('NSW', 'technology') > 0, 'coordination ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

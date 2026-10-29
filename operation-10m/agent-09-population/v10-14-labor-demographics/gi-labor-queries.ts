@@ -155,7 +155,11 @@ export type LaborGiQueryTopic =
   | 'inclusion_flexibility_coupling'
   | 'flexibility_flow'
   | 'subject_flexibility_readiness'
-  | 'workforce_flexibility';
+  | 'workforce_flexibility'
+  | 'flexibility_coordination_coupling'
+  | 'coordination_mesh'
+  | 'subject_coordination_readiness'
+  | 'workforce_coordination';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -326,6 +330,14 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_flexibility_readiness';
   }
   if (/\b(workforce flexibility|flexibility index labor workforce)/.test(q)) return 'workforce_flexibility';
+  if (/\b(flexibility coordination|flexibility-coordination coupling)/.test(q)) {
+    return 'flexibility_coordination_coupling';
+  }
+  if (/\b(coordination mesh|coordination pipeline mesh)/.test(q)) return 'coordination_mesh';
+  if (/\b(subject coordination readiness|coordination readiness subject)/.test(q)) {
+    return 'subject_coordination_readiness';
+  }
+  if (/\b(workforce coordination|coordination index labor workforce)/.test(q)) return 'workforce_coordination';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1560,6 +1572,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Flexibility band ${state.nationalWorkforceFlexibilityIndex?.band ?? 'unknown'}; flexibility drag ${Math.round(state.nationalWorkforceFlexibilityIndex?.flexibilityDrag ?? 0)}.`,
         inference: state.nationalWorkforceFlexibilityIndex?.stewardNote || state.summary,
         projection: 'Workforce flexibility synthesizes inclusion-flexibility coupling, flexibility flow, and subject flexibility.'
+      };
+    case 'flexibility_coordination_coupling':
+      return {
+        topic,
+        headline: state.flexibilityCoordinationCouplingBrief?.summary || 'Flexibility-coordination coupling unavailable.',
+        fact: `Coupling band ${state.flexibilityCoordinationCouplingBrief?.band ?? 'unknown'}; flexibility drag ${Math.round(state.flexibilityCoordinationCouplingBrief?.flexibilityDrag ?? 0)}.`,
+        inference: state.flexibilityCoordinationCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce flexibility with coordination levers — wave 43 / O10-217 depth.'
+      };
+    case 'coordination_mesh':
+      return {
+        topic,
+        headline: state.coordinationMeshOutlook?.summary || 'Coordination mesh unavailable.',
+        fact: `Mesh band ${state.coordinationMeshOutlook?.band ?? 'unknown'}; flexibility drag ${Math.round(state.coordinationMeshOutlook?.flexibilityDrag ?? 0)}.`,
+        inference: state.coordinationMeshOutlook?.stewardNote || state.outlook,
+        projection: 'Mesh blends coordination levers with flexibility flow — bounded indices only.'
+      };
+    case 'subject_coordination_readiness':
+      return {
+        topic,
+        headline: state.subjectCoordinationReadinessBrief?.summary || 'Subject coordination readiness unavailable.',
+        fact: `Coordination band ${state.subjectCoordinationReadinessBrief?.band ?? 'unknown'}; coordination drag ${Math.round(state.subjectCoordinationReadinessBrief?.coordinationDrag ?? 0)}.`,
+        inference: state.subjectCoordinationReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject coordination readiness gates subject flexibility against workforce flexibility for O10-217 wave 43.'
+      };
+    case 'workforce_coordination':
+      return {
+        topic,
+        headline: state.nationalWorkforceCoordinationIndex?.summary || 'Workforce coordination unavailable.',
+        fact: `Coordination band ${state.nationalWorkforceCoordinationIndex?.band ?? 'unknown'}; coordination drag ${Math.round(state.nationalWorkforceCoordinationIndex?.coordinationDrag ?? 0)}.`,
+        inference: state.nationalWorkforceCoordinationIndex?.stewardNote || state.summary,
+        projection: 'Workforce coordination synthesizes flexibility-coordination coupling, coordination mesh, and subject coordination.'
       };
     default:
       return {

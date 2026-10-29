@@ -337,6 +337,10 @@ export interface NationalLaborDemographicsState {
   flexibilityFlowOutlook?: NationalFlexibilityFlowOutlook;
   subjectFlexibilityReadinessBrief?: NationalSubjectFlexibilityReadinessBrief;
   nationalWorkforceFlexibilityIndex?: NationalWorkforceFlexibilityIndex;
+  flexibilityCoordinationCouplingBrief?: NationalFlexibilityCoordinationCouplingBrief;
+  coordinationMeshOutlook?: NationalCoordinationMeshOutlook;
+  subjectCoordinationReadinessBrief?: NationalSubjectCoordinationReadinessBrief;
+  nationalWorkforceCoordinationIndex?: NationalWorkforceCoordinationIndex;
 }
 
 export type MigrationShockKind =
@@ -2061,6 +2065,54 @@ export interface NationalWorkforceFlexibilityIndex {
   flexibilityIndex: number;
   band: WorkforceFlexibilityBand;
   flexibilityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type FlexibilityCoordinationCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalFlexibilityCoordinationCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: FlexibilityCoordinationCouplingBand;
+  flexibilityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CoordinationMeshBand = 'ebbing' | 'patchy' | 'rising' | 'meshed';
+
+export interface NationalCoordinationMeshOutlook {
+  turn: number;
+  meshIndex: number;
+  band: CoordinationMeshBand;
+  flexibilityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectCoordinationReadinessBand =
+  | 'below_coordination'
+  | 'approaching'
+  | 'coordination_ready'
+  | 'flexibility_locked';
+
+export interface NationalSubjectCoordinationReadinessBrief {
+  turn: number;
+  coordinationIndex: number;
+  band: SubjectCoordinationReadinessBand;
+  coordinationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceCoordinationBand = 'fragile' | 'thin' | 'elevated' | 'coordination';
+
+export interface NationalWorkforceCoordinationIndex {
+  turn: number;
+  coordinationIndex: number;
+  band: WorkforceCoordinationBand;
+  coordinationDrag: number;
   summary: string;
   stewardNote: string;
 }

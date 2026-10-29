@@ -341,6 +341,10 @@ export interface NationalLaborDemographicsState {
   flexibilityFlowOutlook?: NationalFlexibilityFlowOutlook;
   subjectFlexibilityReadinessBrief?: NationalSubjectFlexibilityReadinessBrief;
   nationalWorkforceFlexibilityIndex?: NationalWorkforceFlexibilityIndex;
+  flexibilityCoordinationCouplingBrief?: NationalFlexibilityCoordinationCouplingBrief;
+  coordinationMeshOutlook?: NationalCoordinationMeshOutlook;
+  subjectCoordinationReadinessBrief?: NationalSubjectCoordinationReadinessBrief;
+  nationalWorkforceCoordinationIndex?: NationalWorkforceCoordinationIndex;
 }
 
 export type MigrationShockKind =
@@ -2069,6 +2073,54 @@ export interface NationalWorkforceFlexibilityIndex {
   stewardNote: string;
 }
 
+export type FlexibilityCoordinationCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalFlexibilityCoordinationCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: FlexibilityCoordinationCouplingBand;
+  flexibilityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CoordinationMeshBand = 'ebbing' | 'patchy' | 'rising' | 'meshed';
+
+export interface NationalCoordinationMeshOutlook {
+  turn: number;
+  meshIndex: number;
+  band: CoordinationMeshBand;
+  flexibilityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectCoordinationReadinessBand =
+  | 'below_coordination'
+  | 'approaching'
+  | 'coordination_ready'
+  | 'flexibility_locked';
+
+export interface NationalSubjectCoordinationReadinessBrief {
+  turn: number;
+  coordinationIndex: number;
+  band: SubjectCoordinationReadinessBand;
+  coordinationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceCoordinationBand = 'fragile' | 'thin' | 'elevated' | 'coordination';
+
+export interface NationalWorkforceCoordinationIndex {
+  turn: number;
+  coordinationIndex: number;
+  band: WorkforceCoordinationBand;
+  coordinationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
 export interface LaborDemographicsPersisted {
   schemaVersion: string;
   revision: number;
@@ -3287,7 +3339,11 @@ export type LaborGiQueryTopic =
   | 'inclusion_flexibility_coupling'
   | 'flexibility_flow'
   | 'subject_flexibility_readiness'
-  | 'workforce_flexibility';
+  | 'workforce_flexibility'
+  | 'flexibility_coordination_coupling'
+  | 'coordination_mesh'
+  | 'subject_coordination_readiness'
+  | 'workforce_coordination';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -3458,6 +3514,14 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_flexibility_readiness';
   }
   if (/\b(workforce flexibility|flexibility index labor workforce)/.test(q)) return 'workforce_flexibility';
+  if (/\b(flexibility coordination|flexibility-coordination coupling)/.test(q)) {
+    return 'flexibility_coordination_coupling';
+  }
+  if (/\b(coordination mesh|coordination pipeline mesh)/.test(q)) return 'coordination_mesh';
+  if (/\b(subject coordination readiness|coordination readiness subject)/.test(q)) {
+    return 'subject_coordination_readiness';
+  }
+  if (/\b(workforce coordination|coordination index labor workforce)/.test(q)) return 'workforce_coordination';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -4693,6 +4757,38 @@ export function answerLaborDemographicsQuestion(
         inference: state.nationalWorkforceFlexibilityIndex?.stewardNote || state.summary,
         projection: 'Workforce flexibility synthesizes inclusion-flexibility coupling, flexibility flow, and subject flexibility.'
       };
+    case 'flexibility_coordination_coupling':
+      return {
+        topic,
+        headline: state.flexibilityCoordinationCouplingBrief?.summary || 'Flexibility-coordination coupling unavailable.',
+        fact: `Coupling band ${state.flexibilityCoordinationCouplingBrief?.band ?? 'unknown'}; flexibility drag ${Math.round(state.flexibilityCoordinationCouplingBrief?.flexibilityDrag ?? 0)}.`,
+        inference: state.flexibilityCoordinationCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce flexibility with coordination levers — wave 43 / O10-217 depth.'
+      };
+    case 'coordination_mesh':
+      return {
+        topic,
+        headline: state.coordinationMeshOutlook?.summary || 'Coordination mesh unavailable.',
+        fact: `Mesh band ${state.coordinationMeshOutlook?.band ?? 'unknown'}; flexibility drag ${Math.round(state.coordinationMeshOutlook?.flexibilityDrag ?? 0)}.`,
+        inference: state.coordinationMeshOutlook?.stewardNote || state.outlook,
+        projection: 'Mesh blends coordination levers with flexibility flow — bounded indices only.'
+      };
+    case 'subject_coordination_readiness':
+      return {
+        topic,
+        headline: state.subjectCoordinationReadinessBrief?.summary || 'Subject coordination readiness unavailable.',
+        fact: `Coordination band ${state.subjectCoordinationReadinessBrief?.band ?? 'unknown'}; coordination drag ${Math.round(state.subjectCoordinationReadinessBrief?.coordinationDrag ?? 0)}.`,
+        inference: state.subjectCoordinationReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject coordination readiness gates subject flexibility against workforce flexibility for O10-217 wave 43.'
+      };
+    case 'workforce_coordination':
+      return {
+        topic,
+        headline: state.nationalWorkforceCoordinationIndex?.summary || 'Workforce coordination unavailable.',
+        fact: `Coordination band ${state.nationalWorkforceCoordinationIndex?.band ?? 'unknown'}; coordination drag ${Math.round(state.nationalWorkforceCoordinationIndex?.coordinationDrag ?? 0)}.`,
+        inference: state.nationalWorkforceCoordinationIndex?.stewardNote || state.summary,
+        projection: 'Workforce coordination synthesizes flexibility-coordination coupling, coordination mesh, and subject coordination.'
+      };
     default:
       return {
         topic: 'national_summary',
@@ -5849,6 +5945,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceFlexibilityIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceFlexibilityIndex.stewardNote);
+  }
+  if (
+    state.flexibilityCoordinationCouplingBrief?.band === 'decoupled' ||
+    state.flexibilityCoordinationCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.flexibilityCoordinationCouplingBrief.stewardNote);
+  }
+  if (
+    state.coordinationMeshOutlook?.band === 'ebbing' ||
+    state.coordinationMeshOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.coordinationMeshOutlook.stewardNote);
+  }
+  if (
+    state.subjectCoordinationReadinessBrief?.band === 'below_coordination' ||
+    state.subjectCoordinationReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectCoordinationReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceCoordinationIndex?.band === 'fragile' ||
+    state.nationalWorkforceCoordinationIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceCoordinationIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -17262,6 +17382,278 @@ export function computeNationalWorkforceFlexibilityIndex(
 }
 
 
+// --- source: flexibility-coordination-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type FlexibilityCoordinationCouplingBand,
+  type NationalFlexibilityCoordinationCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalWorkforceFlexibilityIndex
+} from './types';
+
+function couplingBand(index: number): FlexibilityCoordinationCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-43 / wave-43 flexibility-coordination coupling — flexibility × coordination (O10-217). */
+export function computeNationalFlexibilityCoordinationCouplingBrief(
+  state: NationalLaborDemographicsState,
+  flexibility: NationalWorkforceFlexibilityIndex | null | undefined
+): NationalFlexibilityCoordinationCouplingBrief {
+  if (!state.enabled || !flexibility) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      flexibilityDrag: 0,
+      summary: 'Flexibility-coordination coupling idle — workforce flexibility unavailable.',
+      stewardNote: 'Compute workforce flexibility before coordination coupling guidance.'
+    };
+  }
+
+  let coordinationLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    coordinationLift += coordinationEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  coordinationLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const flexibilityDrag = v1014laborClamp(
+    flexibility.flexibilityDrag * 0.48 + (flexibility.band === 'fragile' || flexibility.band === 'thin' ? 11 : 3)
+  );
+  const flexibilityLift =
+    flexibility.band === 'elevated' || flexibility.band === 'flexibility'
+      ? flexibility.flexibilityIndex * 0.24
+      : flexibility.flexibilityIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + coordinationLift * 21 + flexibilityLift - flexibilityDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained flexibility-coordination link — deploy coordination levers before wave-43 coordination commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard coordination mesh spikes that drain flexibility buffers.'
+        : 'Amplified coupling — pair coordination packs with subject coordination readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    flexibilityDrag,
+    summary: `Flexibility-coordination coupling ${band} (index ${Math.round(couplingIndex)}); flexibility drag ${Math.round(flexibilityDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: coordination-mesh-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type CoordinationMeshBand,
+  type NationalCoordinationMeshOutlook,
+  type NationalFlexibilityFlowOutlook,
+  type NationalLaborDemographicsState
+} from './types';
+
+function meshBand(index: number): CoordinationMeshBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'meshed';
+}
+
+export function computeNationalCoordinationMeshOutlook(
+  state: NationalLaborDemographicsState,
+  flexibilityFlow: NationalFlexibilityFlowOutlook | null | undefined
+): NationalCoordinationMeshOutlook {
+  if (!state.enabled || !flexibilityFlow) {
+    return {
+      turn: state.turn,
+      meshIndex: 50,
+      band: 'patchy',
+      flexibilityDrag: 0,
+      summary: 'Coordination mesh idle — flexibility flow unavailable.',
+      stewardNote: 'Compute flexibility flow before coordination mesh guidance.'
+    };
+  }
+
+  let coordinationLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    coordinationLift += coordinationEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  coordinationLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const flexibilityDrag = v1014laborClamp(
+    flexibilityFlow.inclusionDrag * 0.46 +
+      (flexibilityFlow.band === 'ebbing' || flexibilityFlow.band === 'patchy' ? 10 : 3)
+  );
+  const flowLift =
+    flexibilityFlow.band === 'rising' || flexibilityFlow.band === 'flowing'
+      ? flexibilityFlow.flowIndex * 0.2
+      : flexibilityFlow.flowIndex * 0.1;
+
+  const meshIndex = v1014laborClamp(24 + coordinationLift * 22 + flowLift - flexibilityDrag);
+  const band = meshBand(meshIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy coordination mesh — deploy coordination levers before subject coordination assembly.'
+      : band === 'meshed'
+        ? 'Meshed band — verify flexibility-coordination coupling before auto workforce pushes.'
+        : 'Rising mesh — align with flexibility flow outlook checks.';
+
+  return {
+    turn: state.turn,
+    meshIndex,
+    band,
+    flexibilityDrag,
+    summary: `National coordination mesh ${band} (index ${Math.round(meshIndex)}); flexibility drag ${Math.round(flexibilityDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-coordination-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectCoordinationReadinessBrief,
+  type NationalSubjectFlexibilityReadinessBrief,
+  type NationalWorkforceFlexibilityIndex,
+  type SubjectCoordinationReadinessBand
+} from './types';
+
+function coordinationBand(index: number): SubjectCoordinationReadinessBand {
+  if (index <= 34) return 'below_coordination';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'coordination_ready';
+  return 'flexibility_locked';
+}
+
+/** Round-43 / wave-43 subject coordination readiness — flexibility × workforce flexibility (O10-217). */
+export function computeNationalSubjectCoordinationReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectFlexibility: NationalSubjectFlexibilityReadinessBrief | null | undefined,
+  workforceFlexibility: NationalWorkforceFlexibilityIndex | null | undefined
+): NationalSubjectCoordinationReadinessBrief {
+  if (!state.enabled || !subjectFlexibility || !workforceFlexibility) {
+    return {
+      turn: state.turn,
+      coordinationIndex: 50,
+      band: 'approaching',
+      coordinationDrag: 0,
+      summary: 'Subject coordination readiness idle — subject flexibility or workforce flexibility unavailable.',
+      stewardNote: 'Compute subject flexibility and workforce flexibility before coordination guidance.'
+    };
+  }
+
+  const coordinationDrag = v1014laborClamp(
+    subjectFlexibility.flexibilityDrag * 0.38 +
+      workforceFlexibility.flexibilityDrag * 0.38 +
+      (subjectFlexibility.band === 'below_flexibility' || workforceFlexibility.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectFlexibility.band === 'flexibility_ready' || subjectFlexibility.band === 'inclusion_locked'
+      ? subjectFlexibility.flexibilityIndex * 0.27
+      : subjectFlexibility.flexibilityIndex * 0.14;
+  const workforceLift =
+    workforceFlexibility.band === 'elevated' || workforceFlexibility.band === 'flexibility'
+      ? workforceFlexibility.flexibilityIndex * 0.25
+      : workforceFlexibility.flexibilityIndex * 0.12;
+
+  const coordinationIndex = v1014laborClamp(20 + subjectLift + workforceLift - coordinationDrag);
+  const band = coordinationBand(coordinationIndex);
+
+  const stewardNote =
+    band === 'below_coordination' || band === 'approaching'
+      ? 'Approaching coordination — hold O10-217 wave-43 scale until flexibility-coordination syncs.'
+      : band === 'flexibility_locked'
+        ? 'Flexibility-locked coordination — still monitor coordination mesh during corridor peaks.'
+        : 'Coordination-ready — pair with workforce coordination index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    coordinationIndex,
+    band,
+    coordinationDrag,
+    summary: `Subject coordination readiness ${band} (index ${Math.round(coordinationIndex)}); coordination drag ${Math.round(coordinationDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-coordination-index.ts ---
+  type NationalCoordinationMeshOutlook,
+  type NationalFlexibilityCoordinationCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalSubjectCoordinationReadinessBrief,
+  type NationalWorkforceCoordinationIndex,
+  type WorkforceCoordinationBand
+} from './types';
+
+function coordinationBand(index: number): WorkforceCoordinationBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'coordination';
+}
+
+export function computeNationalWorkforceCoordinationIndex(
+  state: NationalLaborDemographicsState,
+  coordinationCoupling: NationalFlexibilityCoordinationCouplingBrief | null | undefined,
+  coordinationMesh: NationalCoordinationMeshOutlook | null | undefined,
+  subjectCoordination: NationalSubjectCoordinationReadinessBrief | null | undefined
+): NationalWorkforceCoordinationIndex {
+  if (!state.enabled || !coordinationCoupling || !coordinationMesh || !subjectCoordination) {
+    return {
+      turn: state.turn,
+      coordinationIndex: 50,
+      band: 'thin',
+      coordinationDrag: 0,
+      summary: 'Workforce coordination idle — coordination coupling, mesh, or subject coordination unavailable.',
+      stewardNote: 'Compute O10-217 wave-43 depth stack before coordination guidance.'
+    };
+  }
+
+  const coordinationDrag = v1014laborClamp(
+    subjectCoordination.coordinationDrag * 0.35 +
+      coordinationCoupling.flexibilityDrag * 0.3 +
+      coordinationMesh.flexibilityDrag * 0.25 +
+      (subjectCoordination.band === 'below_coordination' || coordinationCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const couplingLift =
+    coordinationCoupling.band === 'amplified' || coordinationCoupling.band === 'elevated'
+      ? coordinationCoupling.couplingIndex * 0.2
+      : coordinationCoupling.couplingIndex * 0.1;
+  const meshLift =
+    coordinationMesh.band === 'rising' || coordinationMesh.band === 'meshed'
+      ? coordinationMesh.meshIndex * 0.18
+      : coordinationMesh.meshIndex * 0.09;
+  const subjectLift =
+    subjectCoordination.band === 'coordination_ready' || subjectCoordination.band === 'flexibility_locked'
+      ? subjectCoordination.coordinationIndex * 0.22
+      : subjectCoordination.coordinationIndex * 0.11;
+
+  const coordinationIndex = v1014laborClamp(18 + couplingLift + meshLift + subjectLift - coordinationDrag);
+  const band = coordinationBand(coordinationIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce coordination — sequence flexibility-coordination, coordination mesh, and subject coordination before post-641d7d16 tranche.'
+      : band === 'coordination'
+        ? 'Coordination band — avoid corridor overload that breaks subject coordination bands.'
+        : 'Elevated coordination — refresh subject coordination checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    coordinationIndex,
+    band,
+    coordinationDrag,
+    summary: `National workforce coordination ${band} (index ${Math.round(coordinationIndex)}); coordination drag ${Math.round(coordinationDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -18427,6 +18819,25 @@ export function computeNationalLaborDemographics(
     state.flexibilityFlowOutlook,
     state.subjectFlexibilityReadinessBrief
   );
+  state.flexibilityCoordinationCouplingBrief = computeNationalFlexibilityCoordinationCouplingBrief(
+    state,
+    state.nationalWorkforceFlexibilityIndex
+  );
+  state.coordinationMeshOutlook = computeNationalCoordinationMeshOutlook(
+    state,
+    state.flexibilityFlowOutlook
+  );
+  state.subjectCoordinationReadinessBrief = computeNationalSubjectCoordinationReadinessBrief(
+    state,
+    state.subjectFlexibilityReadinessBrief,
+    state.nationalWorkforceFlexibilityIndex
+  );
+  state.nationalWorkforceCoordinationIndex = computeNationalWorkforceCoordinationIndex(
+    state,
+    state.flexibilityCoordinationCouplingBrief,
+    state.coordinationMeshOutlook,
+    state.subjectCoordinationReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -19389,6 +19800,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceFlexibilityIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.flexibilityCoordinationCouplingBrief?.band === 'decoupled' ||
+      state.flexibilityCoordinationCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.flexibilityCoordinationCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.coordinationMeshOutlook?.band === 'ebbing' ||
+      state.coordinationMeshOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.coordinationMeshOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectCoordinationReadinessBrief?.band === 'below_coordination' ||
+      state.subjectCoordinationReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectCoordinationReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceCoordinationIndex?.band === 'fragile' ||
+      state.nationalWorkforceCoordinationIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceCoordinationIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -21901,6 +22340,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'flexibility steward note'
   );
   check('R4216', flexibilityEaseForRegion('NSW', 'technology') > 0, 'flexibility ease for region');
+
+  check('R4301', Boolean(r1.state.flexibilityCoordinationCouplingBrief?.band), 'flexibility coordination on state');
+  check(
+    'R4302',
+    (r1.state.flexibilityCoordinationCouplingBrief?.flexibilityDrag ?? 0) >= 0,
+    'flexibility coordination drag'
+  );
+  check('R4303', Boolean(r1.state.coordinationMeshOutlook?.band), 'coordination mesh on state');
+  check(
+    'R4304',
+    (r1.state.coordinationMeshOutlook?.flexibilityDrag ?? 0) >= 0,
+    'coordination mesh flexibility drag'
+  );
+  check('R4305', Boolean(r1.state.subjectCoordinationReadinessBrief?.band), 'subject coordination on state');
+  check('R4306', Boolean(r1.state.nationalWorkforceCoordinationIndex?.band), 'workforce coordination on state');
+  check(
+    'R4307',
+    detectLaborDemographicsQuery('flexibility coordination coupling') === 'flexibility_coordination_coupling',
+    'GI flexibility coordination detect'
+  );
+  check(
+    'R4308',
+    detectLaborDemographicsQuery('coordination mesh') === 'coordination_mesh',
+    'GI coordination mesh detect'
+  );
+  check(
+    'R4309',
+    detectLaborDemographicsQuery('subject coordination readiness') === 'subject_coordination_readiness',
+    'GI subject coordination detect'
+  );
+  check(
+    'R4310',
+    detectLaborDemographicsQuery('workforce coordination') === 'workforce_coordination',
+    'GI workforce coordination detect'
+  );
+  check(
+    'R4311',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_coordination').headline.length > 5,
+    'GI workforce coordination answer'
+  );
+  const flexibilityCoordinationOnly = computeNationalFlexibilityCoordinationCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceFlexibilityIndex
+  );
+  check('R4312', flexibilityCoordinationOnly.summary.length > 10, 'flexibility coordination standalone summary');
+  const coordinationMeshOnly = computeNationalCoordinationMeshOutlook(
+    r1.state,
+    r1.state.flexibilityFlowOutlook
+  );
+  check('R4313', coordinationMeshOnly.band.length > 3, 'coordination mesh band string');
+  const subjectCoordinationOnly = computeNationalSubjectCoordinationReadinessBrief(
+    r1.state,
+    r1.state.subjectFlexibilityReadinessBrief,
+    r1.state.nationalWorkforceFlexibilityIndex
+  );
+  check('R4314', subjectCoordinationOnly.coordinationDrag >= 0, 'subject coordination drag');
+  check(
+    'R4315',
+    computeNationalWorkforceCoordinationIndex(
+      rHhBad.state,
+      rHhBad.state.flexibilityCoordinationCouplingBrief,
+      rHhBad.state.coordinationMeshOutlook,
+      rHhBad.state.subjectCoordinationReadinessBrief
+    ).stewardNote.length > 8,
+    'coordination steward note'
+  );
+  check('R4316', coordinationEaseForRegion('NSW', 'technology') > 0, 'coordination ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
