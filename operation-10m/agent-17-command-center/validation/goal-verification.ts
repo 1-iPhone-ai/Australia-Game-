@@ -198,7 +198,16 @@ import {
 import {
   buildAgent17SuccessionAccord,
   successionAccordBlocksRealm,
+  successionAccordBlocksCanon,
 } from '../planning/succession-accord.ts';
+import {
+  buildAgent17CanonIndex,
+  canonIndexBlocksLegitimacy,
+} from '../planning/canon-index.ts';
+import {
+  buildAgent17LegitimacyAccord,
+  legitimacyAccordBlocksCanon,
+} from '../planning/legitimacy-accord.ts';
 import {
   Agent17RollbackController,
   createAgent17RollbackController,
@@ -1651,6 +1660,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const canonIndex = depthEval.snapshot.planningDepth?.canonIndex;
+  goalResults.push(
+    result(
+      'G17-097',
+      !!canonIndex &&
+        canonIndex.verses.length >= 5 &&
+        canonIndex.canonScore >= 0 &&
+        canonIndex.canonScore <= 100 &&
+        (canonIndex.band === 'ratified' ||
+          canonIndex.band === 'draft' ||
+          canonIndex.band === 'revoked'),
+      `verses=${canonIndex?.verses.length} score=${canonIndex?.canonScore}`
+    )
+  );
+
+  const legitimacyAccord = depthEval.snapshot.planningDepth?.legitimacyAccord;
+  goalResults.push(
+    result(
+      'G17-098',
+      !!legitimacyAccord &&
+        legitimacyAccord.proofs.length >= 5 &&
+        legitimacyAccord.legitimacyScore >= 0 &&
+        legitimacyAccord.legitimacyScore <= 100,
+      `proofs=${legitimacyAccord?.proofs.length} score=${legitimacyAccord?.legitimacyScore}`
+    )
+  );
+
+  const revokedCanon = buildAgent17CanonIndex({
+    successionAccord: voidSuccession,
+    realmIndex: fallenRealm,
+    dynastyAccord: extinctDynasty,
+  });
+  const forfeitLegitimacy = buildAgent17LegitimacyAccord({
+    canonIndex: revokedCanon,
+    successionAccord: voidSuccession,
+    realmIndex: fallenRealm,
+  });
+  goalResults.push(
+    result(
+      'G17-099',
+      successionAccordBlocksCanon(voidSuccession) ||
+        canonIndexBlocksLegitimacy(revokedCanon) ||
+        legitimacyAccordBlocksCanon(forfeitLegitimacy),
+      `${revokedCanon.band}/${forfeitLegitimacy.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -1777,6 +1833,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-094',
     'G17-095',
     'G17-096',
+    'G17-097',
+    'G17-098',
+    'G17-099',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

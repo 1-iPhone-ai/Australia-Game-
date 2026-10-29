@@ -99,3 +99,7 @@ export function buildAgent17SuccessionAccord(
 export function successionAccordBlocksRealm(snapshot: Agent17SuccessionAccordSnapshot): boolean {
   return snapshot.band === 'void' || !snapshot.successionAnchored;
 }
+
+export function successionAccordBlocksCanon(snapshot: Agent17SuccessionAccordSnapshot): boolean {
+  return snapshot.band === 'void' || !snapshot.successionAnchored;
+}

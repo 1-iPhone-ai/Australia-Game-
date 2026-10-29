@@ -674,6 +674,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Fallen realm or extinct dynasty yields successionAccordBlocksRealm.',
     severity: 'major',
   },
+  {
+    id: 'G17-097',
+    title: 'Canon index on planning depth',
+    category: 'telemetry',
+    acceptance: 'canonIndex reports canonScore 0–100 with ratified/draft/revoked band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-098',
+    title: 'Legitimacy accord proofs complete',
+    category: 'telemetry',
+    acceptance: 'legitimacyAccord exposes ≥5 proofs and legitimacyScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-099',
+    title: 'Revoked canon forfeits legitimacy accord',
+    category: 'integration',
+    acceptance: 'Revoked canon or void succession yields legitimacyAccordBlocksCanon.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

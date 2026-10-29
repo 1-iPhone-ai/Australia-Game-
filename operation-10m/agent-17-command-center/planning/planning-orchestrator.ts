@@ -71,6 +71,8 @@ import { buildAgent17ThroneIndex } from './throne-index.ts';
 import { buildAgent17DynastyAccord } from './dynasty-accord.ts';
 import { buildAgent17RealmIndex } from './realm-index.ts';
 import { buildAgent17SuccessionAccord } from './succession-accord.ts';
+import { buildAgent17CanonIndex } from './canon-index.ts';
+import { buildAgent17LegitimacyAccord } from './legitimacy-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -415,6 +417,16 @@ export function buildAgent17PlanningDepthSnapshot(
     dynastyAccord,
     throneIndex,
   });
+  const canonIndex = buildAgent17CanonIndex({
+    successionAccord,
+    realmIndex,
+    dynastyAccord,
+  });
+  const legitimacyAccord = buildAgent17LegitimacyAccord({
+    canonIndex,
+    successionAccord,
+    realmIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -468,6 +480,8 @@ export function buildAgent17PlanningDepthSnapshot(
     dynastyAccord,
     realmIndex,
     successionAccord,
+    canonIndex,
+    legitimacyAccord,
   };
 }
 

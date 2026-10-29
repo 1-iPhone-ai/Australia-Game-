@@ -231,6 +231,8 @@ export interface Agent17PlanningDepthSnapshot {
   dynastyAccord: Agent17DynastyAccordSnapshot;
   realmIndex: Agent17RealmIndexSnapshot;
   successionAccord: Agent17SuccessionAccordSnapshot;
+  canonIndex: Agent17CanonIndexSnapshot;
+  legitimacyAccord: Agent17LegitimacyAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1039,6 +1041,40 @@ export interface Agent17SuccessionAccordSnapshot {
   realmBand: Agent17RealmIndexSnapshot['band'];
   dynastyBand: Agent17DynastyAccordSnapshot['band'];
   successionAnchored: boolean;
+  headline: string;
+}
+
+export interface Agent17CanonVerse {
+  id: string;
+  label: string;
+  inscribed: boolean;
+  weight: number;
+}
+
+export interface Agent17CanonIndexSnapshot {
+  canonScore: number;
+  band: 'ratified' | 'draft' | 'revoked';
+  verses: Agent17CanonVerse[];
+  successionBand: Agent17SuccessionAccordSnapshot['band'];
+  realmBand: Agent17RealmIndexSnapshot['band'];
+  canonRatified: boolean;
+  headline: string;
+}
+
+export interface Agent17LegitimacyProof {
+  id: string;
+  label: string;
+  settled: boolean;
+  weight: number;
+}
+
+export interface Agent17LegitimacyAccordSnapshot {
+  legitimacyScore: number;
+  band: 'settled' | 'disputed' | 'forfeit';
+  proofs: Agent17LegitimacyProof[];
+  canonBand: Agent17CanonIndexSnapshot['band'];
+  successionBand: Agent17SuccessionAccordSnapshot['band'];
+  legitimacySettled: boolean;
   headline: string;
 }
 
