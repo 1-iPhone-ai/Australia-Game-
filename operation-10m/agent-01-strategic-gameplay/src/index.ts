@@ -131,6 +131,7 @@ export {
   sentinelAscendancyRankingBonus,
   oraclePerpetuityRankingBonus,
   archonEternityRankingBonus,
+  exarchAscendancyRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -556,6 +557,16 @@ export {
   applyArchonEternityMandateBonus,
 } from './engine/coalition-archon-eternity.ts';
 
+export { coalitionExarchAscendancyStreakIssues } from './engine/coalition-exarch-ascendancy-gates.ts';
+
+export {
+  EXARCH_COALITION_ASCENDANCY_THRESHOLD,
+  advanceCoalitionExarchAscendancyStreak,
+  resetCoalitionExarchAscendancyStreak,
+  isExarchCoalitionAscendancy,
+  applyExarchAscendancyMandateBonus,
+} from './engine/coalition-exarch-ascendancy.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '5.3.0';
+export const AGENT_01_MODULE_VERSION = '5.4.0';

@@ -145,6 +145,8 @@ export interface StrategicActionDefinition {
   minCoalitionOraclePerpetuityStreakDays?: number;
   /** Action requires archon eternity streak after oracle perpetuity. */
   minCoalitionArchonEternityStreakDays?: number;
+  /** Action requires exarch ascendancy streak after archon eternity. */
+  minCoalitionExarchAscendancyStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -223,7 +225,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_coalition_vanguard_synthesis_streak'; minDays: number }
   | { kind: 'min_coalition_sentinel_ascendancy_streak'; minDays: number }
   | { kind: 'min_coalition_oracle_perpetuity_streak'; minDays: number }
-  | { kind: 'min_coalition_archon_eternity_streak'; minDays: number };
+  | { kind: 'min_coalition_archon_eternity_streak'; minDays: number }
+  | { kind: 'min_coalition_exarch_ascendancy_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -343,6 +346,8 @@ export interface StrategicGameplayState {
   coalitionOraclePerpetuityStreakDays?: number;
   /** Days oracle perpetuity held archon eternity eligibility. */
   coalitionArchonEternityStreakDays?: number;
+  /** Days archon eternity held exarch ascendancy eligibility. */
+  coalitionExarchAscendancyStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;

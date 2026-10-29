@@ -142,6 +142,10 @@ import {
   advanceCoalitionArchonEternityStreak,
   applyArchonEternityMandateBonus,
 } from './coalition-archon-eternity.ts';
+import {
+  advanceCoalitionExarchAscendancyStreak,
+  applyExarchAscendancyMandateBonus,
+} from './coalition-exarch-ascendancy.ts';
 import { advanceCoalitionRecoveryStreak } from './coalition-recovery.ts';
 import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
 import type { StakeholderGroupId, StakeholderSentiment } from '../types/coalition-mandate.ts';
@@ -267,6 +271,8 @@ export function advanceStrategicGameplayCalendar(
   next = applyOraclePerpetuityMandateBonus(next, daysAdvanced);
   next = advanceCoalitionArchonEternityStreak(next, daysAdvanced);
   next = applyArchonEternityMandateBonus(next, daysAdvanced);
+  next = advanceCoalitionExarchAscendancyStreak(next, daysAdvanced);
+  next = applyExarchAscendancyMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 

@@ -109,6 +109,8 @@ export interface TurnStrategicBriefing {
   coalitionOraclePerpetuityStreakDays: number;
   archonCoalitionEternity: boolean;
   coalitionArchonEternityStreakDays: number;
+  exarchCoalitionAscendancy: boolean;
+  coalitionExarchAscendancyStreakDays: number;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;

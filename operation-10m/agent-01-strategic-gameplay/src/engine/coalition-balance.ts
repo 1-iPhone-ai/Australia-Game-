@@ -408,3 +408,13 @@ export function archonEternityRankingBonus(
   if (streak >= action.minCoalitionArchonEternityStreakDays) return 36;
   return 2;
 }
+
+export function exarchAscendancyRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionExarchAscendancyStreakDays === undefined) return 0;
+  const streak = state.coalitionExarchAscendancyStreakDays ?? 0;
+  if (streak >= action.minCoalitionExarchAscendancyStreakDays) return 37;
+  return 2;
+}

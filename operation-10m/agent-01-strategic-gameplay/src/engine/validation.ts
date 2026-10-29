@@ -63,6 +63,7 @@ import { coalitionVanguardSynthesisStreakIssues } from './coalition-vanguard-syn
 import { coalitionSentinelAscendancyStreakIssues } from './coalition-sentinel-ascendancy-gates.ts';
 import { coalitionOraclePerpetuityStreakIssues } from './coalition-oracle-perpetuity-gates.ts';
 import { coalitionArchonEternityStreakIssues } from './coalition-archon-eternity-gates.ts';
+import { coalitionExarchAscendancyStreakIssues } from './coalition-exarch-ascendancy-gates.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -349,6 +350,7 @@ export function validateAction(
     issues.push(...coalitionSentinelAscendancyStreakIssues(action, state));
     issues.push(...coalitionOraclePerpetuityStreakIssues(action, state));
     issues.push(...coalitionArchonEternityStreakIssues(action, state));
+    issues.push(...coalitionExarchAscendancyStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({

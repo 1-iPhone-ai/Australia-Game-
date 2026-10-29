@@ -38,6 +38,7 @@ import { isVanguardCoalitionSynthesis } from '../engine/coalition-vanguard-synth
 import { isSentinelCoalitionAscendancy } from '../engine/coalition-sentinel-ascendancy.ts';
 import { isOracleCoalitionPerpetuity } from '../engine/coalition-oracle-perpetuity.ts';
 import { isArchonCoalitionEternity } from '../engine/coalition-archon-eternity.ts';
+import { isExarchCoalitionAscendancy } from '../engine/coalition-exarch-ascendancy.ts';
 
 /** Outbound coalition telemetry for Agent 02 / Agent 05 assembly hooks (round 10+). */
 export interface ExternalCoalitionTurnSignals {
@@ -114,6 +115,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionOraclePerpetuityStreakDays: number;
   archonCoalitionEternity: boolean;
   coalitionArchonEternityStreakDays: number;
+  exarchCoalitionAscendancy: boolean;
+  coalitionExarchAscendancyStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -195,6 +198,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionOraclePerpetuityStreakDays: state.coalitionOraclePerpetuityStreakDays ?? 0,
     archonCoalitionEternity: isArchonCoalitionEternity(state),
     coalitionArchonEternityStreakDays: state.coalitionArchonEternityStreakDays ?? 0,
+    exarchCoalitionAscendancy: isExarchCoalitionAscendancy(state),
+    coalitionExarchAscendancyStreakDays: state.coalitionExarchAscendancyStreakDays ?? 0,
   };
 }
 
@@ -276,5 +281,7 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionOraclePerpetuityStreakDays: raw?.coalitionOraclePerpetuityStreakDays ?? 0,
     archonCoalitionEternity: raw?.archonCoalitionEternity ?? false,
     coalitionArchonEternityStreakDays: raw?.coalitionArchonEternityStreakDays ?? 0,
+    exarchCoalitionAscendancy: raw?.exarchCoalitionAscendancy ?? false,
+    coalitionExarchAscendancyStreakDays: raw?.coalitionExarchAscendancyStreakDays ?? 0,
   };
 }
