@@ -72,6 +72,12 @@ import { nrDashBuildNetworkUtilConcentration } from '../core/network-util-concen
 import { nrDashBuildDependencyProviderLoad } from '../core/dependency-provider-load.ts';
 import { nrDashBuildOwnedResilienceShare } from '../core/owned-resilience-share.ts';
 import { nrDashBuildMomentumBandDiversity } from '../core/momentum-band-diversity.ts';
+import { nrDashBuildEconomyBandDiversity } from '../core/economy-band-diversity.ts';
+import { nrDashBuildMapHubConcentration } from '../core/map-hub-concentration.ts';
+import { nrDashBuildChokepointScoreSpread } from '../core/chokepoint-score-spread.ts';
+import { nrDashBuildOwnedOpenNeedsShare } from '../core/owned-open-needs-share.ts';
+import { nrDashBuildNationalStrainedBarCount } from '../core/national-strained-bar-count.ts';
+import { nrDashBuildHistorySnippetLoad } from '../core/history-snippet-load.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -179,6 +185,22 @@ export const NrDashOverviewTab: React.FC<{
       return ownedRes ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-owned-resilience-share">
           Owned resilience share {ownedRes.ownedShare} · {ownedRes.ownedResilience}/{ownedRes.totalResilience}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const needsShare = nrDashBuildOwnedOpenNeedsShare(snap);
+      return needsShare ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-owned-open-needs-share">
+          Owned open-needs share {needsShare.ownedShare} · {needsShare.ownedOpenNeeds}/{needsShare.totalOpenNeeds}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const historyLoad = nrDashBuildHistorySnippetLoad(snap);
+      return historyLoad && historyLoad.snippetCount > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-history-snippet-load">
+          History snippet load {historyLoad.loadRatio} · {historyLoad.snippetCount}/{historyLoad.maxSnippets} slots
         </div>
       ) : null;
     })()}
@@ -310,6 +332,14 @@ export const NrDashRegionsTab: React.FC<{
         </div>
       ) : null;
     })()}
+    {(() => {
+      const econ = nrDashBuildEconomyBandDiversity(snap);
+      return econ ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-economy-band-diversity">
+          Economy band diversity {econ.diversityIndex} · {econ.distinctBands} bands · dominant {econ.dominantBand ?? '—'}
+        </div>
+      ) : null;
+    })()}
     {nrDashTopTensionOutliers(snap, 3).length > 0 && (
       <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-tension-outliers">
         <div className="font-semibold mb-1">Momentum ↔ resilience tension</div>
@@ -398,6 +428,10 @@ export const NrDashNetworksTab: React.FC<{
   const bottleneckSpan = nrDashBuildBottleneckNetworkSpan(ns);
   const regionalHeadroom = nrDashBuildRegionalHeadroomSpread(ns);
   const heatStrained = nrDashBuildHeatStrainedDensity(ns);
+  const chokeSpread = nrDashBuildChokepointScoreSpread(ns);
+  const strainedBars = nrDashBuildNationalStrainedBarCount(
+    nrDashBuildAuthSnapshot(ns.turn ?? 0, null, ns, null)
+  );
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-networks">
       <NrDashUtilAlignmentStrip drift={utilDrift} />
@@ -448,6 +482,16 @@ export const NrDashNetworksTab: React.FC<{
       {heatStrained && (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-heat-strained-density">
           Heat strained+ density {heatStrained.density} · {heatStrained.strainedPlusCount}/{heatStrained.cellCount} cells
+        </div>
+      )}
+      {chokeSpread && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-chokepoint-spread">
+          Dependency chokepoint spread σ {chokeSpread.stdDev} · μ score {chokeSpread.meanScore}
+        </div>
+      )}
+      {strainedBars && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-strained-bars">
+          National strained+ bars {strainedBars.strainedPlusCount}/{strainedBars.networkCount}
         </div>
       )}
       {bottleneckConc && (
@@ -628,6 +672,7 @@ export const NrDashMapTab: React.FC<{
   const peripheralGap = useMemo(() => nrDashBuildPeripheralCorridorGap(nsState), [nsState]);
   const linkDispersion = useMemo(() => nrDashBuildLinkStressDispersion(nsState), [nsState]);
   const pulseConc = useMemo(() => nrDashBuildMapPulseConcentration(snap), [snap]);
+  const hubConc = useMemo(() => nrDashBuildMapHubConcentration(nsState), [nsState]);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-map">
       <NrDashProvenanceStrip items={snap.provenance} />
@@ -681,6 +726,12 @@ export const NrDashMapTab: React.FC<{
         <p className="text-[10px] opacity-75" data-testid="nr-dash-map-pulse-concentration">
           Pulse concentration {pulseConc.concentrationIndex} · top {pulseConc.topRegionId ?? '—'} (
           {Math.round(pulseConc.topRegionShare * 100)}%)
+        </p>
+      )}
+      {hubConc && hubConc.concentrationIndex > 0 && (
+        <p className="text-[10px] opacity-75" data-testid="nr-dash-map-hub-concentration">
+          Hub score concentration {hubConc.concentrationIndex} · top {hubConc.topRegionId ?? '—'} (
+          {Math.round(hubConc.topRegionShare * 100)}%)
         </p>
       )}
       <NrDashMapLegend />
