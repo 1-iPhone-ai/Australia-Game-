@@ -33,6 +33,7 @@ const FILES = [
   'production-readiness-portfolio.ts',
   'production-transition-horizon.ts',
   'production-transition-commitment.ts',
+  'production-transition-mobilization.ts',
   'chunk-exports.ts',
 ];
 

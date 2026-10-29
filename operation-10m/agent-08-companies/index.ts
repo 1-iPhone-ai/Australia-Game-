@@ -319,6 +319,23 @@ export type {
   TransitionCommitmentBand,
 } from './production-transition-commitment';
 
+export {
+  AGENT08_TRANSITION_MOBILIZATION_SCHEMA_VERSION,
+  buildFirmProductionTransitionMobilization,
+  classifyNationalMobilizationBand,
+  computeNationalMobilizationPressure,
+  computeNationalProductionTransitionMobilization,
+  summarizeRegionalTransitionMobilization,
+  runAgent08TransitionMobilizationSelfTests,
+} from './production-transition-mobilization';
+
+export type {
+  FirmProductionTransitionMobilization,
+  NationalProductionTransitionMobilization,
+  RegionalTransitionMobilizationSummary,
+  TransitionMobilizationBand,
+} from './production-transition-mobilization';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -338,6 +355,7 @@ import { runAgent08OperatingDigestSelfTests } from './production-operating-diges
 import { runAgent08ReadinessPortfolioSelfTests } from './production-readiness-portfolio';
 import { runAgent08TransitionHorizonSelfTests } from './production-transition-horizon';
 import { runAgent08TransitionCommitmentSelfTests } from './production-transition-commitment';
+import { runAgent08TransitionMobilizationSelfTests } from './production-transition-mobilization';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -437,6 +455,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionMobilization = runAgent08TransitionMobilizationSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -457,5 +480,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...readinessPortfolio,
     ...transitionHorizon,
     ...transitionCommitment,
+    ...transitionMobilization,
   ];
 }
