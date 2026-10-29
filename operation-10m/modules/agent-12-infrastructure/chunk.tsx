@@ -313,8 +313,14 @@ export type IndigenousCommunityAirliftPolicy = 'baseline' | 'expand';
 
 export type PortBerthSlotOptimizerPolicy = 'baseline' | 'deploy';
 
+export type OffshoreWindTowInstallPolicy = 'baseline' | 'deploy';
+
+export type EvBatteryRecyclingLogisticsPolicy = 'baseline' | 'accelerate';
+
+export type UrbanCourierMicrohubPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/27';
+  schemaVersion: 'agent12/28';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -496,6 +502,14 @@ export interface TransportInfrastructureState {
   portBerthSlotOptimizerShare: number;
   nationalPortBerthSlotOptimizerThroughputIndex: number;
   portBerthSlotOptimizerThroughputByRegion: Record<AuRegionCode, number>;
+  nationalOffshoreWindTowInstallIndex: number;
+  offshoreWindTowInstallByRegion: Record<AuRegionCode, number>;
+  evBatteryRecyclingLogisticsShare: number;
+  nationalEvBatteryRecyclingLogisticsIndex: number;
+  evBatteryRecyclingLogisticsByRegion: Record<AuRegionCode, number>;
+  urbanCourierMicrohubShare: number;
+  nationalUrbanCourierMicrohubThroughputIndex: number;
+  urbanCourierMicrohubThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -567,6 +581,9 @@ export interface TransportInfrastructureOptions {
   greenSteelExportPolicy?: GreenSteelExportPolicy;
   indigenousCommunityAirliftPolicy?: IndigenousCommunityAirliftPolicy;
   portBerthSlotOptimizerPolicy?: PortBerthSlotOptimizerPolicy;
+  offshoreWindTowInstallPolicy?: OffshoreWindTowInstallPolicy;
+  evBatteryRecyclingLogisticsPolicy?: EvBatteryRecyclingLogisticsPolicy;
+  urbanCourierMicrohubPolicy?: UrbanCourierMicrohubPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -1718,6 +1735,48 @@ export const TRANSPORT_CORRIDORS_ROUND26: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round27.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND27: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_vic_offshore_wind_tow',
+    name: 'WA–VIC Offshore Wind Tow',
+    networkKind: 'trade',
+    regionSequence: ['WA', 'VIC'],
+    requiredTagsByRegion: {
+      WA: ['wind_tow_install', 'nacelle_lift', 'offshore_staging'],
+      VIC: ['wind_tow_install', 'nacelle_lift', 'offshore_staging'],
+    },
+    productivitySynergyPoints: 6.0,
+    logisticsRelief: 0.035,
+  },
+  {
+    id: 'corr_nsw_qld_ev_battery_recycle',
+    name: 'NSW–QLD EV Battery Recycle',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'QLD'],
+    requiredTagsByRegion: {
+      NSW: ['ev_battery_recycle', 'black_mass_logistics', 'circular_battery'],
+      QLD: ['ev_battery_recycle', 'black_mass_logistics', 'circular_battery'],
+    },
+    productivitySynergyPoints: 5.7,
+    logisticsRelief: 0.032,
+  },
+  {
+    id: 'corr_nsw_vic_courier_microhub',
+    name: 'NSW–VIC Courier Microhub',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['courier_microhub', 'same_day_urban', 'e_cargo_bike'],
+      VIC: ['courier_microhub', 'same_day_urban', 'e_cargo_bike'],
+    },
+    productivitySynergyPoints: 5.5,
+    logisticsRelief: 0.03,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -1891,6 +1950,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND24,
   ...TRANSPORT_CORRIDORS_ROUND25,
   ...TRANSPORT_CORRIDORS_ROUND26,
+  ...TRANSPORT_CORRIDORS_ROUND27,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -3379,6 +3439,62 @@ export const TRANSPORT_SCENARIOS_ROUND26: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round27.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND27: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_wind_tow_weather_hold',
+    label: 'WA Wind Tow Weather Hold',
+    description: 'Swell hold delays Geraldton nacelle tow staging.',
+    targetRegions: ['WA', 'VIC'],
+    networkKind: 'trade',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_vic_offshore_install_surge',
+    label: 'Victoria Offshore Install Surge',
+    description: 'Install rush overloads Portland wind tow berths.',
+    targetRegions: ['VIC', 'WA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port'],
+  },
+  {
+    id: 'scn_nsw_battery_recycle_backlog',
+    label: 'NSW Battery Recycle Backlog',
+    description: 'EV uptake backs up Silverwater black-mass yards.',
+    targetRegions: ['NSW', 'QLD'],
+    networkKind: 'freight',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics', 'rail'],
+  },
+  {
+    id: 'scn_qld_circular_battery_inspection',
+    label: 'Queensland Circular Battery Inspection',
+    description: 'Inspection blitz delays Brisbane recycle wharf.',
+    targetRegions: ['QLD', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.19,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_nsw_same_day_courier_peak',
+    label: 'NSW Same-Day Courier Peak',
+    description: 'Retail peak strains Redfern microhub e-cargo slots.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.21,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['road', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -3566,6 +3682,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND24,
   ...TRANSPORT_SCENARIOS_ROUND25,
   ...TRANSPORT_SCENARIOS_ROUND26,
+  ...TRANSPORT_SCENARIOS_ROUND27,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -10224,6 +10341,233 @@ export const SCALE_WAVE_ROUND26_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round27-assets.ts ---
+
+export const ROUND27_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_geraldton_wind_tow',
+    category: 'road',
+    name: 'Geraldton Wind Tow Road',
+    description: 'Offshore nacelle tow staging road feed.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'VIC'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['wind_tow_install', 'nacelle_lift', 'offshore_staging'],
+    laneKilometres: 42,
+    designSpeedKmh: 86,
+    freightShare: 0.35,
+    urbanShare: 0.06,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_portland_wind_staging',
+    category: 'road',
+    name: 'Portland Wind Staging Road',
+    description: 'Victorian offshore wind tow install access.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'WA'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['trade'],
+    tags: ['wind_tow_install', 'nacelle_lift', 'offshore_staging'],
+    laneKilometres: 28,
+    designSpeedKmh: 84,
+    freightShare: 0.31,
+    urbanShare: 0.1,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_western_sydney_recycle',
+    category: 'road',
+    name: 'Western Sydney Battery Recycle Road',
+    description: 'EV black-mass haul to recycling logistics.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['freight'],
+    tags: ['ev_battery_recycle', 'black_mass_logistics', 'circular_battery'],
+    laneKilometres: 24,
+    designSpeedKmh: 80,
+    freightShare: 0.28,
+    urbanShare: 0.42,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_collingwood_e_cargo',
+    category: 'road',
+    name: 'Collingwood E-Cargo Spine',
+    description: 'Urban courier microhub e-cargo bike corridor.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 3.8,
+    strategicNetworks: ['freight', 'mobility'],
+    tags: ['courier_microhub', 'same_day_urban', 'e_cargo_bike'],
+    laneKilometres: 12,
+    designSpeedKmh: 45,
+    freightShare: 0.22,
+    urbanShare: 0.72,
+    tollRoad: false,
+  },
+];
+
+export const ROUND27_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_midwest_wind_rail',
+    category: 'rail',
+    name: 'Midwest Wind Install Rail',
+    description: 'Rail feed to offshore wind tow staging.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'VIC'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['wind_tow_install', 'nacelle_lift', 'offshore_staging'],
+    trackKilometres: 88,
+    dualTrackShare: 0.44,
+    electrifiedShare: 0.19,
+    designFreightTonnesPerYear: 5_800_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_nsw_parramatta_recycle_link',
+    category: 'rail',
+    name: 'Parramatta Battery Recycle Link',
+    description: 'Circular EV battery rail to black-mass yards.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['freight'],
+    tags: ['ev_battery_recycle', 'black_mass_logistics', 'circular_battery'],
+    trackKilometres: 22,
+    dualTrackShare: 0.52,
+    electrifiedShare: 0.78,
+    designFreightTonnesPerYear: 2_600_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_nsw_sydney_microhub_feed',
+    category: 'rail',
+    name: 'Sydney Microhub Feed Rail',
+    description: 'Same-day urban courier rail handoff.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['freight'],
+    tags: ['courier_microhub', 'same_day_urban', 'e_cargo_bike'],
+    trackKilometres: 18,
+    dualTrackShare: 0.58,
+    electrifiedShare: 0.82,
+    designFreightTonnesPerYear: 1_900_000,
+    passengerCapable: true,
+  },
+];
+
+export const ROUND27_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_geraldton_wind_staging',
+    category: 'port',
+    name: 'Geraldton Wind Tow Staging',
+    description: 'Offshore nacelle lift and tow install berths.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'VIC'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade'],
+    tags: ['wind_tow_install', 'nacelle_lift', 'offshore_staging'],
+    berthCount: 3,
+    maxDraftMetres: 12.8,
+    teuCapacityPerYear: 110_000,
+    automationLevel: 1,
+    bulkShare: 0.38,
+  },
+  {
+    id: 'port_vic_portland_wind_install',
+    category: 'port',
+    name: 'Portland Wind Install Terminal',
+    description: 'Victorian offshore wind tow staging port.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'WA'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade'],
+    tags: ['wind_tow_install', 'nacelle_lift', 'offshore_staging'],
+    berthCount: 2,
+    maxDraftMetres: 11.5,
+    teuCapacityPerYear: 95_000,
+    automationLevel: 1,
+    bulkShare: 0.32,
+  },
+  {
+    id: 'port_qld_brisbane_battery_recycle',
+    category: 'port',
+    name: 'Brisbane Battery Recycle Wharf',
+    description: 'QLD EV battery recycling import staging.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['ev_battery_recycle', 'black_mass_logistics', 'circular_battery'],
+    berthCount: 2,
+    maxDraftMetres: 12.0,
+    teuCapacityPerYear: 200_000,
+    automationLevel: 1,
+    bulkShare: 0.18,
+  },
+];
+
+export const ROUND27_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_nsw_silverwater_battery_yard',
+    category: 'logistics',
+    name: 'Silverwater Battery Recycle Yard',
+    description: 'NSW circular EV black-mass consolidation.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['freight'],
+    tags: ['ev_battery_recycle', 'black_mass_logistics', 'circular_battery'],
+    warehouseSqm: 70_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 54,
+  },
+  {
+    id: 'log_qld_yatala_battery_hub',
+    category: 'logistics',
+    name: 'Yatala Battery Recycle Hub',
+    description: 'Queensland EV battery circular logistics.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['freight'],
+    tags: ['ev_battery_recycle', 'black_mass_logistics', 'circular_battery'],
+    warehouseSqm: 62_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 59,
+  },
+  {
+    id: 'log_nsw_redfern_courier_microhub',
+    category: 'logistics',
+    name: 'Redfern Courier Microhub',
+    description: 'Sydney same-day urban microhub and e-cargo staging.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['freight', 'mobility'],
+    tags: ['courier_microhub', 'same_day_urban', 'e_cargo_bike'],
+    warehouseSqm: 38_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 82,
+  },
+];
+
+export const SCALE_WAVE_ROUND27_ASSETS = [
+  ...ROUND27_ROADS,
+  ...ROUND27_RAIL,
+  ...ROUND27_PORTS,
+  ...ROUND27_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -10258,6 +10602,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND24_ASSETS,
     ...SCALE_WAVE_ROUND25_ASSETS,
     ...SCALE_WAVE_ROUND26_ASSETS,
+    ...SCALE_WAVE_ROUND27_ASSETS,
   ];
 }
 
@@ -11709,6 +12054,64 @@ export function greenSteelExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.04 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.046 + policyBoost, 0.93, 1.11);
+}
+
+
+// --- source: network/offshore-wind-tow-install-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type OffshoreWindTowInstallPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 offshore wind tow-and-install staging throughput by region. */
+export function computeOffshoreWindTowInstallByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) => t === 'wind_tow_install' || t === 'nacelle_lift' || t === 'offshore_staging',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.4 + asset.bulkShare * 3.8;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 86_000 + asset.intermodalLinks.length * 0.84;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 540;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 12_500_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalOffshoreWindTowInstallIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.47 + max * 0.53, 5, 75) * 10) / 10;
+}
+
+export function offshoreWindTowInstallProductivityMultiplier(
+  index: number,
+  policy: OffshoreWindTowInstallPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'deploy' ? 0.041 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.045 + policyBoost, 0.93, 1.1);
 }
 
 
@@ -13449,6 +13852,93 @@ export function indigenousCommunityAirliftProductivityMultiplier(
 ): number {
   const bias = policy === 'expand' ? 1.022 : 1;
   return (1 + (share - 0.05) * 0.031) * bias;
+}
+
+
+// --- source: operations/ev-battery-recycling-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type EvBatteryRecyclingLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 EV battery recycling and black-mass logistics readiness by region. */
+export function computeEvBatteryRecyclingLogisticsByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 4])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'ev_battery_recycle' || t === 'black_mass_logistics' || t === 'circular_battery',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 76_000 + asset.intermodalLinks.length * 0.7;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 460;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 13_000_000;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.2 + asset.teuCapacityPerYear / 350_000;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.036 - stress * 0.027), 4, 81) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalEvBatteryRecyclingLogisticsIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 5, 77) * 10) / 10;
+}
+
+export function computeEvBatteryRecyclingLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: EvBatteryRecyclingLogisticsPolicy = 'baseline',
+): number {
+  let recycleUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('ev_battery_recycle') || asset.tags.includes('circular_battery')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 72_000;
+        recycleUnits += asset.warehouseSqm / 72_000 * 0.65;
+      }
+      if (asset.category === 'road') {
+        totalUnits += asset.laneKilometres / 380;
+        recycleUnits += asset.laneKilometres / 380 * 0.54;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.034;
+  const policyBoost = policy === 'accelerate' ? 0.031 : 0;
+  return Math.round(clamp(recycleUnits / totalUnits + policyBoost, 0.033, 0.28) * 1000) / 1000;
+}
+
+export function evBatteryRecyclingLogisticsProductivityMultiplier(
+  share: number,
+  policy: EvBatteryRecyclingLogisticsPolicy,
+): number {
+  const bias = policy === 'accelerate' ? 1.023 : 1;
+  return (1 + (share - 0.051) * 0.031) * bias;
 }
 
 
@@ -15426,6 +15916,92 @@ export function nationalPortBerthSlotOptimizerThroughputIndex(
 }
 
 
+// --- source: productivity/urban-courier-microhub-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type UrbanCourierMicrohubPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of urban last-mile freight via courier microhubs. */
+export function computeUrbanCourierMicrohubShare(
+  operationalAssets: TransportAsset[],
+  policy: UrbanCourierMicrohubPolicy = 'baseline',
+): number {
+  let microhubUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) => t === 'courier_microhub' || t === 'same_day_urban' || t === 'e_cargo_bike',
+      )
+    ) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 55_000 + asset.lastMileCoveragePct / 100;
+        microhubUnits += (asset.warehouseSqm / 55_000) * 0.62 + (asset.lastMileCoveragePct / 100) * 0.48;
+      }
+      if (asset.category === 'road' && asset.tags.includes('e_cargo_bike')) {
+        totalUnits += asset.laneKilometres / 320;
+        microhubUnits += asset.laneKilometres / 320 * 0.56;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.036;
+  const policyBoost = policy === 'expand' ? 0.033 : 0;
+  return Math.round(clamp(microhubUnits / totalUnits + policyBoost, 0.035, 0.33) * 1000) / 1000;
+}
+
+export function urbanCourierMicrohubProductivityMultiplier(
+  share: number,
+  policy: UrbanCourierMicrohubPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.022 : 1;
+  return (1 + (share - 0.058) * 0.03) * bias;
+}
+
+export function computeUrbanCourierMicrohubThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'courier_microhub' || t === 'same_day_urban' || t === 'e_cargo_bike',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 65_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 380;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 15_000_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalUrbanCourierMicrohubThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.51 + max * 0.49, 1.6, 50) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -15915,6 +16491,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalPortBerthSlotOptimizerThroughputIndex,
   portBerthSlotOptimizerProductivityMultiplier,
 } from './port-berth-slot-optimizer-index.ts';
+  computeOffshoreWindTowInstallByRegion,
+  nationalOffshoreWindTowInstallIndex,
+  offshoreWindTowInstallProductivityMultiplier,
+} from '../network/offshore-wind-tow-install-index.ts';
+  computeEvBatteryRecyclingLogisticsByRegion,
+  computeEvBatteryRecyclingLogisticsShare,
+  evBatteryRecyclingLogisticsProductivityMultiplier,
+  nationalEvBatteryRecyclingLogisticsIndex,
+} from '../operations/ev-battery-recycling-logistics-index.ts';
+  computeUrbanCourierMicrohubShare,
+  computeUrbanCourierMicrohubThroughputByRegion,
+  nationalUrbanCourierMicrohubThroughputIndex,
+  urbanCourierMicrohubProductivityMultiplier,
+} from './urban-courier-microhub-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -16841,6 +17431,34 @@ export function computeTransportInfrastructureState(
     portBerthSlotOptimizerShare,
     options?.portBerthSlotOptimizerPolicy ?? 'baseline',
   );
+  const offshoreWindTowInstallByRegion = computeOffshoreWindTowInstallByRegion(ops);
+  const nationalWindTow = nationalOffshoreWindTowInstallIndex(offshoreWindTowInstallByRegion);
+  const windTowMult = offshoreWindTowInstallProductivityMultiplier(
+    nationalWindTow,
+    options?.offshoreWindTowInstallPolicy ?? 'baseline',
+  );
+  const evBatteryRecyclingLogisticsByRegion = computeEvBatteryRecyclingLogisticsByRegion(ops, networkStress);
+  const nationalEvBatteryRecycle = nationalEvBatteryRecyclingLogisticsIndex(evBatteryRecyclingLogisticsByRegion);
+  const evBatteryRecyclingLogisticsShare = computeEvBatteryRecyclingLogisticsShare(
+    ops,
+    options?.evBatteryRecyclingLogisticsPolicy ?? 'baseline',
+  );
+  const evBatteryMult = evBatteryRecyclingLogisticsProductivityMultiplier(
+    evBatteryRecyclingLogisticsShare,
+    options?.evBatteryRecyclingLogisticsPolicy ?? 'baseline',
+  );
+  const urbanCourierMicrohubThroughputByRegion = computeUrbanCourierMicrohubThroughputByRegion(ops);
+  const nationalUrbanCourierMicrohub = nationalUrbanCourierMicrohubThroughputIndex(
+    urbanCourierMicrohubThroughputByRegion,
+  );
+  const urbanCourierMicrohubShare = computeUrbanCourierMicrohubShare(
+    ops,
+    options?.urbanCourierMicrohubPolicy ?? 'baseline',
+  );
+  const courierMicrohubMult = urbanCourierMicrohubProductivityMultiplier(
+    urbanCourierMicrohubShare,
+    options?.urbanCourierMicrohubPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -16876,6 +17494,9 @@ export function computeTransportInfrastructureState(
     const greenSteelBoost = (greenSteelExportByRegion[code] - 5) * 0.0042;
     const indigenousAirliftBoost = (indigenousCommunityAirliftByRegion[code] - 5) * 0.0036;
     const berthSlotBoost = (portBerthSlotOptimizerThroughputByRegion[code] - 2) * 0.0034;
+    const windTowBoost = (offshoreWindTowInstallByRegion[code] - 5) * 0.0041;
+    const evBatteryBoost = (evBatteryRecyclingLogisticsByRegion[code] - 5) * 0.0037;
+    const courierMicrohubBoost = (urbanCourierMicrohubThroughputByRegion[code] - 1.6) * 0.0033;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -16910,7 +17531,10 @@ export function computeTransportInfrastructureState(
         doubleStackBoost +
         greenSteelBoost +
         indigenousAirliftBoost +
-        berthSlotBoost) *
+        berthSlotBoost +
+        windTowBoost +
+        evBatteryBoost +
+        courierMicrohubBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -16943,7 +17567,10 @@ export function computeTransportInfrastructureState(
       doubleStackMult *
       greenSteelMult *
       indigenousAirliftMult *
-      berthSlotMult;
+      berthSlotMult *
+      windTowMult *
+      evBatteryMult *
+      courierMicrohubMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -16999,7 +17626,10 @@ export function computeTransportInfrastructureState(
     nationalRailDoubleStack * 0.004 +
     nationalGreenSteel * 0.004 +
     nationalIndigenousAirlift * 0.004 +
-    nationalPortBerthSlot * 0.004;
+    nationalPortBerthSlot * 0.004 +
+    nationalWindTow * 0.004 +
+    nationalEvBatteryRecycle * 0.004 +
+    nationalUrbanCourierMicrohub * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -17014,7 +17644,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/27',
+    schemaVersion: 'agent12/28',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -17196,6 +17826,14 @@ export function computeTransportInfrastructureState(
     portBerthSlotOptimizerShare,
     nationalPortBerthSlotOptimizerThroughputIndex: nationalPortBerthSlot,
     portBerthSlotOptimizerThroughputByRegion,
+    nationalOffshoreWindTowInstallIndex: nationalWindTow,
+    offshoreWindTowInstallByRegion,
+    evBatteryRecyclingLogisticsShare,
+    nationalEvBatteryRecyclingLogisticsIndex: nationalEvBatteryRecycle,
+    evBatteryRecyclingLogisticsByRegion,
+    urbanCourierMicrohubShare,
+    nationalUrbanCourierMicrohubThroughputIndex: nationalUrbanCourierMicrohub,
+    urbanCourierMicrohubThroughputByRegion,
     computeMs,
   };
 }
@@ -17278,7 +17916,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/27' &&
+      infra.schemaVersion === 'agent12/28' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -17368,8 +18006,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalGreenSteelExportIndex >= 5 &&
       infra.nationalIndigenousCommunityAirliftIndex >= 5 &&
       infra.portBerthSlotOptimizerShare >= 0.03 &&
-      infra.nationalPortBerthSlotOptimizerThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} steel=${infra.nationalGreenSteelExportIndex.toFixed(1)} airlift=${infra.nationalIndigenousCommunityAirliftIndex.toFixed(1)} berth=${infra.nationalPortBerthSlotOptimizerThroughputIndex.toFixed(1)}`,
+      infra.nationalPortBerthSlotOptimizerThroughputIndex >= 2 &&
+      infra.nationalOffshoreWindTowInstallIndex >= 5 &&
+      infra.nationalEvBatteryRecyclingLogisticsIndex >= 5 &&
+      infra.urbanCourierMicrohubShare >= 0.03 &&
+      infra.nationalUrbanCourierMicrohubThroughputIndex >= 1.6,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} tow=${infra.nationalOffshoreWindTowInstallIndex.toFixed(1)} recycle=${infra.nationalEvBatteryRecyclingLogisticsIndex.toFixed(1)} courier=${infra.nationalUrbanCourierMicrohubThroughputIndex.toFixed(1)}`,
   });
 
   return results;

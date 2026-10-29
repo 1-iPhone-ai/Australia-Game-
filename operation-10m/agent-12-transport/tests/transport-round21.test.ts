@@ -37,13 +37,13 @@ describe('Agent 12 round 21 catalog', () => {
 });
 
 describe('Agent 12 round 21 systems', () => {
-  it('returns agent12/27 with floating wind, medicine airlift, freight drone', () => {
+  it('returns agent12/28 with floating wind, medicine airlift, freight drone', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(180), {
       floatingOffshoreWindStagingPolicy: 'deploy',
       criticalMedicineAirliftPolicy: 'surge',
       regionalFreightDronePolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/27');
+    assert.equal(state.schemaVersion, 'agent12/28');
     assert.ok(state.nationalFloatingOffshoreWindStagingIndex >= 6);
     assert.ok(state.nationalCriticalMedicineAirliftIndex >= 8);
     assert.ok(state.regionalFreightDroneShare >= 0.03);

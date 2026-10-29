@@ -36,13 +36,13 @@ describe('Agent 12 round 16 catalog', () => {
 });
 
 describe('Agent 12 round 16 systems', () => {
-  it('returns agent12/27 with offshore wind, battery supply, cruise turnaround', () => {
+  it('returns agent12/28 with offshore wind, battery supply, cruise turnaround', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(130), {
       offshoreWindLogisticsPolicy: 'deploy',
       batterySupplyChainPolicy: 'accelerate',
       cruiseTurnaroundPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/27');
+    assert.equal(state.schemaVersion, 'agent12/28');
     assert.ok(state.nationalOffshoreWindLogisticsIndex >= 6);
     assert.ok(state.nationalBatterySupplyChainIndex >= 18);
     assert.ok(state.cruiseTurnaroundShare >= 0.04);

@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 27
+
+- Schema **`agent12/28`**: offshore wind tow install throughput, EV battery recycling logistics readiness, urban courier microhub share (`offshoreWindTowInstallPolicy`, `evBatteryRecyclingLogisticsPolicy`, `urbanCourierMicrohubPolicy`)
+- Catalog: **380** assets, **95** corridors, **153** scenarios
+- Systems: `network/offshore-wind-tow-install-index.ts`, `operations/ev-battery-recycling-logistics-index.ts`, `productivity/urban-courier-microhub-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 26
 
 - Schema **`agent12/27`**: green steel export throughput, indigenous community airlift readiness, port berth slot optimizer share (`greenSteelExportPolicy`, `indigenousCommunityAirliftPolicy`, `portBerthSlotOptimizerPolicy`)

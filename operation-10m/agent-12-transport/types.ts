@@ -309,8 +309,14 @@ export type IndigenousCommunityAirliftPolicy = 'baseline' | 'expand';
 
 export type PortBerthSlotOptimizerPolicy = 'baseline' | 'deploy';
 
+export type OffshoreWindTowInstallPolicy = 'baseline' | 'deploy';
+
+export type EvBatteryRecyclingLogisticsPolicy = 'baseline' | 'accelerate';
+
+export type UrbanCourierMicrohubPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/27';
+  schemaVersion: 'agent12/28';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -492,6 +498,14 @@ export interface TransportInfrastructureState {
   portBerthSlotOptimizerShare: number;
   nationalPortBerthSlotOptimizerThroughputIndex: number;
   portBerthSlotOptimizerThroughputByRegion: Record<AuRegionCode, number>;
+  nationalOffshoreWindTowInstallIndex: number;
+  offshoreWindTowInstallByRegion: Record<AuRegionCode, number>;
+  evBatteryRecyclingLogisticsShare: number;
+  nationalEvBatteryRecyclingLogisticsIndex: number;
+  evBatteryRecyclingLogisticsByRegion: Record<AuRegionCode, number>;
+  urbanCourierMicrohubShare: number;
+  nationalUrbanCourierMicrohubThroughputIndex: number;
+  urbanCourierMicrohubThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -563,6 +577,9 @@ export interface TransportInfrastructureOptions {
   greenSteelExportPolicy?: GreenSteelExportPolicy;
   indigenousCommunityAirliftPolicy?: IndigenousCommunityAirliftPolicy;
   portBerthSlotOptimizerPolicy?: PortBerthSlotOptimizerPolicy;
+  offshoreWindTowInstallPolicy?: OffshoreWindTowInstallPolicy;
+  evBatteryRecyclingLogisticsPolicy?: EvBatteryRecyclingLogisticsPolicy;
+  urbanCourierMicrohubPolicy?: UrbanCourierMicrohubPolicy;
 }
 
 export interface V94ProjectSnapshot {

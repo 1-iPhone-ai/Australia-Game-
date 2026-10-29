@@ -397,6 +397,23 @@ import {
   nationalPortBerthSlotOptimizerThroughputIndex,
   portBerthSlotOptimizerProductivityMultiplier,
 } from './port-berth-slot-optimizer-index.ts';
+import {
+  computeOffshoreWindTowInstallByRegion,
+  nationalOffshoreWindTowInstallIndex,
+  offshoreWindTowInstallProductivityMultiplier,
+} from '../network/offshore-wind-tow-install-index.ts';
+import {
+  computeEvBatteryRecyclingLogisticsByRegion,
+  computeEvBatteryRecyclingLogisticsShare,
+  evBatteryRecyclingLogisticsProductivityMultiplier,
+  nationalEvBatteryRecyclingLogisticsIndex,
+} from '../operations/ev-battery-recycling-logistics-index.ts';
+import {
+  computeUrbanCourierMicrohubShare,
+  computeUrbanCourierMicrohubThroughputByRegion,
+  nationalUrbanCourierMicrohubThroughputIndex,
+  urbanCourierMicrohubProductivityMultiplier,
+} from './urban-courier-microhub-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1324,6 +1341,34 @@ export function computeTransportInfrastructureState(
     portBerthSlotOptimizerShare,
     options?.portBerthSlotOptimizerPolicy ?? 'baseline',
   );
+  const offshoreWindTowInstallByRegion = computeOffshoreWindTowInstallByRegion(ops);
+  const nationalWindTow = nationalOffshoreWindTowInstallIndex(offshoreWindTowInstallByRegion);
+  const windTowMult = offshoreWindTowInstallProductivityMultiplier(
+    nationalWindTow,
+    options?.offshoreWindTowInstallPolicy ?? 'baseline',
+  );
+  const evBatteryRecyclingLogisticsByRegion = computeEvBatteryRecyclingLogisticsByRegion(ops, networkStress);
+  const nationalEvBatteryRecycle = nationalEvBatteryRecyclingLogisticsIndex(evBatteryRecyclingLogisticsByRegion);
+  const evBatteryRecyclingLogisticsShare = computeEvBatteryRecyclingLogisticsShare(
+    ops,
+    options?.evBatteryRecyclingLogisticsPolicy ?? 'baseline',
+  );
+  const evBatteryMult = evBatteryRecyclingLogisticsProductivityMultiplier(
+    evBatteryRecyclingLogisticsShare,
+    options?.evBatteryRecyclingLogisticsPolicy ?? 'baseline',
+  );
+  const urbanCourierMicrohubThroughputByRegion = computeUrbanCourierMicrohubThroughputByRegion(ops);
+  const nationalUrbanCourierMicrohub = nationalUrbanCourierMicrohubThroughputIndex(
+    urbanCourierMicrohubThroughputByRegion,
+  );
+  const urbanCourierMicrohubShare = computeUrbanCourierMicrohubShare(
+    ops,
+    options?.urbanCourierMicrohubPolicy ?? 'baseline',
+  );
+  const courierMicrohubMult = urbanCourierMicrohubProductivityMultiplier(
+    urbanCourierMicrohubShare,
+    options?.urbanCourierMicrohubPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -1359,6 +1404,9 @@ export function computeTransportInfrastructureState(
     const greenSteelBoost = (greenSteelExportByRegion[code] - 5) * 0.0042;
     const indigenousAirliftBoost = (indigenousCommunityAirliftByRegion[code] - 5) * 0.0036;
     const berthSlotBoost = (portBerthSlotOptimizerThroughputByRegion[code] - 2) * 0.0034;
+    const windTowBoost = (offshoreWindTowInstallByRegion[code] - 5) * 0.0041;
+    const evBatteryBoost = (evBatteryRecyclingLogisticsByRegion[code] - 5) * 0.0037;
+    const courierMicrohubBoost = (urbanCourierMicrohubThroughputByRegion[code] - 1.6) * 0.0033;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -1393,7 +1441,10 @@ export function computeTransportInfrastructureState(
         doubleStackBoost +
         greenSteelBoost +
         indigenousAirliftBoost +
-        berthSlotBoost) *
+        berthSlotBoost +
+        windTowBoost +
+        evBatteryBoost +
+        courierMicrohubBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -1426,7 +1477,10 @@ export function computeTransportInfrastructureState(
       doubleStackMult *
       greenSteelMult *
       indigenousAirliftMult *
-      berthSlotMult;
+      berthSlotMult *
+      windTowMult *
+      evBatteryMult *
+      courierMicrohubMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -1482,7 +1536,10 @@ export function computeTransportInfrastructureState(
     nationalRailDoubleStack * 0.004 +
     nationalGreenSteel * 0.004 +
     nationalIndigenousAirlift * 0.004 +
-    nationalPortBerthSlot * 0.004;
+    nationalPortBerthSlot * 0.004 +
+    nationalWindTow * 0.004 +
+    nationalEvBatteryRecycle * 0.004 +
+    nationalUrbanCourierMicrohub * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -1497,7 +1554,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/27',
+    schemaVersion: 'agent12/28',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -1679,6 +1736,14 @@ export function computeTransportInfrastructureState(
     portBerthSlotOptimizerShare,
     nationalPortBerthSlotOptimizerThroughputIndex: nationalPortBerthSlot,
     portBerthSlotOptimizerThroughputByRegion,
+    nationalOffshoreWindTowInstallIndex: nationalWindTow,
+    offshoreWindTowInstallByRegion,
+    evBatteryRecyclingLogisticsShare,
+    nationalEvBatteryRecyclingLogisticsIndex: nationalEvBatteryRecycle,
+    evBatteryRecyclingLogisticsByRegion,
+    urbanCourierMicrohubShare,
+    nationalUrbanCourierMicrohubThroughputIndex: nationalUrbanCourierMicrohub,
+    urbanCourierMicrohubThroughputByRegion,
     computeMs,
   };
 }

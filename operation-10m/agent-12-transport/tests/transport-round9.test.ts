@@ -35,13 +35,13 @@ describe('Agent 12 round 9 catalog', () => {
 });
 
 describe('Agent 12 round 9 systems', () => {
-  it('returns agent12/27 with coastal shipping, biosecurity, and autonomous freight', () => {
+  it('returns agent12/28 with coastal shipping, biosecurity, and autonomous freight', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(60), {
       coastalShippingPolicy: 'short_sea_boost',
       biosecurityStreamlinePolicy: 'preclear',
       autonomousFreightPolicy: 'deploy',
     });
-    assert.equal(state.schemaVersion, 'agent12/27');
+    assert.equal(state.schemaVersion, 'agent12/28');
     assert.ok(state.nationalCoastalShippingThroughputIndex >= 10);
     assert.ok(state.nationalBiosecurityClearanceIndex >= 38);
     assert.ok(state.autonomousFreightShare >= 0.05);

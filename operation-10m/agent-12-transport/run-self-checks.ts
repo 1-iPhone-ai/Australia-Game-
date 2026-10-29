@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/27' &&
+      infra.schemaVersion === 'agent12/28' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -158,8 +158,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalGreenSteelExportIndex >= 5 &&
       infra.nationalIndigenousCommunityAirliftIndex >= 5 &&
       infra.portBerthSlotOptimizerShare >= 0.03 &&
-      infra.nationalPortBerthSlotOptimizerThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} steel=${infra.nationalGreenSteelExportIndex.toFixed(1)} airlift=${infra.nationalIndigenousCommunityAirliftIndex.toFixed(1)} berth=${infra.nationalPortBerthSlotOptimizerThroughputIndex.toFixed(1)}`,
+      infra.nationalPortBerthSlotOptimizerThroughputIndex >= 2 &&
+      infra.nationalOffshoreWindTowInstallIndex >= 5 &&
+      infra.nationalEvBatteryRecyclingLogisticsIndex >= 5 &&
+      infra.urbanCourierMicrohubShare >= 0.03 &&
+      infra.nationalUrbanCourierMicrohubThroughputIndex >= 1.6,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} tow=${infra.nationalOffshoreWindTowInstallIndex.toFixed(1)} recycle=${infra.nationalEvBatteryRecyclingLogisticsIndex.toFixed(1)} courier=${infra.nationalUrbanCourierMicrohubThroughputIndex.toFixed(1)}`,
   });
 
   return results;

@@ -37,13 +37,13 @@ describe('Agent 12 round 23 catalog', () => {
 });
 
 describe('Agent 12 round 23 systems', () => {
-  it('returns agent12/27 with auto haul, GBR biosecurity, night freight', () => {
+  it('returns agent12/28 with auto haul, GBR biosecurity, night freight', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(200), {
       autonomousHeavyHaulPolicy: 'deploy',
       gbrBiosecurityLogisticsPolicy: 'harden',
       nightUrbanFreightWindowPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/27');
+    assert.equal(state.schemaVersion, 'agent12/28');
     assert.ok(state.nationalAutonomousHeavyHaulIndex >= 6);
     assert.ok(state.nationalGbrBiosecurityLogisticsIndex >= 8);
     assert.ok(state.nightUrbanFreightWindowShare >= 0.03);
