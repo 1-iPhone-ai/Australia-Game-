@@ -23,6 +23,12 @@ National **budget envelopes**, **revenue** (tax instruments + ledger), **soverei
 | Fiscal transparency | `modules/fiscal-transparency/` | Disclosure tier index for budget papers and open data |
 | Infrastructure financing | `modules/infrastructure-financing/` | Pay-go vs debt capital stacks (with self-tests) |
 
+### Scale wave round 8
+
+- **supplementary-estimates/** — MYEFO / Additional Estimates revision ledger, net delta tolerance
+- **spending-offsets/** — new-measure offset portfolio, coverage floor vs efficiency dividends
+- **consolidated-fiscal/** — CF25–CF28 supplementary, offsets, reconciliation, warrant coherence; `layerCount` **26**
+
 ### Scale wave round 7
 
 - **cash-management/** — TGA operating/capital slices, drawdown limits, runway bands

@@ -15,6 +15,9 @@ import { buildStatutoryBalancesReport } from '../statutory-balances/compute';
 import { buildCostRecoveryStatement } from '../cost-recovery-pricing/compute';
 import { buildCashManagementReport } from '../cash-management/compute';
 import { buildAppropriationWarrantLedger } from '../appropriation-warrants/compute';
+import { buildSupplementaryEstimatesReport } from '../supplementary-estimates/compute';
+import { buildSpendingOffsetsReport } from '../spending-offsets/compute';
+import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
 import { assessFiscalResilience } from '../fiscal-resilience/compute';
@@ -68,6 +71,8 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
   const costRecovery = buildCostRecoveryStatement(turn, v1012);
   const cashMgmt = buildCashManagementReport(turn, v1012);
   const warrantLedger = buildAppropriationWarrantLedger(turn, v1012);
+  const supplementary = buildSupplementaryEstimatesReport(turn, v1012);
+  const spendingOffsets = buildSpendingOffsetsReport(turn, v1012);
   const debtRollover = resolveDebtRollover({
     turn,
     v1012,
@@ -100,6 +105,15 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     v1012,
     state.budget
   );
+
+  const fiscalReconciliation = runFiscalReconciliation({
+    turn,
+    v1012,
+    envelope: state.budget,
+    revenueLedger: ledger,
+    infraSummary,
+    actorCashProbe: 0
+  });
 
   checks.push({
     id: 'CF01',
@@ -272,12 +286,43 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `risk=${warrantLedger.aggregateLapseRisk}, remaining=${warrantLedger.aggregateRemaining}`
   });
 
+  checks.push({
+    id: 'CF25',
+    label: 'Supplementary estimates net revision within tolerance',
+    passed: supplementary.withinRevisionTolerance,
+    detail: `net=${supplementary.netRevisionPoints}, up=${supplementary.aggregateUpwardRevision}`
+  });
+
+  checks.push({
+    id: 'CF26',
+    label: 'Spending offset portfolio meets coverage floor',
+    passed: spendingOffsets.withinPortfolioTarget,
+    detail: `coverage=${spendingOffsets.portfolioCoverageRatio}, new=${spendingOffsets.aggregateNewSpending}`
+  });
+
+  checks.push({
+    id: 'CF27',
+    label: 'Cross-layer fiscal reconciliation passes',
+    passed: fiscalReconciliation.allPassed || v1012.pressure === 'critical',
+    detail: `checks=${fiscalReconciliation.checks.filter(c => c.passed).length}/${fiscalReconciliation.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF28',
+    label: 'Supplementary uplift coherent with warrant headroom',
+    passed:
+      supplementary.netRevisionPoints <= warrantLedger.aggregateRemaining * 0.85 + 4 ||
+      supplementary.netRevisionPoints <= 0 ||
+      v1012.pressure === 'critical',
+    detail: `revision=${supplementary.netRevisionPoints}, warrantRemaining=${warrantLedger.aggregateRemaining}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 22
+    layerCount: 26
   };
 }

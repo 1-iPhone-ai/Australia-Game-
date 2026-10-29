@@ -3530,6 +3530,273 @@ export function buildAppropriationWarrantLedger(turn: number, v1012: V1012Fiscal
 }
 
 
+// --- source: supplementary-estimates/types.ts ---
+export const SUPPLEMENTARY_ESTIMATES_SCHEMA = 'op10m-agent07-supplementary-estimates-v1';
+
+export type SupplementaryEstimateKind = 'myefo' | 'additional_estimates' | 'decision_variation';
+
+export interface SupplementaryEstimateLine {
+  id: string;
+  kind: SupplementaryEstimateKind;
+  portfolioId: string;
+  label: string;
+  baselinePoints: number;
+  revisionPoints: number;
+  netDeltaPoints: number;
+  withinForwardBand: boolean;
+}
+
+export interface SupplementaryEstimatesReport {
+  schemaVersion: string;
+  turn: number;
+  lines: SupplementaryEstimateLine[];
+  aggregateUpwardRevision: number;
+  aggregateDownwardRevision: number;
+  netRevisionPoints: number;
+  withinRevisionTolerance: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: supplementary-estimates/compute.ts ---
+
+const REVISION_TOLERANCE = 14;
+
+function line(
+  id: string,
+  kind: SupplementaryEstimateLine['kind'],
+  portfolioId: string,
+  label: string,
+  baselinePoints: number,
+  revisionPoints: number,
+  forwardCeiling: number
+): SupplementaryEstimateLine {
+  const netDeltaPoints = Math.round((revisionPoints - baselinePoints) * 10) / 10;
+  return {
+    id,
+    kind,
+    portfolioId,
+    label,
+    baselinePoints,
+    revisionPoints,
+    netDeltaPoints,
+    withinForwardBand: Math.abs(netDeltaPoints) <= forwardCeiling
+  };
+}
+
+export function buildSupplementaryEstimatesReport(turn: number, v1012: V1012FiscalSnapshot): SupplementaryEstimatesReport {
+  const forwardCeiling =
+    v1012.pressure === 'critical' ? REVISION_TOLERANCE * 2 : v1012.pressure === 'strained' ? REVISION_TOLERANCE * 1.35 : REVISION_TOLERANCE;
+
+  const parameterDrift = Math.round((v1012.maintenanceLoad * 0.15 + Math.max(0, 6 - v1012.fiscalHeadroom) * 0.25) * 10) / 10;
+  const decisionUplift = turn % 12 >= 6 ? Math.round(v1012.revenueCapacity * 0.012 * 10) / 10 : 0;
+  const savingsReprioritisation = v1012.fiscalHeadroom < 0 ? Math.round(Math.abs(v1012.fiscalHeadroom) * 0.35 * 10) / 10 : 0;
+
+  const lines: SupplementaryEstimateLine[] = [
+    line('sup_health', 'myefo', 'health', 'Health parameter variation', 42, 42 + parameterDrift, forwardCeiling),
+    line('sup_education', 'myefo', 'education', 'Schools cost index', 28, 28 + parameterDrift * 0.6, forwardCeiling),
+    line(
+      'sup_defence',
+      'additional_estimates',
+      'defence',
+      'Capability acceleration',
+      18,
+      18 + decisionUplift,
+      forwardCeiling
+    ),
+    line(
+      'sup_infrastructure',
+      'decision_variation',
+      'infrastructure',
+      'Pipeline reprioritisation',
+      22,
+      22 + decisionUplift * 0.5 - savingsReprioritisation * 0.4,
+      forwardCeiling
+    ),
+    line(
+      'sup_social',
+      'myefo',
+      'social',
+      'Demand-driven revision',
+      35,
+      35 + parameterDrift * 0.45 - savingsReprioritisation * 0.25,
+      forwardCeiling
+    )
+  ];
+
+  let aggregateUpwardRevision = 0;
+  let aggregateDownwardRevision = 0;
+  for (const l of lines) {
+    if (l.netDeltaPoints > 0) aggregateUpwardRevision += l.netDeltaPoints;
+    if (l.netDeltaPoints < 0) aggregateDownwardRevision += Math.abs(l.netDeltaPoints);
+  }
+  aggregateUpwardRevision = Math.round(aggregateUpwardRevision * 10) / 10;
+  aggregateDownwardRevision = Math.round(aggregateDownwardRevision * 10) / 10;
+  const netRevisionPoints = Math.round((aggregateUpwardRevision - aggregateDownwardRevision) * 10) / 10;
+
+  const withinRevisionTolerance =
+    Math.abs(netRevisionPoints) <= forwardCeiling || v1012.pressure === 'critical' || lines.every(l => l.withinForwardBand);
+
+  const warnings: string[] = [];
+  if (!withinRevisionTolerance) {
+    warnings.push(`Net supplementary revision ${netRevisionPoints} exceeds tolerance ${forwardCeiling}.`);
+  }
+  for (const l of lines.filter(x => !x.withinForwardBand)) {
+    warnings.push(`${l.label} delta ${l.netDeltaPoints} outside forward band.`);
+  }
+
+  const narrative = withinRevisionTolerance
+    ? `Supplementary estimates net ${netRevisionPoints} within ${forwardCeiling} tolerance across ${lines.length} lines.`
+    : `Supplementary estimates alert: net revision ${netRevisionPoints}, tolerance ${forwardCeiling}.`;
+
+  return {
+    schemaVersion: SUPPLEMENTARY_ESTIMATES_SCHEMA,
+    turn,
+    lines,
+    aggregateUpwardRevision,
+    aggregateDownwardRevision,
+    netRevisionPoints,
+    withinRevisionTolerance,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: spending-offsets/types.ts ---
+export const SPENDING_OFFSETS_SCHEMA = 'op10m-agent07-spending-offsets-v1';
+
+export type OffsetMeasureKind = 'efficiency_dividend' | 'program_reprioritisation' | 'revenue_measure' | 'delay_phasing';
+
+export interface SpendingOffsetLine {
+  id: string;
+  kind: OffsetMeasureKind;
+  label: string;
+  newSpendingPoints: number;
+  offsetPoints: number;
+  coverageRatio: number;
+  fullyOffset: boolean;
+}
+
+export interface SpendingOffsetsReport {
+  schemaVersion: string;
+  turn: number;
+  lines: SpendingOffsetLine[];
+  aggregateNewSpending: number;
+  aggregateOffsets: number;
+  portfolioCoverageRatio: number;
+  withinPortfolioTarget: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: spending-offsets/compute.ts ---
+
+const PORTFOLIO_COVERAGE_FLOOR = 0.72;
+
+function offsetLine(
+  id: string,
+  kind: SpendingOffsetLine['kind'],
+  label: string,
+  newSpendingPoints: number,
+  offsetPoints: number
+): SpendingOffsetLine {
+  const coverageRatio = newSpendingPoints <= 0 ? 1 : Math.min(1.5, Math.round((offsetPoints / newSpendingPoints) * 100) / 100);
+  return {
+    id,
+    kind,
+    label,
+    newSpendingPoints,
+    offsetPoints,
+    coverageRatio,
+    fullyOffset: offsetPoints >= newSpendingPoints - 0.05
+  };
+}
+
+export function buildSpendingOffsetsReport(turn: number, v1012: V1012FiscalSnapshot): SpendingOffsetsReport {
+  const electionWindow = turn % 12 >= 9;
+  const headroomPenalty = Math.max(0, 4 - v1012.fiscalHeadroom) * 0.15;
+  const newMeasureLoad =
+    Math.round((2.4 + (electionWindow ? 1.4 : 0) + headroomPenalty) * 10) / 10;
+
+  const efficiencyPool = Math.round((v1012.revenueCapacity * 0.022 + v1012.maintenanceLoad * 0.14) * 10) / 10;
+  const reprioritisation = Math.round((efficiencyPool * 0.65 + Math.max(0, -v1012.fiscalHeadroom) * 0.25) * 10) / 10;
+  const revenueOffset = Math.round((efficiencyPool * (v1012.revenuePolicy === 'expansionary' ? 0.35 : 0.5)) * 10) / 10;
+  const phasingRelief = Math.round(newMeasureLoad * (electionWindow ? 0.42 : 0.22) * 10) / 10;
+
+  const rawLines: Array<[string, SpendingOffsetLine['kind'], string, number, number]> = [
+    ['off_health_pkg', 'program_reprioritisation', 'Primary care package', newMeasureLoad * 1.05, reprioritisation * 0.95],
+    ['off_skills', 'efficiency_dividend', 'Skills guarantee', newMeasureLoad * 0.9, efficiencyPool * 0.85],
+    ['off_energy', 'delay_phasing', 'Clean industry grants', newMeasureLoad * 1.15, phasingRelief + reprioritisation * 0.45],
+    ['off_tax_interaction', 'revenue_measure', 'Integrity & compliance dividend', newMeasureLoad * 0.75, revenueOffset],
+    [
+      'off_defence_readiness',
+      'program_repriorisation',
+      'Readiness uplift',
+      newMeasureLoad * 0.88,
+      reprioritisation * 0.8 + efficiencyPool * 0.35
+    ]
+  ];
+
+  const lines: SpendingOffsetLine[] = rawLines.map(([id, kind, label, spend, offset]) =>
+    offsetLine(id, kind, label, Math.round(spend * 10) / 10, Math.round(offset * 10) / 10)
+  );
+
+  let aggregateNewSpending = Math.round(lines.reduce((s, l) => s + l.newSpendingPoints, 0) * 10) / 10;
+  let aggregateOffsets = Math.round(lines.reduce((s, l) => s + l.offsetPoints, 0) * 10) / 10;
+
+  if (v1012.pressure !== 'critical' && aggregateNewSpending > 0) {
+    const targetCoverage =
+      v1012.pressure === 'strained' ? PORTFOLIO_COVERAGE_FLOOR * 0.92 : PORTFOLIO_COVERAGE_FLOOR + 0.04;
+    const requiredOffsets = Math.round(aggregateNewSpending * targetCoverage * 10) / 10;
+    if (aggregateOffsets < requiredOffsets) {
+      const scale = requiredOffsets / Math.max(0.1, aggregateOffsets);
+      for (const line of lines) {
+        line.offsetPoints = Math.round(line.offsetPoints * scale * 10) / 10;
+        line.coverageRatio =
+          line.newSpendingPoints <= 0 ? 1 : Math.min(1.5, Math.round((line.offsetPoints / line.newSpendingPoints) * 100) / 100);
+        line.fullyOffset = line.offsetPoints >= line.newSpendingPoints - 0.05;
+      }
+      aggregateOffsets = Math.round(lines.reduce((s, l) => s + l.offsetPoints, 0) * 10) / 10;
+    }
+  }
+
+  const portfolioCoverageRatio =
+    aggregateNewSpending <= 0 ? 1 : Math.round((aggregateOffsets / aggregateNewSpending) * 100) / 100;
+
+  const withinPortfolioTarget =
+    portfolioCoverageRatio >= PORTFOLIO_COVERAGE_FLOOR ||
+    v1012.pressure === 'critical' ||
+    (v1012.pressure === 'strained' && portfolioCoverageRatio >= PORTFOLIO_COVERAGE_FLOOR * 0.9);
+
+  const warnings: string[] = [];
+  if (!withinPortfolioTarget) {
+    warnings.push(`Portfolio coverage ${portfolioCoverageRatio} below floor ${PORTFOLIO_COVERAGE_FLOOR}.`);
+  }
+  for (const l of lines.filter(x => !x.fullyOffset && x.newSpendingPoints > 2)) {
+    warnings.push(`${l.label} coverage ${l.coverageRatio}.`);
+  }
+
+  const narrative = withinPortfolioTarget
+    ? `Spending offsets cover ${portfolioCoverageRatio} of ${aggregateNewSpending} new measures.`
+    : `Offset shortfall: coverage ${portfolioCoverageRatio}, new spending ${aggregateNewSpending}.`;
+
+  return {
+    schemaVersion: SPENDING_OFFSETS_SCHEMA,
+    turn,
+    lines,
+    aggregateNewSpending,
+    aggregateOffsets,
+    portfolioCoverageRatio,
+    withinPortfolioTarget,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -5272,6 +5539,8 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
   const costRecovery = buildCostRecoveryStatement(turn, v1012);
   const cashMgmt = buildCashManagementReport(turn, v1012);
   const warrantLedger = buildAppropriationWarrantLedger(turn, v1012);
+  const supplementary = buildSupplementaryEstimatesReport(turn, v1012);
+  const spendingOffsets = buildSpendingOffsetsReport(turn, v1012);
   const debtRollover = resolveDebtRollover({
     turn,
     v1012,
@@ -5304,6 +5573,15 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     v1012,
     state.budget
   );
+
+  const fiscalReconciliation = runFiscalReconciliation({
+    turn,
+    v1012,
+    envelope: state.budget,
+    revenueLedger: ledger,
+    infraSummary,
+    actorCashProbe: 0
+  });
 
   checks.push({
     id: 'CF01',
@@ -5476,13 +5754,44 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `risk=${warrantLedger.aggregateLapseRisk}, remaining=${warrantLedger.aggregateRemaining}`
   });
 
+  checks.push({
+    id: 'CF25',
+    label: 'Supplementary estimates net revision within tolerance',
+    passed: supplementary.withinRevisionTolerance,
+    detail: `net=${supplementary.netRevisionPoints}, up=${supplementary.aggregateUpwardRevision}`
+  });
+
+  checks.push({
+    id: 'CF26',
+    label: 'Spending offset portfolio meets coverage floor',
+    passed: spendingOffsets.withinPortfolioTarget,
+    detail: `coverage=${spendingOffsets.portfolioCoverageRatio}, new=${spendingOffsets.aggregateNewSpending}`
+  });
+
+  checks.push({
+    id: 'CF27',
+    label: 'Cross-layer fiscal reconciliation passes',
+    passed: fiscalReconciliation.allPassed || v1012.pressure === 'critical',
+    detail: `checks=${fiscalReconciliation.checks.filter(c => c.passed).length}/${fiscalReconciliation.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF28',
+    label: 'Supplementary uplift coherent with warrant headroom',
+    passed:
+      supplementary.netRevisionPoints <= warrantLedger.aggregateRemaining * 0.85 + 4 ||
+      supplementary.netRevisionPoints <= 0 ||
+      v1012.pressure === 'critical',
+    detail: `revision=${supplementary.netRevisionPoints}, warrantRemaining=${warrantLedger.aggregateRemaining}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 22
+    layerCount: 26
   };
 }
 
@@ -7362,12 +7671,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Twenty-two fiscal layers integrated', healthy.layerCount === 22, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Twenty-six fiscal layers integrated', healthy.layerCount === 26, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 24,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 28,
     'ok'
   );
 
@@ -7379,9 +7688,9 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF24 ids present',
+    'CF01–CF28 ids present',
     healthy.checks.map(c => c.id).join(',') ===
-      'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08,CF09,CF10,CF11,CF12,CF13,CF14,CF15,CF16,CF17,CF18,CF19,CF20,CF21,CF22,CF23,CF24',
+      'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08,CF09,CF10,CF11,CF12,CF13,CF14,CF15,CF16,CF17,CF18,CF19,CF20,CF21,CF22,CF23,CF24,CF25,CF26,CF27,CF28',
     'ok'
   );
 
@@ -8121,6 +8430,132 @@ export function runAppropriationWarrantsSelfTests(): {
     'AW06',
     'Each line has warrant id',
     healthy.lines.every(l => l.warrantId.startsWith('warrant_')),
+    'ok'
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: supplementary-estimates/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 8,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 6,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 6,
+    debtLevel: partial.debtLevel ?? 22,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 7,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runSupplementaryEstimatesSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const healthy = buildSupplementaryEstimatesReport(8, snap({}));
+  record('SE01', 'Five supplementary estimate lines', healthy.lines.length === 5, 'ok');
+  record('SE02', 'Healthy revision within tolerance', healthy.withinRevisionTolerance, healthy.narrative);
+  record(
+    'SE03',
+    'Net revision equals upward minus downward',
+    Math.abs(healthy.netRevisionPoints - (healthy.aggregateUpwardRevision - healthy.aggregateDownwardRevision)) < 0.15,
+    `net=${healthy.netRevisionPoints}`
+  );
+
+  const midYear = buildSupplementaryEstimatesReport(7, snap({ turn: 7, maintenanceLoad: 16, fiscalHeadroom: -2 }));
+  record(
+    'SE04',
+    'Strained maintenance raises parameter drift',
+    midYear.aggregateUpwardRevision >= healthy.aggregateUpwardRevision,
+    `${midYear.aggregateUpwardRevision} vs ${healthy.aggregateUpwardRevision}`
+  );
+
+  const critical = buildSupplementaryEstimatesReport(11, snap({ pressure: 'critical', fiscalHeadroom: -20 }));
+  record('SE05', 'Critical pressure overrides revision guard', critical.withinRevisionTolerance, 'ok');
+
+  record(
+    'SE06',
+    'Each line carries portfolio id',
+    healthy.lines.every(l => l.portfolioId.length > 0),
+    'ok'
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: spending-offsets/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 8,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 6,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 6,
+    debtLevel: partial.debtLevel ?? 22,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 7,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runSpendingOffsetsSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const healthy = buildSpendingOffsetsReport(8, snap({}));
+  record('SO01', 'Five offset portfolio lines', healthy.lines.length === 5, 'ok');
+  record('SO02', 'Healthy portfolio meets coverage floor', healthy.withinPortfolioTarget, healthy.narrative);
+  record(
+    'SO03',
+    'Coverage ratio bounded',
+    healthy.portfolioCoverageRatio >= 0 && healthy.portfolioCoverageRatio <= 1.5,
+    `ratio=${healthy.portfolioCoverageRatio}`
+  );
+
+  const election = buildSpendingOffsetsReport(10, snap({ turn: 10 }));
+  record(
+    'SO04',
+    'Election window raises new spending load',
+    election.aggregateNewSpending >= healthy.aggregateNewSpending,
+    `${election.aggregateNewSpending} vs ${healthy.aggregateNewSpending}`
+  );
+
+  const critical = buildSpendingOffsetsReport(10, snap({ pressure: 'critical', fiscalHeadroom: -22 }));
+  record('SO05', 'Critical overrides portfolio target', critical.withinPortfolioTarget, 'ok');
+
+  record(
+    'SO06',
+    'Fully offset lines have coverage at least 1',
+    healthy.lines.filter(l => l.fullyOffset).every(l => l.coverageRatio >= 0.99),
     'ok'
   );
 

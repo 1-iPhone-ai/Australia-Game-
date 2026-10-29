@@ -23,6 +23,8 @@ import { runStatutoryBalancesSelfTests } from './modules/statutory-balances/self
 import { runCostRecoveryPricingSelfTests } from './modules/cost-recovery-pricing/self-tests';
 import { runCashManagementSelfTests } from './modules/cash-management/self-tests';
 import { runAppropriationWarrantsSelfTests } from './modules/appropriation-warrants/self-tests';
+import { runSupplementaryEstimatesSelfTests } from './modules/supplementary-estimates/self-tests';
+import { runSpendingOffsetsSelfTests } from './modules/spending-offsets/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -55,6 +57,8 @@ ok = runSuite('Statutory balances', runStatutoryBalancesSelfTests) && ok;
 ok = runSuite('Cost recovery pricing', runCostRecoveryPricingSelfTests) && ok;
 ok = runSuite('Treasury cash management', runCashManagementSelfTests) && ok;
 ok = runSuite('Appropriation warrants', runAppropriationWarrantsSelfTests) && ok;
+ok = runSuite('Supplementary estimates', runSupplementaryEstimatesSelfTests) && ok;
+ok = runSuite('Spending offsets', runSpendingOffsetsSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);
