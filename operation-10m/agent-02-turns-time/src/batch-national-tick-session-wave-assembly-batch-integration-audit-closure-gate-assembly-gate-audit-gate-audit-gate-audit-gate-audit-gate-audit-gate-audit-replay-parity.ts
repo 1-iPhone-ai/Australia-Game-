@@ -13,7 +13,7 @@ export interface BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosur
 }
 
 /**
- * Round 42 wave 42: deterministic replay — two audit-gate audit gate audit gate audit gate audit gate audits from the same snapshot.
+ * Round 44 wave 44: deterministic replay — two audit-gate audit gate audit gate audit gate audit gate audit gate audits from the same snapshot.
  */
 export function verifyBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditReplayParity(
   engine: TurnTimeEngine,
