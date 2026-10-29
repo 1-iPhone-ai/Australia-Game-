@@ -28,6 +28,7 @@ import {
   attachExonerationSessionToState,
   attachExpungementSessionToState,
   attachVacaturSessionToState,
+  attachRemandSessionToState,
   attachGauntletSessionToState,
   attachMarathonQueueToState,
   attachRelaySessionToState,

@@ -107,6 +107,11 @@ import {
   sanitizeVacaturSession,
 } from './save-format-vacatur.js';
 import {
+  getRemandScenarioAtCursor,
+  remandSessionSummary,
+  sanitizeRemandSession,
+} from './save-format-remand.js';
+import {
   getExonerationScenarioAtCursor,
   exonerationSessionSummary,
   sanitizeExonerationSession,
@@ -173,6 +178,7 @@ import type {
   O10mExonerationPhase,
   O10mExpungementPhase,
   O10mVacaturPhase,
+  O10mRemandPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -291,9 +297,31 @@ const emptyQueuePlan = {
   vacaturCursor: null as number | null,
   vacaturPhase: null as O10mVacaturPhase | null,
   vacaturMerit: null as number | null,
+  remandId: null as string | null,
+  remandCursor: null as number | null,
+  remandPhase: null as O10mRemandPhase | null,
+  remandWeight: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const remand = sanitizeRemandSession(state.remandSession);
+  const remandScenario = getRemandScenarioAtCursor(remand);
+  if (remand && remand.active && remandScenario) {
+    return {
+      kind: 'remand_step',
+      scenarioId: remandScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      remandId: remand.remandId,
+      remandCursor: remand.cursor,
+      remandPhase: remand.phaseTag,
+      remandWeight: remand.weightScore,
+      reason: `Remand "${remand.label}" ${remand.phaseTag} phase ${remand.cursor + 1}/${remand.scenarioIds.length} (weight ${remand.weightScore}).`,
+    };
+  }
+
   const vacatur = sanitizeVacaturSession(state.vacaturSession);
   const vacaturScenario = getVacaturScenarioAtCursor(vacatur);
   if (vacatur && vacatur.active && vacaturScenario) {
@@ -910,6 +938,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   exonerationActive: boolean;
   expungementActive: boolean;
   vacaturActive: boolean;
+  remandActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -946,6 +975,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const exoneration = exonerationSessionSummary(state);
   const expungement = expungementSessionSummary(state);
   const vacatur = vacaturSessionSummary(state);
+  const remand = remandSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -980,6 +1010,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     exonerationActive: exoneration.active,
     expungementActive: expungement.active,
     vacaturActive: vacatur.active,
+    remandActive: remand.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

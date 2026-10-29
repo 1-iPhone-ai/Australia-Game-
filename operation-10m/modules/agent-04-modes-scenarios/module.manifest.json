@@ -6,7 +6,7 @@
     "o10mModesProgress"
   ],
   "saveFormat": {
-    "schemaVersion": 33,
+    "schemaVersion": 34,
     "gameStateKey": "o10mModesProgress",
     "nestedFields": [
       "chainProgress",
@@ -49,10 +49,11 @@
       "acquittalSession",
       "exonerationSession",
       "expungementSession",
-      "vacaturSession"
+      "vacaturSession",
+      "remandSession"
     ]
   },
-  "contentSha256": "9f5b60755f9af75b7c45d2400fdcaabdc4a33399642661a0f2963f10236e6137",
+  "contentSha256": "7b129b28ee119d17c7e08437b5fcabd51da099bad510a05e459f322887aae37f",
   "chunkPath": "operation-10m/modules/agent-04-modes-scenarios/chunk.tsx",
   "regenerate": "cd operation-10m/agent-04-modes-scenarios && npm run bundle:agent-04-chunk"
 }

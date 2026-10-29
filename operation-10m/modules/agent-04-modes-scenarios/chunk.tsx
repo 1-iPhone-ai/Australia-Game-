@@ -389,6 +389,7 @@ export type O10mAcquittalPhase = 'brief' | 'review' | 'acquittal';
 export type O10mExonerationPhase = 'claim' | 'review' | 'exoneration';
 export type O10mExpungementPhase = 'filing' | 'review' | 'expungement';
 export type O10mVacaturPhase = 'petition' | 'review' | 'vacatur';
+export type O10mRemandPhase = 'order' | 'review' | 'remand';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -676,6 +677,17 @@ export interface O10mVacaturSession {
   phaseTag: O10mVacaturPhase;
 }
 
+/** Schema v34 — remand arc with weight accrual between phases. */
+export interface O10mRemandSession {
+  remandId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  weightScore: number;
+  phaseTag: O10mRemandPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -700,6 +712,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'remand_step'
     | 'vacatur_step'
     | 'expungement_step'
     | 'exoneration_step'
@@ -848,6 +861,10 @@ export interface O10mCampaignPlan {
   vacaturCursor: number | null;
   vacaturPhase: O10mVacaturPhase | null;
   vacaturMerit: number | null;
+  remandId: string | null;
+  remandCursor: number | null;
+  remandPhase: O10mRemandPhase | null;
+  remandWeight: number | null;
   reason: string;
 }
 
@@ -935,8 +952,10 @@ export interface O10mModesPersistedState {
   exonerationSession?: O10mExonerationSession | null;
   /** Schema v32 — active expungement arc (mutually exclusive with vacatur / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   expungementSession?: O10mExpungementSession | null;
-  /** Schema v33 — active vacatur arc (mutually exclusive with expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v33 — active vacatur arc (mutually exclusive with remand / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   vacaturSession?: O10mVacaturSession | null;
+  /** Schema v34 — active remand arc (mutually exclusive with vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  remandSession?: O10mRemandSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -4685,6 +4704,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Vacatur finales', 'Merit ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_remand_order_docket',
+    title: 'Remand Order Docket',
+    description: 'Open a remand arc with low-pressure weight pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100511,
+    startingMoney: 3500,
+    startingRegions: ['TAS', 'VIC'],
+    badgeId: 'badge_o10m_remand_order_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100511),
+      o10mRemandOrderDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_rod_obj_day',
+        label: 'Order Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Remand arcs', 'Weight pacing', 'Order phase'],
+  },
+  {
+    id: 'o10m_remand_review_chamber',
+    title: 'Remand Review Chamber',
+    description: 'Mid-remand review with accrued weight bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100512,
+    startingMoney: 4050,
+    startingRegions: ['NSW', 'WA'],
+    startingStanding: { NSW: 67, WA: 65 },
+    badgeId: 'badge_o10m_remand_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100512),
+      regionalStandingEnabled: true,
+      o10mRemandReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_rrc2_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 73',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 73,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Weight carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_remand_weight_finale',
+    title: 'Remand Weight Finale',
+    description: 'Finale remand stage — net worth gate with full weight bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100513,
+    startingMoney: 4500,
+    startingRegions: ['QLD', 'NT', 'SA'],
+    badgeId: 'badge_o10m_remand_weight_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100513),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mRemandWeightFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_rwf_obj_net',
+        label: 'Weight Net Worth',
+        description: 'Reach $20,000 net worth',
+        targetType: 'netWorth',
+        targetValue: 20000,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Remand finales', 'Weight ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -6289,6 +6405,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_remand_route',
+    title: 'Remand Route',
+    description:
+      'Three-phase remand arc with weight accrual between legs — round-34 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_remand_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_remand_order_docket',
+        title: 'Order Docket',
+        narrativeBridge: 'Enter order before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 440 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_remand_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 6, NSW: 5 },
+          forcedSettingsPatch: { o10mRemandMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_remand_weight_finale',
+        title: 'Weight Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainRemandRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -7115,7 +7265,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 33;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 34;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -7247,6 +7397,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
   };
 }
 
@@ -7299,6 +7450,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       exonerationSession: merged.exonerationSession ?? null,
       expungementSession: merged.expungementSession ?? null,
       vacaturSession: merged.vacaturSession ?? null,
+      remandSession: merged.remandSession ?? null,
     };
     return upgraded;
   }
@@ -7375,6 +7527,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     exonerationSession: sanitizeExonerationSession(o.exonerationSession),
     expungementSession: sanitizeExpungementSession(o.expungementSession),
     vacaturSession: sanitizeVacaturSession(o.vacaturSession),
+    remandSession: sanitizeRemandSession(o.remandSession),
   };
 }
 
@@ -7614,6 +7767,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Vacatur cursor out of range; clamp on next sanitize.');
   }
 
+  const remand = sanitizeRemandSession(state.remandSession);
+  if (state.remandSession && !remand) {
+    warnings.push('Remand session failed sanitization; planner will ignore it.');
+  } else if (remand && remand.cursor >= remand.scenarioIds.length) {
+    warnings.push('Remand cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -7750,6 +7910,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'exonerationSession',
   'expungementSession',
   'vacaturSession',
+  'remandSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -8281,6 +8442,7 @@ export function attachMarathonQueueToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -8398,6 +8560,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceRemandSessionAfterRun(next, run);
   next = advanceVacaturSessionAfterRun(next, run);
   next = advanceExpungementSessionAfterRun(next, run);
   next = advanceExonerationSessionAfterRun(next, run);
@@ -8580,6 +8743,7 @@ export function attachGauntletSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -8835,6 +8999,7 @@ export function attachRelaySessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -9050,6 +9215,7 @@ export function attachCircuitSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -9283,6 +9449,7 @@ export function attachExpeditionSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -9514,6 +9681,7 @@ export function attachOdysseySessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -9744,6 +9912,7 @@ export function attachPilgrimageSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -9975,6 +10144,7 @@ export function attachCaravanSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -10200,6 +10370,7 @@ export function attachVoyageSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -10425,6 +10596,7 @@ export function attachSiegeSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -10650,6 +10822,7 @@ export function attachConvoySessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -10875,6 +11048,7 @@ export function attachEscortSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -11109,6 +11283,7 @@ export function attachExtractionSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -11351,6 +11526,7 @@ export function attachSubjectSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -11593,6 +11769,7 @@ export function attachWitnessSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -11835,6 +12012,7 @@ export function attachTribunalSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -12077,6 +12255,7 @@ export function attachIndictmentSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -12319,6 +12498,7 @@ export function attachAppealSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,
@@ -12561,6 +12741,7 @@ export function attachClemencySessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     appealSession: null,
     indictmentSession: null,
     tribunalSession: null,
@@ -12803,6 +12984,7 @@ export function attachPardonSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     clemencySession: null,
     appealSession: null,
     indictmentSession: null,
@@ -13045,6 +13227,7 @@ export function attachAmnestySessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     pardonSession: null,
     clemencySession: null,
     appealSession: null,
@@ -13287,6 +13470,7 @@ export function attachReprieveSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     amnestySession: null,
     pardonSession: null,
     clemencySession: null,
@@ -13529,6 +13713,7 @@ export function attachParoleSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     reprieveSession: null,
     amnestySession: null,
     pardonSession: null,
@@ -13771,6 +13956,7 @@ export function attachProbationSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     paroleSession: null,
     reprieveSession: null,
     amnestySession: null,
@@ -14013,6 +14199,7 @@ export function attachCommutationSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     probationSession: null,
     paroleSession: null,
     reprieveSession: null,
@@ -14255,6 +14442,7 @@ export function attachAcquittalSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     commutationSession: null,
     probationSession: null,
     paroleSession: null,
@@ -14497,6 +14685,7 @@ export function attachExonerationSessionToState(
     exonerationSession: sanitized,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     acquittalSession: null,
     commutationSession: null,
     probationSession: null,
@@ -14739,6 +14928,7 @@ export function attachExpungementSessionToState(
     ...state,
     expungementSession: sanitized,
     vacaturSession: null,
+    remandSession: null,
     exonerationSession: null,
     acquittalSession: null,
     commutationSession: null,
@@ -14981,6 +15171,7 @@ export function attachVacaturSessionToState(
   return {
     ...state,
     vacaturSession: sanitized,
+    remandSession: null,
     expungementSession: null,
     exonerationSession: null,
     acquittalSession: null,
@@ -15105,6 +15296,250 @@ export function vacaturSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-remand.ts ---
+export const O10M_REMAND_SCENARIO_CAP = 6;
+export const O10M_REMAND_WEIGHT_SCORE_CAP = 1000;
+export const O10M_REMAND_WEIGHT_SCORE_MONEY_CAP = 1080;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mRemandPhase>(['order', 'review', 'remand']);
+
+export function unlockTokenForRemandId(remandId: string): string | null {
+  if (!remandId.startsWith('o10m_remand_')) return null;
+  return `o10m_unlock_${remandId.slice('o10m_remand_'.length)}`;
+}
+
+export function remandPhaseForCursor(cursor: number, scenarioCount: number): O10mRemandPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'remand';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'order';
+}
+
+export function remandWeightScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(130, Math.max(28, Math.floor(run.playerNetWorth / 142) + standingSlice));
+}
+
+export function sanitizeRemandSession(raw: unknown): O10mRemandSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const remandId =
+    typeof o.remandId === 'string' && o.remandId.startsWith('o10m_remand_') ? o.remandId : null;
+  if (!remandId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : remandId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_REMAND_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const weightScore = Math.min(
+    O10M_REMAND_WEIGHT_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.weightScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mRemandPhase)
+      ? (phaseRaw as O10mRemandPhase)
+      : remandPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    remandId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    weightScore,
+    phaseTag,
+  };
+}
+
+export function createRemandSession(params: {
+  remandId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mRemandSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.remandId.startsWith('o10m_remand_')) {
+    return { session: null, warnings: ['Remand ids must start with o10m_remand_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_REMAND_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Remand arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      remandId: params.remandId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      weightScore: 0,
+      phaseTag: remandPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachRemandSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mRemandSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeRemandSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    remandSession: sanitized,
+    vacaturSession: null,
+    expungementSession: null,
+    exonerationSession: null,
+    acquittalSession: null,
+    commutationSession: null,
+    probationSession: null,
+    paroleSession: null,
+    reprieveSession: null,
+    amnestySession: null,
+    pardonSession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearRemandSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, remandSession: null };
+}
+
+export function getRemandScenarioAtCursor(
+  session: O10mRemandSession | null | undefined,
+): string | null {
+  const remand = sanitizeRemandSession(session);
+  if (!remand || !remand.active) return null;
+  return remand.scenarioIds[remand.cursor] ?? null;
+}
+
+export function buildRemandScenarioStartOverrides(
+  session: O10mRemandSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const remand = sanitizeRemandSession(session);
+  if (!remand) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_REMAND_WEIGHT_SCORE_MONEY_CAP,
+    Math.floor(remand.weightScore * 0.87),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveRemandId: remand.remandId,
+      o10mActiveRemandStep: remand.cursor,
+      o10mActiveRemandPhase: remand.phaseTag,
+      o10mRemandWeightScore: remand.weightScore,
+    },
+  };
+}
+
+export function advanceRemandSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeRemandSession(state.remandSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const weightScore = Math.min(
+    O10M_REMAND_WEIGHT_SCORE_CAP,
+    session.weightScore + remandWeightScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      remandSession: {
+        ...session,
+        cursor,
+        weightScore,
+        phaseTag: remandPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForRemandId(session.remandId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    remandSession: { ...session, active: false, weightScore, phaseTag: 'remand' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function remandSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  weightScore: number;
+  phase: O10mRemandPhase | null;
+} {
+  const session = sanitizeRemandSession(state.remandSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    weightScore: session?.weightScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -15219,9 +15654,31 @@ const emptyQueuePlan = {
   vacaturCursor: null as number | null,
   vacaturPhase: null as O10mVacaturPhase | null,
   vacaturMerit: null as number | null,
+  remandId: null as string | null,
+  remandCursor: null as number | null,
+  remandPhase: null as O10mRemandPhase | null,
+  remandWeight: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const remand = sanitizeRemandSession(state.remandSession);
+  const remandScenario = getRemandScenarioAtCursor(remand);
+  if (remand && remand.active && remandScenario) {
+    return {
+      kind: 'remand_step',
+      scenarioId: remandScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      remandId: remand.remandId,
+      remandCursor: remand.cursor,
+      remandPhase: remand.phaseTag,
+      remandWeight: remand.weightScore,
+      reason: `Remand "${remand.label}" ${remand.phaseTag} phase ${remand.cursor + 1}/${remand.scenarioIds.length} (weight ${remand.weightScore}).`,
+    };
+  }
+
   const vacatur = sanitizeVacaturSession(state.vacaturSession);
   const vacaturScenario = getVacaturScenarioAtCursor(vacatur);
   if (vacatur && vacatur.active && vacaturScenario) {
@@ -15838,6 +16295,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   exonerationActive: boolean;
   expungementActive: boolean;
   vacaturActive: boolean;
+  remandActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -15874,6 +16332,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const exoneration = exonerationSessionSummary(state);
   const expungement = expungementSessionSummary(state);
   const vacatur = vacaturSessionSummary(state);
+  const remand = remandSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -15908,6 +16367,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     exonerationActive: exoneration.active,
     expungementActive: expungement.active,
     vacaturActive: vacatur.active,
+    remandActive: remand.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -15926,7 +16386,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 34, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 35, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -16186,16 +16646,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const vacaturState = vacatur ? attachVacaturSessionToState(createEmptyO10mModesPersistedState(), vacatur) : null;
   push('agent04_chunk_41', vacaturState !== null && planNextCampaignAction(vacaturState!).kind === 'vacatur_step');
 
+  const remand = createRemandSession({
+    remandId: 'o10m_remand_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_remand_order_docket'],
+  }).session;
+  const remandState = remand ? attachRemandSessionToState(createEmptyO10mModesPersistedState(), remand) : null;
+  push('agent04_chunk_42', remandState !== null && planNextCampaignAction(remandState!).kind === 'remand_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v34',
+  schemaVersion: 'op10m-agent04-v35',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 33,
+  saveSchemaVersion: 34,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

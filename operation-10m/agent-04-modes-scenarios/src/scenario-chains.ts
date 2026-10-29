@@ -1164,6 +1164,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_remand_route',
+    title: 'Remand Route',
+    description:
+      'Three-phase remand arc with weight accrual between legs — round-34 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_remand_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_remand_order_docket',
+        title: 'Order Docket',
+        narrativeBridge: 'Enter order before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 440 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_remand_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 6, NSW: 5 },
+          forcedSettingsPatch: { o10mRemandMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_remand_weight_finale',
+        title: 'Weight Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainRemandRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

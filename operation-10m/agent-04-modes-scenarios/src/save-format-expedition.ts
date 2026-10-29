@@ -143,6 +143,7 @@ export function attachExpeditionSessionToState(
     exonerationSession: null,
     expungementSession: null,
     vacaturSession: null,
+    remandSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
