@@ -170748,6 +170748,10 @@ export function publicFinanceInputHash(
   const sc11Sig = sc11Any
     ? `${sc11Any.implementationLoad?.pressure || 'na'}:${Math.round(sc11Any.implementationLoad?.totalLoad || 0)}`
     : 'na';
+  const scCapAny: any = inputs.strategicCapital;
+  const scCapSig = scCapAny
+    ? `${scCapAny.revision ?? 0}:${String(scCapAny.position?.flexibilityBand || scCapAny.summary?.flexibilityBand || 'na')}:${Math.round(Number(scCapAny.position?.deployableCapital ?? scCapAny.summary?.deployableCapital ?? 0))}`
+    : 'na';
   const progSig = (inputs.programs || [])
     .map(
       p =>
@@ -170782,6 +170786,7 @@ export function publicFinanceInputHash(
     `eg:${egSig}`,
     `wf:${wfSig}`,
     `sc11:${sc11Sig}`,
+    `scCap:${scCapSig}`,
     `prog:${progSig}`,
     `cr:${crisisSig}`,
     `cnt:${inputs.completedInfrastructureCount}:${maintNetSig}`,
@@ -214656,9 +214661,10 @@ function dispatchGameSettingsChange(
       economicGeography: egEnabled ? egState : null,
       workforce: wfEnabled ? wfState : null,
       stateCapacity: sc11Enabled ? sc11State : null,
+      strategicCapital: capEnabled ? capState : null,
       persisted: pf12PersistedRef.current
     });
-  }, [pf12Enabled, nsState, lrInputs.turn, npViewerId, gameState.infrastructureProjects, gameState.crisisChainState, gameState.publicStabilityState, player?.id, lrState, rfState, scState, inState, mpEnabled, mpPersisted, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, npEnabled, npState, egEnabled, egState, wfEnabled, wfState, sc11Enabled, sc11State, pf12Persisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pf12Enabled, nsState, lrInputs.turn, npViewerId, gameState.infrastructureProjects, gameState.crisisChainState, gameState.publicStabilityState, player?.id, lrState, rfState, scState, inState, mpEnabled, mpPersisted, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, npEnabled, npState, egEnabled, egState, wfEnabled, wfState, sc11Enabled, sc11State, capEnabled, capState, pf12Persisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
   const pf12Hash = useMemo(() => (pf12Inputs ? publicFinanceInputHash(pf12Inputs, pf12PersistedRef.current) : ''), [pf12Inputs, pf12Persisted?.revision]);
   const pf12State = useMemo<NationalPublicFinanceState | null>(() => (pf12Inputs ? computeNationalPublicFinance(pf12Inputs, pf12PersistedRef.current).state : null),
     [pf12Hash, pf12Inputs, pf12Persisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
