@@ -245,6 +245,11 @@ import {
   V1014_NATIONAL_SECURITY_STRATEGIC_RESERVE_DEFENCE_INDUSTRIAL_TURN_SCENARIOS,
 } from '../modules/national-security-strategic-reserve-defence-industrial-federation-ledger.ts';
 import {
+  runAgent13StrategicReserveCarbonNeutralitySovereignGridScaleSelfTests,
+  runAgent13StrategicReserveCarbonNeutralitySovereignGridTurnScenario,
+  V1014_STRATEGIC_RESERVE_CARBON_NEUTRALITY_SOVEREIGN_GRID_TURN_SCENARIOS,
+} from '../modules/strategic-reserve-carbon-neutrality-sovereign-grid-federation-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -648,6 +653,14 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
     V1014_NATIONAL_SECURITY_STRATEGIC_RESERVE_DEFENCE_INDUSTRIAL_TURN_SCENARIOS[0],
   );
   ok(strategicReserveTurn.passed);
+
+  const carbonNeutralityGrid = runAgent13StrategicReserveCarbonNeutralitySovereignGridScaleSelfTests();
+  ok(carbonNeutralityGrid.failed === 0 && carbonNeutralityGrid.passed >= 5);
+
+  const carbonNeutralityGridTurn = runAgent13StrategicReserveCarbonNeutralitySovereignGridTurnScenario(
+    V1014_STRATEGIC_RESERVE_CARBON_NEUTRALITY_SOVEREIGN_GRID_TURN_SCENARIOS[0],
+  );
+  ok(carbonNeutralityGridTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

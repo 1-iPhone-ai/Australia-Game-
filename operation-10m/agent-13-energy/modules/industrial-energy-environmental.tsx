@@ -373,6 +373,15 @@ import {
   type V1014RegionalDefenceIndustrialFederationLedger,
 } from './national-security-strategic-reserve-defence-industrial-federation-ledger';
 
+import {
+  advanceRegionalSovereignGreenGridFederationOrchestration,
+  computeRegionalStrategicReserveCarbonNeutralityLedger,
+  scoreAgent13StrategicReserveCarbonNeutralitySovereignGridGIAlignment,
+  type V1014RegionalStrategicReserveCarbonNeutralityLedger,
+  type V1014RegionalSovereignGreenGridFederationLedger,
+} from './strategic-reserve-carbon-neutrality-sovereign-grid-federation-ledger';
+
+
 
 import {
   buildHouseholdEnergyHints,
@@ -26035,6 +26044,10 @@ export interface V1014RegionalEnergyProfile {
   nationalSecurityStrategicReserveRelief: number;
   defenceIndustrialFederationBand: string;
   defenceIndustrialFederationRelief: number;
+  strategicReserveCarbonNeutralityBand: string;
+  strategicReserveCarbonNeutralityRelief: number;
+  sovereignGreenGridFederationBand: string;
+  sovereignGreenGridFederationRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -26173,6 +26186,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalNationalSecurityFederationLedgers: Record<string, V1014RegionalNationalSecurityFederationLedger>;
   regionalNationalSecurityStrategicReserveLedgers: Record<string, V1014RegionalNationalSecurityStrategicReserveLedger>;
   regionalDefenceIndustrialFederationLedgers: Record<string, V1014RegionalDefenceIndustrialFederationLedger>;
+  regionalStrategicReserveCarbonNeutralityLedgers: Record<string, V1014RegionalStrategicReserveCarbonNeutralityLedger>;
+  regionalSovereignGreenGridFederationLedgers: Record<string, V1014RegionalSovereignGreenGridFederationLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -26282,6 +26297,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalNationalSecurityFederationMemory: Record<string, { securityIndex: number }>;
   regionalNationalSecurityStrategicReserveMemory: Record<string, { reserveBalance: number; reserveIndex: number }>;
   regionalDefenceIndustrialFederationMemory: Record<string, { industrialIndex: number }>;
+  regionalStrategicReserveCarbonNeutralityMemory: Record<string, { reserveBalance: number; reserveIndex: number }>;
+  regionalSovereignGreenGridFederationMemory: Record<string, { gridIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -26403,6 +26420,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalNationalSecurityFederationMemory: {},
     regionalNationalSecurityStrategicReserveMemory: {},
     regionalDefenceIndustrialFederationMemory: {},
+    regionalStrategicReserveCarbonNeutralityMemory: {},
+    regionalSovereignGreenGridFederationMemory: {},
     history: [],
   };
 }
@@ -26736,6 +26755,14 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalDefenceIndustrialFederationMemory === 'object' && raw.regionalDefenceIndustrialFederationMemory
         ? raw.regionalDefenceIndustrialFederationMemory
         : {},
+    regionalStrategicReserveCarbonNeutralityMemory:
+      typeof raw.regionalStrategicReserveCarbonNeutralityMemory === 'object' && raw.regionalStrategicReserveCarbonNeutralityMemory
+        ? raw.regionalStrategicReserveCarbonNeutralityMemory
+        : {},
+    regionalSovereignGreenGridFederationMemory:
+      typeof raw.regionalSovereignGreenGridFederationMemory === 'object' && raw.regionalSovereignGreenGridFederationMemory
+        ? raw.regionalSovereignGreenGridFederationMemory
+        : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -26944,6 +26971,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalNationalSecurityFederationLedgers: {},
       regionalNationalSecurityStrategicReserveLedgers: {},
       regionalDefenceIndustrialFederationLedgers: {},
+      regionalStrategicReserveCarbonNeutralityLedgers: {},
+      regionalSovereignGreenGridFederationLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -27056,6 +27085,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const nationalSecurityFederationLedgers: Record<string, V1014RegionalNationalSecurityFederationLedger> = {};
   const nationalSecurityStrategicReserveLedgers: Record<string, V1014RegionalNationalSecurityStrategicReserveLedger> = {};
   const defenceIndustrialFederationLedgers: Record<string, V1014RegionalDefenceIndustrialFederationLedger> = {};
+  const strategicReserveCarbonNeutralityLedgers: Record<string, V1014RegionalStrategicReserveCarbonNeutralityLedger> = {};
+  const sovereignGreenGridFederationLedgers: Record<string, V1014RegionalSovereignGreenGridFederationLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -27316,6 +27347,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   const nextDefenceIndustrialFederationMemory: Record<string, { industrialIndex: number }> = {
     ...persisted.regionalDefenceIndustrialFederationMemory,
+  };
+  const nextStrategicReserveCarbonNeutralityMemory: Record<string, { reserveBalance: number; reserveIndex: number }> = {
+    ...persisted.regionalStrategicReserveCarbonNeutralityMemory,
+  };
+  const nextSovereignGreenGridFederationMemory: Record<string, { gridIndex: number }> = {
+    ...persisted.regionalSovereignGreenGridFederationMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -28709,6 +28746,34 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextDefenceIndustrialFederationMemory[regionId] = defenceIndustrialFederationStep.next;
     defenceIndustrialFederationLedgers[regionId] = defenceIndustrialFederationStep.ledger;
     pressure -= defenceIndustrialFederationStep.ledger.defenceIndustrialFederationRelief;
+
+    const strategicReserveCarbonNeutralityStep = computeRegionalStrategicReserveCarbonNeutralityLedger({
+      regionId,
+      nationalSecurityStrategicReserveRelief: nationalSecurityStrategicReserveStep.ledger.nationalSecurityStrategicReserveRelief,
+      sovereignGreenGridFederationRelief: defenceIndustrialFederationStep.ledger.defenceIndustrialFederationRelief,
+      interregionalInterconnectionRelief: interregionalInterconnectionStep.ledger.interregionalInterconnectionRelief,
+      decarbonFederationRelief: decarbonFederationStep.ledger.decarbonFederationRelief,
+      safeguardCertificateRelief: decarbonCertificateStackStep.ledger.decarbonCertificateStackRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextStrategicReserveCarbonNeutralityMemory[regionId] || null,
+    });
+    nextStrategicReserveCarbonNeutralityMemory[regionId] = strategicReserveCarbonNeutralityStep.next;
+    strategicReserveCarbonNeutralityLedgers[regionId] = strategicReserveCarbonNeutralityStep.ledger;
+    pressure -= strategicReserveCarbonNeutralityStep.ledger.strategicReserveCarbonNeutralityRelief;
+
+    const sovereignGreenGridFederationStep = advanceRegionalSovereignGreenGridFederationOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      strategicReserveCarbonNeutralityBand: strategicReserveCarbonNeutralityStep.ledger.band,
+      interregionalInterconnectionRelief: interregionalInterconnectionStep.ledger.interregionalInterconnectionRelief,
+      decarbonFederationRelief: decarbonFederationStep.ledger.decarbonFederationRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextSovereignGreenGridFederationMemory[regionId] || null,
+    });
+    nextSovereignGreenGridFederationMemory[regionId] = sovereignGreenGridFederationStep.next;
+    sovereignGreenGridFederationLedgers[regionId] = sovereignGreenGridFederationStep.ledger;
+    pressure -= sovereignGreenGridFederationStep.ledger.sovereignGreenGridFederationRelief;
     pressure = v1014Clamp(pressure, 0, 100);
 
     nextHyst[regionId] = { extractionScore, renewableScore: renewableShareScore, pressure };
@@ -28823,6 +28888,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       nationalSecurityFederationStep.ledger.summary,
       nationalSecurityStrategicReserveStep.ledger.summary,
       defenceIndustrialFederationStep.ledger.summary,
+      strategicReserveCarbonNeutralityStep.ledger.summary,
+      sovereignGreenGridFederationStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -29103,6 +29170,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       nationalSecurityStrategicReserveRelief: nationalSecurityStrategicReserveStep.ledger.nationalSecurityStrategicReserveRelief,
       defenceIndustrialFederationBand: defenceIndustrialFederationStep.ledger.band,
       defenceIndustrialFederationRelief: defenceIndustrialFederationStep.ledger.defenceIndustrialFederationRelief,
+      strategicReserveCarbonNeutralityBand: strategicReserveCarbonNeutralityStep.ledger.band,
+      strategicReserveCarbonNeutralityRelief: strategicReserveCarbonNeutralityStep.ledger.strategicReserveCarbonNeutralityRelief,
+      sovereignGreenGridFederationBand: sovereignGreenGridFederationStep.ledger.band,
+      sovereignGreenGridFederationRelief: sovereignGreenGridFederationStep.ledger.sovereignGreenGridFederationRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -29270,6 +29341,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalNationalSecurityFederationLedgers: nationalSecurityFederationLedgers,
     regionalNationalSecurityStrategicReserveLedgers: nationalSecurityStrategicReserveLedgers,
     regionalDefenceIndustrialFederationLedgers: defenceIndustrialFederationLedgers,
+    regionalStrategicReserveCarbonNeutralityLedgers: strategicReserveCarbonNeutralityLedgers,
+    regionalSovereignGreenGridFederationLedgers: sovereignGreenGridFederationLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -29379,6 +29452,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalNationalSecurityFederationMemory: nextNationalSecurityFederationMemory,
     regionalNationalSecurityStrategicReserveMemory: nextNationalSecurityStrategicReserveMemory,
     regionalDefenceIndustrialFederationMemory: nextDefenceIndustrialFederationMemory,
+    regionalStrategicReserveCarbonNeutralityMemory: nextStrategicReserveCarbonNeutralityMemory,
+    regionalSovereignGreenGridFederationMemory: nextSovereignGreenGridFederationMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -31396,6 +31471,43 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     defenceIndustrialFederationBand: rr52.state.regions.NSW?.defenceIndustrialFederationBand,
   });
   check('NATIONAL SECURITY STRATEGIC RESERVE GI alignment', giStrategicReserve.relevanceDelta > 0.25, giStrategicReserve.reason || '');
+
+  const carbonNeutralityInp: IndustrialEnergyEnvironmentalInputs = {
+    ...strategicReserveInp,
+    completedProjectTypes: [
+      ...(strategicReserveInp.completedProjectTypes || []),
+      'strategic_reserve_carbon_neutrality_hub',
+      'strategic_reserve_carbon_neutrality_recovery_hub',
+      'sovereign_green_grid_load_stack',
+      'sovereign_green_grid_federation_corridor',
+    ],
+  };
+  const rr53 = computeIndustrialEnergyEnvironmentalState(
+    carbonNeutralityInp,
+    createInitialIndustrialEnergyEnvironmentalPersisted(),
+    null,
+  );
+  check(
+    'STRATEGIC reserve carbon neutrality tracked',
+    !!rr53.state.regionalStrategicReserveCarbonNeutralityLedgers.NSW?.band,
+    rr53.state.regionalStrategicReserveCarbonNeutralityLedgers.NSW?.band || '',
+  );
+  check(
+    'SOVEREIGN green grid federation relief',
+    (rr53.state.regions.NSW?.sovereignGreenGridFederationRelief || 0) > 0,
+    String(rr53.state.regions.NSW?.sovereignGreenGridFederationRelief),
+  );
+  check(
+    'STRATEGIC reserve carbon neutrality memory persisted',
+    !!rr53.persisted.regionalStrategicReserveCarbonNeutralityMemory.NSW,
+    String(rr53.persisted.regionalStrategicReserveCarbonNeutralityMemory.NSW?.reserveIndex),
+  );
+  const giCarbonGrid = scoreAgent13StrategicReserveCarbonNeutralitySovereignGridGIAlignment({
+    actionText: 'Strategic reserve carbon neutrality hub with sovereign green grid load stack and strategic reserve coupling hub',
+    strategicReserveCarbonNeutralityBand: rr53.state.regions.NSW?.strategicReserveCarbonNeutralityBand,
+    sovereignGreenGridFederationBand: rr53.state.regions.NSW?.sovereignGreenGridFederationBand,
+  });
+  check('STRATEGIC RESERVE CARBON NEUTRALITY GI alignment', giCarbonGrid.relevanceDelta > 0.25, giCarbonGrid.reason || '');
 
 
   for (let i = 0; i < 40; i++) {
