@@ -4705,6 +4705,165 @@ export function nrDashBuildDerivedEventTurnSpan(
   };
 }
 
+// --- bundled from core/critical-needs-spread.ts ---
+export interface NrDashCriticalNeedsSpread {
+  regionCount: number;
+  totalCriticalNeeds: number;
+  meanCriticalNeeds: number;
+  stdDev: number;
+}
+
+/** Cross-region dispersion of open LR needs at critical severity. */
+export function nrDashBuildCriticalNeedsSpread(
+  lr: LivingRegionsWorldView | null
+): NrDashCriticalNeedsSpread | null {
+  if (!lr?.state.regions) return null;
+  const counts = Object.values(lr.state.regions).map(reg =>
+    reg.needs.filter(n => n.status === 'open' && n.severity === 'critical').length
+  );
+  const totalCriticalNeeds = counts.reduce((s, n) => s + n, 0);
+  if (totalCriticalNeeds <= 0) return null;
+  const meanCriticalNeeds = totalCriticalNeeds / counts.length;
+  const variance =
+    counts.reduce((s, n) => s + (n - meanCriticalNeeds) ** 2, 0) / Math.max(counts.length, 1);
+  return {
+    regionCount: counts.length,
+    totalCriticalNeeds,
+    meanCriticalNeeds: Math.round(meanCriticalNeeds * 1000) / 1000,
+    stdDev: Math.round(Math.sqrt(variance) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/national-snippet-gap.ts ---
+export interface NrDashNationalSnippetGap {
+  maxSnippets: number;
+  surfacedCount: number;
+  unusedSlots: number;
+}
+
+/** Unused dashboard history snippet buffer slots on the merged snapshot. */
+export function nrDashBuildNationalSnippetGap(
+  snap: NrDashAuthSnapshot | null
+): NrDashNationalSnippetGap | null {
+  if (!snap) return null;
+  const maxSnippets = 8;
+  const surfacedCount = snap.historySnippets.length;
+  return {
+    maxSnippets,
+    surfacedCount,
+    unusedSlots: maxSnippets - surfacedCount,
+  };
+}
+
+// --- bundled from core/hub-pulse-span.ts ---
+export interface NrDashHubPulseSpan {
+  hubRegionCount: number;
+  minIntensity: number;
+  maxIntensity: number;
+  intensitySpread: number;
+}
+
+/** Spread of map pulse intensity across NS connectivity hub regions (hubScore > 0). */
+export function nrDashBuildHubPulseSpan(
+  ns: NationalSystemsState | null,
+  nodes: RegionMapNode[]
+): NrDashHubPulseSpan | null {
+  const pulseById = new Map(nrDashBuildMapPulseRows(nodes).map(p => [p.regionId, p.intensity]));
+  const hubs = nrDashBuildMapHubIndex(ns).filter(h => h.hubScore > 0);
+  if (!hubs.length) return null;
+  const intensities = hubs.map(h => pulseById.get(h.regionId) ?? 0);
+  const minIntensity = Math.min(...intensities);
+  const maxIntensity = Math.max(...intensities);
+  return {
+    hubRegionCount: intensities.length,
+    minIntensity: Math.round(minIntensity * 1000) / 1000,
+    maxIntensity: Math.round(maxIntensity * 1000) / 1000,
+    intensitySpread: Math.round((maxIntensity - minIntensity) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/rival-portfolio-span.ts ---
+export interface NrDashRivalPortfolioSpan {
+  youCount: number;
+  rivalCount: number;
+  portfolioSpread: number;
+}
+
+/** Absolute gap between player-owned and rival-owned region counts on the snapshot. */
+export function nrDashBuildRivalPortfolioSpan(
+  snap: NrDashAuthSnapshot | null
+): NrDashRivalPortfolioSpan | null {
+  if (!snap?.regions.length) return null;
+  let youCount = 0;
+  let rivalCount = 0;
+  snap.regions.forEach(r => {
+    if (r.owner === 'you') youCount += 1;
+    if (r.owner === 'rival') rivalCount += 1;
+  });
+  return {
+    youCount,
+    rivalCount,
+    portfolioSpread: Math.abs(youCount - rivalCount),
+  };
+}
+
+// --- bundled from core/network-condition-span.ts ---
+export interface NrDashNetworkConditionSpan {
+  cellCount: number;
+  meanRank: number;
+  stdDev: number;
+}
+
+function condRank(c: NationalNetworkCondition | undefined): number {
+  return NS_COND_RANK[c ?? 'healthy'] ?? 1;
+}
+
+/** Dispersion of NS regional network condition ranks across the heat grid. */
+export function nrDashBuildNetworkConditionSpan(
+  ns: NationalSystemsState | null
+): NrDashNetworkConditionSpan | null {
+  if (!ns?.regions) return null;
+  const ranks: number[] = [];
+  Object.values(ns.regions).forEach(reg => {
+    NATIONAL_NETWORKS.forEach(n => {
+      ranks.push(condRank(reg.networks[n]?.condition));
+    });
+  });
+  if (!ranks.length) return null;
+  const meanRank = ranks.reduce((s, r) => s + r, 0) / ranks.length;
+  const variance = ranks.reduce((s, r) => s + (r - meanRank) ** 2, 0) / Math.max(ranks.length, 1);
+  return {
+    cellCount: ranks.length,
+    meanRank: Math.round(meanRank * 1000) / 1000,
+    stdDev: Math.round(Math.sqrt(variance) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/ns-history-turn-span.ts ---
+export interface NrDashNsHistoryTurnSpan {
+  eventCount: number;
+  minTurn: number;
+  maxTurn: number;
+  turnSpread: number;
+}
+
+/** Spread of turn numbers in NS history entries only (authoritative list). */
+export function nrDashBuildNsHistoryTurnSpan(
+  ns: NationalSystemsState | null
+): NrDashNsHistoryTurnSpan | null {
+  if (!ns?.history.length) return null;
+  const turns = ns.history.map(h => h.turn).filter(t => Number.isFinite(t));
+  if (!turns.length) return null;
+  const minTurn = Math.min(...turns);
+  const maxTurn = Math.max(...turns);
+  return {
+    eventCount: turns.length,
+    minTurn,
+    maxTurn,
+    turnSpread: maxTurn - minTurn,
+  };
+}
+
 // --- bundled from tests/fixtures.ts ---
 function emptyNetworks(): Record<NationalNetworkKind, NationalRegionSystemsState['networks']['freight']> {
   const base = { utilization: 0.4, condition: 'healthy' as const };
@@ -5635,6 +5794,15 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const critNeedsSpread = nrDashBuildCriticalNeedsSpread(lrView);
+      return critNeedsSpread ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-critical-needs-spread-metric">
+          Critical needs spread σ {critNeedsSpread.stdDev} · μ {critNeedsSpread.meanCriticalNeeds} across{' '}
+          {critNeedsSpread.regionCount} regions
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const resGap = nrDashBuildNationalResilienceGap(snap);
       return resGap ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-resilience-gap">
@@ -5672,6 +5840,22 @@ export const NrDashOverviewTab: React.FC<{
       return histGap ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-history-gap">
           National history gap {histGap.gap} · sources {histGap.sourceEventCount} vs surfaced {histGap.surfacedSnippetCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const snippetGap = nrDashBuildNationalSnippetGap(snap);
+      return snippetGap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-snippet-gap">
+          National snippet gap {snippetGap.unusedSlots} unused · {snippetGap.surfacedCount}/{snippetGap.maxSnippets} slots
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const rivalSpan = nrDashBuildRivalPortfolioSpan(snap);
+      return rivalSpan ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-rival-portfolio-span">
+          Rival portfolio span {rivalSpan.portfolioSpread} · you {rivalSpan.youCount} · rival {rivalSpan.rivalCount}
         </div>
       ) : null;
     })()}
@@ -6020,6 +6204,14 @@ export const NrDashNetworksTab: React.FC<{
           {nationalSpread.maxUtilNetwork ? ` · peak ${nationalSpread.maxUtilNetwork}` : ''}
         </div>
       )}
+      {(() => {
+        const condSpan = nrDashBuildNetworkConditionSpan(ns);
+        return condSpan ? (
+          <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-network-condition-span">
+            Network condition span σ {condSpan.stdDev} · μ rank {condSpan.meanRank} · {condSpan.cellCount} cells
+          </div>
+        ) : null;
+      })()}
       {resilienceUtilGap && (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-resilience-util-gap">
           Resilience ↔ util gap μ |Δ| {resilienceUtilGap.meanAbsGap}
@@ -6355,6 +6547,18 @@ export const NrDashTrendsTab: React.FC<{
           </div>
         ) : null;
       })()}
+      {(() => {
+        const nsTurnSpan = nrDashBuildNsHistoryTurnSpan(nsState);
+        return nsTurnSpan ? (
+          <div className="text-xs mb-3 rounded border border-slate-600/50 p-2" data-testid="nr-dash-ns-history-turn-span">
+            <div className="font-semibold mb-1">NS history turn span</div>
+            <div>
+              turn spread {nsTurnSpan.turnSpread} · min R{nsTurnSpan.minTurn} · max R{nsTurnSpan.maxTurn} · {nsTurnSpan.eventCount}{' '}
+              entries
+            </div>
+          </div>
+        ) : null;
+      })()}
       {movers.length > 0 && (
         <div className="text-xs mb-3" data-testid="nr-dash-trend-movers">
           <div className="font-semibold mb-1">Largest momentum history deltas (authoritative)</div>
@@ -6501,6 +6705,15 @@ export const NrDashMapTab: React.FC<{
           <p className="text-[10px] opacity-75" data-testid="nr-dash-link-pulse-span">
             Link pulse span {linkPulse.intensitySpread} · min {linkPulse.minBlend} · max {linkPulse.maxBlend} ·{' '}
             {linkPulse.linkCount} links
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const hubPulse = nrDashBuildHubPulseSpan(nsState, baseNodes);
+        return hubPulse && hubPulse.intensitySpread > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-hub-pulse-span">
+            Hub pulse span {hubPulse.intensitySpread} · min {hubPulse.minIntensity} · max {hubPulse.maxIntensity} ·{' '}
+            {hubPulse.hubRegionCount} hubs
           </p>
         ) : null;
       })()}
@@ -7501,6 +7714,38 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   check('a23_derived_event_turn_span', 'Derived event turn span is zero on single major event', () => {
     const span = nrDashBuildDerivedEventTurnSpan(createAgent23LrFixture())!;
     return span.eventCount === 1 && span.turnSpread === 0 && span.minTurn === 4;
+  });
+
+  check('a23_critical_needs_spread', 'Critical needs spread is null without critical open needs', () =>
+    nrDashBuildCriticalNeedsSpread(createAgent23LrFixture()) === null
+  );
+
+  check('a23_national_snippet_gap', 'National snippet gap reports unused dashboard slots', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const gap = nrDashBuildNationalSnippetGap(snap)!;
+    return gap.maxSnippets === 8 && gap.surfacedCount === 2 && gap.unusedSlots === 6;
+  });
+
+  check('a23_hub_pulse_span', 'Hub pulse span is positive on connectivity hubs', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const span = nrDashBuildHubPulseSpan(createAgent23NsFixture(), nrDashBuildRegionMapNodes(snap))!;
+    return span.hubRegionCount > 0 && span.intensitySpread > 0.02;
+  });
+
+  check('a23_rival_portfolio_span', 'Rival portfolio span tracks NSW rival ownership', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { NSW: 'rival' })!;
+    const span = nrDashBuildRivalPortfolioSpan(snap)!;
+    return span.rivalCount === 1 && span.portfolioSpread === 1;
+  });
+
+  check('a23_network_condition_span', 'Network condition span is positive on strained fixture', () => {
+    const span = nrDashBuildNetworkConditionSpan(createAgent23NsFixture())!;
+    return span.cellCount === 40 && span.stdDev > 0.1;
+  });
+
+  check('a23_ns_history_turn_span', 'NS history turn span is zero on single entry fixture', () => {
+    const span = nrDashBuildNsHistoryTurnSpan(createAgent23NsFixture())!;
+    return span.eventCount === 1 && span.turnSpread === 0 && span.minTurn === 5;
   });
 
   return results;

@@ -132,6 +132,12 @@ import { nrDashBuildLinkPulseSpan } from '../core/link-pulse-span.ts';
 import { nrDashBuildOwnerPortfolioSpan } from '../core/owner-portfolio-span.ts';
 import { nrDashBuildConstraintBandSpan } from '../core/constraint-band-span.ts';
 import { nrDashBuildDerivedEventTurnSpan } from '../core/derived-event-turn-span.ts';
+import { nrDashBuildCriticalNeedsSpread } from '../core/critical-needs-spread.ts';
+import { nrDashBuildNationalSnippetGap } from '../core/national-snippet-gap.ts';
+import { nrDashBuildHubPulseSpan } from '../core/hub-pulse-span.ts';
+import { nrDashBuildRivalPortfolioSpan } from '../core/rival-portfolio-span.ts';
+import { nrDashBuildNetworkConditionSpan } from '../core/network-condition-span.ts';
+import { nrDashBuildNsHistoryTurnSpan } from '../core/ns-history-turn-span.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -392,6 +398,15 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const critNeedsSpread = nrDashBuildCriticalNeedsSpread(lrView);
+      return critNeedsSpread ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-critical-needs-spread-metric">
+          Critical needs spread σ {critNeedsSpread.stdDev} · μ {critNeedsSpread.meanCriticalNeeds} across{' '}
+          {critNeedsSpread.regionCount} regions
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const resGap = nrDashBuildNationalResilienceGap(snap);
       return resGap ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-resilience-gap">
@@ -429,6 +444,22 @@ export const NrDashOverviewTab: React.FC<{
       return histGap ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-history-gap">
           National history gap {histGap.gap} · sources {histGap.sourceEventCount} vs surfaced {histGap.surfacedSnippetCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const snippetGap = nrDashBuildNationalSnippetGap(snap);
+      return snippetGap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-snippet-gap">
+          National snippet gap {snippetGap.unusedSlots} unused · {snippetGap.surfacedCount}/{snippetGap.maxSnippets} slots
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const rivalSpan = nrDashBuildRivalPortfolioSpan(snap);
+      return rivalSpan ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-rival-portfolio-span">
+          Rival portfolio span {rivalSpan.portfolioSpread} · you {rivalSpan.youCount} · rival {rivalSpan.rivalCount}
         </div>
       ) : null;
     })()}
@@ -777,6 +808,14 @@ export const NrDashNetworksTab: React.FC<{
           {nationalSpread.maxUtilNetwork ? ` · peak ${nationalSpread.maxUtilNetwork}` : ''}
         </div>
       )}
+      {(() => {
+        const condSpan = nrDashBuildNetworkConditionSpan(ns);
+        return condSpan ? (
+          <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-network-condition-span">
+            Network condition span σ {condSpan.stdDev} · μ rank {condSpan.meanRank} · {condSpan.cellCount} cells
+          </div>
+        ) : null;
+      })()}
       {resilienceUtilGap && (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-resilience-util-gap">
           Resilience ↔ util gap μ |Δ| {resilienceUtilGap.meanAbsGap}
@@ -1112,6 +1151,18 @@ export const NrDashTrendsTab: React.FC<{
           </div>
         ) : null;
       })()}
+      {(() => {
+        const nsTurnSpan = nrDashBuildNsHistoryTurnSpan(nsState);
+        return nsTurnSpan ? (
+          <div className="text-xs mb-3 rounded border border-slate-600/50 p-2" data-testid="nr-dash-ns-history-turn-span">
+            <div className="font-semibold mb-1">NS history turn span</div>
+            <div>
+              turn spread {nsTurnSpan.turnSpread} · min R{nsTurnSpan.minTurn} · max R{nsTurnSpan.maxTurn} · {nsTurnSpan.eventCount}{' '}
+              entries
+            </div>
+          </div>
+        ) : null;
+      })()}
       {movers.length > 0 && (
         <div className="text-xs mb-3" data-testid="nr-dash-trend-movers">
           <div className="font-semibold mb-1">Largest momentum history deltas (authoritative)</div>
@@ -1258,6 +1309,15 @@ export const NrDashMapTab: React.FC<{
           <p className="text-[10px] opacity-75" data-testid="nr-dash-link-pulse-span">
             Link pulse span {linkPulse.intensitySpread} · min {linkPulse.minBlend} · max {linkPulse.maxBlend} ·{' '}
             {linkPulse.linkCount} links
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const hubPulse = nrDashBuildHubPulseSpan(nsState, baseNodes);
+        return hubPulse && hubPulse.intensitySpread > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-hub-pulse-span">
+            Hub pulse span {hubPulse.intensitySpread} · min {hubPulse.minIntensity} · max {hubPulse.maxIntensity} ·{' '}
+            {hubPulse.hubRegionCount} hubs
           </p>
         ) : null;
       })()}

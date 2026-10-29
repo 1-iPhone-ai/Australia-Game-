@@ -128,6 +128,12 @@ import { nrDashBuildLinkPulseSpan } from '../core/link-pulse-span.ts';
 import { nrDashBuildOwnerPortfolioSpan } from '../core/owner-portfolio-span.ts';
 import { nrDashBuildConstraintBandSpan } from '../core/constraint-band-span.ts';
 import { nrDashBuildDerivedEventTurnSpan } from '../core/derived-event-turn-span.ts';
+import { nrDashBuildCriticalNeedsSpread } from '../core/critical-needs-spread.ts';
+import { nrDashBuildNationalSnippetGap } from '../core/national-snippet-gap.ts';
+import { nrDashBuildHubPulseSpan } from '../core/hub-pulse-span.ts';
+import { nrDashBuildRivalPortfolioSpan } from '../core/rival-portfolio-span.ts';
+import { nrDashBuildNetworkConditionSpan } from '../core/network-condition-span.ts';
+import { nrDashBuildNsHistoryTurnSpan } from '../core/ns-history-turn-span.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -1015,6 +1021,38 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   check('a23_derived_event_turn_span', 'Derived event turn span is zero on single major event', () => {
     const span = nrDashBuildDerivedEventTurnSpan(createAgent23LrFixture())!;
     return span.eventCount === 1 && span.turnSpread === 0 && span.minTurn === 4;
+  });
+
+  check('a23_critical_needs_spread', 'Critical needs spread is null without critical open needs', () =>
+    nrDashBuildCriticalNeedsSpread(createAgent23LrFixture()) === null
+  );
+
+  check('a23_national_snippet_gap', 'National snippet gap reports unused dashboard slots', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const gap = nrDashBuildNationalSnippetGap(snap)!;
+    return gap.maxSnippets === 8 && gap.surfacedCount === 2 && gap.unusedSlots === 6;
+  });
+
+  check('a23_hub_pulse_span', 'Hub pulse span is positive on connectivity hubs', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const span = nrDashBuildHubPulseSpan(createAgent23NsFixture(), nrDashBuildRegionMapNodes(snap))!;
+    return span.hubRegionCount > 0 && span.intensitySpread > 0.02;
+  });
+
+  check('a23_rival_portfolio_span', 'Rival portfolio span tracks NSW rival ownership', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { NSW: 'rival' })!;
+    const span = nrDashBuildRivalPortfolioSpan(snap)!;
+    return span.rivalCount === 1 && span.portfolioSpread === 1;
+  });
+
+  check('a23_network_condition_span', 'Network condition span is positive on strained fixture', () => {
+    const span = nrDashBuildNetworkConditionSpan(createAgent23NsFixture())!;
+    return span.cellCount === 40 && span.stdDev > 0.1;
+  });
+
+  check('a23_ns_history_turn_span', 'NS history turn span is zero on single entry fixture', () => {
+    const span = nrDashBuildNsHistoryTurnSpan(createAgent23NsFixture())!;
+    return span.eventCount === 1 && span.turnSpread === 0 && span.minTurn === 5;
   });
 
   return results;
