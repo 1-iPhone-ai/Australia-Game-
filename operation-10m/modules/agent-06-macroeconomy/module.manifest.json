@@ -1,0 +1,8 @@
+{
+  "moduleId": "agent-06-macroeconomy",
+  "slot": "append-only-self-tests",
+  "touchesSaveFormat": false,
+  "anchorComment": "// Agent 25 tranche 4 inline — #302 macro",
+  "sourceRoot": "operation-10m/agent-06-macroeconomy/v10-14-macro-economy",
+  "regenerate": "node operation-10m/agent-06-macroeconomy/scripts/build-chunk.mjs"
+}
