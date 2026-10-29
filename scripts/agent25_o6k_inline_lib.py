@@ -561,6 +561,50 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
             "  createEmptyV1026RhsPersisted,\n  v1026RhsInputHash,\n  sanitizeV1026RhsPersisted,\n} from '../engine/regional-health-systems-orchestrator';",
             "  v1026RhsInputHash,\n} from '../engine/regional-health-systems-orchestrator';\nimport {\n  createEmptyV1026RhsPersisted,\n  sanitizeV1026RhsPersisted,\n} from '../persistence/migrations';",
         )
+    if "v1027-water-security" in name.replace("\\", "/"):
+        src = src.replace("SECTION 20BV", "SECTION 20BW")
+        src = src.replace("SECTION 20BU", "SECTION 20BW")
+        src = src.replace("SECTION 20BT", "SECTION 20BW")
+        src = src.replace("SECTION 20BR", "SECTION 20BW")
+    if "water-security/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"function clampNum\(", "function v1027WsecClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1027WsecClampNum(", src)
+        src = re.sub(r"const REGIONS:", "const V1027_WSEC_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1027_WSEC_MIG_REGIONS", src)
+    if "water-security-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1027WsecPersisted, sanitizeV1027WsecPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1027_WSEC_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1027_WSEC_ORCH_REGIONS.forEach", src)
+    if "water-security-utils.ts" in name:
+        src = re.sub(
+            r"export function V1027_WSEC_aquiferReserveGraphHash",
+            "export function V1027_WSEC_utilAquiferReserveGraphHash",
+            src,
+        )
+    if "v1027-water-security/aquifer-reserve-stacks/graph-utils.ts" in name.replace("\\", "/"):
+        src = re.sub(
+            r"V1027_WSEC_aquiferReserveGraphHash as dgovGraphHashCore",
+            "V1027_WSEC_utilAquiferReserveGraphHash as dgovGraphHashCore",
+            src,
+        )
+    if "run-v1027-wsec-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1027WsecSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1027WsecSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1027WsecBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1027WsecBaseInput(", src)
+        src = src.replace(
+            "  runV1027WsecTurn,\n  createEmptyV1027WsecPersisted,\n  v1027WsecInputHash,\n  sanitizeV1027WsecPersisted,\n} from '../engine/water-security-orchestrator';",
+            "  runV1027WsecTurn,\n  v1027WsecInputHash,\n} from '../engine/water-security-orchestrator';\nimport {\n  createEmptyV1027WsecPersisted,\n  sanitizeV1027WsecPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1027WsecPersisted,\n  v1027WsecInputHash,\n  sanitizeV1027WsecPersisted,\n} from '../engine/water-security-orchestrator';",
+            "  v1027WsecInputHash,\n} from '../engine/water-security-orchestrator';\nimport {\n  createEmptyV1027WsecPersisted,\n  sanitizeV1027WsecPersisted,\n} from '../persistence/migrations';",
+        )
     return src
 
 
@@ -1285,6 +1329,63 @@ def regional_health_systems_paths() -> list[str]:
             and not (p.parent.name == "generated" and p.name == "index.ts")
             and "conservation-offset" not in str(p)
             and "recovery-registry" not in str(p)
+            and "stress-registry" not in str(p)
+            and "supply-pipeline" not in str(p)
+            and "drought-buffer-bundle" not in str(p)
+            and "hazard-registry" not in str(p)
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def water_security_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1027-water-security"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/aquifer-reserve-stacks/" in s and "graph-utils" in s:
+            return (2, s)
+        if "/generated/basin-scenarios/" in s:
+            return (3, s)
+        if "/generated/aquifer-reserve-stacks/" in s:
+            return (4, s)
+        if "basin-registry" in s or "aquifer-reserve-bundle" in s:
+            return (5, s)
+        if "/distribution-network-nodes/" in s:
+            return (6, s)
+        if "water-security-utils" in s:
+            return (7, s)
+        if "/adapters/" in s:
+            return (8, s)
+        if "water-security-orchestrator" in s:
+            return (9, s)
+        if "/self-tests/" in s:
+            return (10, s)
+        if "conservation-offset" in s or "recovery-registry" in s or "primary-care" in s:
+            return (98, s)
+        if "stress-registry" in s or "supply-pipeline" in s:
+            return (98, s)
+        if "drought-buffer-bundle" in s or "hazard-registry" in s:
+            return (98, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
+            and not (p.parent.name == "generated" and p.name == "index.ts")
+            and "conservation-offset" not in str(p)
+            and "recovery-registry" not in str(p)
+            and "primary-care" not in str(p)
             and "stress-registry" not in str(p)
             and "supply-pipeline" not in str(p)
             and "drought-buffer-bundle" not in str(p)

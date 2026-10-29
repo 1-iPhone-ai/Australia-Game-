@@ -29,6 +29,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     digital_governance_paths,
     biodiversity_stewardship_paths,
     regional_health_systems_paths,
+    water_security_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -176,6 +177,15 @@ RHS_SECTION = (
 )
 
 RHS_MARKER = "export function runV1026RhsTurn"
+
+WSEC_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20BW: V10.27 WATER SECURITY — BASIN SCENARIOS, AQUIFER RESERVES & DISTRIBUTION NETWORKS (O6K-61)\n"
+    "// Renumbered from shard 20BV (canonical 20BV = regional health systems, push #24)\n"
+    "// ============================================================================\n"
+)
+
+WSEC_MARKER = "export function runV1027WsecTurn"
 
 TRADE_HELPERS = """
 export function buildV1014TradeDepthTurnInputFromGameState(gs: any, turn: number): V1014TradeDepthTurnInput {
@@ -2434,6 +2444,177 @@ def push_rhs(text: str) -> str:
     return text
 
 
+WSEC_HELPERS = """
+function V1027_WSEC_readPersistedFromGameState(gs: any): V1027WsecPersisted | null {
+  const raw = (gs?.save?.meta?.v1027 as any)?.water_security;
+  return raw ? sanitizeV1027WsecPersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1027_WSEC_applyToGameState(gs: any, out: V1027WsecTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1027 = { ...(meta.v1027 || {}) };
+  v1027.water_security = out.persisted;
+  meta.v1027 = v1027;
+  save.meta = meta;
+  return { ...gs, save, v1027WaterSecurity: out.state };
+}
+
+export function buildV1027WsecTurnInputFromGameState(gs: any, turn: number): V1027WsecTurnInput {
+  const seed = typeof gs?.seed === 'number' ? gs.seed : 10270;
+  const inp = buildV1027WsecTurnInputFromGameStateStub(turn, seed);
+  const trade = gs?.v1014TradeDepth ?? null;
+  const energy = gs?.energyDepth ?? null;
+  const supply = gs?.v1014SupplyChain ?? null;
+  const workforce = gs?.v1014WorkforceMigration ?? gs?.workforceHumanCapital ?? null;
+  const pubsvc = gs?.v1014PublicServicesCrosswalk ?? null;
+  const clad = gs?.v1023ClimateAdaptation ?? null;
+  const dgov = gs?.v1024DigitalGovernance ?? null;
+  const bio = gs?.v1025BiodiversityStewardship ?? null;
+  return {
+    ...inp,
+    supply20bb: {
+      ...inp.supply20bb,
+      turn,
+      bottleneckPressure: Number(supply?.bottleneckPressure ?? inp.supply20bb.bottleneckPressure),
+      aquiferReserveIndex: Number(supply?.aquiferReserveIndex ?? inp.supply20bb.aquiferReserveIndex),
+    },
+    trade20ba: {
+      ...inp.trade20ba,
+      turn,
+      sanctionsPressure: Number(trade?.sanctionsPressure ?? inp.trade20ba.sanctionsPressure),
+      exportLaneStability: Number(trade?.exportLaneStability ?? inp.trade20ba.exportLaneStability),
+      importDependencyRatio: Number(trade?.importDependencyRatio ?? inp.trade20ba.importDependencyRatio),
+    },
+    energy20bc: {
+      ...inp.energy20bc,
+      turn,
+      gridStability: Number(energy?.gridStability ?? inp.energy20bc.gridStability),
+      reserveMarginPct: Number(energy?.reserveMarginPct ?? inp.energy20bc.reserveMarginPct),
+      droughtRiskStress: Number(energy?.droughtRiskStress ?? inp.energy20bc.droughtRiskStress),
+    },
+    workforce20bf: {
+      ...inp.workforce20bf,
+      turn,
+      specialistGap: Number(workforce?.specialistGap ?? inp.workforce20bf.specialistGap),
+      nationalReadiness: Number(workforce?.nationalReadiness ?? inp.workforce20bf.nationalReadiness),
+      mismatchIndex: Number(workforce?.mismatchIndex ?? inp.workforce20bf.mismatchIndex),
+    },
+    publicServices20az: {
+      ...inp.publicServices20az,
+      turn,
+      clinicCapacityScore: Number(pubsvc?.clinicCapacityScore ?? inp.publicServices20az.clinicCapacityScore),
+      digitalServiceCoverage: Number(
+        pubsvc?.digitalServiceCoverage ?? inp.publicServices20az.digitalServiceCoverage,
+      ),
+      serviceDeliveryReadiness: Number(
+        pubsvc?.serviceDeliveryReadiness ?? inp.publicServices20az.serviceDeliveryReadiness,
+      ),
+    },
+    climateAdaptation20br: {
+      ...inp.climateAdaptation20br,
+      turn,
+      heatStressPressure: Number(clad?.heatStressPressure ?? inp.climateAdaptation20br.heatStressPressure),
+      grantStackLoad: Number(clad?.grantStackLoad ?? inp.climateAdaptation20br.grantStackLoad),
+      resilienceDriftTurns: Number(clad?.resilienceDriftTurns ?? inp.climateAdaptation20br.resilienceDriftTurns),
+    },
+    digitalGovernance20bt: {
+      ...inp.digitalGovernance20bt,
+      turn,
+      modelGovernancePressure: Number(dgov?.modelGovernancePressure ?? inp.digitalGovernance20bt.modelGovernancePressure),
+      grantStackLoad: Number(dgov?.grantStackLoad ?? inp.digitalGovernance20bt.grantStackLoad),
+      alignmentDriftTurns: Number(dgov?.alignmentDriftTurns ?? inp.digitalGovernance20bt.alignmentDriftTurns),
+    },
+    biodiversityStewardship20bu: {
+      ...inp.biodiversityStewardship20bu,
+      turn,
+      catchmentIntegrityPressure: Number(
+        bio?.catchmentIntegrityPressure ?? inp.biodiversityStewardship20bu.catchmentIntegrityPressure,
+      ),
+      grantStackLoad: Number(bio?.grantStackLoad ?? inp.biodiversityStewardship20bu.grantStackLoad),
+      offsetDriftTurns: Number(bio?.offsetDriftTurns ?? inp.biodiversityStewardship20bu.offsetDriftTurns),
+    },
+    persisted: null,
+  };
+}
+"""
+
+WSEC_DAY_HOOK = """
+      if (typeof runV1027WsecTurn === 'function') {
+        try {
+          const wsecIn = buildV1027WsecTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          wsecIn.persisted = V1027_WSEC_readPersistedFromGameState(mergedGameState);
+          const wsecOut = runV1027WsecTurn(wsecIn);
+          mergedGameState = V1027_WSEC_applyToGameState(mergedGameState, wsecOut);
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_wsec_day_hook(text: str) -> str:
+    marker = "runV1027WsecTurn(wsecIn)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:56000] if "executeAgent02SingleDayBoundary" in text else ""
+    if marker in day_slice:
+        print("skip wsec day hook (present)")
+        return text
+    rhs_tail = """      if (typeof runV1026RhsTurn === 'function') {
+        try {
+          const rhsIn = buildV1026RhsTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          rhsIn.persisted = V1026_RHS_readPersistedFromGameState(mergedGameState);
+          const rhsOut = runV1026RhsTurn(rhsIn);
+          mergedGameState = V1026_RHS_applyToGameState(mergedGameState, rhsOut);
+        } catch (_) { /* isolated */ }
+      }"""
+    if rhs_tail not in text:
+        raise SystemExit("rhs day hook anchor missing for wsec hook")
+    return text.replace(rhs_tail, rhs_tail + WSEC_DAY_HOOK, 1)
+
+
+def wire_wsec_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState && typeof sanitizeV1026RhsPersisted === 'function') {"
+    patch = (
+        "  if (migrated.gameState && typeof sanitizeV1027WsecPersisted === 'function') {\n"
+        "    const wsecRaw = (migrated.gameState as any)?.save?.meta?.v1027?.water_security;\n"
+        "    if (wsecRaw) {\n"
+        "      const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "      const meta = { ...(save.meta || {}) };\n"
+        "      const v1027 = { ...(meta.v1027 || {}) };\n"
+        "      v1027.water_security = sanitizeV1027WsecPersisted(wsecRaw, Number((migrated.gameState as any).turnCounter || 0));\n"
+        "      meta.v1027 = v1027;\n"
+        "      save.meta = meta;\n"
+        "      migrated.gameState = { ...(migrated.gameState as any), save };\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1027.water_security = sanitizeV1027WsecPersisted" in text:
+        print("skip wsec §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("rhs §6 anchor missing for wsec migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
+def push_wsec(text: str) -> str:
+    block = WSEC_SECTION + bundle_local_files(water_security_paths()) + WSEC_HELPERS
+    text = insert_before(text, block, WSEC_MARKER, "T6 push #25 v1027-water-security (PR #351)")
+    text = wire_wsec_day_hook(text)
+    text = wire_wsec_migration(text)
+    lab = """  { id: 'v1027_water_security', label: 'V10.27 Water security (20BW basin & aquifer reserves)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1027WsecSelfTestsForLab() },
+"""
+    rhs_lab = (
+        "  { id: 'v1026_regional_health_systems', label: 'V10.26 Regional health systems (20BV care & hospital networks)', "
+        "tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1026RhsSelfTestsForLab() },"
+    )
+    if "{ id: 'v1027_water_security'" not in text:
+        if rhs_lab in text:
+            text = text.replace(rhs_lab, rhs_lab + "\n" + lab.strip(), 1)
+            print("registered LAB v1027_water_security")
+        else:
+            text = wire_lab(text, lab, "v1027_water_security")
+            print("registered LAB v1027_water_security (fallback)")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -2448,7 +2629,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18, 19, 21, 22, 23, 24])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18, 19, 21, 22, 23, 24, 25])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -2489,6 +2670,8 @@ def main() -> None:
         text = push_bio(text)
     elif args.push == 24:
         text = push_rhs(text)
+    elif args.push == 25:
+        text = push_wsec(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")

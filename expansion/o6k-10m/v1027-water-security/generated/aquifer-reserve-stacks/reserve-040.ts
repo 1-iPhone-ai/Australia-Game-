@@ -1,0 +1,31 @@
+import type { V1027WsecAquiferReserveEdge } from '../../types/core.ts';
+
+/** Aquifer reserve graph shard 040 (surface/ground/aquifer corridor coupling). */
+export const V1027_WSEC_AQUIFER_RESERVE_SHARD_040: readonly V1027WsecAquiferReserveEdge[] = [
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.392, lagTurns: 6, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.398, lagTurns: 7, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.404, lagTurns: 8, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.41, lagTurns: 9, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.416, lagTurns: 6, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.422, lagTurns: 7, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.428, lagTurns: 8, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.332, lagTurns: 9, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.338, lagTurns: 6, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.344, lagTurns: 7, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.35, lagTurns: 8, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.356, lagTurns: 9, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.362, lagTurns: 6, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.368, lagTurns: 7, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.374, lagTurns: 8, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.38, lagTurns: 9, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.386, lagTurns: 6, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.392, lagTurns: 7, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.398, lagTurns: 8, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.404, lagTurns: 9, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.41, lagTurns: 6, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.416, lagTurns: 7, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.422, lagTurns: 8, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.428, lagTurns: 9, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.332, lagTurns: 6, nodeId: 'distribution_network_16' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.338, lagTurns: 7, nodeId: 'distribution_network_16' },
+];

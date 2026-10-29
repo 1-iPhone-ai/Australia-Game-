@@ -1,0 +1,31 @@
+import type { V1027WsecAquiferReserveEdge } from '../../types/core.ts';
+
+/** Aquifer reserve graph shard 014 (surface/ground/aquifer corridor coupling). */
+export const V1027_WSEC_AQUIFER_RESERVE_SHARD_014: readonly V1027WsecAquiferReserveEdge[] = [
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.66, lagTurns: 7, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.666, lagTurns: 8, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.672, lagTurns: 9, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.678, lagTurns: 10, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.684, lagTurns: 7, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.588, lagTurns: 8, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.594, lagTurns: 9, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.6, lagTurns: 10, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.606, lagTurns: 7, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.612, lagTurns: 8, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.618, lagTurns: 9, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.624, lagTurns: 10, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.63, lagTurns: 7, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.636, lagTurns: 8, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.642, lagTurns: 9, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.648, lagTurns: 10, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.654, lagTurns: 7, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.66, lagTurns: 8, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.666, lagTurns: 9, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.672, lagTurns: 10, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.678, lagTurns: 7, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.684, lagTurns: 8, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.588, lagTurns: 9, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.594, lagTurns: 10, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.6, lagTurns: 7, nodeId: 'distribution_network_14' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.606, lagTurns: 8, nodeId: 'distribution_network_14' },
+];

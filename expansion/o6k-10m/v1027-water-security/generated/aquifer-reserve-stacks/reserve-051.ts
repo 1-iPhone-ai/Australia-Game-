@@ -1,0 +1,31 @@
+import type { V1027WsecAquiferReserveEdge } from '../../types/core.ts';
+
+/** Aquifer reserve graph shard 051 (surface/ground/aquifer corridor coupling). */
+export const V1027_WSEC_AQUIFER_RESERVE_SHARD_051: readonly V1027WsecAquiferReserveEdge[] = [
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.14, lagTurns: 8, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.146, lagTurns: 9, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.152, lagTurns: 10, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.158, lagTurns: 11, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.164, lagTurns: 8, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.17, lagTurns: 9, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.176, lagTurns: 10, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.182, lagTurns: 11, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.188, lagTurns: 8, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.194, lagTurns: 9, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.2, lagTurns: 10, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.206, lagTurns: 11, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.212, lagTurns: 8, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.218, lagTurns: 9, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.224, lagTurns: 10, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.23, lagTurns: 11, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.236, lagTurns: 8, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.14, lagTurns: 9, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.146, lagTurns: 10, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.152, lagTurns: 11, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.158, lagTurns: 8, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.164, lagTurns: 9, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.17, lagTurns: 10, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.176, lagTurns: 11, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.182, lagTurns: 8, nodeId: 'distribution_network_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.188, lagTurns: 9, nodeId: 'distribution_network_03' },
+];
