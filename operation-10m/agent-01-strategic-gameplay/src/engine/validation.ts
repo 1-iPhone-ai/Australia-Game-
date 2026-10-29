@@ -16,6 +16,9 @@ import {
   pendingTradeOffCount,
 } from './commitment-journal.ts';
 import { validatePrerequisites } from './action-prerequisites.ts';
+import {
+  canExecuteAfterCooldown,
+} from './strategic-synergies.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -186,6 +189,13 @@ export function validateAction(
 
   if (state) {
     issues.push(...validatePrerequisites(state, action));
+    if (!canExecuteAfterCooldown(state, action.id)) {
+      issues.push({
+        code: 'COOLDOWN_ACTIVE',
+        message: `${action.title} is on cooldown.`,
+        requirement: { kind: 'action_not_yet_completed', actionId: action.id },
+      });
+    }
   }
 
   return issues;

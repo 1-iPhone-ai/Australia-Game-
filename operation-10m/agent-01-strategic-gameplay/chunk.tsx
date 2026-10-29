@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-01-strategic-gameplay
-// content-sha256-prefix: 57059d758172a937
+// content-sha256-prefix: d2f7ccec451890f7
 // Operation 10M — Agent 01 Strategic Gameplay
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -261,6 +261,10 @@ export interface StrategicActionDefinition {
   requiresMaxPendingTradeOffs?: number;
   /** All listed actions must appear in completedActionIds before this runs. */
   prerequisiteActionIds?: string[];
+  /** After execution, block same action id until day + cooldownDays. */
+  cooldownDays?: number;
+  /** Bonus approval when synergy matches exist (applied in engine). */
+  synergyEligible?: boolean;
 }
 
 export interface MultiStageChoiceOption {
@@ -333,6 +337,7 @@ export interface StrategicGameplayState {
   completedActionIds: string[];
   journal: StrategicActionJournalEntry[];
   priorityMomentum: Partial<Record<NationalPriorityId, number>>;
+  actionCooldowns: Record<string, { untilDay: number }>;
   activeChoice: {
     choiceId: string;
     stageId: string;
@@ -525,6 +530,221 @@ export function mergeConsequenceForecasts(
   );
 }
 
+// --- src/engine/strategic-synergies.ts ---
+
+export interface StrategicSynergyMatch {
+  priorityId: NationalPriorityId;
+  completedActionId: string;
+  bonusScore: number;
+  reason: string;
+}
+
+export function detectStrategicSynergies(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+  catalog: Record<string, StrategicActionDefinition>,
+): StrategicSynergyMatch[] {
+  const matches: StrategicSynergyMatch[] = [];
+  for (const priorityId of action.alignedPriorities) {
+    for (const completedId of state.completedActionIds) {
+      if (completedId === action.id) continue;
+      const prior = catalog[completedId];
+      if (!prior?.alignedPriorities.includes(priorityId)) continue;
+      matches.push({
+        priorityId,
+        completedActionId: completedId,
+        bonusScore: 6,
+        reason: `Builds on ${prior.title} for ${priorityId.replace(/_/g, ' ')}.`,
+      });
+    }
+  }
+  return matches;
+}
+
+export function synergyScoreBonus(matches: StrategicSynergyMatch[]): number {
+  return matches.reduce((sum, m) => sum + m.bonusScore, 0);
+}
+
+export function applySynergyApprovalBoost(
+  matches: StrategicSynergyMatch[],
+): number {
+  if (matches.length === 0) return 0;
+  return Math.min(4, 1 + Math.floor(matches.length / 2));
+}
+
+export function canExecuteAfterCooldown(
+  state: StrategicGameplayState,
+  actionId: string,
+): boolean {
+  const entry = state.actionCooldowns[actionId];
+  if (!entry) return true;
+  return state.day >= entry.untilDay;
+}
+
+export function startActionCooldown(
+  state: StrategicGameplayState,
+  actionId: string,
+  cooldownDays: number,
+): StrategicGameplayState {
+  return {
+    ...state,
+    actionCooldowns: {
+      ...state.actionCooldowns,
+      [actionId]: { untilDay: state.day + cooldownDays },
+    },
+  };
+}
+
+export function countCompletedInCategory(
+  state: StrategicGameplayState,
+  catalog: Record<string, StrategicActionDefinition>,
+  category: StrategicActionDefinition['category'],
+): number {
+  return state.completedActionIds.filter((id) => catalog[id]?.category === category).length;
+}
+
+export function hasCompletedPrerequisiteChain(
+  state: StrategicGameplayState,
+  chain: string[],
+): boolean {
+  return chain.every((id) => actionAlreadyCompleted(state, id));
+}
+
+// --- src/engine/strategic-save.ts ---
+
+export interface StrategicGameplaySaveV1 {
+  version: 1;
+  day: number;
+  completedActionIds: string[];
+  pendingDelayed: StrategicGameplayState['pendingDelayed'];
+  journal: StrategicGameplayState['journal'];
+  priorityMomentum: StrategicGameplayState['priorityMomentum'];
+  actionCooldowns: StrategicGameplayState['actionCooldowns'];
+  activeChoice: StrategicGameplayState['activeChoice'];
+}
+
+export function serializeStrategicGameplayState(
+  state: StrategicGameplayState,
+): StrategicGameplaySaveV1 {
+  return {
+    version: 1,
+    day: state.day,
+    completedActionIds: [...state.completedActionIds],
+    pendingDelayed: state.pendingDelayed.map((p) => ({ ...p, effects: { ...p.effects } })),
+    journal: state.journal.slice(),
+    priorityMomentum: { ...state.priorityMomentum },
+    actionCooldowns: { ...state.actionCooldowns },
+    activeChoice: state.activeChoice ? { ...state.activeChoice } : null,
+  };
+}
+
+export function deserializeStrategicGameplayState(
+  save: StrategicGameplaySaveV1,
+): StrategicGameplayState {
+  if (save.version !== 1) {
+    throw new Error(`Unsupported strategic save version: ${save.version}`);
+  }
+  return {
+    day: save.day,
+    completedActionIds: [...save.completedActionIds],
+    pendingDelayed: save.pendingDelayed.slice(),
+    journal: save.journal.slice(),
+    priorityMomentum: { ...save.priorityMomentum },
+    actionCooldowns: { ...save.actionCooldowns },
+    activeChoice: save.activeChoice ? { ...save.activeChoice } : null,
+  };
+}
+
+export function mergeStrategicSaveIntoState(
+  base: StrategicGameplayState,
+  save: StrategicGameplaySaveV1,
+): StrategicGameplayState {
+  const loaded = deserializeStrategicGameplayState(save);
+  return {
+    ...base,
+    ...loaded,
+    day: Math.max(base.day, loaded.day),
+  };
+}
+
+// --- src/engine/tradeoff-mitigation.ts ---
+
+/** Spend AP + treasury to defer one pending trade-off by extraDays. */
+export function mitigateNextPendingTradeOff(
+  state: StrategicGameplayState,
+  contracts: StrategicGameplayContracts,
+  options: { apCost: number; treasuryCost: number; extraDays: number },
+): { state: StrategicGameplayState; ok: boolean; issues: StrategicValidationIssue[] } {
+  const issues: StrategicValidationIssue[] = [];
+  if (state.pendingDelayed.length === 0) {
+    issues.push({
+      code: 'NO_PENDING_TRADEOFFS',
+      message: 'No delayed trade-offs to mitigate.',
+      requirement: { kind: 'max_pending_tradeoffs', max: 0 },
+    });
+    return { state, ok: false, issues };
+  }
+
+  const econ = contracts.economy.snapshot();
+  if (econ.treasuryReserve < options.treasuryCost) {
+    issues.push({
+      code: 'INSUFFICIENT_FUNDS',
+      message: 'Treasury cannot fund mitigation.',
+      requirement: { kind: 'min_treasury', amount: options.treasuryCost },
+    });
+    return { state, ok: false, issues };
+  }
+
+  contracts.economy.applyPatch({ treasuryDelta: -options.treasuryCost });
+  const sorted = [...state.pendingDelayed].sort((a, b) => a.firesOnDay - b.firesOnDay);
+  const [next, ...rest] = sorted;
+  const deferred = {
+    ...next,
+    firesOnDay: next.firesOnDay + options.extraDays,
+    label: `${next.label} (deferred +${options.extraDays}d)`,
+  };
+
+  contracts.ui.pushToast({
+    id: `mitigate_${next.id}_${state.day}`,
+    severity: 'info',
+    title: 'Trade-off deferred',
+    body: deferred.label,
+    day: state.day,
+  });
+
+  return {
+    ok: true,
+    issues: [],
+    state: {
+      ...state,
+      pendingDelayed: [...rest, deferred].sort((a, b) => a.firesOnDay - b.firesOnDay),
+    },
+  };
+}
+
+export function summarizePendingTradeOffLoad(state: StrategicGameplayState): {
+  count: number;
+  nextFireDay: number | null;
+  heaviestPopulationStress: number;
+} {
+  if (state.pendingDelayed.length === 0) {
+    return { count: 0, nextFireDay: null, heaviestPopulationStress: 0 };
+  }
+  const sorted = [...state.pendingDelayed].sort((a, b) => a.firesOnDay - b.firesOnDay);
+  let heaviest = 0;
+  for (const p of state.pendingDelayed) {
+    heaviest = Math.max(
+      heaviest,
+      p.effects.population?.affordabilityStressDelta ?? 0,
+    );
+  }
+  return {
+    count: pendingTradeOffCount(state),
+    nextFireDay: sorted[0].firesOnDay,
+    heaviestPopulationStress: heaviest,
+  };
+}
+
 // --- src/engine/validation.ts ---
 
 export function evaluateRequirements(
@@ -696,6 +916,13 @@ export function validateAction(
 
   if (state) {
     issues.push(...validatePrerequisites(state, action));
+    if (!canExecuteAfterCooldown(state, action.id)) {
+      issues.push({
+        code: 'COOLDOWN_ACTIVE',
+        message: `${action.title} is on cooldown.`,
+        requirement: { kind: 'action_not_yet_completed', actionId: action.id },
+      });
+    }
   }
 
   return issues;
@@ -786,11 +1013,15 @@ export function rankStrategicActions(
       maxPendingTradeOffs: maxPending,
     });
     const alignment = scoreNationalPriorityAlignment(action, priorityCtx);
+    const synergies = detectStrategicSynergies(state, action, STRATEGIC_ACTION_CATALOG);
     recommendations.push({
       actionId: action.id,
       title: action.title,
       feasible: issues.length === 0,
-      alignmentScore: (alignment?.score ?? 0) + priorityMomentumBonus(state, action),
+      alignmentScore:
+        (alignment?.score ?? 0) +
+        priorityMomentumBonus(state, action) +
+        synergyScoreBonus(synergies),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });
@@ -892,6 +1123,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     completedActionIds: [],
     journal: [],
     priorityMomentum: {},
+    actionCooldowns: {},
     activeChoice: null,
   };
 }
@@ -989,8 +1221,17 @@ export function executeStrategicAction(
   applyDomainEffects(contracts, action.immediateEffects);
 
   const alignment = scoreNationalPriorityAlignment(action, priorityCtx);
+  const synergies =
+    action.synergyEligible !== false
+      ? detectStrategicSynergies(state, action, STRATEGIC_ACTION_CATALOG)
+      : [];
+  const synergyApproval = applySynergyApprovalBoost(synergies);
+
   if (alignment && alignment.band === 'strong') {
-    contracts.government.applyPatch({ approvalDelta: 1, ledgerNote: alignment.reason });
+    contracts.government.applyPatch({
+      approvalDelta: 1 + synergyApproval,
+      ledgerNote: alignment.reason,
+    });
   } else if (alignment && alignment.band === 'conflict') {
     contracts.government.applyPatch({ approvalDelta: -2, ledgerNote: alignment.reason });
   }
@@ -1013,6 +1254,9 @@ export function executeStrategicAction(
     action.delayedTradeOffs.length,
   );
   nextState = applyPriorityMomentum(nextState, action);
+  if (action.cooldownDays && action.cooldownDays > 0) {
+    nextState = startActionCooldown(nextState, action.id, action.cooldownDays);
+  }
 
   contracts.ui.pushToast({
     id: `action_${action.id}_${state.day}`,
@@ -1338,6 +1582,58 @@ export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition>
       },
     ],
   },
+  'sga_critical_priority_surge': {
+    id: 'sga_critical_priority_surge',
+    title: 'Critical Priority Surge',
+    category: 'governance',
+    apCost: 2,
+    cashCost: 15_000,
+    treasuryCost: 90_000,
+    minApproval: 52,
+    alignedPriorities: [
+      'water_security',
+      'energy_resilience',
+      'supply_chain_security',
+      'freight_modernization',
+    ],
+    conflictingPriorities: [],
+    tags: ['surge', 'directive'],
+    repeatable: true,
+    cooldownDays: 4,
+    synergyEligible: true,
+    immediateEffects: {
+      economy: { cashDelta: -15_000, treasuryDelta: -90_000 },
+      government: { approvalDelta: 2, directiveSlotsDelta: 1 },
+      population: { publicStabilityDelta: 1 },
+    },
+    delayedTradeOffs: [
+      {
+        label: 'Surge fatigue',
+        warning: 'Staff burnout increases regulatory burden.',
+        effects: { government: { regulatoryBurdenDelta: 3, approvalDelta: -1 } },
+      },
+    ],
+  },
+  'sga_supply_chain_contingency_plan': {
+    id: 'sga_supply_chain_contingency_plan',
+    title: 'Supply Chain Contingency Plan',
+    category: 'trade_off',
+    apCost: 1,
+    cashCost: 18_000,
+    treasuryCost: 45_000,
+    minApproval: 40,
+    alignedPriorities: ['supply_chain_security', 'freight_modernization'],
+    conflictingPriorities: ['technology_competitiveness'],
+    tags: ['contingency', 'logistics'],
+    repeatable: true,
+    prerequisiteActionIds: ['sga_supply_chain_buffer'],
+    synergyEligible: true,
+    immediateEffects: {
+      economy: { cashDelta: -18_000, treasuryDelta: -45_000, priceMultiplierFactor: 0.97 },
+      population: { essentialAccessDelta: 2 },
+    },
+    delayedTradeOffs: [],
+  },
 };
 
 export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefinition> = {
@@ -1525,6 +1821,57 @@ export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefiniti
             optionId: 'div_cancel',
             label: 'Cancel',
             description: 'Exit without launch.',
+            nextStageId: null,
+          },
+        ],
+      },
+    ],
+  },
+  'msc_resilience_compact': {
+    choiceId: 'msc_resilience_compact',
+    title: 'National Resilience Compact',
+    linkedActionId: 'sga_national_resilience_compact',
+    entryStageId: 'resilience_terms',
+    stages: [
+      {
+        stageId: 'resilience_terms',
+        prompt: 'Choose compact enforcement level.',
+        options: [
+          {
+            optionId: 'terms_standard',
+            label: 'Standard compliance',
+            description: 'Balanced audits and timelines.',
+            nextStageId: 'resilience_sign',
+            requirements: [{ kind: 'min_approval', rating: 48 }],
+          },
+          {
+            optionId: 'terms_strict',
+            label: 'Strict compliance',
+            description: 'Higher approval bar, faster dividends.',
+            nextStageId: 'resilience_sign',
+            requirements: [
+              { kind: 'min_approval', rating: 52 },
+              { kind: 'directive_slot_available' },
+            ],
+          },
+        ],
+      },
+      {
+        stageId: 'resilience_sign',
+        prompt: 'Sign compact — prerequisites must already be complete.',
+        options: [
+          {
+            optionId: 'resilience_sign_execute',
+            label: 'Sign and execute',
+            description: 'Launch National Resilience Compact.',
+            nextStageId: null,
+            resolvesActionId: 'sga_national_resilience_compact',
+            requirements: [{ kind: 'max_pending_tradeoffs', max: 6 }],
+          },
+          {
+            optionId: 'resilience_sign_defer',
+            label: 'Defer',
+            description: 'Exit without signing.',
             nextStageId: null,
           },
         ],
@@ -1749,7 +2096,7 @@ export function createMemoryStrategicContracts(
 
 export const AGENT_01_MODULE_ID = 'operation-10m/agent-01-strategic-gameplay';
 
-export const AGENT_01_MODULE_VERSION = '1.2.0';
+export const AGENT_01_MODULE_VERSION = '1.3.0';
 
 
 
@@ -1771,7 +2118,7 @@ export function runOp10mAgent01StrategicGameplaySelfTests(): {
 
     name: 'strategic action catalog non-empty',
 
-    passed: listStrategicActions().length >= 8,
+    passed: listStrategicActions().length >= 10,
 
   });
 

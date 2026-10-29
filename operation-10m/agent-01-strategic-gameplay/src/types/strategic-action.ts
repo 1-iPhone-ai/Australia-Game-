@@ -50,6 +50,10 @@ export interface StrategicActionDefinition {
   requiresMaxPendingTradeOffs?: number;
   /** All listed actions must appear in completedActionIds before this runs. */
   prerequisiteActionIds?: string[];
+  /** After execution, block same action id until day + cooldownDays. */
+  cooldownDays?: number;
+  /** Bonus approval when synergy matches exist (applied in engine). */
+  synergyEligible?: boolean;
 }
 
 export interface MultiStageChoiceOption {
@@ -122,6 +126,7 @@ export interface StrategicGameplayState {
   completedActionIds: string[];
   journal: StrategicActionJournalEntry[];
   priorityMomentum: Partial<Record<NationalPriorityId, number>>;
+  actionCooldowns: Record<string, { untilDay: number }>;
   activeChoice: {
     choiceId: string;
     stageId: string;

@@ -12,6 +12,12 @@ import {
   DEFAULT_MAX_PENDING_TRADE_OFFS,
 } from './commitment-journal.ts';
 import { applyPriorityMomentum } from './priority-momentum.ts';
+import { STRATEGIC_ACTION_CATALOG } from '../catalog/strategic-action-catalog.ts';
+import {
+  applySynergyApprovalBoost,
+  detectStrategicSynergies,
+  startActionCooldown,
+} from './strategic-synergies.ts';
 import {
   applyDomainEffects,
   scheduleDelayedTradeOffs,
@@ -29,6 +35,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     completedActionIds: [],
     journal: [],
     priorityMomentum: {},
+    actionCooldowns: {},
     activeChoice: null,
   };
 }
@@ -126,8 +133,17 @@ export function executeStrategicAction(
   applyDomainEffects(contracts, action.immediateEffects);
 
   const alignment = scoreNationalPriorityAlignment(action, priorityCtx);
+  const synergies =
+    action.synergyEligible !== false
+      ? detectStrategicSynergies(state, action, STRATEGIC_ACTION_CATALOG)
+      : [];
+  const synergyApproval = applySynergyApprovalBoost(synergies);
+
   if (alignment && alignment.band === 'strong') {
-    contracts.government.applyPatch({ approvalDelta: 1, ledgerNote: alignment.reason });
+    contracts.government.applyPatch({
+      approvalDelta: 1 + synergyApproval,
+      ledgerNote: alignment.reason,
+    });
   } else if (alignment && alignment.band === 'conflict') {
     contracts.government.applyPatch({ approvalDelta: -2, ledgerNote: alignment.reason });
   }
@@ -150,6 +166,9 @@ export function executeStrategicAction(
     action.delayedTradeOffs.length,
   );
   nextState = applyPriorityMomentum(nextState, action);
+  if (action.cooldownDays && action.cooldownDays > 0) {
+    nextState = startActionCooldown(nextState, action.id, action.cooldownDays);
+  }
 
   contracts.ui.pushToast({
     id: `action_${action.id}_${state.day}`,

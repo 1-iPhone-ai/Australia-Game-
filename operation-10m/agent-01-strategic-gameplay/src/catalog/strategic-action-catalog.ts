@@ -261,6 +261,58 @@ export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition>
       },
     ],
   },
+  'sga_critical_priority_surge': {
+    id: 'sga_critical_priority_surge',
+    title: 'Critical Priority Surge',
+    category: 'governance',
+    apCost: 2,
+    cashCost: 15_000,
+    treasuryCost: 90_000,
+    minApproval: 52,
+    alignedPriorities: [
+      'water_security',
+      'energy_resilience',
+      'supply_chain_security',
+      'freight_modernization',
+    ],
+    conflictingPriorities: [],
+    tags: ['surge', 'directive'],
+    repeatable: true,
+    cooldownDays: 4,
+    synergyEligible: true,
+    immediateEffects: {
+      economy: { cashDelta: -15_000, treasuryDelta: -90_000 },
+      government: { approvalDelta: 2, directiveSlotsDelta: 1 },
+      population: { publicStabilityDelta: 1 },
+    },
+    delayedTradeOffs: [
+      {
+        label: 'Surge fatigue',
+        warning: 'Staff burnout increases regulatory burden.',
+        effects: { government: { regulatoryBurdenDelta: 3, approvalDelta: -1 } },
+      },
+    ],
+  },
+  'sga_supply_chain_contingency_plan': {
+    id: 'sga_supply_chain_contingency_plan',
+    title: 'Supply Chain Contingency Plan',
+    category: 'trade_off',
+    apCost: 1,
+    cashCost: 18_000,
+    treasuryCost: 45_000,
+    minApproval: 40,
+    alignedPriorities: ['supply_chain_security', 'freight_modernization'],
+    conflictingPriorities: ['technology_competitiveness'],
+    tags: ['contingency', 'logistics'],
+    repeatable: true,
+    prerequisiteActionIds: ['sga_supply_chain_buffer'],
+    synergyEligible: true,
+    immediateEffects: {
+      economy: { cashDelta: -18_000, treasuryDelta: -45_000, priceMultiplierFactor: 0.97 },
+      population: { essentialAccessDelta: 2 },
+    },
+    delayedTradeOffs: [],
+  },
 };
 
 export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefinition> = {
@@ -448,6 +500,57 @@ export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefiniti
             optionId: 'div_cancel',
             label: 'Cancel',
             description: 'Exit without launch.',
+            nextStageId: null,
+          },
+        ],
+      },
+    ],
+  },
+  'msc_resilience_compact': {
+    choiceId: 'msc_resilience_compact',
+    title: 'National Resilience Compact',
+    linkedActionId: 'sga_national_resilience_compact',
+    entryStageId: 'resilience_terms',
+    stages: [
+      {
+        stageId: 'resilience_terms',
+        prompt: 'Choose compact enforcement level.',
+        options: [
+          {
+            optionId: 'terms_standard',
+            label: 'Standard compliance',
+            description: 'Balanced audits and timelines.',
+            nextStageId: 'resilience_sign',
+            requirements: [{ kind: 'min_approval', rating: 48 }],
+          },
+          {
+            optionId: 'terms_strict',
+            label: 'Strict compliance',
+            description: 'Higher approval bar, faster dividends.',
+            nextStageId: 'resilience_sign',
+            requirements: [
+              { kind: 'min_approval', rating: 52 },
+              { kind: 'directive_slot_available' },
+            ],
+          },
+        ],
+      },
+      {
+        stageId: 'resilience_sign',
+        prompt: 'Sign compact — prerequisites must already be complete.',
+        options: [
+          {
+            optionId: 'resilience_sign_execute',
+            label: 'Sign and execute',
+            description: 'Launch National Resilience Compact.',
+            nextStageId: null,
+            resolvesActionId: 'sga_national_resilience_compact',
+            requirements: [{ kind: 'max_pending_tradeoffs', max: 6 }],
+          },
+          {
+            optionId: 'resilience_sign_defer',
+            label: 'Defer',
+            description: 'Exit without signing.',
             nextStageId: null,
           },
         ],

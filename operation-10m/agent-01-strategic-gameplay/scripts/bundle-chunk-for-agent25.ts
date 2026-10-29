@@ -24,6 +24,9 @@ const SOURCE_FILES = [
   'src/engine/action-prerequisites.ts',
   'src/engine/priority-momentum.ts',
   'src/engine/consequence-forecast.ts',
+  'src/engine/strategic-synergies.ts',
+  'src/engine/strategic-save.ts',
+  'src/engine/tradeoff-mitigation.ts',
   'src/engine/validation.ts',
   'src/engine/strategic-recommendations.ts',
   'src/engine/delayed-effects.ts',
@@ -77,7 +80,7 @@ function bundleSources(): string {
 
   parts.push(
     `export const AGENT_01_MODULE_ID = 'operation-10m/${moduleId}';`,
-    `export const AGENT_01_MODULE_VERSION = '1.2.0';`,
+    `export const AGENT_01_MODULE_VERSION = '1.3.0';`,
     '',
     `export function runOp10mAgent01StrategicGameplaySelfTests(): {`,
     `  passed: number;`,
@@ -88,7 +91,7 @@ function bundleSources(): string {
     `  results.push({`,
     `    id: 'agent01_catalog',`,
     `    name: 'strategic action catalog non-empty',`,
-    `    passed: listStrategicActions().length >= 8,`,
+    `    passed: listStrategicActions().length >= 10,`,
     `  });`,
     `  const contracts = createMemoryStrategicContracts();`,
     `  const action = getStrategicAction('sga_supply_chain_buffer');`,

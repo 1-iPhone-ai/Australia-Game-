@@ -54,4 +54,23 @@ export {
 export { createMemoryStrategicContracts } from './adapters/memory-contracts.ts';
 
 export const AGENT_01_MODULE_ID = 'operation-10m/agent-01-strategic-gameplay';
-export const AGENT_01_MODULE_VERSION = '1.2.0';
+export {
+  applySynergyApprovalBoost,
+  canExecuteAfterCooldown,
+  detectStrategicSynergies,
+  startActionCooldown,
+  synergyScoreBonus,
+} from './engine/strategic-synergies.ts';
+
+export {
+  deserializeStrategicGameplayState,
+  mergeStrategicSaveIntoState,
+  serializeStrategicGameplayState,
+} from './engine/strategic-save.ts';
+
+export {
+  mitigateNextPendingTradeOff,
+  summarizePendingTradeOffLoad,
+} from './engine/tradeoff-mitigation.ts';
+
+export const AGENT_01_MODULE_VERSION = '1.3.0';

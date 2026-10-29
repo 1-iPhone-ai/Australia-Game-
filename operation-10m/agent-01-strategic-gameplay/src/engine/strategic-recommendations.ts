@@ -7,6 +7,8 @@ import type {
   StrategicGameplayState,
 } from '../types/strategic-action.ts';
 import { priorityMomentumBonus } from './priority-momentum.ts';
+import { detectStrategicSynergies, synergyScoreBonus } from './strategic-synergies.ts';
+import { STRATEGIC_ACTION_CATALOG } from '../catalog/strategic-action-catalog.ts';
 import { scoreNationalPriorityAlignment, validateAction } from './validation.ts';
 
 export function rankStrategicActions(
@@ -25,11 +27,15 @@ export function rankStrategicActions(
       maxPendingTradeOffs: maxPending,
     });
     const alignment = scoreNationalPriorityAlignment(action, priorityCtx);
+    const synergies = detectStrategicSynergies(state, action, STRATEGIC_ACTION_CATALOG);
     recommendations.push({
       actionId: action.id,
       title: action.title,
       feasible: issues.length === 0,
-      alignmentScore: (alignment?.score ?? 0) + priorityMomentumBonus(state, action),
+      alignmentScore:
+        (alignment?.score ?? 0) +
+        priorityMomentumBonus(state, action) +
+        synergyScoreBonus(synergies),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });
