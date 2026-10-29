@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-20-automation
-// OP10M_MANIFEST_SHA256: 35911d487aee2b4047f5e921e1b92049d6ef2d4131c60576a7032d94b7bbdd35
-// OP10M_MODULE_VERSION: 10m.1.13.0-agent20
+// OP10M_MANIFEST_SHA256: 3fa8ae9ce57335115173ccd3c769fb194e88f3ae8ab9fce29a09cdbc26c4eeed
+// OP10M_MODULE_VERSION: 10m.1.14.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
@@ -7000,6 +7000,386 @@ export function runO10Agent20IdleGovernanceProgramPassSelfTests(): O10SelfTestRe
 }
 
 
+// --- source: automation-idle-governance-program-attestation.ts ---
+
+export interface O10IdleGovernanceProgramAttestation {
+  schema: '10m.agent20.idle-governance-program-attestation.v1';
+  replayFrameCount: number;
+  effectiveCycles: number;
+  replayDeterministic: boolean;
+  charterPolicyLine: string;
+  rollupRecommendation: string;
+  digestChain: string;
+  ok: boolean;
+  notes: string[];
+}
+
+function fnv1aHex(text: string): string {
+  let chain = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    chain ^= text.charCodeAt(i);
+    chain = Math.imul(chain, 16777619);
+  }
+  return `o10govprog_${(chain >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+/** Attest a program pass: replay determinism, cycle alignment, rollup recommendation present. */
+export function attestIdleGovernanceProgramPass(
+  pass: O10IdleGovernanceProgramPassResult
+): O10IdleGovernanceProgramAttestation {
+  const notes: string[] = [];
+  const tape = pass.replayTape;
+  const verify = verifyIdleGovernanceReplayTapeDeterminism(pass.watch, tape);
+
+  if (!pass.replayDeterministic || !verify.ok) {
+    notes.push('replay_nondeterministic');
+  }
+  if (tape.frameCount !== pass.watch.journal.entries.length) {
+    notes.push(`frame_journal_mismatch:${tape.frameCount}!=${pass.watch.journal.entries.length}`);
+  }
+  if (pass.effectiveCycles !== pass.watch.cyclesRun) {
+    notes.push('cycle_count_mismatch');
+  }
+  if (tape.rollupRecommendation !== pass.watch.rollup.recommendation) {
+    notes.push('rollup_recommendation_mismatch');
+  }
+
+  const digestChain = fnv1aHex([
+    pass.charterPolicyLine,
+    tape.rollupRecommendation,
+    tape.frames.map(f => f.digest).join('|'),
+    String(pass.effectiveCycles),
+  ].join('\n'));
+
+  const ok = notes.length === 0;
+
+  return {
+    schema: '10m.agent20.idle-governance-program-attestation.v1',
+    replayFrameCount: tape.frameCount,
+    effectiveCycles: pass.effectiveCycles,
+    replayDeterministic: pass.replayDeterministic && verify.ok,
+    charterPolicyLine: pass.charterPolicyLine,
+    rollupRecommendation: tape.rollupRecommendation,
+    digestChain,
+    ok,
+    notes,
+  };
+}
+
+export function verifyIdleGovernanceProgramAttestation(
+  pass: O10IdleGovernanceProgramPassResult,
+  attestation: O10IdleGovernanceProgramAttestation
+): boolean {
+  const rerun = attestIdleGovernanceProgramPass(pass);
+  return rerun.digestChain === attestation.digestChain && rerun.ok === attestation.ok;
+}
+
+export function runO10Agent20IdleGovernanceProgramAttestationSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const mockWatch = {
+    schema: '10m.agent20.idle-governance-sustained-watch.v1' as const,
+    cyclesRun: 2,
+    summaryLine: 'watch',
+    finalTrail: { schema: '10m.agent20.idle-governance-audit-trail.v1' as const, entries: [] },
+    lastPass: {} as never,
+    journal: {
+      schema: '10m.agent20.idle-governance-assurance-journal.v1' as const,
+      entries: [
+        {
+          schema: '10m.agent20.idle-governance-assurance-journal-entry.v1' as const,
+          turn: 1,
+          attestationFingerprint: 'fnv1a_1',
+          reconcileStatus: 'aligned',
+          trendDirection: 'stable',
+          watchUrgency: 'low',
+          attestValid: true,
+        },
+        {
+          schema: '10m.agent20.idle-governance-assurance-journal-entry.v1' as const,
+          turn: 2,
+          attestationFingerprint: 'fnv1a_2',
+          reconcileStatus: 'aligned',
+          trendDirection: 'stable',
+          watchUrgency: 'low',
+          attestValid: true,
+        },
+      ],
+    },
+    rollup: {
+      schema: '10m.agent20.idle-governance-assurance-rollup.v1' as const,
+      entryCount: 2,
+      validRatio: 1,
+      highUrgencyCount: 0,
+      dominantTrend: 'stable',
+      recommendation: 'continue_scheduled_watch',
+      summaryLine: 'rollup',
+    },
+  };
+
+  const replayTape = buildIdleGovernanceReplayTapeFromWatch(mockWatch);
+  const replayDeterministic = verifyIdleGovernanceReplayTapeDeterminism(mockWatch, replayTape).ok;
+
+  const mockPass: O10IdleGovernanceProgramPassResult = {
+    schema: '10m.agent20.idle-governance-program-pass.v1',
+    requestedCycles: 2,
+    effectiveCycles: 2,
+    charterPolicyLine: 'charter continue_scheduled_watch',
+    replayDeterministic,
+    summaryLine: 'mock',
+    watch: mockWatch,
+    replayTape,
+  };
+
+  const att = attestIdleGovernanceProgramPass(mockPass);
+  push('gov_prog_att_ok', 'aligned mock pass attests ok', att.ok && att.digestChain.startsWith('o10govprog_'));
+  push('gov_prog_att_verify', 'verify matches digest rerun', verifyIdleGovernanceProgramAttestation(mockPass, att));
+
+  const badPass = {
+    ...mockPass,
+    replayDeterministic: false,
+    replayTape: { ...mockPass.replayTape, rollupRecommendation: 'escalate_to_human_takeover' as const },
+  };
+  const badAtt = attestIdleGovernanceProgramPass(badPass);
+  push('gov_prog_att_fail', 'mismatch yields notes and not ok', !badAtt.ok && badAtt.notes.length > 0);
+
+  push('gov_prog_att_schema', 'program attestation schema marker', att.schema === '10m.agent20.idle-governance-program-attestation.v1');
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-registry.ts ---
+
+export interface O10IdleGovernanceProgramRegistryEntry {
+  schema: '10m.agent20.idle-governance-program-registry-entry.v1';
+  turn: number;
+  digestChain: string;
+  charterPolicyLine: string;
+  rollupRecommendation: string;
+  attestOk: boolean;
+}
+
+export interface O10IdleGovernanceProgramRegistry {
+  schema: '10m.agent20.idle-governance-program-registry.v1';
+  entries: O10IdleGovernanceProgramRegistryEntry[];
+}
+
+export function createEmptyIdleGovernanceProgramRegistry(): O10IdleGovernanceProgramRegistry {
+  return { schema: '10m.agent20.idle-governance-program-registry.v1', entries: [] };
+}
+
+export function appendIdleGovernanceProgramRegistryEntry(
+  registry: O10IdleGovernanceProgramRegistry,
+  pass: O10IdleGovernanceProgramPassResult,
+  attestation: O10IdleGovernanceProgramAttestation,
+  turn: number
+): O10IdleGovernanceProgramRegistry {
+  const entry: O10IdleGovernanceProgramRegistryEntry = {
+    schema: '10m.agent20.idle-governance-program-registry-entry.v1',
+    turn,
+    digestChain: attestation.digestChain,
+    charterPolicyLine: pass.charterPolicyLine,
+    rollupRecommendation: attestation.rollupRecommendation,
+    attestOk: attestation.ok,
+  };
+  return { schema: registry.schema, entries: [...registry.entries, entry].slice(-32) };
+}
+
+export function formatIdleGovernanceProgramRegistryDigest(registry: O10IdleGovernanceProgramRegistry): string {
+  if (registry.entries.length === 0) return 'gov_program_registry entries=0';
+  const last = registry.entries[registry.entries.length - 1];
+  return `gov_program_registry entries=${registry.entries.length} last_ok=${last.attestOk} rollup=${last.rollupRecommendation}`;
+}
+
+export function runO10Agent20IdleGovernanceProgramRegistrySelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  let registry = createEmptyIdleGovernanceProgramRegistry();
+  push('gov_prog_reg_empty', 'empty registry digest', formatIdleGovernanceProgramRegistryDigest(registry).includes('entries=0'));
+
+  const mockAtt: O10IdleGovernanceProgramAttestation = {
+    schema: '10m.agent20.idle-governance-program-attestation.v1',
+    replayFrameCount: 1,
+    effectiveCycles: 1,
+    replayDeterministic: true,
+    charterPolicyLine: 'charter ok',
+    rollupRecommendation: 'continue_scheduled_watch',
+    digestChain: 'o10govprog_deadbeef',
+    ok: true,
+    notes: [],
+  };
+  const mockPass: O10IdleGovernanceProgramPassResult = {
+    schema: '10m.agent20.idle-governance-program-pass.v1',
+    requestedCycles: 1,
+    effectiveCycles: 1,
+    charterPolicyLine: 'charter ok',
+    replayDeterministic: true,
+    summaryLine: 's',
+    watch: {} as never,
+    replayTape: {} as never,
+  };
+
+  registry = appendIdleGovernanceProgramRegistryEntry(registry, mockPass, mockAtt, 3);
+  push('gov_prog_reg_append', 'append stores digest and rollup', registry.entries.length === 1 && registry.entries[0].digestChain.includes('o10govprog'));
+
+  registry = appendIdleGovernanceProgramRegistryEntry(registry, mockPass, { ...mockAtt, ok: false, rollupRecommendation: 'escalate_to_human_takeover' }, 4);
+  push('gov_prog_reg_digest', 'digest reflects last entry', formatIdleGovernanceProgramRegistryDigest(registry).includes('escalate_to_human_takeover'));
+
+  push('gov_prog_reg_schema', 'registry schema marker', registry.schema === '10m.agent20.idle-governance-program-registry.v1');
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-operations.ts ---
+  appendIdleGovernanceProgramRegistryEntry,
+  createEmptyIdleGovernanceProgramRegistry,
+  formatIdleGovernanceProgramRegistryDigest,
+  type O10IdleGovernanceProgramRegistry,
+} from './automation-idle-governance-program-registry.js';
+
+export interface O10IdleGovernanceProgramOperationsResult {
+  schema: '10m.agent20.idle-governance-program-operations.v1';
+  pass: ReturnType<typeof runIdleGovernanceProgramPass>;
+  attestation: ReturnType<typeof attestIdleGovernanceProgramPass>;
+  registry: O10IdleGovernanceProgramRegistry;
+  registryDigest: string;
+  operationsMarkdown: string;
+  summaryLine: string;
+}
+
+export function buildIdleGovernanceProgramOperationsMarkdown(
+  pass: ReturnType<typeof runIdleGovernanceProgramPass>,
+  attestation: ReturnType<typeof attestIdleGovernanceProgramPass>,
+  registryDigest: string
+): string {
+  return [
+    '## Agent 20 idle governance program operations',
+    '',
+    `- ${pass.summaryLine}`,
+    `- attest_ok=${attestation.ok} digest=${attestation.digestChain}`,
+    `- ${registryDigest}`,
+    `- rollup=${attestation.rollupRecommendation}`,
+    '',
+  ].join('\n');
+}
+
+/** Round-14 operations bundle: program pass + attestation + registry append. */
+export function runIdleGovernanceProgramOperations(
+  spec: O10IdleOpsWindowSpec,
+  rule: PortableHumanAutomationRule,
+  startTurn: number,
+  requestedCycles: number,
+  priorRegistry: O10IdleGovernanceProgramRegistry = createEmptyIdleGovernanceProgramRegistry()
+): O10IdleGovernanceProgramOperationsResult {
+  const pass = runIdleGovernanceProgramPass(spec, rule, startTurn, requestedCycles);
+  const attestation = attestIdleGovernanceProgramPass(pass);
+  const registry = appendIdleGovernanceProgramRegistryEntry(priorRegistry, pass, attestation, startTurn);
+  const registryDigest = formatIdleGovernanceProgramRegistryDigest(registry);
+  const operationsMarkdown = buildIdleGovernanceProgramOperationsMarkdown(pass, attestation, registryDigest);
+
+  const summaryLine = [
+    'gov_program_ops',
+    `attest_ok=${attestation.ok}`,
+    registryDigest,
+    `frames=${attestation.replayFrameCount}`,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-operations.v1',
+    pass,
+    attestation,
+    registry,
+    registryDigest,
+    operationsMarkdown,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramOperationsSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const sampleRule: PortableHumanAutomationRule = {
+    id: 'ops1',
+    name: 'Program ops',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 5,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 10, maxRunsTotal: null, cooldownTurns: 0 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: null,
+      lastRunTurn: null,
+      runsToday: 0,
+      runsTodayDay: -1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+  };
+
+  const calmSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 2,
+    humanCommittedEvery: 1,
+    idleMsStart: 0,
+    idleMsStep: 0,
+    consecutiveIdleStart: 0,
+  };
+
+  const ops = runIdleGovernanceProgramOperations(calmSpec, sampleRule, 1, 3);
+  push(
+    'gov_prog_ops_calm',
+    'calm operations attests and registers',
+    ops.attestation.ok && ops.registry.entries.length === 1 && ops.operationsMarkdown.includes('program operations')
+  );
+
+  const stressSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 5,
+    humanCommittedEvery: 0,
+    idleMsStart: 200_000,
+    idleMsStep: 120_000,
+    consecutiveIdleStart: 7,
+  };
+  const ops2 = runIdleGovernanceProgramOperations(stressSpec, sampleRule, 4, 4, ops.registry);
+  push(
+    'gov_prog_ops_chain',
+    'chained registry accumulates entries',
+    ops2.registry.entries.length === 2 && ops2.summaryLine.includes('gov_program_ops')
+  );
+
+  push('gov_prog_ops_schema', 'operations schema marker', ops.schema === '10m.agent20.idle-governance-program-operations.v1');
+
+  push(
+    'gov_prog_ops_digest',
+    'registry digest on operations result',
+    ops.registryDigest.includes('entries=1') && ops2.registryDigest.includes('entries=2')
+  );
+
+  return results;
+}
+
+
 // --- source: index.ts ---
 
 
@@ -7074,6 +7454,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceWatchReplayTapeSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramCharterSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramPassSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramAttestationSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramRegistrySelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramOperationsSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }

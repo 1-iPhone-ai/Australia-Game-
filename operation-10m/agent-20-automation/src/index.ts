@@ -42,6 +42,9 @@ export * from './automation-idle-governance-sustained-watch.js';
 export * from './automation-idle-governance-watch-replay-tape.js';
 export * from './automation-idle-governance-program-charter.js';
 export * from './automation-idle-governance-program-pass.js';
+export * from './automation-idle-governance-program-attestation.js';
+export * from './automation-idle-governance-program-registry.js';
+export * from './automation-idle-governance-program-operations.js';
 
 import type { O10SelfTestResult } from './types.js';
 import { runO10Agent20NationalStewardSelfTests } from './national-steward.js';
@@ -84,6 +87,9 @@ import { runO10Agent20IdleGovernanceSustainedWatchSelfTests } from './automation
 import { runO10Agent20IdleGovernanceWatchReplayTapeSelfTests } from './automation-idle-governance-watch-replay-tape.js';
 import { runO10Agent20IdleGovernanceProgramCharterSelfTests } from './automation-idle-governance-program-charter.js';
 import { runO10Agent20IdleGovernanceProgramPassSelfTests } from './automation-idle-governance-program-pass.js';
+import { runO10Agent20IdleGovernanceProgramAttestationSelfTests } from './automation-idle-governance-program-attestation.js';
+import { runO10Agent20IdleGovernanceProgramRegistrySelfTests } from './automation-idle-governance-program-registry.js';
+import { runO10Agent20IdleGovernanceProgramOperationsSelfTests } from './automation-idle-governance-program-operations.js';
 
 /** Full module self-test bundle for Agent 25 dev lab registration. */
 export function runO10Agent20ModuleSelfTests(): {
@@ -156,6 +162,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceWatchReplayTapeSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramCharterSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramPassSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramAttestationSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramRegistrySelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramOperationsSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }
