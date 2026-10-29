@@ -7686,6 +7686,293 @@ export function treatyRecoveryOrchestratorWithinCap(report: TreatyRecoveryOrches
 }
 
 
+// --- source: match-explainability-accord-bundle.ts ---
+  auditMatchExplainabilityAccordGate,
+  matchExplainabilityAccordAllowed,
+} from './match-explainability-accord-gate.ts';
+  buildMatchExplainabilityTreatyBundle,
+  matchExplainabilityTreatyReady,
+} from './match-explainability-treaty-bundle.ts';
+  buildSessionTreatyExportBundle,
+  sessionTreatyExportShipped,
+} from './session-treaty-export-bundle.ts';
+
+export const AGENT19_ACCORD_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityAccordBundle {
+  accordReady: boolean;
+  accordAllowed: boolean;
+  treatyReady: boolean;
+  treatyExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type AccordParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Accord bundle: accord gate and treaty export must both be green. */
+export function buildMatchExplainabilityAccordBundle(
+  packs: TurnExplainabilityPack[],
+  params: AccordParams,
+): MatchExplainabilityAccordBundle {
+  const accord = auditMatchExplainabilityAccordGate(packs, params);
+  const treaty = buildMatchExplainabilityTreatyBundle(packs, params);
+  const treatyExport = buildSessionTreatyExportBundle(packs, params);
+  const accordAllowed = matchExplainabilityAccordAllowed(accord);
+  const treatyReady = matchExplainabilityTreatyReady(treaty);
+  const treatyExportShipped = sessionTreatyExportShipped(treatyExport);
+  const accordReady = accordAllowed && treatyReady && treatyExportShipped;
+  const narrativeLines = [
+    `Match explainability accord bundle: ${accordReady ? 'READY' : 'PENDING'} (gate ${accordAllowed ? 'ok' : 'fail'}, treaty ${treatyReady ? 'ok' : 'fail'}).`,
+    ...accord.narrativeLines.slice(0, 2),
+    ...treaty.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_ACCORD_NARRATIVE_CAP);
+  return {
+    accordReady,
+    accordAllowed,
+    treatyReady,
+    treatyExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityAccordReady(bundle: MatchExplainabilityAccordBundle): boolean {
+  return bundle.accordReady;
+}
+
+
+// --- source: session-accord-export-bundle.ts ---
+  buildSessionTreatyExportBundle,
+  type SessionTreatyExportBundle,
+} from './session-treaty-export-bundle.ts';
+  buildMatchExplainabilityAccordBundle,
+  matchExplainabilityAccordReady,
+} from './match-explainability-accord-bundle.ts';
+
+export interface SessionAccordExportBundle extends SessionTreatyExportBundle {
+  accordReady: boolean;
+  accordSchema: string;
+}
+
+/** Accord export wraps treaty export when accord bundle is ready. */
+export function buildSessionAccordExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionAccordExportBundle {
+  const base = buildSessionTreatyExportBundle(packs, params);
+  const accord = buildMatchExplainabilityAccordBundle(packs, params);
+  const accordReady = matchExplainabilityAccordReady(accord);
+  const exports = accordReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    accordReady,
+    accordSchema: 'agent19.accord.v1',
+    releaseReady: accordReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Accord export: ${accordReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionAccordExportShipped(bundle: SessionAccordExportBundle): boolean {
+  return (
+    bundle.accordReady &&
+    bundle.exports.length > 0 &&
+    bundle.accordSchema === 'agent19.accord.v1'
+  );
+}
+
+
+// --- source: treaty-accord-bridge.ts ---
+  buildMatchExplainabilityAccordBundle,
+  matchExplainabilityAccordReady,
+} from './match-explainability-accord-bundle.ts';
+  buildMatchExplainabilityTreatyBundle,
+  matchExplainabilityTreatyReady,
+} from './match-explainability-treaty-bundle.ts';
+
+export interface TreatyAccordBridgeReport {
+  aligned: boolean;
+  accordReady: boolean;
+  treatyReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Accord-ready should match treaty-ready when treaty export stack passes. */
+export function auditTreatyAccordBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): TreatyAccordBridgeReport {
+  const accord = buildMatchExplainabilityAccordBundle(packs, params);
+  const treaty = buildMatchExplainabilityTreatyBundle(packs, params);
+  const accordReady = matchExplainabilityAccordReady(accord);
+  const treatyReady = matchExplainabilityTreatyReady(treaty);
+  const aligned = accordReady === treatyReady;
+  const narrativeLines = [
+    `Treaty/accord bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (accord ${accordReady ? 'ok' : 'fail'}, treaty ${treatyReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, accordReady, treatyReady, narrativeLines };
+}
+
+export function treatyAccordBridgeHealthy(report: TreatyAccordBridgeReport): boolean {
+  return report.accordReady && report.treatyReady && report.aligned;
+}
+
+
+// --- source: match-explainability-league-gate.ts ---
+  buildMatchExplainabilityAccordBundle,
+  matchExplainabilityAccordReady,
+} from './match-explainability-accord-bundle.ts';
+  buildSessionAccordExportBundle,
+  sessionAccordExportShipped,
+} from './session-accord-export-bundle.ts';
+
+export interface MatchExplainabilityLeagueGateReport {
+  leagueAllowed: boolean;
+  accordReady: boolean;
+  accordExportShipped: boolean;
+  treatyAccordHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** League gate: accord bundle + accord export + treaty/accord bridge. */
+export function auditMatchExplainabilityLeagueGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityLeagueGateReport {
+  const accord = buildMatchExplainabilityAccordBundle(packs, params);
+  const accordExport = buildSessionAccordExportBundle(packs, params);
+  const bridge = auditTreatyAccordBridge(packs, params);
+  const accordReady = matchExplainabilityAccordReady(accord);
+  const accordExportShipped = sessionAccordExportShipped(accordExport);
+  const treatyAccordHealthy = treatyAccordBridgeHealthy(bridge);
+  const leagueAllowed = accordReady && accordExportShipped && treatyAccordHealthy;
+  const narrativeLines = [
+    `Match explainability league: ${leagueAllowed ? 'ALLOWED' : 'DENIED'} (accord ${accordReady ? 'ok' : 'fail'}, export ${accordExportShipped ? 'ok' : 'fail'}).`,
+    ...accord.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    leagueAllowed,
+    accordReady,
+    accordExportShipped,
+    treatyAccordHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityLeagueAllowed(report: MatchExplainabilityLeagueGateReport): boolean {
+  return report.leagueAllowed;
+}
+
+
+// --- source: accord-recovery-orchestrator.ts ---
+  auditMatchExplainabilityAccordGate,
+  matchExplainabilityAccordAllowed,
+} from './match-explainability-accord-gate.ts';
+
+export const AGENT19_ACCORD_RECOVERY_CAP = 10;
+
+export interface AccordRecoveryOrchestratorReport {
+  accordBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when accord gate blocks league rollout. */
+export function buildAccordRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): AccordRecoveryOrchestratorReport {
+  const accord = auditMatchExplainabilityAccordGate(packs, params);
+  const accordBlocked = !matchExplainabilityAccordAllowed(accord);
+  const steps: string[] = [];
+  if (accordBlocked) {
+    if (!accord.treatyReady) {
+      steps.push('Restore treaty bundle: pact and treaty export must pass.');
+    }
+    if (!accord.treatyExportShipped) {
+      steps.push('Emit session treaty export before accord clearance.');
+    }
+    if (!accord.pactTreatyHealthy) {
+      steps.push('Reconcile pact/treaty bridge before accord.');
+    }
+    steps.push(...buildTreatyRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const treaty = buildMatchExplainabilityTreatyBundle(packs, params);
+    if (!treaty.treatyReady) {
+      steps.push('Re-run treaty readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Accord gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_ACCORD_RECOVERY_CAP);
+  return {
+    accordBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Accord recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function accordRecoveryOrchestratorWithinCap(report: AccordRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_ACCORD_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -8110,6 +8397,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilityAccordGate,
   matchExplainabilityAccordAllowed,
 } from '../match-explainability-accord-gate.ts';
+  buildMatchExplainabilityAccordBundle,
+  matchExplainabilityAccordReady,
+} from '../match-explainability-accord-bundle.ts';
+  buildSessionAccordExportBundle,
+  sessionAccordExportShipped,
+} from '../session-accord-export-bundle.ts';
+  buildAccordRecoveryOrchestrator,
+  accordRecoveryOrchestratorWithinCap,
+} from '../accord-recovery-orchestrator.ts';
+  auditMatchExplainabilityLeagueGate,
+  matchExplainabilityLeagueAllowed,
+} from '../match-explainability-league-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -12315,6 +12614,138 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilityAccordAllowed(report) && !report.treatyReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r30_accord_ready',
+        'Accord bundle ready when accord gate and treaty export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilityAccordBundle([pack], params);
+          return matchExplainabilityAccordReady(bundle) && bundle.accordAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r30_accord_held',
+        'Accord bundle pending when accord gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 35, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityAccordBundle([pack], {
+            memory: null,
+            currentTurn: 35,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityAccordReady(bundle) && !bundle.accordAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r30_accord_recovery',
+        'Accord recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 16, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 16, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildAccordRecoveryOrchestrator([pack], params);
+          return report.accordBlocked && accordRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r30_treaty_accord_bridge',
+        'Treaty accord bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditTreatyAccordBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return treatyAccordBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r30_accord_export',
+        'Accord export shipped when accord ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionAccordExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionAccordExportShipped(bundle) && bundle.accordSchema === 'agent19.accord.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r30_league_gate_ok',
+        'League gate allowed on healthy accord stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityLeagueGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityLeagueAllowed(report) && report.accordExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r30_league_gate_block',
+        'League gate denied when accord pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 36, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityLeagueGate([pack], {
+            memory: null,
+            currentTurn: 36,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityLeagueAllowed(report) && !report.accordReady || JSON.stringify(report);
         },
       ],
     ]),
