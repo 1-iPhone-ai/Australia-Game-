@@ -5382,6 +5382,232 @@ export function buildRevenueIntegrityAuditReport(
 }
 
 
+// --- source: appropriation-carry-forward/types.ts ---
+export const APPROPRIATION_CARRY_FORWARD_SCHEMA = 'op10m-agent07-appropriation-carry-forward-v1';
+
+export interface CarryForwardLine {
+  id: string;
+  portfolio: string;
+  carryForwardPoints: number;
+  sourceLapsePoints: number;
+  envelopeShare: number;
+  withinLineCap: boolean;
+}
+
+export interface AppropriationCarryForwardReport {
+  schemaVersion: string;
+  turn: number;
+  lines: CarryForwardLine[];
+  aggregateCarryForwardPoints: number;
+  aggregateSourceLapsePoints: number;
+  carryToEnvelopeRatio: number;
+  withinPortfolioCarryCap: boolean;
+  alignedWithLapseRegister: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: appropriation-carry-forward/compute.ts ---
+
+const CARRY_RATIO_CAP = 0.16;
+
+export function buildAppropriationCarryForwardReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  envelope: BudgetEnvelope,
+  lapseRegister: AppropriationLapseRegisterReport,
+  warrantLedger: AppropriationWarrantLedger
+): AppropriationCarryForwardReport {
+  const envelopeCapacity = envelope.totalCapacityPoints;
+  const yearEnd = turn % 12 >= 10;
+
+  const lines: CarryForwardLine[] = lapseRegister.entries.map(entry => {
+    const carryFactor = entry.disposition === 'reallocated' ? 0.62 : entry.disposition === 'pending_review' ? 0.38 : 0.22;
+    const carryForwardPoints =
+      Math.round((entry.lapsePoints * carryFactor * (yearEnd ? 1.05 : 0.94)) * 10) / 10;
+    const envelopeShare =
+      envelopeCapacity <= 0 ? 0 : Math.round((carryForwardPoints / envelopeCapacity) * 1000) / 1000;
+    const withinLineCap =
+      envelopeShare <= 0.045 || entry.withinEntryTolerance || v1012.pressure === 'critical';
+    return {
+      id: `cf_${entry.portfolio}`,
+      portfolio: entry.portfolio,
+      carryForwardPoints,
+      sourceLapsePoints: entry.lapsePoints,
+      envelopeShare,
+      withinLineCap
+    };
+  });
+
+  let aggregateCarryForwardPoints = Math.round(lines.reduce((s, l) => s + l.carryForwardPoints, 0) * 10) / 10;
+  const aggregateSourceLapsePoints = Math.round(
+    lines.reduce((s, l) => s + l.sourceLapsePoints, 0) * 10
+  ) / 10;
+
+  if (v1012.pressure !== 'critical' && envelopeCapacity > 0) {
+    const ratio = aggregateCarryForwardPoints / envelopeCapacity;
+    if (ratio > CARRY_RATIO_CAP) {
+      const scale = (CARRY_RATIO_CAP * envelopeCapacity) / Math.max(0.1, aggregateCarryForwardPoints);
+      for (const line of lines) {
+        line.carryForwardPoints = Math.round(line.carryForwardPoints * scale * 10) / 10;
+        line.envelopeShare = Math.round((line.carryForwardPoints / envelopeCapacity) * 1000) / 1000;
+      }
+      aggregateCarryForwardPoints = Math.round(lines.reduce((s, l) => s + l.carryForwardPoints, 0) * 10) / 10;
+    }
+  }
+
+  const carryToEnvelopeRatio =
+    envelopeCapacity <= 0
+      ? 0
+      : Math.round((aggregateCarryForwardPoints / envelopeCapacity) * 1000) / 1000;
+
+  const withinPortfolioCarryCap =
+    carryToEnvelopeRatio <= CARRY_RATIO_CAP ||
+    v1012.pressure === 'critical' ||
+    (v1012.pressure === 'strained' && carryToEnvelopeRatio <= CARRY_RATIO_CAP * 1.12);
+
+  const alignedWithLapseRegister =
+    aggregateCarryForwardPoints <= aggregateSourceLapsePoints * 0.72 + 1.5 ||
+    lapseRegister.withinRegisterTolerance ||
+    warrantLedger.lapseWithinTolerance ||
+    v1012.pressure === 'critical';
+
+  const warnings: string[] = [];
+  if (!withinPortfolioCarryCap) {
+    warnings.push(`Carry-forward ratio ${carryToEnvelopeRatio} exceeds cap ${CARRY_RATIO_CAP}.`);
+  }
+  if (!alignedWithLapseRegister) {
+    warnings.push(
+      `Carry ${aggregateCarryForwardPoints} exceeds lapse-derived pool ${aggregateSourceLapsePoints}.`
+    );
+  }
+
+  const narrative = withinPortfolioCarryCap
+    ? `Appropriation carry-forward ${aggregateCarryForwardPoints} (${carryToEnvelopeRatio} of envelope).`
+    : `Carry-forward alert: ratio ${carryToEnvelopeRatio}.`;
+
+  return {
+    schemaVersion: APPROPRIATION_CARRY_FORWARD_SCHEMA,
+    turn,
+    lines,
+    aggregateCarryForwardPoints,
+    aggregateSourceLapsePoints,
+    carryToEnvelopeRatio,
+    withinPortfolioCarryCap,
+    alignedWithLapseRegister,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: expenditure-growth-benchmark/types.ts ---
+export const EXPENDITURE_GROWTH_BENCHMARK_SCHEMA = 'op10m-agent07-expenditure-growth-benchmark-v1';
+
+export interface GrowthBenchmarkRow {
+  category: string;
+  baselinePoints: number;
+  projectedPoints: number;
+  growthRatePercent: number;
+  withinBenchmarkBand: boolean;
+}
+
+export interface ExpenditureGrowthBenchmarkReport {
+  schemaVersion: string;
+  turn: number;
+  rows: GrowthBenchmarkRow[];
+  aggregateGrowthRate: number;
+  revenueCapacityGrowthBand: number;
+  withinAggregateBenchmark: boolean;
+  coherentWithForwardIntegrity: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: expenditure-growth-benchmark/compute.ts ---
+
+const AGGREGATE_GROWTH_CAP = 4.2;
+
+export function buildExpenditureGrowthBenchmarkReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  myefo: MultiYearExpenditureFramework,
+  recurring: RecurringCommitmentsSchedule,
+  forwardIntegrity: ForwardEstimatesIntegrityReport
+): ExpenditureGrowthBenchmarkReport {
+  const revenueBand = Math.min(5.5, Math.max(1.8, v1012.revenueCapacity / 14));
+  const envelopeCapacity =
+    myefo.forwardBands[0]?.envelopeCapacity ?? Math.max(1, recurring.totalLoadThisTurn * 2);
+  const loadRatio = recurring.totalLoadThisTurn / Math.max(1, envelopeCapacity);
+
+  const rows: GrowthBenchmarkRow[] = myefo.ceilings.map(row => {
+    const projectedPoints = Math.round(row.ceilingPoints * (1 + loadRatio * 0.04) * 10) / 10;
+    const growthRatePercent =
+      row.baselinePoints <= 0
+        ? 0
+        : Math.round(((projectedPoints - row.baselinePoints) / row.baselinePoints) * 1000) / 10;
+    const cap = row.growthCapPercent + (v1012.pressure === 'strained' ? 0.6 : 0);
+    const withinBenchmarkBand =
+      growthRatePercent <= cap + 0.35 ||
+      row.binding === false ||
+      v1012.pressure === 'critical';
+    return {
+      category: row.category,
+      baselinePoints: row.baselinePoints,
+      projectedPoints,
+      growthRatePercent,
+      withinBenchmarkBand
+    };
+  });
+
+  const totalBaseline = rows.reduce((s, r) => s + r.baselinePoints, 0);
+  const totalProjected = rows.reduce((s, r) => s + r.projectedPoints, 0);
+  const aggregateGrowthRate =
+    totalBaseline <= 0
+      ? 0
+      : Math.round(((totalProjected - totalBaseline) / totalBaseline) * 1000) / 10;
+
+  const withinAggregateBenchmark =
+    aggregateGrowthRate <= AGGREGATE_GROWTH_CAP ||
+    aggregateGrowthRate <= revenueBand + 1.2 ||
+    v1012.pressure === 'critical' ||
+    (v1012.pressure === 'strained' && aggregateGrowthRate <= AGGREGATE_GROWTH_CAP * 1.15);
+
+  const coherentWithForwardIntegrity =
+    forwardIntegrity.coherentWithSupplementary &&
+    (Math.abs(aggregateGrowthRate - forwardIntegrity.bandDriftPoints) <= 2.8 ||
+      forwardIntegrity.allPassed ||
+      forwardIntegrity.aggregateRevisionGap <= 5 ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinAggregateBenchmark) {
+    warnings.push(`Aggregate growth ${aggregateGrowthRate}% exceeds cap ${AGGREGATE_GROWTH_CAP}%.`);
+  }
+  if (!coherentWithForwardIntegrity) {
+    warnings.push('Growth benchmark diverges from forward estimates integrity band.');
+  }
+
+  const narrative = withinAggregateBenchmark
+    ? `Expenditure growth benchmark ${aggregateGrowthRate}% vs revenue band ${revenueBand.toFixed(1)}%.`
+    : `Growth benchmark alert: ${aggregateGrowthRate}%.`;
+
+  return {
+    schemaVersion: EXPENDITURE_GROWTH_BENCHMARK_SCHEMA,
+    turn,
+    rows,
+    aggregateGrowthRate,
+    revenueCapacityGrowthBand: Math.round(revenueBand * 10) / 10,
+    withinAggregateBenchmark,
+    coherentWithForwardIntegrity,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -7199,6 +7425,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
 
   const infrastructureFiscalLoad = buildInfrastructureFiscalLoadReport(turn, v1012, infraSummary, state.budget);
   const revenueIntegrityAudit = buildRevenueIntegrityAuditReport(turn, v1012, ledger, taxPolicySensitivity);
+  const appropriationCarryForward = buildAppropriationCarryForwardReport(
+    turn,
+    v1012,
+    state.budget,
+    appropriationLapseRegister,
+    warrantLedger
+  );
+  const expenditureGrowthBenchmark = buildExpenditureGrowthBenchmarkReport(
+    turn,
+    v1012,
+    myefo,
+    recurring,
+    forwardEstimatesIntegrity
+  );
 
   checks.push({
     id: 'CF01',
@@ -7608,13 +7848,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `gap=${revenueIntegrityAudit.aggregateDeltaGap}, uplift=${taxPolicySensitivity.modeledUpliftPoints}`
   });
 
+  checks.push({
+    id: 'CF57',
+    label: 'Appropriation carry-forward within portfolio cap',
+    passed: appropriationCarryForward.withinPortfolioCarryCap || v1012.pressure === 'critical',
+    detail: `ratio=${appropriationCarryForward.carryToEnvelopeRatio}, carry=${appropriationCarryForward.aggregateCarryForwardPoints}`
+  });
+
+  checks.push({
+    id: 'CF58',
+    label: 'Expenditure growth within benchmark band',
+    passed: expenditureGrowthBenchmark.withinAggregateBenchmark,
+    detail: `growth=${expenditureGrowthBenchmark.aggregateGrowthRate}, band=${expenditureGrowthBenchmark.revenueCapacityGrowthBand}`
+  });
+
+  checks.push({
+    id: 'CF59',
+    label: 'Carry-forward aligned with lapse register',
+    passed: appropriationCarryForward.alignedWithLapseRegister,
+    detail: `carry=${appropriationCarryForward.aggregateCarryForwardPoints}, lapse=${appropriationCarryForward.aggregateSourceLapsePoints}`
+  });
+
+  checks.push({
+    id: 'CF60',
+    label: 'Growth benchmark coherent with forward integrity',
+    passed: expenditureGrowthBenchmark.coherentWithForwardIntegrity,
+    detail: `drift=${forwardEstimatesIntegrity.bandDriftPoints}, revisionGap=${forwardEstimatesIntegrity.aggregateRevisionGap}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 54
+    layerCount: 58
   };
 }
 
@@ -9494,12 +9762,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Fifty-four fiscal layers integrated', healthy.layerCount === 54, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Fifty-eight fiscal layers integrated', healthy.layerCount === 58, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 56,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 60,
     'ok'
   );
 
@@ -9511,10 +9779,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF56 ids present',
-    healthy.checks.length === 56 &&
+    'CF01–CF60 ids present',
+    healthy.checks.length === 60 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[55]?.id === 'CF56',
+      healthy.checks[59]?.id === 'CF60',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -11322,6 +11590,149 @@ export function runRevenueIntegrityAuditSelfTests(): {
   record('RIA05', 'Critical override path', critical.allPassed || critical.coherentWithTaxSensitivity, 'ok');
 
   record('RIA06', 'Delta gap non-negative', healthy.aggregateDeltaGap >= 0, `gap=${healthy.aggregateDeltaGap}`);
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: appropriation-carry-forward/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 11,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 4,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 6,
+    debtLevel: partial.debtLevel ?? 24,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 7,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+function bundle(turn: number, v1012: V1012FiscalSnapshot) {
+  const persisted = createInitialFiscalOutcomesPersisted(turn);
+  const { state } = computeFiscalOutcomesLayer({ turn, v1012 }, persisted);
+  const warrantLedger = buildAppropriationWarrantLedger(turn, v1012);
+  const lapseRegister = buildAppropriationLapseRegisterReport(turn, v1012, warrantLedger);
+  return { state, warrantLedger, lapseRegister };
+}
+
+export function runAppropriationCarryForwardSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const { state, warrantLedger, lapseRegister } = bundle(11, v);
+  const healthy = buildAppropriationCarryForwardReport(11, v, state.budget, lapseRegister, warrantLedger);
+
+  record('ACF01', 'At least one carry-forward line', healthy.lines.length >= 1, 'ok');
+  record('ACF02', 'Within portfolio carry cap', healthy.withinPortfolioCarryCap, healthy.narrative);
+  record('ACF03', 'Aligned with lapse register', healthy.alignedWithLapseRegister, 'ok');
+  record('ACF04', 'Carry ratio bounded', healthy.carryToEnvelopeRatio <= 0.2, `ratio=${healthy.carryToEnvelopeRatio}`);
+
+  const strained = buildAppropriationCarryForwardReport(
+    11,
+    snap({ pressure: 'strained', fiscalHeadroom: -4 }),
+    bundle(11, snap({ pressure: 'strained', fiscalHeadroom: -4 })).state.budget,
+    bundle(11, snap({ pressure: 'strained', fiscalHeadroom: -4 })).lapseRegister,
+    bundle(11, snap({ pressure: 'strained', fiscalHeadroom: -4 })).warrantLedger
+  );
+  record('ACF05', 'Strained snapshot runs carry report', strained.lines.length >= 1, `cap=${strained.withinPortfolioCarryCap}`);
+
+  const critical = buildAppropriationCarryForwardReport(
+    11,
+    snap({ pressure: 'critical' }),
+    state.budget,
+    lapseRegister,
+    warrantLedger
+  );
+  record('ACF06', 'Critical override path', critical.withinPortfolioCarryCap || critical.alignedWithLapseRegister, 'ok');
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: expenditure-growth-benchmark/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 70,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 5,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+function bundle(turn: number, v1012: V1012FiscalSnapshot) {
+  const persisted = createInitialFiscalOutcomesPersisted(turn);
+  const { state } = computeFiscalOutcomesLayer({ turn, v1012 }, persisted);
+  const recurring = scheduleRecurringCommitments(turn, v1012, state.budget);
+  const myefo = buildMultiYearExpenditureFramework(v1012, 3);
+  const outlook = buildMediumTermFiscalOutlook(v1012, 3);
+  const supplementary = buildSupplementaryEstimatesReport(turn, v1012, state.budget);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(turn, v1012, myefo, supplementary, outlook);
+  return { recurring, myefo, forwardIntegrity };
+}
+
+export function runExpenditureGrowthBenchmarkSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const { recurring, myefo, forwardIntegrity } = bundle(9, v);
+  const healthy = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+
+  record('EGB01', 'At least one benchmark row', healthy.rows.length >= 1, 'ok');
+  record('EGB02', 'Within aggregate benchmark', healthy.withinAggregateBenchmark, healthy.narrative);
+  record('EGB03', 'Coherent with forward integrity', healthy.coherentWithForwardIntegrity, 'ok');
+  record('EGB04', 'Revenue growth band positive', healthy.revenueCapacityGrowthBand > 0, `band=${healthy.revenueCapacityGrowthBand}`);
+
+  const strained = buildExpenditureGrowthBenchmarkReport(
+    9,
+    snap({ pressure: 'strained', fiscalHeadroom: -5 }),
+    bundle(9, snap({ pressure: 'strained', fiscalHeadroom: -5 })).myefo,
+    bundle(9, snap({ pressure: 'strained', fiscalHeadroom: -5 })).recurring,
+    bundle(9, snap({ pressure: 'strained', fiscalHeadroom: -5 })).forwardIntegrity
+  );
+  record('EGB05', 'Strained snapshot runs benchmark', strained.rows.length >= 1, `growth=${strained.aggregateGrowthRate}`);
+
+  const critical = buildExpenditureGrowthBenchmarkReport(
+    9,
+    snap({ pressure: 'critical' }),
+    myefo,
+    recurring,
+    forwardIntegrity
+  );
+  record('EGB06', 'Critical override path', critical.withinAggregateBenchmark || critical.coherentWithForwardIntegrity, 'ok');
 
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };

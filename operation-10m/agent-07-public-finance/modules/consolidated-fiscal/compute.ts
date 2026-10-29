@@ -31,6 +31,8 @@ import { buildGrantClawbackScheduleReport } from '../grant-clawback-schedule/com
 import { buildBudgetNeutralPackagesReport } from '../budget-neutral-packages/compute';
 import { buildInfrastructureFiscalLoadReport } from '../infrastructure-fiscal-load/compute';
 import { buildRevenueIntegrityAuditReport } from '../revenue-integrity-audit/compute';
+import { buildAppropriationCarryForwardReport } from '../appropriation-carry-forward/compute';
+import { buildExpenditureGrowthBenchmarkReport } from '../expenditure-growth-benchmark/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -160,6 +162,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
 
   const infrastructureFiscalLoad = buildInfrastructureFiscalLoadReport(turn, v1012, infraSummary, state.budget);
   const revenueIntegrityAudit = buildRevenueIntegrityAuditReport(turn, v1012, ledger, taxPolicySensitivity);
+  const appropriationCarryForward = buildAppropriationCarryForwardReport(
+    turn,
+    v1012,
+    state.budget,
+    appropriationLapseRegister,
+    warrantLedger
+  );
+  const expenditureGrowthBenchmark = buildExpenditureGrowthBenchmarkReport(
+    turn,
+    v1012,
+    myefo,
+    recurring,
+    forwardEstimatesIntegrity
+  );
 
   checks.push({
     id: 'CF01',
@@ -569,12 +585,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `gap=${revenueIntegrityAudit.aggregateDeltaGap}, uplift=${taxPolicySensitivity.modeledUpliftPoints}`
   });
 
+  checks.push({
+    id: 'CF57',
+    label: 'Appropriation carry-forward within portfolio cap',
+    passed: appropriationCarryForward.withinPortfolioCarryCap || v1012.pressure === 'critical',
+    detail: `ratio=${appropriationCarryForward.carryToEnvelopeRatio}, carry=${appropriationCarryForward.aggregateCarryForwardPoints}`
+  });
+
+  checks.push({
+    id: 'CF58',
+    label: 'Expenditure growth within benchmark band',
+    passed: expenditureGrowthBenchmark.withinAggregateBenchmark,
+    detail: `growth=${expenditureGrowthBenchmark.aggregateGrowthRate}, band=${expenditureGrowthBenchmark.revenueCapacityGrowthBand}`
+  });
+
+  checks.push({
+    id: 'CF59',
+    label: 'Carry-forward aligned with lapse register',
+    passed: appropriationCarryForward.alignedWithLapseRegister,
+    detail: `carry=${appropriationCarryForward.aggregateCarryForwardPoints}, lapse=${appropriationCarryForward.aggregateSourceLapsePoints}`
+  });
+
+  checks.push({
+    id: 'CF60',
+    label: 'Growth benchmark coherent with forward integrity',
+    passed: expenditureGrowthBenchmark.coherentWithForwardIntegrity,
+    detail: `drift=${forwardEstimatesIntegrity.bandDriftPoints}, revisionGap=${forwardEstimatesIntegrity.aggregateRevisionGap}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 54
+    layerCount: 58
   };
 }

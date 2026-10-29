@@ -39,6 +39,8 @@ import { runGrantClawbackScheduleSelfTests } from './modules/grant-clawback-sche
 import { runBudgetNeutralPackagesSelfTests } from './modules/budget-neutral-packages/self-tests';
 import { runInfrastructureFiscalLoadSelfTests } from './modules/infrastructure-fiscal-load/self-tests';
 import { runRevenueIntegrityAuditSelfTests } from './modules/revenue-integrity-audit/self-tests';
+import { runAppropriationCarryForwardSelfTests } from './modules/appropriation-carry-forward/self-tests';
+import { runExpenditureGrowthBenchmarkSelfTests } from './modules/expenditure-growth-benchmark/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -87,6 +89,8 @@ ok = runSuite('Grant clawback schedule', runGrantClawbackScheduleSelfTests) && o
 ok = runSuite('Budget-neutral packages', runBudgetNeutralPackagesSelfTests) && ok;
 ok = runSuite('Infrastructure fiscal load', runInfrastructureFiscalLoadSelfTests) && ok;
 ok = runSuite('Revenue integrity audit', runRevenueIntegrityAuditSelfTests) && ok;
+ok = runSuite('Appropriation carry-forward', runAppropriationCarryForwardSelfTests) && ok;
+ok = runSuite('Expenditure growth benchmark', runExpenditureGrowthBenchmarkSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);
