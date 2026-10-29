@@ -12,6 +12,9 @@ import {
   diffAgent24ReplayBundles,
   runAgent24AnalyticsDepthSelfTests,
 } from '../src/analytics-depth.ts';
+import { runAgent24ReplayScenarioSuite } from '../src/replay-scenarios.ts';
+import { buildAgent24AuditTrail, mergeAgent24AuditTrails } from '../src/audit-trails.ts';
+import { buildAgent24MultiSessionContinuity } from '../src/multi-session.ts';
 import { o6kAgent24StableStringify, runO6kAgent24SelfTests } from '../src/history-replay-analytics.ts';
 
 describe('Agent 24 causal records', () => {
@@ -93,6 +96,9 @@ describe('Agent 24 replay determinism bundle', () => {
     const result = verifyAgent24ReplayDeterminism(sampleInput);
     assert.equal(result.passed, true);
     assert.ok(result.probes.some(p => p.name === 'analytics_depth_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'scenario_suite_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'audit_trail_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'multi_session_twin' && p.passed));
   });
 
   it('includes analytics depth rollups and stable twin fingerprint', () => {
@@ -114,6 +120,63 @@ describe('Agent 24 replay determinism bundle', () => {
     const late = buildAgent24ReplayDeterminismBundle(sampleInput());
     const diff = diffAgent24ReplayBundles(early, late);
     assert.ok(diff.summary.includes('Milestones'));
+  });
+});
+
+describe('Agent 24 replay scenarios', () => {
+  it('evaluates scenario suite deterministically', () => {
+    const suite = runAgent24ReplayScenarioSuite({
+      replayEventCount: 3,
+      branchNodeCount: 2,
+      isLateGame: true,
+      maxCausalDepth: 3,
+      sessionCount: 2,
+    });
+    assert.equal(suite.assessments.length, 5);
+    assert.ok(suite.satisfiedCount >= 4);
+    const suite2 = runAgent24ReplayScenarioSuite({
+      replayEventCount: 3,
+      branchNodeCount: 2,
+      isLateGame: true,
+      maxCausalDepth: 3,
+      sessionCount: 2,
+    });
+    assert.equal(suite.deterministicFingerprint, suite2.deterministicFingerprint);
+  });
+});
+
+describe('Agent 24 audit trails', () => {
+  it('builds and merges trails with stable fingerprints', () => {
+    const t1 = buildAgent24AuditTrail({
+      matchId: 'm',
+      turn: 5,
+      day: 5,
+      entries: [{ action: 'session_saved', summary: 'Saved slot A', relatedSessionId: 's1' }],
+    });
+    const t2 = buildAgent24AuditTrail({
+      matchId: 'm',
+      turn: 6,
+      day: 6,
+      entries: [{ action: 'session_resumed', summary: 'Resumed slot A', relatedSessionId: 's1' }],
+    });
+    const merged = mergeAgent24AuditTrails(t1, t2);
+    assert.equal(merged.entryCount, 2);
+    assert.equal(merged.actionCounts.session_saved, 1);
+  });
+});
+
+describe('Agent 24 multi-session continuity', () => {
+  it('flags resume-safe non-overlapping sessions', () => {
+    const c = buildAgent24MultiSessionContinuity({
+      matchId: 'm',
+      sessions: [
+        { sessionId: 's1', startedAtTurn: 1, endedAtTurn: 10, replayEventCount: 4, branchNodeCount: 1 },
+        { sessionId: 's2', startedAtTurn: 11, endedAtTurn: 20, replayEventCount: 5, branchNodeCount: 2 },
+      ],
+    });
+    assert.equal(c.sessionCount, 2);
+    assert.equal(c.resumeSafe, true);
+    assert.equal(c.totalReplayEvents, 9);
   });
 });
 

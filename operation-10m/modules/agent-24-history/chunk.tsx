@@ -571,6 +571,375 @@ export function runAgent24AnalyticsDepthSelfTests(): Array<{ name: string; passe
 }
 
 
+// --- source: replay-scenarios.ts ---
+
+export type Agent24ReplayScenarioId =
+  | 'baseline_match'
+  | 'branch_heavy'
+  | 'late_game_overtime'
+  | 'causal_chain_stress'
+  | 'multi_session_resume';
+
+export interface Agent24ReplayScenarioDefinition {
+  id: Agent24ReplayScenarioId;
+  title: string;
+  description: string;
+  /** Minimum replay events expected when scenario is satisfied. */
+  minReplayEvents: number;
+  /** Minimum branch nodes when applicable. */
+  minBranchNodes: number;
+  requiresLateGame: boolean;
+  requiresCausalDepth: number;
+}
+
+export interface Agent24ReplayScenarioInput {
+  replayEventCount: number;
+  branchNodeCount: number;
+  isLateGame: boolean;
+  maxCausalDepth: number;
+  sessionCount: number;
+}
+
+export interface Agent24ReplayScenarioAssessment {
+  scenarioId: Agent24ReplayScenarioId;
+  satisfied: boolean;
+  score: number;
+  detail: string;
+  fingerprint: string;
+}
+
+export interface Agent24ReplayScenarioSuiteResult {
+  suiteId: string;
+  assessments: Agent24ReplayScenarioAssessment[];
+  satisfiedCount: number;
+  deterministicFingerprint: string;
+}
+
+export const AGENT24_REPLAY_SCENARIO_CATALOG: Agent24ReplayScenarioDefinition[] = [
+  {
+    id: 'baseline_match',
+    title: 'Baseline match replay',
+    description: 'Standard single-timeline match with checkpoints.',
+    minReplayEvents: 1,
+    minBranchNodes: 0,
+    requiresLateGame: false,
+    requiresCausalDepth: 0,
+  },
+  {
+    id: 'branch_heavy',
+    title: 'Branch-heavy what-if',
+    description: 'Multiple replay branches recorded.',
+    minReplayEvents: 2,
+    minBranchNodes: 2,
+    requiresLateGame: false,
+    requiresCausalDepth: 0,
+  },
+  {
+    id: 'late_game_overtime',
+    title: 'Late game / overtime',
+    description: 'Endgame phase with checkpoint coverage.',
+    minReplayEvents: 1,
+    minBranchNodes: 0,
+    requiresLateGame: true,
+    requiresCausalDepth: 0,
+  },
+  {
+    id: 'causal_chain_stress',
+    title: 'Deep causal chains',
+    description: 'Ledger causal depth stress for audit replay.',
+    minReplayEvents: 0,
+    minBranchNodes: 0,
+    requiresLateGame: false,
+    requiresCausalDepth: 2,
+  },
+  {
+    id: 'multi_session_resume',
+    title: 'Multi-session resume',
+    description: 'Match spans more than one persisted session.',
+    minReplayEvents: 1,
+    minBranchNodes: 0,
+    requiresLateGame: false,
+    requiresCausalDepth: 0,
+  },
+];
+
+function assessOne(def: Agent24ReplayScenarioDefinition, input: Agent24ReplayScenarioInput): Agent24ReplayScenarioAssessment {
+  let satisfied = true;
+  const checks: string[] = [];
+
+  if (input.replayEventCount < def.minReplayEvents) {
+    satisfied = false;
+    checks.push(`replayEvents ${input.replayEventCount}<${def.minReplayEvents}`);
+  }
+  if (input.branchNodeCount < def.minBranchNodes) {
+    satisfied = false;
+    checks.push(`branches ${input.branchNodeCount}<${def.minBranchNodes}`);
+  }
+  if (def.requiresLateGame && !input.isLateGame) {
+    satisfied = false;
+    checks.push('lateGame required');
+  }
+  if (input.maxCausalDepth < def.requiresCausalDepth) {
+    satisfied = false;
+    checks.push(`causalDepth ${input.maxCausalDepth}<${def.requiresCausalDepth}`);
+  }
+  if (def.id === 'multi_session_resume' && input.sessionCount < 2) {
+    satisfied = false;
+    checks.push(`sessions ${input.sessionCount}<2`);
+  }
+
+  const score = satisfied ? 100 : Math.max(0, 100 - checks.length * 25);
+  const payload = { id: def.id, satisfied, score, checks };
+  return {
+    scenarioId: def.id,
+    satisfied,
+    score,
+    detail: satisfied ? 'Scenario satisfied.' : checks.join('; '),
+    fingerprint: o6kAgent24Fingerprint('replay_scenario', payload),
+  };
+}
+
+export function runAgent24ReplayScenarioSuite(input: Agent24ReplayScenarioInput): Agent24ReplayScenarioSuiteResult {
+  const assessments = AGENT24_REPLAY_SCENARIO_CATALOG.map(def => assessOne(def, input)).sort((a, b) =>
+    a.scenarioId.localeCompare(b.scenarioId),
+  );
+  const satisfiedCount = assessments.filter(a => a.satisfied).length;
+  const payload = assessments.map(a => ({ id: a.scenarioId, fp: a.fingerprint, ok: a.satisfied }));
+  return {
+    suiteId: o6kAgent24Fingerprint('scenario_suite', { satisfiedCount, payload }),
+    assessments,
+    satisfiedCount,
+    deterministicFingerprint: o6kAgent24Fingerprint('scenario_suite_body', payload),
+  };
+}
+
+
+// --- source: audit-trails.ts ---
+
+export type Agent24AuditTrailAction =
+  | 'replay_checkpoint'
+  | 'branch_created'
+  | 'branch_switched'
+  | 'timeline_merged'
+  | 'session_saved'
+  | 'session_resumed'
+  | 'determinism_verified'
+  | 'scenario_evaluated';
+
+export interface Agent24AuditTrailEntry {
+  entryId: string;
+  sequence: number;
+  turn: number;
+  day: number;
+  action: Agent24AuditTrailAction;
+  actorId: string;
+  summary: string;
+  relatedTimelineId: string | null;
+  relatedSessionId: string | null;
+  fingerprint: string;
+}
+
+export interface Agent24AuditTrailBuildInput {
+  matchId: string;
+  turn: number;
+  day: number;
+  entries: Array<{
+    action: Agent24AuditTrailAction;
+    actorId?: string;
+    summary: string;
+    relatedTimelineId?: string | null;
+    relatedSessionId?: string | null;
+    turn?: number;
+    day?: number;
+  }>;
+}
+
+export interface Agent24AuditTrail {
+  trailId: string;
+  matchId: string;
+  entryCount: number;
+  entries: Agent24AuditTrailEntry[];
+  actionCounts: Record<Agent24AuditTrailAction, number>;
+  deterministicFingerprint: string;
+}
+
+const ZERO_COUNTS = (): Record<Agent24AuditTrailAction, number> => ({
+  replay_checkpoint: 0,
+  branch_created: 0,
+  branch_switched: 0,
+  timeline_merged: 0,
+  session_saved: 0,
+  session_resumed: 0,
+  determinism_verified: 0,
+  scenario_evaluated: 0,
+});
+
+export function buildAgent24AuditTrail(input: Agent24AuditTrailBuildInput): Agent24AuditTrail {
+  const entries: Agent24AuditTrailEntry[] = [];
+  const actionCounts = ZERO_COUNTS();
+  let seq = 0;
+
+  const sortedRaw = [...input.entries].sort(
+    (a, b) => (a.turn ?? input.turn) - (b.turn ?? input.turn) || a.summary.localeCompare(b.summary),
+  );
+
+  for (const raw of sortedRaw) {
+    seq++;
+    const turn = raw.turn ?? input.turn;
+    const day = raw.day ?? input.day;
+    const action = raw.action;
+    actionCounts[action] += 1;
+    const body = {
+      seq,
+      action,
+      summary: raw.summary.slice(0, 200),
+      timeline: raw.relatedTimelineId ?? null,
+      session: raw.relatedSessionId ?? null,
+    };
+    entries.push({
+      entryId: o6kAgent24Fingerprint('audit_entry', { matchId: input.matchId, ...body }),
+      sequence: seq,
+      turn,
+      day,
+      action,
+      actorId: raw.actorId || 'system',
+      summary: raw.summary.slice(0, 200),
+      relatedTimelineId: raw.relatedTimelineId ?? null,
+      relatedSessionId: raw.relatedSessionId ?? null,
+      fingerprint: o6kAgent24Fingerprint('audit_evt', body),
+    });
+  }
+
+  const fpPayload = {
+    entries: entries.map(e => e.fingerprint),
+    actionCounts,
+  };
+
+  return {
+    trailId: o6kAgent24Fingerprint('audit_trail', { matchId: input.matchId, count: entries.length }),
+    matchId: input.matchId,
+    entryCount: entries.length,
+    entries,
+    actionCounts,
+    deterministicFingerprint: o6kAgent24Fingerprint('audit_trail_body', o6kAgent24StableStringify(fpPayload)),
+  };
+}
+
+export function mergeAgent24AuditTrails(a: Agent24AuditTrail, b: Agent24AuditTrail): Agent24AuditTrail {
+  if (a.matchId !== b.matchId) {
+    throw new Error('Cannot merge audit trails for different matches');
+  }
+  const combined = [...a.entries, ...b.entries].sort((x, y) => x.sequence - y.sequence || x.entryId.localeCompare(y.entryId));
+  return buildAgent24AuditTrail({
+    matchId: a.matchId,
+    turn: Math.max(a.entries.at(-1)?.turn ?? 0, b.entries.at(-1)?.turn ?? 0),
+    day: Math.max(a.entries.at(-1)?.day ?? 0, b.entries.at(-1)?.day ?? 0),
+    entries: combined.map(e => ({
+      action: e.action,
+      actorId: e.actorId,
+      summary: e.summary,
+      relatedTimelineId: e.relatedTimelineId,
+      relatedSessionId: e.relatedSessionId,
+      turn: e.turn,
+      day: e.day,
+    })),
+  });
+}
+
+
+// --- source: multi-session.ts ---
+
+export interface Agent24ReplaySessionRecord {
+  sessionId: string;
+  matchId: string;
+  sessionIndex: number;
+  startedAtTurn: number;
+  endedAtTurn: number;
+  replayEventCount: number;
+  branchNodeCount: number;
+  continuityToken: string;
+  fingerprint: string;
+}
+
+export interface Agent24MultiSessionInput {
+  matchId: string;
+  sessions: Array<{
+    sessionId: string;
+    startedAtTurn: number;
+    endedAtTurn: number;
+    replayEventCount: number;
+    branchNodeCount: number;
+  }>;
+}
+
+export interface Agent24MultiSessionContinuity {
+  continuityId: string;
+  matchId: string;
+  sessionCount: number;
+  totalReplayEvents: number;
+  totalBranchNodes: number;
+  spanTurns: number;
+  sessions: Agent24ReplaySessionRecord[];
+  resumeSafe: boolean;
+  deterministicFingerprint: string;
+}
+
+export function buildAgent24MultiSessionContinuity(input: Agent24MultiSessionInput): Agent24MultiSessionContinuity {
+  const sorted = [...input.sessions].sort((a, b) => a.startedAtTurn - b.startedAtTurn || a.sessionId.localeCompare(b.sessionId));
+  const sessions: Agent24ReplaySessionRecord[] = sorted.map((s, idx) => {
+    const prev = sorted[idx - 1];
+    const continuityToken = o6kAgent24Fingerprint('session_link', {
+      matchId: input.matchId,
+      prev: prev?.sessionId ?? 'none',
+      cur: s.sessionId,
+      turn: s.startedAtTurn,
+    });
+    return {
+      sessionId: s.sessionId,
+      matchId: input.matchId,
+      sessionIndex: idx,
+      startedAtTurn: s.startedAtTurn,
+      endedAtTurn: s.endedAtTurn,
+      replayEventCount: s.replayEventCount,
+      branchNodeCount: s.branchNodeCount,
+      continuityToken,
+      fingerprint: o6kAgent24Fingerprint('session_record', { ...s, idx }),
+    };
+  });
+
+  let resumeSafe = sessions.length > 0;
+  for (let i = 1; i < sessions.length; i++) {
+    if (sessions[i].startedAtTurn < sessions[i - 1].endedAtTurn) {
+      resumeSafe = false;
+      break;
+    }
+  }
+
+  const totalReplayEvents = sessions.reduce((s, r) => s + r.replayEventCount, 0);
+  const totalBranchNodes = sessions.reduce((s, r) => s + r.branchNodeCount, 0);
+  const minTurn = sessions[0]?.startedAtTurn ?? 0;
+  const maxTurn = sessions.at(-1)?.endedAtTurn ?? 0;
+  const payload = {
+    sessionIds: sessions.map(s => s.sessionId),
+    fingerprints: sessions.map(s => s.fingerprint),
+    resumeSafe,
+    totalReplayEvents,
+  };
+
+  return {
+    continuityId: o6kAgent24Fingerprint('multi_session', { matchId: input.matchId, count: sessions.length }),
+    matchId: input.matchId,
+    sessionCount: sessions.length,
+    totalReplayEvents,
+    totalBranchNodes,
+    spanTurns: Math.max(0, maxTurn - minTurn),
+    sessions,
+    resumeSafe,
+    deterministicFingerprint: o6kAgent24Fingerprint('multi_session_body', payload),
+  };
+}
+
+
 // --- source: history-replay-analytics.ts ---
 
 export const O6K_AGENT24_MODULE_VERSION = '1.1.0-op10m';
@@ -20066,6 +20435,9 @@ export interface Agent24ReplayDeterminismBundle {
   timelineRegistry: Agent24TimelineRegistry;
   lateGame: Agent24LateGameReplayAssessment;
   analyticsDepth: Agent24ReplayAnalyticsDepth;
+  scenarioSuite: Agent24ReplayScenarioSuiteResult;
+  auditTrail: Agent24AuditTrail;
+  multiSession: Agent24MultiSessionContinuity;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -20082,6 +20454,22 @@ export function buildAgent24ReplayDeterminismBundle(
     endgameStartTurn?: number;
     victoryDeclared?: boolean;
     checkpointKinds?: string[];
+    auditTrailEntries?: Array<{
+      action: Agent24AuditTrailAction;
+      actorId?: string;
+      summary: string;
+      relatedTimelineId?: string | null;
+      relatedSessionId?: string | null;
+      turn?: number;
+      day?: number;
+    }>;
+    sessions?: Array<{
+      sessionId: string;
+      startedAtTurn: number;
+      endedAtTurn: number;
+      replayEventCount: number;
+      branchNodeCount: number;
+    }>;
   },
 ): Agent24ReplayDeterminismBundle {
   const ledgerEvents = (input.gameActivityLedger?.events || []) as Agent24LedgerEventLike[];
@@ -20110,18 +20498,63 @@ export function buildAgent24ReplayDeterminismBundle(
     twinBuildPassed: twin.passed,
   };
   const analyticsDepth = buildAgent24ReplayAnalyticsDepth(partial);
+  const branchNodeCount = Object.keys(input.replayBranchTree?.nodesById || {}).length;
+  const replayEventCount = input.replay?.events?.length ?? snapshot.integrity.replayEventCount;
+  const scenarioSuite = runAgent24ReplayScenarioSuite({
+    replayEventCount,
+    branchNodeCount,
+    isLateGame: lateGame.isLateGame,
+    maxCausalDepth: causalIndex.maxDepth,
+    sessionCount: input.sessions?.length ?? 1,
+  });
+  const defaultAudit: Array<{
+    action: Agent24AuditTrailAction;
+    summary: string;
+    relatedTimelineId?: string | null;
+  }> = [
+    { action: 'replay_checkpoint', summary: 'Auto checkpoint on bundle build', relatedTimelineId: input.activeTimelineId || 'main' },
+    { action: 'determinism_verified', summary: twin.passed ? 'Twin build passed' : 'Twin build failed' },
+    { action: 'scenario_evaluated', summary: `Scenarios satisfied ${scenarioSuite.satisfiedCount}/${scenarioSuite.assessments.length}` },
+  ];
+  const auditTrail = buildAgent24AuditTrail({
+    matchId: input.matchId,
+    turn: input.turn,
+    day: input.day,
+    entries: [...defaultAudit, ...(input.auditTrailEntries || [])],
+  });
+  const multiSession = buildAgent24MultiSessionContinuity({
+    matchId: input.matchId,
+    sessions:
+      input.sessions && input.sessions.length > 0
+        ? input.sessions
+        : [
+            {
+              sessionId: `${input.matchId}_session_1`,
+              startedAtTurn: 1,
+              endedAtTurn: input.turn,
+              replayEventCount,
+              branchNodeCount,
+            },
+          ],
+  });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
     timeline: timelineRegistry.deterministicFingerprint,
     late: lateGame.fingerprint,
     depth: analyticsDepth.deterministicFingerprint,
+    scenarios: scenarioSuite.deterministicFingerprint,
+    audit: auditTrail.deterministicFingerprint,
+    sessions: multiSession.deterministicFingerprint,
   });
 
   return {
     bundleId: o6kAgent24Fingerprint('replay_bundle_id', { matchId: input.matchId, turn: input.turn }),
     ...partial,
     analyticsDepth,
+    scenarioSuite,
+    auditTrail,
+    multiSession,
     compositeFingerprint,
   };
 }
@@ -20156,6 +20589,21 @@ export function verifyAgent24ReplayDeterminism(
       name: 'analytics_depth_twin',
       passed: a.analyticsDepth.deterministicFingerprint === b.analyticsDepth.deterministicFingerprint,
       detail: 'Twin analytics depth fingerprints',
+    },
+    {
+      name: 'scenario_suite_twin',
+      passed: a.scenarioSuite.deterministicFingerprint === b.scenarioSuite.deterministicFingerprint,
+      detail: 'Twin replay scenario suite fingerprints',
+    },
+    {
+      name: 'audit_trail_twin',
+      passed: a.auditTrail.deterministicFingerprint === b.auditTrail.deterministicFingerprint,
+      detail: 'Twin audit trail fingerprints',
+    },
+    {
+      name: 'multi_session_twin',
+      passed: a.multiSession.deterministicFingerprint === b.multiSession.deterministicFingerprint,
+      detail: 'Twin multi-session continuity fingerprints',
     },
     {
       name: 'composite_twin',

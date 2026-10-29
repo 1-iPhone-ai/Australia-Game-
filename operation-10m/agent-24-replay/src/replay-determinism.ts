@@ -13,6 +13,9 @@ import {
   type O6kHistoricalAnalyticsSnapshot,
 } from './history-replay-analytics.ts';
 import { buildAgent24ReplayAnalyticsDepth, type Agent24ReplayAnalyticsDepth } from './analytics-depth.ts';
+import { runAgent24ReplayScenarioSuite, type Agent24ReplayScenarioSuiteResult } from './replay-scenarios.ts';
+import { buildAgent24AuditTrail, type Agent24AuditTrail, type Agent24AuditTrailAction } from './audit-trails.ts';
+import { buildAgent24MultiSessionContinuity, type Agent24MultiSessionContinuity } from './multi-session.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -21,6 +24,9 @@ export interface Agent24ReplayDeterminismBundle {
   timelineRegistry: Agent24TimelineRegistry;
   lateGame: Agent24LateGameReplayAssessment;
   analyticsDepth: Agent24ReplayAnalyticsDepth;
+  scenarioSuite: Agent24ReplayScenarioSuiteResult;
+  auditTrail: Agent24AuditTrail;
+  multiSession: Agent24MultiSessionContinuity;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -37,6 +43,22 @@ export function buildAgent24ReplayDeterminismBundle(
     endgameStartTurn?: number;
     victoryDeclared?: boolean;
     checkpointKinds?: string[];
+    auditTrailEntries?: Array<{
+      action: Agent24AuditTrailAction;
+      actorId?: string;
+      summary: string;
+      relatedTimelineId?: string | null;
+      relatedSessionId?: string | null;
+      turn?: number;
+      day?: number;
+    }>;
+    sessions?: Array<{
+      sessionId: string;
+      startedAtTurn: number;
+      endedAtTurn: number;
+      replayEventCount: number;
+      branchNodeCount: number;
+    }>;
   },
 ): Agent24ReplayDeterminismBundle {
   const ledgerEvents = (input.gameActivityLedger?.events || []) as Agent24LedgerEventLike[];
@@ -65,18 +87,63 @@ export function buildAgent24ReplayDeterminismBundle(
     twinBuildPassed: twin.passed,
   };
   const analyticsDepth = buildAgent24ReplayAnalyticsDepth(partial);
+  const branchNodeCount = Object.keys(input.replayBranchTree?.nodesById || {}).length;
+  const replayEventCount = input.replay?.events?.length ?? snapshot.integrity.replayEventCount;
+  const scenarioSuite = runAgent24ReplayScenarioSuite({
+    replayEventCount,
+    branchNodeCount,
+    isLateGame: lateGame.isLateGame,
+    maxCausalDepth: causalIndex.maxDepth,
+    sessionCount: input.sessions?.length ?? 1,
+  });
+  const defaultAudit: Array<{
+    action: Agent24AuditTrailAction;
+    summary: string;
+    relatedTimelineId?: string | null;
+  }> = [
+    { action: 'replay_checkpoint', summary: 'Auto checkpoint on bundle build', relatedTimelineId: input.activeTimelineId || 'main' },
+    { action: 'determinism_verified', summary: twin.passed ? 'Twin build passed' : 'Twin build failed' },
+    { action: 'scenario_evaluated', summary: `Scenarios satisfied ${scenarioSuite.satisfiedCount}/${scenarioSuite.assessments.length}` },
+  ];
+  const auditTrail = buildAgent24AuditTrail({
+    matchId: input.matchId,
+    turn: input.turn,
+    day: input.day,
+    entries: [...defaultAudit, ...(input.auditTrailEntries || [])],
+  });
+  const multiSession = buildAgent24MultiSessionContinuity({
+    matchId: input.matchId,
+    sessions:
+      input.sessions && input.sessions.length > 0
+        ? input.sessions
+        : [
+            {
+              sessionId: `${input.matchId}_session_1`,
+              startedAtTurn: 1,
+              endedAtTurn: input.turn,
+              replayEventCount,
+              branchNodeCount,
+            },
+          ],
+  });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
     timeline: timelineRegistry.deterministicFingerprint,
     late: lateGame.fingerprint,
     depth: analyticsDepth.deterministicFingerprint,
+    scenarios: scenarioSuite.deterministicFingerprint,
+    audit: auditTrail.deterministicFingerprint,
+    sessions: multiSession.deterministicFingerprint,
   });
 
   return {
     bundleId: o6kAgent24Fingerprint('replay_bundle_id', { matchId: input.matchId, turn: input.turn }),
     ...partial,
     analyticsDepth,
+    scenarioSuite,
+    auditTrail,
+    multiSession,
     compositeFingerprint,
   };
 }
@@ -111,6 +178,21 @@ export function verifyAgent24ReplayDeterminism(
       name: 'analytics_depth_twin',
       passed: a.analyticsDepth.deterministicFingerprint === b.analyticsDepth.deterministicFingerprint,
       detail: 'Twin analytics depth fingerprints',
+    },
+    {
+      name: 'scenario_suite_twin',
+      passed: a.scenarioSuite.deterministicFingerprint === b.scenarioSuite.deterministicFingerprint,
+      detail: 'Twin replay scenario suite fingerprints',
+    },
+    {
+      name: 'audit_trail_twin',
+      passed: a.auditTrail.deterministicFingerprint === b.auditTrail.deterministicFingerprint,
+      detail: 'Twin audit trail fingerprints',
+    },
+    {
+      name: 'multi_session_twin',
+      passed: a.multiSession.deterministicFingerprint === b.multiSession.deterministicFingerprint,
+      detail: 'Twin multi-session continuity fingerprints',
     },
     {
       name: 'composite_twin',
