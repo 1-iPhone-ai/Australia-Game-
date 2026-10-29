@@ -458,10 +458,13 @@ export type RemoteEcmoSupplyStagingPolicy = 'baseline' | 'surge';
 export type PortAmmoniaBunkeringLogisticsPolicy = 'baseline' | 'expand';
 
 export type SuperconductingHvdcExportPolicy = 'baseline' | 'accelerate';
+export type FusionTritiumBreedingExportPolicy = 'baseline' | 'accelerate';
 
 export type RemoteNeonatalIcuSupplyStagingPolicy = 'baseline' | 'surge';
+export type RemotePediatricOncologySupplyStagingPolicy = 'baseline' | 'surge';
 
 export type PortMethanolDualFuelBunkeringLogisticsPolicy = 'baseline' | 'expand';
+export type PortBioLngBunkeringLogisticsPolicy = 'baseline' | 'expand';
 
 export interface TransportInfrastructureState {
   schemaVersion: 'agent12/50';
@@ -846,6 +849,14 @@ export interface TransportInfrastructureState {
   portMethanolDualFuelBunkeringLogisticsShare: number;
   nationalPortMethanolDualFuelBunkeringLogisticsThroughputIndex: number;
   portMethanolDualFuelBunkeringLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalFusionTritiumBreedingExportIndex: number;
+  fusionTritiumBreedingExportByRegion: Record<AuRegionCode, number>;
+  remotePediatricOncologySupplyStagingShare: number;
+  nationalRemotePediatricOncologySupplyStagingIndex: number;
+  remotePediatricOncologySupplyStagingByRegion: Record<AuRegionCode, number>;
+  portBioLngBunkeringLogisticsShare: number;
+  nationalPortBioLngBunkeringLogisticsThroughputIndex: number;
+  portBioLngBunkeringLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -992,6 +1003,9 @@ export interface TransportInfrastructureOptions {
   superconductingHvdcExportPolicy?: SuperconductingHvdcExportPolicy;
   remoteNeonatalIcuSupplyStagingPolicy?: RemoteNeonatalIcuSupplyStagingPolicy;
   portMethanolDualFuelBunkeringLogisticsPolicy?: PortMethanolDualFuelBunkeringLogisticsPolicy;
+  fusionTritiumBreedingExportPolicy?: FusionTritiumBreedingExportPolicy;
+  remotePediatricOncologySupplyStagingPolicy?: RemotePediatricOncologySupplyStagingPolicy;
+  portBioLngBunkeringLogisticsPolicy?: PortBioLngBunkeringLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -3193,6 +3207,48 @@ export const TRANSPORT_CORRIDORS_ROUND51: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round52.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND52: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_nsw_vic_fusion_tritium_breeding',
+    name: 'NSW–VIC Fusion Tritium Breeding',
+    networkKind: 'trade',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['fusion_tritium_breeding_export', 'tritium_breeding_logistics', 'fusion_freight_corridor'],
+      VIC: ['fusion_tritium_breeding_export', 'tritium_breeding_logistics', 'fusion_freight_corridor'],
+    },
+    productivitySynergyPoints: 7.3,
+    logisticsRelief: 0.044,
+  },
+  {
+    id: 'corr_nt_sa_nicu_remote',
+    name: 'NT–SA Remote Pediatric Oncology',
+    networkKind: 'mobility',
+    regionSequence: ['NT', 'SA'],
+    requiredTagsByRegion: {
+      NT: ['remote_pediatric_oncology_supply', 'pediatric_oncology_staging', 'oncology_critical_care_logistics'],
+      SA: ['remote_pediatric_oncology_supply', 'pediatric_oncology_staging', 'oncology_critical_care_logistics'],
+    },
+    productivitySynergyPoints: 7.1,
+    logisticsRelief: 0.038,
+  },
+  {
+    id: 'corr_wa_qld_methanol_liquefied_biofuel_bunkering',
+    name: 'WA–QLD Bio-LNG Bunkering',
+    networkKind: 'freight',
+    regionSequence: ['WA', 'QLD'],
+    requiredTagsByRegion: {
+      WA: ['port_bio_lng_bunkering', 'bio_lng_mooring', 'liquefied_biofuel_bunkering'],
+      QLD: ['port_bio_lng_bunkering', 'bio_lng_mooring', 'liquefied_biofuel_bunkering'],
+    },
+    productivitySynergyPoints: 7.0,
+    logisticsRelief: 0.041,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -3391,6 +3447,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND49,
   ...TRANSPORT_CORRIDORS_ROUND50,
   ...TRANSPORT_CORRIDORS_ROUND51,
+  ...TRANSPORT_CORRIDORS_ROUND52,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -6491,6 +6548,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND49,
   ...TRANSPORT_SCENARIOS_ROUND50,
   ...TRANSPORT_SCENARIOS_ROUND51,
+  ...TRANSPORT_SCENARIOS_ROUND52,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -19065,6 +19123,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND49_ASSETS,
     ...SCALE_WAVE_ROUND50_ASSETS,
     ...SCALE_WAVE_ROUND51_ASSETS,
+    ...SCALE_WAVE_ROUND52_ASSETS,
   ];
 }
 
@@ -31036,6 +31095,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalPortMethanolDualFuelBunkeringLogisticsThroughputIndex,
   portMethanolDualFuelBunkeringLogisticsProductivityMultiplier,
 } from './port-methanol-dual-fuel-bunkering-logistics-index.ts';
+  computeFusionTritiumBreedingExportByRegion,
+  nationalFusionTritiumBreedingExportIndex,
+  fusionTritiumBreedingExportProductivityMultiplier,
+} from '../network/fusion-tritium-breeding-export-index.ts';
+  computeRemotePediatricOncologySupplyStagingByRegion,
+  computeRemotePediatricOncologySupplyStagingShare,
+  nationalRemotePediatricOncologySupplyStagingIndex,
+  remotePediatricOncologySupplyStagingProductivityMultiplier,
+} from '../operations/remote-pediatric-oncology-supply-staging-index.ts';
+  computePortBioLngBunkeringLogisticsShare,
+  computePortBioLngBunkeringLogisticsThroughputByRegion,
+  nationalPortBioLngBunkeringLogisticsThroughputIndex,
+  portBioLngBunkeringLogisticsProductivityMultiplier,
+} from './port-bio-lng-bunkering-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -32702,6 +32775,40 @@ export function computeTransportInfrastructureState(
     portMethanolDualFuelBunkeringLogisticsShare,
     options?.portMethanolDualFuelBunkeringLogisticsPolicy ?? 'baseline',
   );
+  const fusionTritiumBreedingExportByRegion = computeFusionTritiumBreedingExportByRegion(ops);
+  const nationalFusionTritiumBreeding = nationalFusionTritiumBreedingExportIndex(fusionTritiumBreedingExportByRegion);
+  const fusionTritiumBreedingMult = fusionTritiumBreedingExportProductivityMultiplier(
+    nationalFusionTritiumBreeding,
+    options?.fusionTritiumBreedingExportPolicy ?? 'baseline',
+  );
+  const remotePediatricOncologySupplyStagingByRegion = computeRemotePediatricOncologySupplyStagingByRegion(
+    ops,
+    networkStress,
+  );
+  const nationalPediatricOncology = nationalRemotePediatricOncologySupplyStagingIndex(
+    remotePediatricOncologySupplyStagingByRegion,
+  );
+  const remotePediatricOncologySupplyStagingShare = computeRemotePediatricOncologySupplyStagingShare(
+    ops,
+    options?.remotePediatricOncologySupplyStagingPolicy ?? 'baseline',
+  );
+  const pediatricOncologyMult = remotePediatricOncologySupplyStagingProductivityMultiplier(
+    remotePediatricOncologySupplyStagingShare,
+    options?.remotePediatricOncologySupplyStagingPolicy ?? 'baseline',
+  );
+  const portBioLngBunkeringLogisticsThroughputByRegion =
+    computePortBioLngBunkeringLogisticsThroughputByRegion(ops);
+  const nationalBioLngBunkering = nationalPortBioLngBunkeringLogisticsThroughputIndex(
+    portBioLngBunkeringLogisticsThroughputByRegion,
+  );
+  const portBioLngBunkeringLogisticsShare = computePortBioLngBunkeringLogisticsShare(
+    ops,
+    options?.portBioLngBunkeringLogisticsPolicy ?? 'baseline',
+  );
+  const bioLngBunkeringMult = portBioLngBunkeringLogisticsProductivityMultiplier(
+    portBioLngBunkeringLogisticsShare,
+    options?.portBioLngBunkeringLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -32812,6 +32919,9 @@ export function computeTransportInfrastructureState(
     const superconductingHvdcBoost = (superconductingHvdcExportByRegion[code] - 5) * 0.0017;
     const neonatalIcuBoost = (remoteNeonatalIcuSupplyStagingByRegion[code] - 6) * 0.0013;
     const methanolBunkeringBoost = (portMethanolDualFuelBunkeringLogisticsThroughputByRegion[code] - 2) * 0.0009;
+    const fusionTritiumBreedingBoost = (fusionTritiumBreedingExportByRegion[code] - 5) * 0.0017;
+    const pediatricOncologyBoost = (remotePediatricOncologySupplyStagingByRegion[code] - 6) * 0.0013;
+    const bioLngBunkeringBoost = (portBioLngBunkeringLogisticsThroughputByRegion[code] - 2) * 0.0009;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -32921,7 +33031,10 @@ export function computeTransportInfrastructureState(
         ammoniaBunkeringBoost +
         superconductingHvdcBoost +
         neonatalIcuBoost +
-        methanolBunkeringBoost) *
+        methanolBunkeringBoost +
+        fusionTritiumBreedingBoost +
+        pediatricOncologyBoost +
+        bioLngBunkeringBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -33029,7 +33142,10 @@ export function computeTransportInfrastructureState(
       ammoniaBunkeringMult *
       superconductingHvdcMult *
       neonatalIcuMult *
-      methanolBunkeringMult;
+      methanolBunkeringMult *
+      fusionTritiumBreedingMult *
+      pediatricOncologyMult *
+      bioLngBunkeringMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -33169,7 +33285,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/52',
+    schemaVersion: 'agent12/53',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -33551,6 +33667,14 @@ export function computeTransportInfrastructureState(
     portMethanolDualFuelBunkeringLogisticsShare,
     nationalPortMethanolDualFuelBunkeringLogisticsThroughputIndex: nationalMethanolDualFuelBunkering,
     portMethanolDualFuelBunkeringLogisticsThroughputByRegion,
+    nationalFusionTritiumBreedingExportIndex: nationalFusionTritiumBreeding,
+    fusionTritiumBreedingExportByRegion,
+    remotePediatricOncologySupplyStagingShare,
+    nationalRemotePediatricOncologySupplyStagingIndex: nationalPediatricOncology,
+    remotePediatricOncologySupplyStagingByRegion,
+    portBioLngBunkeringLogisticsShare,
+    nationalPortBioLngBunkeringLogisticsThroughputIndex: nationalBioLngBunkering,
+    portBioLngBunkeringLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -33633,7 +33757,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/52' &&
+      infra.schemaVersion === 'agent12/53' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -33814,8 +33938,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalSuperconductingHvdcExportIndex >= 5 &&
       infra.nationalRemoteNeonatalIcuSupplyStagingIndex >= 6 &&
       infra.portMethanolDualFuelBunkeringLogisticsShare >= 0.03 &&
-      infra.nationalPortMethanolDualFuelBunkeringLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} eWaste=${infra.nationalEWasteCriticalMineralsRecoveryExportIndex.toFixed(1)} oncology=${infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex.toFixed(1)} tug=${infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex.toFixed(1)} h2=${infra.nationalGreenHydrogenElectrolyzerExportIndex.toFixed(1)} semi=${infra.nationalAdvancedSemiconductorPackagingExportIndex.toFixed(1)} hvdc=${infra.nationalSuperconductingHvdcExportIndex.toFixed(1)}`,
+      infra.nationalPortMethanolDualFuelBunkeringLogisticsThroughputIndex >= 2 &&
+      infra.nationalFusionTritiumBreedingExportIndex >= 5 &&
+      infra.nationalRemotePediatricOncologySupplyStagingIndex >= 6 &&
+      infra.portBioLngBunkeringLogisticsShare >= 0.03 &&
+      infra.nationalPortBioLngBunkeringLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} eWaste=${infra.nationalEWasteCriticalMineralsRecoveryExportIndex.toFixed(1)} oncology=${infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex.toFixed(1)} tug=${infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex.toFixed(1)} h2=${infra.nationalGreenHydrogenElectrolyzerExportIndex.toFixed(1)} semi=${infra.nationalAdvancedSemiconductorPackagingExportIndex.toFixed(1)} hvdc=${infra.nationalSuperconductingHvdcExportIndex.toFixed(1)} fusion=${infra.nationalFusionTritiumBreedingExportIndex.toFixed(1)}`,
   });
 
   return results;

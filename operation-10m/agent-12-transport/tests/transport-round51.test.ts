@@ -37,13 +37,13 @@ describe('Agent 12 round 51 catalog', () => {
 });
 
 describe('Agent 12 round 51 systems', () => {
-  it('returns agent12/52 with superconducting HVDC, NICU, methanol dual-fuel bunkering', () => {
+  it('returns agent12/53 with superconducting HVDC, NICU, methanol dual-fuel bunkering', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(750), {
       superconductingHvdcExportPolicy: 'accelerate',
       remoteNeonatalIcuSupplyStagingPolicy: 'surge',
       portMethanolDualFuelBunkeringLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/52');
+    assert.equal(state.schemaVersion, 'agent12/53');
     assert.ok(state.nationalSuperconductingHvdcExportIndex >= 5);
     assert.ok(state.nationalRemoteNeonatalIcuSupplyStagingIndex >= 6);
     assert.ok(state.portMethanolDualFuelBunkeringLogisticsShare >= 0.03);

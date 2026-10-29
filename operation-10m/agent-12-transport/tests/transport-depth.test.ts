@@ -70,7 +70,7 @@ describe('Agent 12 corridors and intermodal synergy', () => {
 
   it('returns infrastructure state schema agent12/2 with corridor synergy', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(3));
-    assert.equal(state.schemaVersion, 'agent12/52');
+    assert.equal(state.schemaVersion, 'agent12/53');
     assert.ok(state.corridorSynergyPoints > 0);
     assert.ok(state.activeCorridors.some((c) => c.active));
     assert.ok(state.productivity.nationalProductivityIndexBonus > 100);

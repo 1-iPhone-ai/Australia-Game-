@@ -37,13 +37,13 @@ describe('Agent 12 round 44 catalog', () => {
 });
 
 describe('Agent 12 round 44 systems', () => {
-  it('returns agent12/52 with kelp, dialysis, rail inspection', () => {
+  it('returns agent12/53 with kelp, dialysis, rail inspection', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(500), {
       marineKelpExportPolicy: 'accelerate',
       remoteDialysisSupplyStagingPolicy: 'surge',
       railAutomatedInspectionLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/52');
+    assert.equal(state.schemaVersion, 'agent12/53');
     assert.ok(state.nationalMarineKelpExportIndex >= 5);
     assert.ok(state.nationalRemoteDialysisSupplyStagingIndex >= 6);
     assert.ok(state.railAutomatedInspectionLogisticsShare >= 0.03);
