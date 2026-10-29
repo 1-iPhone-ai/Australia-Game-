@@ -140603,11 +140603,42 @@ export function industryPlayStrip(s: IndustriesSupplyChainsState | null, focusRe
   return out.slice(0, 2);
 }
 
+/** Player/team "company" footprint vs V10.1 national industries (read-only; never touches cash or inventory). */
+export type ActorIndustrialExposureSeverity = 'moderate' | 'major' | 'critical';
+export interface ActorIndustrialExposureLine { regionId: string; kind: 'bottleneck' | 'dependency' | 'local_supply'; severity: ActorIndustrialExposureSeverity; text: string }
+export function actorIndustrialExposureBrief(state: IndustriesSupplyChainsState | null, ownedRegionIds: string[]): { lines: ActorIndustrialExposureLine[]; summary: string | null } {
+  if (!state || !ownedRegionIds.length) return { lines: [], summary: null };
+  const owned = new Set(ownedRegionIds.filter(c => REGIONS[c]));
+  const lines: ActorIndustrialExposureLine[] = [];
+  const sevRank = (s: ActorIndustrialExposureSeverity) => (s === 'critical' ? 3 : s === 'major' ? 2 : 1);
+  const push = (line: ActorIndustrialExposureLine) => {
+    if (lines.some(x => x.regionId === line.regionId && x.text === line.text)) return;
+    lines.push(line);
+  };
+  state.bottlenecks.filter(b => owned.has(b.regionId)).forEach(b => {
+    const st = state.regions[b.regionId]?.industries[b.industry];
+    push({ regionId: b.regionId, kind: 'bottleneck', severity: b.severity === 'critical' ? 'critical' : b.severity === 'major' ? 'major' : 'moderate',
+      text: `${scName(b.regionId)} ${INDUSTRY_LABEL[b.industry].toLowerCase()} ${st ? INDUSTRY_CONDITION_LABEL[st.condition].toLowerCase() : 'strained'}${b.input ? ` (${SUPPLY_LABEL[b.input].toLowerCase()} tight)` : ''}` });
+  });
+  ownedRegionIds.forEach(c => {
+    const reg = state.regions[c]; if (!reg) return;
+    reg.suppliedBy.filter(d => d.importance === 'critical' || d.importance === 'high').sort((a, b) => b.share - a.share || a.providerRegionId.localeCompare(b.providerRegionId)).slice(0, 2).forEach(d => {
+      push({ regionId: c, kind: 'dependency', severity: d.importance === 'critical' ? 'critical' : 'major',
+        text: `${scName(c)} relies on ${scName(d.providerRegionId)} for ${scPct(d.share)} of ${SUPPLY_LABEL[d.supply].toLowerCase()} (${d.shareBand})` });
+    });
+    (state.supplies[c] || []).filter(sp => sp.condition === 'shortage' || sp.condition === 'tight').slice(0, 1).forEach(sp => {
+      push({ regionId: c, kind: 'local_supply', severity: sp.condition === 'shortage' ? 'major' : 'moderate', text: `${scName(c)} local ${SUPPLY_LABEL[sp.supply].toLowerCase()} is ${SUPPLY_CONDITION_LABEL[sp.condition].toLowerCase()}` });
+    });
+  });
+  const sorted = lines.sort((a, b) => sevRank(b.severity) - sevRank(a.severity) || a.regionId.localeCompare(b.regionId)).slice(0, 4);
+  return { lines: sorted, summary: sorted.length ? sorted.map(l => l.text).join(' · ') : null };
+}
+
 
 // ---- V10.1 Industries & Supply Chains: Game Intelligence (Fact / Calculated / Inference / Projection) ----------
 
 export interface IndustriesWorldView { state: IndustriesSupplyChainsState; inputs: IndustriesInputs; persisted: IndustriesPersisted | null }
-export type IndustryQueryTopic = 'why_industry' | 'supply_source' | 'dependents' | 'what_if_decline' | 'top_producer' | 'network_matters' | 'overdependence' | 'diversify' | 'what_if_build';
+export type IndustryQueryTopic = 'why_industry' | 'supply_source' | 'dependents' | 'what_if_decline' | 'top_producer' | 'network_matters' | 'overdependence' | 'diversify' | 'what_if_build' | 'actor_exposure';
 export interface IndustryQuery { topic: IndustryQueryTopic; regionId: string | null; industry: StrategicIndustryKind | null; supply: StrategicSupplyKind | null; network: NationalNetworkKind | null; projectType: string | null }
 
 const SC_INDUSTRY_WORDS: Array<[StrategicIndustryKind, RegExp]> = [
@@ -140627,8 +140658,11 @@ export function detectIndustryQuery(raw: string, gw: GIWorld): IndustryQuery | n
   const q = ` ${String(raw || '').toLowerCase().replace(/[’']/g, "'").replace(/[?!.]/g, ' ').replace(/\s+/g, ' ').trim()} `;
   const industry = industryInText(q); const supply = supplyInText(q); const regionId = nsRegionInText(q);
   const network = nationalNetworkInText(q);
-  const chainWord = /\b(supply chains?|suppl(y|ies|ier|iers)|industr(y|ies)|inputs?|value chains?|diversif\w*)\b/.test(q);
+  const chainWord = /\b(supply chains?|suppl(y|ies|ier|iers)|industr(y|ies)|inputs?|value chains?|diversif\w*|compan(y|ies)|corporat\w*|firms?|business(es)?)\b/.test(q);
   const mk = (topic: IndustryQueryTopic, extra: Partial<IndustryQuery> = {}): IndustryQuery => ({ topic, regionId, industry, supply, network, projectType: null, ...extra });
+  const actorWord = /\b(my|our|we|player|team'?s?)\b/.test(q);
+  const companyWord = /\b(compan(y|ies)|corporat\w*|firms?|business(es)?|operations?|footprint|portfolio)\b/.test(q);
+  if ((actorWord && companyWord && (supply || industry || chainWord)) || (/\b(am i|are we)\b/.test(q) && /\b(exposed|vulnerable|at risk)\b/.test(q) && (supply || industry || chainWord || companyWord))) return mk('actor_exposure');
   // Economy-wide concentration and project What-Ifs are answered here whenever V10.1 is on (downstream effects).
   if (/\b(too dependent|overly dependent|over-?dependen\w*|reliant on one|depend\w* on (one|a single) region)\b/.test(q)) return mk('overdependence');
   if (/\b(what (happens|would happen)|what if)\b/.test(q) && /\b(build|fund|complete|add)\b/.test(q) && regionId) {
@@ -140757,6 +140791,18 @@ export function composeIndustryAnswer(query: IndustryQuery, gw: GIWorld): GIComp
         ...fragile.slice(0, 3).map(d => C(`${SUPPLY_LABEL[d.supply]}: ${scName(d.providerRegionId)} supplies ${scPct(d.share)}${d.alternatives.length ? ` (alternatives: ${d.alternatives.map(scName).join(', ')})` : ' (no alternative)'}.`, 'calculated'))]);
       const alt = fragile[0] ? Object.entries(s.supplies).filter(([c, l]) => c !== reg.regionId && c !== fragile[0].providerRegionId && (l.find(x => x.supply === fragile[0].supply)?.production || 0) >= 5).map(([c]) => c) : [];
       say('infer', 'Inference', [fragile[0] ? C(`Options: strengthen corridors to ${alt.length ? alt.map(scName).join(' or ') : 'another producer'}, develop local ${SUPPLY_LABEL[fragile[0].supply].toLowerCase()} capacity, or accept the concentration for its efficiency. Diversifying costs capital and some specialization advantage.`, 'inference') : C(`${reg.name} has no high-importance single-supplier dependency right now.`, 'inference')]);
+      break;
+    }
+    case 'actor_exposure': {
+      const owned = Object.values(gw.regions).filter(r => r.controlledByPlayer).map(r => r.code);
+      const brief = actorIndustrialExposureBrief(s, owned);
+      title = 'Your company & national industries';
+      shape = 'diagnosis';
+      say('fact', 'Fact', [C(`Your company footprint here means regions you control (${owned.length ? owned.map(scName).join(', ') : 'none yet'}) — not your personal cash, loans, or inventory.`, 'fact')]);
+      if (!owned.length) { say('infer', 'Inference', [C('Control at least one region before regional industrial exposure applies to your company operations.', 'inference')]); break; }
+      if (!brief.lines.length) { say('infer', 'Inference', [C('No major industrial bottlenecks or critical supply dependencies in your controlled regions right now.', 'inference')]); break; }
+      say('calc', 'Calculated', brief.lines.map(l => C(l.text, 'calculated')));
+      say('infer', 'Inference', [C('These are strategic supply-chain conditions (abstract points). They do not auto-debit your wallet; mitigations are corridors, alternative suppliers, and local industrial capacity.', 'inference')]);
       break;
     }
   }
@@ -141172,6 +141218,19 @@ export function runV101IndustriesSupplyChainsSelfTests(): V9SelfTestResult[] {
     for (let k = 0; k < 50; k++) { const r = computeIndustriesSupplyChains({ ...w.ii, turn: k }, p); p = r.persisted; if (r.state.flows.length > V101_LIMITS.flows || r.persisted.history.length > V101_LIMITS.history) return 'unbounded'; }
     const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
     return ms < 1500 || `${Math.round(ms)}ms`;
+  });
+  check('sc36_company_query', 'Company / exposure phrasing maps to actor_exposure when Industries is on', () => {
+    const w = W({ sectors: chainSectors, modifiers: noOtherMining, corridors: directCorridors(1) });
+    const st = run(w.ii).state;
+    const gw = { regions: { VIC: { code: 'VIC', name: 'Victoria', controlledByPlayer: true, controlledByRival: false } }, national: { industries: { state: st, inputs: w.ii, persisted: null } } } as any;
+    const q = detectIndustryQuery('Is my company exposed to mineral shortages?', gw);
+    return (q?.topic === 'actor_exposure' && q.supply === 'minerals') || JSON.stringify(q);
+  });
+  check('sc37_actor_brief', 'Actor industrial exposure brief lists owned-region bottlenecks only', () => {
+    const st = run(W({ sectors: chainSectors, modifiers: noOtherMining, corridors: directCorridors(0.3) }).ii).state;
+    const vic = actorIndustrialExposureBrief(st, ['VIC']);
+    const tas = actorIndustrialExposureBrief(st, ['TAS']);
+    return (vic.lines.length >= 1 && vic.lines.every(l => l.regionId === 'VIC') && tas.lines.length <= vic.lines.length) || `${vic.lines.length} vs ${tas.lines.length}`;
   });
   return results;
 }
