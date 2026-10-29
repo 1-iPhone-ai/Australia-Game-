@@ -373,6 +373,7 @@ export interface NationalLaborDemographicsState {
   steadfastResilienceOutlook?: NationalSteadfastResilienceOutlook;
   subjectSteadfastReadinessBrief?: NationalSubjectSteadfastReadinessBrief;
   nationalWorkforceSteadfastDepthIndex?: NationalWorkforceSteadfastDepthIndex;
+  resoluteAdvocacyCouplingBrief?: NationalResoluteAdvocacyCouplingBrief;
   steadfastAdvocacyCouplingBrief?: NationalSteadfastAdvocacyCouplingBrief;
   advocacyResilienceOutlook?: NationalAdvocacyResilienceOutlook;
   subjectAdvocacySteadfastReadinessBrief?: NationalSubjectAdvocacySteadfastReadinessBrief;
@@ -2530,7 +2531,17 @@ export interface NationalWorkforceSteadfastDepthIndex {
 }
 
 
+export type ResoluteAdvocacyCouplingBand = SteadfastAdvocacyCouplingBand;
 export type SteadfastAdvocacyCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalResoluteAdvocacyCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: ResoluteAdvocacyCouplingBand;
+  resoluteDrag: number;
+  summary: string;
+  stewardNote: string;
+}
 
 export interface NationalSteadfastAdvocacyCouplingBrief {
   turn: number;
