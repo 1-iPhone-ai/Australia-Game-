@@ -10,7 +10,7 @@ import { priorityMomentumBonus } from './priority-momentum.ts';
 import { detectStrategicSynergies, synergyScoreBonus } from './strategic-synergies.ts';
 import { STRATEGIC_ACTION_CATALOG } from '../catalog/strategic-action-catalog.ts';
 import { mandateRankingBonus } from './strategic-mandate.ts';
-import { coalitionBalanceRankingBonus, coalitionRecoveryRankingBonus, sustainedRecoveryRankingBonus, stabilizationRankingBonus, lockInRankingBonus, crossModuleSyncRankingBonus, integratedMaturityRankingBonus, stewardshipRankingBonus, anchoredGovernanceRankingBonus } from './coalition-balance.ts';
+import { coalitionBalanceRankingBonus, coalitionRecoveryRankingBonus, sustainedRecoveryRankingBonus, stabilizationRankingBonus, lockInRankingBonus, crossModuleSyncRankingBonus, integratedMaturityRankingBonus, stewardshipRankingBonus, anchoredGovernanceRankingBonus, institutionalPermanenceRankingBonus } from './coalition-balance.ts';
 import { scoreNationalPriorityAlignment, validateAction } from './validation.ts';
 
 export function rankStrategicActions(
@@ -47,7 +47,8 @@ export function rankStrategicActions(
         crossModuleSyncRankingBonus(state, action) +
         integratedMaturityRankingBonus(state, action) +
         stewardshipRankingBonus(state, action) +
-        anchoredGovernanceRankingBonus(state, action),
+        anchoredGovernanceRankingBonus(state, action) +
+        institutionalPermanenceRankingBonus(state, action),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });

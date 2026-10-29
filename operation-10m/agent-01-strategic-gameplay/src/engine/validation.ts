@@ -33,6 +33,7 @@ import { crossModuleSyncStreakIssues } from './cross-module-sync-gates.ts';
 import { integratedCoalitionMaturityStreakIssues } from './coalition-integrated-maturity-gates.ts';
 import { coalitionStewardshipStreakIssues } from './coalition-stewardship-gates.ts';
 import { coalitionAnchoredGovernanceStreakIssues } from './coalition-anchored-governance-gates.ts';
+import { coalitionInstitutionalPermanenceStreakIssues } from './coalition-institutional-permanence-gates.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -289,6 +290,7 @@ export function validateAction(
     issues.push(...integratedCoalitionMaturityStreakIssues(action, state));
     issues.push(...coalitionStewardshipStreakIssues(action, state));
     issues.push(...coalitionAnchoredGovernanceStreakIssues(action, state));
+    issues.push(...coalitionInstitutionalPermanenceStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({

@@ -108,3 +108,13 @@ export function anchoredGovernanceRankingBonus(
   if (streak >= action.minCoalitionAnchoredGovernanceStreakDays) return 6;
   return 2;
 }
+
+export function institutionalPermanenceRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionInstitutionalPermanenceStreakDays === undefined) return 0;
+  const streak = state.coalitionInstitutionalPermanenceStreakDays ?? 0;
+  if (streak >= action.minCoalitionInstitutionalPermanenceStreakDays) return 7;
+  return 2;
+}

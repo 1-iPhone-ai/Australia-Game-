@@ -101,6 +101,7 @@ export {
   integratedMaturityRankingBonus,
   stewardshipRankingBonus,
   anchoredGovernanceRankingBonus,
+  institutionalPermanenceRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -226,6 +227,16 @@ export {
   applyAnchoredGovernanceMandateBonus,
 } from './engine/coalition-anchored-governance.ts';
 
+export { coalitionInstitutionalPermanenceStreakIssues } from './engine/coalition-institutional-permanence-gates.ts';
+
+export {
+  INSTITUTIONAL_COALITION_PERMANENCE_THRESHOLD,
+  advanceCoalitionInstitutionalPermanenceStreak,
+  resetCoalitionInstitutionalPermanenceStreak,
+  isInstitutionalCoalitionPermanence,
+  applyInstitutionalPermanenceMandateBonus,
+} from './engine/coalition-institutional-permanence.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '2.3.0';
+export const AGENT_01_MODULE_VERSION = '2.4.0';

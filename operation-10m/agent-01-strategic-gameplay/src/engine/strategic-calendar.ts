@@ -22,6 +22,10 @@ import {
   advanceCoalitionAnchoredGovernanceStreak,
   applyAnchoredGovernanceMandateBonus,
 } from './coalition-anchored-governance.ts';
+import {
+  advanceCoalitionInstitutionalPermanenceStreak,
+  applyInstitutionalPermanenceMandateBonus,
+} from './coalition-institutional-permanence.ts';
 import { advanceCoalitionRecoveryStreak } from './coalition-recovery.ts';
 import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
 import type { StakeholderGroupId, StakeholderSentiment } from '../types/coalition-mandate.ts';
@@ -87,6 +91,8 @@ export function advanceStrategicGameplayCalendar(
   next = applyStewardshipStakeholderCalm(next, daysAdvanced);
   next = advanceCoalitionAnchoredGovernanceStreak(next, daysAdvanced);
   next = applyAnchoredGovernanceMandateBonus(next, daysAdvanced);
+  next = advanceCoalitionInstitutionalPermanenceStreak(next, daysAdvanced);
+  next = applyInstitutionalPermanenceMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 

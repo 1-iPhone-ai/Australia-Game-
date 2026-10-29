@@ -85,6 +85,8 @@ export interface StrategicActionDefinition {
   minCoalitionStewardshipStreakDays?: number;
   /** Action requires anchored governance streak after sustained stewardship. */
   minCoalitionAnchoredGovernanceStreakDays?: number;
+  /** Action requires institutional permanence streak after anchored governance. */
+  minCoalitionInstitutionalPermanenceStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -133,7 +135,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_cross_module_sync_streak'; minDays: number }
   | { kind: 'min_integrated_coalition_maturity_streak'; minDays: number }
   | { kind: 'min_coalition_stewardship_streak'; minDays: number }
-  | { kind: 'min_coalition_anchored_governance_streak'; minDays: number };
+  | { kind: 'min_coalition_anchored_governance_streak'; minDays: number }
+  | { kind: 'min_coalition_institutional_permanence_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -193,6 +196,8 @@ export interface StrategicGameplayState {
   coalitionStewardshipStreakDays?: number;
   /** Days sustained stewardship held governance anchor eligibility. */
   coalitionAnchoredGovernanceStreakDays?: number;
+  /** Days anchored governance held institutional permanence eligibility. */
+  coalitionInstitutionalPermanenceStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;

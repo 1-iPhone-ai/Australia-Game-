@@ -34,6 +34,7 @@ import { resetCrossModuleSyncStreak } from '../integrations/strategic-cross-modu
 import { resetIntegratedCoalitionMaturityStreak } from './coalition-integrated-maturity.ts';
 import { resetCoalitionStewardshipStreak } from './coalition-stewardship.ts';
 import { resetCoalitionAnchoredGovernanceStreak } from './coalition-anchored-governance.ts';
+import { resetCoalitionInstitutionalPermanenceStreak } from './coalition-institutional-permanence.ts';
 import {
   scoreNationalPriorityAlignment,
   validateAction,
@@ -63,6 +64,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     integratedCoalitionMaturityStreakDays: 0,
     coalitionStewardshipStreakDays: 0,
     coalitionAnchoredGovernanceStreakDays: 0,
+    coalitionInstitutionalPermanenceStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -247,6 +249,12 @@ export function executeStrategicAction(
   }
   if (action.id === 'sga_coalition_legacy_trust_endowment') {
     nextState = resetCoalitionAnchoredGovernanceStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_institutional_permanence_charter') {
+    nextState = resetCoalitionInstitutionalPermanenceStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_succession_resilience_covenant') {
+    nextState = resetCoalitionInstitutionalPermanenceStreak(nextState);
   }
 
   contracts.ui.pushToast({
