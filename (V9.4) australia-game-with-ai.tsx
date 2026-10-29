@@ -136512,6 +136512,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
+  { id: 'o111_it54', label: 'O111 Agent 54 International Trade', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runAgent54InternationalTradeSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
@@ -139911,6 +139912,82 @@ export function runV100NationalSystemsSelfTests(): V9SelfTestResult[] {
     const ans = q ? composeNationalSystemsAnswer(q, gw) : null;
     const text = ans ? ans.sections.flatMap(x => x.claims.map(c => c.text)).join(' ') : '';
     return (imp.beneficiaries.includes('VIC') && /Public good/.test(text) && /Value to your strategy/.test(text) && ans!.sections.some(x => x.claims.some(c => c.kind === 'projection'))) || `${imp.beneficiaries} :: ${text.slice(0, 200)}`;
+  });
+  return results;
+}
+
+// ============================================================================
+// Operation 111 · Agent 54 — International Trade Engineer (cross-layer regression harness)
+// National trade network, regional tariffs, diplomacy resource_trade, infrastructure trade discounts.
+// ============================================================================
+export function runAgent54InternationalTradeSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const fx = createNationalSystemsFixtureInputs;
+  const runNs = (i: NationalSystemsInputs, prev: NationalSystemsPersisted | null = null) => computeNationalSystems(i, prev);
+  const net = (s: NationalSystemsState, c: string, n: NationalNetworkKind) => s.regions[c].networks[n];
+  const portProj = (id: string, regionId: string) => ({ id, title: id, regionId, projectType: 'automated_port', status: 'active' });
+
+  check('it01_port_trade_capacity', 'Port infrastructure raises regional trade network local capacity', () => {
+    const base = runNs(fx()).state;
+    const port = runNs(fx({ projects: [portProj('port', 'QLD')] })).state;
+    const delta = net(port, 'QLD', 'trade').localCapacity - net(base, 'QLD', 'trade').localCapacity;
+    const expected = LR_PROJECT_PROFILE.automated_port.capacity.trade || 0;
+    return (delta >= expected * 0.9 && net(port, 'QLD', 'trade').sources.some(s => s.source === 'project:port')) || `delta ${delta} expected ~${expected}`;
+  });
+  check('it02_export_demand', 'Export-oriented sectors increase national trade demand', () => {
+    const base = runNs(fx()).state;
+    const hot = runNs(fx({ regions: { WA: { sectors: { mining: 90, trade: 70, agriculture: 60 } } } })).state;
+    return net(hot, 'WA', 'trade').demand > net(base, 'WA', 'trade').demand || `${net(base, 'WA', 'trade').demand} vs ${net(hot, 'WA', 'trade').demand}`;
+  });
+  check('it03_trade_import_sharing', 'Trade deficits import bounded capacity from a neighbouring surplus (national network)', () => {
+    const corridors: NationalCorridorDef[] = [{ a: 'SA', b: 'VIC', base: { trade: 30 }, label: 'test' }];
+    const s = runNs(fx({
+      corridors,
+      projects: [portProj('psa', 'SA')],
+      modifiers: { VIC: { trade: -40 }, SA: { trade: 15 } },
+      regions: { VIC: { sectors: { trade: 85, manufacturing: 40 } } }
+    })).state;
+    const v = net(s, 'VIC', 'trade');
+    return (v.importedCapacity > 0 && s.flows.some(f => f.network === 'trade' && f.toRegionId === 'VIC')) || JSON.stringify({ imp: v.importedCapacity, flows: s.flows.filter(f => f.network === 'trade') }).slice(0, 200);
+  });
+  check('it04_port_crisis_trade', 'Port / freight crises constrain trade network capacity', () => {
+    const base = runNs(fx({ projects: [portProj('port', 'QLD')] })).state;
+    const strike = runNs(fx({
+      projects: [portProj('port', 'QLD')],
+      crises: [{ id: 'ps', name: 'Port strike', category: 'infrastructure', status: 'active', affectedRegions: ['QLD'] }]
+    })).state;
+    return net(strike, 'QLD', 'trade').localCapacity < net(base, 'QLD', 'trade').localCapacity || `${net(base, 'QLD', 'trade').localCapacity} vs ${net(strike, 'QLD', 'trade').localCapacity}`;
+  });
+  check('it05_regional_tariff_standing', 'Regional standing shifts tariff rates within documented bounds', () => {
+    const gsGood = { gameSettings: { regionalStandingEnabled: true }, standingPerActor: { player: { VIC: 80 } } };
+    const gsBad = { gameSettings: { regionalStandingEnabled: true }, standingPerActor: { player: { VIC: -60 } } };
+    const low = calculateRegionalTariffRate('player', 'VIC', gsGood);
+    const high = calculateRegionalTariffRate('player', 'VIC', gsBad);
+    return (low < 0.11 && high > 0.15 && high <= 0.26) || `low ${low} high ${high}`;
+  });
+  check('it06_trade_discount_projects', 'Active infrastructure trade_discount bonuses stack through getEffectiveTradeAndTravelDiscounts', () => {
+    const gs = {
+      infrastructureProjects: {
+        p1: { status: 'active', regionId: 'QLD', providedBonuses: [{ type: 'trade_discount', magnitude: 0.2 }] }
+      }
+    };
+    const { tradeDiscount } = getEffectiveTradeAndTravelDiscounts({}, 'QLD', gs);
+    return tradeDiscount >= 0.19 || `discount ${tradeDiscount}`;
+  });
+  check('it07_dn_resource_trade_template', 'Diplomacy resource_trade template builds a resource-for-cash deal', () => {
+    const f = createDiplomacyFixture();
+    const deal = buildDiplomaticTemplate('resource_trade', 'ai', f.view, null, 1500);
+    const kinds = deal.terms.map(t => t.kind);
+    return (deal.type === 'resource_trade' && (kinds.includes('transfer_resource') || kinds.includes('pay_cash'))) || kinds.join(',');
+  });
+  check('it08_trade_bottleneck_content', 'Contract gating requires real trade network strain (never invented)', () => {
+    const req: ContentReq = { k: 'network', network: 'trade', conditions: ['bottlenecked', 'critical'] };
+    const ctx = (cond: NationalNetworkCondition | null) => ({ regions: { QLD: { name: 'Queensland' } }, national: cond ? { QLD: { trade: cond } } : null, nationalDeps: [] }) as any;
+    return (evaluateContentReq(req, ctx('bottlenecked'), 'QLD', null).ok && !evaluateContentReq(req, ctx('healthy'), 'QLD', null).ok && !evaluateContentReq(req, ctx(null), 'QLD', null).ok) || 'trade content gating wrong';
   });
   return results;
 }
