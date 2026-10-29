@@ -117,6 +117,11 @@ import {
   sanitizeReversalSession,
 } from './save-format-reversal.js';
 import {
+  getReinstatementScenarioAtCursor,
+  reinstatementSessionSummary,
+  sanitizeReinstatementSession,
+} from './save-format-reinstatement.js';
+import {
   getAnnulmentScenarioAtCursor,
   annulmentSessionSummary,
   sanitizeAnnulmentSession,
@@ -191,6 +196,7 @@ import type {
   O10mRemandPhase,
   O10mReversalPhase,
   O10mAnnulmentPhase,
+  O10mReinstatementPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -321,9 +327,31 @@ const emptyQueuePlan = {
   annulmentCursor: null as number | null,
   annulmentPhase: null as O10mAnnulmentPhase | null,
   annulmentScore: null as number | null,
+  reinstatementId: null as string | null,
+  reinstatementCursor: null as number | null,
+  reinstatementPhase: null as O10mReinstatementPhase | null,
+  reinstatementScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const reinstatement = sanitizeReinstatementSession(state.reinstatementSession);
+  const reinstatementScenario = getReinstatementScenarioAtCursor(reinstatement);
+  if (reinstatement && reinstatement.active && reinstatementScenario) {
+    return {
+      kind: 'reinstatement_step',
+      scenarioId: reinstatementScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      reinstatementId: reinstatement.reinstatementId,
+      reinstatementCursor: reinstatement.cursor,
+      reinstatementPhase: reinstatement.phaseTag,
+      reinstatementScore: reinstatement.reinstatementScore,
+      reason: `Reinstatement "${reinstatement.label}" ${reinstatement.phaseTag} phase ${reinstatement.cursor + 1}/${reinstatement.scenarioIds.length} (score ${reinstatement.reinstatementScore}).`,
+    };
+  }
+
   const annulment = sanitizeAnnulmentSession(state.annulmentSession);
   const annulmentScenario = getAnnulmentScenarioAtCursor(annulment);
   if (annulment && annulment.active && annulmentScenario) {
@@ -997,6 +1025,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   remandActive: boolean;
   reversalActive: boolean;
   annulmentActive: boolean;
+  reinstatementActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -1036,6 +1065,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const remand = remandSessionSummary(state);
   const reversal = reversalSessionSummary(state);
   const annulment = annulmentSessionSummary(state);
+  const reinstatement = reinstatementSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -1073,6 +1103,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     remandActive: remand.active,
     reversalActive: reversal.active,
     annulmentActive: annulment.active,
+    reinstatementActive: reinstatement.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

@@ -392,6 +392,7 @@ export type O10mVacaturPhase = 'petition' | 'review' | 'vacatur';
 export type O10mRemandPhase = 'order' | 'review' | 'remand';
 export type O10mReversalPhase = 'motion' | 'review' | 'reversal';
 export type O10mAnnulmentPhase = 'filing' | 'review' | 'annulment';
+export type O10mReinstatementPhase = 'filing' | 'review' | 'reinstatement';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -712,6 +713,17 @@ export interface O10mAnnulmentSession {
   phaseTag: O10mAnnulmentPhase;
 }
 
+/** Schema v37 — reinstatement arc with score accrual between phases. */
+export interface O10mReinstatementSession {
+  reinstatementId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  reinstatementScore: number;
+  phaseTag: O10mReinstatementPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -736,6 +748,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'reinstatement_step'
     | 'annulment_step'
     | 'reversal_step'
     | 'remand_step'
@@ -899,6 +912,10 @@ export interface O10mCampaignPlan {
   annulmentCursor: number | null;
   annulmentPhase: O10mAnnulmentPhase | null;
   annulmentScore: number | null;
+  reinstatementId: string | null;
+  reinstatementCursor: number | null;
+  reinstatementPhase: O10mReinstatementPhase | null;
+  reinstatementScore: number | null;
   reason: string;
 }
 
@@ -992,8 +1009,10 @@ export interface O10mModesPersistedState {
   remandSession?: O10mRemandSession | null;
   /** Schema v35 — active reversal arc (mutually exclusive with annulment / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   reversalSession?: O10mReversalSession | null;
-  /** Schema v36 — active annulment arc (mutually exclusive with reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v36 — active annulment arc (mutually exclusive with reinstatement / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   annulmentSession?: O10mAnnulmentSession | null;
+  /** Schema v37 — active reinstatement arc (mutually exclusive with annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  reinstatementSession?: O10mReinstatementSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -5033,6 +5052,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Annulment finales', 'Score ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_reinstatement_filing_docket',
+    title: 'Reinstatement Filing Docket',
+    description: 'Open a reinstatement arc with low-pressure score pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100520,
+    startingMoney: 3650,
+    startingRegions: ['NSW', 'ACT'],
+    badgeId: 'badge_o10m_reinstatement_filing_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100520),
+      o10mReinstatementFilingDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_rfd_obj_day',
+        label: 'Filing Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Reinstatement arcs', 'Score pacing', 'Filing phase'],
+  },
+  {
+    id: 'o10m_reinstatement_review_chamber',
+    title: 'Reinstatement Review Chamber',
+    description: 'Mid-reinstatement review with accrued score bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100521,
+    startingMoney: 4200,
+    startingRegions: ['VIC', 'TAS'],
+    startingStanding: { VIC: 68, TAS: 66 },
+    badgeId: 'badge_o10m_reinstatement_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100521),
+      regionalStandingEnabled: true,
+      o10mReinstatementReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_rrc_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 75',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 75,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Score carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_reinstatement_restoration_finale',
+    title: 'Reinstatement Restoration Finale',
+    description: 'Finale reinstatement stage — net worth gate with full score bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100522,
+    startingMoney: 4650,
+    startingRegions: ['SA', 'NT', 'WA'],
+    badgeId: 'badge_o10m_reinstatement_restoration_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100522),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mReinstatementRestorationFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_rrf_obj_net',
+        label: 'Restoration Net Worth',
+        description: 'Reach $20,800 net worth',
+        targetType: 'netWorth',
+        targetValue: 20800,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Reinstatement finales', 'Score ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -6739,6 +6855,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_reinstatement_route',
+    title: 'Reinstatement Route',
+    description:
+      'Three-phase reinstatement arc with score accrual between legs — round-37 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_reinstatement_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_reinstatement_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File reinstatement petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 470 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_reinstatement_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { WA: 6, QLD: 5 },
+          forcedSettingsPatch: { o10mReinstatementMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_reinstatement_restoration_finale',
+        title: 'Restoration Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainReinstatementRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -7565,7 +7715,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 36;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 37;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -7700,6 +7850,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
   };
 }
 
@@ -7755,6 +7906,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       remandSession: merged.remandSession ?? null,
       reversalSession: merged.reversalSession ?? null,
       annulmentSession: merged.annulmentSession ?? null,
+      reinstatementSession: merged.reinstatementSession ?? null,
     };
     return upgraded;
   }
@@ -7834,6 +7986,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     remandSession: sanitizeRemandSession(o.remandSession),
     reversalSession: sanitizeReversalSession(o.reversalSession),
     annulmentSession: sanitizeAnnulmentSession(o.annulmentSession),
+    reinstatementSession: sanitizeReinstatementSession(o.reinstatementSession),
   };
 }
 
@@ -8094,6 +8247,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Annulment cursor out of range; clamp on next sanitize.');
   }
 
+  const reinstatement = sanitizeReinstatementSession(state.reinstatementSession);
+  if (state.reinstatementSession && !reinstatement) {
+    warnings.push('Reinstatement session failed sanitization; planner will ignore it.');
+  } else if (reinstatement && reinstatement.cursor >= reinstatement.scenarioIds.length) {
+    warnings.push('Reinstatement cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -8233,6 +8393,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'remandSession',
   'reversalSession',
   'annulmentSession',
+  'reinstatementSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -8767,6 +8928,7 @@ export function attachMarathonQueueToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -8884,6 +9046,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceReinstatementSessionAfterRun(next, run);
   next = advanceAnnulmentSessionAfterRun(next, run);
   next = advanceReversalSessionAfterRun(next, run);
   next = advanceRemandSessionAfterRun(next, run);
@@ -9072,6 +9235,7 @@ export function attachGauntletSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -9330,6 +9494,7 @@ export function attachRelaySessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -9548,6 +9713,7 @@ export function attachCircuitSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -9784,6 +9950,7 @@ export function attachExpeditionSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -10018,6 +10185,7 @@ export function attachOdysseySessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -10251,6 +10419,7 @@ export function attachPilgrimageSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -10485,6 +10654,7 @@ export function attachCaravanSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -10713,6 +10883,7 @@ export function attachVoyageSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -10941,6 +11112,7 @@ export function attachSiegeSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -11169,6 +11341,7 @@ export function attachConvoySessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -11397,6 +11570,7 @@ export function attachEscortSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -11634,6 +11808,7 @@ export function attachExtractionSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -11879,6 +12054,7 @@ export function attachSubjectSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -12124,6 +12300,7 @@ export function attachWitnessSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -12369,6 +12546,7 @@ export function attachTribunalSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -12614,6 +12792,7 @@ export function attachIndictmentSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -12859,6 +13038,7 @@ export function attachAppealSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,
@@ -13104,6 +13284,7 @@ export function attachClemencySessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     appealSession: null,
     indictmentSession: null,
     tribunalSession: null,
@@ -13349,6 +13530,7 @@ export function attachPardonSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     clemencySession: null,
     appealSession: null,
     indictmentSession: null,
@@ -13594,6 +13776,7 @@ export function attachAmnestySessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     pardonSession: null,
     clemencySession: null,
     appealSession: null,
@@ -13839,6 +14022,7 @@ export function attachReprieveSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     amnestySession: null,
     pardonSession: null,
     clemencySession: null,
@@ -14084,6 +14268,7 @@ export function attachParoleSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     reprieveSession: null,
     amnestySession: null,
     pardonSession: null,
@@ -14329,6 +14514,7 @@ export function attachProbationSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     paroleSession: null,
     reprieveSession: null,
     amnestySession: null,
@@ -14574,6 +14760,7 @@ export function attachCommutationSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     probationSession: null,
     paroleSession: null,
     reprieveSession: null,
@@ -14819,6 +15006,7 @@ export function attachAcquittalSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     commutationSession: null,
     probationSession: null,
     paroleSession: null,
@@ -15064,6 +15252,7 @@ export function attachExonerationSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     acquittalSession: null,
     commutationSession: null,
     probationSession: null,
@@ -15309,6 +15498,7 @@ export function attachExpungementSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     exonerationSession: null,
     acquittalSession: null,
     commutationSession: null,
@@ -15554,6 +15744,7 @@ export function attachVacaturSessionToState(
     remandSession: null,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     expungementSession: null,
     exonerationSession: null,
     acquittalSession: null,
@@ -15799,6 +15990,7 @@ export function attachRemandSessionToState(
     remandSession: sanitized,
     reversalSession: null,
     annulmentSession: null,
+    reinstatementSession: null,
     vacaturSession: null,
     expungementSession: null,
     exonerationSession: null,
@@ -16044,6 +16236,7 @@ export function attachReversalSessionToState(
     ...state,
     reversalSession: sanitized,
     annulmentSession: null,
+    reinstatementSession: null,
     remandSession: null,
     vacaturSession: null,
     expungementSession: null,
@@ -16289,6 +16482,7 @@ export function attachAnnulmentSessionToState(
   return {
     ...state,
     annulmentSession: sanitized,
+    reinstatementSession: null,
     reversalSession: null,
     remandSession: null,
     vacaturSession: null,
@@ -16412,6 +16606,255 @@ export function annulmentSessionSummary(state: O10mModesPersistedState): {
     active: session?.active === true,
     cursor: session?.active ? session.cursor : null,
     annulmentScore: session?.annulmentScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
+// --- bundled from src/save-format-reinstatement.ts ---
+export const O10M_REINSTATEMENT_SCENARIO_CAP = 6;
+export const O10M_REINSTATEMENT_SCORE_CAP = 1030;
+export const O10M_REINSTATEMENT_SCORE_MONEY_CAP = 1110;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mReinstatementPhase>(['filing', 'review', 'reinstatement']);
+
+export function unlockTokenForReinstatementId(reinstatementId: string): string | null {
+  if (!reinstatementId.startsWith('o10m_reinstatement_')) return null;
+  return `o10m_unlock_${reinstatementId.slice('o10m_reinstatement_'.length)}`;
+}
+
+export function reinstatementPhaseForCursor(cursor: number, scenarioCount: number): O10mReinstatementPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'reinstatement';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'filing';
+}
+
+export function reinstatementScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(136, Math.max(31, Math.floor(run.playerNetWorth / 136) + standingSlice));
+}
+
+export function sanitizeReinstatementSession(raw: unknown): O10mReinstatementSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const reinstatementId =
+    typeof o.reinstatementId === 'string' && o.reinstatementId.startsWith('o10m_reinstatement_')
+      ? o.reinstatementId
+      : null;
+  if (!reinstatementId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : reinstatementId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_REINSTATEMENT_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const reinstatementScore = Math.min(
+    O10M_REINSTATEMENT_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.reinstatementScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mReinstatementPhase)
+      ? (phaseRaw as O10mReinstatementPhase)
+      : reinstatementPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    reinstatementId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    reinstatementScore,
+    phaseTag,
+  };
+}
+
+export function createReinstatementSession(params: {
+  reinstatementId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mReinstatementSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.reinstatementId.startsWith('o10m_reinstatement_')) {
+    return { session: null, warnings: ['Reinstatement ids must start with o10m_reinstatement_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_REINSTATEMENT_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Reinstatement arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      reinstatementId: params.reinstatementId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      reinstatementScore: 0,
+      phaseTag: reinstatementPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachReinstatementSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mReinstatementSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeReinstatementSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    reinstatementSession: sanitized,
+    annulmentSession: null,
+    reversalSession: null,
+    remandSession: null,
+    vacaturSession: null,
+    expungementSession: null,
+    exonerationSession: null,
+    acquittalSession: null,
+    commutationSession: null,
+    probationSession: null,
+    paroleSession: null,
+    reprieveSession: null,
+    amnestySession: null,
+    pardonSession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearReinstatementSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, reinstatementSession: null };
+}
+
+export function getReinstatementScenarioAtCursor(
+  session: O10mReinstatementSession | null | undefined,
+): string | null {
+  const reinstatement = sanitizeReinstatementSession(session);
+  if (!reinstatement || !reinstatement.active) return null;
+  return reinstatement.scenarioIds[reinstatement.cursor] ?? null;
+}
+
+export function buildReinstatementScenarioStartOverrides(
+  session: O10mReinstatementSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const reinstatement = sanitizeReinstatementSession(session);
+  if (!reinstatement) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_REINSTATEMENT_SCORE_MONEY_CAP,
+    Math.floor(reinstatement.reinstatementScore * 0.87),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveReinstatementId: reinstatement.reinstatementId,
+      o10mActiveReinstatementStep: reinstatement.cursor,
+      o10mActiveReinstatementPhase: reinstatement.phaseTag,
+      o10mReinstatementScore: reinstatement.reinstatementScore,
+    },
+  };
+}
+
+export function advanceReinstatementSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeReinstatementSession(state.reinstatementSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const reinstatementScore = Math.min(
+    O10M_REINSTATEMENT_SCORE_CAP,
+    session.reinstatementScore + reinstatementScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      reinstatementSession: {
+        ...session,
+        cursor,
+        reinstatementScore,
+        phaseTag: reinstatementPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForReinstatementId(session.reinstatementId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    reinstatementSession: { ...session, active: false, reinstatementScore, phaseTag: 'reinstatement' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function reinstatementSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  reinstatementScore: number;
+  phase: O10mReinstatementPhase | null;
+} {
+  const session = sanitizeReinstatementSession(state.reinstatementSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    reinstatementScore: session?.reinstatementScore ?? 0,
     phase: session?.active ? session.phaseTag : null,
   };
 }
@@ -16542,9 +16985,31 @@ const emptyQueuePlan = {
   annulmentCursor: null as number | null,
   annulmentPhase: null as O10mAnnulmentPhase | null,
   annulmentScore: null as number | null,
+  reinstatementId: null as string | null,
+  reinstatementCursor: null as number | null,
+  reinstatementPhase: null as O10mReinstatementPhase | null,
+  reinstatementScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const reinstatement = sanitizeReinstatementSession(state.reinstatementSession);
+  const reinstatementScenario = getReinstatementScenarioAtCursor(reinstatement);
+  if (reinstatement && reinstatement.active && reinstatementScenario) {
+    return {
+      kind: 'reinstatement_step',
+      scenarioId: reinstatementScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      reinstatementId: reinstatement.reinstatementId,
+      reinstatementCursor: reinstatement.cursor,
+      reinstatementPhase: reinstatement.phaseTag,
+      reinstatementScore: reinstatement.reinstatementScore,
+      reason: `Reinstatement "${reinstatement.label}" ${reinstatement.phaseTag} phase ${reinstatement.cursor + 1}/${reinstatement.scenarioIds.length} (score ${reinstatement.reinstatementScore}).`,
+    };
+  }
+
   const annulment = sanitizeAnnulmentSession(state.annulmentSession);
   const annulmentScenario = getAnnulmentScenarioAtCursor(annulment);
   if (annulment && annulment.active && annulmentScenario) {
@@ -17218,6 +17683,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   remandActive: boolean;
   reversalActive: boolean;
   annulmentActive: boolean;
+  reinstatementActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -17257,6 +17723,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const remand = remandSessionSummary(state);
   const reversal = reversalSessionSummary(state);
   const annulment = annulmentSessionSummary(state);
+  const reinstatement = reinstatementSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -17294,6 +17761,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     remandActive: remand.active,
     reversalActive: reversal.active,
     annulmentActive: annulment.active,
+    reinstatementActive: reinstatement.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -17312,7 +17780,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 37, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 38, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -17596,16 +18064,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const annulmentState = annulment ? attachAnnulmentSessionToState(createEmptyO10mModesPersistedState(), annulment) : null;
   push('agent04_chunk_44', annulmentState !== null && planNextCampaignAction(annulmentState!).kind === 'annulment_step');
 
+  const reinstatement = createReinstatementSession({
+    reinstatementId: 'o10m_reinstatement_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_reinstatement_filing_docket'],
+  }).session;
+  const reinstatementState = reinstatement ? attachReinstatementSessionToState(createEmptyO10mModesPersistedState(), reinstatement) : null;
+  push('agent04_chunk_45', reinstatementState !== null && planNextCampaignAction(reinstatementState!).kind === 'reinstatement_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v37',
+  schemaVersion: 'op10m-agent04-v38',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 36,
+  saveSchemaVersion: 37,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

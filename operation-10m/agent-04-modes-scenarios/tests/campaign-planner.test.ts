@@ -31,6 +31,7 @@ import {
   attachRemandSessionToState,
   attachReversalSessionToState,
   attachAnnulmentSessionToState,
+  attachReinstatementSessionToState,
   attachGauntletSessionToState,
   attachMarathonQueueToState,
   attachRelaySessionToState,
@@ -64,6 +65,8 @@ import {
   createVacaturSession,
   createRemandSession,
   createReversalSession,
+  createAnnulmentSession,
+  createReinstatementSession,
   createGauntletSession,
   createMarathonQueue,
   createRelaySession,
@@ -239,6 +242,38 @@ describe('scenario campaign planner round 4', () => {
     state = attachReprieveSessionToState(state, reprieve!);
     state = attachParoleSessionToState(state, parole!);
     assert.equal(planNextCampaignAction(state).kind, 'parole_step');
+  });
+
+  it('prefers active reinstatement over annulment, reversal, remand, vacatur, expungement, exoneration, acquittal, commutation, probation, parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: reinstatement } = createReinstatementSession({
+      reinstatementId: 'o10m_reinstatement_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_reinstatement_filing_docket', 'o10m_reinstatement_review_chamber'],
+    });
+    const { session: annulment } = createAnnulmentSession({
+      annulmentId: 'o10m_annulment_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_annulment_filing_docket', 'o10m_annulment_review_chamber'],
+    });
+    let state = attachAnnulmentSessionToState(createEmptyO10mModesPersistedState(), annulment!);
+    state = attachReinstatementSessionToState(state, reinstatement!);
+    assert.equal(planNextCampaignAction(state).kind, 'reinstatement_step');
+  });
+
+  it('prefers active annulment over reversal, remand, vacatur, expungement, exoneration, acquittal, commutation, probation, parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: annulment } = createAnnulmentSession({
+      annulmentId: 'o10m_annulment_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_annulment_filing_docket', 'o10m_annulment_review_chamber'],
+    });
+    const { session: reversal } = createReversalSession({
+      reversalId: 'o10m_reversal_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_reversal_motion_docket', 'o10m_reversal_review_chamber'],
+    });
+    let state = attachReversalSessionToState(createEmptyO10mModesPersistedState(), reversal!);
+    state = attachAnnulmentSessionToState(state, annulment!);
+    assert.equal(planNextCampaignAction(state).kind, 'annulment_step');
   });
 
   it('prefers active reversal over remand, vacatur, expungement, exoneration, acquittal, commutation, probation, parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
