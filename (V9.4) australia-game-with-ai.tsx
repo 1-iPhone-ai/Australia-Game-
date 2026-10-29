@@ -60863,6 +60863,7 @@ export const CommandCenterDashboardModal: React.FC<CommandCenterDashboardModalPr
   const [showWhyRecId, setShowWhyRecId] = safeUseState<string | null>(null);
   const [jsonSearchFilter, setJsonSearchFilter] = safeUseState('');
   const [copiedJson, setCopiedJson] = safeUseState(false);
+  const [m6DevDiagReport, setM6DevDiagReport] = safeUseState<AiCommandCenterM6DevTestReport | null>(null);
 
   if (!isOpen) return null;
 
@@ -61654,6 +61655,61 @@ export const CommandCenterDashboardModal: React.FC<CommandCenterDashboardModalPr
                         <option value="developer">Developer</option>
                       </select>
                     </div>
+
+                    {currentViewMode === 'developer' && (
+                      <div className="pt-3 border-t border-slate-700 space-y-3">
+                        <div>
+                          <div className="font-bold text-white">M6 Developer Diagnostics</div>
+                          <div className="text-slate-400">Runs M4/M5 suites plus evaluation pipeline checks (Operation 111 / Agent 44)</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const mergedSettings: GameSettingsState = {
+                              ...(gameState?.gameSettings || createDefaultGameSettings()),
+                              commandCenterSettings: {
+                                ...(gameState?.gameSettings?.commandCenterSettings || createDefaultCommandCenterSettings()),
+                                ...commandCenterSettings
+                              }
+                            };
+                            setM6DevDiagReport(runAiCommandCenterM6DevTests(gameState, mergedSettings));
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-cyan-700 hover:bg-cyan-600 text-white font-bold text-xs"
+                        >
+                          ▶ Run M6 Dev Diagnostics
+                        </button>
+                        {m6DevDiagReport && (
+                          <div className="p-3 rounded-lg bg-slate-950 border border-slate-700 space-y-2">
+                            <div className="flex justify-between items-center">
+                              <span className="font-bold text-slate-200">{m6DevDiagReport.summary}</span>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  m6DevDiagReport.overallStatus === 'passed'
+                                    ? 'bg-emerald-950 text-emerald-300'
+                                    : 'bg-red-950 text-red-300'
+                                }`}
+                              >
+                                {m6DevDiagReport.overallStatus.toUpperCase()}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-500">{m6DevDiagReport.m4Summary} · {m6DevDiagReport.m5Summary}</div>
+                            <ul className="space-y-1 max-h-40 overflow-y-auto">
+                              {m6DevDiagReport.testResults.map((row) => (
+                                <li
+                                  key={row.id}
+                                  className={`text-[10px] flex justify-between gap-2 ${
+                                    row.status === 'passed' ? 'text-emerald-300' : 'text-red-300'
+                                  }`}
+                                >
+                                  <span>{row.name}</span>
+                                  <span className="font-mono shrink-0">{row.status}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -67967,6 +68023,157 @@ export function runAiCommandCenterM5DevTests(
     summary: `AI Command Center M5 Dev Tests: ${passedCount}/${testResults.length} Passed`
   };
 }
+
+export interface AiCommandCenterM6DevTestReport {
+  timestamp: number;
+  totalTests: number;
+  passedCount: number;
+  failedCount: number;
+  executionTimeMs: number;
+  overallStatus: 'passed' | 'failed';
+  success: boolean;
+  m4Summary: string;
+  m5Summary: string;
+  testResults: {
+    id: string;
+    name: string;
+    status: 'passed' | 'failed';
+    durationMs: number;
+    errorMessage?: string;
+  }[];
+  summary: string;
+}
+
+/**
+ * Milestone 6 — aggregates M4/M5 suites plus evaluation pipeline & persistence sanitization checks.
+ */
+export function runAiCommandCenterM6DevTests(
+  customState?: any,
+  customSettings?: GameSettingsState
+): AiCommandCenterM6DevTestReport {
+  const startTime = Date.now();
+  const testResults: AiCommandCenterM6DevTestReport['testResults'] = [];
+  const state = customState || initialGameState;
+  const settings = customSettings || createDefaultGameSettings();
+  const ccSettings = settings.commandCenterSettings || createDefaultCommandCenterSettings();
+
+  const m4 = runAiCommandCenterM4DevTests(state, settings);
+  testResults.push({
+    id: 'm4_suite_aggregate',
+    name: 'M4 Dev Test Suite (UI visibility & conflict control)',
+    status: m4.success ? 'passed' : 'failed',
+    durationMs: m4.executionTimeMs,
+    errorMessage: m4.success ? undefined : m4.summary
+  });
+
+  const m5 = runAiCommandCenterM5DevTests(state, settings);
+  testResults.push({
+    id: 'm5_suite_aggregate',
+    name: 'M5 Dev Test Suite (telemetry sanitization & overlay integrity)',
+    status: m5.success ? 'passed' : 'failed',
+    durationMs: m5.executionTimeMs,
+    errorMessage: m5.success ? undefined : m5.summary
+  });
+
+  const tPipeline = Date.now();
+  try {
+    const evaluated = evaluateCommandCenter(state as GameState, ccSettings, 'player');
+    const pipelineOk =
+      evaluated.recommendations.length > 0 &&
+      evaluated.telemetry !== undefined &&
+      typeof evaluated.telemetry?.competitivePositionScore === 'number' &&
+      evaluated.lastEvaluatedTurn >= 0;
+    testResults.push({
+      id: 'evaluation_pipeline_integrity',
+      name: 'Full evaluateCommandCenter Pipeline Integrity',
+      status: pipelineOk ? 'passed' : 'failed',
+      durationMs: Date.now() - tPipeline,
+      errorMessage: pipelineOk ? undefined : `recs=${evaluated.recommendations.length}, turn=${evaluated.lastEvaluatedTurn}`
+    });
+  } catch (err: any) {
+    testResults.push({
+      id: 'evaluation_pipeline_integrity',
+      name: 'Full evaluateCommandCenter Pipeline Integrity',
+      status: 'failed',
+      durationMs: Date.now() - tPipeline,
+      errorMessage: err?.message || String(err)
+    });
+  }
+
+  const tDedup = Date.now();
+  try {
+    commandCenterEvaluationCache.clear();
+    const evalState = { ...(state as any), matchId: 'm6_dedup_test', turnCounter: 7, day: 7 };
+    const first = evaluateCommandCenterDeduplicated(evalState as GameState, ccSettings, 'player', 'm6');
+    const second = evaluateCommandCenterDeduplicated(evalState as GameState, ccSettings, 'player', 'm6');
+    const dedupOk =
+      first.recommendations.length === second.recommendations.length &&
+      first.lastEvaluatedTurn === second.lastEvaluatedTurn;
+    testResults.push({
+      id: 'deduplicated_evaluation_cache',
+      name: 'evaluateCommandCenterDeduplicated Cache Coherence',
+      status: dedupOk ? 'passed' : 'failed',
+      durationMs: Date.now() - tDedup,
+      errorMessage: dedupOk ? undefined : 'Cached evaluation mismatch'
+    });
+  } catch (err: any) {
+    testResults.push({
+      id: 'deduplicated_evaluation_cache',
+      name: 'evaluateCommandCenterDeduplicated Cache Coherence',
+      status: 'failed',
+      durationMs: Date.now() - tDedup,
+      errorMessage: err?.message || String(err)
+    });
+  }
+
+  const tSanitize = Date.now();
+  try {
+    const corruptSettings = { enabled: 'yes', defaultViewMode: 'invalid_mode', autoRefreshIntervalMs: -500 };
+    const sanitizedSettings = sanitizeCommandCenterSettings(corruptSettings);
+    const corruptState = { activeTab: 'not_a_tab', viewMode: 'nope', recommendations: [{ id: 1 }] };
+    const sanitizedState = sanitizeCommandCenterState(corruptState);
+    const sanitizeOk =
+      sanitizedSettings.enabled === true &&
+      sanitizedSettings.defaultViewMode === 'simple' &&
+      sanitizedSettings.autoRefreshIntervalMs >= 0 &&
+      sanitizedState.recommendations.length > 0 &&
+      sanitizedState.viewMode === 'simple';
+    testResults.push({
+      id: 'settings_state_sanitization',
+      name: 'Command Center Settings & State Sanitization Round-Trip',
+      status: sanitizeOk ? 'passed' : 'failed',
+      durationMs: Date.now() - tSanitize,
+      errorMessage: sanitizeOk ? undefined : JSON.stringify({ sanitizedSettings, sanitizedState })
+    });
+  } catch (err: any) {
+    testResults.push({
+      id: 'settings_state_sanitization',
+      name: 'Command Center Settings & State Sanitization Round-Trip',
+      status: 'failed',
+      durationMs: Date.now() - tSanitize,
+      errorMessage: err?.message || String(err)
+    });
+  }
+
+  const passedCount = testResults.filter(t => t.status === 'passed').length;
+  const failedCount = testResults.filter(t => t.status === 'failed').length;
+  const overallStatus: 'passed' | 'failed' = failedCount === 0 ? 'passed' : 'failed';
+
+  return {
+    timestamp: Date.now(),
+    totalTests: testResults.length,
+    passedCount,
+    failedCount,
+    executionTimeMs: Date.now() - startTime,
+    overallStatus,
+    success: overallStatus === 'passed',
+    m4Summary: m4.summary,
+    m5Summary: m5.summary,
+    testResults,
+    summary: `AI Command Center M6 Dev Tests: ${passedCount}/${testResults.length} Passed`
+  };
+}
+
 
 export function evaluateCommandCenterSnapshot(
   state: GameState,
@@ -182066,6 +182273,15 @@ export function runReliabilityUpgradeSelfTests(): V9SelfTestResult[] {
     const r = reduceGameAction({ ...live, gameSettings: settings, player: real, actorsById: { player: real } } as any, { type: 'work', actorId: 'player', parameters: {} } as any, { active: true, actorId: 'player' } as any);
     const after: any = (r.nextState as any).actorsById.player;
     return (canon.actorsById.player.money === 123456 && canon.actorsById.player.currentRegion === 'WA' && after.money === 123456 + 50) || `canon ${canon.actorsById.player.money}@${canon.actorsById.player.currentRegion} after ${after.money}`;
+  });
+  check('ru_aicc_m6_dev_suite', 'AI Command Center M6 dev suite passes (M4/M5 + pipeline + sanitization)', () => {
+    const report = runAiCommandCenterM6DevTests(initialGameState, settings);
+    return report.success || report.summary;
+  });
+  check('ru_aicc_load_sanitize', 'Partial commandCenterState survives load sanitization without throwing', () => {
+    const raw = { activeTab: 'overview', viewMode: 'detailed', recommendations: [{ id: 'x', title: 'T', category: 'c', description: 'd', expectedImpact: 'e', confidence: 2, priority: 1 }] };
+    const sanitized = sanitizeCommandCenterState(raw);
+    return sanitized.recommendations.length === 1 && sanitized.viewMode === 'detailed' || JSON.stringify(sanitized);
   });
   return results;
 }
