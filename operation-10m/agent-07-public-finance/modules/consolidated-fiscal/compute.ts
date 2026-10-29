@@ -25,6 +25,8 @@ import { buildTaxPolicySensitivityReport } from '../tax-policy-sensitivity/compu
 import { buildAppropriationLapseRegisterReport } from '../appropriation-lapse-register/compute';
 import { buildContingencyDrawdownRegisterReport } from '../contingency-drawdown/compute';
 import { buildForwardEstimatesIntegrityReport } from '../forward-estimates-integrity/compute';
+import { buildSovereignCreditOutlookReport } from '../sovereign-credit-outlook/compute';
+import { buildDebtServiceCoverageReport } from '../debt-service-coverage/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -118,6 +120,10 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     supplementary,
     outlook
   );
+  const sovereignCreditOutlook = buildSovereignCreditOutlookReport(turn, v1012, debtPortfolioGov, {
+    stressWorstDelta: fiscalStress.worstHeadroomDelta
+  });
+  const debtServiceCoverage = buildDebtServiceCoverageReport(turn, v1012, ledger, cashMgmt);
   const issuance = executeIssuanceCalendar(turn, v1012);
   const programPerf = reviewProgramPerformance(turn, v1012);
   const infraSummary = summarizeInfrastructureFinancing(
@@ -470,12 +476,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `gap=${forwardEstimatesIntegrity.aggregateRevisionGap}, suppNet=${supplementary.netRevisionPoints}`
   });
 
+  checks.push({
+    id: 'CF45',
+    label: 'Sovereign credit outlook within band',
+    passed: sovereignCreditOutlook.withinOutlookBand || !v1012.debtEnabled,
+    detail: `spread=${sovereignCreditOutlook.impliedSpreadBps}, band=${sovereignCreditOutlook.ratingBand}`
+  });
+
+  checks.push({
+    id: 'CF46',
+    label: 'Debt service coverage above floor',
+    passed: debtServiceCoverage.withinCoverageFloor,
+    detail: `ratio=${debtServiceCoverage.coverageRatio}, band=${debtServiceCoverage.coverageBand}`
+  });
+
+  checks.push({
+    id: 'CF47',
+    label: 'Credit outlook coherent with debt portfolio governance',
+    passed: sovereignCreditOutlook.coherentWithDebtGovernance,
+    detail: `band=${sovereignCreditOutlook.ratingBand}, govOk=${debtPortfolioGov.withinGovernanceTargets}`
+  });
+
+  checks.push({
+    id: 'CF48',
+    label: 'Debt coverage aligned with TGA runway',
+    passed: debtServiceCoverage.runwayTurnsAligned,
+    detail: `runway=${cashMgmt.runwayTurns}, coverage=${debtServiceCoverage.coverageRatio}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 42
+    layerCount: 46
   };
 }

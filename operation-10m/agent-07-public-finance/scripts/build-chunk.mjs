@@ -60,6 +60,10 @@ const FILES = [
   'contingency-drawdown/compute.ts',
   'forward-estimates-integrity/types.ts',
   'forward-estimates-integrity/compute.ts',
+  'sovereign-credit-outlook/types.ts',
+  'sovereign-credit-outlook/compute.ts',
+  'debt-service-coverage/types.ts',
+  'debt-service-coverage/compute.ts',
   'infrastructure-financing/types.ts',
   'infrastructure-financing/compute.ts',
   'recurring-commitments/types.ts',
@@ -127,7 +131,9 @@ const FILES = [
   'tax-policy-sensitivity/self-tests.ts',
   'appropriation-lapse-register/self-tests.ts',
   'contingency-drawdown/self-tests.ts',
-  'forward-estimates-integrity/self-tests.ts'
+  'forward-estimates-integrity/self-tests.ts',
+  'sovereign-credit-outlook/self-tests.ts',
+  'debt-service-coverage/self-tests.ts'
 ];
 
 function stripModulePreamble(source) {
