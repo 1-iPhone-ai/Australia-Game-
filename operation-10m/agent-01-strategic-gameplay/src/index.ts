@@ -138,6 +138,7 @@ export {
   matriarchPerpetuityRankingBonus,
   matriarchEternityRankingBonus,
   matriarchInfinityRankingBonus,
+  matriarchTranscendenceRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -615,6 +616,7 @@ export {
 
 export { coalitionMatriarchEternityStreakIssues } from './engine/coalition-matriarch-eternity-gates.ts';
 export { coalitionMatriarchInfinityStreakIssues } from './engine/coalition-matriarch-infinity-gates.ts';
+export { coalitionMatriarchTranscendenceStreakIssues } from './engine/coalition-matriarch-transcendence-gates.ts';
 
 export {
   MATRIARCH_COALITION_ETERNITY_THRESHOLD,
@@ -630,7 +632,14 @@ export {
   isMatriarchCoalitionInfinity,
   applyMatriarchInfinityMandateBonus,
 } from './engine/coalition-matriarch-infinity.ts';
+export {
+  MATRIARCH_COALITION_TRANSCENDENCE_THRESHOLD,
+  advanceCoalitionMatriarchTranscendenceStreak,
+  resetCoalitionMatriarchTranscendenceStreak,
+  isMatriarchCoalitionTranscendence,
+  applyMatriarchTranscendenceMandateBonus,
+} from './engine/coalition-matriarch-transcendence.ts';
 
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '5.10.0';
+export const AGENT_01_MODULE_VERSION = '5.11.0';

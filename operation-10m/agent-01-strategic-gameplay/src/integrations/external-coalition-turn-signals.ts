@@ -135,6 +135,7 @@ export interface ExternalCoalitionTurnSignals {
   coalitionMatriarchEternityStreakDays: number;
   matriarchCoalitionInfinity: boolean;
   coalitionMatriarchInfinityStreakDays: number;
+  coalitionMatriarchTranscendenceStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -230,6 +231,7 @@ export function buildExternalCoalitionTurnSignals(
     coalitionMatriarchEternityStreakDays: state.coalitionMatriarchEternityStreakDays ?? 0,
     matriarchCoalitionInfinity: isMatriarchCoalitionInfinity(state),
     coalitionMatriarchInfinityStreakDays: state.coalitionMatriarchInfinityStreakDays ?? 0,
+    coalitionMatriarchTranscendenceStreakDays: state.coalitionMatriarchTranscendenceStreakDays ?? 0,
   };
 }
 
@@ -325,5 +327,6 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionMatriarchEternityStreakDays: raw?.coalitionMatriarchEternityStreakDays ?? 0,
     matriarchCoalitionInfinity: raw?.matriarchCoalitionInfinity ?? false,
     coalitionMatriarchInfinityStreakDays: raw?.coalitionMatriarchInfinityStreakDays ?? 0,
+    coalitionMatriarchTranscendenceStreakDays: raw?.coalitionMatriarchTranscendenceStreakDays ?? 0,
   };
 }
