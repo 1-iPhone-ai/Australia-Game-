@@ -111,4 +111,7 @@ export * from './forecast-round30-console';
 export * from './forecast-wave31-projection-sync';
 export * from './forecast-integration-wave31-origin-handoff';
 export * from './forecast-round31-console';
+export * from './forecast-wave32-projection-sync';
+export * from './forecast-integration-wave32-origin-handoff';
+export * from './forecast-round32-console';
 export * from './strategic-forecast-policy-lab';
