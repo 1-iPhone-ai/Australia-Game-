@@ -671,6 +671,44 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'fiscal', 'labor', 'round20'],
   },
+  {
+    id: 'wholesale_energy_transition_stack',
+    label: 'Wholesale energy transition stack',
+    description: 'Energy crisis with cascade wholesale band and tariff shock.',
+    patch: {
+      systemicLiquidityBand: 'critical',
+      highInflationScenario: true,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.27,
+    },
+    tags: ['inflation', 'energy', 'round21'],
+  },
+  {
+    id: 'urban_rent_dispersion_stress',
+    label: 'Urban rent dispersion stress',
+    description: 'Critical vacancy with surging rent growth and dispersion.',
+    patch: {
+      householdAffordability: 'severe_pressure',
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.24,
+      publicStability: 43,
+    },
+    tags: ['inflation', 'cities', 'round21'],
+  },
+  {
+    id: 'energy_cities_fusion_stress',
+    label: 'Energy & cities fusion stress',
+    description: 'Aligned Agent 13 cascade + Agent 11 metro dispersion critical.',
+    patch: {
+      inflationSettingMultiplier: 1.32,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      householdAffordability: 'severe_pressure',
+      systemicLiquidityBand: 'critical',
+    },
+    tags: ['inflation', 'energy', 'cities', 'round21'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

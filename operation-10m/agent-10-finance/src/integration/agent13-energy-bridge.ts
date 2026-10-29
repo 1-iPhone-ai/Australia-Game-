@@ -8,6 +8,10 @@ export interface Agent13EnergySnapshot {
   retailTariffShock: boolean;
   gridReliabilityBand: 'stable' | 'strained' | 'fragile';
   emissionsTransitionCostBand: 'low' | 'medium' | 'high';
+  /** Round 21: renewable shortfall feeding wholesale CPI metadata. */
+  renewableShortfallInflationFlag?: boolean;
+  /** Round 21: wholesale price cascade band. */
+  wholesaleCascadeBand?: 'none' | 'stressed' | 'cascade';
 }
 
 export function mergeAgent13IntoMacroFinancialInputs(
@@ -39,6 +43,12 @@ export function mergeAgent13IntoMacroFinancialInputs(
     (snapshot.retailTariffShock || snapshot.gridReliabilityBand === 'fragile')
   ) {
     highInflationScenario = true;
+  }
+  if (snapshot.wholesaleCascadeBand === 'cascade' || snapshot.renewableShortfallInflationFlag) {
+    highInflationScenario = true;
+  }
+  if (snapshot.wholesaleCascadeBand === 'cascade') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   }
 
   return {

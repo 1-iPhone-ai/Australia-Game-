@@ -8,6 +8,10 @@ export interface Agent11CitiesSnapshot {
   rentGrowthBand: 'subdued' | 'moderate' | 'strong' | 'surging';
   urbanizationPressure: 'low' | 'medium' | 'high';
   regionalDispersionScore: number;
+  /** Round 21: critical metro rent dispersion band. */
+  metroRentDispersionCritical?: boolean;
+  /** Round 21: regional markets syncing housing inflation. */
+  regionalHousingInflationSync?: boolean;
 }
 
 export function mergeAgent11IntoMacroFinancialInputs(
@@ -34,11 +38,18 @@ export function mergeAgent11IntoMacroFinancialInputs(
     householdAffordability = householdAffordability === 'healthy' ? 'strained' : householdAffordability;
   }
 
+  let highInflationScenario = base.highInflationScenario;
+  if (snapshot.metroRentDispersionCritical && snapshot.regionalHousingInflationSync) {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
   return {
     ...base,
     turn: Math.max(base.turn, snapshot.turn),
     inflationSettingMultiplier,
     householdAffordability,
+    highInflationScenario,
     householdInflationScenarioActive:
       base.householdInflationScenarioActive ||
       snapshot.rentGrowthBand === 'surging' ||

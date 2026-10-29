@@ -128,6 +128,14 @@ import {
   assessPopulationLaborWageInflation,
   type PopulationLaborWageBand,
 } from '../inflation/population-labor-wage-inflation.js';
+import {
+  assessWholesaleEnergyTransitionInflation,
+  type WholesaleEnergyTransitionBand,
+} from '../inflation/wholesale-energy-transition-inflation.js';
+import {
+  assessUrbanRentDispersionInflation,
+  type UrbanRentDispersionBand,
+} from '../inflation/urban-rent-dispersion-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -168,6 +176,8 @@ export interface InflationForecastPoint {
   dashboardMapInflationOverlayBand: DashboardMapInflationOverlayBand;
   publicFinanceDebtServiceBand: PublicFinanceDebtServiceBand;
   populationLaborWageBand: PopulationLaborWageBand;
+  wholesaleEnergyTransitionBand: WholesaleEnergyTransitionBand;
+  urbanRentDispersionBand: UrbanRentDispersionBand;
 }
 
 export interface InflationForecastPath {
@@ -469,6 +479,28 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const wholesaleEnergy = assessWholesaleEnergyTransitionInflation({
+      wholesaleEnergyStress:
+        inputs.systemicLiquidityBand === 'critical' ? 'crisis' : inputs.highInflationScenario ? 'severe' : 'elevated',
+      retailTariffShock: inputs.highInflationScenario,
+      gridReliabilityBand:
+        inputs.systemicLiquidityBand === 'strained' || inputs.systemicLiquidityBand === 'critical' ? 'fragile' : 'strained',
+      emissionsTransitionCostBand: inputs.fiscalPressure === 'critical' ? 'high' : 'medium',
+      renewableShortfallInflationFlag: inputs.creditShockActive,
+      wholesaleCascadeBand: inputs.creditShockActive ? 'cascade' : inputs.fiscalPressure === 'critical' ? 'stressed' : 'none',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const urbanRent = assessUrbanRentDispersionInflation({
+      vacancyBand: inputs.householdAffordability === 'severe_pressure' ? 'critical' : 'tight',
+      rentGrowthBand: inputs.householdInflationScenarioActive ? 'surging' : 'strong',
+      urbanizationPressure: inputs.publicStability < 50 ? 'high' : 'medium',
+      regionalDispersionScore: inputs.householdAffordability === 'severe_pressure' ? 0.7 : 0.45,
+      metroRentDispersionCritical: inputs.householdAffordability === 'severe_pressure',
+      regionalHousingInflationSync: inputs.householdInflationScenarioActive,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -509,6 +541,8 @@ export function projectInflationForecastPath(
       dashboardMapInflationOverlayBand: dashboardOverlay.overlayBand,
       publicFinanceDebtServiceBand: publicFinanceDebt.debtServiceBand,
       populationLaborWageBand: populationLabor.wageBand,
+      wholesaleEnergyTransitionBand: wholesaleEnergy.transitionBand,
+      urbanRentDispersionBand: urbanRent.dispersionBand,
     });
   }
 

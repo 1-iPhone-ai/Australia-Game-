@@ -34,11 +34,13 @@ import type { DynamicEventsInflationSpilloverBand } from '../inflation/dynamic-e
 import type { DashboardMapInflationOverlayBand } from '../inflation/dashboard-map-inflation-overlay.js';
 import type { PublicFinanceDebtServiceBand } from '../inflation/public-finance-debt-service-inflation.js';
 import type { PopulationLaborWageBand } from '../inflation/population-labor-wage-inflation.js';
+import type { WholesaleEnergyTransitionBand } from '../inflation/wholesale-energy-transition-inflation.js';
+import type { UrbanRentDispersionBand } from '../inflation/urban-rent-dispersion-inflation.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r20';
+  schemaVersion: '10.14.agent10.r21';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -74,6 +76,8 @@ export interface Agent21InflationForecastBundle {
   terminalDashboardMapInflationOverlay: DashboardMapInflationOverlayBand;
   terminalPublicFinanceDebtService: PublicFinanceDebtServiceBand;
   terminalPopulationLaborWage: PopulationLaborWageBand;
+  terminalWholesaleEnergyTransition: WholesaleEnergyTransitionBand;
+  terminalUrbanRentDispersion: UrbanRentDispersionBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -102,7 +106,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r20',
+    schemaVersion: '10.14.agent10.r21',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -138,6 +142,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalDashboardMapInflationOverlay: lastPoint?.dashboardMapInflationOverlayBand ?? 'routine',
     terminalPublicFinanceDebtService: lastPoint?.publicFinanceDebtServiceBand ?? 'anchored',
     terminalPopulationLaborWage: lastPoint?.populationLaborWageBand ?? 'subdued',
+    terminalWholesaleEnergyTransition: lastPoint?.wholesaleEnergyTransitionBand ?? 'stable',
+    terminalUrbanRentDispersion: lastPoint?.urbanRentDispersionBand ?? 'aligned',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
