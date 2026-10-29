@@ -357,8 +357,14 @@ export type HeatwaveRailSpeedRestrictionPolicy = 'baseline' | 'relax';
 
 export type AutomatedLivestockExportYardPolicy = 'baseline' | 'expand';
 
+export type SiliconSolarWaferExportPolicy = 'baseline' | 'accelerate';
+
+export type RailCoalPhaseoutStagingPolicy = 'baseline' | 'accelerate';
+
+export type AirportBaggageRobotLogisticsPolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/35';
+  schemaVersion: 'agent12/36';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -604,6 +610,14 @@ export interface TransportInfrastructureState {
   automatedLivestockExportYardShare: number;
   nationalAutomatedLivestockExportYardThroughputIndex: number;
   automatedLivestockExportYardThroughputByRegion: Record<AuRegionCode, number>;
+  nationalSiliconSolarWaferExportIndex: number;
+  siliconSolarWaferExportByRegion: Record<AuRegionCode, number>;
+  railCoalPhaseoutStagingShare: number;
+  nationalRailCoalPhaseoutStagingIndex: number;
+  railCoalPhaseoutStagingByRegion: Record<AuRegionCode, number>;
+  airportBaggageRobotLogisticsShare: number;
+  nationalAirportBaggageRobotLogisticsThroughputIndex: number;
+  airportBaggageRobotLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -699,6 +713,9 @@ export interface TransportInfrastructureOptions {
   titaniumSpongeExportPolicy?: TitaniumSpongeExportPolicy;
   heatwaveRailSpeedRestrictionPolicy?: HeatwaveRailSpeedRestrictionPolicy;
   automatedLivestockExportYardPolicy?: AutomatedLivestockExportYardPolicy;
+  siliconSolarWaferExportPolicy?: SiliconSolarWaferExportPolicy;
+  railCoalPhaseoutStagingPolicy?: RailCoalPhaseoutStagingPolicy;
+  airportBaggageRobotLogisticsPolicy?: AirportBaggageRobotLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {

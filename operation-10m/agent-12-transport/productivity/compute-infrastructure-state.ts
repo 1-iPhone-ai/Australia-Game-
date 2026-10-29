@@ -533,6 +533,23 @@ import {
   automatedLivestockExportYardProductivityMultiplier,
   nationalAutomatedLivestockExportYardThroughputIndex,
 } from './automated-livestock-export-yard-index.ts';
+import {
+  computeSiliconSolarWaferExportByRegion,
+  nationalSiliconSolarWaferExportIndex,
+  siliconSolarWaferExportProductivityMultiplier,
+} from '../network/silicon-solar-wafer-export-index.ts';
+import {
+  computeRailCoalPhaseoutStagingByRegion,
+  computeRailCoalPhaseoutStagingShare,
+  nationalRailCoalPhaseoutStagingIndex,
+  railCoalPhaseoutStagingProductivityMultiplier,
+} from '../operations/rail-coal-phaseout-staging-index.ts';
+import {
+  airportBaggageRobotLogisticsProductivityMultiplier,
+  computeAirportBaggageRobotLogisticsShare,
+  computeAirportBaggageRobotLogisticsThroughputByRegion,
+  nationalAirportBaggageRobotLogisticsThroughputIndex,
+} from './airport-baggage-robot-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1686,6 +1703,35 @@ export function computeTransportInfrastructureState(
     automatedLivestockExportYardShare,
     options?.automatedLivestockExportYardPolicy ?? 'baseline',
   );
+  const siliconSolarWaferExportByRegion = computeSiliconSolarWaferExportByRegion(ops);
+  const nationalSiliconWafer = nationalSiliconSolarWaferExportIndex(siliconSolarWaferExportByRegion);
+  const siliconWaferMult = siliconSolarWaferExportProductivityMultiplier(
+    nationalSiliconWafer,
+    options?.siliconSolarWaferExportPolicy ?? 'baseline',
+  );
+  const railCoalPhaseoutStagingByRegion = computeRailCoalPhaseoutStagingByRegion(ops, networkStress);
+  const nationalCoalPhaseout = nationalRailCoalPhaseoutStagingIndex(railCoalPhaseoutStagingByRegion);
+  const railCoalPhaseoutStagingShare = computeRailCoalPhaseoutStagingShare(
+    ops,
+    options?.railCoalPhaseoutStagingPolicy ?? 'baseline',
+  );
+  const coalPhaseoutMult = railCoalPhaseoutStagingProductivityMultiplier(
+    railCoalPhaseoutStagingShare,
+    options?.railCoalPhaseoutStagingPolicy ?? 'baseline',
+  );
+  const airportBaggageRobotLogisticsThroughputByRegion =
+    computeAirportBaggageRobotLogisticsThroughputByRegion(ops);
+  const nationalBaggageRobot = nationalAirportBaggageRobotLogisticsThroughputIndex(
+    airportBaggageRobotLogisticsThroughputByRegion,
+  );
+  const airportBaggageRobotLogisticsShare = computeAirportBaggageRobotLogisticsShare(
+    ops,
+    options?.airportBaggageRobotLogisticsPolicy ?? 'baseline',
+  );
+  const baggageRobotMult = airportBaggageRobotLogisticsProductivityMultiplier(
+    airportBaggageRobotLogisticsShare,
+    options?.airportBaggageRobotLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -1745,6 +1791,9 @@ export function computeTransportInfrastructureState(
     const titaniumSpongeBoost = (titaniumSpongeExportByRegion[code] - 5) * 0.0034;
     const heatwaveRailBoost = (heatwaveRailSpeedRestrictionByRegion[code] - 6) * 0.003;
     const livestockYardBoost = (automatedLivestockExportYardThroughputByRegion[code] - 2) * 0.0026;
+    const siliconWaferBoost = (siliconSolarWaferExportByRegion[code] - 5) * 0.0033;
+    const coalPhaseoutBoost = (railCoalPhaseoutStagingByRegion[code] - 6) * 0.0029;
+    const baggageRobotBoost = (airportBaggageRobotLogisticsThroughputByRegion[code] - 2) * 0.0025;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -1803,7 +1852,10 @@ export function computeTransportInfrastructureState(
         zeroDrayageBoost +
         titaniumSpongeBoost +
         heatwaveRailBoost +
-        livestockYardBoost) *
+        livestockYardBoost +
+        siliconWaferBoost +
+        coalPhaseoutBoost +
+        baggageRobotBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -1860,7 +1912,10 @@ export function computeTransportInfrastructureState(
       zeroDrayageMult *
       titaniumSpongeMult *
       heatwaveRailMult *
-      livestockYardMult;
+      livestockYardMult *
+      siliconWaferMult *
+      coalPhaseoutMult *
+      baggageRobotMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -1940,7 +1995,10 @@ export function computeTransportInfrastructureState(
     nationalZeroDrayage * 0.003 +
     nationalTitaniumSponge * 0.003 +
     nationalHeatwaveRail * 0.003 +
-    nationalLivestockYard * 0.003;
+    nationalLivestockYard * 0.003 +
+    nationalSiliconWafer * 0.003 +
+    nationalCoalPhaseout * 0.003 +
+    nationalBaggageRobot * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -1955,7 +2013,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/35',
+    schemaVersion: 'agent12/36',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -2201,6 +2259,14 @@ export function computeTransportInfrastructureState(
     automatedLivestockExportYardShare,
     nationalAutomatedLivestockExportYardThroughputIndex: nationalLivestockYard,
     automatedLivestockExportYardThroughputByRegion,
+    nationalSiliconSolarWaferExportIndex: nationalSiliconWafer,
+    siliconSolarWaferExportByRegion,
+    railCoalPhaseoutStagingShare,
+    nationalRailCoalPhaseoutStagingIndex: nationalCoalPhaseout,
+    railCoalPhaseoutStagingByRegion,
+    airportBaggageRobotLogisticsShare,
+    nationalAirportBaggageRobotLogisticsThroughputIndex: nationalBaggageRobot,
+    airportBaggageRobotLogisticsThroughputByRegion,
     computeMs,
   };
 }

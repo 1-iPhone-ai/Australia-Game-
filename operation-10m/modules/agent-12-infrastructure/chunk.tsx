@@ -361,8 +361,14 @@ export type HeatwaveRailSpeedRestrictionPolicy = 'baseline' | 'relax';
 
 export type AutomatedLivestockExportYardPolicy = 'baseline' | 'expand';
 
+export type SiliconSolarWaferExportPolicy = 'baseline' | 'accelerate';
+
+export type RailCoalPhaseoutStagingPolicy = 'baseline' | 'accelerate';
+
+export type AirportBaggageRobotLogisticsPolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/35';
+  schemaVersion: 'agent12/36';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -608,6 +614,14 @@ export interface TransportInfrastructureState {
   automatedLivestockExportYardShare: number;
   nationalAutomatedLivestockExportYardThroughputIndex: number;
   automatedLivestockExportYardThroughputByRegion: Record<AuRegionCode, number>;
+  nationalSiliconSolarWaferExportIndex: number;
+  siliconSolarWaferExportByRegion: Record<AuRegionCode, number>;
+  railCoalPhaseoutStagingShare: number;
+  nationalRailCoalPhaseoutStagingIndex: number;
+  railCoalPhaseoutStagingByRegion: Record<AuRegionCode, number>;
+  airportBaggageRobotLogisticsShare: number;
+  nationalAirportBaggageRobotLogisticsThroughputIndex: number;
+  airportBaggageRobotLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -703,6 +717,9 @@ export interface TransportInfrastructureOptions {
   titaniumSpongeExportPolicy?: TitaniumSpongeExportPolicy;
   heatwaveRailSpeedRestrictionPolicy?: HeatwaveRailSpeedRestrictionPolicy;
   automatedLivestockExportYardPolicy?: AutomatedLivestockExportYardPolicy;
+  siliconSolarWaferExportPolicy?: SiliconSolarWaferExportPolicy;
+  railCoalPhaseoutStagingPolicy?: RailCoalPhaseoutStagingPolicy;
+  airportBaggageRobotLogisticsPolicy?: AirportBaggageRobotLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -2371,6 +2388,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND32,
   ...TRANSPORT_CORRIDORS_ROUND33,
   ...TRANSPORT_CORRIDORS_ROUND34,
+  ...TRANSPORT_CORRIDORS_ROUND35,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -4251,6 +4269,62 @@ export const TRANSPORT_SCENARIOS_ROUND33: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round34.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND34: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_titanium_export_surge',
+    label: 'WA Titanium Export Surge',
+    description: 'Defense orders overload Fremantle sponge berths.',
+    targetRegions: ['WA', 'SA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_sa_heatwave_speed_cap',
+    label: 'SA Heatwave Speed Cap',
+    description: 'Extreme heat triggers thermal track limits.',
+    targetRegions: ['SA', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail'],
+  },
+  {
+    id: 'scn_nsw_summer_freight_hold',
+    label: 'NSW Summer Freight Hold',
+    description: 'Heatwave holds delay Broken Hill freight.',
+    targetRegions: ['NSW', 'SA'],
+    networkKind: 'freight',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['road', 'rail'],
+  },
+  {
+    id: 'scn_qld_livestock_export_peak',
+    label: 'Queensland Livestock Export Peak',
+    description: 'Cattle rush strains Townsville quarantine yards.',
+    targetRegions: ['QLD', 'NT'],
+    networkKind: 'trade',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_nt_quarantine_hold',
+    label: 'Darwin Quarantine Hold',
+    description: 'Biosecurity hold backs up Darwin livestock staging.',
+    targetRegions: ['NT', 'QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.21,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -4446,6 +4520,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND32,
   ...TRANSPORT_SCENARIOS_ROUND33,
   ...TRANSPORT_SCENARIOS_ROUND34,
+  ...TRANSPORT_SCENARIOS_ROUND35,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -12700,6 +12775,233 @@ export const SCALE_WAVE_ROUND33_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round34-assets.ts ---
+
+export const ROUND34_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_bunbury_titanium_haul',
+    category: 'road',
+    name: 'Bunbury Titanium Haul',
+    description: 'WA defense aero feed road to export rail.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['titanium_sponge_export', 'defense_aero_feed', 'critical_metal_rail'],
+    laneKilometres: 42,
+    designSpeedKmh: 86,
+    freightShare: 0.39,
+    urbanShare: 0.05,
+    tollRoad: false,
+  },
+  {
+    id: 'road_sa_port_augusta_titanium_feed',
+    category: 'road',
+    name: 'Port Augusta Titanium Feed',
+    description: 'SA critical metal road to coastal handoff.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['trade'],
+    tags: ['titanium_sponge_export', 'defense_aero_feed', 'critical_metal_rail'],
+    laneKilometres: 30,
+    designSpeedKmh: 84,
+    freightShare: 0.33,
+    urbanShare: 0.07,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_broken_hill_heatwave',
+    category: 'road',
+    name: 'Broken Hill Heatwave Access',
+    description: 'NSW thermal track limit freight connector.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'SA'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['freight'],
+    tags: ['heatwave_rail_caution', 'thermal_track_limit', 'summer_freight_hold'],
+    laneKilometres: 36,
+    designSpeedKmh: 82,
+    freightShare: 0.29,
+    urbanShare: 0.06,
+    tollRoad: false,
+  },
+  {
+    id: 'road_sa_olympic_dam_heatwave',
+    category: 'road',
+    name: 'Olympic Dam Heatwave Road',
+    description: 'SA summer freight hold road feed.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NSW'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['heatwave_rail_caution', 'thermal_track_limit', 'summer_freight_hold'],
+    laneKilometres: 32,
+    designSpeedKmh: 80,
+    freightShare: 0.31,
+    urbanShare: 0.04,
+    tollRoad: false,
+  },
+];
+
+export const ROUND34_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_southwest_titanium_rail',
+    category: 'rail',
+    name: 'Southwest Titanium Rail',
+    description: 'WA sponge export and aero feed corridor.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['titanium_sponge_export', 'defense_aero_feed', 'critical_metal_rail'],
+    trackKilometres: 96,
+    dualTrackShare: 0.44,
+    electrifiedShare: 0.21,
+    designFreightTonnesPerYear: 6_800_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_nsw_transcontinental_heatwave',
+    category: 'rail',
+    name: 'Transcontinental Heatwave Rail',
+    description: 'NSW heatwave speed restriction managed line.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'SA'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['freight'],
+    tags: ['heatwave_rail_caution', 'thermal_track_limit', 'summer_freight_hold'],
+    trackKilometres: 72,
+    dualTrackShare: 0.46,
+    electrifiedShare: 0.58,
+    designFreightTonnesPerYear: 5_200_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_qld_central_livestock_export',
+    category: 'rail',
+    name: 'Central QLD Livestock Export Rail',
+    description: 'Automated cattle rail loadout to export yards.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NT'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['auto_livestock_yard', 'export_quarantine_staging', 'cattle_rail_loadout'],
+    trackKilometres: 68,
+    dualTrackShare: 0.41,
+    electrifiedShare: 0.19,
+    designFreightTonnesPerYear: 4_600_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND34_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_fremantle_titanium_export',
+    category: 'port',
+    name: 'Fremantle Titanium Export',
+    description: 'WA titanium sponge bulk export berths.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 5.7,
+    strategicNetworks: ['trade'],
+    tags: ['titanium_sponge_export', 'defense_aero_feed', 'critical_metal_rail', 'bulk'],
+    berthCount: 3,
+    maxDraftMetres: 14.0,
+    teuCapacityPerYear: 140_000,
+    automationLevel: 2,
+    bulkShare: 0.66,
+  },
+  {
+    id: 'port_sa_whyalla_titanium_handoff',
+    category: 'port',
+    name: 'Whyalla Titanium Handoff',
+    description: 'SA defense aero feed coastal staging.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade'],
+    tags: ['titanium_sponge_export', 'defense_aero_feed', 'critical_metal_rail'],
+    berthCount: 2,
+    maxDraftMetres: 12.4,
+    teuCapacityPerYear: 92_000,
+    automationLevel: 1,
+    bulkShare: 0.52,
+  },
+  {
+    id: 'port_qld_townsville_livestock_export',
+    category: 'port',
+    name: 'Townsville Livestock Export',
+    description: 'QLD automated quarantine livestock export port.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NT'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['trade'],
+    tags: ['auto_livestock_yard', 'export_quarantine_staging', 'cattle_rail_loadout'],
+    berthCount: 3,
+    maxDraftMetres: 12.6,
+    teuCapacityPerYear: 128_000,
+    automationLevel: 2,
+    bulkShare: 0.22,
+  },
+];
+
+export const ROUND34_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_nt_darwin_livestock_quarantine',
+    category: 'logistics',
+    name: 'Darwin Livestock Quarantine',
+    description: 'NT export quarantine staging yard.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'QLD'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['trade'],
+    tags: ['auto_livestock_yard', 'export_quarantine_staging', 'cattle_rail_loadout'],
+    warehouseSqm: 68_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 41,
+  },
+  {
+    id: 'log_qld_rockhampton_cattle_yard',
+    category: 'logistics',
+    name: 'Rockhampton Cattle Yard',
+    description: 'QLD automated livestock export consolidation.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NT'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['auto_livestock_yard', 'export_quarantine_staging', 'cattle_rail_loadout'],
+    warehouseSqm: 72_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 45,
+  },
+  {
+    id: 'log_sa_port_augusta_heatwave_stores',
+    category: 'logistics',
+    name: 'Port Augusta Heatwave Stores',
+    description: 'SA summer freight hold staging.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NSW'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['freight'],
+    tags: ['heatwave_rail_caution', 'thermal_track_limit', 'summer_freight_hold'],
+    warehouseSqm: 50_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 52,
+  },
+];
+
+export const SCALE_WAVE_ROUND34_ASSETS = [
+  ...ROUND34_ROADS,
+  ...ROUND34_RAIL,
+  ...ROUND34_PORTS,
+  ...ROUND34_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -12742,6 +13044,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND32_ASSETS,
     ...SCALE_WAVE_ROUND33_ASSETS,
     ...SCALE_WAVE_ROUND34_ASSETS,
+    ...SCALE_WAVE_ROUND35_ASSETS,
   ];
 }
 
@@ -14599,6 +14902,64 @@ export function greenIronPelletExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.036 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.041 + policyBoost, 0.93, 1.1);
+}
+
+
+// --- source: network/titanium-sponge-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type TitaniumSpongeExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 titanium sponge and defense aero feed export throughput by region. */
+export function computeTitaniumSpongeExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) => t === 'titanium_sponge_export' || t === 'defense_aero_feed' || t === 'critical_metal_rail',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.05 + asset.bulkShare * 4.4;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 83_000 + asset.intermodalLinks.length * 0.71;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 535;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 9_000_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalTitaniumSpongeExportIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.48 + max * 0.52, 5, 74) * 10) / 10;
+}
+
+export function titaniumSpongeExportProductivityMultiplier(
+  index: number,
+  policy: TitaniumSpongeExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.035 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.04 + policyBoost, 0.93, 1.1);
 }
 
 
@@ -16948,6 +17309,86 @@ export function floodLeveeRailProtectionProductivityMultiplier(
 ): number {
   const bias = policy === 'harden' ? 1.021 : 1;
   return (1 + (share - 0.053) * 0.027) * bias;
+}
+
+
+// --- source: operations/heatwave-rail-speed-restriction-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type HeatwaveRailSpeedRestrictionPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 heatwave rail speed-restriction management readiness by region. */
+export function computeHeatwaveRailSpeedRestrictionByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'heatwave_rail_caution' || t === 'thermal_track_limit' || t === 'summer_freight_hold',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 14_200_000 + asset.electrifiedShare * 3.5;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 570;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 76_000;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.04 - stress * 0.024), 5, 78) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalHeatwaveRailSpeedRestrictionIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.49 + max * 0.51, 6, 76) * 10) / 10;
+}
+
+export function computeHeatwaveRailSpeedRestrictionShare(
+  operationalAssets: TransportAsset[],
+  policy: HeatwaveRailSpeedRestrictionPolicy = 'baseline',
+): number {
+  let managedUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('heatwave_rail_caution') || asset.tags.includes('thermal_track_limit')) {
+      if (asset.category === 'rail' && 'trackKilometres' in asset) {
+        totalUnits += asset.trackKilometres / 92;
+        managedUnits += (asset.trackKilometres / 92) * (asset.electrifiedShare > 0.4 ? 0.62 : 0.52);
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.037;
+  const policyBoost = policy === 'relax' ? 0.027 : 0;
+  return Math.round(clamp(managedUnits / totalUnits + policyBoost, 0.036, 0.26) * 1000) / 1000;
+}
+
+export function heatwaveRailSpeedRestrictionProductivityMultiplier(
+  share: number,
+  policy: HeatwaveRailSpeedRestrictionPolicy,
+): number {
+  const bias = policy === 'relax' ? 1.02 : 1;
+  return (1 + (share - 0.052) * 0.026) * bias;
 }
 
 
@@ -19533,6 +19974,96 @@ export function nationalPortZeroEmissionDrayageThroughputIndex(
 }
 
 
+// --- source: productivity/automated-livestock-export-yard-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type AutomatedLivestockExportYardPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of livestock export using automated quarantine yards. */
+export function computeAutomatedLivestockExportYardShare(
+  operationalAssets: TransportAsset[],
+  policy: AutomatedLivestockExportYardPolicy = 'baseline',
+): number {
+  let autoUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) => t === 'auto_livestock_yard' || t === 'export_quarantine_staging' || t === 'cattle_rail_loadout',
+      )
+    ) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 55_000 + (asset.coldChainCapable ? 0.8 : 0.5);
+        autoUnits += (asset.warehouseSqm / 55_000) * 0.6;
+      }
+      if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+        totalUnits += asset.designFreightTonnesPerYear / 12_500_000;
+        autoUnits += (asset.designFreightTonnesPerYear / 12_500_000) * 0.56;
+      }
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.1;
+        autoUnits += asset.berthCount * 0.65;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.038;
+  const policyBoost = policy === 'expand' ? 0.03 : 0;
+  return Math.round(clamp(autoUnits / totalUnits + policyBoost, 0.037, 0.28) * 1000) / 1000;
+}
+
+export function automatedLivestockExportYardProductivityMultiplier(
+  share: number,
+  policy: AutomatedLivestockExportYardPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.023 : 1;
+  return (1 + (share - 0.058) * 0.027) * bias;
+}
+
+export function computeAutomatedLivestockExportYardThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'auto_livestock_yard' || t === 'export_quarantine_staging' || t === 'cattle_rail_loadout',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 63_000;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 11_200_000;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.6;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalAutomatedLivestockExportYardThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 2, 55) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -20134,6 +20665,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   automatedLivestockExportYardProductivityMultiplier,
   nationalAutomatedLivestockExportYardThroughputIndex,
 } from './automated-livestock-export-yard-index.ts';
+  computeSiliconSolarWaferExportByRegion,
+  nationalSiliconSolarWaferExportIndex,
+  siliconSolarWaferExportProductivityMultiplier,
+} from '../network/silicon-solar-wafer-export-index.ts';
+  computeRailCoalPhaseoutStagingByRegion,
+  computeRailCoalPhaseoutStagingShare,
+  nationalRailCoalPhaseoutStagingIndex,
+  railCoalPhaseoutStagingProductivityMultiplier,
+} from '../operations/rail-coal-phaseout-staging-index.ts';
+  airportBaggageRobotLogisticsProductivityMultiplier,
+  computeAirportBaggageRobotLogisticsShare,
+  computeAirportBaggageRobotLogisticsThroughputByRegion,
+  nationalAirportBaggageRobotLogisticsThroughputIndex,
+} from './airport-baggage-robot-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -21286,6 +21831,35 @@ export function computeTransportInfrastructureState(
     automatedLivestockExportYardShare,
     options?.automatedLivestockExportYardPolicy ?? 'baseline',
   );
+  const siliconSolarWaferExportByRegion = computeSiliconSolarWaferExportByRegion(ops);
+  const nationalSiliconWafer = nationalSiliconSolarWaferExportIndex(siliconSolarWaferExportByRegion);
+  const siliconWaferMult = siliconSolarWaferExportProductivityMultiplier(
+    nationalSiliconWafer,
+    options?.siliconSolarWaferExportPolicy ?? 'baseline',
+  );
+  const railCoalPhaseoutStagingByRegion = computeRailCoalPhaseoutStagingByRegion(ops, networkStress);
+  const nationalCoalPhaseout = nationalRailCoalPhaseoutStagingIndex(railCoalPhaseoutStagingByRegion);
+  const railCoalPhaseoutStagingShare = computeRailCoalPhaseoutStagingShare(
+    ops,
+    options?.railCoalPhaseoutStagingPolicy ?? 'baseline',
+  );
+  const coalPhaseoutMult = railCoalPhaseoutStagingProductivityMultiplier(
+    railCoalPhaseoutStagingShare,
+    options?.railCoalPhaseoutStagingPolicy ?? 'baseline',
+  );
+  const airportBaggageRobotLogisticsThroughputByRegion =
+    computeAirportBaggageRobotLogisticsThroughputByRegion(ops);
+  const nationalBaggageRobot = nationalAirportBaggageRobotLogisticsThroughputIndex(
+    airportBaggageRobotLogisticsThroughputByRegion,
+  );
+  const airportBaggageRobotLogisticsShare = computeAirportBaggageRobotLogisticsShare(
+    ops,
+    options?.airportBaggageRobotLogisticsPolicy ?? 'baseline',
+  );
+  const baggageRobotMult = airportBaggageRobotLogisticsProductivityMultiplier(
+    airportBaggageRobotLogisticsShare,
+    options?.airportBaggageRobotLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -21345,6 +21919,9 @@ export function computeTransportInfrastructureState(
     const titaniumSpongeBoost = (titaniumSpongeExportByRegion[code] - 5) * 0.0034;
     const heatwaveRailBoost = (heatwaveRailSpeedRestrictionByRegion[code] - 6) * 0.003;
     const livestockYardBoost = (automatedLivestockExportYardThroughputByRegion[code] - 2) * 0.0026;
+    const siliconWaferBoost = (siliconSolarWaferExportByRegion[code] - 5) * 0.0033;
+    const coalPhaseoutBoost = (railCoalPhaseoutStagingByRegion[code] - 6) * 0.0029;
+    const baggageRobotBoost = (airportBaggageRobotLogisticsThroughputByRegion[code] - 2) * 0.0025;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -21400,7 +21977,13 @@ export function computeTransportInfrastructureState(
         grainSiloAutoBoost +
         greenPelletBoost +
         floodLeveeBoost +
-        zeroDrayageBoost) *
+        zeroDrayageBoost +
+        titaniumSpongeBoost +
+        heatwaveRailBoost +
+        livestockYardBoost +
+        siliconWaferBoost +
+        coalPhaseoutBoost +
+        baggageRobotBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -21454,7 +22037,13 @@ export function computeTransportInfrastructureState(
       grainSiloAutoMult *
       greenPelletMult *
       floodLeveeMult *
-      zeroDrayageMult;
+      zeroDrayageMult *
+      titaniumSpongeMult *
+      heatwaveRailMult *
+      livestockYardMult *
+      siliconWaferMult *
+      coalPhaseoutMult *
+      baggageRobotMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -21531,7 +22120,13 @@ export function computeTransportInfrastructureState(
     nationalGrainSiloAuto * 0.003 +
     nationalGreenPellet * 0.003 +
     nationalFloodLevee * 0.003 +
-    nationalZeroDrayage * 0.003;
+    nationalZeroDrayage * 0.003 +
+    nationalTitaniumSponge * 0.003 +
+    nationalHeatwaveRail * 0.003 +
+    nationalLivestockYard * 0.003 +
+    nationalSiliconWafer * 0.003 +
+    nationalCoalPhaseout * 0.003 +
+    nationalBaggageRobot * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -21546,7 +22141,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/34',
+    schemaVersion: 'agent12/36',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -21784,6 +22379,22 @@ export function computeTransportInfrastructureState(
     portZeroEmissionDrayageShare,
     nationalPortZeroEmissionDrayageThroughputIndex: nationalZeroDrayage,
     portZeroEmissionDrayageThroughputByRegion,
+    nationalTitaniumSpongeExportIndex: nationalTitaniumSponge,
+    titaniumSpongeExportByRegion,
+    heatwaveRailSpeedRestrictionShare,
+    nationalHeatwaveRailSpeedRestrictionIndex: nationalHeatwaveRail,
+    heatwaveRailSpeedRestrictionByRegion,
+    automatedLivestockExportYardShare,
+    nationalAutomatedLivestockExportYardThroughputIndex: nationalLivestockYard,
+    automatedLivestockExportYardThroughputByRegion,
+    nationalSiliconSolarWaferExportIndex: nationalSiliconWafer,
+    siliconSolarWaferExportByRegion,
+    railCoalPhaseoutStagingShare,
+    nationalRailCoalPhaseoutStagingIndex: nationalCoalPhaseout,
+    railCoalPhaseoutStagingByRegion,
+    airportBaggageRobotLogisticsShare,
+    nationalAirportBaggageRobotLogisticsThroughputIndex: nationalBaggageRobot,
+    airportBaggageRobotLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -21984,8 +22595,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalGreenIronPelletExportIndex >= 5 &&
       infra.nationalFloodLeveeRailProtectionIndex >= 6 &&
       infra.portZeroEmissionDrayageShare >= 0.03 &&
-      infra.nationalPortZeroEmissionDrayageThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} pellet=${infra.nationalGreenIronPelletExportIndex.toFixed(1)} levee=${infra.nationalFloodLeveeRailProtectionIndex.toFixed(1)} drayage=${infra.nationalPortZeroEmissionDrayageThroughputIndex.toFixed(1)}`,
+      infra.nationalPortZeroEmissionDrayageThroughputIndex >= 2 &&
+      infra.nationalTitaniumSpongeExportIndex >= 5 &&
+      infra.nationalHeatwaveRailSpeedRestrictionIndex >= 6 &&
+      infra.automatedLivestockExportYardShare >= 0.03 &&
+      infra.nationalAutomatedLivestockExportYardThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} titanium=${infra.nationalTitaniumSpongeExportIndex.toFixed(1)} heatwave=${infra.nationalHeatwaveRailSpeedRestrictionIndex.toFixed(1)} livestock=${infra.nationalAutomatedLivestockExportYardThroughputIndex.toFixed(1)}`,
   });
 
   return results;

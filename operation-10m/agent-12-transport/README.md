@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 35
+
+- Schema **`agent12/36`**: silicon solar wafer export throughput, rail coal phase-out staging readiness, airport baggage robot logistics share (`siliconSolarWaferExportPolicy`, `railCoalPhaseoutStagingPolicy`, `airportBaggageRobotLogisticsPolicy`)
+- Catalog: **484** assets, **119** corridors, **193** scenarios
+- Systems: `network/silicon-solar-wafer-export-index.ts`, `operations/rail-coal-phaseout-staging-index.ts`, `productivity/airport-baggage-robot-logistics-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 34
 
 - Schema **`agent12/35`**: titanium sponge export throughput, heatwave rail speed-restriction readiness, automated livestock export yard share (`titaniumSpongeExportPolicy`, `heatwaveRailSpeedRestrictionPolicy`, `automatedLivestockExportYardPolicy`)
