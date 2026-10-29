@@ -6,7 +6,7 @@
 | --- | --- |
 | Branch | `op10m/agent-09-population` |
 | Base commit | `649bf40` — wave **36** / round 36 integration stack |
-| Origin (round 37 feat) | **`<FEAT_SHA>`** — pushed first |
+| Origin (round 37 feat) | **`7c3b64e`** — pushed first |
 | Wave baseline | **`cfb4603`** projected (O10-205) |
 | Round **37** / wave **37** | Integration-retention coupling, retention cohesion, subject retention, workforce retention |
 | Self-tests | **634** cases (`npm run test:agent09`) |
