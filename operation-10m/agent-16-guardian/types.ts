@@ -219,6 +219,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   commissionStrainIndex: number;
   commissionIntegrityScore: number;
   governanceVibrancyScore: number;
+  confermentStrainIndex: number;
+  confermentIntegrityScore: number;
+  governanceVitalityScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
