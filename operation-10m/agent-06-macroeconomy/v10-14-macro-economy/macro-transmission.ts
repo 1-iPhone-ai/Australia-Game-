@@ -70,6 +70,8 @@ import type { MacroUiResponsivenessWave37ExportSpillover } from './bridge-v1022-
 import type { MacroDashboardClarityWave37ExportSpillover } from './bridge-v1023-dashboard-clarity-wave-round37-export.ts';
 import type { MacroReplayWave38ExportSpillover } from './bridge-v1024-replay-wave-round38-export.ts';
 import type { MacroIntegrationHealthWave38ExportSpillover } from './bridge-v1025-integration-health-wave-round38-export.ts';
+import type { MacroAutomationIdleGovernanceWave39ExportSpillover } from './bridge-v1020-automation-idle-governance-wave-round39-export.ts';
+import type { MacroForecastWave39ExportSpillover } from './bridge-v1021-forecast-wave-round39-export.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -148,6 +150,8 @@ export function buildMacroTransmissionReport(params: {
   dashboardClarityWave37Export?: MacroDashboardClarityWave37ExportSpillover;
   replayWave38Export?: MacroReplayWave38ExportSpillover;
   integrationHealthWave38Export?: MacroIntegrationHealthWave38ExportSpillover;
+  automationIdleGovernanceWave39Export?: MacroAutomationIdleGovernanceWave39ExportSpillover;
+  forecastWave39Export?: MacroForecastWave39ExportSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -211,6 +215,8 @@ export function buildMacroTransmissionReport(params: {
   const dashboardClarityWave37Export = params.dashboardClarityWave37Export ?? ZERO_SPILLOVER;
   const replayWave38Export = params.replayWave38Export ?? ZERO_SPILLOVER;
   const integrationHealthWave38Export = params.integrationHealthWave38Export ?? ZERO_SPILLOVER;
+  const automationIdleGovernanceWave39Export = params.automationIdleGovernanceWave39Export ?? ZERO_SPILLOVER;
+  const forecastWave39Export = params.forecastWave39Export ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -759,6 +765,22 @@ export function buildMacroTransmissionReport(params: {
       integrationHealthWave38Export.investmentNudge,
       integrationHealthWave38Export.productivityNudge,
       integrationHealthWave38Export.summary
+    ),
+    layer(
+      'v10.20_automation_idle_governance_wave39_export',
+      'Automation idle governance wave 39 export',
+      automationIdleGovernanceWave39Export.cycleNudge,
+      automationIdleGovernanceWave39Export.investmentNudge,
+      automationIdleGovernanceWave39Export.productivityNudge,
+      automationIdleGovernanceWave39Export.summary
+    ),
+    layer(
+      'v10.21_forecast_wave39_export',
+      'Forecast wave 39 export',
+      forecastWave39Export.cycleNudge,
+      forecastWave39Export.investmentNudge,
+      forecastWave39Export.productivityNudge,
+      forecastWave39Export.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

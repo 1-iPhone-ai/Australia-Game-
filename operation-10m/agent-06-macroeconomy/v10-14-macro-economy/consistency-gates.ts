@@ -1277,5 +1277,46 @@ export function evaluateMacroConsistencyGates(
       summary: 'Elevated transmission synthesis — net spillover impulse is concentrated across layers.'
     });
   }
+  const wave39Auto: any =
+    inputs.automationIdleGovernanceWave39Export ??
+    inputs.automationIdleGovernance?.wave39Export ??
+    inputs.idleAutomation?.governanceWave39Export;
+  const round39Ready = Boolean(
+    wave39Auto?.round39Ready ?? wave39Auto?.payload?.round39Ready ?? wave39Auto?.exportReady
+  );
+  if (
+    wave39Auto &&
+    !round39Ready &&
+    (state.automationSpilloverSummary != null || state.automationIdleGovernanceWave39ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'automation_idle_governance_wave39_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Automation idle governance wave 39 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave39Forecast: any =
+    inputs.forecastWave39Export ?? inputs.forecastingLab?.wave39Export ?? inputs.macroForecasts?.wave39Export;
+  const exportStatus = String(wave39Forecast?.status ?? wave39Forecast?.syncStatus ?? '').toLowerCase();
+  if (
+    exportStatus === 'drift' &&
+    (state.forecastingSpilloverSummary != null || state.forecastWave39ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'forecast_wave39_export_drifted',
+      triggered: true,
+      severity: 'info',
+      summary: 'Forecast wave 39 export drifted coincides with strained forecasting spillover.'
+    });
+  }
+  if (state.transmissionCentrality?.band === 'concentrated') {
+    gates.push({
+      id: 'transmission_centrality_concentrated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Concentrated transmission centrality — top layers carry most active spillover mass.'
+    });
+  }
   return gates;
 }
