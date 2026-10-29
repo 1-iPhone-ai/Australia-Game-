@@ -1318,5 +1318,51 @@ export function evaluateMacroConsistencyGates(
       summary: 'Concentrated transmission centrality — top layers carry most active spillover mass.'
     });
   }
+  const wave40Ui: any =
+    inputs.uiResponsivenessWave40Export ??
+    inputs.uiResponsiveness?.wave40Export ??
+    inputs.gameUi?.responsivenessWave40Export;
+  const round40Ready = Boolean(
+    wave40Ui?.round40Ready ?? wave40Ui?.payload?.round40Ready ?? wave40Ui?.exportReady
+  );
+  if (
+    wave40Ui &&
+    !round40Ready &&
+    (state.uiSpilloverSummary != null || state.uiResponsivenessWave40ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'ui_responsiveness_wave40_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'UI responsiveness wave 40 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave40Dash: any =
+    inputs.dashboardClarityWave40Export ??
+    inputs.dashboardClarity?.wave40Export ??
+    inputs.dashboards?.clarityWave40Export;
+  const clarity40Ready = Boolean(
+    wave40Dash?.clarityReady ?? wave40Dash?.round40Ready ?? wave40Dash?.payload?.clarityReady
+  );
+  if (
+    wave40Dash &&
+    !clarity40Ready &&
+    (state.dashboardsSpilloverSummary != null || state.dashboardClarityWave40ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'dashboard_clarity_wave40_export_blocked',
+      triggered: true,
+      severity: 'info',
+      summary: 'Dashboard clarity wave 40 export not ready coincides with strained dashboards spillover.'
+    });
+  }
+  if (state.transmissionEnvelope?.band === 'wide') {
+    gates.push({
+      id: 'transmission_envelope_wide',
+      triggered: true,
+      severity: 'info',
+      summary: 'Wide transmission envelope — peak active-layer spillover magnitude is elevated.'
+    });
+  }
   return gates;
 }

@@ -72,6 +72,8 @@ import type { MacroReplayWave38ExportSpillover } from './bridge-v1024-replay-wav
 import type { MacroIntegrationHealthWave38ExportSpillover } from './bridge-v1025-integration-health-wave-round38-export.ts';
 import type { MacroAutomationIdleGovernanceWave39ExportSpillover } from './bridge-v1020-automation-idle-governance-wave-round39-export.ts';
 import type { MacroForecastWave39ExportSpillover } from './bridge-v1021-forecast-wave-round39-export.ts';
+import type { MacroUiResponsivenessWave40ExportSpillover } from './bridge-v1022-ui-responsiveness-wave-round40-export.ts';
+import type { MacroDashboardClarityWave40ExportSpillover } from './bridge-v1023-dashboard-clarity-wave-round40-export.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -152,6 +154,8 @@ export function buildMacroTransmissionReport(params: {
   integrationHealthWave38Export?: MacroIntegrationHealthWave38ExportSpillover;
   automationIdleGovernanceWave39Export?: MacroAutomationIdleGovernanceWave39ExportSpillover;
   forecastWave39Export?: MacroForecastWave39ExportSpillover;
+  uiResponsivenessWave40Export?: MacroUiResponsivenessWave40ExportSpillover;
+  dashboardClarityWave40Export?: MacroDashboardClarityWave40ExportSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -217,6 +221,8 @@ export function buildMacroTransmissionReport(params: {
   const integrationHealthWave38Export = params.integrationHealthWave38Export ?? ZERO_SPILLOVER;
   const automationIdleGovernanceWave39Export = params.automationIdleGovernanceWave39Export ?? ZERO_SPILLOVER;
   const forecastWave39Export = params.forecastWave39Export ?? ZERO_SPILLOVER;
+  const uiResponsivenessWave40Export = params.uiResponsivenessWave40Export ?? ZERO_SPILLOVER;
+  const dashboardClarityWave40Export = params.dashboardClarityWave40Export ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -781,6 +787,22 @@ export function buildMacroTransmissionReport(params: {
       forecastWave39Export.investmentNudge,
       forecastWave39Export.productivityNudge,
       forecastWave39Export.summary
+    ),
+    layer(
+      'v10.22_ui_responsiveness_wave40_export',
+      'UI responsiveness wave 40 export',
+      uiResponsivenessWave40Export.cycleNudge,
+      uiResponsivenessWave40Export.investmentNudge,
+      uiResponsivenessWave40Export.productivityNudge,
+      uiResponsivenessWave40Export.summary
+    ),
+    layer(
+      'v10.23_dashboard_clarity_wave40_export',
+      'Dashboard clarity wave 40 export',
+      dashboardClarityWave40Export.cycleNudge,
+      dashboardClarityWave40Export.investmentNudge,
+      dashboardClarityWave40Export.productivityNudge,
+      dashboardClarityWave40Export.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

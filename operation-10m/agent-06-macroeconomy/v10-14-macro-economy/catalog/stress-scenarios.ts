@@ -246,6 +246,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Wave 39 automation & forecast export stress',
     shockIds: ['terms_of_trade_squeeze', 'mining_supercycle'],
     description: 'Blocked automation wave 39 export with drifted forecast wave 39 export (harness overlay).'
+  },
+  {
+    id: 'wave40_ui_dashboard_export_stress',
+    label: 'Wave 40 UI & dashboard export stress',
+    shockIds: ['stimulus_bounce', 'global_slowdown'],
+    description: 'Blocked UI wave 40 export with unclear dashboard wave 40 export (harness overlay).'
   }
 ];
 
