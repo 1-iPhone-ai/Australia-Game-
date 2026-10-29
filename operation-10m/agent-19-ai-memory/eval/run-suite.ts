@@ -21,6 +21,11 @@ import {
   compareHorizonSnapshots,
   labelMemoryHorizon,
 } from '../decision-trace.ts';
+import { buildPersistentPriorExplainabilityBrief, listPersistentPriorBeliefs } from '../prior-explainability.ts';
+import { explainAdaptivePlan } from '../adaptive-plan-explainability.ts';
+import { computeMemoryHealthScorecard, formatMemoryHealthBrief } from '../memory-health-scorecard.ts';
+import { summarizeTurnMemoryInfluence } from '../turn-influence-summary.ts';
+import { buildMemoryGiClaims, formatGiClaimsAsBrief } from '../explainability-claims.ts';
 import type { MemoryEvalResult } from '../types.ts';
 
 type Case = [string, string, () => boolean | string];
@@ -234,6 +239,79 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             { horizon: 'team_directive', delta: 25, reason: 'b' },
           ]);
           return ranked[0].delta === 25 && formatHorizonBadge('team_directive') === 'Team directive' || JSON.stringify(ranked);
+        },
+      ],
+      [
+        'a19_r3_prior_lines',
+        'Persistent prior brief lists saved beliefs when enabled',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.opponentModels.player = {
+            actorId: 'player',
+            totalOpportunities: 1,
+            beliefs: {
+              aggressive: { key: 'aggressive', value: 0.7, confidence: 0.4, observations: 0, opportunityCount: 1, source: 'persistent_prior' },
+            },
+            regionalInterest: {},
+            predictedObjectives: [],
+          };
+          const lines = buildPersistentPriorExplainabilityBrief(mem, { persistentMemoryEnabled: true });
+          return listPersistentPriorBeliefs(mem).length === 1 && lines.some(l => l.includes('Saved prior')) || lines.join('|');
+        },
+      ],
+      [
+        'a19_r3_adaptive_plan',
+        'Adaptive plan explainability describes status',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.adaptivePlan = { objectiveId: 'counter_expand_NSW', status: 'revised', revisionReason: 'Rival focus shifted' };
+          const lines = explainAdaptivePlan(mem);
+          return lines.some(l => l.includes('revised')) && lines.some(l => l.includes('never execute')) || lines.join('|');
+        },
+      ],
+      [
+        'a19_r3_health_scorecard',
+        'Health scorecard is excellent for empty bounded memory',
+        () => {
+          const card = computeMemoryHealthScorecard(createEmptyAiActorMemory('ai'));
+          return card.boundsOk && card.band === 'excellent' && card.healthScore >= 90 || JSON.stringify(card);
+        },
+      ],
+      [
+        'a19_r3_turn_summary',
+        'Turn influence summary aggregates horizons',
+        () => {
+          const before = [{ type: 'a', score: 5 }, { type: 'b', score: 5 }];
+          const after = [
+            { type: 'a', score: 30, memoryInfluence: 25, memoryInfluenceSlices: [{ horizon: 'team_directive', delta: 25, reason: 'plan' }] },
+            { type: 'b', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust' }] },
+          ];
+          const sum = summarizeTurnMemoryInfluence(before, after);
+          return sum.auditOk && sum.influencedDecisionCount === 2 && sum.byHorizon.team_directive?.totalDelta === 25 || JSON.stringify(sum);
+        },
+      ],
+      [
+        'a19_r3_gi_claims',
+        'GI claims include policy disclaimer and redaction',
+        () => {
+          const snap = buildAiMemoryHorizonSnapshot(null);
+          const claims = buildMemoryGiClaims({
+            horizon: snap,
+            inspection: getFilteredAiMemoryInspectionView(createEmptyAiActorMemory('ai'), {
+              viewerTeamId: 'a',
+              ownerTeamId: 'b',
+            }),
+          });
+          const brief = formatGiClaimsAsBrief(claims);
+          return brief.some(l => l.includes('[policy]')) && brief.some(l => l.includes('hidden')) || brief.join('|');
+        },
+      ],
+      [
+        'a19_r3_health_brief',
+        'Health brief formats scorecard summary',
+        () => {
+          const lines = formatMemoryHealthBrief(computeMemoryHealthScorecard(createEmptyAiActorMemory('x')));
+          return lines[0].includes('100') || lines[0];
         },
       ],
     ]),

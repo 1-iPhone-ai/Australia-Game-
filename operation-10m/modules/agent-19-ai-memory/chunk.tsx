@@ -541,6 +541,258 @@ export function compareHorizonSnapshots(before: AiMemoryHorizonSnapshot, after: 
 }
 
 
+// --- source: prior-explainability.ts ---
+
+export interface PersistentPriorExplainLine {
+  subjectActorId: string;
+  beliefKey: string;
+  value: number;
+  confidence: number;
+  line: string;
+}
+
+export function listPersistentPriorBeliefs(memory: AiActorMemory | null | undefined): PersistentPriorExplainLine[] {
+  const out: PersistentPriorExplainLine[] = [];
+  Object.values(memory?.opponentModels || {}).forEach((om: AiOpponentModel) => {
+    Object.values(om.beliefs || {}).forEach((b: AiBelief) => {
+      if (b.source !== 'persistent_prior' || b.confidence <= 0.05) return;
+      out.push({
+        subjectActorId: om.actorId,
+        beliefKey: b.key,
+        value: b.value,
+        confidence: b.confidence,
+        line: `Saved prior: ${om.actorId} tends toward ${b.key} (${(b.value * 100).toFixed(0)}% estimate, confidence ${(b.confidence * 100).toFixed(0)}%).`,
+      });
+    });
+  });
+  return out.sort((a, b) => b.confidence - a.confidence || a.subjectActorId.localeCompare(b.subjectActorId));
+}
+
+export function buildPersistentPriorExplainabilityBrief(
+  memory: AiActorMemory | null | undefined,
+  opts?: { persistentMemoryEnabled?: boolean },
+): string[] {
+  if (!opts?.persistentMemoryEnabled) {
+    return ['Cross-match priors are off — only this match’s observations affect expectations.'];
+  }
+  const priors = listPersistentPriorBeliefs(memory);
+  if (!priors.length) {
+    return ['Persistent memory is on, but no cross-match prior beliefs are active yet in this match.'];
+  }
+  return [
+    `${priors.length} cross-match prior belief(s) nudge expectations until this match observes more:`,
+    ...priors.slice(0, 4).map(p => `• ${p.line}`),
+    'Priors are capped and never override committed events or legal actions.',
+  ];
+}
+
+
+// --- source: adaptive-plan-explainability.ts ---
+
+export function explainAdaptivePlan(memory: AiActorMemory | null | undefined): string[] {
+  const plan = memory?.adaptivePlan;
+  if (!plan) {
+    return ['No adaptive counter-plan is active — memory has not revised a rival-focused objective yet.'];
+  }
+  const objective = plan.objectiveId.replace(/_/g, ' ');
+  const lines = [`Adaptive plan: ${objective} (${plan.status}).`];
+  if (plan.revisionReason) {
+    lines.push(`Revision: ${plan.revisionReason}`);
+  }
+  lines.push('Adaptive plans are suggestions inside scoring — they never execute actions directly.');
+  return lines;
+}
+
+export function adaptivePlanSummaryForInspection(memory: AiActorMemory | null | undefined): string | null {
+  const plan = memory?.adaptivePlan;
+  if (!plan) return null;
+  return `${plan.status} counter-plan: ${plan.objectiveId.replace(/_/g, ' ')}`;
+}
+
+
+// --- source: memory-health-scorecard.ts ---
+
+export interface MemoryHealthScorecard {
+  boundsOk: boolean;
+  eventCount: number;
+  relationshipCount: number;
+  priorBeliefCount: number;
+  healthScore: number;
+  band: 'excellent' | 'good' | 'fair' | 'degraded';
+  findings: MemoryInfluenceAuditFinding[];
+  summaryLine: string;
+}
+
+export function computeMemoryHealthScorecard(
+  memory: AiActorMemory | null | undefined,
+  opts?: { persistentMemoryEnabled?: boolean },
+): MemoryHealthScorecard {
+  const findings = auditActorMemoryBounds(memory);
+  const boundsOk = memoryBoundsOk(memory);
+  const snap = buildAiMemoryHorizonSnapshot(memory, opts);
+  let healthScore = 100;
+  findings.forEach(f => {
+    if (f.severity === 'fail') healthScore -= 25;
+    else if (f.severity === 'warn') healthScore -= 8;
+  });
+  if (!boundsOk) healthScore = Math.min(healthScore, 40);
+  healthScore = Math.max(0, Math.min(100, healthScore));
+  const band: MemoryHealthScorecard['band'] =
+    healthScore >= 90 ? 'excellent' : healthScore >= 75 ? 'good' : healthScore >= 50 ? 'fair' : 'degraded';
+  const summaryLine = boundsOk
+    ? `Memory health ${healthScore}/100 (${band}): ${snap.shortTermEventCount} events, ${snap.shortTermRelationshipCount} relationships tracked.`
+    : `Memory health ${healthScore}/100 (${band}): bounds audit failed — see findings.`;
+  return {
+    boundsOk,
+    eventCount: snap.shortTermEventCount,
+    relationshipCount: snap.shortTermRelationshipCount,
+    priorBeliefCount: snap.longTermPriorBeliefCount,
+    healthScore,
+    band,
+    findings,
+    summaryLine,
+  };
+}
+
+export function formatMemoryHealthBrief(scorecard: MemoryHealthScorecard): string[] {
+  const lines = [scorecard.summaryLine];
+  scorecard.findings.slice(0, 4).forEach(f => lines.push(`[${f.severity}] ${f.message}`));
+  return lines;
+}
+
+
+// --- source: turn-influence-summary.ts ---
+
+export interface TurnMemoryInfluenceSummary {
+  decisionCount: number;
+  influencedDecisionCount: number;
+  totalInfluenceDelta: number;
+  maxSingleInfluence: number;
+  auditOk: boolean;
+  findings: MemoryInfluenceAuditFinding[];
+  byHorizon: Record<string, { totalDelta: number; count: number }>;
+  narrativeLines: string[];
+}
+
+export function summarizeTurnMemoryInfluence<T extends MemoryInfluenceDecisionLike>(
+  before: T[],
+  after: T[],
+): TurnMemoryInfluenceSummary {
+  const findings = auditMemoryInfluenceDecisions(before, after);
+  const auditOk = auditFindingsOk(findings);
+  let influencedDecisionCount = 0;
+  let totalInfluenceDelta = 0;
+  let maxSingleInfluence = 0;
+  const allSlices = after.flatMap(d => d.memoryInfluenceSlices || []);
+  after.forEach(d => {
+    const inf = d.memoryInfluence ?? 0;
+    if (inf) influencedDecisionCount += 1;
+    totalInfluenceDelta += inf;
+    maxSingleInfluence = Math.max(maxSingleInfluence, Math.abs(inf));
+  });
+  totalInfluenceDelta = Math.round(totalInfluenceDelta * 100) / 100;
+  const byHorizon = summarizeSlicesByHorizon(allSlices);
+  const narrativeLines = [
+    `${after.length} scored options; ${influencedDecisionCount} adjusted by memory (total Δ ${totalInfluenceDelta >= 0 ? '+' : ''}${totalInfluenceDelta}).`,
+    `Largest single adjustment: ${maxSingleInfluence.toFixed(2)}.`,
+  ];
+  Object.entries(byHorizon).forEach(([h, v]) => {
+    narrativeLines.push(`Horizon ${h}: ${v.count} slice(s), Δ ${v.totalDelta >= 0 ? '+' : ''}${v.totalDelta.toFixed(2)}.`);
+  });
+  if (!auditOk) narrativeLines.push('Audit flagged trace inconsistencies — memory must not drop options.');
+  return {
+    decisionCount: after.length,
+    influencedDecisionCount,
+    totalInfluenceDelta,
+    maxSingleInfluence,
+    auditOk,
+    findings,
+    byHorizon,
+    narrativeLines,
+  };
+}
+
+
+// --- source: explainability-claims.ts ---
+
+export type MemoryGiClaimKind = 'fact' | 'interpretation' | 'policy';
+
+export interface MemoryGiClaim {
+  id: string;
+  kind: MemoryGiClaimKind;
+  text: string;
+  confidence: 'confirmed' | 'likely' | 'policy';
+}
+
+/** Ask-the-Game style claims derived only from inspection-safe memory views. */
+export function buildMemoryGiClaims(params: {
+  horizon: AiMemoryHorizonSnapshot;
+  inspection?: AiMemoryInspectionView | null;
+  memoryInfluenceEnabled?: boolean;
+}): MemoryGiClaim[] {
+  const claims: MemoryGiClaim[] = [];
+  if (params.memoryInfluenceEnabled === false) {
+    claims.push({
+      id: 'mem_off',
+      kind: 'policy',
+      text: 'AI memory influence is turned off in settings — relationships may still display but do not adjust scores.',
+      confidence: 'confirmed',
+    });
+    return claims;
+  }
+  claims.push({
+    id: 'mem_rule_based',
+    kind: 'policy',
+    text: AGENT19_EXPLAINABILITY_DISCLAIMER,
+    confidence: 'policy',
+  });
+  if (params.horizon.longTermPriorActive) {
+    claims.push({
+      id: 'mem_priors',
+      kind: 'fact',
+      text: `${params.horizon.longTermPriorBeliefCount} cross-match prior belief(s) are active alongside this match’s events.`,
+      confidence: 'confirmed',
+    });
+  } else if (params.horizon.shortTermEventCount > 0) {
+    claims.push({
+      id: 'mem_match_only',
+      kind: 'fact',
+      text: `Memory is using ${params.horizon.shortTermEventCount} committed event(s) from this match only.`,
+      confidence: 'confirmed',
+    });
+  } else {
+    claims.push({
+      id: 'mem_idle',
+      kind: 'fact',
+      text: 'AI memory has not recorded committed events this match yet.',
+      confidence: 'confirmed',
+    });
+  }
+  const view = params.inspection;
+  if (view?.isRedacted) {
+    claims.push({
+      id: 'mem_redacted',
+      kind: 'policy',
+      text: 'Rival private beliefs stay hidden unless full memory inspection is enabled.',
+      confidence: 'policy',
+    });
+  }
+  if (view?.influenceSummary) {
+    claims.push({
+      id: 'mem_influence',
+      kind: 'interpretation',
+      text: view.influenceSummary,
+      confidence: 'likely',
+    });
+  }
+  return claims;
+}
+
+export function formatGiClaimsAsBrief(claims: MemoryGiClaim[]): string[] {
+  return claims.map(c => `[${c.kind}] ${c.text}`);
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -859,6 +1111,79 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             { horizon: 'team_directive', delta: 25, reason: 'b' },
           ]);
           return ranked[0].delta === 25 && formatHorizonBadge('team_directive') === 'Team directive' || JSON.stringify(ranked);
+        },
+      ],
+      [
+        'a19_r3_prior_lines',
+        'Persistent prior brief lists saved beliefs when enabled',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.opponentModels.player = {
+            actorId: 'player',
+            totalOpportunities: 1,
+            beliefs: {
+              aggressive: { key: 'aggressive', value: 0.7, confidence: 0.4, observations: 0, opportunityCount: 1, source: 'persistent_prior' },
+            },
+            regionalInterest: {},
+            predictedObjectives: [],
+          };
+          const lines = buildPersistentPriorExplainabilityBrief(mem, { persistentMemoryEnabled: true });
+          return listPersistentPriorBeliefs(mem).length === 1 && lines.some(l => l.includes('Saved prior')) || lines.join('|');
+        },
+      ],
+      [
+        'a19_r3_adaptive_plan',
+        'Adaptive plan explainability describes status',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.adaptivePlan = { objectiveId: 'counter_expand_NSW', status: 'revised', revisionReason: 'Rival focus shifted' };
+          const lines = explainAdaptivePlan(mem);
+          return lines.some(l => l.includes('revised')) && lines.some(l => l.includes('never execute')) || lines.join('|');
+        },
+      ],
+      [
+        'a19_r3_health_scorecard',
+        'Health scorecard is excellent for empty bounded memory',
+        () => {
+          const card = computeMemoryHealthScorecard(createEmptyAiActorMemory('ai'));
+          return card.boundsOk && card.band === 'excellent' && card.healthScore >= 90 || JSON.stringify(card);
+        },
+      ],
+      [
+        'a19_r3_turn_summary',
+        'Turn influence summary aggregates horizons',
+        () => {
+          const before = [{ type: 'a', score: 5 }, { type: 'b', score: 5 }];
+          const after = [
+            { type: 'a', score: 30, memoryInfluence: 25, memoryInfluenceSlices: [{ horizon: 'team_directive', delta: 25, reason: 'plan' }] },
+            { type: 'b', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust' }] },
+          ];
+          const sum = summarizeTurnMemoryInfluence(before, after);
+          return sum.auditOk && sum.influencedDecisionCount === 2 && sum.byHorizon.team_directive?.totalDelta === 25 || JSON.stringify(sum);
+        },
+      ],
+      [
+        'a19_r3_gi_claims',
+        'GI claims include policy disclaimer and redaction',
+        () => {
+          const snap = buildAiMemoryHorizonSnapshot(null);
+          const claims = buildMemoryGiClaims({
+            horizon: snap,
+            inspection: getFilteredAiMemoryInspectionView(createEmptyAiActorMemory('ai'), {
+              viewerTeamId: 'a',
+              ownerTeamId: 'b',
+            }),
+          });
+          const brief = formatGiClaimsAsBrief(claims);
+          return brief.some(l => l.includes('[policy]')) && brief.some(l => l.includes('hidden')) || brief.join('|');
+        },
+      ],
+      [
+        'a19_r3_health_brief',
+        'Health brief formats scorecard summary',
+        () => {
+          const lines = formatMemoryHealthBrief(computeMemoryHealthScorecard(createEmptyAiActorMemory('x')));
+          return lines[0].includes('100') || lines[0];
         },
       ],
     ]),
