@@ -46,6 +46,7 @@ const FILES = [
   'transmission-congestion-merchant-storage-ledger.ts',
   'nature-positive-siting-biodiversity-coexistence-ledger.ts',
   'climate-adaptation-flood-heat-resilience-ledger.ts',
+  'industrial-symbiosis-waste-heat-recovery-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -98,6 +99,8 @@ const EXPORT_MANIFEST = [
   'V1014_BIODIVERSITY_COEXISTENCE_CATALOG',
   'V1014_CLIMATE_ADAPTATION_HARDENING_CATALOG',
   'V1014_FLOOD_HEAT_RESILIENCE_CATALOG',
+  'V1014_INDUSTRIAL_SYMBIOSIS_CATALOG',
+  'V1014_WASTE_HEAT_RECOVERY_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -182,6 +185,9 @@ const EXPORT_MANIFEST = [
   'runAgent13ClimateFloodHeatScaleSelfTests',
   'runAgent13ClimateFloodHeatTurnScenario',
   'V1014_CLIMATE_FLOOD_HEAT_TURN_SCENARIOS',
+  'runAgent13SymbiosisWasteHeatScaleSelfTests',
+  'runAgent13SymbiosisWasteHeatTurnScenario',
+  'V1014_SYMBIOSIS_WASTE_HEAT_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

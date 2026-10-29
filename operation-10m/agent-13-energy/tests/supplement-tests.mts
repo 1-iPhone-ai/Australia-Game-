@@ -115,6 +115,11 @@ import {
   V1014_CLIMATE_FLOOD_HEAT_TURN_SCENARIOS,
 } from '../modules/climate-adaptation-flood-heat-resilience-ledger.ts';
 import {
+  runAgent13SymbiosisWasteHeatScaleSelfTests,
+  runAgent13SymbiosisWasteHeatTurnScenario,
+  V1014_SYMBIOSIS_WASTE_HEAT_TURN_SCENARIOS,
+} from '../modules/industrial-symbiosis-waste-heat-recovery-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -360,6 +365,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const cfhTurn = runAgent13ClimateFloodHeatTurnScenario(V1014_CLIMATE_FLOOD_HEAT_TURN_SCENARIOS[0]);
   ok(cfhTurn.passed);
+
+  const symbiosisWasteHeat = runAgent13SymbiosisWasteHeatScaleSelfTests();
+  ok(symbiosisWasteHeat.failed === 0 && symbiosisWasteHeat.passed >= 7);
+
+  const swhTurn = runAgent13SymbiosisWasteHeatTurnScenario(V1014_SYMBIOSIS_WASTE_HEAT_TURN_SCENARIOS[0]);
+  ok(swhTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }
