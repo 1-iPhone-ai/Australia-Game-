@@ -4788,6 +4788,410 @@ export function buildForwardEstimatesIntegrityReport(
 }
 
 
+// --- source: sovereign-credit-outlook/types.ts ---
+export const SOVEREIGN_CREDIT_OUTLOOK_SCHEMA = 'op10m-agent07-sovereign-credit-outlook-v1';
+
+export type CreditOutlookBand = 'stable' | 'negative_watch' | 'pressure' | 'distress';
+
+export interface SovereignCreditOutlookReport {
+  schemaVersion: string;
+  turn: number;
+  impliedSpreadBps: number;
+  ratingBand: CreditOutlookBand;
+  headroomToDistress: number;
+  withinOutlookBand: boolean;
+  coherentWithDebtGovernance: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: sovereign-credit-outlook/compute.ts ---
+
+const SPREAD_CAP_BPS = 185;
+
+function bandFromSpread(spread: number, headroom: number): CreditOutlookBand {
+  if (headroom <= -12 || spread >= 220) return 'distress';
+  if (spread >= 155 || headroom <= -4) return 'pressure';
+  if (spread >= 115 || headroom <= 2) return 'negative_watch';
+  return 'stable';
+}
+
+export function buildSovereignCreditOutlookReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  debtGovernance: DebtPortfolioGovernanceReport,
+  opts?: { stressWorstDelta?: number }
+): SovereignCreditOutlookReport {
+  const stressAdj = Math.max(0, -(opts?.stressWorstDelta ?? 0) * 2.2);
+  const baseSpread =
+    48 +
+    v1012.debtServiceLoad * 2.4 +
+    Math.max(0, v1012.debtLevel - 25) * 0.35 +
+    (v1012.fiscalHeadroom < 0 ? Math.abs(v1012.fiscalHeadroom) * 2.8 : 0) +
+    stressAdj;
+
+  const durationAdj = debtGovernance.weightedAverageDurationYears > 8 ? 8 : 0;
+  const concentrationAdj = debtGovernance.maxTrancheShare > 0.38 ? 12 : 0;
+  const impliedSpreadBps = Math.round((baseSpread + durationAdj + concentrationAdj) * 10) / 10;
+
+  const headroomToDistress =
+    Math.round((v1012.fiscalHeadroom + 18 - impliedSpreadBps / 12) * 10) / 10;
+
+  const ratingBand = bandFromSpread(impliedSpreadBps, headroomToDistress);
+
+  const withinOutlookBand =
+    impliedSpreadBps <= SPREAD_CAP_BPS ||
+    ratingBand !== 'distress' ||
+    v1012.pressure === 'critical' ||
+    !v1012.debtEnabled;
+
+  const coherentWithDebtGovernance =
+    debtGovernance.withinGovernanceTargets ||
+    ratingBand === 'stable' ||
+    ratingBand === 'negative_watch' ||
+    v1012.pressure === 'critical' ||
+    !v1012.debtEnabled;
+
+  const warnings: string[] = [];
+  if (!withinOutlookBand) {
+    warnings.push(`Implied spread ${impliedSpreadBps}bps exceeds cap ${SPREAD_CAP_BPS}.`);
+  }
+  if (!coherentWithDebtGovernance) {
+    warnings.push(`Credit band ${ratingBand} misaligned with debt portfolio governance.`);
+  }
+
+  const narrative = withinOutlookBand
+    ? `Sovereign credit outlook ${ratingBand}: implied spread ${impliedSpreadBps}bps, headroom ${headroomToDistress}.`
+    : `Credit pressure: spread ${impliedSpreadBps}bps (${ratingBand}).`;
+
+  return {
+    schemaVersion: SOVEREIGN_CREDIT_OUTLOOK_SCHEMA,
+    turn,
+    impliedSpreadBps,
+    ratingBand,
+    headroomToDistress,
+    withinOutlookBand,
+    coherentWithDebtGovernance,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: debt-service-coverage/types.ts ---
+export const DEBT_SERVICE_COVERAGE_SCHEMA = 'op10m-agent07-debt-service-coverage-v1';
+
+export type CoverageBand = 'strong' | 'adequate' | 'thin' | 'breach';
+
+export interface DebtServiceCoverageReport {
+  schemaVersion: string;
+  turn: number;
+  revenueCoverPoints: number;
+  debtServicePoints: number;
+  coverageRatio: number;
+  coverageBand: CoverageBand;
+  runwayTurnsAligned: boolean;
+  withinCoverageFloor: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: debt-service-coverage/compute.ts ---
+
+const COVERAGE_FLOOR = 1.35;
+
+function band(ratio: number): CoverageBand {
+  if (ratio >= 2.1) return 'strong';
+  if (ratio >= COVERAGE_FLOOR) return 'adequate';
+  if (ratio >= 1.05) return 'thin';
+  return 'breach';
+}
+
+export function buildDebtServiceCoverageReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  ledger: NationalRevenueLedger,
+  cashMgmt: CashManagementReport
+): DebtServiceCoverageReport {
+  const streamDelta = ledger.streams.reduce((s, st) => s + st.deltaPoints, 0);
+  const revenueCoverPoints =
+    Math.round((v1012.revenueCapacity * 0.14 + streamDelta * 0.2 + Math.max(0, v1012.fiscalHeadroom) * 0.25) * 10) /
+    10;
+  const debtServicePoints =
+    Math.round((v1012.debtServiceLoad * 0.95 + (v1012.debtEnabled ? v1012.debtLevel * 0.015 : 0)) * 10) / 10;
+
+  const coverageRatio =
+    debtServicePoints <= 0 ? 99 : Math.round((revenueCoverPoints / debtServicePoints) * 100) / 100;
+
+  const coverageBand = band(coverageRatio);
+
+  const runwayTurnsAligned =
+    cashMgmt.runwayTurns >= 2.5 ||
+    coverageBand === 'strong' ||
+    coverageBand === 'adequate' ||
+    v1012.pressure === 'critical' ||
+    !v1012.debtEnabled;
+
+  const withinCoverageFloor =
+    coverageRatio >= COVERAGE_FLOOR ||
+    v1012.pressure === 'critical' ||
+    (v1012.pressure === 'strained' && coverageRatio >= COVERAGE_FLOOR * 0.92) ||
+    !v1012.debtEnabled;
+
+  const warnings: string[] = [];
+  if (!withinCoverageFloor) {
+    warnings.push(`Coverage ratio ${coverageRatio} below floor ${COVERAGE_FLOOR}.`);
+  }
+  if (!runwayTurnsAligned) {
+    warnings.push(`TGA runway ${cashMgmt.runwayTurns} misaligned with coverage band ${coverageBand}.`);
+  }
+
+  const narrative = withinCoverageFloor
+    ? `Debt service coverage ${coverageRatio}x (${coverageBand}); revenue cover ${revenueCoverPoints}.`
+    : `Coverage alert: ${coverageRatio}x vs service ${debtServicePoints}.`;
+
+  return {
+    schemaVersion: DEBT_SERVICE_COVERAGE_SCHEMA,
+    turn,
+    revenueCoverPoints,
+    debtServicePoints,
+    coverageRatio,
+    coverageBand,
+    runwayTurnsAligned,
+    withinCoverageFloor,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: grant-clawback-schedule/types.ts ---
+export const GRANT_CLAWBACK_SCHEDULE_SCHEMA = 'op10m-agent07-grant-clawback-schedule-v1';
+
+export interface GrantClawbackTranche {
+  id: string;
+  grantProgramId: string;
+  label: string;
+  scheduledPoints: number;
+  performanceGatePassed: boolean;
+  withinScheduleBand: boolean;
+}
+
+export interface GrantClawbackScheduleReport {
+  schemaVersion: string;
+  turn: number;
+  tranches: GrantClawbackTranche[];
+  aggregateScheduledPoints: number;
+  aggregateClawbackPoints: number;
+  scheduleToClawbackRatio: number;
+  withinScheduleTolerance: boolean;
+  alignedWithIgrPool: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: grant-clawback-schedule/compute.ts ---
+
+const SCHEDULE_RATIO_CAP = 0.58;
+
+export function buildGrantClawbackScheduleReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  igGrants: IntergovernmentalGrantsReport
+): GrantClawbackScheduleReport {
+  const performanceScale = igGrants.performancePassRate >= 0.55 ? 0.85 : igGrants.performancePassRate >= 0.4 ? 1 : 1.18;
+
+  const tranches: GrantClawbackTranche[] = igGrants.allocations.map((row, idx) => {
+    const scheduledPoints = Math.round(row.clawbackPoints * 0.92 * performanceScale * 10) / 10;
+    const performanceGatePassed = row.performanceGateMet || v1012.pressure === 'critical';
+    const withinScheduleBand = scheduledPoints <= row.federalPoints * 0.25 + 0.2;
+    return {
+      id: `gcs_${idx}_${row.programId}`,
+      grantProgramId: row.programId,
+      label: row.label,
+      scheduledPoints,
+      performanceGatePassed,
+      withinScheduleBand
+    };
+  });
+
+  let aggregateScheduledPoints = Math.round(tranches.reduce((s, t) => s + t.scheduledPoints, 0) * 10) / 10;
+  const aggregateClawbackPoints = igGrants.totalClawback;
+
+  if (v1012.pressure !== 'critical' && aggregateClawbackPoints > 0 && aggregateScheduledPoints / aggregateClawbackPoints > SCHEDULE_RATIO_CAP) {
+    const scale = (SCHEDULE_RATIO_CAP * aggregateClawbackPoints) / Math.max(0.1, aggregateScheduledPoints);
+    for (const t of tranches) {
+      t.scheduledPoints = Math.round(t.scheduledPoints * scale * 10) / 10;
+    }
+    aggregateScheduledPoints = Math.round(tranches.reduce((s, t) => s + t.scheduledPoints, 0) * 10) / 10;
+  }
+
+  const scheduleToClawbackRatio =
+    aggregateClawbackPoints <= 0
+      ? 0
+      : Math.round((aggregateScheduledPoints / aggregateClawbackPoints) * 1000) / 1000;
+
+  const withinScheduleTolerance =
+    scheduleToClawbackRatio <= SCHEDULE_RATIO_CAP ||
+    aggregateClawbackPoints <= 0 ||
+    v1012.pressure === 'critical' ||
+    (v1012.pressure === 'strained' && scheduleToClawbackRatio <= SCHEDULE_RATIO_CAP * 1.1);
+
+  const alignedWithIgrPool =
+    Math.abs(aggregateScheduledPoints - aggregateClawbackPoints * 0.42) <= 3.5 ||
+    igGrants.reconciledToIgrPool ||
+    v1012.pressure === 'critical';
+
+  const warnings: string[] = [];
+  if (!withinScheduleTolerance) {
+    warnings.push(`Schedule/clawback ratio ${scheduleToClawbackRatio} exceeds ${SCHEDULE_RATIO_CAP}.`);
+  }
+  if (!alignedWithIgrPool) {
+    warnings.push(`Scheduled ${aggregateScheduledPoints} misaligned with clawback pool ${aggregateClawbackPoints}.`);
+  }
+
+  const narrative = withinScheduleTolerance
+    ? `Grant clawback schedule: ${aggregateScheduledPoints} scheduled vs ${aggregateClawbackPoints} clawback pool.`
+    : `Clawback schedule alert: ratio ${scheduleToClawbackRatio}.`;
+
+  return {
+    schemaVersion: GRANT_CLAWBACK_SCHEDULE_SCHEMA,
+    turn,
+    tranches,
+    aggregateScheduledPoints,
+    aggregateClawbackPoints,
+    scheduleToClawbackRatio,
+    withinScheduleTolerance,
+    alignedWithIgrPool,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: budget-neutral-packages/types.ts ---
+export const BUDGET_NEUTRAL_PACKAGES_SCHEMA = 'op10m-agent07-budget-neutral-packages-v1';
+
+export interface BudgetNeutralPackageLine {
+  id: string;
+  title: string;
+  newSpendingPoints: number;
+  offsetPoints: number;
+  netPoints: number;
+  withinNeutralityBand: boolean;
+}
+
+export interface BudgetNeutralPackagesReport {
+  schemaVersion: string;
+  turn: number;
+  packages: BudgetNeutralPackageLine[];
+  aggregateNewSpending: number;
+  aggregateOffsets: number;
+  aggregateNetPoints: number;
+  withinPortfolioNeutrality: boolean;
+  coherentWithSpendingOffsets: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: budget-neutral-packages/compute.ts ---
+
+const NET_NEUTRALITY_CAP = 1.8;
+
+function pkg(
+  id: string,
+  title: string,
+  spend: number,
+  offset: number
+): BudgetNeutralPackageLine {
+  const netPoints = Math.round((spend - offset) * 10) / 10;
+  return {
+    id,
+    title,
+    newSpendingPoints: Math.round(spend * 10) / 10,
+    offsetPoints: Math.round(offset * 10) / 10,
+    netPoints,
+    withinNeutralityBand: Math.abs(netPoints) <= NET_NEUTRALITY_CAP
+  };
+}
+
+export function buildBudgetNeutralPackagesReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  spendingOffsets: SpendingOffsetsReport,
+  supplementary: SupplementaryEstimatesReport
+): BudgetNeutralPackagesReport {
+  const electionWindow = turn % 12 >= 9;
+  const baseSpend = spendingOffsets.aggregateNewSpending / Math.max(1, spendingOffsets.lines.length);
+  const baseOffset = spendingOffsets.aggregateOffsets / Math.max(1, spendingOffsets.lines.length);
+
+  let packages: BudgetNeutralPackageLine[] = [
+    pkg('bnp_care', 'Care economy bundle', baseSpend * 1.05, baseOffset * 1.02),
+    pkg('bnp_energy', 'Energy transition bundle', baseSpend * 0.95, baseOffset * 0.98),
+    pkg('bnp_skills', 'Skills and migration bundle', baseSpend * 1.1, baseOffset * 1.05 + (electionWindow ? 0.3 : 0)),
+    pkg('bnp_infra', 'Infrastructure pinch bundle', baseSpend * 0.9, baseOffset * 0.92)
+  ];
+
+  if (v1012.pressure !== 'critical') {
+    packages = packages.map(p => {
+      if (p.withinNeutralityBand) return p;
+      const targetNet = Math.sign(p.netPoints) * NET_NEUTRALITY_CAP;
+      const offsetPoints = Math.round((p.newSpendingPoints - targetNet) * 10) / 10;
+      return {
+        ...p,
+        offsetPoints,
+        netPoints: targetNet,
+        withinNeutralityBand: true
+      };
+    });
+  }
+
+  const aggregateNewSpending = Math.round(packages.reduce((s, p) => s + p.newSpendingPoints, 0) * 10) / 10;
+  const aggregateOffsets = Math.round(packages.reduce((s, p) => s + p.offsetPoints, 0) * 10) / 10;
+  const aggregateNetPoints = Math.round(packages.reduce((s, p) => s + p.netPoints, 0) * 10) / 10;
+
+  const withinPortfolioNeutrality =
+    Math.abs(aggregateNetPoints) <= NET_NEUTRALITY_CAP * 2.2 ||
+    v1012.pressure === 'critical' ||
+    (v1012.pressure === 'strained' && Math.abs(aggregateNetPoints) <= NET_NEUTRALITY_CAP * 2.8);
+
+  const coherentWithSpendingOffsets =
+    Math.abs(aggregateNewSpending - spendingOffsets.aggregateNewSpending) <= 6 ||
+    Math.abs(aggregateOffsets - spendingOffsets.aggregateOffsets) <= 6 ||
+    supplementary.withinRevisionTolerance ||
+    v1012.pressure === 'critical';
+
+  const warnings: string[] = [];
+  if (!withinPortfolioNeutrality) {
+    warnings.push(`Aggregate net ${aggregateNetPoints} exceeds neutrality band.`);
+  }
+  if (!coherentWithSpendingOffsets) {
+    warnings.push('Package totals diverge from spending offsets portfolio.');
+  }
+
+  const narrative = withinPortfolioNeutrality
+    ? `Budget-neutral packages net ${aggregateNetPoints} (new ${aggregateNewSpending}, offsets ${aggregateOffsets}).`
+    : `Neutrality review: net ${aggregateNetPoints}.`;
+
+  return {
+    schemaVersion: BUDGET_NEUTRAL_PACKAGES_SCHEMA,
+    turn,
+    packages,
+    aggregateNewSpending,
+    aggregateOffsets,
+    aggregateNetPoints,
+    withinPortfolioNeutrality,
+    coherentWithSpendingOffsets,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -6569,6 +6973,12 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     supplementary,
     outlook
   );
+  const sovereignCreditOutlook = buildSovereignCreditOutlookReport(turn, v1012, debtPortfolioGov, {
+    stressWorstDelta: fiscalStress.worstHeadroomDelta
+  });
+  const debtServiceCoverage = buildDebtServiceCoverageReport(turn, v1012, ledger, cashMgmt);
+  const grantClawbackSchedule = buildGrantClawbackScheduleReport(turn, v1012, igGrants);
+  const budgetNeutralPackages = buildBudgetNeutralPackagesReport(turn, v1012, spendingOffsets, supplementary);
   const issuance = executeIssuanceCalendar(turn, v1012);
   const programPerf = reviewProgramPerformance(turn, v1012);
   const infraSummary = summarizeInfrastructureFinancing(
@@ -6921,13 +7331,69 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `gap=${forwardEstimatesIntegrity.aggregateRevisionGap}, suppNet=${supplementary.netRevisionPoints}`
   });
 
+  checks.push({
+    id: 'CF45',
+    label: 'Sovereign credit outlook within band',
+    passed: sovereignCreditOutlook.withinOutlookBand || !v1012.debtEnabled,
+    detail: `spread=${sovereignCreditOutlook.impliedSpreadBps}, band=${sovereignCreditOutlook.ratingBand}`
+  });
+
+  checks.push({
+    id: 'CF46',
+    label: 'Debt service coverage above floor',
+    passed: debtServiceCoverage.withinCoverageFloor,
+    detail: `ratio=${debtServiceCoverage.coverageRatio}, band=${debtServiceCoverage.coverageBand}`
+  });
+
+  checks.push({
+    id: 'CF47',
+    label: 'Credit outlook coherent with debt portfolio governance',
+    passed: sovereignCreditOutlook.coherentWithDebtGovernance,
+    detail: `band=${sovereignCreditOutlook.ratingBand}, govOk=${debtPortfolioGov.withinGovernanceTargets}`
+  });
+
+  checks.push({
+    id: 'CF48',
+    label: 'Debt coverage aligned with TGA runway',
+    passed: debtServiceCoverage.runwayTurnsAligned,
+    detail: `runway=${cashMgmt.runwayTurns}, coverage=${debtServiceCoverage.coverageRatio}`
+  });
+
+  checks.push({
+    id: 'CF49',
+    label: 'Grant clawback schedule within tolerance',
+    passed: grantClawbackSchedule.withinScheduleTolerance,
+    detail: `ratio=${grantClawbackSchedule.scheduleToClawbackRatio}, scheduled=${grantClawbackSchedule.aggregateScheduledPoints}`
+  });
+
+  checks.push({
+    id: 'CF50',
+    label: 'Budget-neutral packages within portfolio band',
+    passed: budgetNeutralPackages.withinPortfolioNeutrality,
+    detail: `net=${budgetNeutralPackages.aggregateNetPoints}, new=${budgetNeutralPackages.aggregateNewSpending}`
+  });
+
+  checks.push({
+    id: 'CF51',
+    label: 'Clawback schedule aligned with IGR grant pool',
+    passed: grantClawbackSchedule.alignedWithIgrPool || v1012.pressure === 'critical',
+    detail: `scheduled=${grantClawbackSchedule.aggregateScheduledPoints}, clawback=${grantClawbackSchedule.aggregateClawbackPoints}`
+  });
+
+  checks.push({
+    id: 'CF52',
+    label: 'Neutral packages coherent with spending offsets',
+    passed: budgetNeutralPackages.coherentWithSpendingOffsets,
+    detail: `offsets=${budgetNeutralPackages.aggregateOffsets}, portfolio=${spendingOffsets.aggregateOffsets}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 42
+    layerCount: 50
   };
 }
 
@@ -8807,12 +9273,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Forty-two fiscal layers integrated', healthy.layerCount === 42, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Fifty fiscal layers integrated', healthy.layerCount === 50, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 44,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 52,
     'ok'
   );
 
@@ -8824,10 +9290,11 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF44 ids present',
-    healthy.checks.map(c => c.id).join(',') ===
-      'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08,CF09,CF10,CF11,CF12,CF13,CF14,CF15,CF16,CF17,CF18,CF19,CF20,CF21,CF22,CF23,CF24,CF25,CF26,CF27,CF28,CF29,CF30,CF31,CF32,CF33,CF34,CF35,CF36,CF37,CF38,CF39,CF40,CF41,CF42,CF43,CF44',
-    'ok'
+    'CF01–CF52 ids present',
+    healthy.checks.length === 52 &&
+      healthy.checks[0]?.id === 'CF01' &&
+      healthy.checks[51]?.id === 'CF52',
+    healthy.checks.map(c => c.id).join(',')
   );
 
   const passed = results.filter(r => r.passed).length;
@@ -10226,6 +10693,266 @@ export function runForwardEstimatesIntegritySelfTests(): {
     'Band drift non-negative',
     healthy.bandDriftPoints >= 0,
     `drift=${healthy.bandDriftPoints}`
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: sovereign-credit-outlook/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 13,
+    revenueCapacity: partial.revenueCapacity ?? 70,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 5,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 7,
+    debtLevel: partial.debtLevel ?? 28,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 8,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runSovereignCreditOutlookSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const gov = buildDebtPortfolioGovernanceReport(13, v);
+  const stress = buildFiscalStressScenariosReport(13, v);
+  const healthy = buildSovereignCreditOutlookReport(13, v, gov, { stressWorstDelta: stress.worstHeadroomDelta });
+
+  record('SCO01', 'Healthy within outlook band', healthy.withinOutlookBand, healthy.narrative);
+  record('SCO02', 'Stable or watch band under healthy', healthy.ratingBand === 'stable' || healthy.ratingBand === 'negative_watch', healthy.ratingBand);
+  record('SCO03', 'Coherent with debt governance', healthy.coherentWithDebtGovernance, 'ok');
+
+  const levered = buildSovereignCreditOutlookReport(
+    13,
+    snap({ debtLevel: 72, debtServiceLoad: 20, fiscalHeadroom: -6 }),
+    buildDebtPortfolioGovernanceReport(13, snap({ debtLevel: 72, debtServiceLoad: 20 }), { liquidityStress: true }),
+    { stressWorstDelta: -9 }
+  );
+  record(
+    'SCO04',
+    'Levered snapshot raises implied spread',
+    levered.impliedSpreadBps > healthy.impliedSpreadBps,
+    `${levered.impliedSpreadBps} vs ${healthy.impliedSpreadBps}`
+  );
+
+  const noDebt = buildSovereignCreditOutlookReport(13, snap({ debtEnabled: false }), gov, {});
+  record('SCO05', 'Debt disabled passes outlook guard', noDebt.withinOutlookBand, 'ok');
+
+  record('SCO06', 'Implied spread positive', healthy.impliedSpreadBps > 0, `spread=${healthy.impliedSpreadBps}`);
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: debt-service-coverage/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 14,
+    revenueCapacity: partial.revenueCapacity ?? 72,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 6,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 6,
+    debtLevel: partial.debtLevel ?? 26,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 7,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+function ledgerFor(turn: number, v1012: V1012FiscalSnapshot) {
+  const persisted = createInitialFiscalOutcomesPersisted(turn);
+  const { state } = computeFiscalOutcomesLayer({ turn, v1012 }, persisted);
+  return buildNationalRevenueLedger({ turn, v1012, taxInstruments: state.taxInstruments });
+}
+
+export function runDebtServiceCoverageSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const cash = buildCashManagementReport(14, v);
+  const healthy = buildDebtServiceCoverageReport(14, v, ledgerFor(14, v), cash);
+
+  record('DSC01', 'Healthy within coverage floor', healthy.withinCoverageFloor, healthy.narrative);
+  record('DSC02', 'Runway aligned under healthy', healthy.runwayTurnsAligned, `runway=${cash.runwayTurns}`);
+  record(
+    'DSC03',
+    'Coverage ratio matches revenue over service',
+    Math.abs(healthy.coverageRatio - healthy.revenueCoverPoints / Math.max(0.1, healthy.debtServicePoints)) < 0.05,
+    `ratio=${healthy.coverageRatio}`
+  );
+
+  const thin = buildDebtServiceCoverageReport(
+    14,
+    snap({ debtServiceLoad: 22, debtLevel: 60, fiscalHeadroom: -4 }),
+    ledgerFor(14, snap({ debtServiceLoad: 22 })),
+    buildCashManagementReport(14, snap({ debtServiceLoad: 22, fiscalHeadroom: -4 }))
+  );
+  record(
+    'DSC04',
+    'High service load lowers coverage vs healthy',
+    thin.coverageRatio < healthy.coverageRatio,
+    `${thin.coverageRatio} vs ${healthy.coverageRatio}`
+  );
+
+  const critical = buildDebtServiceCoverageReport(14, snap({ pressure: 'critical' }), ledgerFor(14, snap({ pressure: 'critical' })), cash);
+  record('DSC05', 'Critical overrides coverage floor', critical.withinCoverageFloor, 'ok');
+
+  record('DSC06', 'Adequate or strong band under healthy', healthy.coverageBand === 'adequate' || healthy.coverageBand === 'strong', healthy.coverageBand);
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: grant-clawback-schedule/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 10,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 6,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 6,
+    debtLevel: partial.debtLevel ?? 24,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 7,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runGrantClawbackScheduleSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const ig = allocateIntergovernmentalGrants(10, v);
+  const healthy = buildGrantClawbackScheduleReport(10, v, ig);
+
+  record('GCS01', 'Five clawback schedule tranches', healthy.tranches.length === 5, 'ok');
+  record('GCS02', 'Healthy within schedule tolerance', healthy.withinScheduleTolerance, healthy.narrative);
+  record('GCS03', 'Aligned with IGR pool under healthy', healthy.alignedWithIgrPool, 'ok');
+
+  const stressed = buildGrantClawbackScheduleReport(
+    10,
+    snap({ maintenanceLoad: 18, fiscalHeadroom: -6, pressure: 'strained' }),
+    allocateIntergovernmentalGrants(10, snap({ maintenanceLoad: 18, fiscalHeadroom: -6, pressure: 'strained' }))
+  );
+  record(
+    'GCS04',
+    'Stressed grants raise clawback pool vs healthy',
+    stressed.aggregateClawbackPoints >= healthy.aggregateClawbackPoints,
+    `${stressed.aggregateClawbackPoints} vs ${healthy.aggregateClawbackPoints}`
+  );
+
+  const critical = buildGrantClawbackScheduleReport(10, snap({ pressure: 'critical' }), ig);
+  record('GCS05', 'Critical overrides schedule tolerance', critical.withinScheduleTolerance, 'ok');
+
+  record(
+    'GCS06',
+    'Scheduled points non-negative',
+    healthy.tranches.every(t => t.scheduledPoints >= 0),
+    'ok'
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: budget-neutral-packages/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 69,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 6,
+    debtLevel: partial.debtLevel ?? 23,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 7,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runBudgetNeutralPackagesSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const offsets = buildSpendingOffsetsReport(9, v);
+  const supp = buildSupplementaryEstimatesReport(9, v);
+  const healthy = buildBudgetNeutralPackagesReport(9, v, offsets, supp);
+
+  record('BNP01', 'Four budget-neutral packages', healthy.packages.length === 4, 'ok');
+  record('BNP02', 'Healthy portfolio neutrality', healthy.withinPortfolioNeutrality, healthy.narrative);
+  record('BNP03', 'Coherent with spending offsets', healthy.coherentWithSpendingOffsets, 'ok');
+
+  record(
+    'BNP04',
+    'Aggregate new spending positive under healthy',
+    healthy.aggregateNewSpending > 0 && healthy.aggregateOffsets > 0,
+    `new=${healthy.aggregateNewSpending}`
+  );
+
+  const critical = buildBudgetNeutralPackagesReport(9, snap({ pressure: 'critical' }), offsets, supp);
+  record('BNP05', 'Critical overrides neutrality guard', critical.withinPortfolioNeutrality, 'ok');
+
+  record(
+    'BNP06',
+    'Each package within neutrality band after guard',
+    healthy.packages.every(p => p.withinNeutralityBand),
+    'ok'
   );
 
   const passed = results.filter(r => r.passed).length;

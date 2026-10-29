@@ -27,6 +27,8 @@ import { buildContingencyDrawdownRegisterReport } from '../contingency-drawdown/
 import { buildForwardEstimatesIntegrityReport } from '../forward-estimates-integrity/compute';
 import { buildSovereignCreditOutlookReport } from '../sovereign-credit-outlook/compute';
 import { buildDebtServiceCoverageReport } from '../debt-service-coverage/compute';
+import { buildGrantClawbackScheduleReport } from '../grant-clawback-schedule/compute';
+import { buildBudgetNeutralPackagesReport } from '../budget-neutral-packages/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -124,6 +126,8 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     stressWorstDelta: fiscalStress.worstHeadroomDelta
   });
   const debtServiceCoverage = buildDebtServiceCoverageReport(turn, v1012, ledger, cashMgmt);
+  const grantClawbackSchedule = buildGrantClawbackScheduleReport(turn, v1012, igGrants);
+  const budgetNeutralPackages = buildBudgetNeutralPackagesReport(turn, v1012, spendingOffsets, supplementary);
   const issuance = executeIssuanceCalendar(turn, v1012);
   const programPerf = reviewProgramPerformance(turn, v1012);
   const infraSummary = summarizeInfrastructureFinancing(
@@ -504,12 +508,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `runway=${cashMgmt.runwayTurns}, coverage=${debtServiceCoverage.coverageRatio}`
   });
 
+  checks.push({
+    id: 'CF49',
+    label: 'Grant clawback schedule within tolerance',
+    passed: grantClawbackSchedule.withinScheduleTolerance,
+    detail: `ratio=${grantClawbackSchedule.scheduleToClawbackRatio}, scheduled=${grantClawbackSchedule.aggregateScheduledPoints}`
+  });
+
+  checks.push({
+    id: 'CF50',
+    label: 'Budget-neutral packages within portfolio band',
+    passed: budgetNeutralPackages.withinPortfolioNeutrality,
+    detail: `net=${budgetNeutralPackages.aggregateNetPoints}, new=${budgetNeutralPackages.aggregateNewSpending}`
+  });
+
+  checks.push({
+    id: 'CF51',
+    label: 'Clawback schedule aligned with IGR grant pool',
+    passed: grantClawbackSchedule.alignedWithIgrPool || v1012.pressure === 'critical',
+    detail: `scheduled=${grantClawbackSchedule.aggregateScheduledPoints}, clawback=${grantClawbackSchedule.aggregateClawbackPoints}`
+  });
+
+  checks.push({
+    id: 'CF52',
+    label: 'Neutral packages coherent with spending offsets',
+    passed: budgetNeutralPackages.coherentWithSpendingOffsets,
+    detail: `offsets=${budgetNeutralPackages.aggregateOffsets}, portfolio=${spendingOffsets.aggregateOffsets}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 46
+    layerCount: 50
   };
 }

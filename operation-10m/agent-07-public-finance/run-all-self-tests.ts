@@ -35,6 +35,8 @@ import { runContingencyDrawdownSelfTests } from './modules/contingency-drawdown/
 import { runForwardEstimatesIntegritySelfTests } from './modules/forward-estimates-integrity/self-tests';
 import { runSovereignCreditOutlookSelfTests } from './modules/sovereign-credit-outlook/self-tests';
 import { runDebtServiceCoverageSelfTests } from './modules/debt-service-coverage/self-tests';
+import { runGrantClawbackScheduleSelfTests } from './modules/grant-clawback-schedule/self-tests';
+import { runBudgetNeutralPackagesSelfTests } from './modules/budget-neutral-packages/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -79,6 +81,8 @@ ok = runSuite('Contingency drawdown register', runContingencyDrawdownSelfTests) 
 ok = runSuite('Forward estimates integrity', runForwardEstimatesIntegritySelfTests) && ok;
 ok = runSuite('Sovereign credit outlook', runSovereignCreditOutlookSelfTests) && ok;
 ok = runSuite('Debt service coverage', runDebtServiceCoverageSelfTests) && ok;
+ok = runSuite('Grant clawback schedule', runGrantClawbackScheduleSelfTests) && ok;
+ok = runSuite('Budget-neutral packages', runBudgetNeutralPackagesSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);
