@@ -228,6 +228,14 @@ import {
   type BatchNationalTickSessionWaveResult,
   type NationalTickSessionWaveTickSpec,
 } from './batch-national-tick-session-wave.js';
+import {
+  exportBatchNationalTickSessionWave,
+  type BatchNationalTickSessionWaveExport,
+} from './batch-national-tick-session-wave-export.js';
+import {
+  verifyBatchNationalTickSessionWaveReplayParity,
+  type BatchNationalTickSessionWaveReplayParityResult,
+} from './batch-national-tick-session-wave-replay-parity.js';
 import { computeBatchStabilizationAlignmentScore } from './batch-stabilization-alignment-score.js';
 import {
   gateBatchAdvancePostStabilization,
@@ -767,6 +775,19 @@ export class TurnTimeEngine {
     ledgerDigest: string,
   ): string {
     return computeBatchNationalTickSessionWaveDigest(sessions, ledgerDigest);
+  }
+
+  exportBatchNationalTickSessionWave(
+    wave: BatchNationalTickSessionWaveResult,
+  ): BatchNationalTickSessionWaveExport {
+    return exportBatchNationalTickSessionWave(wave);
+  }
+
+  verifyBatchNationalTickSessionWaveReplayParity(
+    budget: TurnAdvanceBudgetState,
+    ticks: readonly NationalTickSessionWaveTickSpec[],
+  ): BatchNationalTickSessionWaveReplayParityResult {
+    return verifyBatchNationalTickSessionWaveReplayParity(this, budget, ticks);
   }
 
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {

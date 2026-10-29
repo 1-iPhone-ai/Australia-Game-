@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
 // @ts-nocheck
-// content-sha256-prefix: 3df9e569945ddf97
+// content-sha256-prefix: ba9b30ea286a6ede
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -2255,6 +2255,19 @@ export class TurnTimeEngine {
     ledgerDigest: string,
   ): string {
     return computeBatchNationalTickSessionWaveDigest(sessions, ledgerDigest);
+  }
+
+  exportBatchNationalTickSessionWave(
+    wave: BatchNationalTickSessionWaveResult,
+  ): BatchNationalTickSessionWaveExport {
+    return exportBatchNationalTickSessionWave(wave);
+  }
+
+  verifyBatchNationalTickSessionWaveReplayParity(
+    budget: TurnAdvanceBudgetState,
+    ticks: readonly NationalTickSessionWaveTickSpec[],
+  ): BatchNationalTickSessionWaveReplayParityResult {
+    return verifyBatchNationalTickSessionWaveReplayParity(this, budget, ticks);
   }
 
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {
@@ -4575,6 +4588,76 @@ export function runNationalTickOrchestratedSessionWave(
   };
 }
 
+// --- src/batch-national-tick-session-wave-export.ts ---
+
+export interface BatchNationalTickSessionWaveExportRow {
+  tickIndex: number;
+  sessionDigest: string;
+  unifiedOk: boolean;
+  ledgerOk: boolean;
+}
+
+export interface BatchNationalTickSessionWaveExport {
+  rows: BatchNationalTickSessionWaveExportRow[];
+  sessionCount: number;
+  allOk: boolean;
+  waveDigest: string;
+  ledgerDigest: string;
+}
+
+/**
+ * Round 17: flatten chained unified session wave for Agent 25 assembly hooks.
+ */
+export function exportBatchNationalTickSessionWave(
+  wave: BatchNationalTickSessionWaveResult,
+): BatchNationalTickSessionWaveExport {
+  const rows = wave.sessions.map((session, index) => {
+    const ledgerRow = wave.ledgerExport.rows[index];
+    return {
+      tickIndex: ledgerRow?.tickIndex ?? index + 1,
+      sessionDigest: computeBatchNationalTickUnifiedSessionDigest(session),
+      unifiedOk: session.unifiedGate?.ok ?? true,
+      ledgerOk: ledgerRow?.ok ?? false,
+    };
+  });
+  return {
+    rows,
+    sessionCount: rows.length,
+    allOk:
+      wave.ledgerExport.allOk &&
+      rows.every((row) => row.unifiedOk && row.ledgerOk),
+    waveDigest: wave.waveDigest,
+    ledgerDigest: wave.ledgerExport.ledgerDigest,
+  };
+}
+
+// --- src/batch-national-tick-session-wave-replay-parity.ts ---
+
+export interface BatchNationalTickSessionWaveReplayParityResult {
+  parityOk: boolean;
+  baseline: BatchNationalTickSessionWaveResult;
+  replay: BatchNationalTickSessionWaveResult;
+}
+
+/**
+ * Round 17: deterministic replay — two session waves from the same starting snapshot.
+ */
+export function verifyBatchNationalTickSessionWaveReplayParity(
+  engine: TurnTimeEngine,
+  budget: TurnAdvanceBudgetState,
+  ticks: readonly NationalTickSessionWaveTickSpec[],
+): BatchNationalTickSessionWaveReplayParityResult {
+  const snapshot = engine.snapshot();
+  const baseline = runNationalTickOrchestratedSessionWave(engine, budget, ticks);
+  const replayEngine = TurnTimeEngine.fromSnapshot(snapshot);
+  const replay = runNationalTickOrchestratedSessionWave(replayEngine, budget, ticks);
+  const parityOk =
+    baseline.waveDigest === replay.waveDigest &&
+    baseline.ledgerExport.ledgerDigest === replay.ledgerExport.ledgerDigest &&
+    baseline.ledgerExport.allOk === replay.ledgerExport.allOk;
+  return { parityOk, baseline, replay };
+}
+
 // --- src/fast-forward.ts ---
 
 export interface FastForwardResult {
@@ -5340,6 +5423,30 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
     name: 'national tick session wave digest ok',
 
     passed: waveRun.waveDigest.length === 16 && waveRun.ledgerExport.entryCount === 1,
+
+  });
+
+  results.push({
+
+    id: 'agent02_national_tick_session_wave_export',
+
+    name: 'national tick session wave export for assembly',
+
+    passed: exportBatchNationalTickSessionWave(waveRun).allOk && waveRun.waveDigest.length === 16,
+
+  });
+
+  results.push({
+
+    id: 'agent02_national_tick_session_wave_replay_parity',
+
+    name: 'national tick session wave replay parity from snapshot',
+
+    passed: verifyBatchNationalTickSessionWaveReplayParity(new TurnTimeEngine(), createTurnAdvanceBudget(2), [
+
+      { maxSteps: 1, input: { stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } } } },
+
+    ]).parityOk,
 
   });
 

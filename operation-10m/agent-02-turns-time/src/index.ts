@@ -70,4 +70,6 @@ export * from './batch-national-tick-session.js';
 export * from './batch-national-tick-session-ledger-export.js';
 export * from './batch-national-tick-unified-session.js';
 export * from './batch-national-tick-session-wave.js';
+export * from './batch-national-tick-session-wave-export.js';
+export * from './batch-national-tick-session-wave-replay-parity.js';
 export * from './engine.js';
