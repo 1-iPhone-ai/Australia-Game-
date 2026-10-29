@@ -18,12 +18,12 @@ describe('Tranche 15 inline-assembly-lock lattice catalog', () => {
   it('adds 320 inline-assembly-lock lattice chains', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE15_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche15Chains, 320);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 10120);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 10440);
   });
 
   it('uses op10m_t15 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 10120);
+    assert.equal(ids.size, 10440);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE15) {
       assert.match(c.chainId, /^op10m_t15_/);
     }
