@@ -863,6 +863,23 @@ export type {
   TransitionEnshrinementBand,
 } from './production-transition-enshrinement';
 
+export {
+  AGENT08_TRANSITION_IMMORTALIZATION_SCHEMA_VERSION,
+  buildFirmProductionTransitionImmortalization,
+  classifyNationalImmortalizationBand,
+  computeNationalImmortalizationPressure,
+  computeNationalProductionTransitionImmortalization,
+  summarizeRegionalTransitionImmortalization,
+  runAgent08TransitionImmortalizationSelfTests,
+} from './production-transition-immortalization';
+
+export type {
+  FirmProductionTransitionImmortalization,
+  NationalProductionTransitionImmortalization,
+  RegionalTransitionImmortalizationSummary,
+  TransitionImmortalizationBand,
+} from './production-transition-immortalization';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -914,6 +931,7 @@ import { runAgent08TransitionRemembranceSelfTests } from './production-transitio
 import { runAgent08TransitionCommemorationSelfTests } from './production-transition-commemoration';
 import { runAgent08TransitionVenerationSelfTests } from './production-transition-veneration';
 import { runAgent08TransitionEnshrinementSelfTests } from './production-transition-enshrinement';
+import { runAgent08TransitionImmortalizationSelfTests } from './production-transition-immortalization';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -1173,6 +1191,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionImmortalization = runAgent08TransitionImmortalizationSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -1225,5 +1248,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...transitionCommemoration,
     ...transitionVeneration,
     ...transitionEnshrinement,
+    ...transitionImmortalization,
   ];
 }
