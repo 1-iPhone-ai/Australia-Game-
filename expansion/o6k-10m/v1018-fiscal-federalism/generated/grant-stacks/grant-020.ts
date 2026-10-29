@@ -1,0 +1,31 @@
+import type { V1018FfedGrantStackEdge } from '../../types/core.ts';
+
+/** Grant stack graph shard 020 (state–federal transfer cross-system coupling). */
+export const V1018_FFED_GRANT_STACK_SHARD_020: readonly V1018FfedGrantStackEdge[] = [
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.225, lagTurns: 7, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.232, lagTurns: 8, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.239, lagTurns: 9, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.246, lagTurns: 7, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.253, lagTurns: 8, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.155, lagTurns: 9, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.162, lagTurns: 7, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.169, lagTurns: 8, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.176, lagTurns: 9, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.183, lagTurns: 7, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.19, lagTurns: 8, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.197, lagTurns: 9, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.204, lagTurns: 7, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.211, lagTurns: 8, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.218, lagTurns: 9, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.225, lagTurns: 7, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.232, lagTurns: 8, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.239, lagTurns: 9, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.246, lagTurns: 7, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.253, lagTurns: 8, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.155, lagTurns: 9, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.162, lagTurns: 7, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.169, lagTurns: 8, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.176, lagTurns: 9, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.183, lagTurns: 7, nodeId: 'audit_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.19, lagTurns: 8, nodeId: 'audit_20' },
+];

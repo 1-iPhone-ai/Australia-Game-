@@ -1,0 +1,31 @@
+import type { V1018FfedGrantStackEdge } from '../../types/core.ts';
+
+/** Grant stack graph shard 012 (state–federal transfer cross-system coupling). */
+export const V1018_FFED_GRANT_STACK_SHARD_012: readonly V1018FfedGrantStackEdge[] = [
+  { fromSystem: 'water', toSystem: 'food', weight: 0.624, lagTurns: 7, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.631, lagTurns: 8, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.638, lagTurns: 9, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.54, lagTurns: 7, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.547, lagTurns: 8, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.554, lagTurns: 9, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.561, lagTurns: 7, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.568, lagTurns: 8, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.575, lagTurns: 9, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.582, lagTurns: 7, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.589, lagTurns: 8, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.596, lagTurns: 9, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.603, lagTurns: 7, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.61, lagTurns: 8, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.617, lagTurns: 9, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.624, lagTurns: 7, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.631, lagTurns: 8, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.638, lagTurns: 9, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.54, lagTurns: 7, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.547, lagTurns: 8, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.554, lagTurns: 9, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.561, lagTurns: 7, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.568, lagTurns: 8, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.575, lagTurns: 9, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.582, lagTurns: 7, nodeId: 'audit_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.589, lagTurns: 8, nodeId: 'audit_12' },
+];
