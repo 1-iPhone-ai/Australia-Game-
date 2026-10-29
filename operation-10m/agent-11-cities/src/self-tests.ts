@@ -120,6 +120,9 @@ import { op10mA11ComputeSettlementExistentialNullStateLock } from './settlement-
 import { op10mA11ComputeRegionalCollapseExistenceSingularityPoint } from './regional-collapse-existence-singularity-point.ts';
 import { op10mA11ComputeInterregionalVoidExistenceAnnihilationFront } from './interregional-void-existence-annihilation-front.ts';
 import { op10mA11ComputeSettlementExistentialAbsoluteZeroLock } from './settlement-existential-absolute-zero-lock.ts';
+import { op10mA11ComputeRegionalCollapseOmniSingularityNode } from './regional-collapse-omni-singularity-node.ts';
+import { op10mA11ComputeInterregionalVoidAbsoluteErosionSurge } from './interregional-void-absolute-erosion-surge.ts';
+import { op10mA11ComputeSettlementExistentialFinalNullityLock } from './settlement-existential-final-nullity-lock.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -446,7 +449,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.25',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.26',
     composite.state.schemaVersion,
   );
 
@@ -597,7 +600,10 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastExistentialNullStateLockIndex === composite.state.nationalExistentialNullStateLockIndex &&
       composite.persisted.lastCollapseExistenceSingularityPointIndex === composite.state.nationalCollapseExistenceSingularityPointIndex &&
       composite.persisted.lastVoidExistenceAnnihilationFrontIndex === composite.state.nationalVoidExistenceAnnihilationFrontIndex &&
-      composite.persisted.lastExistentialAbsoluteZeroLockIndex === composite.state.nationalExistentialAbsoluteZeroLockIndex,
+      composite.persisted.lastExistentialAbsoluteZeroLockIndex === composite.state.nationalExistentialAbsoluteZeroLockIndex &&
+      composite.persisted.lastCollapseOmniSingularityNodeIndex === composite.state.nationalCollapseOmniSingularityNodeIndex &&
+      composite.persisted.lastVoidAbsoluteErosionSurgeIndex === composite.state.nationalVoidAbsoluteErosionSurgeIndex &&
+      composite.persisted.lastExistentialFinalNullityLockIndex === composite.state.nationalExistentialFinalNullityLockIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -2416,6 +2422,90 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_230',
     composite.state.existentialAbsoluteZeroLock.every((z) => z.narrative.includes('existential absolute zero lock')),
     composite.state.existentialAbsoluteZeroLock[0]?.band ?? 'none',
+  );
+
+  const collapseOmniSingularityNode = op10mA11ComputeRegionalCollapseOmniSingularityNode({
+    collapseExistenceSingularityPoint: composite.state.collapseExistenceSingularityPoint,
+    voidExistenceAnnihilationFront: composite.state.voidExistenceAnnihilationFront,
+    existentialAbsoluteZeroLock: composite.state.existentialAbsoluteZeroLock,
+  });
+  push(
+    out,
+    'a11_231',
+    composite.state.collapseOmniSingularityNode.length === 8 &&
+      composite.state.nationalCollapseOmniSingularityNodeIndex === collapseOmniSingularityNode.nationalIndex,
+    `omni node ${composite.state.nationalCollapseOmniSingularityNodeIndex}`,
+  );
+
+  const voidAbsoluteErosionSurge = op10mA11ComputeInterregionalVoidAbsoluteErosionSurge({
+    voidExistenceAnnihilationFront: composite.state.voidExistenceAnnihilationFront,
+    collapseExistenceSingularityPoint: composite.state.collapseExistenceSingularityPoint,
+    voidAnnihilationConvergence: composite.state.voidAnnihilationConvergence,
+  });
+  push(
+    out,
+    'a11_232',
+    composite.state.voidAbsoluteErosionSurge.length === 8 &&
+      composite.state.nationalVoidAbsoluteErosionSurgeIndex === voidAbsoluteErosionSurge.nationalIndex,
+    `erosion surge ${composite.state.nationalVoidAbsoluteErosionSurgeIndex}`,
+  );
+
+  const existentialFinalNullityLock = op10mA11ComputeSettlementExistentialFinalNullityLock({
+    existentialAbsoluteZeroLock: composite.state.existentialAbsoluteZeroLock,
+    collapseExistenceSingularityPoint: composite.state.collapseExistenceSingularityPoint,
+    existentialNullStateLock: composite.state.existentialNullStateLock,
+  });
+  push(
+    out,
+    'a11_233',
+    composite.state.existentialFinalNullityLock.length === 8 &&
+      composite.state.nationalExistentialFinalNullityLockIndex === existentialFinalNullityLock.nationalIndex,
+    `final nullity ${composite.state.nationalExistentialFinalNullityLockIndex}`,
+  );
+
+  push(
+    out,
+    'a11_234',
+    composite.state.collapseOmniSingularityNode.every((n) => n.narrative.includes('collapse omni singularity node')),
+    composite.state.collapseOmniSingularityNode[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_235',
+    composite.derived.some((d) => d.kind === 'collapse_omni_singularity_node') ||
+      composite.state.collapseOmniSingularityNode.some((n) => n.band === 'omni' || n.band === 'total_node'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_236',
+    composite.derived.some((d) => d.kind === 'void_absolute_erosion_surge') ||
+      composite.state.voidAbsoluteErosionSurge.some((e) => e.band === 'absolute' || e.band === 'omni_erosion'),
+    composite.state.voidAbsoluteErosionSurge[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_237',
+    composite.persisted.lastVoidAbsoluteErosionSurgeIndex === composite.state.nationalVoidAbsoluteErosionSurgeIndex,
+    `persisted erosion ${composite.persisted.lastVoidAbsoluteErosionSurgeIndex}`,
+  );
+
+  push(
+    out,
+    'a11_238',
+    composite.derived.some((d) => d.kind === 'existential_final_nullity_lock') ||
+      composite.state.existentialFinalNullityLock.some((f) => f.band === 'nullity' || f.band === 'final_nullity'),
+    composite.state.existentialFinalNullityLock[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_239',
+    composite.state.existentialFinalNullityLock.every((f) => f.narrative.includes('existential final nullity lock')),
+    composite.state.existentialFinalNullityLock[0]?.band ?? 'none',
   );
 
   return out;
