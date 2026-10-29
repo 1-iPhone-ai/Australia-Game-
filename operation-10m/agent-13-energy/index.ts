@@ -11,6 +11,7 @@ export * from './modules/offshore-marine-demand-response-ledger';
 export * from './modules/carbon-capture-grid-firming-ledger';
 export * from './modules/rez-transmission-bushfire-resilience-ledger';
 export * from './modules/distributed-rooftop-ev-v2g-ledger';
+export * from './modules/agrivoltaics-soil-carbon-land-ledger';
 export * from './modules/turn-simulation-depth';
 export * from './modules/v94-type-stubs';
 export * from './modules/industrial-energy-environmental';

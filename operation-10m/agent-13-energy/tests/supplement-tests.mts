@@ -35,6 +35,11 @@ import {
   V1014_DER_V2G_TURN_SCENARIOS,
 } from '../modules/distributed-rooftop-ev-v2g-ledger.ts';
 import {
+  runAgent13AgriSoilScaleSelfTests,
+  runAgent13AgriSoilTurnScenario,
+  V1014_AGRI_SOIL_TURN_SCENARIOS,
+} from '../modules/agrivoltaics-soil-carbon-land-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -184,6 +189,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const derTurn = runAgent13DerV2gTurnScenario(V1014_DER_V2G_TURN_SCENARIOS[0]);
   ok(derTurn.passed);
+
+  const agriSoil = runAgent13AgriSoilScaleSelfTests();
+  ok(agriSoil.failed === 0 && agriSoil.passed >= 7);
+
+  const agriTurn = runAgent13AgriSoilTurnScenario(V1014_AGRI_SOIL_TURN_SCENARIOS[0]);
+  ok(agriTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

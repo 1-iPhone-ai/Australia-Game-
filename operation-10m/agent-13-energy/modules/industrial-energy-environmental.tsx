@@ -79,6 +79,13 @@ import {
   type V1014RegionalRooftopDerLedger,
 } from './distributed-rooftop-ev-v2g-ledger';
 import {
+  advanceRegionalSoilCarbonLand,
+  computeRegionalAgrivoltaicsLedger,
+  scoreAgent13AgriSoilGIAlignment,
+  type V1014RegionalAgrivoltaicsLedger,
+  type V1014RegionalSoilCarbonLandLedger,
+} from './agrivoltaics-soil-carbon-land-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25571,6 +25578,10 @@ export interface V1014RegionalEnergyProfile {
   rooftopDerRelief: number;
   evV2gFleetBand: string;
   evV2gGridRelief: number;
+  agrivoltaicsBand: string;
+  agrivoltaicsLandRelief: number;
+  soilCarbonLandBand: string;
+  soilCarbonLandRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25625,6 +25636,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalBushfireLedgers: Record<string, V1014RegionalBushfireResilienceLedger>;
   regionalRooftopDerLedgers: Record<string, V1014RegionalRooftopDerLedger>;
   regionalEvV2gLedgers: Record<string, V1014RegionalEvV2gFleetLedger>;
+  regionalAgrivoltaicsLedgers: Record<string, V1014RegionalAgrivoltaicsLedger>;
+  regionalSoilCarbonLandLedgers: Record<string, V1014RegionalSoilCarbonLandLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25650,6 +25663,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalBushfireMemory: Record<string, { resilienceIndex: number }>;
   regionalRooftopDerMemory: Record<string, { exportBalance: number; derIndex: number }>;
   regionalEvV2gMemory: Record<string, { fleetIndex: number }>;
+  regionalAgrivoltaicsMemory: Record<string, { paddockBalance: number; dualUseIndex: number }>;
+  regionalSoilCarbonLandMemory: Record<string, { stewardshipIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -25687,6 +25702,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalBushfireMemory: {},
     regionalRooftopDerMemory: {},
     regionalEvV2gMemory: {},
+    regionalAgrivoltaicsMemory: {},
+    regionalSoilCarbonLandMemory: {},
     history: [],
   };
 }
@@ -25723,6 +25740,12 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
     regionalRooftopDerMemory:
       typeof raw.regionalRooftopDerMemory === 'object' && raw.regionalRooftopDerMemory ? raw.regionalRooftopDerMemory : {},
     regionalEvV2gMemory: typeof raw.regionalEvV2gMemory === 'object' && raw.regionalEvV2gMemory ? raw.regionalEvV2gMemory : {},
+    regionalAgrivoltaicsMemory:
+      typeof raw.regionalAgrivoltaicsMemory === 'object' && raw.regionalAgrivoltaicsMemory ? raw.regionalAgrivoltaicsMemory : {},
+    regionalSoilCarbonLandMemory:
+      typeof raw.regionalSoilCarbonLandMemory === 'object' && raw.regionalSoilCarbonLandMemory
+        ? raw.regionalSoilCarbonLandMemory
+        : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -25847,6 +25870,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalBushfireLedgers: {},
       regionalRooftopDerLedgers: {},
       regionalEvV2gLedgers: {},
+      regionalAgrivoltaicsLedgers: {},
+      regionalSoilCarbonLandLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -25875,6 +25900,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const bushfireLedgers: Record<string, V1014RegionalBushfireResilienceLedger> = {};
   const rooftopDerLedgers: Record<string, V1014RegionalRooftopDerLedger> = {};
   const evV2gLedgers: Record<string, V1014RegionalEvV2gFleetLedger> = {};
+  const agrivoltaicsLedgers: Record<string, V1014RegionalAgrivoltaicsLedger> = {};
+  const soilCarbonLandLedgers: Record<string, V1014RegionalSoilCarbonLandLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -25902,6 +25929,12 @@ export function computeIndustrialEnergyEnvironmentalState(
     ...persisted.regionalRooftopDerMemory,
   };
   const nextEvV2gMemory: Record<string, { fleetIndex: number }> = { ...persisted.regionalEvV2gMemory };
+  const nextAgrivoltaicsMemory: Record<string, { paddockBalance: number; dualUseIndex: number }> = {
+    ...persisted.regionalAgrivoltaicsMemory,
+  };
+  const nextSoilCarbonLandMemory: Record<string, { stewardshipIndex: number }> = {
+    ...persisted.regionalSoilCarbonLandMemory,
+  };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
 
@@ -26131,6 +26164,29 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextEvV2gMemory[regionId] = v2gStep.next;
     evV2gLedgers[regionId] = v2gStep.ledger;
 
+    const agriStep = computeRegionalAgrivoltaicsLedger({
+      regionId,
+      renewableShareScore,
+      landStewardshipRelief: biodiversityStep.ledger.landStewardshipRelief,
+      circularRecoveryRelief: circularStep.ledger.circularRelief,
+      evV2gGridRelief: v2gStep.ledger.evV2gGridRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextAgrivoltaicsMemory[regionId] || null,
+    });
+    nextAgrivoltaicsMemory[regionId] = agriStep.next;
+    agrivoltaicsLedgers[regionId] = agriStep.ledger;
+
+    const soilStep = advanceRegionalSoilCarbonLand({
+      regionId,
+      extractionScore,
+      waterStressPressure: waterStep.ledger.pressureAdd,
+      agrivoltaicsBand: agriStep.ledger.band,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextSoilCarbonLandMemory[regionId] || null,
+    });
+    nextSoilCarbonLandMemory[regionId] = soilStep.next;
+    soilCarbonLandLedgers[regionId] = soilStep.ledger;
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -26154,6 +26210,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure -= bushfireStep.ledger.bushfireGridRelief;
     pressure -= derStep.ledger.rooftopDerRelief;
     pressure -= v2gStep.ledger.evV2gGridRelief;
+    pressure -= agriStep.ledger.agrivoltaicsLandRelief;
+    pressure -= soilStep.ledger.soilCarbonLandRelief;
     if (biodiversityStep.ledger.band === 'critical_loss') pressure += 5;
     pressure -= gridRecovery.pressureRelief;
     pressure -= storageFlex.gridStressRelief;
@@ -26202,6 +26260,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       bushfireStep.ledger.summary,
       derStep.ledger.summary,
       v2gStep.ledger.summary,
+      agriStep.ledger.summary,
+      soilStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -26314,6 +26374,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       rooftopDerRelief: derStep.ledger.rooftopDerRelief,
       evV2gFleetBand: v2gStep.ledger.band,
       evV2gGridRelief: v2gStep.ledger.evV2gGridRelief,
+      agrivoltaicsBand: agriStep.ledger.band,
+      agrivoltaicsLandRelief: agriStep.ledger.agrivoltaicsLandRelief,
+      soilCarbonLandBand: soilStep.ledger.band,
+      soilCarbonLandRelief: soilStep.ledger.soilCarbonLandRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -26397,6 +26461,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalBushfireLedgers: bushfireLedgers,
     regionalRooftopDerLedgers: rooftopDerLedgers,
     regionalEvV2gLedgers: evV2gLedgers,
+    regionalAgrivoltaicsLedgers: agrivoltaicsLedgers,
+    regionalSoilCarbonLandLedgers: soilCarbonLandLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -26422,6 +26488,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalBushfireMemory: nextBushfireMemory,
     regionalRooftopDerMemory: nextRooftopDerMemory,
     regionalEvV2gMemory: nextEvV2gMemory,
+    regionalAgrivoltaicsMemory: nextAgrivoltaicsMemory,
+    regionalSoilCarbonLandMemory: nextSoilCarbonLandMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -26755,6 +26823,37 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     v2gBand: rr10.state.regions.VIC?.evV2gFleetBand,
   });
   check('DER V2G GI alignment', giDer.relevanceDelta > 0.5, giDer.reason || '');
+
+  const agriInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'broadacre_agrivoltaics',
+      'sheep_grazing_solar_paddock',
+      'indigenous_land_solar_partnership',
+      'regenerative_pasture_carbon',
+      'cover_crop_rotation_stewardship',
+      'biochar_soil_amendment',
+      'rangeland_restoration_carbon',
+    ],
+  };
+  const rr11 = computeIndustrialEnergyEnvironmentalState(agriInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check('AGRI ledger tracked', !!rr11.state.regionalAgrivoltaicsLedgers.SA?.band, rr11.state.regionalAgrivoltaicsLedgers.SA?.band || '');
+  check(
+    'SOIL carbon relief',
+    (rr11.state.regions.SA?.soilCarbonLandRelief || 0) > 0,
+    String(rr11.state.regions.SA?.soilCarbonLandRelief),
+  );
+  check(
+    'AGRI memory persisted',
+    !!rr11.persisted.regionalAgrivoltaicsMemory.SA,
+    String(rr11.persisted.regionalAgrivoltaicsMemory.SA?.dualUseIndex),
+  );
+  const giAgri = scoreAgent13AgriSoilGIAlignment({
+    actionText: 'Broadacre agrivoltaics with regenerative pasture soil carbon',
+    agriBand: rr11.state.regions.SA?.agrivoltaicsBand,
+    soilBand: rr11.state.regions.SA?.soilCarbonLandBand,
+  });
+  check('AGRI SOIL GI alignment', giAgri.relevanceDelta > 0.5, giAgri.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');

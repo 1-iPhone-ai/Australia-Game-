@@ -30,6 +30,7 @@ const FILES = [
   'carbon-capture-grid-firming-ledger.ts',
   'rez-transmission-bushfire-resilience-ledger.ts',
   'distributed-rooftop-ev-v2g-ledger.ts',
+  'agrivoltaics-soil-carbon-land-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -50,6 +51,8 @@ const EXPORT_MANIFEST = [
   'V1014_BUSHFIRE_RESILIENCE_CATALOG',
   'V1014_ROOFTOP_DER_CATALOG',
   'V1014_EV_V2G_CATALOG',
+  'V1014_AGRIVOLTAICS_CATALOG',
+  'V1014_SOIL_CARBON_LAND_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -86,6 +89,9 @@ const EXPORT_MANIFEST = [
   'runAgent13DerV2gScaleSelfTests',
   'runAgent13DerV2gTurnScenario',
   'V1014_DER_V2G_TURN_SCENARIOS',
+  'runAgent13AgriSoilScaleSelfTests',
+  'runAgent13AgriSoilTurnScenario',
+  'V1014_AGRI_SOIL_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];
