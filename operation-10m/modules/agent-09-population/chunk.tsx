@@ -245,6 +245,10 @@ export interface NationalLaborDemographicsState {
   onboardingVelocityOutlook?: NationalOnboardingVelocityOutlook;
   subjectAssemblyContinuityBrief?: NationalSubjectAssemblyContinuityBrief;
   nationalWorkforceContinuityIndex?: NationalWorkforceContinuityIndex;
+  continuityCoordinationCouplingBrief?: NationalContinuityCoordinationCouplingBrief;
+  reengagementMomentumOutlook?: NationalReengagementMomentumOutlook;
+  subjectWaveAssemblyBrief?: NationalSubjectWaveAssemblyBrief;
+  nationalWorkforceDurabilityIndex?: NationalWorkforceDurabilityIndex;
 }
 
 export type MigrationShockKind =
@@ -873,6 +877,50 @@ export interface NationalWorkforceContinuityIndex {
   continuityIndex: number;
   band: WorkforceContinuityBand;
   assemblyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ContinuityCoordinationCouplingBand = 'decoupled' | 'strained' | 'synced' | 'aligned';
+
+export interface NationalContinuityCoordinationCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: ContinuityCoordinationCouplingBand;
+  continuityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ReengagementMomentumBand = 'stalled' | 'patchy' | 'building' | 'surging';
+
+export interface NationalReengagementMomentumOutlook {
+  turn: number;
+  momentumIndex: number;
+  band: ReengagementMomentumBand;
+  pipelineDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectWaveAssemblyBand = 'blocked' | 'gapped' | 'ready' | 'cleared';
+
+export interface NationalSubjectWaveAssemblyBrief {
+  turn: number;
+  assemblyIndex: number;
+  band: SubjectWaveAssemblyBand;
+  waveDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceDurabilityBand = 'brittle' | 'thin' | 'grounded' | 'fortified';
+
+export interface NationalWorkforceDurabilityIndex {
+  turn: number;
+  durabilityIndex: number;
+  band: WorkforceDurabilityBand;
+  waveDrag: number;
   summary: string;
   stewardNote: string;
 }
@@ -1999,7 +2047,11 @@ export type LaborGiQueryTopic =
   | 'sustainment_retention_coupling'
   | 'onboarding_velocity'
   | 'subject_assembly_continuity'
-  | 'workforce_continuity';
+  | 'workforce_continuity'
+  | 'continuity_coordination_coupling'
+  | 'reengagement_momentum'
+  | 'subject_wave_assembly'
+  | 'workforce_durability';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -2056,6 +2108,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(onboarding velocity|onboarding pipeline velocity)/.test(q)) return 'onboarding_velocity';
   if (/\b(subject assembly continuity|assembly continuity subject)/.test(q)) return 'subject_assembly_continuity';
   if (/\b(workforce continuity|continuity index labor)/.test(q)) return 'workforce_continuity';
+  if (/\b(continuity coordination|continuity-coordination coupling)/.test(q)) return 'continuity_coordination_coupling';
+  if (/\b(reengagement momentum|reengagement pipeline momentum)/.test(q)) return 'reengagement_momentum';
+  if (/\b(subject wave assembly|wave assembly subject)/.test(q)) return 'subject_wave_assembly';
+  if (/\b(workforce durability|durability index labor)/.test(q)) return 'workforce_durability';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -2522,6 +2578,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Continuity band ${state.nationalWorkforceContinuityIndex?.band ?? 'unknown'}; assembly drag ${Math.round(state.nationalWorkforceContinuityIndex?.assemblyDrag ?? 0)}.`,
         inference: state.nationalWorkforceContinuityIndex?.stewardNote || state.summary,
         projection: 'Continuity synthesizes sustainment-retention, onboarding velocity, and subject assembly — steward guidance only.'
+      };
+    case 'continuity_coordination_coupling':
+      return {
+        topic,
+        headline: state.continuityCoordinationCouplingBrief?.summary || 'Continuity-coordination coupling unavailable.',
+        fact: `Coupling band ${state.continuityCoordinationCouplingBrief?.band ?? 'unknown'}; continuity drag ${Math.round(state.continuityCoordinationCouplingBrief?.continuityDrag ?? 0)}.`,
+        inference: state.continuityCoordinationCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce continuity with coordination levers — bounded indices only.'
+      };
+    case 'reengagement_momentum':
+      return {
+        topic,
+        headline: state.reengagementMomentumOutlook?.summary || 'Reengagement momentum unavailable.',
+        fact: `Momentum band ${state.reengagementMomentumOutlook?.band ?? 'unknown'}; pipeline drag ${Math.round(state.reengagementMomentumOutlook?.pipelineDrag ?? 0)}.`,
+        inference: state.reengagementMomentumOutlook?.stewardNote || state.outlook,
+        projection: 'Momentum blends reengagement levers with onboarding velocity — not literal return-to-work counts.'
+      };
+    case 'subject_wave_assembly':
+      return {
+        topic,
+        headline: state.subjectWaveAssemblyBrief?.summary || 'Subject wave assembly unavailable.',
+        fact: `Wave band ${state.subjectWaveAssemblyBrief?.band ?? 'unknown'}; wave drag ${Math.round(state.subjectWaveAssemblyBrief?.waveDrag ?? 0)}.`,
+        inference: state.subjectWaveAssemblyBrief?.stewardNote || state.summary,
+        projection: 'Subject wave assembly gates continuity stack for O10-168 scale-wave commits.'
+      };
+    case 'workforce_durability':
+      return {
+        topic,
+        headline: state.nationalWorkforceDurabilityIndex?.summary || 'Workforce durability unavailable.',
+        fact: `Durability band ${state.nationalWorkforceDurabilityIndex?.band ?? 'unknown'}; wave drag ${Math.round(state.nationalWorkforceDurabilityIndex?.waveDrag ?? 0)}.`,
+        inference: state.nationalWorkforceDurabilityIndex?.stewardNote || state.summary,
+        projection: 'Durability synthesizes coordination coupling, reengagement momentum, and subject wave assembly.'
       };
     default:
       return {
@@ -3103,6 +3191,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceContinuityIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceContinuityIndex.stewardNote);
+  }
+  if (
+    state.continuityCoordinationCouplingBrief?.band === 'decoupled' ||
+    state.continuityCoordinationCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.continuityCoordinationCouplingBrief.stewardNote);
+  }
+  if (
+    state.reengagementMomentumOutlook?.band === 'stalled' ||
+    state.reengagementMomentumOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.reengagementMomentumOutlook.stewardNote);
+  }
+  if (
+    state.subjectWaveAssemblyBrief?.band === 'blocked' ||
+    state.subjectWaveAssemblyBrief?.band === 'gapped'
+  ) {
+    hints.push(state.subjectWaveAssemblyBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceDurabilityIndex?.band === 'brittle' ||
+    state.nationalWorkforceDurabilityIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceDurabilityIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -7984,6 +8096,278 @@ export function computeNationalWorkforceContinuityIndex(
 }
 
 
+// --- source: continuity-coordination-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type ContinuityCoordinationCouplingBand,
+  type NationalContinuityCoordinationCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalWorkforceContinuityIndex
+} from './types';
+
+function couplingBand(index: number): ContinuityCoordinationCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'synced';
+  return 'aligned';
+}
+
+export function computeNationalContinuityCoordinationCouplingBrief(
+  state: NationalLaborDemographicsState,
+  continuity: NationalWorkforceContinuityIndex | null | undefined
+): NationalContinuityCoordinationCouplingBrief {
+  if (!state.enabled || !continuity) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      continuityDrag: 0,
+      summary: 'Continuity-coordination coupling idle — workforce continuity unavailable.',
+      stewardNote: 'Compute workforce continuity before coordination coupling guidance.'
+    };
+  }
+
+  let coordinationLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    coordinationLift += coordinationEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  coordinationLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const continuityDrag = v1014laborClamp(
+    continuity.assemblyDrag * 0.5 +
+      (continuity.band === 'fragile' || continuity.band === 'thin' ? 11 : 3)
+  );
+  const continuityLift =
+    continuity.band === 'stable' || continuity.band === 'durable'
+      ? continuity.continuityIndex * 0.24
+      : continuity.continuityIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + coordinationLift * 21 + continuityLift - continuityDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained continuity-coordination link — ease coordination levers before corridor scale commits.'
+      : band === 'aligned'
+        ? 'Aligned coupling — guard reengagement spikes that thin coordination buffers.'
+        : 'Synced coupling — pair coordination packs with subject wave assembly checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    continuityDrag,
+    summary: `Continuity-coordination coupling ${band} (index ${Math.round(couplingIndex)}); continuity drag ${Math.round(continuityDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: reengagement-momentum-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalOnboardingVelocityOutlook,
+  type NationalReengagementMomentumOutlook,
+  type ReengagementMomentumBand
+} from './types';
+
+function momentumBand(index: number): ReengagementMomentumBand {
+  if (index <= 34) return 'stalled';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'building';
+  return 'surging';
+}
+
+export function computeNationalReengagementMomentumOutlook(
+  state: NationalLaborDemographicsState,
+  onboardingVelocity: NationalOnboardingVelocityOutlook | null | undefined
+): NationalReengagementMomentumOutlook {
+  if (!state.enabled || !onboardingVelocity) {
+    return {
+      turn: state.turn,
+      momentumIndex: 50,
+      band: 'patchy',
+      pipelineDrag: 0,
+      summary: 'Reengagement momentum idle — onboarding velocity unavailable.',
+      stewardNote: 'Compute onboarding velocity before reengagement momentum guidance.'
+    };
+  }
+
+  let reengagementLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    reengagementLift += reengagementPullForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  reengagementLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const pipelineDrag = v1014laborClamp(
+    onboardingVelocity.pipelineDrag * 0.48 +
+      (onboardingVelocity.band === 'stalled' || onboardingVelocity.band === 'uneven' ? 10 : 3)
+  );
+  const onboardingLift =
+    onboardingVelocity.band === 'steady' || onboardingVelocity.band === 'surging'
+      ? onboardingVelocity.velocityIndex * 0.2
+      : onboardingVelocity.velocityIndex * 0.1;
+
+  const momentumIndex = v1014laborClamp(24 + reengagementLift * 22 + onboardingLift - pipelineDrag);
+  const band = momentumBand(momentumIndex);
+
+  const stewardNote =
+    band === 'stalled' || band === 'patchy'
+      ? 'Patchy reengagement momentum — deploy reengagement levers before subject wave assembly.'
+      : band === 'surging'
+        ? 'Surging momentum — verify continuity-coordination coupling before scale-wave intake.'
+        : 'Building momentum — align reengagement with household participation coupling checks.';
+
+  return {
+    turn: state.turn,
+    momentumIndex,
+    band,
+    pipelineDrag,
+    summary: `National reengagement momentum ${band} (index ${Math.round(momentumIndex)}); pipeline drag ${Math.round(pipelineDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-wave-assembly-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectAssemblyContinuityBrief,
+  type NationalSubjectWaveAssemblyBrief,
+  type NationalWorkforceContinuityIndex,
+  type SubjectWaveAssemblyBand
+} from './types';
+
+function assemblyBand(index: number): SubjectWaveAssemblyBand {
+  if (index <= 34) return 'blocked';
+  if (index <= 48) return 'gapped';
+  if (index <= 62) return 'ready';
+  return 'cleared';
+}
+
+/** Round-19 subject wave assembly — continuity stack gate for scale-wave commits. */
+export function computeNationalSubjectWaveAssemblyBrief(
+  state: NationalLaborDemographicsState,
+  subjectContinuity: NationalSubjectAssemblyContinuityBrief | null | undefined,
+  continuity: NationalWorkforceContinuityIndex | null | undefined
+): NationalSubjectWaveAssemblyBrief {
+  if (!state.enabled || !subjectContinuity || !continuity) {
+    return {
+      turn: state.turn,
+      assemblyIndex: 50,
+      band: 'gapped',
+      waveDrag: 0,
+      summary: 'Subject wave assembly idle — subject continuity or workforce continuity unavailable.',
+      stewardNote: 'Compute subject assembly continuity and workforce continuity before wave assembly guidance.'
+    };
+  }
+
+  const waveDrag = v1014laborClamp(
+    subjectContinuity.assemblyDrag * 0.38 +
+      continuity.assemblyDrag * 0.38 +
+      (subjectContinuity.band === 'broken' || continuity.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectContinuity.band === 'continuous' || subjectContinuity.band === 'locked'
+      ? subjectContinuity.continuityIndex * 0.27
+      : subjectContinuity.continuityIndex * 0.14;
+  const continuityLift =
+    continuity.band === 'stable' || continuity.band === 'durable'
+      ? continuity.continuityIndex * 0.25
+      : continuity.continuityIndex * 0.12;
+
+  const assemblyIndex = v1014laborClamp(20 + subjectLift + continuityLift - waveDrag);
+  const band = assemblyBand(assemblyIndex);
+
+  const stewardNote =
+    band === 'blocked' || band === 'gapped'
+      ? 'Gapped subject wave assembly — hold O10-168 scale commits until continuity-coordination syncs.'
+      : band === 'cleared'
+        ? 'Cleared wave assembly — still monitor reengagement momentum during seasonal peaks.'
+        : 'Ready wave band — pair with workforce durability index each assembly tranche.';
+
+  return {
+    turn: state.turn,
+    assemblyIndex,
+    band,
+    waveDrag,
+    summary: `Subject wave assembly ${band} (index ${Math.round(assemblyIndex)}); wave drag ${Math.round(waveDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-durability-index.ts ---
+  type NationalContinuityCoordinationCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalReengagementMomentumOutlook,
+  type NationalSubjectWaveAssemblyBrief,
+  type NationalWorkforceDurabilityIndex,
+  type WorkforceDurabilityBand
+} from './types';
+
+function durabilityBand(index: number): WorkforceDurabilityBand {
+  if (index <= 34) return 'brittle';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'grounded';
+  return 'fortified';
+}
+
+export function computeNationalWorkforceDurabilityIndex(
+  state: NationalLaborDemographicsState,
+  coordinationCoupling: NationalContinuityCoordinationCouplingBrief | null | undefined,
+  reengagementMomentum: NationalReengagementMomentumOutlook | null | undefined,
+  subjectWaveAssembly: NationalSubjectWaveAssemblyBrief | null | undefined
+): NationalWorkforceDurabilityIndex {
+  if (!state.enabled || !coordinationCoupling || !reengagementMomentum || !subjectWaveAssembly) {
+    return {
+      turn: state.turn,
+      durabilityIndex: 50,
+      band: 'thin',
+      waveDrag: 0,
+      summary: 'Workforce durability idle — coordination coupling, reengagement momentum, or subject wave assembly unavailable.',
+      stewardNote: 'Compute round-19 depth stack before durability guidance.'
+    };
+  }
+
+  const waveDrag = v1014laborClamp(
+    subjectWaveAssembly.waveDrag * 0.35 +
+      coordinationCoupling.continuityDrag * 0.3 +
+      reengagementMomentum.pipelineDrag * 0.25 +
+      (subjectWaveAssembly.band === 'blocked' || coordinationCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const coordinationLift =
+    coordinationCoupling.band === 'synced' || coordinationCoupling.band === 'aligned'
+      ? coordinationCoupling.couplingIndex * 0.2
+      : coordinationCoupling.couplingIndex * 0.1;
+  const momentumLift =
+    reengagementMomentum.band === 'building' || reengagementMomentum.band === 'surging'
+      ? reengagementMomentum.momentumIndex * 0.18
+      : reengagementMomentum.momentumIndex * 0.09;
+  const waveLift =
+    subjectWaveAssembly.band === 'ready' || subjectWaveAssembly.band === 'cleared'
+      ? subjectWaveAssembly.assemblyIndex * 0.22
+      : subjectWaveAssembly.assemblyIndex * 0.11;
+
+  const durabilityIndex = v1014laborClamp(18 + coordinationLift + momentumLift + waveLift - waveDrag);
+  const band = durabilityBand(durabilityIndex);
+
+  const stewardNote =
+    band === 'brittle' || band === 'thin'
+      ? 'Thin workforce durability — sequence continuity-coordination, reengagement, and subject wave before post-O10-167 tranche.'
+      : band === 'fortified'
+        ? 'Fortified durability — avoid corridor overload that breaks subject wave assembly.'
+        : 'Grounded durability — refresh subject wave checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    durabilityIndex,
+    band,
+    waveDrag,
+    summary: `National workforce durability ${band} (index ${Math.round(durabilityIndex)}); wave drag ${Math.round(waveDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -8701,6 +9085,25 @@ export function computeNationalLaborDemographics(
     state.onboardingVelocityOutlook,
     state.subjectAssemblyContinuityBrief
   );
+  state.continuityCoordinationCouplingBrief = computeNationalContinuityCoordinationCouplingBrief(
+    state,
+    state.nationalWorkforceContinuityIndex
+  );
+  state.reengagementMomentumOutlook = computeNationalReengagementMomentumOutlook(
+    state,
+    state.onboardingVelocityOutlook
+  );
+  state.subjectWaveAssemblyBrief = computeNationalSubjectWaveAssemblyBrief(
+    state,
+    state.subjectAssemblyContinuityBrief,
+    state.nationalWorkforceContinuityIndex
+  );
+  state.nationalWorkforceDurabilityIndex = computeNationalWorkforceDurabilityIndex(
+    state,
+    state.continuityCoordinationCouplingBrief,
+    state.reengagementMomentumOutlook,
+    state.subjectWaveAssemblyBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -8991,6 +9394,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceContinuityIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.continuityCoordinationCouplingBrief?.band === 'decoupled' ||
+      state.continuityCoordinationCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.continuityCoordinationCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.reengagementMomentumOutlook?.band === 'stalled' ||
+      state.reengagementMomentumOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.reengagementMomentumOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectWaveAssemblyBrief?.band === 'blocked' ||
+      state.subjectWaveAssemblyBrief?.band === 'gapped') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectWaveAssemblyBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceDurabilityIndex?.band === 'brittle' ||
+      state.nationalWorkforceDurabilityIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceDurabilityIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -10075,6 +10506,66 @@ export function runV1014LaborDemographicsSelfTests(): {
     'continuity steward note'
   );
   check('R1816', onboardingEaseForRegion('NSW', 'technology') > 0, 'onboarding ease for region');
+
+  check('R1901', Boolean(r1.state.continuityCoordinationCouplingBrief?.band), 'continuity coordination on state');
+  check(
+    'R1902',
+    (r1.state.continuityCoordinationCouplingBrief?.continuityDrag ?? 0) >= 0,
+    'continuity coordination drag'
+  );
+  check('R1903', Boolean(r1.state.reengagementMomentumOutlook?.band), 'reengagement momentum on state');
+  check('R1904', (r1.state.reengagementMomentumOutlook?.pipelineDrag ?? 0) >= 0, 'reengagement pipeline drag');
+  check('R1905', Boolean(r1.state.subjectWaveAssemblyBrief?.band), 'subject wave assembly on state');
+  check('R1906', Boolean(r1.state.nationalWorkforceDurabilityIndex?.band), 'workforce durability on state');
+  check(
+    'R1907',
+    detectLaborDemographicsQuery('continuity coordination coupling') === 'continuity_coordination_coupling',
+    'GI continuity coordination detect'
+  );
+  check(
+    'R1908',
+    detectLaborDemographicsQuery('reengagement momentum') === 'reengagement_momentum',
+    'GI reengagement momentum detect'
+  );
+  check(
+    'R1909',
+    detectLaborDemographicsQuery('subject wave assembly') === 'subject_wave_assembly',
+    'GI subject wave detect'
+  );
+  check(
+    'R1910',
+    detectLaborDemographicsQuery('workforce durability') === 'workforce_durability',
+    'GI durability detect'
+  );
+  check(
+    'R1911',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_durability').headline.length > 5,
+    'GI durability answer'
+  );
+  const coordinationCouplingOnly = computeNationalContinuityCoordinationCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceContinuityIndex
+  );
+  check('R1912', coordinationCouplingOnly.summary.length > 10, 'coordination coupling standalone summary');
+  const reengagementOnly = computeNationalReengagementMomentumOutlook(r1.state, r1.state.onboardingVelocityOutlook);
+  check('R1913', reengagementOnly.band.length > 3, 'reengagement momentum band string');
+  const waveAssemblyOnly = computeNationalSubjectWaveAssemblyBrief(
+    r1.state,
+    r1.state.subjectAssemblyContinuityBrief,
+    r1.state.nationalWorkforceContinuityIndex
+  );
+  check('R1914', waveAssemblyOnly.waveDrag >= 0, 'subject wave drag');
+  check(
+    'R1915',
+    computeNationalWorkforceDurabilityIndex(
+      rHhBad.state,
+      rHhBad.state.continuityCoordinationCouplingBrief,
+      rHhBad.state.reengagementMomentumOutlook,
+      rHhBad.state.subjectWaveAssemblyBrief
+    ).stewardNote.length > 8,
+    'durability steward note'
+  );
+  check('R1916', coordinationEaseForRegion('NSW', 'technology') > 0, 'coordination ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

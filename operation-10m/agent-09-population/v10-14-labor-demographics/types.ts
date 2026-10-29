@@ -241,6 +241,10 @@ export interface NationalLaborDemographicsState {
   onboardingVelocityOutlook?: NationalOnboardingVelocityOutlook;
   subjectAssemblyContinuityBrief?: NationalSubjectAssemblyContinuityBrief;
   nationalWorkforceContinuityIndex?: NationalWorkforceContinuityIndex;
+  continuityCoordinationCouplingBrief?: NationalContinuityCoordinationCouplingBrief;
+  reengagementMomentumOutlook?: NationalReengagementMomentumOutlook;
+  subjectWaveAssemblyBrief?: NationalSubjectWaveAssemblyBrief;
+  nationalWorkforceDurabilityIndex?: NationalWorkforceDurabilityIndex;
 }
 
 export type MigrationShockKind =
@@ -869,6 +873,50 @@ export interface NationalWorkforceContinuityIndex {
   continuityIndex: number;
   band: WorkforceContinuityBand;
   assemblyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ContinuityCoordinationCouplingBand = 'decoupled' | 'strained' | 'synced' | 'aligned';
+
+export interface NationalContinuityCoordinationCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: ContinuityCoordinationCouplingBand;
+  continuityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ReengagementMomentumBand = 'stalled' | 'patchy' | 'building' | 'surging';
+
+export interface NationalReengagementMomentumOutlook {
+  turn: number;
+  momentumIndex: number;
+  band: ReengagementMomentumBand;
+  pipelineDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectWaveAssemblyBand = 'blocked' | 'gapped' | 'ready' | 'cleared';
+
+export interface NationalSubjectWaveAssemblyBrief {
+  turn: number;
+  assemblyIndex: number;
+  band: SubjectWaveAssemblyBand;
+  waveDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceDurabilityBand = 'brittle' | 'thin' | 'grounded' | 'fortified';
+
+export interface NationalWorkforceDurabilityIndex {
+  turn: number;
+  durabilityIndex: number;
+  band: WorkforceDurabilityBand;
+  waveDrag: number;
   summary: string;
   stewardNote: string;
 }

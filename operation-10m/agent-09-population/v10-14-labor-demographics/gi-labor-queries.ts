@@ -59,7 +59,11 @@ export type LaborGiQueryTopic =
   | 'sustainment_retention_coupling'
   | 'onboarding_velocity'
   | 'subject_assembly_continuity'
-  | 'workforce_continuity';
+  | 'workforce_continuity'
+  | 'continuity_coordination_coupling'
+  | 'reengagement_momentum'
+  | 'subject_wave_assembly'
+  | 'workforce_durability';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -116,6 +120,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(onboarding velocity|onboarding pipeline velocity)/.test(q)) return 'onboarding_velocity';
   if (/\b(subject assembly continuity|assembly continuity subject)/.test(q)) return 'subject_assembly_continuity';
   if (/\b(workforce continuity|continuity index labor)/.test(q)) return 'workforce_continuity';
+  if (/\b(continuity coordination|continuity-coordination coupling)/.test(q)) return 'continuity_coordination_coupling';
+  if (/\b(reengagement momentum|reengagement pipeline momentum)/.test(q)) return 'reengagement_momentum';
+  if (/\b(subject wave assembly|wave assembly subject)/.test(q)) return 'subject_wave_assembly';
+  if (/\b(workforce durability|durability index labor)/.test(q)) return 'workforce_durability';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -582,6 +590,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Continuity band ${state.nationalWorkforceContinuityIndex?.band ?? 'unknown'}; assembly drag ${Math.round(state.nationalWorkforceContinuityIndex?.assemblyDrag ?? 0)}.`,
         inference: state.nationalWorkforceContinuityIndex?.stewardNote || state.summary,
         projection: 'Continuity synthesizes sustainment-retention, onboarding velocity, and subject assembly — steward guidance only.'
+      };
+    case 'continuity_coordination_coupling':
+      return {
+        topic,
+        headline: state.continuityCoordinationCouplingBrief?.summary || 'Continuity-coordination coupling unavailable.',
+        fact: `Coupling band ${state.continuityCoordinationCouplingBrief?.band ?? 'unknown'}; continuity drag ${Math.round(state.continuityCoordinationCouplingBrief?.continuityDrag ?? 0)}.`,
+        inference: state.continuityCoordinationCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce continuity with coordination levers — bounded indices only.'
+      };
+    case 'reengagement_momentum':
+      return {
+        topic,
+        headline: state.reengagementMomentumOutlook?.summary || 'Reengagement momentum unavailable.',
+        fact: `Momentum band ${state.reengagementMomentumOutlook?.band ?? 'unknown'}; pipeline drag ${Math.round(state.reengagementMomentumOutlook?.pipelineDrag ?? 0)}.`,
+        inference: state.reengagementMomentumOutlook?.stewardNote || state.outlook,
+        projection: 'Momentum blends reengagement levers with onboarding velocity — not literal return-to-work counts.'
+      };
+    case 'subject_wave_assembly':
+      return {
+        topic,
+        headline: state.subjectWaveAssemblyBrief?.summary || 'Subject wave assembly unavailable.',
+        fact: `Wave band ${state.subjectWaveAssemblyBrief?.band ?? 'unknown'}; wave drag ${Math.round(state.subjectWaveAssemblyBrief?.waveDrag ?? 0)}.`,
+        inference: state.subjectWaveAssemblyBrief?.stewardNote || state.summary,
+        projection: 'Subject wave assembly gates continuity stack for O10-168 scale-wave commits.'
+      };
+    case 'workforce_durability':
+      return {
+        topic,
+        headline: state.nationalWorkforceDurabilityIndex?.summary || 'Workforce durability unavailable.',
+        fact: `Durability band ${state.nationalWorkforceDurabilityIndex?.band ?? 'unknown'}; wave drag ${Math.round(state.nationalWorkforceDurabilityIndex?.waveDrag ?? 0)}.`,
+        inference: state.nationalWorkforceDurabilityIndex?.stewardNote || state.summary,
+        projection: 'Durability synthesizes coordination coupling, reengagement momentum, and subject wave assembly.'
       };
     default:
       return {

@@ -126,6 +126,10 @@ import { computeNationalSustainmentRetentionCouplingBrief } from './sustainment-
 import { computeNationalOnboardingVelocityOutlook } from './onboarding-velocity-outlook';
 import { computeNationalSubjectAssemblyContinuityBrief } from './subject-assembly-continuity-brief';
 import { computeNationalWorkforceContinuityIndex } from './national-workforce-continuity-index';
+import { computeNationalContinuityCoordinationCouplingBrief } from './continuity-coordination-coupling-brief';
+import { computeNationalReengagementMomentumOutlook } from './reengagement-momentum-outlook';
+import { computeNationalSubjectWaveAssemblyBrief } from './subject-wave-assembly-brief';
+import { computeNationalWorkforceDurabilityIndex } from './national-workforce-durability-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -1141,6 +1145,66 @@ export function runV1014LaborDemographicsSelfTests(): {
     'continuity steward note'
   );
   check('R1816', onboardingEaseForRegion('NSW', 'technology') > 0, 'onboarding ease for region');
+
+  check('R1901', Boolean(r1.state.continuityCoordinationCouplingBrief?.band), 'continuity coordination on state');
+  check(
+    'R1902',
+    (r1.state.continuityCoordinationCouplingBrief?.continuityDrag ?? 0) >= 0,
+    'continuity coordination drag'
+  );
+  check('R1903', Boolean(r1.state.reengagementMomentumOutlook?.band), 'reengagement momentum on state');
+  check('R1904', (r1.state.reengagementMomentumOutlook?.pipelineDrag ?? 0) >= 0, 'reengagement pipeline drag');
+  check('R1905', Boolean(r1.state.subjectWaveAssemblyBrief?.band), 'subject wave assembly on state');
+  check('R1906', Boolean(r1.state.nationalWorkforceDurabilityIndex?.band), 'workforce durability on state');
+  check(
+    'R1907',
+    detectLaborDemographicsQuery('continuity coordination coupling') === 'continuity_coordination_coupling',
+    'GI continuity coordination detect'
+  );
+  check(
+    'R1908',
+    detectLaborDemographicsQuery('reengagement momentum') === 'reengagement_momentum',
+    'GI reengagement momentum detect'
+  );
+  check(
+    'R1909',
+    detectLaborDemographicsQuery('subject wave assembly') === 'subject_wave_assembly',
+    'GI subject wave detect'
+  );
+  check(
+    'R1910',
+    detectLaborDemographicsQuery('workforce durability') === 'workforce_durability',
+    'GI durability detect'
+  );
+  check(
+    'R1911',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_durability').headline.length > 5,
+    'GI durability answer'
+  );
+  const coordinationCouplingOnly = computeNationalContinuityCoordinationCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceContinuityIndex
+  );
+  check('R1912', coordinationCouplingOnly.summary.length > 10, 'coordination coupling standalone summary');
+  const reengagementOnly = computeNationalReengagementMomentumOutlook(r1.state, r1.state.onboardingVelocityOutlook);
+  check('R1913', reengagementOnly.band.length > 3, 'reengagement momentum band string');
+  const waveAssemblyOnly = computeNationalSubjectWaveAssemblyBrief(
+    r1.state,
+    r1.state.subjectAssemblyContinuityBrief,
+    r1.state.nationalWorkforceContinuityIndex
+  );
+  check('R1914', waveAssemblyOnly.waveDrag >= 0, 'subject wave drag');
+  check(
+    'R1915',
+    computeNationalWorkforceDurabilityIndex(
+      rHhBad.state,
+      rHhBad.state.continuityCoordinationCouplingBrief,
+      rHhBad.state.reengagementMomentumOutlook,
+      rHhBad.state.subjectWaveAssemblyBrief
+    ).stewardNote.length > 8,
+    'durability steward note'
+  );
+  check('R1916', coordinationEaseForRegion('NSW', 'technology') > 0, 'coordination ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
