@@ -226,6 +226,10 @@ import { computeNationalFlexibilityCoordinationCouplingBrief } from './flexibili
 import { computeNationalCoordinationMeshOutlook } from './coordination-mesh-outlook';
 import { computeNationalSubjectCoordinationReadinessBrief } from './subject-coordination-readiness-brief';
 import { computeNationalWorkforceCoordinationIndex } from './national-workforce-coordination-index';
+import { computeNationalCoordinationSchedulingCouplingBrief } from './coordination-scheduling-coupling-brief';
+import { computeNationalSchedulingPulseOutlook } from './scheduling-pulse-outlook';
+import { computeNationalSubjectSchedulingReadinessBrief } from './subject-scheduling-readiness-brief';
+import { computeNationalWorkforceSchedulingIndex } from './national-workforce-scheduling-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -2736,6 +2740,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'coordination steward note'
   );
   check('R4316', coordinationEaseForRegion('NSW', 'technology') > 0, 'coordination ease for region');
+
+  check('R4401', Boolean(r1.state.coordinationSchedulingCouplingBrief?.band), 'coordination scheduling on state');
+  check(
+    'R4402',
+    (r1.state.coordinationSchedulingCouplingBrief?.coordinationDrag ?? 0) >= 0,
+    'coordination scheduling drag'
+  );
+  check('R4403', Boolean(r1.state.schedulingPulseOutlook?.band), 'scheduling pulse on state');
+  check(
+    'R4404',
+    (r1.state.schedulingPulseOutlook?.coordinationDrag ?? 0) >= 0,
+    'scheduling pulse coordination drag'
+  );
+  check('R4405', Boolean(r1.state.subjectSchedulingReadinessBrief?.band), 'subject scheduling on state');
+  check('R4406', Boolean(r1.state.nationalWorkforceSchedulingIndex?.band), 'workforce scheduling on state');
+  check(
+    'R4407',
+    detectLaborDemographicsQuery('coordination scheduling coupling') === 'coordination_scheduling_coupling',
+    'GI coordination scheduling detect'
+  );
+  check(
+    'R4408',
+    detectLaborDemographicsQuery('scheduling pulse') === 'scheduling_pulse',
+    'GI scheduling pulse detect'
+  );
+  check(
+    'R4409',
+    detectLaborDemographicsQuery('subject scheduling readiness') === 'subject_scheduling_readiness',
+    'GI subject scheduling detect'
+  );
+  check(
+    'R4410',
+    detectLaborDemographicsQuery('workforce scheduling') === 'workforce_scheduling',
+    'GI workforce scheduling detect'
+  );
+  check(
+    'R4411',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_scheduling').headline.length > 5,
+    'GI workforce scheduling answer'
+  );
+  const coordinationSchedulingOnly = computeNationalCoordinationSchedulingCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceCoordinationIndex
+  );
+  check('R4412', coordinationSchedulingOnly.summary.length > 10, 'coordination scheduling standalone summary');
+  const schedulingPulseOnly = computeNationalSchedulingPulseOutlook(
+    r1.state,
+    r1.state.coordinationMeshOutlook
+  );
+  check('R4413', schedulingPulseOnly.band.length > 3, 'scheduling pulse band string');
+  const subjectSchedulingOnly = computeNationalSubjectSchedulingReadinessBrief(
+    r1.state,
+    r1.state.subjectCoordinationReadinessBrief,
+    r1.state.nationalWorkforceCoordinationIndex
+  );
+  check('R4414', subjectSchedulingOnly.schedulingDrag >= 0, 'subject scheduling drag');
+  check(
+    'R4415',
+    computeNationalWorkforceSchedulingIndex(
+      rHhBad.state,
+      rHhBad.state.coordinationSchedulingCouplingBrief,
+      rHhBad.state.schedulingPulseOutlook,
+      rHhBad.state.subjectSchedulingReadinessBrief
+    ).stewardNote.length > 8,
+    'scheduling steward note'
+  );
+  check('R4416', schedulingEaseForRegion('NSW', 'technology') > 0, 'scheduling ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

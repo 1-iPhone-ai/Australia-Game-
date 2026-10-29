@@ -345,6 +345,10 @@ export interface NationalLaborDemographicsState {
   coordinationMeshOutlook?: NationalCoordinationMeshOutlook;
   subjectCoordinationReadinessBrief?: NationalSubjectCoordinationReadinessBrief;
   nationalWorkforceCoordinationIndex?: NationalWorkforceCoordinationIndex;
+  coordinationSchedulingCouplingBrief?: NationalCoordinationSchedulingCouplingBrief;
+  schedulingPulseOutlook?: NationalSchedulingPulseOutlook;
+  subjectSchedulingReadinessBrief?: NationalSubjectSchedulingReadinessBrief;
+  nationalWorkforceSchedulingIndex?: NationalWorkforceSchedulingIndex;
 }
 
 export type MigrationShockKind =
@@ -2121,6 +2125,54 @@ export interface NationalWorkforceCoordinationIndex {
   stewardNote: string;
 }
 
+export type CoordinationSchedulingCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalCoordinationSchedulingCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: CoordinationSchedulingCouplingBand;
+  coordinationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SchedulingPulseBand = 'ebbing' | 'patchy' | 'rising' | 'pulsing';
+
+export interface NationalSchedulingPulseOutlook {
+  turn: number;
+  pulseIndex: number;
+  band: SchedulingPulseBand;
+  coordinationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectSchedulingReadinessBand =
+  | 'below_scheduling'
+  | 'approaching'
+  | 'scheduling_ready'
+  | 'coordination_locked';
+
+export interface NationalSubjectSchedulingReadinessBrief {
+  turn: number;
+  schedulingIndex: number;
+  band: SubjectSchedulingReadinessBand;
+  schedulingDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceSchedulingBand = 'fragile' | 'thin' | 'elevated' | 'scheduling';
+
+export interface NationalWorkforceSchedulingIndex {
+  turn: number;
+  schedulingIndex: number;
+  band: WorkforceSchedulingBand;
+  schedulingDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
 export interface LaborDemographicsPersisted {
   schemaVersion: string;
   revision: number;
@@ -3343,7 +3395,11 @@ export type LaborGiQueryTopic =
   | 'flexibility_coordination_coupling'
   | 'coordination_mesh'
   | 'subject_coordination_readiness'
-  | 'workforce_coordination';
+  | 'workforce_coordination'
+  | 'coordination_scheduling_coupling'
+  | 'scheduling_pulse'
+  | 'subject_scheduling_readiness'
+  | 'workforce_scheduling';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -3522,6 +3578,14 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_coordination_readiness';
   }
   if (/\b(workforce coordination|coordination index labor workforce)/.test(q)) return 'workforce_coordination';
+  if (/\b(coordination scheduling|coordination-scheduling coupling)/.test(q)) {
+    return 'coordination_scheduling_coupling';
+  }
+  if (/\b(scheduling pulse|scheduling pipeline pulse)/.test(q)) return 'scheduling_pulse';
+  if (/\b(subject scheduling readiness|scheduling readiness subject)/.test(q)) {
+    return 'subject_scheduling_readiness';
+  }
+  if (/\b(workforce scheduling|scheduling index labor workforce)/.test(q)) return 'workforce_scheduling';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -4789,6 +4853,38 @@ export function answerLaborDemographicsQuestion(
         inference: state.nationalWorkforceCoordinationIndex?.stewardNote || state.summary,
         projection: 'Workforce coordination synthesizes flexibility-coordination coupling, coordination mesh, and subject coordination.'
       };
+    case 'coordination_scheduling_coupling':
+      return {
+        topic,
+        headline: state.coordinationSchedulingCouplingBrief?.summary || 'Coordination-scheduling coupling unavailable.',
+        fact: `Coupling band ${state.coordinationSchedulingCouplingBrief?.band ?? 'unknown'}; coordination drag ${Math.round(state.coordinationSchedulingCouplingBrief?.coordinationDrag ?? 0)}.`,
+        inference: state.coordinationSchedulingCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce coordination with scheduling levers — wave 44 / O10-219 depth.'
+      };
+    case 'scheduling_pulse':
+      return {
+        topic,
+        headline: state.schedulingPulseOutlook?.summary || 'Scheduling pulse unavailable.',
+        fact: `Pulse band ${state.schedulingPulseOutlook?.band ?? 'unknown'}; coordination drag ${Math.round(state.schedulingPulseOutlook?.coordinationDrag ?? 0)}.`,
+        inference: state.schedulingPulseOutlook?.stewardNote || state.outlook,
+        projection: 'Pulse blends scheduling levers with coordination mesh — bounded indices only.'
+      };
+    case 'subject_scheduling_readiness':
+      return {
+        topic,
+        headline: state.subjectSchedulingReadinessBrief?.summary || 'Subject scheduling readiness unavailable.',
+        fact: `Scheduling band ${state.subjectSchedulingReadinessBrief?.band ?? 'unknown'}; scheduling drag ${Math.round(state.subjectSchedulingReadinessBrief?.schedulingDrag ?? 0)}.`,
+        inference: state.subjectSchedulingReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject scheduling readiness gates subject coordination against workforce coordination for O10-219 wave 44.'
+      };
+    case 'workforce_scheduling':
+      return {
+        topic,
+        headline: state.nationalWorkforceSchedulingIndex?.summary || 'Workforce scheduling unavailable.',
+        fact: `Scheduling band ${state.nationalWorkforceSchedulingIndex?.band ?? 'unknown'}; scheduling drag ${Math.round(state.nationalWorkforceSchedulingIndex?.schedulingDrag ?? 0)}.`,
+        inference: state.nationalWorkforceSchedulingIndex?.stewardNote || state.summary,
+        projection: 'Workforce scheduling synthesizes coordination-scheduling coupling, scheduling pulse, and subject scheduling.'
+      };
     default:
       return {
         topic: 'national_summary',
@@ -5969,6 +6065,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceCoordinationIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceCoordinationIndex.stewardNote);
+  }
+  if (
+    state.coordinationSchedulingCouplingBrief?.band === 'decoupled' ||
+    state.coordinationSchedulingCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.coordinationSchedulingCouplingBrief.stewardNote);
+  }
+  if (
+    state.schedulingPulseOutlook?.band === 'ebbing' ||
+    state.schedulingPulseOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.schedulingPulseOutlook.stewardNote);
+  }
+  if (
+    state.subjectSchedulingReadinessBrief?.band === 'below_scheduling' ||
+    state.subjectSchedulingReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectSchedulingReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceSchedulingIndex?.band === 'fragile' ||
+    state.nationalWorkforceSchedulingIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceSchedulingIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -17654,6 +17774,278 @@ export function computeNationalWorkforceCoordinationIndex(
 }
 
 
+// --- source: coordination-scheduling-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type CoordinationSchedulingCouplingBand,
+  type NationalCoordinationSchedulingCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalWorkforceCoordinationIndex
+} from './types';
+
+function couplingBand(index: number): CoordinationSchedulingCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-44 / wave-44 coordination-scheduling coupling — coordination × scheduling (O10-219). */
+export function computeNationalCoordinationSchedulingCouplingBrief(
+  state: NationalLaborDemographicsState,
+  coordination: NationalWorkforceCoordinationIndex | null | undefined
+): NationalCoordinationSchedulingCouplingBrief {
+  if (!state.enabled || !coordination) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      coordinationDrag: 0,
+      summary: 'Coordination-scheduling coupling idle — workforce coordination unavailable.',
+      stewardNote: 'Compute workforce coordination before scheduling coupling guidance.'
+    };
+  }
+
+  let schedulingLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    schedulingLift += schedulingEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  schedulingLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const coordinationDrag = v1014laborClamp(
+    coordination.coordinationDrag * 0.48 + (coordination.band === 'fragile' || coordination.band === 'thin' ? 11 : 3)
+  );
+  const coordinationLift =
+    coordination.band === 'elevated' || coordination.band === 'coordination'
+      ? coordination.coordinationIndex * 0.24
+      : coordination.coordinationIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + schedulingLift * 21 + coordinationLift - coordinationDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained coordination-scheduling link — deploy scheduling levers before wave-44 scheduling commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard scheduling pulse spikes that drain coordination buffers.'
+        : 'Amplified coupling — pair scheduling packs with subject scheduling readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    coordinationDrag,
+    summary: `Coordination-scheduling coupling ${band} (index ${Math.round(couplingIndex)}); coordination drag ${Math.round(coordinationDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: scheduling-pulse-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalCoordinationMeshOutlook,
+  type NationalLaborDemographicsState,
+  type NationalSchedulingPulseOutlook,
+  type SchedulingPulseBand
+} from './types';
+
+function pulseBand(index: number): SchedulingPulseBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'pulsing';
+}
+
+export function computeNationalSchedulingPulseOutlook(
+  state: NationalLaborDemographicsState,
+  coordinationMesh: NationalCoordinationMeshOutlook | null | undefined
+): NationalSchedulingPulseOutlook {
+  if (!state.enabled || !coordinationMesh) {
+    return {
+      turn: state.turn,
+      pulseIndex: 50,
+      band: 'patchy',
+      coordinationDrag: 0,
+      summary: 'Scheduling pulse idle — coordination mesh unavailable.',
+      stewardNote: 'Compute coordination mesh before scheduling pulse guidance.'
+    };
+  }
+
+  let schedulingLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    schedulingLift += schedulingEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  schedulingLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const coordinationDrag = v1014laborClamp(
+    coordinationMesh.flexibilityDrag * 0.46 +
+      (coordinationMesh.band === 'ebbing' || coordinationMesh.band === 'patchy' ? 10 : 3)
+  );
+  const meshLift =
+    coordinationMesh.band === 'rising' || coordinationMesh.band === 'meshed'
+      ? coordinationMesh.meshIndex * 0.2
+      : coordinationMesh.meshIndex * 0.1;
+
+  const pulseIndex = v1014laborClamp(24 + schedulingLift * 22 + meshLift - coordinationDrag);
+  const band = pulseBand(pulseIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy scheduling pulse — deploy scheduling levers before subject scheduling assembly.'
+      : band === 'pulsing'
+        ? 'Pulsing band — verify coordination-scheduling coupling before auto workforce pushes.'
+        : 'Rising pulse — align with coordination mesh outlook checks.';
+
+  return {
+    turn: state.turn,
+    pulseIndex,
+    band,
+    coordinationDrag,
+    summary: `National scheduling pulse ${band} (index ${Math.round(pulseIndex)}); coordination drag ${Math.round(coordinationDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-scheduling-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectCoordinationReadinessBrief,
+  type NationalSubjectSchedulingReadinessBrief,
+  type NationalWorkforceCoordinationIndex,
+  type SubjectSchedulingReadinessBand
+} from './types';
+
+function schedulingBand(index: number): SubjectSchedulingReadinessBand {
+  if (index <= 34) return 'below_scheduling';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'scheduling_ready';
+  return 'coordination_locked';
+}
+
+/** Round-44 / wave-44 subject scheduling readiness — coordination × workforce coordination (O10-219). */
+export function computeNationalSubjectSchedulingReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectCoordination: NationalSubjectCoordinationReadinessBrief | null | undefined,
+  workforceCoordination: NationalWorkforceCoordinationIndex | null | undefined
+): NationalSubjectSchedulingReadinessBrief {
+  if (!state.enabled || !subjectCoordination || !workforceCoordination) {
+    return {
+      turn: state.turn,
+      schedulingIndex: 50,
+      band: 'approaching',
+      schedulingDrag: 0,
+      summary: 'Subject scheduling readiness idle — subject coordination or workforce coordination unavailable.',
+      stewardNote: 'Compute subject coordination and workforce coordination before scheduling guidance.'
+    };
+  }
+
+  const schedulingDrag = v1014laborClamp(
+    subjectCoordination.coordinationDrag * 0.38 +
+      workforceCoordination.coordinationDrag * 0.38 +
+      (subjectCoordination.band === 'below_coordination' || workforceCoordination.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectCoordination.band === 'coordination_ready' || subjectCoordination.band === 'flexibility_locked'
+      ? subjectCoordination.coordinationIndex * 0.27
+      : subjectCoordination.coordinationIndex * 0.14;
+  const workforceLift =
+    workforceCoordination.band === 'elevated' || workforceCoordination.band === 'coordination'
+      ? workforceCoordination.coordinationIndex * 0.25
+      : workforceCoordination.coordinationIndex * 0.12;
+
+  const schedulingIndex = v1014laborClamp(20 + subjectLift + workforceLift - schedulingDrag);
+  const band = schedulingBand(schedulingIndex);
+
+  const stewardNote =
+    band === 'below_scheduling' || band === 'approaching'
+      ? 'Approaching scheduling — hold O10-219 wave-44 scale until coordination-scheduling syncs.'
+      : band === 'coordination_locked'
+        ? 'Coordination-locked scheduling — still monitor scheduling pulse during corridor peaks.'
+        : 'Scheduling-ready — pair with workforce scheduling index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    schedulingIndex,
+    band,
+    schedulingDrag,
+    summary: `Subject scheduling readiness ${band} (index ${Math.round(schedulingIndex)}); scheduling drag ${Math.round(schedulingDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-scheduling-index.ts ---
+  type NationalCoordinationSchedulingCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalSchedulingPulseOutlook,
+  type NationalSubjectSchedulingReadinessBrief,
+  type NationalWorkforceSchedulingIndex,
+  type WorkforceSchedulingBand
+} from './types';
+
+function schedulingBand(index: number): WorkforceSchedulingBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'scheduling';
+}
+
+export function computeNationalWorkforceSchedulingIndex(
+  state: NationalLaborDemographicsState,
+  schedulingCoupling: NationalCoordinationSchedulingCouplingBrief | null | undefined,
+  schedulingPulse: NationalSchedulingPulseOutlook | null | undefined,
+  subjectScheduling: NationalSubjectSchedulingReadinessBrief | null | undefined
+): NationalWorkforceSchedulingIndex {
+  if (!state.enabled || !schedulingCoupling || !schedulingPulse || !subjectScheduling) {
+    return {
+      turn: state.turn,
+      schedulingIndex: 50,
+      band: 'thin',
+      schedulingDrag: 0,
+      summary: 'Workforce scheduling idle — scheduling coupling, pulse, or subject scheduling unavailable.',
+      stewardNote: 'Compute O10-219 wave-44 depth stack before scheduling guidance.'
+    };
+  }
+
+  const schedulingDrag = v1014laborClamp(
+    subjectScheduling.schedulingDrag * 0.35 +
+      schedulingCoupling.coordinationDrag * 0.3 +
+      schedulingPulse.coordinationDrag * 0.25 +
+      (subjectScheduling.band === 'below_scheduling' || schedulingCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const couplingLift =
+    schedulingCoupling.band === 'amplified' || schedulingCoupling.band === 'elevated'
+      ? schedulingCoupling.couplingIndex * 0.2
+      : schedulingCoupling.couplingIndex * 0.1;
+  const pulseLift =
+    schedulingPulse.band === 'rising' || schedulingPulse.band === 'pulsing'
+      ? schedulingPulse.pulseIndex * 0.18
+      : schedulingPulse.pulseIndex * 0.09;
+  const subjectLift =
+    subjectScheduling.band === 'scheduling_ready' || subjectScheduling.band === 'coordination_locked'
+      ? subjectScheduling.schedulingIndex * 0.22
+      : subjectScheduling.schedulingIndex * 0.11;
+
+  const schedulingIndex = v1014laborClamp(18 + couplingLift + pulseLift + subjectLift - schedulingDrag);
+  const band = schedulingBand(schedulingIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce scheduling — sequence coordination-scheduling, scheduling pulse, and subject scheduling before post-bca7e0a3 tranche.'
+      : band === 'scheduling'
+        ? 'Scheduling band — avoid corridor overload that breaks subject scheduling bands.'
+        : 'Elevated scheduling — refresh subject scheduling checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    schedulingIndex,
+    band,
+    schedulingDrag,
+    summary: `National workforce scheduling ${band} (index ${Math.round(schedulingIndex)}); scheduling drag ${Math.round(schedulingDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -18838,6 +19230,25 @@ export function computeNationalLaborDemographics(
     state.coordinationMeshOutlook,
     state.subjectCoordinationReadinessBrief
   );
+  state.coordinationSchedulingCouplingBrief = computeNationalCoordinationSchedulingCouplingBrief(
+    state,
+    state.nationalWorkforceCoordinationIndex
+  );
+  state.schedulingPulseOutlook = computeNationalSchedulingPulseOutlook(
+    state,
+    state.coordinationMeshOutlook
+  );
+  state.subjectSchedulingReadinessBrief = computeNationalSubjectSchedulingReadinessBrief(
+    state,
+    state.subjectCoordinationReadinessBrief,
+    state.nationalWorkforceCoordinationIndex
+  );
+  state.nationalWorkforceSchedulingIndex = computeNationalWorkforceSchedulingIndex(
+    state,
+    state.coordinationSchedulingCouplingBrief,
+    state.schedulingPulseOutlook,
+    state.subjectSchedulingReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -19828,6 +20239,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceCoordinationIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.coordinationSchedulingCouplingBrief?.band === 'decoupled' ||
+      state.coordinationSchedulingCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.coordinationSchedulingCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.schedulingPulseOutlook?.band === 'ebbing' ||
+      state.schedulingPulseOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.schedulingPulseOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectSchedulingReadinessBrief?.band === 'below_scheduling' ||
+      state.subjectSchedulingReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectSchedulingReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceSchedulingIndex?.band === 'fragile' ||
+      state.nationalWorkforceSchedulingIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceSchedulingIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -22407,6 +22846,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'coordination steward note'
   );
   check('R4316', coordinationEaseForRegion('NSW', 'technology') > 0, 'coordination ease for region');
+
+  check('R4401', Boolean(r1.state.coordinationSchedulingCouplingBrief?.band), 'coordination scheduling on state');
+  check(
+    'R4402',
+    (r1.state.coordinationSchedulingCouplingBrief?.coordinationDrag ?? 0) >= 0,
+    'coordination scheduling drag'
+  );
+  check('R4403', Boolean(r1.state.schedulingPulseOutlook?.band), 'scheduling pulse on state');
+  check(
+    'R4404',
+    (r1.state.schedulingPulseOutlook?.coordinationDrag ?? 0) >= 0,
+    'scheduling pulse coordination drag'
+  );
+  check('R4405', Boolean(r1.state.subjectSchedulingReadinessBrief?.band), 'subject scheduling on state');
+  check('R4406', Boolean(r1.state.nationalWorkforceSchedulingIndex?.band), 'workforce scheduling on state');
+  check(
+    'R4407',
+    detectLaborDemographicsQuery('coordination scheduling coupling') === 'coordination_scheduling_coupling',
+    'GI coordination scheduling detect'
+  );
+  check(
+    'R4408',
+    detectLaborDemographicsQuery('scheduling pulse') === 'scheduling_pulse',
+    'GI scheduling pulse detect'
+  );
+  check(
+    'R4409',
+    detectLaborDemographicsQuery('subject scheduling readiness') === 'subject_scheduling_readiness',
+    'GI subject scheduling detect'
+  );
+  check(
+    'R4410',
+    detectLaborDemographicsQuery('workforce scheduling') === 'workforce_scheduling',
+    'GI workforce scheduling detect'
+  );
+  check(
+    'R4411',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_scheduling').headline.length > 5,
+    'GI workforce scheduling answer'
+  );
+  const coordinationSchedulingOnly = computeNationalCoordinationSchedulingCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceCoordinationIndex
+  );
+  check('R4412', coordinationSchedulingOnly.summary.length > 10, 'coordination scheduling standalone summary');
+  const schedulingPulseOnly = computeNationalSchedulingPulseOutlook(
+    r1.state,
+    r1.state.coordinationMeshOutlook
+  );
+  check('R4413', schedulingPulseOnly.band.length > 3, 'scheduling pulse band string');
+  const subjectSchedulingOnly = computeNationalSubjectSchedulingReadinessBrief(
+    r1.state,
+    r1.state.subjectCoordinationReadinessBrief,
+    r1.state.nationalWorkforceCoordinationIndex
+  );
+  check('R4414', subjectSchedulingOnly.schedulingDrag >= 0, 'subject scheduling drag');
+  check(
+    'R4415',
+    computeNationalWorkforceSchedulingIndex(
+      rHhBad.state,
+      rHhBad.state.coordinationSchedulingCouplingBrief,
+      rHhBad.state.schedulingPulseOutlook,
+      rHhBad.state.subjectSchedulingReadinessBrief
+    ).stewardNote.length > 8,
+    'scheduling steward note'
+  );
+  check('R4416', schedulingEaseForRegion('NSW', 'technology') > 0, 'scheduling ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

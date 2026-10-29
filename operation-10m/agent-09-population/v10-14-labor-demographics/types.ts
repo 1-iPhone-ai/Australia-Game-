@@ -341,6 +341,10 @@ export interface NationalLaborDemographicsState {
   coordinationMeshOutlook?: NationalCoordinationMeshOutlook;
   subjectCoordinationReadinessBrief?: NationalSubjectCoordinationReadinessBrief;
   nationalWorkforceCoordinationIndex?: NationalWorkforceCoordinationIndex;
+  coordinationSchedulingCouplingBrief?: NationalCoordinationSchedulingCouplingBrief;
+  schedulingPulseOutlook?: NationalSchedulingPulseOutlook;
+  subjectSchedulingReadinessBrief?: NationalSubjectSchedulingReadinessBrief;
+  nationalWorkforceSchedulingIndex?: NationalWorkforceSchedulingIndex;
 }
 
 export type MigrationShockKind =
@@ -2113,6 +2117,54 @@ export interface NationalWorkforceCoordinationIndex {
   coordinationIndex: number;
   band: WorkforceCoordinationBand;
   coordinationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CoordinationSchedulingCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalCoordinationSchedulingCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: CoordinationSchedulingCouplingBand;
+  coordinationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SchedulingPulseBand = 'ebbing' | 'patchy' | 'rising' | 'pulsing';
+
+export interface NationalSchedulingPulseOutlook {
+  turn: number;
+  pulseIndex: number;
+  band: SchedulingPulseBand;
+  coordinationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectSchedulingReadinessBand =
+  | 'below_scheduling'
+  | 'approaching'
+  | 'scheduling_ready'
+  | 'coordination_locked';
+
+export interface NationalSubjectSchedulingReadinessBrief {
+  turn: number;
+  schedulingIndex: number;
+  band: SubjectSchedulingReadinessBand;
+  schedulingDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceSchedulingBand = 'fragile' | 'thin' | 'elevated' | 'scheduling';
+
+export interface NationalWorkforceSchedulingIndex {
+  turn: number;
+  schedulingIndex: number;
+  band: WorkforceSchedulingBand;
+  schedulingDrag: number;
   summary: string;
   stewardNote: string;
 }

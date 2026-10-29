@@ -159,7 +159,11 @@ export type LaborGiQueryTopic =
   | 'flexibility_coordination_coupling'
   | 'coordination_mesh'
   | 'subject_coordination_readiness'
-  | 'workforce_coordination';
+  | 'workforce_coordination'
+  | 'coordination_scheduling_coupling'
+  | 'scheduling_pulse'
+  | 'subject_scheduling_readiness'
+  | 'workforce_scheduling';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -338,6 +342,14 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_coordination_readiness';
   }
   if (/\b(workforce coordination|coordination index labor workforce)/.test(q)) return 'workforce_coordination';
+  if (/\b(coordination scheduling|coordination-scheduling coupling)/.test(q)) {
+    return 'coordination_scheduling_coupling';
+  }
+  if (/\b(scheduling pulse|scheduling pipeline pulse)/.test(q)) return 'scheduling_pulse';
+  if (/\b(subject scheduling readiness|scheduling readiness subject)/.test(q)) {
+    return 'subject_scheduling_readiness';
+  }
+  if (/\b(workforce scheduling|scheduling index labor workforce)/.test(q)) return 'workforce_scheduling';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1604,6 +1616,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Coordination band ${state.nationalWorkforceCoordinationIndex?.band ?? 'unknown'}; coordination drag ${Math.round(state.nationalWorkforceCoordinationIndex?.coordinationDrag ?? 0)}.`,
         inference: state.nationalWorkforceCoordinationIndex?.stewardNote || state.summary,
         projection: 'Workforce coordination synthesizes flexibility-coordination coupling, coordination mesh, and subject coordination.'
+      };
+    case 'coordination_scheduling_coupling':
+      return {
+        topic,
+        headline: state.coordinationSchedulingCouplingBrief?.summary || 'Coordination-scheduling coupling unavailable.',
+        fact: `Coupling band ${state.coordinationSchedulingCouplingBrief?.band ?? 'unknown'}; coordination drag ${Math.round(state.coordinationSchedulingCouplingBrief?.coordinationDrag ?? 0)}.`,
+        inference: state.coordinationSchedulingCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce coordination with scheduling levers — wave 44 / O10-219 depth.'
+      };
+    case 'scheduling_pulse':
+      return {
+        topic,
+        headline: state.schedulingPulseOutlook?.summary || 'Scheduling pulse unavailable.',
+        fact: `Pulse band ${state.schedulingPulseOutlook?.band ?? 'unknown'}; coordination drag ${Math.round(state.schedulingPulseOutlook?.coordinationDrag ?? 0)}.`,
+        inference: state.schedulingPulseOutlook?.stewardNote || state.outlook,
+        projection: 'Pulse blends scheduling levers with coordination mesh — bounded indices only.'
+      };
+    case 'subject_scheduling_readiness':
+      return {
+        topic,
+        headline: state.subjectSchedulingReadinessBrief?.summary || 'Subject scheduling readiness unavailable.',
+        fact: `Scheduling band ${state.subjectSchedulingReadinessBrief?.band ?? 'unknown'}; scheduling drag ${Math.round(state.subjectSchedulingReadinessBrief?.schedulingDrag ?? 0)}.`,
+        inference: state.subjectSchedulingReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject scheduling readiness gates subject coordination against workforce coordination for O10-219 wave 44.'
+      };
+    case 'workforce_scheduling':
+      return {
+        topic,
+        headline: state.nationalWorkforceSchedulingIndex?.summary || 'Workforce scheduling unavailable.',
+        fact: `Scheduling band ${state.nationalWorkforceSchedulingIndex?.band ?? 'unknown'}; scheduling drag ${Math.round(state.nationalWorkforceSchedulingIndex?.schedulingDrag ?? 0)}.`,
+        inference: state.nationalWorkforceSchedulingIndex?.stewardNote || state.summary,
+        projection: 'Workforce scheduling synthesizes coordination-scheduling coupling, scheduling pulse, and subject scheduling.'
       };
     default:
       return {
