@@ -50,6 +50,7 @@ import { sanitizeContemptSession } from './save-format-contempt.js';
 import { sanitizeSequestrationSession } from './save-format-sequestration.js';
 import { sanitizeReceivershipSession } from './save-format-receivership.js';
 import { sanitizeLiquidationSession } from './save-format-liquidation.js';
+import { sanitizeDissolutionSession } from './save-format-dissolution.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -68,7 +69,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 50;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 51;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -217,6 +218,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     sequestrationSession: null,
     receivershipSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
   };
 }
 
@@ -286,6 +288,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       sequestrationSession: merged.sequestrationSession ?? null,
       receivershipSession: merged.receivershipSession ?? null,
       liquidationSession: merged.liquidationSession ?? null,
+      dissolutionSession: merged.dissolutionSession ?? null,
     };
     return upgraded;
   }
@@ -379,6 +382,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     sequestrationSession: sanitizeSequestrationSession(o.sequestrationSession),
     receivershipSession: sanitizeReceivershipSession(o.receivershipSession),
     liquidationSession: sanitizeLiquidationSession(o.liquidationSession),
+    dissolutionSession: sanitizeDissolutionSession(o.dissolutionSession),
   };
 }
 
@@ -735,6 +739,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Liquidation session failed sanitization; planner will ignore it.');
   } else if (liquidation && liquidation.cursor >= liquidation.scenarioIds.length) {
     warnings.push('Liquidation cursor out of range; clamp on next sanitize.');
+  }
+
+  const dissolution = sanitizeDissolutionSession(state.dissolutionSession);
+  if (state.dissolutionSession && !dissolution) {
+    warnings.push('Dissolution session failed sanitization; planner will ignore it.');
+  } else if (dissolution && dissolution.cursor >= dissolution.scenarioIds.length) {
+    warnings.push('Dissolution cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

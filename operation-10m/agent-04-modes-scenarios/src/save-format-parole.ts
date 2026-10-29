@@ -147,6 +147,7 @@ export function attachParoleSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     reprieveSession: null,
     amnestySession: null,

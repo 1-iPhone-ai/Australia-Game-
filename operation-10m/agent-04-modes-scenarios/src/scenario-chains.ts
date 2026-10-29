@@ -1742,6 +1742,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_dissolution_route',
+    title: 'Dissolution Route',
+    description:
+      'Three-phase dissolution arc with score accrual between legs — round-51 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_dissolution_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_dissolution_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File dissolution petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 610 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_dissolution_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, VIC: 5 },
+          forcedSettingsPatch: { o10mDissolutionMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_dissolution_estate_finale',
+        title: 'Estate Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainDissolutionRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

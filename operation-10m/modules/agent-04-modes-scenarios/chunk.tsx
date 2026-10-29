@@ -409,6 +409,7 @@ export type O10mSequestrationPhase = 'filing' | 'review' | 'sequestration';
 export type O10mReceivershipPhase = 'filing' | 'review' | 'receivership';
 
 export type O10mLiquidationPhase = 'filing' | 'review' | 'liquidation';
+export type O10mDissolutionPhase = 'filing' | 'review' | 'dissolution';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -883,6 +884,17 @@ export interface O10mLiquidationSession {
   phaseTag: O10mLiquidationPhase;
 }
 
+/** Schema v51 — dissolution arc with score accrual between phases. */
+export interface O10mDissolutionSession {
+  dissolutionId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  dissolutionScore: number;
+  phaseTag: O10mDissolutionPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -907,6 +919,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'dissolution_step'
     | 'liquidation_step'
     | 'receivership_step'
     | 'sequestration_step'
@@ -1132,6 +1145,10 @@ export interface O10mCampaignPlan {
   receivershipCursor: number | null;
   receivershipPhase: O10mReceivershipPhase | null;
   receivershipScore: number | null;
+  dissolutionId: string | null;
+  dissolutionCursor: number | null;
+  dissolutionPhase: O10mDissolutionPhase | null;
+  dissolutionScore: number | null;
   liquidationId: string | null;
   liquidationCursor: number | null;
   liquidationPhase: O10mLiquidationPhase | null;
@@ -1263,6 +1280,8 @@ export interface O10mModesPersistedState {
   receivershipSession?: O10mReceivershipSession | null;
   /** Schema v50 — active liquidation arc (mutually exclusive with receivership / sequestration / contempt / injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   liquidationSession?: O10mLiquidationSession | null;
+  /** Schema v51 — active dissolution arc (mutually exclusive with liquidation / receivership / sequestration / contempt / injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  dissolutionSession?: O10mDissolutionSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -6660,6 +6679,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Liquidation finales', 'Score ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_dissolution_filing_docket',
+    title: 'Dissolution Filing Docket',
+    description: 'Open a dissolution arc with low-pressure score pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100562,
+    startingMoney: 4350,
+    startingRegions: ['NT', 'QLD'],
+    badgeId: 'badge_o10m_dissolution_filing_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100562),
+      o10mDissolutionFilingDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_dfd_obj_day',
+        label: 'Filing Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Dissolution arcs', 'Score pacing', 'Filing phase'],
+  },
+  {
+    id: 'o10m_dissolution_review_chamber',
+    title: 'Dissolution Review Chamber',
+    description: 'Mid dissolution review with accrued score bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100563,
+    startingMoney: 4900,
+    startingRegions: ['WA', 'SA'],
+    startingStanding: { WA: 72, SA: 70 },
+    badgeId: 'badge_o10m_dissolution_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100563),
+      regionalStandingEnabled: true,
+      o10mDissolutionReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_drc_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 75',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 75,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Score carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_dissolution_estate_finale',
+    title: 'Dissolution Estate Finale',
+    description: 'Finale dissolution stage — net worth gate with full score bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100564,
+    startingMoney: 5350,
+    startingRegions: ['ACT', 'NSW', 'VIC'],
+    badgeId: 'badge_o10m_dissolution_estate_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100564),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mDissolutionEstateFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_def_obj_net',
+        label: 'Estate Net Worth',
+        description: 'Reach $23,800 net worth',
+        targetType: 'netWorth',
+        targetValue: 23800,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Dissolution finales', 'Score ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -8842,6 +8958,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_dissolution_route',
+    title: 'Dissolution Route',
+    description:
+      'Three-phase dissolution arc with score accrual between legs — round-51 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_dissolution_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_dissolution_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File dissolution petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 610 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_dissolution_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, VIC: 5 },
+          forcedSettingsPatch: { o10mDissolutionMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_dissolution_estate_finale',
+        title: 'Estate Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainDissolutionRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -9668,7 +9818,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 50;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 51;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -9817,6 +9967,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     sequestrationSession: null,
     receivershipSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
   };
 }
 
@@ -9886,6 +10037,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       sequestrationSession: merged.sequestrationSession ?? null,
       receivershipSession: merged.receivershipSession ?? null,
       liquidationSession: merged.liquidationSession ?? null,
+      dissolutionSession: merged.dissolutionSession ?? null,
     };
     return upgraded;
   }
@@ -9979,6 +10131,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     sequestrationSession: sanitizeSequestrationSession(o.sequestrationSession),
     receivershipSession: sanitizeReceivershipSession(o.receivershipSession),
     liquidationSession: sanitizeLiquidationSession(o.liquidationSession),
+    dissolutionSession: sanitizeDissolutionSession(o.dissolutionSession),
   };
 }
 
@@ -10335,6 +10488,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Liquidation session failed sanitization; planner will ignore it.');
   } else if (liquidation && liquidation.cursor >= liquidation.scenarioIds.length) {
     warnings.push('Liquidation cursor out of range; clamp on next sanitize.');
+  }
+
+  const dissolution = sanitizeDissolutionSession(state.dissolutionSession);
+  if (state.dissolutionSession && !dissolution) {
+    warnings.push('Dissolution session failed sanitization; planner will ignore it.');
+  } else if (dissolution && dissolution.cursor >= dissolution.scenarioIds.length) {
+    warnings.push('Dissolution cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
@@ -11036,6 +11196,7 @@ export function attachMarathonQueueToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -11154,6 +11315,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceDissolutionSessionAfterRun(next, run);
   next = advanceLiquidationSessionAfterRun(next, run);
   next = advanceReceivershipSessionAfterRun(next, run);
   next = advanceSequestrationSessionAfterRun(next, run);
@@ -11369,6 +11531,7 @@ export function attachGauntletSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     scenarioId,
     challengeModeIds,
@@ -11641,6 +11804,7 @@ export function attachRelaySessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -11873,6 +12037,7 @@ export function attachCircuitSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     expeditionSession: null,
     marathonQueue: null,
@@ -12123,6 +12288,7 @@ export function attachExpeditionSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -12371,6 +12537,7 @@ export function attachOdysseySessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -12618,6 +12785,7 @@ export function attachPilgrimageSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -12866,6 +13034,7 @@ export function attachCaravanSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -13108,6 +13277,7 @@ export function attachVoyageSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -13350,6 +13520,7 @@ export function attachSiegeSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -13592,6 +13763,7 @@ export function attachConvoySessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     siegeSession: null,
     voyageSession: null,
@@ -13834,6 +14006,7 @@ export function attachEscortSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     convoySession: null,
     siegeSession: null,
@@ -14085,6 +14258,7 @@ export function attachExtractionSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     escortSession: null,
     convoySession: null,
@@ -14344,6 +14518,7 @@ export function attachSubjectSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     extractionSession: null,
     escortSession: null,
@@ -14603,6 +14778,7 @@ export function attachWitnessSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -14862,6 +15038,7 @@ export function attachTribunalSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -15121,6 +15298,7 @@ export function attachIndictmentSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     tribunalSession: null,
     witnessSession: null,
@@ -15380,6 +15558,7 @@ export function attachAppealSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     indictmentSession: null,
     tribunalSession: null,
@@ -15639,6 +15818,7 @@ export function attachClemencySessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     appealSession: null,
     indictmentSession: null,
@@ -15898,6 +16078,7 @@ export function attachPardonSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     clemencySession: null,
     appealSession: null,
@@ -16157,6 +16338,7 @@ export function attachAmnestySessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     pardonSession: null,
     clemencySession: null,
@@ -16416,6 +16598,7 @@ export function attachReprieveSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     amnestySession: null,
     pardonSession: null,
@@ -16675,6 +16858,7 @@ export function attachParoleSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     reprieveSession: null,
     amnestySession: null,
@@ -16934,6 +17118,7 @@ export function attachProbationSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     paroleSession: null,
     reprieveSession: null,
@@ -17193,6 +17378,7 @@ export function attachCommutationSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     probationSession: null,
     paroleSession: null,
@@ -17452,6 +17638,7 @@ export function attachAcquittalSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     commutationSession: null,
     probationSession: null,
@@ -17711,6 +17898,7 @@ export function attachExonerationSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     acquittalSession: null,
     commutationSession: null,
@@ -17970,6 +18158,7 @@ export function attachExpungementSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     exonerationSession: null,
     acquittalSession: null,
@@ -18229,6 +18418,7 @@ export function attachVacaturSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     expungementSession: null,
     exonerationSession: null,
@@ -18488,6 +18678,7 @@ export function attachRemandSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     vacaturSession: null,
     expungementSession: null,
@@ -18747,6 +18938,7 @@ export function attachReversalSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     remandSession: null,
     vacaturSession: null,
@@ -19006,6 +19198,7 @@ export function attachAnnulmentSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     reversalSession: null,
     remandSession: null,
@@ -19267,6 +19460,7 @@ export function attachReinstatementSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     annulmentSession: null,
     reversalSession: null,
@@ -19528,6 +19722,7 @@ export function attachSetAsideSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     reinstatementSession: null,
     annulmentSession: null,
@@ -19787,6 +19982,7 @@ export function attachQuashSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     setAsideSession: null,
     reinstatementSession: null,
@@ -20048,6 +20244,7 @@ export function attachSupersedeSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     quashSession: null,
     setAsideSession: null,
@@ -21323,6 +21520,7 @@ export function attachQuowarrantoSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     habeasSession: null,
     prohibitionSession: null,
@@ -21584,6 +21782,7 @@ export function attachInjunctionSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    dissolutionSession: null,
     receivershipSession: null,
     quowarrantoSession: null,
     habeasSession: null,
@@ -22362,6 +22561,8 @@ export function attachReceivershipSessionToState(
   return {
     ...state,
     receivershipSession: sanitized,
+    dissolutionSession: null,
+    dissolutionSession: null,
     liquidationSession: null,
     sequestrationSession: null,
     contemptSession: null,
@@ -22624,6 +22825,7 @@ export function attachLiquidationSessionToState(
   return {
     ...state,
     liquidationSession: sanitized,
+    dissolutionSession: null,
     receivershipSession: null,
     sequestrationSession: null,
     contemptSession: null,
@@ -22761,6 +22963,269 @@ export function liquidationSessionSummary(state: O10mModesPersistedState): {
     active: session?.active === true,
     cursor: session?.active ? session.cursor : null,
     liquidationScore: session?.liquidationScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
+// --- bundled from src/save-format-dissolution.ts ---
+export const O10M_DISSOLUTION_SCENARIO_CAP = 6;
+export const O10M_DISSOLUTION_SCORE_CAP = 1150;
+export const O10M_DISSOLUTION_SCORE_MONEY_CAP = 1240;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mDissolutionPhase>(['filing', 'review', 'dissolution']);
+
+export function unlockTokenForDissolutionId(dissolutionId: string): string | null {
+  if (!dissolutionId.startsWith('o10m_dissolution_')) return null;
+  return `o10m_unlock_${dissolutionId.slice('o10m_dissolution_'.length)}`;
+}
+
+export function dissolutionPhaseForCursor(cursor: number, scenarioCount: number): O10mDissolutionPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'dissolution';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'filing';
+}
+
+export function dissolutionScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(150, Math.max(36, Math.floor(run.playerNetWorth / 108) + standingSlice));
+}
+
+export function sanitizeDissolutionSession(raw: unknown): O10mDissolutionSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const dissolutionId =
+    typeof o.dissolutionId === 'string' && o.dissolutionId.startsWith('o10m_dissolution_')
+      ? o.dissolutionId
+      : null;
+  if (!dissolutionId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : dissolutionId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_DISSOLUTION_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const dissolutionScore = Math.min(
+    O10M_DISSOLUTION_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.dissolutionScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mDissolutionPhase)
+      ? (phaseRaw as O10mDissolutionPhase)
+      : dissolutionPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    dissolutionId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    dissolutionScore,
+    phaseTag,
+  };
+}
+
+export function createDissolutionSession(params: {
+  dissolutionId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mDissolutionSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.dissolutionId.startsWith('o10m_dissolution_')) {
+    return { session: null, warnings: ['Dissolution ids must start with o10m_dissolution_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_DISSOLUTION_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Dissolution arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      dissolutionId: params.dissolutionId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      dissolutionScore: 0,
+      phaseTag: dissolutionPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachDissolutionSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mDissolutionSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeDissolutionSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    dissolutionSession: sanitized,
+    liquidationSession: null,
+    receivershipSession: null,
+    sequestrationSession: null,
+    contemptSession: null,
+    injunctionSession: null,
+    quowarrantoSession: null,
+    habeasSession: null,
+    prohibitionSession: null,
+    mandamusSession: null,
+    certiorariSession: null,
+    supersedeSession: null,
+    quashSession: null,
+    setAsideSession: null,
+    reinstatementSession: null,
+    annulmentSession: null,
+    reversalSession: null,
+    remandSession: null,
+    vacaturSession: null,
+    expungementSession: null,
+    exonerationSession: null,
+    acquittalSession: null,
+    commutationSession: null,
+    probationSession: null,
+    paroleSession: null,
+    reprieveSession: null,
+    amnestySession: null,
+    pardonSession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearDissolutionSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, dissolutionSession: null };
+}
+
+export function getDissolutionScenarioAtCursor(
+  session: O10mDissolutionSession | null | undefined,
+): string | null {
+  const dissolution = sanitizeDissolutionSession(session);
+  if (!dissolution || !dissolution.active) return null;
+  return dissolution.scenarioIds[dissolution.cursor] ?? null;
+}
+
+export function buildDissolutionScenarioStartOverrides(
+  session: O10mDissolutionSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const dissolution = sanitizeDissolutionSession(session);
+  if (!dissolution) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_DISSOLUTION_SCORE_MONEY_CAP,
+    Math.floor(dissolution.dissolutionScore * 0.95),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveDissolutionId: dissolution.dissolutionId,
+      o10mActiveDissolutionStep: dissolution.cursor,
+      o10mActiveDissolutionPhase: dissolution.phaseTag,
+      o10mDissolutionScore: dissolution.dissolutionScore,
+    },
+  };
+}
+
+export function advanceDissolutionSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeDissolutionSession(state.dissolutionSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const dissolutionScore = Math.min(
+    O10M_DISSOLUTION_SCORE_CAP,
+    session.dissolutionScore + dissolutionScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      dissolutionSession: {
+        ...session,
+        cursor,
+        dissolutionScore,
+        phaseTag: dissolutionPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForDissolutionId(session.dissolutionId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    dissolutionSession: { ...session, active: false, dissolutionScore, phaseTag: 'dissolution' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function dissolutionSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  dissolutionScore: number;
+  phase: O10mDissolutionPhase | null;
+} {
+  const session = sanitizeDissolutionSession(state.dissolutionSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    dissolutionScore: session?.dissolutionScore ?? 0,
     phase: session?.active ? session.phaseTag : null,
   };
 }
@@ -22943,6 +23408,10 @@ const emptyQueuePlan = {
   receivershipCursor: null as number | null,
   receivershipPhase: null as O10mReceivershipPhase | null,
   receivershipScore: null as number | null,
+  dissolutionId: null as string | null,
+  dissolutionCursor: null as number | null,
+  dissolutionPhase: null as O10mDissolutionPhase | null,
+  dissolutionScore: null as number | null,
   liquidationId: null as string | null,
   liquidationCursor: null as number | null,
   liquidationPhase: null as O10mLiquidationPhase | null,
@@ -22950,6 +23419,24 @@ const emptyQueuePlan = {
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const dissolution = sanitizeDissolutionSession(state.dissolutionSession);
+  const dissolutionScenario = getDissolutionScenarioAtCursor(dissolution);
+  if (dissolution && dissolution.active && dissolutionScenario) {
+    return {
+      kind: 'dissolution_step',
+      scenarioId: dissolutionScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      dissolutionId: dissolution.dissolutionId,
+      dissolutionCursor: dissolution.cursor,
+      dissolutionPhase: dissolution.phaseTag,
+      dissolutionScore: dissolution.dissolutionScore,
+      reason: `Dissolution "${dissolution.label}" ${dissolution.phaseTag} phase ${dissolution.cursor + 1}/${dissolution.scenarioIds.length} (score ${dissolution.dissolutionScore}).`,
+    };
+  }
+
   const liquidation = sanitizeLiquidationSession(state.liquidationSession);
   const liquidationScenario = getLiquidationScenarioAtCursor(liquidation);
   if (liquidation && liquidation.active && liquidationScenario) {
@@ -23889,6 +24376,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   sequestrationActive: boolean;
   receivershipActive: boolean;
   liquidationActive: boolean;
+  dissolutionActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -23942,6 +24430,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const sequestration = sequestrationSessionSummary(state);
   const receivership = receivershipSessionSummary(state);
   const liquidation = liquidationSessionSummary(state);
+  const dissolution = dissolutionSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -23993,6 +24482,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     sequestrationActive: sequestration.active,
     receivershipActive: receivership.active,
     liquidationActive: liquidation.active,
+    dissolutionActive: dissolution.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -24407,6 +24897,14 @@ export function runAgent04ModesScenariosSelfTests(): {
   const liquidationState = liquidation ? attachLiquidationSessionToState(createEmptyO10mModesPersistedState(), liquidation) : null;
   push('agent04_chunk_58', liquidationState !== null && planNextCampaignAction(liquidationState!).kind === 'liquidation_step');
 
+  const dissolution = createDissolutionSession({
+    dissolutionId: 'o10m_dissolution_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_dissolution_filing_docket'],
+  }).session;
+  const dissolutionState = dissolution ? attachDissolutionSessionToState(createEmptyO10mModesPersistedState(), dissolution) : null;
+  push('agent04_chunk_59', dissolutionState !== null && planNextCampaignAction(dissolutionState!).kind === 'dissolution_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
@@ -24416,7 +24914,7 @@ export const OP10M_AGENT04_MODULE_META = {
   schemaVersion: 'op10m-agent04-v51',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 50,
+  saveSchemaVersion: 51,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

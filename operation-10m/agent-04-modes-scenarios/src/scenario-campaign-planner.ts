@@ -132,6 +132,11 @@ import {
   sanitizeLiquidationSession,
 } from './save-format-liquidation.js';
 import {
+  getDissolutionScenarioAtCursor,
+  dissolutionSessionSummary,
+  sanitizeDissolutionSession,
+} from './save-format-dissolution.js';
+import {
   getReceivershipScenarioAtCursor,
   receivershipSessionSummary,
   sanitizeReceivershipSession,
@@ -275,6 +280,7 @@ import type {
   O10mSequestrationPhase,
   O10mReceivershipPhase,
   O10mLiquidationPhase,
+  O10mDissolutionPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -457,6 +463,10 @@ const emptyQueuePlan = {
   receivershipCursor: null as number | null,
   receivershipPhase: null as O10mReceivershipPhase | null,
   receivershipScore: null as number | null,
+  dissolutionId: null as string | null,
+  dissolutionCursor: null as number | null,
+  dissolutionPhase: null as O10mDissolutionPhase | null,
+  dissolutionScore: null as number | null,
   liquidationId: null as string | null,
   liquidationCursor: null as number | null,
   liquidationPhase: null as O10mLiquidationPhase | null,
@@ -464,6 +474,24 @@ const emptyQueuePlan = {
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const dissolution = sanitizeDissolutionSession(state.dissolutionSession);
+  const dissolutionScenario = getDissolutionScenarioAtCursor(dissolution);
+  if (dissolution && dissolution.active && dissolutionScenario) {
+    return {
+      kind: 'dissolution_step',
+      scenarioId: dissolutionScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      dissolutionId: dissolution.dissolutionId,
+      dissolutionCursor: dissolution.cursor,
+      dissolutionPhase: dissolution.phaseTag,
+      dissolutionScore: dissolution.dissolutionScore,
+      reason: `Dissolution "${dissolution.label}" ${dissolution.phaseTag} phase ${dissolution.cursor + 1}/${dissolution.scenarioIds.length} (score ${dissolution.dissolutionScore}).`,
+    };
+  }
+
   const liquidation = sanitizeLiquidationSession(state.liquidationSession);
   const liquidationScenario = getLiquidationScenarioAtCursor(liquidation);
   if (liquidation && liquidation.active && liquidationScenario) {
@@ -1403,6 +1431,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   sequestrationActive: boolean;
   receivershipActive: boolean;
   liquidationActive: boolean;
+  dissolutionActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -1456,6 +1485,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const sequestration = sequestrationSessionSummary(state);
   const receivership = receivershipSessionSummary(state);
   const liquidation = liquidationSessionSummary(state);
+  const dissolution = dissolutionSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -1507,6 +1537,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     sequestrationActive: sequestration.active,
     receivershipActive: receivership.active,
     liquidationActive: liquidation.active,
+    dissolutionActive: dissolution.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

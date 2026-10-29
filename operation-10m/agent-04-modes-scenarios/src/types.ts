@@ -405,6 +405,7 @@ export type O10mSequestrationPhase = 'filing' | 'review' | 'sequestration';
 export type O10mReceivershipPhase = 'filing' | 'review' | 'receivership';
 
 export type O10mLiquidationPhase = 'filing' | 'review' | 'liquidation';
+export type O10mDissolutionPhase = 'filing' | 'review' | 'dissolution';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -879,6 +880,17 @@ export interface O10mLiquidationSession {
   phaseTag: O10mLiquidationPhase;
 }
 
+/** Schema v51 — dissolution arc with score accrual between phases. */
+export interface O10mDissolutionSession {
+  dissolutionId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  dissolutionScore: number;
+  phaseTag: O10mDissolutionPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -903,6 +915,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'dissolution_step'
     | 'liquidation_step'
     | 'receivership_step'
     | 'sequestration_step'
@@ -1128,6 +1141,10 @@ export interface O10mCampaignPlan {
   receivershipCursor: number | null;
   receivershipPhase: O10mReceivershipPhase | null;
   receivershipScore: number | null;
+  dissolutionId: string | null;
+  dissolutionCursor: number | null;
+  dissolutionPhase: O10mDissolutionPhase | null;
+  dissolutionScore: number | null;
   liquidationId: string | null;
   liquidationCursor: number | null;
   liquidationPhase: O10mLiquidationPhase | null;
@@ -1259,6 +1276,8 @@ export interface O10mModesPersistedState {
   receivershipSession?: O10mReceivershipSession | null;
   /** Schema v50 — active liquidation arc (mutually exclusive with receivership / sequestration / contempt / injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   liquidationSession?: O10mLiquidationSession | null;
+  /** Schema v51 — active dissolution arc (mutually exclusive with liquidation / receivership / sequestration / contempt / injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  dissolutionSession?: O10mDissolutionSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

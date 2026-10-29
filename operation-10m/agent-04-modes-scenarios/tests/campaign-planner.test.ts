@@ -45,6 +45,7 @@ import {
   attachSequestrationSessionToState,
   attachReceivershipSessionToState,
   attachLiquidationSessionToState,
+  attachDissolutionSessionToState,
   attachGauntletSessionToState,
   attachMarathonQueueToState,
   attachRelaySessionToState,
@@ -93,6 +94,7 @@ import {
   createSequestrationSession,
   createReceivershipSession,
   createLiquidationSession,
+  createDissolutionSession,
   createGauntletSession,
   createMarathonQueue,
   createRelaySession,
@@ -268,6 +270,22 @@ describe('scenario campaign planner round 4', () => {
     state = attachReprieveSessionToState(state, reprieve!);
     state = attachParoleSessionToState(state, parole!);
     assert.equal(planNextCampaignAction(state).kind, 'parole_step');
+  });
+
+  it('prefers active dissolution over liquidation, receivership, sequestration, contempt, injunction, quowarranto, habeas, prohibition, mandamus, certiorari, supersede, quash, set-aside, reinstatement, annulment, reversal, remand, vacatur, expungement, exoneration, acquittal, commutation, probation, parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: dissolution } = createDissolutionSession({
+      dissolutionId: 'o10m_dissolution_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_dissolution_filing_docket', 'o10m_dissolution_review_chamber'],
+    });
+    const { session: liquidation } = createLiquidationSession({
+      liquidationId: 'o10m_liquidation_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_liquidation_filing_docket', 'o10m_liquidation_review_chamber'],
+    });
+    let state = attachLiquidationSessionToState(createEmptyO10mModesPersistedState(), liquidation!);
+    state = attachDissolutionSessionToState(state, dissolution!);
+    assert.equal(planNextCampaignAction(state).kind, 'dissolution_step');
   });
 
   it('prefers active liquidation over receivership, sequestration, contempt, injunction, quowarranto, habeas, prohibition, mandamus, certiorari, supersede, quash, set-aside, reinstatement, annulment, reversal, remand, vacatur, expungement, exoneration, acquittal, commutation, probation, parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {

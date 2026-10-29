@@ -15,9 +15,9 @@ import {
 
 describe('scenario chains', () => {
   it('defines twenty-seven multi-step chains with unique ids', () => {
-    assert.equal(O10M_SCENARIO_CHAINS.length, 51);
+    assert.equal(O10M_SCENARIO_CHAINS.length, 52);
     const ids = O10M_SCENARIO_CHAINS.map(c => c.id);
-    assert.equal(new Set(ids).size, 51);
+    assert.equal(new Set(ids).size, 52);
     for (const chain of O10M_SCENARIO_CHAINS) {
       assert.ok(chain.steps.length >= 3);
     }
