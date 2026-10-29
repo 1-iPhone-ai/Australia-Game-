@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 5173"
+    "preview": "vite preview --host 0.0.0.0 --port 5173",
+    "test:agent08": "npx --yes tsx operation-10m/agent-08-companies/tests/run-agent-08-tests.mts"
   },
   "dependencies": {
     "react": "19.3.1",
