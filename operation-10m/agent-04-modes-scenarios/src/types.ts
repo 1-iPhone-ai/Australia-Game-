@@ -365,6 +365,8 @@ export type O10mVoyageSegment = 'embark' | 'open_sea' | 'port_call';
 
 export type O10mSiegePhase = 'mustering' | 'breach' | 'relief';
 
+export type O10mConvoyStage = 'staging' | 'transit' | 'delivery';
+
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
   circuitId: string;
@@ -442,6 +444,17 @@ export interface O10mSiegeSession {
   phaseTag: O10mSiegePhase;
 }
 
+/** Schema v15 — overland convoy with haul accrual between stages. */
+export interface O10mConvoySession {
+  convoyId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  haulScore: number;
+  stageTag: O10mConvoyStage;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -466,6 +479,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'convoy_step'
     | 'siege_step'
     | 'voyage_step'
     | 'caravan_step'
@@ -519,6 +533,10 @@ export interface O10mCampaignPlan {
   siegeCursor: number | null;
   siegePhase: O10mSiegePhase | null;
   siegeMorale: number | null;
+  convoyId: string | null;
+  convoyCursor: number | null;
+  convoyStage: O10mConvoyStage | null;
+  convoyHaul: number | null;
   reason: string;
 }
 
@@ -570,6 +588,8 @@ export interface O10mModesPersistedState {
   voyageSession?: O10mVoyageSession | null;
   /** Schema v14 — active fortress siege (mutually exclusive with voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   siegeSession?: O10mSiegeSession | null;
+  /** Schema v15 — active overland convoy (mutually exclusive with siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  convoySession?: O10mConvoySession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

@@ -518,6 +518,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_convoy_route',
+    title: 'Convoy Route',
+    description:
+      'Three-stage overland convoy with haul accrual between legs — round-15 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_convoy_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_convoy_staging_depot',
+        title: 'Staging Depot',
+        narrativeBridge: 'Load haul before the transit corridor run.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 250 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_convoy_transit_corridor',
+        title: 'Transit Corridor',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { SA: 6, NT: 5 },
+          forcedSettingsPatch: { o10mConvoyMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_convoy_delivery_finale',
+        title: 'Delivery Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainConvoyRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

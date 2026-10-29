@@ -25,4 +25,5 @@ export * from './save-format-pilgrimage.js';
 export * from './save-format-caravan.js';
 export * from './save-format-voyage.js';
 export * from './save-format-siege.js';
+export * from './save-format-convoy.js';
 export * from './scenario-campaign-planner.js';

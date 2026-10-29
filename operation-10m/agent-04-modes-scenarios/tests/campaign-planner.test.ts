@@ -9,6 +9,7 @@ import {
   attachCaravanSessionToState,
   attachVoyageSessionToState,
   attachSiegeSessionToState,
+  attachConvoySessionToState,
   attachGauntletSessionToState,
   attachMarathonQueueToState,
   attachRelaySessionToState,
@@ -21,6 +22,7 @@ import {
   createCaravanSession,
   createVoyageSession,
   createSiegeSession,
+  createConvoySession,
   createGauntletSession,
   createMarathonQueue,
   createRelaySession,
@@ -48,6 +50,82 @@ describe('scenario campaign planner round 4', () => {
     assert.equal(plan.kind, 'chain_step');
     assert.equal(plan.scenarioId, 'o10m_continuity_drill');
     assert.equal(plan.chainId, 'o10m_chain_continuity_arc');
+  });
+
+  it('prefers active convoy over siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: convoy } = createConvoySession({
+      convoyId: 'o10m_convoy_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_convoy_staging_depot', 'o10m_convoy_transit_corridor'],
+    });
+    const { session: siege } = createSiegeSession({
+      siegeId: 'o10m_siege_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_siege_mustering_yard', 'o10m_siege_breach_wall'],
+    });
+    const { session: voyage } = createVoyageSession({
+      voyageId: 'o10m_voyage_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_voyage_embark_pier', 'o10m_voyage_open_sea_passage'],
+    });
+    const { session: caravan } = createCaravanSession({
+      caravanId: 'o10m_caravan_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_caravan_assembly_yard', 'o10m_caravan_dune_crossing'],
+    });
+    const { session: pilgrimage } = createPilgrimageSession({
+      pilgrimageId: 'o10m_pilgrimage_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_pilgrimage_setting_out', 'o10m_pilgrimage_midway_shrine'],
+    });
+    const { session: odyssey } = createOdysseySession({
+      odysseyId: 'o10m_odyssey_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_odyssey_opening_winds', 'o10m_odyssey_crossing_shelves'],
+    });
+    const { session: expedition } = createExpeditionSession({
+      expeditionId: 'o10m_expedition_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_expedition_departure_dock', 'o10m_expedition_transit_pass'],
+    });
+    const { session: circuit } = createCircuitSession({
+      circuitId: 'o10m_circuit_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_circuit_warmup_laps', 'o10m_circuit_ridge_climb'],
+    });
+    const { session: relay } = createRelaySession({
+      relayId: 'o10m_relay_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_relay_dust_corridor', 'o10m_relay_coastal_handoff'],
+    });
+    const { session: gauntlet } = createGauntletSession({
+      gauntletId: 'o10m_gauntlet_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_gauntlet_opening_gate', 'o10m_gauntlet_midfield_press'],
+    });
+    const { queue } = createMarathonQueue({
+      queueId: 'o10m_marathon_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_marathon_pace_setter'],
+    });
+    let state = createEmptyO10mModesPersistedState();
+    state = pinCampaignSlot(state, {
+      slotId: 'o10m_slot_lab',
+      scenarioId: 'o10m_slot_rotation_lab',
+      turn: 4,
+    }).state;
+    state = attachMarathonQueueToState(state, queue!);
+    state = attachGauntletSessionToState(state, gauntlet!);
+    state = attachRelaySessionToState(state, relay!);
+    state = attachCircuitSessionToState(state, circuit!);
+    state = attachExpeditionSessionToState(state, expedition!);
+    state = attachOdysseySessionToState(state, odyssey!);
+    state = attachPilgrimageSessionToState(state, pilgrimage!);
+    state = attachCaravanSessionToState(state, caravan!);
+    state = attachVoyageSessionToState(state, voyage!);
+    state = attachSiegeSessionToState(state, siege!);
+    state = attachConvoySessionToState(state, convoy!);
+    assert.equal(planNextCampaignAction(state).kind, 'convoy_step');
   });
 
   it('prefers active siege over voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {

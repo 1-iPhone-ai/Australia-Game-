@@ -4,6 +4,7 @@ import { advanceExpeditionSessionAfterRun } from './save-format-expedition.js';
 import { advanceOdysseySessionAfterRun } from './save-format-odyssey.js';
 import { advancePilgrimageSessionAfterRun } from './save-format-pilgrimage.js';
 import { advanceCaravanSessionAfterRun } from './save-format-caravan.js';
+import { advanceConvoySessionAfterRun } from './save-format-convoy.js';
 import { advanceSiegeSessionAfterRun } from './save-format-siege.js';
 import { advanceVoyageSessionAfterRun } from './save-format-voyage.js';
 import { advanceRelaySessionAfterRun } from './save-format-relay.js';
@@ -119,6 +120,7 @@ export function attachMarathonQueueToState(
     caravanSession: null,
     voyageSession: null,
     siegeSession: null,
+    convoySession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -236,6 +238,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceConvoySessionAfterRun(next, run);
   next = advanceSiegeSessionAfterRun(next, run);
   next = advanceVoyageSessionAfterRun(next, run);
   next = advanceCaravanSessionAfterRun(next, run);

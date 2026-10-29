@@ -369,6 +369,8 @@ export type O10mVoyageSegment = 'embark' | 'open_sea' | 'port_call';
 
 export type O10mSiegePhase = 'mustering' | 'breach' | 'relief';
 
+export type O10mConvoyStage = 'staging' | 'transit' | 'delivery';
+
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
   circuitId: string;
@@ -446,6 +448,17 @@ export interface O10mSiegeSession {
   phaseTag: O10mSiegePhase;
 }
 
+/** Schema v15 — overland convoy with haul accrual between stages. */
+export interface O10mConvoySession {
+  convoyId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  haulScore: number;
+  stageTag: O10mConvoyStage;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -470,6 +483,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'convoy_step'
     | 'siege_step'
     | 'voyage_step'
     | 'caravan_step'
@@ -523,6 +537,10 @@ export interface O10mCampaignPlan {
   siegeCursor: number | null;
   siegePhase: O10mSiegePhase | null;
   siegeMorale: number | null;
+  convoyId: string | null;
+  convoyCursor: number | null;
+  convoyStage: O10mConvoyStage | null;
+  convoyHaul: number | null;
   reason: string;
 }
 
@@ -574,6 +592,8 @@ export interface O10mModesPersistedState {
   voyageSession?: O10mVoyageSession | null;
   /** Schema v14 — active fortress siege (mutually exclusive with voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   siegeSession?: O10mSiegeSession | null;
+  /** Schema v15 — active overland convoy (mutually exclusive with siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  convoySession?: O10mConvoySession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -2479,6 +2499,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Siege finales', 'Morale ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_convoy_staging_depot',
+    title: 'Convoy Staging Depot',
+    description: 'Stage an overland convoy with low-pressure haul pacing before transit.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100447,
+    startingMoney: 2550,
+    startingRegions: ['SA', 'VIC'],
+    badgeId: 'badge_o10m_convoy_staging_depot',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100447),
+      o10mConvoyStagingDepot: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_csd_obj_day',
+        label: 'Staging Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Overland convoys', 'Haul pacing', 'Staging phase'],
+  },
+  {
+    id: 'o10m_convoy_transit_corridor',
+    title: 'Convoy Transit Corridor',
+    description: 'Mid-convoy transit with accrued haul bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100448,
+    startingMoney: 3100,
+    startingRegions: ['NT', 'QLD'],
+    startingStanding: { NT: 48, QLD: 46 },
+    badgeId: 'badge_o10m_convoy_transit_corridor',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100448),
+      regionalStandingEnabled: true,
+      o10mConvoyTransitCorridor: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_ctc_obj_avg',
+        label: 'Transit Threshold',
+        description: 'Average standing of 54',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 54,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Convoy transit', 'Haul carry', 'Stage transitions'],
+  },
+  {
+    id: 'o10m_convoy_delivery_finale',
+    title: 'Convoy Delivery Finale',
+    description: 'Finale delivery stage — net worth gate with full haul bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100449,
+    startingMoney: 3550,
+    startingRegions: ['WA', 'NSW', 'ACT'],
+    badgeId: 'badge_o10m_convoy_delivery_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100449),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mConvoyDeliveryFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_cdf_obj_net',
+        label: 'Delivery Net Worth',
+        description: 'Reach $16,200 net worth',
+        targetType: 'netWorth',
+        targetValue: 16200,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Convoy finales', 'Haul ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -3437,6 +3554,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_convoy_route',
+    title: 'Convoy Route',
+    description:
+      'Three-stage overland convoy with haul accrual between legs — round-15 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_convoy_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_convoy_staging_depot',
+        title: 'Staging Depot',
+        narrativeBridge: 'Load haul before the transit corridor run.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 250 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_convoy_transit_corridor',
+        title: 'Transit Corridor',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { SA: 6, NT: 5 },
+          forcedSettingsPatch: { o10mConvoyMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_convoy_delivery_finale',
+        title: 'Delivery Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainConvoyRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -4263,7 +4414,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 14;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 15;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -4376,6 +4527,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     caravanSession: null,
     voyageSession: null,
     siegeSession: null,
+    convoySession: null,
   };
 }
 
@@ -4409,6 +4561,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       caravanSession: merged.caravanSession ?? null,
       voyageSession: merged.voyageSession ?? null,
       siegeSession: merged.siegeSession ?? null,
+      convoySession: merged.convoySession ?? null,
     };
     return upgraded;
   }
@@ -4466,6 +4619,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     caravanSession: sanitizeCaravanSession(o.caravanSession),
     voyageSession: sanitizeVoyageSession(o.voyageSession),
     siegeSession: sanitizeSiegeSession(o.siegeSession),
+    convoySession: sanitizeConvoySession(o.convoySession),
   };
 }
 
@@ -4570,6 +4724,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Siege session failed sanitization; planner will ignore it.');
   } else if (siege && siege.cursor >= siege.scenarioIds.length) {
     warnings.push('Siege cursor out of range; clamp on next sanitize.');
+  }
+
+  const convoy = sanitizeConvoySession(state.convoySession);
+  if (state.convoySession && !convoy) {
+    warnings.push('Convoy session failed sanitization; planner will ignore it.');
+  } else if (convoy && convoy.cursor >= convoy.scenarioIds.length) {
+    warnings.push('Convoy cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
@@ -4689,6 +4850,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'caravanSession',
   'voyageSession',
   'siegeSession',
+  'convoySession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -5201,6 +5363,7 @@ export function attachMarathonQueueToState(
     caravanSession: null,
     voyageSession: null,
     siegeSession: null,
+    convoySession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -5318,6 +5481,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceConvoySessionAfterRun(next, run);
   next = advanceSiegeSessionAfterRun(next, run);
   next = advanceVoyageSessionAfterRun(next, run);
   next = advanceCaravanSessionAfterRun(next, run);
@@ -5462,6 +5626,7 @@ export function attachGauntletSessionToState(
     caravanSession: null,
     voyageSession: null,
     siegeSession: null,
+    convoySession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -5698,6 +5863,7 @@ export function attachRelaySessionToState(
     caravanSession: null,
     voyageSession: null,
     siegeSession: null,
+    convoySession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -5894,6 +6060,7 @@ export function attachCircuitSessionToState(
     caravanSession: null,
     voyageSession: null,
     siegeSession: null,
+    convoySession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -6108,6 +6275,7 @@ export function attachExpeditionSessionToState(
     caravanSession: null,
     voyageSession: null,
     siegeSession: null,
+    convoySession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -6320,6 +6488,7 @@ export function attachOdysseySessionToState(
     caravanSession: null,
     voyageSession: null,
     siegeSession: null,
+    convoySession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -6531,6 +6700,7 @@ export function attachPilgrimageSessionToState(
     caravanSession: null,
     voyageSession: null,
     siegeSession: null,
+    convoySession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -6743,6 +6913,7 @@ export function attachCaravanSessionToState(
     caravanSession: sanitized,
     voyageSession: null,
     siegeSession: null,
+    convoySession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -6949,6 +7120,7 @@ export function attachVoyageSessionToState(
     ...state,
     voyageSession: sanitized,
     siegeSession: null,
+    convoySession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -7155,6 +7327,7 @@ export function attachSiegeSessionToState(
   return {
     ...state,
     siegeSession: sanitized,
+    convoySession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -7250,6 +7423,214 @@ export function siegeSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-convoy.ts ---
+export const O10M_CONVOY_SCENARIO_CAP = 6;
+export const O10M_CONVOY_HAUL_CAP = 650;
+export const O10M_CONVOY_HAUL_MONEY_CAP = 730;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_STAGES = new Set<O10mConvoyStage>(['staging', 'transit', 'delivery']);
+
+export function unlockTokenForConvoyId(convoyId: string): string | null {
+  if (!convoyId.startsWith('o10m_convoy_')) return null;
+  return `o10m_unlock_${convoyId.slice('o10m_convoy_'.length)}`;
+}
+
+export function convoyStageForCursor(cursor: number, scenarioCount: number): O10mConvoyStage {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'delivery';
+  if (clamped >= Math.floor(total / 2)) return 'transit';
+  return 'staging';
+}
+
+export function convoyHaulFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const moneySlice = Math.floor(run.playerMoney / 230);
+  return Math.min(90, Math.max(11, Math.floor(run.playerNetWorth / 205) + moneySlice));
+}
+
+export function sanitizeConvoySession(raw: unknown): O10mConvoySession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const convoyId =
+    typeof o.convoyId === 'string' && o.convoyId.startsWith('o10m_convoy_') ? o.convoyId : null;
+  if (!convoyId) return null;
+  const label = typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : convoyId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_CONVOY_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const haulScore = Math.min(O10M_CONVOY_HAUL_CAP, Math.max(0, Math.floor(num(o.haulScore, 0))));
+  const stageRaw = o.stageTag;
+  const stageTag =
+    typeof stageRaw === 'string' && VALID_STAGES.has(stageRaw as O10mConvoyStage)
+      ? (stageRaw as O10mConvoyStage)
+      : convoyStageForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    convoyId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    haulScore,
+    stageTag,
+  };
+}
+
+export function createConvoySession(params: {
+  convoyId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mConvoySession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.convoyId.startsWith('o10m_convoy_')) {
+    return { session: null, warnings: ['Convoy ids must start with o10m_convoy_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_CONVOY_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return { session: null, warnings: [...warnings, 'Convoy requires at least one valid scenario.'] };
+  }
+  return {
+    session: {
+      convoyId: params.convoyId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      haulScore: 0,
+      stageTag: convoyStageForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachConvoySessionToState(
+  state: O10mModesPersistedState,
+  session: O10mConvoySession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeConvoySession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    convoySession: sanitized,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearConvoySession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, convoySession: null };
+}
+
+export function getConvoyScenarioAtCursor(session: O10mConvoySession | null | undefined): string | null {
+  const convoy = sanitizeConvoySession(session);
+  if (!convoy || !convoy.active) return null;
+  return convoy.scenarioIds[convoy.cursor] ?? null;
+}
+
+export function buildConvoyScenarioStartOverrides(session: O10mConvoySession | null | undefined): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const convoy = sanitizeConvoySession(session);
+  if (!convoy) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(O10M_CONVOY_HAUL_MONEY_CAP, Math.floor(convoy.haulScore * 0.75));
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveConvoyId: convoy.convoyId,
+      o10mActiveConvoyStep: convoy.cursor,
+      o10mActiveConvoyStage: convoy.stageTag,
+      o10mConvoyHaul: convoy.haulScore,
+    },
+  };
+}
+
+export function advanceConvoySessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeConvoySession(state.convoySession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const haulScore = Math.min(O10M_CONVOY_HAUL_CAP, session.haulScore + convoyHaulFromRun(run));
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      convoySession: {
+        ...session,
+        cursor,
+        haulScore,
+        stageTag: convoyStageForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForConvoyId(session.convoyId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    convoySession: { ...session, active: false, haulScore, stageTag: 'delivery' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function convoySessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  haul: number;
+  stage: O10mConvoyStage | null;
+} {
+  const session = sanitizeConvoySession(state.convoySession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    haul: session?.haulScore ?? 0,
+    stage: session?.active ? session.stageTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -7288,9 +7669,31 @@ const emptyQueuePlan = {
   siegeCursor: null as number | null,
   siegePhase: null as O10mSiegePhase | null,
   siegeMorale: null as number | null,
+  convoyId: null as string | null,
+  convoyCursor: null as number | null,
+  convoyStage: null as O10mConvoyStage | null,
+  convoyHaul: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const convoy = sanitizeConvoySession(state.convoySession);
+  const convoyScenario = getConvoyScenarioAtCursor(convoy);
+  if (convoy && convoy.active && convoyScenario) {
+    return {
+      kind: 'convoy_step',
+      scenarioId: convoyScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      convoyId: convoy.convoyId,
+      convoyCursor: convoy.cursor,
+      convoyStage: convoy.stageTag,
+      convoyHaul: convoy.haulScore,
+      reason: `Convoy "${convoy.label}" ${convoy.stageTag} stage ${convoy.cursor + 1}/${convoy.scenarioIds.length} (haul ${convoy.haulScore}).`,
+    };
+  }
+
   const siege = sanitizeSiegeSession(state.siegeSession);
   const siegeScenario = getSiegeScenarioAtCursor(siege);
   if (siege && siege.active && siegeScenario) {
@@ -7546,6 +7949,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   caravanActive: boolean;
   voyageActive: boolean;
   siegeActive: boolean;
+  convoyActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -7563,6 +7967,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const caravan = caravanSessionSummary(state);
   const voyage = voyageSessionSummary(state);
   const siege = siegeSessionSummary(state);
+  const convoy = convoySessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -7578,6 +7983,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     caravanActive: caravan.active,
     voyageActive: voyage.active,
     siegeActive: siege.active,
+    convoyActive: convoy.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -7596,7 +8002,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 15, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 16, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -7704,16 +8110,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const siegeState = siege ? attachSiegeSessionToState(createEmptyO10mModesPersistedState(), siege) : null;
   push('agent04_chunk_22', siegeState !== null && planNextCampaignAction(siegeState!).kind === 'siege_step');
 
+  const convoy = createConvoySession({
+    convoyId: 'o10m_convoy_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_convoy_staging_depot'],
+  }).session;
+  const convoyState = convoy ? attachConvoySessionToState(createEmptyO10mModesPersistedState(), convoy) : null;
+  push('agent04_chunk_23', convoyState !== null && planNextCampaignAction(convoyState!).kind === 'convoy_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v15',
+  schemaVersion: 'op10m-agent04-v16',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 14,
+  saveSchemaVersion: 15,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

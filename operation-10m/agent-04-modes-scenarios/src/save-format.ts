@@ -14,6 +14,7 @@ import { sanitizePilgrimageSession } from './save-format-pilgrimage.js';
 import { sanitizeCaravanSession } from './save-format-caravan.js';
 import { sanitizeVoyageSession } from './save-format-voyage.js';
 import { sanitizeSiegeSession } from './save-format-siege.js';
+import { sanitizeConvoySession } from './save-format-convoy.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -32,7 +33,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 14;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 15;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -145,6 +146,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     caravanSession: null,
     voyageSession: null,
     siegeSession: null,
+    convoySession: null,
   };
 }
 
@@ -178,6 +180,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       caravanSession: merged.caravanSession ?? null,
       voyageSession: merged.voyageSession ?? null,
       siegeSession: merged.siegeSession ?? null,
+      convoySession: merged.convoySession ?? null,
     };
     return upgraded;
   }
@@ -235,6 +238,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     caravanSession: sanitizeCaravanSession(o.caravanSession),
     voyageSession: sanitizeVoyageSession(o.voyageSession),
     siegeSession: sanitizeSiegeSession(o.siegeSession),
+    convoySession: sanitizeConvoySession(o.convoySession),
   };
 }
 
@@ -339,6 +343,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Siege session failed sanitization; planner will ignore it.');
   } else if (siege && siege.cursor >= siege.scenarioIds.length) {
     warnings.push('Siege cursor out of range; clamp on next sanitize.');
+  }
+
+  const convoy = sanitizeConvoySession(state.convoySession);
+  if (state.convoySession && !convoy) {
+    warnings.push('Convoy session failed sanitization; planner will ignore it.');
+  } else if (convoy && convoy.cursor >= convoy.scenarioIds.length) {
+    warnings.push('Convoy cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

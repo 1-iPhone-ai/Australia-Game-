@@ -119,6 +119,7 @@ export function attachVoyageSessionToState(
     ...state,
     voyageSession: sanitized,
     siegeSession: null,
+    convoySession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
