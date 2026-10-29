@@ -203,7 +203,7 @@ Suggested marker:
 - `advanceDelayedSpendingEffects` / `commitSpendingProgram` / `makeSpendingCommitment`
 - `runAgent14WellbeingSelfTests`
 - `runAgent14HousingScenarioSweep` / `simulateAgent14HousingScenario`
-- `AGENT14_WELLBEING_SCHEMA_VERSION` (`10.14.43-scale-wave-43`)
+- `AGENT14_WELLBEING_SCHEMA_VERSION` (`10.14.44-scale-wave-44`)
 
 ## Upstream inputs (read-only)
 
