@@ -166,6 +166,10 @@ import { computeNationalPinnacleRetentionCouplingBrief } from './pinnacle-retent
 import { computeNationalRetentionCrestOutlook } from './retention-crest-outlook';
 import { computeNationalSubjectSummitReadinessBrief } from './subject-summit-readiness-brief';
 import { computeNationalWorkforceSummitIndex } from './national-workforce-summit-index';
+import { computeNationalSummitCoordinationCouplingBrief } from './summit-coordination-coupling-brief';
+import { computeNationalCoordinationHorizonOutlook } from './coordination-horizon-outlook';
+import { computeNationalSubjectZenithReadinessBrief } from './subject-zenith-readiness-brief';
+import { computeNationalWorkforceZenithIndex } from './national-workforce-zenith-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -1748,6 +1752,62 @@ export function runV1014LaborDemographicsSelfTests(): {
     'summit steward note'
   );
   check('R2816', retentionPullForRegion('NSW', 'technology') > 0, 'retention pull for region');
+
+  check('R2901', Boolean(r1.state.summitCoordinationCouplingBrief?.band), 'summit coordination on state');
+  check('R2902', (r1.state.summitCoordinationCouplingBrief?.summitDrag ?? 0) >= 0, 'summit coordination drag');
+  check('R2903', Boolean(r1.state.coordinationHorizonOutlook?.band), 'coordination horizon on state');
+  check('R2904', (r1.state.coordinationHorizonOutlook?.crestDrag ?? 0) >= 0, 'coordination horizon crest drag');
+  check('R2905', Boolean(r1.state.subjectZenithReadinessBrief?.band), 'subject zenith on state');
+  check('R2906', Boolean(r1.state.nationalWorkforceZenithIndex?.band), 'workforce zenith on state');
+  check(
+    'R2907',
+    detectLaborDemographicsQuery('summit coordination coupling') === 'summit_coordination_coupling',
+    'GI summit coordination detect'
+  );
+  check(
+    'R2908',
+    detectLaborDemographicsQuery('coordination horizon') === 'coordination_horizon',
+    'GI coordination horizon detect'
+  );
+  check(
+    'R2909',
+    detectLaborDemographicsQuery('subject zenith readiness') === 'subject_zenith_readiness',
+    'GI subject zenith detect'
+  );
+  check(
+    'R2910',
+    detectLaborDemographicsQuery('workforce zenith') === 'workforce_zenith',
+    'GI workforce zenith detect'
+  );
+  check(
+    'R2911',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_zenith').headline.length > 5,
+    'GI workforce zenith answer'
+  );
+  const summitCoordinationOnly = computeNationalSummitCoordinationCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceSummitIndex
+  );
+  check('R2912', summitCoordinationOnly.summary.length > 10, 'summit coordination standalone summary');
+  const coordinationHorizonOnly = computeNationalCoordinationHorizonOutlook(r1.state, r1.state.retentionCrestOutlook);
+  check('R2913', coordinationHorizonOnly.band.length > 3, 'coordination horizon band string');
+  const subjectZenithOnly = computeNationalSubjectZenithReadinessBrief(
+    r1.state,
+    r1.state.subjectSummitReadinessBrief,
+    r1.state.nationalWorkforceSummitIndex
+  );
+  check('R2914', subjectZenithOnly.zenithDrag >= 0, 'subject zenith drag');
+  check(
+    'R2915',
+    computeNationalWorkforceZenithIndex(
+      rHhBad.state,
+      rHhBad.state.summitCoordinationCouplingBrief,
+      rHhBad.state.coordinationHorizonOutlook,
+      rHhBad.state.subjectZenithReadinessBrief
+    ).stewardNote.length > 8,
+    'zenith steward note'
+  );
+  check('R2916', coordinationEaseForRegion('NSW', 'technology') > 0, 'coordination ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

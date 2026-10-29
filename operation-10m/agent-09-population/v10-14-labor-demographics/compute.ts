@@ -122,6 +122,10 @@ import { computeNationalPinnacleRetentionCouplingBrief } from './pinnacle-retent
 import { computeNationalRetentionCrestOutlook } from './retention-crest-outlook';
 import { computeNationalSubjectSummitReadinessBrief } from './subject-summit-readiness-brief';
 import { computeNationalWorkforceSummitIndex } from './national-workforce-summit-index';
+import { computeNationalSummitCoordinationCouplingBrief } from './summit-coordination-coupling-brief';
+import { computeNationalCoordinationHorizonOutlook } from './coordination-horizon-outlook';
+import { computeNationalSubjectZenithReadinessBrief } from './subject-zenith-readiness-brief';
+import { computeNationalWorkforceZenithIndex } from './national-workforce-zenith-index';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -850,6 +854,25 @@ export function computeNationalLaborDemographics(
     state.retentionCrestOutlook,
     state.subjectSummitReadinessBrief
   );
+  state.summitCoordinationCouplingBrief = computeNationalSummitCoordinationCouplingBrief(
+    state,
+    state.nationalWorkforceSummitIndex
+  );
+  state.coordinationHorizonOutlook = computeNationalCoordinationHorizonOutlook(
+    state,
+    state.retentionCrestOutlook
+  );
+  state.subjectZenithReadinessBrief = computeNationalSubjectZenithReadinessBrief(
+    state,
+    state.subjectSummitReadinessBrief,
+    state.nationalWorkforceSummitIndex
+  );
+  state.nationalWorkforceZenithIndex = computeNationalWorkforceZenithIndex(
+    state,
+    state.summitCoordinationCouplingBrief,
+    state.coordinationHorizonOutlook,
+    state.subjectZenithReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -1420,6 +1443,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceSummitIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.summitCoordinationCouplingBrief?.band === 'decoupled' ||
+      state.summitCoordinationCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.summitCoordinationCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.coordinationHorizonOutlook?.band === 'ebbing' ||
+      state.coordinationHorizonOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.coordinationHorizonOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectZenithReadinessBrief?.band === 'below_zenith' ||
+      state.subjectZenithReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectZenithReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceZenithIndex?.band === 'fragile' ||
+      state.nationalWorkforceZenithIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceZenithIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
