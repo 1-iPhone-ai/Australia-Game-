@@ -18,6 +18,7 @@ import {
   O6K_AGENT24_WAVE35_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE37_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE38_INTEGRATION_BASELINE_SHA,
 } from './replay-scale-wave-integration-closeout.ts';
 
 export { O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA } from './replay-scale-wave-integration-closeout.ts';
@@ -55,8 +56,10 @@ export function buildAgent24ReplayScaleWaveFullChunksHandoffSeal(
   const waveRound = input.replayScaleWaveDryrunVerification.waveRound;
   const fullChunksBaselineSha =
     input.fullChunksBaselineSha ??
-    (waveRound >= 37
-      ? O6K_AGENT24_WAVE37_INTEGRATION_BASELINE_SHA
+    (waveRound >= 38
+      ? O6K_AGENT24_WAVE38_INTEGRATION_BASELINE_SHA
+      : waveRound >= 37
+      ? O6K_AGENT24_WAVE38_INTEGRATION_BASELINE_SHA
       : waveRound >= 36
       ? O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA
       : waveRound >= 35
@@ -155,8 +158,8 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
   const dryrunVerification = {
     reportId: 'dv',
     matchId: 'self',
-    waveRound: 37,
-    dryrunBaselineSha: O6K_AGENT24_WAVE37_INTEGRATION_BASELINE_SHA,
+    waveRound: 38,
+    dryrunBaselineSha: O6K_AGENT24_WAVE38_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -167,7 +170,7 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
   const fullChunksGate = {
     reportId: 'fcg',
     matchId: 'self',
-    waveRound: 37,
+    waveRound: 38,
     chunksGateOpen: true,
     blockerCount: 0,
     blockers: [],
@@ -186,9 +189,9 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
       name: 'handoff_ready_at_full_chunks_baseline',
       passed:
         seal.handoffReady &&
-        seal.fullChunksBaselineSha === O6K_AGENT24_WAVE37_INTEGRATION_BASELINE_SHA,
+        seal.fullChunksBaselineSha === O6K_AGENT24_WAVE38_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: seal.waveRound === 37 },
+    { name: 'wave_round_pinned', passed: seal.waveRound === 38 },
     {
       name: 'deterministic_fingerprint',
       passed:
