@@ -97,3 +97,7 @@ export { LiveRegionQueueDayCoachStrip } from './LiveRegionQueueDayCoachStrip.js'
 export { ModalFocusRestoreDayCoachStrip } from './ModalFocusRestoreDayCoachStrip.js';
 export { LayoutDensityMismatchDayCoachStrip } from './LayoutDensityMismatchDayCoachStrip.js';
 export { NewlyUnlockedBatchDayCoachStrip } from './NewlyUnlockedBatchDayCoachStrip.js';
+export { CoachLiveRegionDeliveryDayCoachStrip } from './CoachLiveRegionDeliveryDayCoachStrip.js';
+export { ShortcutConflictWarningDayCoachStrip } from './ShortcutConflictWarningDayCoachStrip.js';
+export { AttentionDeferralDayCoachStrip } from './AttentionDeferralDayCoachStrip.js';
+export { ProgressionVisibilitySummaryDayCoachStrip } from './ProgressionVisibilitySummaryDayCoachStrip.js';

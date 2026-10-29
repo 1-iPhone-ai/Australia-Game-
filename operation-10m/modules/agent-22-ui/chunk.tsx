@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 48cbe46c4d9bac8c
+// content-sha256-prefix: 82ca0411e5989fb0
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -939,6 +939,10 @@ export interface DayAdvanceUiEvolutionResult {
   modalFocusRestoreDayCoachCopy: string | null;
   layoutDensityMismatchDayCoachCopy: string | null;
   newlyUnlockedBatchDayCoachCopy: string | null;
+  coachLiveRegionDeliveryDayCoachCopy: string | null;
+  shortcutConflictWarningDayCoachCopy: string | null;
+  attentionDeferralDayCoachCopy: string | null;
+  progressionVisibilitySummaryDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1500,6 +1504,53 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const coachLiveRegionDeliveryDayCoach = buildCoachLiveRegionDeliveryDayCoach({
+    plan: liveRegionPlan,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const progressionVisibilitySummaryDayCoach = buildProgressionVisibilitySummaryDayCoach({
+    signals: nextSignals,
+    policy,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const loadForAttentionDeferral = assessCognitiveLoad({
+    signals: nextSignals,
+    policy,
+    pendingCoachAnnouncements: combinedQueue.length,
+  });
+
+  const focusSummaryForDeferral = summarizeFocusSessionSuppression({
+    phase: context.phase ?? 'human_turn',
+    signals: nextSignals,
+    policy,
+    focusSessionSnoozedUntilDay: persistedAfterCalm.focusSessionSnoozedUntilDay,
+  });
+
+  const shortcutConflictWarningDayCoach =
+    context.phase != null
+      ? buildShortcutConflictWarningDayCoach({
+          interfaceLevel: nextSignals.interfaceLevel,
+          phase: context.phase,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { conflictCount: 0, coachCopy: null };
+
+  const attentionDeferralDayCoach =
+    context.phase != null
+      ? buildAttentionDeferralDayCoach({
+          band: loadForAttentionDeferral.band,
+          phase: context.phase,
+          nextGameDay: nextSignals.gameDay,
+          cognitiveLoadCoachRequested: loadForAttentionDeferral.band !== 'light',
+          focusSessionBannerRequested: focusSummaryForDeferral.active,
+          panelUnlockCoachRequested: newlyUnlockedPanelIds.length > 0,
+          simEvolutionBridgeRequested: newlyUnlockedPanelIds.length > 0,
+          keyboardHintsRequested: true,
+        })
+      : { deferredSurfaceCount: 0, coachCopy: null };
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1610,6 +1661,10 @@ export function tickEvolvingUiOnDayAdvance(
     modalFocusRestoreDayCoachCopy: modalFocusRestoreDayCoach.coachCopy,
     layoutDensityMismatchDayCoachCopy: layoutDensityMismatchDayCoach.coachCopy,
     newlyUnlockedBatchDayCoachCopy: newlyUnlockedBatchDayCoach.coachCopy,
+    coachLiveRegionDeliveryDayCoachCopy: coachLiveRegionDeliveryDayCoach.coachCopy,
+    shortcutConflictWarningDayCoachCopy: shortcutConflictWarningDayCoach.coachCopy,
+    attentionDeferralDayCoachCopy: attentionDeferralDayCoach.coachCopy,
+    progressionVisibilitySummaryDayCoachCopy: progressionVisibilitySummaryDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -6339,6 +6394,289 @@ export function buildNewlyUnlockedBatchDayCoach(input: {
     .join(', ');
   const coachCopy = `Day ${input.nextGameDay}: ${unlockCount} panels unlocked (${labels}${unlockCount > 3 ? '…' : ''}) — scan the nav rail.`;
   return { unlockCount, coachCopy };
+}
+
+// --- source: engine/coach-live-region-delivery-day-coach.ts ---
+export interface CoachLiveRegionDeliveryDayCoach {
+  messageCount: number;
+  coachCopy: string | null;
+}
+
+export function buildCoachLiveRegionDeliveryDayCoach(input: {
+  plan: CoachLiveRegionDeliveryPlan;
+  nextGameDay: number;
+}): CoachLiveRegionDeliveryDayCoach {
+  const base = coachLiveRegionDeliveryCopy(input.plan);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+  return {
+    messageCount: input.plan.messages.length,
+    coachCopy,
+  };
+}
+
+// --- source: engine/shortcut-conflict-warning-day-coach.ts ---
+export interface ShortcutConflictWarningDayCoach {
+  conflictCount: number;
+  coachCopy: string | null;
+}
+
+export function buildShortcutConflictWarningDayCoach(input: {
+  interfaceLevel: InterfaceExperienceLevel;
+  phase: V94StandardizedGamePhase;
+  nextGameDay: number;
+}): ShortcutConflictWarningDayCoach {
+  const conflicts = planKeyboardShortcutConflicts(input.interfaceLevel, input.phase);
+  const base = shortcutConflictWarningCopy(conflicts);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+  return {
+    conflictCount: conflicts.length,
+    coachCopy,
+  };
+}
+
+// --- source: engine/attention-deferral-day-coach.ts ---
+export interface AttentionDeferralDayCoach {
+  deferredSurfaceCount: number;
+  coachCopy: string | null;
+}
+
+export function buildAttentionDeferralDayCoach(input: {
+  band: CognitiveLoadBand;
+  phase: V94StandardizedGamePhase;
+  nextGameDay: number;
+  cognitiveLoadCoachRequested?: boolean;
+  focusSessionBannerRequested?: boolean;
+  panelUnlockCoachRequested?: boolean;
+  simEvolutionBridgeRequested?: boolean;
+  keyboardHintsRequested?: boolean;
+}): AttentionDeferralDayCoach {
+  const gate = planAttentionSurfaceGate({
+    band: input.band,
+    phase: input.phase,
+    cognitiveLoadCoachRequested: input.cognitiveLoadCoachRequested,
+    focusSessionBannerRequested: input.focusSessionBannerRequested,
+    panelUnlockCoachRequested: input.panelUnlockCoachRequested,
+    simEvolutionBridgeRequested: input.simEvolutionBridgeRequested,
+    keyboardHintsRequested: input.keyboardHintsRequested,
+  });
+  const base = attentionDeferralCopy(gate.deferredIds);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+  return {
+    deferredSurfaceCount: gate.deferredIds.length,
+    coachCopy,
+  };
+}
+
+// --- source: engine/progression-visibility-summary-day-coach.ts ---
+export interface ProgressionVisibilitySummaryDayCoach {
+  visibleCount: number;
+  previewCount: number;
+  hiddenCount: number;
+  coachCopy: string | null;
+}
+
+export function buildProgressionVisibilitySummaryDayCoach(input: {
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  nextGameDay: number;
+}): ProgressionVisibilitySummaryDayCoach {
+  const stats = computeProgressionCoverage(input.signals, input.policy);
+  let coachCopy: string | null = null;
+  if (input.nextGameDay <= 5 || stats.preview > 0) {
+    coachCopy = `Day ${input.nextGameDay}: ${stats.visible} visible, ${stats.preview} preview, ${stats.hidden} hidden interface panels.`;
+  }
+  return {
+    visibleCount: stats.visible,
+    previewCount: stats.preview,
+    hiddenCount: stats.hidden,
+    coachCopy,
+  };
+}
+
+// --- source: engine/round31-self-tests.ts ---
+export function runAgent22Round31SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r31_live_region_delivery',
+    'coach live region delivery day coach with messages',
+    (() => {
+      const plan = buildCoachLiveRegionDeliveryPlan(['A', 'B'], DEFAULT_ACCESSIBILITY_SNAPSHOT);
+      const coach = buildCoachLiveRegionDeliveryDayCoach({ plan, nextGameDay: 3 });
+      return coach.messageCount > 0 && Boolean(coach.coachCopy?.includes('Day 3'));
+    })()
+  );
+
+  check(
+    'r31_shortcut_warning',
+    'shortcut conflict warning day coach shape',
+    (() => {
+      const coach = buildShortcutConflictWarningDayCoach({
+        interfaceLevel: 'expert',
+        phase: 'human_turn',
+        nextGameDay: 4,
+      });
+      return coach.conflictCount >= 0 && (coach.coachCopy === null || coach.coachCopy.includes('Day 4'));
+    })()
+  );
+
+  check(
+    'r31_attention_deferral',
+    'attention deferral day coach on heavy band',
+    (() => {
+      const coach = buildAttentionDeferralDayCoach({
+        band: 'heavy',
+        phase: 'human_turn',
+        nextGameDay: 5,
+        cognitiveLoadCoachRequested: true,
+        panelUnlockCoachRequested: true,
+        simEvolutionBridgeRequested: true,
+        keyboardHintsRequested: true,
+        focusSessionBannerRequested: true,
+      });
+      return coach.deferredSurfaceCount > 0 && Boolean(coach.coachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r31_visibility_summary',
+    'progression visibility summary day coach early day',
+    (() => {
+      const coach = buildProgressionVisibilitySummaryDayCoach({
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        nextGameDay: 2,
+      });
+      return coach.visibleCount >= 0 && Boolean(coach.coachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r31_tick_delivery_field',
+    'day advance exposes live region delivery day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.coachLiveRegionDeliveryDayCoachCopy === 'string' || r.coachLiveRegionDeliveryDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r31_tick_shortcut_warning_field',
+    'day advance exposes shortcut conflict warning day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'expert' },
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'expert' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.shortcutConflictWarningDayCoachCopy === 'string' || r.shortcutConflictWarningDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r31_tick_deferral_field',
+    'day advance exposes attention deferral day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' },
+        { gameDay: 6, turnCount: 6, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'save_load' }
+      );
+      return typeof r.attentionDeferralDayCoachCopy === 'string' || r.attentionDeferralDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r31_tick_visibility_summary_field',
+    'day advance exposes progression visibility summary day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.progressionVisibilitySummaryDayCoachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r31_delivery_empty',
+    'live region delivery day coach null when empty',
+    (() => {
+      const coach = buildCoachLiveRegionDeliveryDayCoach({
+        plan: { messages: [], assertiveCount: 0, politeCount: 0 },
+        nextGameDay: 1,
+      });
+      return coach.messageCount === 0 && coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r31_deferral_clear',
+    'attention deferral day coach null when nothing deferred',
+    (() => {
+      const coach = buildAttentionDeferralDayCoach({
+        band: 'light',
+        phase: 'human_turn',
+        nextGameDay: 6,
+        cognitiveLoadCoachRequested: false,
+        panelUnlockCoachRequested: false,
+        simEvolutionBridgeRequested: false,
+        keyboardHintsRequested: false,
+      });
+      return coach.deferredSurfaceCount === 0 && coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r31_visibility_late_day',
+    'progression visibility summary null late day without preview',
+    (() => {
+      const coach = buildProgressionVisibilitySummaryDayCoach({
+        signals: { gameDay: 20, turnCount: 20, interfaceLevel: 'expert' },
+        policy: { ...DEFAULT_EVOLVING_UI_ACCESS_POLICY, showAllPanelsOverride: true },
+        nextGameDay: 20,
+      });
+      return coach.coachCopy === null || coach.coachCopy.includes('Day 20');
+    })()
+  );
+
+  check(
+    'r31_tick_deferral_save_load',
+    'save_load day advance may defer attention surfaces',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 7, turnCount: 7, interfaceLevel: 'guided' },
+        { gameDay: 8, turnCount: 8, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'save_load' }
+      );
+      return r.attentionDeferralDayCoachCopy === null || r.attentionDeferralDayCoachCopy.includes('Day 8');
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round30-self-tests.ts ---
@@ -12127,6 +12465,18 @@ export function SimulationUiEvolutionBridge({
       {result.newlyUnlockedBatchDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-unlock-batch-day">{result.newlyUnlockedBatchDayCoachCopy}</div>
       ) : null}
+      {result.coachLiveRegionDeliveryDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-lr-delivery-day">{result.coachLiveRegionDeliveryDayCoachCopy}</div>
+      ) : null}
+      {result.shortcutConflictWarningDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-shortcut-warning-day">{result.shortcutConflictWarningDayCoachCopy}</div>
+      ) : null}
+      {result.attentionDeferralDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-attention-deferral-day">{result.attentionDeferralDayCoachCopy}</div>
+      ) : null}
+      {result.progressionVisibilitySummaryDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-visibility-summary-day">{result.progressionVisibilitySummaryDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -14177,7 +14527,7 @@ export function ContextualWidgetDayCoachStrip({
 }
 
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.30.0';
+export const AGENT_22_MODULE_VERSION = '1.31.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -14328,6 +14678,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round31 = runAgent22Round31SelfTests();
+  for (const r of round31.results) {
+    check(`agent22_round31_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round30 = runAgent22Round30SelfTests();

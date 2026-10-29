@@ -101,6 +101,10 @@ import { buildLiveRegionQueueDayCoach } from '../engine/live-region-queue-day-co
 import { buildModalFocusRestoreDayCoach } from '../engine/modal-focus-restore-day-coach.js';
 import { buildLayoutDensityMismatchDayCoach } from '../engine/layout-density-mismatch-day-coach.js';
 import { buildNewlyUnlockedBatchDayCoach } from '../engine/newly-unlocked-batch-day-coach.js';
+import { buildCoachLiveRegionDeliveryDayCoach } from '../engine/coach-live-region-delivery-day-coach.js';
+import { buildShortcutConflictWarningDayCoach } from '../engine/shortcut-conflict-warning-day-coach.js';
+import { buildAttentionDeferralDayCoach } from '../engine/attention-deferral-day-coach.js';
+import { buildProgressionVisibilitySummaryDayCoach } from '../engine/progression-visibility-summary-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -210,6 +214,10 @@ export interface DayAdvanceUiEvolutionResult {
   modalFocusRestoreDayCoachCopy: string | null;
   layoutDensityMismatchDayCoachCopy: string | null;
   newlyUnlockedBatchDayCoachCopy: string | null;
+  coachLiveRegionDeliveryDayCoachCopy: string | null;
+  shortcutConflictWarningDayCoachCopy: string | null;
+  attentionDeferralDayCoachCopy: string | null;
+  progressionVisibilitySummaryDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -771,6 +779,53 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const coachLiveRegionDeliveryDayCoach = buildCoachLiveRegionDeliveryDayCoach({
+    plan: liveRegionPlan,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const progressionVisibilitySummaryDayCoach = buildProgressionVisibilitySummaryDayCoach({
+    signals: nextSignals,
+    policy,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const loadForAttentionDeferral = assessCognitiveLoad({
+    signals: nextSignals,
+    policy,
+    pendingCoachAnnouncements: combinedQueue.length,
+  });
+
+  const focusSummaryForDeferral = summarizeFocusSessionSuppression({
+    phase: context.phase ?? 'human_turn',
+    signals: nextSignals,
+    policy,
+    focusSessionSnoozedUntilDay: persistedAfterCalm.focusSessionSnoozedUntilDay,
+  });
+
+  const shortcutConflictWarningDayCoach =
+    context.phase != null
+      ? buildShortcutConflictWarningDayCoach({
+          interfaceLevel: nextSignals.interfaceLevel,
+          phase: context.phase,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { conflictCount: 0, coachCopy: null };
+
+  const attentionDeferralDayCoach =
+    context.phase != null
+      ? buildAttentionDeferralDayCoach({
+          band: loadForAttentionDeferral.band,
+          phase: context.phase,
+          nextGameDay: nextSignals.gameDay,
+          cognitiveLoadCoachRequested: loadForAttentionDeferral.band !== 'light',
+          focusSessionBannerRequested: focusSummaryForDeferral.active,
+          panelUnlockCoachRequested: newlyUnlockedPanelIds.length > 0,
+          simEvolutionBridgeRequested: newlyUnlockedPanelIds.length > 0,
+          keyboardHintsRequested: true,
+        })
+      : { deferredSurfaceCount: 0, coachCopy: null };
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -881,6 +936,10 @@ export function tickEvolvingUiOnDayAdvance(
     modalFocusRestoreDayCoachCopy: modalFocusRestoreDayCoach.coachCopy,
     layoutDensityMismatchDayCoachCopy: layoutDensityMismatchDayCoach.coachCopy,
     newlyUnlockedBatchDayCoachCopy: newlyUnlockedBatchDayCoach.coachCopy,
+    coachLiveRegionDeliveryDayCoachCopy: coachLiveRegionDeliveryDayCoach.coachCopy,
+    shortcutConflictWarningDayCoachCopy: shortcutConflictWarningDayCoach.coachCopy,
+    attentionDeferralDayCoachCopy: attentionDeferralDayCoach.coachCopy,
+    progressionVisibilitySummaryDayCoachCopy: progressionVisibilitySummaryDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
