@@ -149,6 +149,22 @@ import {
   digitalFreightProductivityMultiplier,
   nationalDigitalFreightThroughputIndex,
 } from './digital-freight-visibility-index.ts';
+import {
+  computeCriticalMineralsExportByRegion,
+  criticalMineralsProductivityMultiplier,
+  nationalCriticalMineralsExportIndex,
+} from '../network/critical-minerals-export-index.ts';
+import {
+  channelMaintenanceProductivityMultiplier,
+  computeChannelMaintenanceByRegion,
+  nationalChannelMaintenanceIndex,
+} from '../operations/channel-maintenance-index.ts';
+import {
+  computeIndigenousRemoteSupplyThroughputByRegion,
+  computeIndigenousRemoteSupplyShare,
+  indigenousRemoteSupplyProductivityMultiplier,
+  nationalIndigenousRemoteSupplyThroughputIndex,
+} from './indigenous-remote-supply-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -573,6 +589,59 @@ export function computeTransportInfrastructureState(
     nationalDefenceLogistics * 0.022 +
     nationalDigitalFreight * 0.021;
 
+  const tradeUtil = inputs.networkUtilization?.trade ?? freightUtil;
+  const criticalMineralsExportByRegion = computeCriticalMineralsExportByRegion(ops);
+  const nationalCriticalMinerals = nationalCriticalMineralsExportIndex(criticalMineralsExportByRegion);
+  const mineralsMult = criticalMineralsProductivityMultiplier(
+    nationalCriticalMinerals,
+    options?.criticalMineralsPolicy ?? 'baseline',
+  );
+  const channelMaintenanceByRegion = computeChannelMaintenanceByRegion(ops, tradeUtil);
+  const nationalChannelMaintenance = nationalChannelMaintenanceIndex(channelMaintenanceByRegion);
+  const channelMult = channelMaintenanceProductivityMultiplier(
+    nationalChannelMaintenance,
+    options?.channelMaintenancePolicy ?? 'baseline',
+  );
+  const indigenousRemoteSupplyThroughputByRegion = computeIndigenousRemoteSupplyThroughputByRegion(ops);
+  const nationalIndigenousRemoteSupply = nationalIndigenousRemoteSupplyThroughputIndex(
+    indigenousRemoteSupplyThroughputByRegion,
+  );
+  const indigenousRemoteSupplyShare = computeIndigenousRemoteSupplyShare(
+    ops,
+    options?.indigenousRemoteSupplyPolicy ?? 'baseline',
+  );
+  const indigenousMult = indigenousRemoteSupplyProductivityMultiplier(
+    indigenousRemoteSupplyShare,
+    options?.indigenousRemoteSupplyPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const mineralsBoost = (criticalMineralsExportByRegion[code] - 9) * 0.0058;
+    const channelBoost = (channelMaintenanceByRegion[code] - 42) * 0.004;
+    const indigenousBoost = (indigenousRemoteSupplyThroughputByRegion[code] - 3) * 0.0055;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + mineralsBoost + channelBoost + indigenousBoost) *
+      mineralsMult *
+      channelMult *
+      indigenousMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035 +
+    nationalAviationCargo * 0.03 +
+    nationalHydrogenCorridor * 0.028 +
+    nationalCoastalShipping * 0.026 +
+    nationalAutonomousCorridor * 0.024 +
+    nationalDeepSeaGateway * 0.027 +
+    nationalElectricCorridor * 0.023 +
+    nationalDefenceLogistics * 0.022 +
+    nationalDigitalFreight * 0.021 +
+    nationalCriticalMinerals * 0.024 +
+    nationalIndigenousRemoteSupply * 0.019;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -586,7 +655,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/12',
+    schemaVersion: 'agent12/13',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -655,6 +724,13 @@ export function computeTransportInfrastructureState(
     digitalFreightVisibilityShare,
     nationalDigitalFreightThroughputIndex: nationalDigitalFreight,
     digitalFreightThroughputByRegion,
+    nationalCriticalMineralsExportIndex: nationalCriticalMinerals,
+    criticalMineralsExportByRegion,
+    nationalChannelMaintenanceIndex: nationalChannelMaintenance,
+    channelMaintenanceByRegion,
+    indigenousRemoteSupplyShare,
+    nationalIndigenousRemoteSupplyThroughputIndex: nationalIndigenousRemoteSupply,
+    indigenousRemoteSupplyThroughputByRegion,
     computeMs,
   };
 }

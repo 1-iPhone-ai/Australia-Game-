@@ -63,7 +63,7 @@ describe('Agent 12 round 2 analytics', () => {
       activeScenarioIds: new Set(['scn_multi_coastal_compound', 'scn_national_fuel_spike']),
       maintenanceSpendIndex: 55,
     });
-    assert.equal(state.schemaVersion, 'agent12/12');
+    assert.equal(state.schemaVersion, 'agent12/13');
     assert.ok(state.scenarioStackFactor > 1);
     assert.ok(nationalResilienceIndex(state.resilienceScoreByRegion) > 50);
     assert.ok(Object.keys(state.projectedBacklogNextTurn).length > 50);

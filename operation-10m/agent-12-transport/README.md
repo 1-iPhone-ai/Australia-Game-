@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 12
+
+- Schema **`agent12/13`**: critical-minerals export throughput, channel maintenance readiness, indigenous remote supply share (`criticalMineralsPolicy`, `channelMaintenancePolicy`, `indigenousRemoteSupplyPolicy`)
+- Catalog: **181** assets, **50** corridors, **78** scenarios
+- Systems: `network/critical-minerals-export-index.ts`, `operations/channel-maintenance-index.ts`, `productivity/indigenous-remote-supply-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 11
 
 - Schema **`agent12/12`**: defence logistics readiness, weather-resilience routing, digital freight visibility (`defenceMobilityPolicy`, `weatherResiliencePolicy`, `digitalFreightPolicy`)

@@ -223,8 +223,14 @@ export type WeatherResiliencePolicy = 'baseline' | 'harden';
 
 export type DigitalFreightPolicy = 'baseline' | 'integrate';
 
+export type CriticalMineralsPolicy = 'baseline' | 'accelerate';
+
+export type ChannelMaintenancePolicy = 'baseline' | 'dredge';
+
+export type IndigenousRemoteSupplyPolicy = 'baseline' | 'strengthen';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/12';
+  schemaVersion: 'agent12/13';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -293,6 +299,13 @@ export interface TransportInfrastructureState {
   digitalFreightVisibilityShare: number;
   nationalDigitalFreightThroughputIndex: number;
   digitalFreightThroughputByRegion: Record<AuRegionCode, number>;
+  nationalCriticalMineralsExportIndex: number;
+  criticalMineralsExportByRegion: Record<AuRegionCode, number>;
+  nationalChannelMaintenanceIndex: number;
+  channelMaintenanceByRegion: Record<AuRegionCode, number>;
+  indigenousRemoteSupplyShare: number;
+  nationalIndigenousRemoteSupplyThroughputIndex: number;
+  indigenousRemoteSupplyThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -319,6 +332,9 @@ export interface TransportInfrastructureOptions {
   defenceMobilityPolicy?: DefenceMobilityPolicy;
   weatherResiliencePolicy?: WeatherResiliencePolicy;
   digitalFreightPolicy?: DigitalFreightPolicy;
+  criticalMineralsPolicy?: CriticalMineralsPolicy;
+  channelMaintenancePolicy?: ChannelMaintenancePolicy;
+  indigenousRemoteSupplyPolicy?: IndigenousRemoteSupplyPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -845,6 +861,47 @@ export const TRANSPORT_CORRIDORS_ROUND11: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round12.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND12: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_pilbara_critical_minerals',
+    name: 'Pilbara Critical Minerals Export',
+    networkKind: 'trade',
+    regionSequence: ['WA'],
+    requiredTagsByRegion: {
+      WA: ['critical_minerals', 'lithium', 'bulk'],
+    },
+    productivitySynergyPoints: 7.8,
+    logisticsRelief: 0.045,
+  },
+  {
+    id: 'corr_qld_gladstone_channel_chain',
+    name: 'Gladstone Channel Maintenance Chain',
+    networkKind: 'trade',
+    regionSequence: ['QLD'],
+    requiredTagsByRegion: {
+      QLD: ['dredging', 'pilotage', 'channel_depth'],
+    },
+    productivitySynergyPoints: 6.5,
+    logisticsRelief: 0.038,
+  },
+  {
+    id: 'corr_nt_indigenous_remote_supply',
+    name: 'Top End Indigenous Remote Supply',
+    networkKind: 'freight',
+    regionSequence: ['NT', 'QLD', 'WA'],
+    requiredTagsByRegion: {
+      NT: ['indigenous_supply', 'remote_community', 'remote'],
+      QLD: ['remote_community', 'remote'],
+      WA: ['indigenous_supply', 'remote'],
+    },
+    productivitySynergyPoints: 5.9,
+    logisticsRelief: 0.036,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -1003,6 +1060,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND9,
   ...TRANSPORT_CORRIDORS_ROUND10,
   ...TRANSPORT_CORRIDORS_ROUND11,
+  ...TRANSPORT_CORRIDORS_ROUND12,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -1651,6 +1709,62 @@ export const TRANSPORT_SCENARIOS_ROUND11: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round12.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND12: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_lithium_export_surge',
+    label: 'WA Lithium Export Surge',
+    description: 'Critical-minerals vessel queue at Pilbara export terminals.',
+    targetRegions: ['WA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.3,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_qld_channel_draft_restriction',
+    label: 'Gladstone Channel Draft Restriction',
+    description: 'Dredging delay narrows deep-draft export windows.',
+    targetRegions: ['QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port'],
+  },
+  {
+    id: 'scn_nt_remote_supply_isolation',
+    label: 'NT Remote Supply Isolation',
+    description: 'Wet season cuts indigenous community freight corridors.',
+    targetRegions: ['NT'],
+    networkKind: 'freight',
+    utilizationAdd: 0.28,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['road', 'logistics'],
+  },
+  {
+    id: 'scn_sa_spodumene_rail_fault',
+    label: 'SA Spodumene Rail Fault',
+    description: 'Critical-minerals rail possession slows export feed.',
+    targetRegions: ['SA', 'WA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail'],
+  },
+  {
+    id: 'scn_tas_pilotage_delay',
+    label: 'Tasmanian Pilotage Delay',
+    description: 'Pilot shortage delays Bass Strait channel movements.',
+    targetRegions: ['TAS', 'VIC'],
+    networkKind: 'trade',
+    utilizationAdd: 0.19,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -1823,6 +1937,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND9,
   ...TRANSPORT_SCENARIOS_ROUND10,
   ...TRANSPORT_SCENARIOS_ROUND11,
+  ...TRANSPORT_SCENARIOS_ROUND12,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -5020,6 +5135,232 @@ export const SCALE_WAVE_ROUND11_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round12-assets.ts ---
+
+export const ROUND12_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_pilbara_lithium_haul',
+    category: 'road',
+    name: 'Pilbara Lithium Haul Road',
+    description: 'Spodumene concentrate feed to Port Hedland export.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['critical_minerals', 'lithium', 'battery_feedstock', 'mining', 'bulk'],
+    laneKilometres: 380,
+    designSpeedKmh: 90,
+    freightShare: 0.58,
+    urbanShare: 0.02,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nt_arnhem_remote_supply',
+    category: 'road',
+    name: 'Arnhem Remote Supply Highway',
+    description: 'Indigenous community freight and essential supply corridor.',
+    hostRegion: 'NT',
+    servedRegions: ['NT'],
+    baseProductivityPoints: 3.6,
+    strategicNetworks: ['freight'],
+    tags: ['indigenous_supply', 'remote_community', 'remote', 'national_highway'],
+    laneKilometres: 520,
+    designSpeedKmh: 100,
+    freightShare: 0.29,
+    urbanShare: 0.03,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_cape_remote_feed',
+    category: 'road',
+    name: 'Cape York Remote Community Feed',
+    description: 'Seasonal remote community supply from Cairns hub.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 3.4,
+    strategicNetworks: ['freight'],
+    tags: ['remote_community', 'remote', 'indigenous_supply'],
+    laneKilometres: 410,
+    designSpeedKmh: 90,
+    freightShare: 0.31,
+    urbanShare: 0.04,
+    tollRoad: false,
+  },
+  {
+    id: 'road_wa_kimberley_indigenous_feed',
+    category: 'road',
+    name: 'Kimberley Indigenous Supply Feed',
+    description: 'Remote community and indigenous supply link to Broome.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'NT'],
+    baseProductivityPoints: 3.5,
+    strategicNetworks: ['freight'],
+    tags: ['indigenous_supply', 'remote', 'remote_community'],
+    laneKilometres: 340,
+    designSpeedKmh: 95,
+    freightShare: 0.27,
+    urbanShare: 0.05,
+    tollRoad: false,
+  },
+];
+
+export const ROUND12_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_karratha_lithium',
+    category: 'rail',
+    name: 'Karratha Lithium Export Rail',
+    description: 'Critical-minerals unit trains to Hedland bulk loaders.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 6.6,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['critical_minerals', 'lithium', 'bulk', 'heavy_haul', 'battery_feedstock'],
+    trackKilometres: 280,
+    dualTrackShare: 0.62,
+    electrifiedShare: 0.28,
+    designFreightTonnesPerYear: 14_500_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_sa_olympic_dam_minerals',
+    category: 'rail',
+    name: 'Olympic Dam Minerals Rail',
+    description: 'Copper and critical-minerals feed to Adelaide export chain.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 5.9,
+    strategicNetworks: ['trade'],
+    tags: ['critical_minerals', 'bulk', 'mining', 'rare_earth'],
+    trackKilometres: 420,
+    dualTrackShare: 0.48,
+    electrifiedShare: 0.22,
+    designFreightTonnesPerYear: 11_200_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_nt_gove_remote_supply',
+    category: 'rail',
+    name: 'Gove Remote Supply Shuttle',
+    description: 'Bauxite-region remote community supply shuttle.',
+    hostRegion: 'NT',
+    servedRegions: ['NT'],
+    baseProductivityPoints: 3.8,
+    strategicNetworks: ['freight'],
+    tags: ['remote', 'remote_community', 'indigenous_supply'],
+    trackKilometres: 95,
+    dualTrackShare: 0.35,
+    electrifiedShare: 0.12,
+    designFreightTonnesPerYear: 1_800_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND12_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_hedland_lithium_export',
+    category: 'port',
+    name: 'Port Hedland Lithium Export Berths',
+    description: 'Critical-minerals bulk export with maintained deep channels.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 7.8,
+    strategicNetworks: ['trade'],
+    tags: ['critical_minerals', 'lithium', 'bulk', 'dredging', 'channel_depth', 'pilotage'],
+    berthCount: 9,
+    maxDraftMetres: 18.2,
+    teuCapacityPerYear: 520_000,
+    automationLevel: 2,
+    bulkShare: 0.84,
+  },
+  {
+    id: 'port_qld_gladstone_channel',
+    category: 'port',
+    name: 'Gladstone Channel Services Terminal',
+    description: 'Dredged deep-draft channel with pilotage coordination.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 7.2,
+    strategicNetworks: ['trade'],
+    tags: ['dredging', 'pilotage', 'channel_depth', 'bulk', 'export'],
+    berthCount: 8,
+    maxDraftMetres: 15.8,
+    teuCapacityPerYear: 380_000,
+    automationLevel: 2,
+    bulkShare: 0.71,
+  },
+];
+
+export const ROUND12_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_wa_pilbara_minerals_staging',
+    category: 'logistics',
+    name: 'Pilbara Minerals Staging Yard',
+    description: 'Lithium and battery-feedstock export staging.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['trade'],
+    tags: ['critical_minerals', 'lithium', 'battery_feedstock', 'bulk'],
+    warehouseSqm: 142_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 54,
+  },
+  {
+    id: 'log_nt_indigenous_remote_dc',
+    category: 'logistics',
+    name: 'Darwin Indigenous Remote DC',
+    description: 'Top End indigenous and remote community supply consolidation.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'QLD', 'WA'],
+    baseProductivityPoints: 3.8,
+    strategicNetworks: ['freight'],
+    tags: ['indigenous_supply', 'remote_community', 'remote'],
+    warehouseSqm: 86_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 42,
+  },
+  {
+    id: 'log_qld_gladstone_pilotage',
+    category: 'logistics',
+    name: 'Gladstone Pilotage Coordination Hub',
+    description: 'Channel maintenance and pilot scheduling staging.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['trade'],
+    tags: ['pilotage', 'dredging', 'channel_depth', 'gateway'],
+    warehouseSqm: 68_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 58,
+  },
+  {
+    id: 'log_tas_bass_pilotage',
+    category: 'logistics',
+    name: 'Bass Strait Pilotage Office',
+    description: 'Short-sea pilotage and channel movement coordination.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 3.2,
+    strategicNetworks: ['trade'],
+    tags: ['pilotage', 'channel_depth', 'coastal_shipping'],
+    warehouseSqm: 42_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 51,
+  },
+];
+
+export const SCALE_WAVE_ROUND12_ASSETS = [
+  ...ROUND12_ROADS,
+  ...ROUND12_RAIL,
+  ...ROUND12_PORTS,
+  ...ROUND12_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -5039,6 +5380,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND9_ASSETS,
     ...SCALE_WAVE_ROUND10_ASSETS,
     ...SCALE_WAVE_ROUND11_ASSETS,
+    ...SCALE_WAVE_ROUND12_ASSETS,
   ];
 }
 
@@ -5659,6 +6001,61 @@ export function defenceLogisticsProductivityMultiplier(
   const policyBoost = policy === 'mobilize' ? 0.044 : 0;
   const normalized = (readinessIndex - 10) / 100;
   return clamp(1 + normalized * 0.05 + policyBoost, 0.93, 1.11);
+}
+
+
+// --- source: network/critical-minerals-export-index.ts ---
+
+/** 0–100 critical-minerals export throughput (lithium, rare earth, battery feedstock). */
+export function computeCriticalMineralsExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const mineralTagged =
+      asset.tags.some(
+        (t) => t === 'critical_minerals' || t === 'lithium' || t === 'rare_earth' || t === 'battery_feedstock',
+      ) || (asset.category === 'port' && asset.tags.includes('bulk') && asset.bulkShare > 0.55);
+
+    if (!mineralTagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.bulkShare * (asset.berthCount * 2.2 + asset.teuCapacityPerYear / 200_000);
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 6_200_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += (asset.laneKilometres * asset.freightShare) / 720;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 95_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalCriticalMineralsExportIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 3, 90) * 10) / 10;
+}
+
+export function criticalMineralsProductivityMultiplier(
+  exportIndex: number,
+  policy: CriticalMineralsPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.043 : 0;
+  const normalized = (exportIndex - 11) / 100;
+  return clamp(1 + normalized * 0.054 + policyBoost, 0.93, 1.11);
 }
 
 
@@ -6293,6 +6690,62 @@ export function weatherResilienceProductivityMultiplier(
   const policyBoost = policy === 'harden' ? 0.047 : 0;
   const normalized = (routingIndex - 40) / 100;
   return clamp(1 + normalized * 0.052 + policyBoost, 0.92, 1.1);
+}
+
+
+// --- source: operations/channel-maintenance-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type ChannelMaintenancePolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 channel maintenance readiness (dredging, pilotage, draft windows). */
+export function computeChannelMaintenanceByRegion(
+  operationalAssets: TransportAsset[],
+  tradeUtilization = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 37])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'port') {
+      const channelScore =
+        asset.maxDraftMetres * 2.4 + asset.berthCount * 1.7 + asset.automationLevel * 2.1;
+      if (
+        asset.tags.includes('dredging') ||
+        asset.tags.includes('pilotage') ||
+        asset.tags.includes('channel_depth')
+      ) {
+        byRegion[asset.hostRegion] += channelScore * 0.35;
+      } else {
+        byRegion[asset.hostRegion] += channelScore * 0.12;
+      }
+    }
+    if (asset.category === 'logistics' && asset.tags.includes('pilotage')) {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 100_000 + 2;
+    }
+  }
+
+  const utilDrag = clamp(tradeUtilization, 0.05, 1.2);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.02 - utilDrag * 0.06), 18, 93) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalChannelMaintenanceIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  return Math.round(clamp(avg, 22, 88) * 10) / 10;
+}
+
+export function channelMaintenanceProductivityMultiplier(
+  maintenanceIndex: number,
+  policy: ChannelMaintenancePolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'dredge' ? 0.045 : 0;
+  const normalized = (maintenanceIndex - 43) / 100;
+  return clamp(1 + normalized * 0.05 + policyBoost, 0.92, 1.1);
 }
 
 
@@ -6963,6 +7416,100 @@ export function nationalDigitalFreightThroughputIndex(
 }
 
 
+// --- source: productivity/indigenous-remote-supply-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type IndigenousRemoteSupplyPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of remote/indigenous community supply served by dedicated corridors. */
+export function computeIndigenousRemoteSupplyShare(
+  operationalAssets: TransportAsset[],
+  policy: IndigenousRemoteSupplyPolicy = 'baseline',
+): number {
+  let remoteUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      const units = asset.laneKilometres * (0.22 + asset.freightShare);
+      totalUnits += units;
+      if (
+        asset.tags.includes('indigenous_supply') ||
+        asset.tags.includes('remote_community') ||
+        asset.tags.includes('remote')
+      ) {
+        remoteUnits += units * (0.55 + (1 - asset.urbanShare) * 0.35);
+      }
+    }
+    if (asset.category === 'logistics') {
+      const units = asset.warehouseSqm / 80_000;
+      totalUnits += units;
+      if (asset.tags.includes('indigenous_supply') || asset.tags.includes('remote_community')) {
+        remoteUnits += units * 0.9;
+      }
+    }
+    if (asset.category === 'port' && asset.tags.includes('remote')) {
+      totalUnits += asset.berthCount * 2;
+      remoteUnits += asset.berthCount * 1.4;
+    }
+  }
+
+  if (totalUnits <= 0) return 0.09;
+  const policyBoost = policy === 'strengthen' ? 0.04 : 0;
+  return Math.round(clamp(remoteUnits / totalUnits + policyBoost, 0.08, 0.55) * 1000) / 1000;
+}
+
+export function indigenousRemoteSupplyProductivityMultiplier(
+  share: number,
+  policy: IndigenousRemoteSupplyPolicy,
+): number {
+  const bias = policy === 'strengthen' ? 1.025 : 1;
+  return (1 + (share - 0.14) * 0.04) * bias;
+}
+
+export function computeIndigenousRemoteSupplyThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'indigenous_supply' || t === 'remote_community' || (t === 'remote' && asset.category === 'logistics'),
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += (asset.laneKilometres * (1 - asset.urbanShare)) / 550;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 85_000 + asset.lastMileCoveragePct / 150;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.6;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalIndigenousRemoteSupplyThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.54 + max * 0.46, 2, 72) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -7249,6 +7796,19 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   digitalFreightProductivityMultiplier,
   nationalDigitalFreightThroughputIndex,
 } from './digital-freight-visibility-index.ts';
+  computeCriticalMineralsExportByRegion,
+  criticalMineralsProductivityMultiplier,
+  nationalCriticalMineralsExportIndex,
+} from '../network/critical-minerals-export-index.ts';
+  channelMaintenanceProductivityMultiplier,
+  computeChannelMaintenanceByRegion,
+  nationalChannelMaintenanceIndex,
+} from '../operations/channel-maintenance-index.ts';
+  computeIndigenousRemoteSupplyThroughputByRegion,
+  computeIndigenousRemoteSupplyShare,
+  indigenousRemoteSupplyProductivityMultiplier,
+  nationalIndigenousRemoteSupplyThroughputIndex,
+} from './indigenous-remote-supply-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -7672,6 +8232,59 @@ export function computeTransportInfrastructureState(
     nationalDefenceLogistics * 0.022 +
     nationalDigitalFreight * 0.021;
 
+  const tradeUtil = inputs.networkUtilization?.trade ?? freightUtil;
+  const criticalMineralsExportByRegion = computeCriticalMineralsExportByRegion(ops);
+  const nationalCriticalMinerals = nationalCriticalMineralsExportIndex(criticalMineralsExportByRegion);
+  const mineralsMult = criticalMineralsProductivityMultiplier(
+    nationalCriticalMinerals,
+    options?.criticalMineralsPolicy ?? 'baseline',
+  );
+  const channelMaintenanceByRegion = computeChannelMaintenanceByRegion(ops, tradeUtil);
+  const nationalChannelMaintenance = nationalChannelMaintenanceIndex(channelMaintenanceByRegion);
+  const channelMult = channelMaintenanceProductivityMultiplier(
+    nationalChannelMaintenance,
+    options?.channelMaintenancePolicy ?? 'baseline',
+  );
+  const indigenousRemoteSupplyThroughputByRegion = computeIndigenousRemoteSupplyThroughputByRegion(ops);
+  const nationalIndigenousRemoteSupply = nationalIndigenousRemoteSupplyThroughputIndex(
+    indigenousRemoteSupplyThroughputByRegion,
+  );
+  const indigenousRemoteSupplyShare = computeIndigenousRemoteSupplyShare(
+    ops,
+    options?.indigenousRemoteSupplyPolicy ?? 'baseline',
+  );
+  const indigenousMult = indigenousRemoteSupplyProductivityMultiplier(
+    indigenousRemoteSupplyShare,
+    options?.indigenousRemoteSupplyPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const mineralsBoost = (criticalMineralsExportByRegion[code] - 9) * 0.0058;
+    const channelBoost = (channelMaintenanceByRegion[code] - 42) * 0.004;
+    const indigenousBoost = (indigenousRemoteSupplyThroughputByRegion[code] - 3) * 0.0055;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + mineralsBoost + channelBoost + indigenousBoost) *
+      mineralsMult *
+      channelMult *
+      indigenousMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035 +
+    nationalAviationCargo * 0.03 +
+    nationalHydrogenCorridor * 0.028 +
+    nationalCoastalShipping * 0.026 +
+    nationalAutonomousCorridor * 0.024 +
+    nationalDeepSeaGateway * 0.027 +
+    nationalElectricCorridor * 0.023 +
+    nationalDefenceLogistics * 0.022 +
+    nationalDigitalFreight * 0.021 +
+    nationalCriticalMinerals * 0.024 +
+    nationalIndigenousRemoteSupply * 0.019;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -7685,7 +8298,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/12',
+    schemaVersion: 'agent12/13',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -7754,6 +8367,13 @@ export function computeTransportInfrastructureState(
     digitalFreightVisibilityShare,
     nationalDigitalFreightThroughputIndex: nationalDigitalFreight,
     digitalFreightThroughputByRegion,
+    nationalCriticalMineralsExportIndex: nationalCriticalMinerals,
+    criticalMineralsExportByRegion,
+    nationalChannelMaintenanceIndex: nationalChannelMaintenance,
+    channelMaintenanceByRegion,
+    indigenousRemoteSupplyShare,
+    nationalIndigenousRemoteSupplyThroughputIndex: nationalIndigenousRemoteSupply,
+    indigenousRemoteSupplyThroughputByRegion,
     computeMs,
   };
 }
@@ -7836,7 +8456,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/12' &&
+      infra.schemaVersion === 'agent12/13' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -7866,8 +8486,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalDefenceLogisticsReadinessIndex >= 8 &&
       infra.nationalWeatherResilienceRoutingIndex > 38 &&
       infra.digitalFreightVisibilityShare >= 0.07 &&
-      infra.nationalDigitalFreightThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} defence=${infra.nationalDefenceLogisticsReadinessIndex.toFixed(1)} weather=${infra.nationalWeatherResilienceRoutingIndex.toFixed(1)} digital=${infra.nationalDigitalFreightThroughputIndex.toFixed(1)}`,
+      infra.nationalDigitalFreightThroughputIndex >= 2 &&
+      infra.nationalCriticalMineralsExportIndex >= 10 &&
+      infra.nationalChannelMaintenanceIndex > 40 &&
+      infra.indigenousRemoteSupplyShare >= 0.08 &&
+      infra.nationalIndigenousRemoteSupplyThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} minerals=${infra.nationalCriticalMineralsExportIndex.toFixed(1)} channel=${infra.nationalChannelMaintenanceIndex.toFixed(1)} indigenous=${infra.nationalIndigenousRemoteSupplyThroughputIndex.toFixed(1)}`,
   });
 
   return results;

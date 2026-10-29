@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/12' &&
+      infra.schemaVersion === 'agent12/13' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -98,8 +98,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalDefenceLogisticsReadinessIndex >= 8 &&
       infra.nationalWeatherResilienceRoutingIndex > 38 &&
       infra.digitalFreightVisibilityShare >= 0.07 &&
-      infra.nationalDigitalFreightThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} defence=${infra.nationalDefenceLogisticsReadinessIndex.toFixed(1)} weather=${infra.nationalWeatherResilienceRoutingIndex.toFixed(1)} digital=${infra.nationalDigitalFreightThroughputIndex.toFixed(1)}`,
+      infra.nationalDigitalFreightThroughputIndex >= 2 &&
+      infra.nationalCriticalMineralsExportIndex >= 10 &&
+      infra.nationalChannelMaintenanceIndex > 40 &&
+      infra.indigenousRemoteSupplyShare >= 0.08 &&
+      infra.nationalIndigenousRemoteSupplyThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} minerals=${infra.nationalCriticalMineralsExportIndex.toFixed(1)} channel=${infra.nationalChannelMaintenanceIndex.toFixed(1)} indigenous=${infra.nationalIndigenousRemoteSupplyThroughputIndex.toFixed(1)}`,
   });
 
   return results;

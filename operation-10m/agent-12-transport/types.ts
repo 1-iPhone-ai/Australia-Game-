@@ -219,8 +219,14 @@ export type WeatherResiliencePolicy = 'baseline' | 'harden';
 
 export type DigitalFreightPolicy = 'baseline' | 'integrate';
 
+export type CriticalMineralsPolicy = 'baseline' | 'accelerate';
+
+export type ChannelMaintenancePolicy = 'baseline' | 'dredge';
+
+export type IndigenousRemoteSupplyPolicy = 'baseline' | 'strengthen';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/12';
+  schemaVersion: 'agent12/13';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -289,6 +295,13 @@ export interface TransportInfrastructureState {
   digitalFreightVisibilityShare: number;
   nationalDigitalFreightThroughputIndex: number;
   digitalFreightThroughputByRegion: Record<AuRegionCode, number>;
+  nationalCriticalMineralsExportIndex: number;
+  criticalMineralsExportByRegion: Record<AuRegionCode, number>;
+  nationalChannelMaintenanceIndex: number;
+  channelMaintenanceByRegion: Record<AuRegionCode, number>;
+  indigenousRemoteSupplyShare: number;
+  nationalIndigenousRemoteSupplyThroughputIndex: number;
+  indigenousRemoteSupplyThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -315,6 +328,9 @@ export interface TransportInfrastructureOptions {
   defenceMobilityPolicy?: DefenceMobilityPolicy;
   weatherResiliencePolicy?: WeatherResiliencePolicy;
   digitalFreightPolicy?: DigitalFreightPolicy;
+  criticalMineralsPolicy?: CriticalMineralsPolicy;
+  channelMaintenancePolicy?: ChannelMaintenancePolicy;
+  indigenousRemoteSupplyPolicy?: IndigenousRemoteSupplyPolicy;
 }
 
 export interface V94ProjectSnapshot {
