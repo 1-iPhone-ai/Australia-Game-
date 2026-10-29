@@ -124,3 +124,10 @@ npm run build:agent-13-chunk
 ```
 
 Output: `chunk.tsx` wrapped with `// OP10M_MODULE_BEGIN agent-13-energy` … `// OP10M_MODULE_END agent-13-energy`. No `import` lines; `React.useState` for inspector UI.
+
+## Wave 54 (O10-240)
+
+- Gate feat: `feat(op10m): O10-240 · wave 54 · round 54`
+- Merge baseline: **`5bd043ad`** (O10-238 projection)
+- Module depth: `federated-net-zero-export-climate-resilience-orchestration-ledger.ts` stacks round-53 strategic reserve / sovereign green grid federation
+- Verification: `npm run test:agent-13` → **634/634** (254 manifest + 112 supplements + 268 core)
