@@ -169,3 +169,7 @@ export { NinthUnlockHeadlineDayCoachStrip } from './NinthUnlockHeadlineDayCoachS
 export { HeptDeferredQueueDayCoachStrip } from './HeptDeferredQueueDayCoachStrip.js';
 export { TotalPanelBreadthDayCoachStrip } from './TotalPanelBreadthDayCoachStrip.js';
 export { PacingDeferredQuadDayCoachStrip } from './PacingDeferredQuadDayCoachStrip.js';
+export { TenthUnlockHeadlineDayCoachStrip } from './TenthUnlockHeadlineDayCoachStrip.js';
+export { OctDeferredQueueDayCoachStrip } from './OctDeferredQueueDayCoachStrip.js';
+export { CoverageRatioBreadthDayCoachStrip } from './CoverageRatioBreadthDayCoachStrip.js';
+export { PacingDeferredQuintDayCoachStrip } from './PacingDeferredQuintDayCoachStrip.js';

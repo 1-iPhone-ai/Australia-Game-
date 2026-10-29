@@ -3,8 +3,8 @@
   "slot": "post-v10z",
   "touchesSaveFormat": false,
   "proposedGameSettingsField": "evolvingUi",
-  "contentSha256": "6425f71ebf08af5649f89d5e71894587a84d1ab5485b62033dabe07d32b6e22a",
+  "contentSha256": "9ec26304d54aa7e00c52612759afd4c95dba03634560347180ea50cb099b7285",
   "chunkPath": "operation-10m/modules/agent-22-ui/chunk.tsx",
   "selfTestExport": "runOp10mAgent22EvolvingUiSelfTests",
-  "moduleVersion": "1.48.0"
+  "moduleVersion": "1.49.0"
 }
