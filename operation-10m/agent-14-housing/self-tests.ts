@@ -6667,7 +6667,7 @@ export function runAgent14WellbeingSelfTests(): {
     const wave56Brief = {
       turn: 56,
       shouldProjectWave56: true,
-      shouldRunO10m257DryRun: true,
+      shouldRunO10m263DryRun: true,
       headlines: ['Agent 25 wave 56'],
       summary: 'wave56=ready',
     };
@@ -6678,10 +6678,10 @@ export function runAgent14WellbeingSelfTests(): {
       wave56ProjectionBrief: wave56Brief,
       wave56IntegrationMonitor: {
         turn: 9,
-        shouldRunO10m257DryRun: true,
+        shouldRunO10m263DryRun: true,
         wave56GateBand: 'ready',
         blockingReasons: [],
-        summary: 'Wave 56 O10-257 dry-run gate ready',
+        summary: 'Wave 56 O10-263 dry-run gate ready',
       },
       wave57GateTrajectory: snap57.snapshot,
     });
@@ -6699,14 +6699,14 @@ export function runAgent14WellbeingSelfTests(): {
     const wave58GateBrief = {
       turn: 58,
       shouldProjectWave58: true,
-      shouldRunO10m260DryRun: true,
+      shouldRunO10m265DryRun: true,
       headlines: ['Agent 25 wave 58'],
       summary: 'wave58=ready',
     };
     const wave57Brief = {
       turn: 57,
       shouldProjectWave57: true,
-      shouldRunO10m260DryRun: true,
+      shouldRunO10m265DryRun: true,
       headlines: ['Agent 25 wave 57'],
       summary: 'wave57=ready',
     };
@@ -6717,10 +6717,10 @@ export function runAgent14WellbeingSelfTests(): {
       wave57ProjectionBrief: wave57Brief,
       wave57IntegrationMonitor: {
         turn: 9,
-        shouldRunO10m260DryRun: true,
+        shouldRunO10m265DryRun: true,
         wave57GateBand: 'ready',
         blockingReasons: [],
-        summary: 'Wave 57 O10-260 dry-run gate ready',
+        summary: 'Wave 57 O10-265 dry-run gate ready',
       },
       wave58GateTrajectory: snap58.snapshot,
     });
