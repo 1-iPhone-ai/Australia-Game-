@@ -2753,6 +2753,138 @@ export function domesticTravelInflationScoreAdjustment(band: DomesticTravelPress
 }
 
 
+// --- source: inflation/construction-materials-inflation.ts ---
+
+export type ConstructionMaterialsPressureBand = 'soft' | 'firming' | 'sharp' | 'supply_crunch';
+
+export interface ConstructionMaterialsInflationAssessment {
+  pressureBand: ConstructionMaterialsPressureBand;
+  materialsIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Building materials and construction inputs in macro CPI metadata (not asset prices). */
+export function assessConstructionMaterialsInflation(input: {
+  supplyChainStressBand: 'normal' | 'elevated' | 'severe';
+  laborShortagePassThrough: boolean;
+  importContentShare: number;
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): ConstructionMaterialsInflationAssessment {
+  let pressure = 0;
+  if (input.supplyChainStressBand === 'severe') pressure += 0.42;
+  else if (input.supplyChainStressBand === 'elevated') pressure += 0.26;
+
+  if (input.laborShortagePassThrough) pressure += 0.2;
+  pressure += finClamp(input.importContentShare, 0, 0.5) * 0.35;
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.08;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.005, 0, 1.05);
+  const materialsIndex = finRound(100 + pressure * 18, 1);
+
+  let pressureBand: ConstructionMaterialsPressureBand = 'soft';
+  if (pressure >= 0.62) pressureBand = 'supply_crunch';
+  else if (pressure >= 0.4) pressureBand = 'sharp';
+  else if (pressure >= 0.2) pressureBand = 'firming';
+
+  const inflationScoreNudge =
+    pressureBand === 'supply_crunch'
+      ? 0.09
+      : pressureBand === 'sharp'
+        ? 0.06
+        : pressureBand === 'firming'
+          ? 0.03
+          : 0;
+
+  const narrative =
+    pressureBand === 'supply_crunch' || pressureBand === 'sharp'
+      ? 'Construction materials are lifting investment-sensitive CPI through supply and import pass-through.'
+      : pressureBand === 'firming'
+        ? 'Materials inflation firming — labor and supply stress building.'
+        : 'Construction materials inflation soft versus goods headline.';
+
+  return { pressureBand, materialsIndex, inflationScoreNudge, narrative };
+}
+
+export function constructionMaterialsInflationScoreAdjustment(band: ConstructionMaterialsPressureBand): number {
+  if (band === 'supply_crunch') return 4;
+  if (band === 'sharp') return 3;
+  if (band === 'firming') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/retail-trade-margin-inflation.ts ---
+
+export type RetailTradeMarginBand = 'compressed' | 'stable' | 'expanding' | 'price_led';
+
+export interface RetailTradeMarginInflationAssessment {
+  marginBand: RetailTradeMarginBand;
+  retailIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Retail trade margin and shelf-price pass-through in macro CPI metadata. */
+export function assessRetailTradeMarginInflation(input: {
+  discountingIntensity: 'heavy' | 'moderate' | 'light';
+  inventoryClearanceActive: boolean;
+  wageBillPressure: 'low' | 'medium' | 'high';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): RetailTradeMarginInflationAssessment {
+  let pressure = 0;
+  if (input.wageBillPressure === 'high') pressure += 0.32;
+  else if (input.wageBillPressure === 'medium') pressure += 0.16;
+
+  if (input.discountingIntensity === 'light') pressure += 0.18;
+  else if (input.discountingIntensity === 'moderate') pressure += 0.08;
+
+  if (input.inventoryClearanceActive) pressure -= 0.12;
+
+  if (input.inflationBand === 'elevated' || input.inflationBand === 'high') {
+    pressure += 0.07;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.004, 0, 1.05);
+  const retailIndex = finRound(100 + pressure * 15, 1);
+
+  let marginBand: RetailTradeMarginBand = 'stable';
+  if (pressure >= 0.55) marginBand = 'price_led';
+  else if (pressure >= 0.35) marginBand = 'expanding';
+  else if (pressure < 0.12) marginBand = 'compressed';
+
+  const inflationScoreNudge =
+    marginBand === 'price_led'
+      ? 0.08
+      : marginBand === 'expanding'
+        ? 0.05
+        : marginBand === 'compressed'
+          ? -0.02
+          : 0;
+
+  const narrative =
+    marginBand === 'price_led' || marginBand === 'expanding'
+      ? 'Retail margins are passing wage and input costs into shelf-price CPI.'
+      : marginBand === 'compressed'
+        ? 'Retail discounting compressing margins — partial CPI offset.'
+        : 'Retail trade margin inflation stable versus services basket.';
+
+  return { marginBand, retailIndex, inflationScoreNudge, narrative };
+}
+
+export function retailTradeMarginInflationScoreAdjustment(band: RetailTradeMarginBand): number {
+  if (band === 'price_led') return 4;
+  if (band === 'expanding') return 3;
+  if (band === 'compressed') return 0;
+  return 1;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -3441,6 +3573,42 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
       activeCrises: 1,
     },
     tags: ['inflation', 'strategic', 'round14'],
+  },
+  {
+    id: 'construction_materials_supply_crunch',
+    label: 'Construction materials supply crunch',
+    description: 'Severe supply chain with labor pass-through — materials CPI.',
+    patch: {
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.25,
+      highInflationScenario: true,
+      fiscalPressure: 'critical',
+    },
+    tags: ['inflation', 'construction', 'round15'],
+  },
+  {
+    id: 'retail_margin_price_led_shelf',
+    label: 'Retail margin price-led shelf',
+    description: 'Light discounting with high wage bill — retail CPI pass-through.',
+    patch: {
+      householdAffordability: 'severe_pressure',
+      inflationSettingMultiplier: 1.22,
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+    },
+    tags: ['inflation', 'retail', 'round15'],
+  },
+  {
+    id: 'dashboard_regional_heatmap_alert',
+    label: 'Dashboard regional heatmap alert',
+    description: 'Critical dashboard urgency with regional inflation alert.',
+    patch: {
+      inflationSettingMultiplier: 1.26,
+      highInflationScenario: true,
+      systemicLiquidityBand: 'strained',
+      publicStability: 40,
+    },
+    tags: ['inflation', 'dashboard', 'round15'],
   },
 ] as const;
 
@@ -5128,6 +5296,93 @@ export function agent19MemoryBridgeIntegrationNote(): string {
 }
 
 
+// --- source: integration/agent22-ui-bridge.ts ---
+
+/** Read-only evolving UI snapshot from Agent 22 (contract only). */
+export interface Agent22UiSnapshot {
+  turn: number;
+  inflationDashboardStressHighlight: boolean;
+  playerAttentionOnCostOfLiving: 'low' | 'medium' | 'high';
+  uiNudgeInflationExpectationsUp: boolean;
+}
+
+export function mergeAgent22IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent22UiSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.inflationDashboardStressHighlight && snapshot.playerAttentionOnCostOfLiving === 'high') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+  if (snapshot.uiNudgeInflationExpectationsUp) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  }
+
+  let householdInflationScenarioActive = base.householdInflationScenarioActive;
+  if (snapshot.playerAttentionOnCostOfLiving === 'high') {
+    householdInflationScenarioActive = true;
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    householdInflationScenarioActive,
+  };
+}
+
+export function agent22UiBridgeIntegrationNote(): string {
+  return 'Agent 22 UI snapshot reflects player-facing inflation stress flags; no UI state writes.';
+}
+
+
+// --- source: integration/agent23-dashboards-bridge.ts ---
+
+/** Read-only dashboards / maps snapshot from Agent 23 (contract only). */
+export interface Agent23DashboardsSnapshot {
+  turn: number;
+  regionalHeatmapInflationAlert: boolean;
+  mapLayerCostPressureScore: number;
+  dashboardRefreshUrgency: 'routine' | 'elevated' | 'critical';
+}
+
+export function mergeAgent23IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent23DashboardsSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.regionalHeatmapInflationAlert) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  }
+  if (snapshot.mapLayerCostPressureScore > 0.65) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  }
+  if (snapshot.dashboardRefreshUrgency === 'critical') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
+  let highInflationScenario = base.highInflationScenario;
+  if (snapshot.regionalHeatmapInflationAlert && snapshot.dashboardRefreshUrgency === 'critical') {
+    highInflationScenario = true;
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    highInflationScenario,
+  };
+}
+
+export function agent23DashboardsBridgeIntegrationNote(): string {
+  return 'Agent 23 dashboards snapshot adjusts regional inflation alert flags; no map tile writes.';
+}
+
+
 // --- source: integration/inflation-forecast.ts ---
   stepInflationRegimeTracker,
   createInitialInflationRegimeTracker,
@@ -5185,6 +5440,12 @@ export function agent19MemoryBridgeIntegrationNote(): string {
   assessDomesticTravelInflation,
   type DomesticTravelPressureBand,
 } from '../inflation/domestic-travel-inflation.js';
+  assessConstructionMaterialsInflation,
+  type ConstructionMaterialsPressureBand,
+} from '../inflation/construction-materials-inflation.js';
+  assessRetailTradeMarginInflation,
+  type RetailTradeMarginBand,
+} from '../inflation/retail-trade-margin-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -5213,6 +5474,8 @@ export interface InflationForecastPoint {
   governmentChargesPressureBand: GovernmentChargesPressureBand;
   waterUtilitiesPressureBand: WaterUtilitiesPressureBand;
   domesticTravelPressureBand: DomesticTravelPressureBand;
+  constructionMaterialsPressureBand: ConstructionMaterialsPressureBand;
+  retailTradeMarginBand: RetailTradeMarginBand;
 }
 
 export interface InflationForecastPath {
@@ -5382,6 +5645,20 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const constructionMaterials = assessConstructionMaterialsInflation({
+      supplyChainStressBand: inputs.creditShockActive ? 'severe' : inputs.systemicLiquidityBand === 'strained' ? 'elevated' : 'normal',
+      laborShortagePassThrough: inputs.fiscalPressure === 'critical',
+      importContentShare: 0.25,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const retailMargin = assessRetailTradeMarginInflation({
+      discountingIntensity: inputs.householdAffordability === 'severe_pressure' ? 'light' : 'moderate',
+      inventoryClearanceActive: inputs.publicStability > 55,
+      wageBillPressure: inputs.highInflationScenario ? 'high' : 'medium',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -5410,6 +5687,8 @@ export function projectInflationForecastPath(
       governmentChargesPressureBand: govCharges.pressureBand,
       waterUtilitiesPressureBand: waterUtils.pressureBand,
       domesticTravelPressureBand: domesticTravel.pressureBand,
+      constructionMaterialsPressureBand: constructionMaterials.pressureBand,
+      retailTradeMarginBand: retailMargin.marginBand,
     });
   }
 
@@ -5515,7 +5794,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r14';
+  schemaVersion: '10.14.agent10.r15';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -5539,6 +5818,8 @@ export interface Agent21InflationForecastBundle {
   terminalGovernmentChargesPressure: GovernmentChargesPressureBand;
   terminalWaterUtilitiesPressure: WaterUtilitiesPressureBand;
   terminalDomesticTravelPressure: DomesticTravelPressureBand;
+  terminalConstructionMaterialsPressure: ConstructionMaterialsPressureBand;
+  terminalRetailTradeMargin: RetailTradeMarginBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -5567,7 +5848,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r14',
+    schemaVersion: '10.14.agent10.r15',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -5591,6 +5872,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalGovernmentChargesPressure: lastPoint?.governmentChargesPressureBand ?? 'flat',
     terminalWaterUtilitiesPressure: lastPoint?.waterUtilitiesPressureBand ?? 'stable',
     terminalDomesticTravelPressure: lastPoint?.domesticTravelPressureBand ?? 'subdued',
+    terminalConstructionMaterialsPressure: lastPoint?.constructionMaterialsPressureBand ?? 'soft',
+    terminalRetailTradeMargin: lastPoint?.retailTradeMarginBand ?? 'stable',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -5772,6 +6055,18 @@ export function effectiveTierLoanRate(
   mergeAgent19IntoMacroFinancialInputs,
   agent19MemoryBridgeIntegrationNote,
 } from './integration/agent19-memory-bridge.js';
+  assessConstructionMaterialsInflation,
+  constructionMaterialsInflationScoreAdjustment,
+} from './inflation/construction-materials-inflation.js';
+  assessRetailTradeMarginInflation,
+  retailTradeMarginInflationScoreAdjustment,
+} from './inflation/retail-trade-margin-inflation.js';
+  mergeAgent22IntoMacroFinancialInputs,
+  agent22UiBridgeIntegrationNote,
+} from './integration/agent22-ui-bridge.js';
+  mergeAgent23IntoMacroFinancialInputs,
+  agent23DashboardsBridgeIntegrationNote,
+} from './integration/agent23-dashboards-bridge.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -6170,7 +6465,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r14');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r15');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -6317,7 +6612,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r14' &&
+      bundle.schemaVersion === '10.14.agent10.r15' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -6409,7 +6704,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r14' &&
+      bundle.schemaVersion === '10.14.agent10.r15' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -6508,7 +6803,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r14' &&
+      bundle.schemaVersion === '10.14.agent10.r15' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -6606,7 +6901,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r14' &&
+      bundle.schemaVersion === '10.14.agent10.r15' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -6704,7 +6999,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r14' &&
+      bundle.schemaVersion === '10.14.agent10.r15' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -6794,7 +7089,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r12_10',
       'agent21 r12 fields',
-      bundle.schemaVersion === '10.14.agent10.r14' &&
+      bundle.schemaVersion === '10.14.agent10.r15' &&
         bundle.terminalRecreationLeisurePressure !== undefined &&
         bundle.terminalProfessionalServicesFee !== undefined,
     );
@@ -6884,7 +7179,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r13_10',
       'agent21 r13 fields',
-      bundle.schemaVersion === '10.14.agent10.r14' &&
+      bundle.schemaVersion === '10.14.agent10.r15' &&
         bundle.terminalChildcareServicesPressure !== undefined &&
         bundle.terminalGovernmentChargesPressure !== undefined,
     );
@@ -6911,6 +7206,186 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'turns_automation_inflation_drift');
       return inp?.creditShockActive === true && (inp.inflationSettingMultiplier ?? 1) > 1.25;
+    })(),
+  );
+
+  // --- Round 14 scale wave ---
+  {
+    const water = assessWaterUtilitiesInflation({
+      droughtStressBand: 'severe',
+      infrastructureTariffShock: true,
+      recyclingCostPassThrough: 'high',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check('a10_r14_01', 'water sharp or drought crisis', water.pressureBand === 'sharp' || water.pressureBand === 'drought_crisis');
+    check('a10_r14_02', 'water score adj', waterUtilitiesInflationScoreAdjustment(water.pressureBand) >= 3);
+  }
+  {
+    const travel = assessDomesticTravelInflation({
+      routeCapacityBand: 'constrained',
+      fuelSurchargePassThrough: true,
+      accommodationOccupancyBand: 'full',
+      inflationBand: 'elevated',
+      turn: 3,
+    });
+    check('a10_r14_03', 'travel hot or overheated', travel.pressureBand === 'hot' || travel.pressureBand === 'overheated');
+    check('a10_r14_04', 'travel score adj', domesticTravelInflationScoreAdjustment(travel.pressureBand) >= 3);
+  }
+  {
+    const merged01 = mergeAgent01IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      nationalPriorityInflationBias: 'expansionary',
+      strategicStockpileStress: true,
+      geopoliticalRiskPremium: 0.72,
+    });
+    check('a10_r14_05', 'agent01 strategic merge', merged01.highInflationScenario === true);
+    check('a10_r14_06', 'agent01 bridge note', agent01StrategicBridgeIntegrationNote().includes('Agent 01'));
+  }
+  {
+    const merged19 = mergeAgent19IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      recalledInflationRegimeConfidence: 0.82,
+      narrativeDriftTowardHigherInflation: true,
+      explainabilityAlertActive: true,
+    });
+    check('a10_r14_07', 'agent19 memory merge', merged19.highInflationScenario === true);
+    check('a10_r14_08', 'agent19 bridge note', agent19MemoryBridgeIntegrationNote().includes('Agent 19'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r14_09',
+      'forecast water and travel fields',
+      path.points.every((p) => !!p.waterUtilitiesPressureBand && !!p.domesticTravelPressureBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r14_10',
+      'agent21 r14 fields',
+      bundle.schemaVersion === '10.14.agent10.r15' &&
+        bundle.terminalWaterUtilitiesPressure !== undefined &&
+        bundle.terminalDomesticTravelPressure !== undefined,
+    );
+  }
+  check(
+    'a10_r14_11',
+    'round14 preset water drought',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'water_drought_utility_crisis');
+      return inp?.systemicLiquidityBand === 'critical' && inp.fiscalPressure === 'critical';
+    })(),
+  );
+  check(
+    'a10_r14_12',
+    'round14 preset domestic travel',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'domestic_travel_capacity_overheat');
+      return inp?.householdInflationScenarioActive === true && inp.highInflationScenario === true;
+    })(),
+  );
+  check(
+    'a10_r14_13',
+    'round14 preset strategic memory drift',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'strategic_memory_inflation_drift');
+      return (inp?.inflationSettingMultiplier ?? 1) > 1.28 && inp.creditShockActive === true;
+    })(),
+  );
+
+  // --- Round 15 scale wave ---
+  {
+    const materials = assessConstructionMaterialsInflation({
+      supplyChainStressBand: 'severe',
+      laborShortagePassThrough: true,
+      importContentShare: 0.35,
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check('a10_r15_01', 'materials sharp or supply crunch', materials.pressureBand === 'sharp' || materials.pressureBand === 'supply_crunch');
+    check('a10_r15_02', 'materials score adj', constructionMaterialsInflationScoreAdjustment(materials.pressureBand) >= 3);
+  }
+  {
+    const retail = assessRetailTradeMarginInflation({
+      discountingIntensity: 'light',
+      inventoryClearanceActive: false,
+      wageBillPressure: 'high',
+      inflationBand: 'elevated',
+      turn: 3,
+    });
+    check('a10_r15_03', 'retail expanding or price_led', retail.marginBand === 'expanding' || retail.marginBand === 'price_led');
+    check('a10_r15_04', 'retail score adj', retailTradeMarginInflationScoreAdjustment(retail.marginBand) >= 3);
+  }
+  {
+    const merged22 = mergeAgent22IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      inflationDashboardStressHighlight: true,
+      playerAttentionOnCostOfLiving: 'high',
+      uiNudgeInflationExpectationsUp: true,
+    });
+    check('a10_r15_05', 'agent22 ui merge', merged22.householdInflationScenarioActive === true);
+    check('a10_r15_06', 'agent22 bridge note', agent22UiBridgeIntegrationNote().includes('Agent 22'));
+  }
+  {
+    const merged23 = mergeAgent23IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      regionalHeatmapInflationAlert: true,
+      mapLayerCostPressureScore: 0.78,
+      dashboardRefreshUrgency: 'critical',
+    });
+    check('a10_r15_07', 'agent23 dashboards merge', merged23.highInflationScenario === true);
+    check('a10_r15_08', 'agent23 bridge note', agent23DashboardsBridgeIntegrationNote().includes('Agent 23'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r15_09',
+      'forecast construction and retail fields',
+      path.points.every((p) => !!p.constructionMaterialsPressureBand && !!p.retailTradeMarginBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r15_10',
+      'agent21 r15 fields',
+      bundle.schemaVersion === '10.14.agent10.r15' &&
+        bundle.terminalConstructionMaterialsPressure !== undefined &&
+        bundle.terminalRetailTradeMargin !== undefined,
+    );
+  }
+  check(
+    'a10_r15_11',
+    'round15 preset construction crunch',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'construction_materials_supply_crunch');
+      return inp?.creditShockActive === true && inp.fiscalPressure === 'critical';
+    })(),
+  );
+  check(
+    'a10_r15_12',
+    'round15 preset retail price led',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'retail_margin_price_led_shelf');
+      return inp?.householdAffordability === 'severe_pressure' && inp.highInflationScenario === true;
+    })(),
+  );
+  check(
+    'a10_r15_13',
+    'round15 preset dashboard heatmap',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'dashboard_regional_heatmap_alert');
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.25;
     })(),
   );
 
@@ -7653,6 +8128,70 @@ export function WaterTravelStrategicInflationPanel(props: WaterTravelStrategicIn
       </p>
       <p data-testid="water-travel-water-note">{water.narrative}</p>
       <p>{travel.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/ConstructionRetailDashboardInflationPanel.tsx ---
+  assessConstructionMaterialsInflation,
+  constructionMaterialsInflationScoreAdjustment,
+} from '../inflation/construction-materials-inflation.js';
+  assessRetailTradeMarginInflation,
+  retailTradeMarginInflationScoreAdjustment,
+} from '../inflation/retail-trade-margin-inflation.js';
+
+export interface ConstructionRetailDashboardInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent22?: Agent22UiSnapshot | null;
+  agent23?: Agent23DashboardsSnapshot | null;
+}
+
+export function ConstructionRetailDashboardInflationPanel(props: ConstructionRetailDashboardInflationPanelProps) {
+  const ui = props.agent22 ?? {
+    turn: props.inputs.turn,
+    inflationDashboardStressHighlight: props.inputs.highInflationScenario,
+    playerAttentionOnCostOfLiving: props.inputs.householdAffordability === 'severe_pressure' ? ('high' as const) : ('medium' as const),
+    uiNudgeInflationExpectationsUp: props.inputs.householdInflationScenarioActive,
+  };
+
+  const dashboards = props.agent23 ?? {
+    turn: props.inputs.turn,
+    regionalHeatmapInflationAlert: props.inputs.highInflationScenario,
+    mapLayerCostPressureScore: 0.58,
+    dashboardRefreshUrgency: props.inputs.fiscalPressure === 'critical' ? ('critical' as const) : ('elevated' as const),
+  };
+
+  const materials = assessConstructionMaterialsInflation({
+    supplyChainStressBand: dashboards.regionalHeatmapInflationAlert ? 'severe' : 'elevated',
+    laborShortagePassThrough: props.inputs.fiscalPressure === 'critical',
+    importContentShare: 0.28,
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const retail = assessRetailTradeMarginInflation({
+    discountingIntensity: ui.playerAttentionOnCostOfLiving === 'high' ? 'light' : 'moderate',
+    inventoryClearanceActive: false,
+    wageBillPressure: dashboards.dashboardRefreshUrgency === 'critical' ? 'high' : 'medium',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-construction-retail-dashboard-inflation" data-testid="construction-retail-dashboard-inflation-panel">
+      <h4>Construction, retail & dashboards (round 15)</h4>
+      <p>
+        Materials {materials.pressureBand} · index {materials.materialsIndex.toFixed(0)} · score adj{' '}
+        {constructionMaterialsInflationScoreAdjustment(materials.pressureBand)}
+      </p>
+      <p>
+        Retail {retail.marginBand} · index {retail.retailIndex.toFixed(0)} · score adj{' '}
+        {retailTradeMarginInflationScoreAdjustment(retail.marginBand)}
+      </p>
+      <p data-testid="construction-retail-materials-note">{materials.narrative}</p>
+      <p>{retail.narrative}</p>
     </div>
   );
 }

@@ -451,6 +451,42 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'strategic', 'round14'],
   },
+  {
+    id: 'construction_materials_supply_crunch',
+    label: 'Construction materials supply crunch',
+    description: 'Severe supply chain with labor pass-through — materials CPI.',
+    patch: {
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.25,
+      highInflationScenario: true,
+      fiscalPressure: 'critical',
+    },
+    tags: ['inflation', 'construction', 'round15'],
+  },
+  {
+    id: 'retail_margin_price_led_shelf',
+    label: 'Retail margin price-led shelf',
+    description: 'Light discounting with high wage bill — retail CPI pass-through.',
+    patch: {
+      householdAffordability: 'severe_pressure',
+      inflationSettingMultiplier: 1.22,
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+    },
+    tags: ['inflation', 'retail', 'round15'],
+  },
+  {
+    id: 'dashboard_regional_heatmap_alert',
+    label: 'Dashboard regional heatmap alert',
+    description: 'Critical dashboard urgency with regional inflation alert.',
+    patch: {
+      inflationSettingMultiplier: 1.26,
+      highInflationScenario: true,
+      systemicLiquidityBand: 'strained',
+      publicStability: 40,
+    },
+    tags: ['inflation', 'dashboard', 'round15'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

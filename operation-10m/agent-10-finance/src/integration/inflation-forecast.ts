@@ -79,6 +79,14 @@ import {
   assessDomesticTravelInflation,
   type DomesticTravelPressureBand,
 } from '../inflation/domestic-travel-inflation.js';
+import {
+  assessConstructionMaterialsInflation,
+  type ConstructionMaterialsPressureBand,
+} from '../inflation/construction-materials-inflation.js';
+import {
+  assessRetailTradeMarginInflation,
+  type RetailTradeMarginBand,
+} from '../inflation/retail-trade-margin-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -107,6 +115,8 @@ export interface InflationForecastPoint {
   governmentChargesPressureBand: GovernmentChargesPressureBand;
   waterUtilitiesPressureBand: WaterUtilitiesPressureBand;
   domesticTravelPressureBand: DomesticTravelPressureBand;
+  constructionMaterialsPressureBand: ConstructionMaterialsPressureBand;
+  retailTradeMarginBand: RetailTradeMarginBand;
 }
 
 export interface InflationForecastPath {
@@ -276,6 +286,20 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const constructionMaterials = assessConstructionMaterialsInflation({
+      supplyChainStressBand: inputs.creditShockActive ? 'severe' : inputs.systemicLiquidityBand === 'strained' ? 'elevated' : 'normal',
+      laborShortagePassThrough: inputs.fiscalPressure === 'critical',
+      importContentShare: 0.25,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const retailMargin = assessRetailTradeMarginInflation({
+      discountingIntensity: inputs.householdAffordability === 'severe_pressure' ? 'light' : 'moderate',
+      inventoryClearanceActive: inputs.publicStability > 55,
+      wageBillPressure: inputs.highInflationScenario ? 'high' : 'medium',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -304,6 +328,8 @@ export function projectInflationForecastPath(
       governmentChargesPressureBand: govCharges.pressureBand,
       waterUtilitiesPressureBand: waterUtils.pressureBand,
       domesticTravelPressureBand: domesticTravel.pressureBand,
+      constructionMaterialsPressureBand: constructionMaterials.pressureBand,
+      retailTradeMarginBand: retailMargin.marginBand,
     });
   }
 
