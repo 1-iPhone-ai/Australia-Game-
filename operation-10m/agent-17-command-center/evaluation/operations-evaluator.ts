@@ -16,6 +16,7 @@ import {
   sanitizeAcc17CommandCenterOpsState,
 } from '../planning/ops-state.ts';
 import { maybeApplyAgent17RecoveryPath } from '../planning/recovery-paths.ts';
+import { attachAgent17PlanningDepth } from '../planning/planning-orchestrator.ts';
 
 export function buildAcc17V94DeepContextBundle(
   state: Agent17GameStateSlice,
@@ -183,14 +184,20 @@ export function evaluateAcc17CommandCenterOperations(
         : 'strategy_planner';
   return {
     ops,
-    snapshot: {
-      deepContext,
-      activePlan: ops.activePlan,
-      delegatedProjects: ops.delegatedProjects,
-      pendingVerificationCount,
-      verifiedStepsThisTurn,
-      blockedSteps,
-      recommendedDelegateKind,
-    },
+    snapshot: attachAgent17PlanningDepth(
+      {
+        deepContext,
+        activePlan: ops.activePlan,
+        delegatedProjects: ops.delegatedProjects,
+        pendingVerificationCount,
+        verifiedStepsThisTurn,
+        blockedSteps,
+        recommendedDelegateKind,
+      },
+      ops,
+      state,
+      settings,
+      actorId
+    ),
   };
 }

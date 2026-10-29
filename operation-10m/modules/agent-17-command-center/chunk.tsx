@@ -145,6 +145,44 @@ export interface Acc17OperationsSnapshot {
   verifiedStepsThisTurn: number;
   blockedSteps: Acc17MultiStepPlanStep[];
   recommendedDelegateKind: Acc17DelegateTargetKind;
+  planningDepth?: Agent17PlanningDepthSnapshot;
+}
+
+export interface Agent17PlanHealthBand {
+  band: 'critical' | 'at_risk' | 'steady' | 'strong';
+  score: number;
+  blockedCount: number;
+  verifiedRatio: number;
+  replanCount: number;
+  onTrack: boolean;
+}
+
+export interface Agent17PlanningSuggestion {
+  kind: 'template' | 'recovery' | 'delegate' | 'hold';
+  templateId?: string;
+  delegateKind?: Acc17DelegateTargetKind;
+  headline: string;
+  rationale: string;
+  confidence: number;
+}
+
+export interface Agent17DelegationAnalyticsRow {
+  delegateKind: Acc17DelegateTargetKind;
+  activeProjects: number;
+  completedProjects: number;
+  blockedProjects: number;
+  authorityMix: Record<string, number>;
+  recommendedAdjustment?: string;
+}
+
+export interface Agent17PlanningDepthSnapshot {
+  turn: number;
+  actorId: string;
+  planHealth: Agent17PlanHealthBand;
+  suggestion: Agent17PlanningSuggestion;
+  templateRouting: { matchedCategory: string; candidateTemplateIds: string[] };
+  delegationAnalytics: Agent17DelegationAnalyticsRow[];
+  catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
 export interface Acc17ProjectTemplate {
@@ -498,6 +536,80 @@ export const AGENT17_DEEP_TEMPLATE_CATALOG: Acc17ProjectTemplate[] = [
         title: 'Verify supply recovery',
         actionType: 'verify_objective',
         summary: 'Confirm supply lane closed.',
+        requirements: { prerequisiteStepIndices: [3] },
+      },
+    ],
+  },
+  {
+    id: 'agent17_tpl_diplomatic_depth',
+    title: 'Diplomatic leverage program (deep)',
+    category: 'diplomacy',
+    delegateKind: 'strategy_planner',
+    stepBlueprints: [
+      {
+        title: 'Map rival intent signals',
+        actionType: 'wait',
+        summary: 'Collect observable diplomacy telemetry only.',
+      },
+      {
+        title: 'Travel to negotiation hub',
+        actionType: 'travel',
+        summary: 'Position in region with active negotiation window.',
+        requirements: { prerequisiteStepIndices: [0] },
+      },
+      {
+        title: 'Execute trade sweetener',
+        actionType: 'trade',
+        summary: 'Offer structured trade to shift standing.',
+        requirements: { prerequisiteStepIndices: [1], minCash: 600 },
+      },
+      {
+        title: 'Deposit goodwill buffer',
+        actionType: 'deposit',
+        summary: 'Lock goodwill into regional deposit.',
+        requirements: { prerequisiteStepIndices: [2] },
+      },
+      {
+        title: 'Verify diplomatic milestone',
+        actionType: 'verify_objective',
+        summary: 'Confirm diplomacy objective progress.',
+        requirements: { prerequisiteStepIndices: [3] },
+      },
+    ],
+  },
+  {
+    id: 'agent17_tpl_automation_oversight',
+    title: 'Automation oversight ladder',
+    category: 'intelligence',
+    delegateKind: 'copilot',
+    stepBlueprints: [
+      {
+        title: 'Review autonomy ceiling',
+        actionType: 'wait',
+        summary: 'Confirm AI communication autonomy matches plan.',
+      },
+      {
+        title: 'Delegate verification pass',
+        actionType: 'contract',
+        summary: 'Run delegated step with assisted ceiling.',
+        requirements: { prerequisiteStepIndices: [0] },
+      },
+      {
+        title: 'Copilot session sync',
+        actionType: 'invest',
+        summary: 'Align copilot session with active plan id.',
+        requirements: { prerequisiteStepIndices: [1] },
+      },
+      {
+        title: 'Manual override checkpoint',
+        actionType: 'wait',
+        summary: 'Player confirms no silent automation.',
+        requirements: { prerequisiteStepIndices: [2] },
+      },
+      {
+        title: 'Verify oversight log',
+        actionType: 'verify_objective',
+        summary: 'Close oversight ladder with fingerprint proof.',
         requirements: { prerequisiteStepIndices: [3] },
       },
     ],
@@ -1265,6 +1377,384 @@ export function resolveTemplateById(templateId: string) {
 }
 
 
+// --- source: planning/template-selector.ts ---
+  Acc17ProjectTemplate,
+  Agent17GameStateSlice,
+  Agent17SettingsSlice,
+  ResolvedObjective,
+} from '../types/command-center-types.ts';
+  AGENT17_BASE_TEMPLATE_CATALOG,
+  AGENT17_PROJECT_TEMPLATE_CATALOG,
+} from './templates.ts';
+
+export interface Agent17TemplateRoute {
+  category: string;
+  keywords: string[];
+  templateIds: string[];
+  priority: number;
+}
+
+export const AGENT17_TEMPLATE_ROUTE_TABLE: Agent17TemplateRoute[] = [
+  {
+    category: 'economy',
+    keywords: ['cash', 'liquidity', 'debt', 'treasury', 'loan'],
+    templateIds: ['agent17_tpl_economy_liquidity', 'agent17_tpl_deep_capital_program', 'agent17_tpl_debt_recovery'],
+    priority: 10,
+  },
+  {
+    category: 'trade',
+    keywords: ['trade', 'market', 'arbitrage', 'sell', 'buy'],
+    templateIds: ['agent17_tpl_trade_arbitrage', 'agent17_tpl_regional_recovery'],
+    priority: 9,
+  },
+  {
+    category: 'team',
+    keywords: ['team', 'treasury', 'synergy', 'alignment'],
+    templateIds: ['agent17_tpl_team_synergy', 'agent17_tpl_automation_oversight'],
+    priority: 8,
+  },
+  {
+    category: 'recovery',
+    keywords: ['recover', 'supply', 'restock', 'crisis', 'blocked'],
+    templateIds: [
+      'agent17_tpl_recovery',
+      'agent17_tpl_supply_deep_recovery',
+      'agent17_tpl_crisis_stabilization',
+    ],
+    priority: 11,
+  },
+  {
+    category: 'intelligence',
+    keywords: ['strategy', 'gi3', 'planner', 'objective', 'plan'],
+    templateIds: ['agent17_tpl_gi3_strategy', 'agent17_tpl_automation_oversight'],
+    priority: 7,
+  },
+  {
+    category: 'diplomacy',
+    keywords: ['diplomacy', 'negotiation', 'rival', 'standing', 'treaty'],
+    templateIds: ['agent17_tpl_diplomatic_depth'],
+    priority: 6,
+  },
+];
+
+function normalizeText(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ');
+}
+
+export function inferAgent17ObjectiveCategory(
+  objective: ResolvedObjective | null,
+  state: Agent17GameStateSlice
+): string {
+  if (!objective?.title) return 'general';
+  const blob = normalizeText(
+    [objective.title, objective.description || '', objective.sourceType || ''].join(' ')
+  );
+  let best = { category: 'general', score: 0 };
+  for (const route of AGENT17_TEMPLATE_ROUTE_TABLE) {
+    let score = 0;
+    for (const kw of route.keywords) {
+      if (blob.includes(kw)) score += 1;
+    }
+    if (state.gi3Strategy?.headline && route.category === 'intelligence') score += 1;
+    if (score > best.score) best = { category: route.category, score };
+  }
+  return best.score > 0 ? best.category : 'general';
+}
+
+export function rankAgent17TemplateCandidates(
+  state: Agent17GameStateSlice,
+  settings: Agent17SettingsSlice,
+  actorId: string
+): { matchedCategory: string; candidateTemplateIds: string[] } {
+  const objective = defaultObjectiveResolver(state, settings, actorId);
+  const matchedCategory = inferAgent17ObjectiveCategory(objective, state);
+  const route = AGENT17_TEMPLATE_ROUTE_TABLE.find(r => r.category === matchedCategory);
+  const fallbackIds = AGENT17_BASE_TEMPLATE_CATALOG.slice(0, 3).map(t => t.id);
+  const candidateTemplateIds = route?.templateIds?.length
+    ? [...route.templateIds]
+    : fallbackIds;
+  const cash = state.player?.money ?? state.actorsById?.[actorId]?.money ?? 0;
+  if (cash < 500) {
+    candidateTemplateIds.unshift('agent17_tpl_deep_capital_program');
+  }
+  const unique: string[] = [];
+  for (const id of candidateTemplateIds) {
+    if (!unique.includes(id) && AGENT17_PROJECT_TEMPLATE_CATALOG.some(t => t.id === id)) {
+      unique.push(id);
+    }
+  }
+  return { matchedCategory, candidateTemplateIds: unique.slice(0, 6) };
+}
+
+export function pickAgent17TemplateForCategory(category: string): Acc17ProjectTemplate | null {
+  const route = AGENT17_TEMPLATE_ROUTE_TABLE.find(r => r.category === category);
+  const id = route?.templateIds?.[0];
+  if (!id) return null;
+  return AGENT17_PROJECT_TEMPLATE_CATALOG.find(t => t.id === id) ?? null;
+}
+
+export function summarizeAgent17CatalogDepth(): {
+  templateCount: number;
+  deepTemplateCount: number;
+  maxStepCount: number;
+} {
+  const templateCount = AGENT17_PROJECT_TEMPLATE_CATALOG.length;
+  const deepTemplateCount = AGENT17_DEEP_TEMPLATE_CATALOG.length;
+  const maxStepCount = AGENT17_PROJECT_TEMPLATE_CATALOG.reduce(
+    (max, t) => Math.max(max, t.stepBlueprints.length),
+    0
+  );
+  return { templateCount, deepTemplateCount, maxStepCount };
+}
+
+
+// --- source: planning/plan-health.ts ---
+  Acc17MultiStepPlan,
+  Agent17PlanHealthBand,
+  Agent17GameStateSlice,
+} from '../types/command-center-types.ts';
+
+export function assessAgent17PlanHealth(
+  plan: Acc17MultiStepPlan | null,
+  _state: Agent17GameStateSlice,
+  _actorId: string
+): Agent17PlanHealthBand {
+  if (!plan || plan.steps.length === 0) {
+    return {
+      band: 'critical',
+      score: 0,
+      blockedCount: 0,
+      verifiedRatio: 0,
+      replanCount: 0,
+      onTrack: false,
+    };
+  }
+  const blockedCount = plan.steps.filter(
+    s => s.status === 'blocked' || s.status === 'failed'
+  ).length;
+  const verified = plan.steps.filter(s => s.status === 'verified_complete').length;
+  const verifiedRatio = verified / plan.steps.length;
+  const inFlight = plan.steps.some(s => s.status === 'in_progress' || s.status === 'pending');
+  let score = Math.round(verifiedRatio * 70 + (plan.isOnTrack ? 20 : 0));
+  if (verifiedRatio === 0 && inFlight && blockedCount === 0) {
+    score = Math.max(score, 52);
+  }
+  score -= blockedCount * 15;
+  score -= Math.min(15, plan.replanCount * 3);
+  score = Math.max(0, Math.min(100, score));
+  let band: Agent17PlanHealthBand['band'] = 'steady';
+  if (score < 35 || blockedCount >= 2) band = 'critical';
+  else if (score < 50 || blockedCount >= 1) band = 'at_risk';
+  else if (score >= 80 && verifiedRatio >= 0.6) band = 'strong';
+  else if (verifiedRatio === 0 && inFlight && blockedCount === 0) band = 'steady';
+  return {
+    band,
+    score,
+    blockedCount,
+    verifiedRatio,
+    replanCount: plan.replanCount,
+    onTrack: plan.isOnTrack && blockedCount === 0,
+  };
+}
+
+export function planHealthNeedsRecovery(health: Agent17PlanHealthBand): boolean {
+  return health.band === 'critical' || health.band === 'at_risk';
+}
+
+export function formatAgent17PlanHealthSummary(health: Agent17PlanHealthBand): string {
+  return `${health.band} · score ${health.score} · verified ${Math.round(health.verifiedRatio * 100)}% · replans ${health.replanCount}`;
+}
+
+
+// --- source: planning/delegation-analytics.ts ---
+  Acc17CommandCenterOpsState,
+  Acc17DelegateTargetKind,
+  Acc17DelegatedProject,
+  Agent17DelegationAnalyticsRow,
+  Agent17SettingsSlice,
+} from '../types/command-center-types.ts';
+
+const DELEGATE_KINDS: Acc17DelegateTargetKind[] = [
+  'copilot',
+  'team_os',
+  'teammate',
+  'strategy_planner',
+  'manual',
+];
+
+export function buildAgent17DelegationAnalytics(
+  ops: Acc17CommandCenterOpsState,
+  settings: Agent17SettingsSlice
+): Agent17DelegationAnalyticsRow[] {
+  const projects = ops.delegatedProjects || [];
+  return DELEGATE_KINDS.map(delegateKind => {
+    const rows = projects.filter(p => p.delegateKind === delegateKind);
+    const authorityMix: Record<string, number> = {};
+    for (const p of rows) {
+      authorityMix[p.authorityCeiling] = (authorityMix[p.authorityCeiling] || 0) + 1;
+    }
+    const activeProjects = rows.filter(p =>
+      ['delegated', 'executing', 'awaiting_verification'].includes(p.status)
+    ).length;
+    const completedProjects = rows.filter(p => p.status === 'completed').length;
+    const blockedProjects = rows.filter(p => p.status === 'blocked').length;
+    let recommendedAdjustment: string | undefined;
+    const autonomy = settings.aiCommunicationAutonomyLevel;
+    if (delegateKind === 'copilot' && autonomy === 'advisory' && activeProjects > 0) {
+      recommendedAdjustment = 'Reduce copilot load while autonomy is advisory.';
+    }
+    if (delegateKind === 'team_os' && autonomy === 'delegated' && activeProjects === 0) {
+      recommendedAdjustment = 'Consider team_os delegation under delegated autonomy.';
+    }
+    if (blockedProjects >= 2) {
+      recommendedAdjustment = 'Multiple blocked delegations — replan or downgrade authority ceiling.';
+    }
+    return {
+      delegateKind,
+      activeProjects,
+      completedProjects,
+      blockedProjects,
+      authorityMix,
+      recommendedAdjustment,
+    };
+  });
+}
+
+export function pickAgent17DelegateKindFromAnalytics(
+  rows: Agent17DelegationAnalyticsRow[],
+  recommended: Acc17DelegateTargetKind
+): Acc17DelegateTargetKind {
+  const overloaded = rows.find(r => r.activeProjects >= 3 && r.delegateKind === recommended);
+  if (overloaded) {
+    const alt = rows.find(r => r.activeProjects === 0 && r.delegateKind !== 'manual');
+    return alt?.delegateKind ?? recommended;
+  }
+  return recommended;
+}
+
+export function countAgent17ActiveDelegations(projects: Acc17DelegatedProject[]): number {
+  return projects.filter(p =>
+    ['delegated', 'executing', 'awaiting_verification'].includes(p.status)
+  ).length;
+}
+
+
+// --- source: planning/planning-orchestrator.ts ---
+  Acc17CommandCenterOpsState,
+  Acc17DelegateTargetKind,
+  Acc17OperationsSnapshot,
+  Agent17PlanningDepthSnapshot,
+  Agent17PlanningSuggestion,
+  Agent17GameStateSlice,
+  Agent17SettingsSlice,
+} from '../types/command-center-types.ts';
+  buildAgent17DelegationAnalytics,
+  pickAgent17DelegateKindFromAnalytics,
+} from './delegation-analytics.ts';
+  rankAgent17TemplateCandidates,
+  summarizeAgent17CatalogDepth,
+} from './template-selector.ts';
+
+export function buildAgent17PlanningSuggestion(
+  ops: Acc17CommandCenterOpsState,
+  state: Agent17GameStateSlice,
+  settings: Agent17SettingsSlice,
+  actorId: string,
+  recommendedDelegateKind: Acc17DelegateTargetKind
+): Agent17PlanningSuggestion {
+  const plan = ops.activePlan;
+  const health = assessAgent17PlanHealth(plan, state, actorId);
+  const blocked = plan?.steps.some(s => s.status === 'blocked' || s.status === 'failed') ?? false;
+  const signals = detectAgent17RecoverySignals(state, actorId);
+  const recovery = pickAgent17RecoveryTemplateId(signals, blocked);
+  if (recovery && (blocked || planHealthNeedsRecovery(health))) {
+    return {
+      kind: 'recovery',
+      templateId: recovery.templateId,
+      headline: `Recovery lane: ${recovery.lane}`,
+      rationale: recovery.rationale,
+      confidence: Math.min(0.95, 0.55 + (signals[0]?.severity ?? 40) / 200),
+    };
+  }
+  const routing = rankAgent17TemplateCandidates(state, settings, actorId);
+  const templateId = routing.candidateTemplateIds[0];
+  if (templateId && (!plan || health.band === 'steady' || health.band === 'strong')) {
+    return {
+      kind: 'template',
+      templateId,
+      headline: `Route ${routing.matchedCategory} → ${templateId}`,
+      rationale: `Category ${routing.matchedCategory} from objective and state cues.`,
+      confidence: 0.72,
+    };
+  }
+  const analytics = buildAgent17DelegationAnalytics(ops, settings);
+  const delegateKind = pickAgent17DelegateKindFromAnalytics(analytics, recommendedDelegateKind);
+  if (plan && plan.completionPercent < 100) {
+    return {
+      kind: 'delegate',
+      delegateKind,
+      headline: `Delegate via ${delegateKind}`,
+      rationale: 'Active plan incomplete; delegation analytics favor this target.',
+      confidence: 0.65,
+    };
+  }
+  return {
+    kind: 'hold',
+    headline: 'Hold planning posture',
+    rationale: 'No recovery, template, or delegation action required this turn.',
+    confidence: 0.5,
+  };
+}
+
+export function buildAgent17PlanningDepthSnapshot(
+  ops: Acc17CommandCenterOpsState,
+  state: Agent17GameStateSlice,
+  settings: Agent17SettingsSlice,
+  actorId: string,
+  recommendedDelegateKind: Acc17DelegateTargetKind
+): Agent17PlanningDepthSnapshot {
+  const turn = state.turnCounter || state.day || 1;
+  const planHealth = assessAgent17PlanHealth(ops.activePlan, state, actorId);
+  const templateRouting = rankAgent17TemplateCandidates(state, settings, actorId);
+  const delegationAnalytics = buildAgent17DelegationAnalytics(ops, settings);
+  const suggestion = buildAgent17PlanningSuggestion(
+    ops,
+    state,
+    settings,
+    actorId,
+    recommendedDelegateKind
+  );
+  return {
+    turn,
+    actorId,
+    planHealth,
+    suggestion,
+    templateRouting,
+    delegationAnalytics,
+    catalogDepth: summarizeAgent17CatalogDepth(),
+  };
+}
+
+export function attachAgent17PlanningDepth(
+  snapshot: Acc17OperationsSnapshot,
+  ops: Acc17CommandCenterOpsState,
+  state: Agent17GameStateSlice,
+  settings: Agent17SettingsSlice,
+  actorId: string
+): Acc17OperationsSnapshot {
+  return {
+    ...snapshot,
+    planningDepth: buildAgent17PlanningDepthSnapshot(
+      ops,
+      state,
+      settings,
+      actorId,
+      snapshot.recommendedDelegateKind
+    ),
+  };
+}
+
+
 // --- source: evaluation/operations-evaluator.ts ---
   Acc17CommandCenterOpsState,
   Acc17DelegateTargetKind,
@@ -1447,15 +1937,21 @@ export function evaluateAcc17CommandCenterOperations(
         : 'strategy_planner';
   return {
     ops,
-    snapshot: {
-      deepContext,
-      activePlan: ops.activePlan,
-      delegatedProjects: ops.delegatedProjects,
-      pendingVerificationCount,
-      verifiedStepsThisTurn,
-      blockedSteps,
-      recommendedDelegateKind,
-    },
+    snapshot: attachAgent17PlanningDepth(
+      {
+        deepContext,
+        activePlan: ops.activePlan,
+        delegatedProjects: ops.delegatedProjects,
+        pendingVerificationCount,
+        verifiedStepsThisTurn,
+        blockedSteps,
+        recommendedDelegateKind,
+      },
+      ops,
+      state,
+      settings,
+      actorId
+    ),
   };
 }
 
@@ -1632,6 +2128,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     category: 'validation',
     acceptance: 'evaluateAcc17CommandCenterOperations sets recovery objectiveSource.',
     severity: 'critical',
+  },
+  {
+    id: 'G17-016',
+    title: 'Planning depth snapshot on evaluation',
+    category: 'telemetry',
+    acceptance: 'Snapshot includes planningDepth with catalogDepth.templateCount ≥ 12.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-017',
+    title: 'Template routing by objective category',
+    category: 'planning',
+    acceptance: 'Trade-flavored objective routes to trade category candidates.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-018',
+    title: 'Delegation analytics matrix complete',
+    category: 'integration',
+    acceptance: 'buildAgent17DelegationAnalytics returns five delegate kinds.',
+    severity: 'minor',
   },
 ];
 
@@ -1881,6 +2398,49 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const tradeState: Agent17GameStateSlice = {
+    turnCounter: 4,
+    day: 4,
+    player: { id: 'player', money: 3000, netWorth: 7000, currentRegion: 'NSW' },
+    actorsById: { player: { id: 'player', money: 3000, netWorth: 7000, currentRegion: 'NSW' } },
+    playerTrackedObjective: {
+      title: 'Trade market expansion',
+      sourceType: 'contract',
+      sourceId: 't1',
+    },
+  };
+  const tradeRoute = rankAgent17TemplateCandidates(tradeState, settings, 'player');
+  goalResults.push(
+    result(
+      'G17-017',
+      tradeRoute.matchedCategory === 'trade' &&
+        tradeRoute.candidateTemplateIds.includes('agent17_tpl_trade_arbitrage'),
+      `${tradeRoute.matchedCategory}/${tradeRoute.candidateTemplateIds[0]}`
+    )
+  );
+
+  const depthEval = evaluateAcc17CommandCenterOperations(
+    baseState,
+    settings,
+    'player',
+    createDefaultAcc17CommandCenterOpsState()
+  );
+  goalResults.push(
+    result(
+      'G17-016',
+      (depthEval.snapshot.planningDepth?.catalogDepth.templateCount ?? 0) >= 12,
+      String(depthEval.snapshot.planningDepth?.catalogDepth.templateCount)
+    )
+  );
+
+  const delegationRows = buildAgent17DelegationAnalytics(
+    depthEval.ops,
+    settings
+  );
+  goalResults.push(
+    result('G17-018', delegationRows.length === 5, String(delegationRows.length))
+  );
+
   const passedCount = goalResults.filter(r => r.passed).length;
   const failedCount = goalResults.length - passedCount;
   return {
@@ -1918,6 +2478,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-013',
     'G17-014',
     'G17-015',
+    'G17-016',
+    'G17-017',
+    'G17-018',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
@@ -2207,14 +2770,154 @@ export function runAgent17RecoveryPathTests(): Agent17DevTestReport {
 }
 
 
+// --- source: harness/run-planning-depth-tests.ts ---
+  rankAgent17TemplateCandidates,
+  summarizeAgent17CatalogDepth,
+} from '../planning/template-selector.ts';
+
+export function runAgent17PlanningDepthTests(): Agent17DevTestReport {
+  const start = Date.now();
+  const testResults: Agent17DevTestReport['testResults'] = [];
+  const push = (id: string, name: string, ok: boolean, detail?: string) => {
+    testResults.push({
+      id,
+      name,
+      status: ok ? 'passed' : 'failed',
+      durationMs: 0,
+      errorMessage: ok ? undefined : detail,
+    });
+  };
+
+  try {
+    const state: Agent17GameStateSlice = {
+      turnCounter: 8,
+      day: 8,
+      player: {
+        id: 'player',
+        money: 4200,
+        netWorth: 9000,
+        currentRegion: 'NSW',
+        currentSupplies: 80,
+      },
+      actorsById: {
+        player: {
+          id: 'player',
+          money: 4200,
+          netWorth: 9000,
+          currentRegion: 'NSW',
+          currentSupplies: 80,
+        },
+      },
+      playerTrackedObjective: {
+        title: 'Expand trade routes across markets',
+        sourceType: 'contract',
+        sourceId: 'trade-1',
+        description: 'Focus on trade arbitrage this turn',
+      },
+      lastExecutedAction: { type: 'wait' },
+    };
+    const settings = {
+      commandCenterSettings: { enabled: true },
+      aiCommunicationAutonomyLevel: 'assisted' as const,
+    };
+
+    const depth = summarizeAgent17CatalogDepth();
+    push(
+      'depth_catalog_scale',
+      'Catalog depth meets scale wave minimums',
+      depth.templateCount >= 12 && depth.deepTemplateCount >= 7 && depth.maxStepCount >= 6,
+      JSON.stringify(depth)
+    );
+
+    const routing = rankAgent17TemplateCandidates(state, settings, 'player');
+    push(
+      'depth_template_routing',
+      'Trade objective routes to trade category',
+      routing.matchedCategory === 'trade' &&
+        routing.candidateTemplateIds.includes('agent17_tpl_trade_arbitrage'),
+      `${routing.matchedCategory}/${routing.candidateTemplateIds[0]}`
+    );
+
+    const plan = acc17InstantiatePlanFromTemplate(
+      'agent17_tpl_diplomatic_depth',
+      state,
+      'player'
+    );
+    const health = assessAgent17PlanHealth(plan, state, 'player');
+    push(
+      'depth_plan_health',
+      'Fresh deep plan starts steady or strong',
+      health.band === 'steady' || health.band === 'strong',
+      health.band
+    );
+
+    const evalRes = evaluateAcc17CommandCenterOperations(
+      state,
+      settings,
+      'player',
+      createDefaultAcc17CommandCenterOpsState()
+    );
+    push(
+      'depth_snapshot_attached',
+      'Evaluator attaches planningDepth snapshot',
+      !!evalRes.snapshot.planningDepth &&
+        evalRes.snapshot.planningDepth.catalogDepth.templateCount >= 12,
+      String(evalRes.snapshot.planningDepth?.catalogDepth.templateCount)
+    );
+    push(
+      'depth_suggestion',
+      'Planning suggestion has kind and confidence',
+      !!evalRes.snapshot.planningDepth?.suggestion.kind &&
+        (evalRes.snapshot.planningDepth?.suggestion.confidence ?? 0) > 0,
+      evalRes.snapshot.planningDepth?.suggestion.kind
+    );
+
+    const ops = evalRes.ops;
+    const manualDepth = buildAgent17PlanningDepthSnapshot(
+      ops,
+      state,
+      settings,
+      'player',
+      'copilot'
+    );
+    push(
+      'depth_delegation_analytics',
+      'Delegation analytics covers all delegate kinds',
+      manualDepth.delegationAnalytics.length === 5,
+      String(manualDepth.delegationAnalytics.length)
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    push('depth_throw', 'Planning depth harness did not throw', false, msg);
+  }
+
+  const passedCount = testResults.filter(t => t.status === 'passed').length;
+  const failedCount = testResults.filter(t => t.status === 'failed').length;
+  const overallStatus: 'passed' | 'failed' = failedCount === 0 ? 'passed' : 'failed';
+  return {
+    timestamp: Date.now(),
+    totalTests: testResults.length,
+    passedCount,
+    failedCount,
+    executionTimeMs: Date.now() - start,
+    overallStatus,
+    success: overallStatus === 'passed',
+    testResults,
+    summary: `Agent 17 Planning Depth Tests: ${passedCount}/${testResults.length} Passed`,
+  };
+}
+
+
 export function runAgent17Op10mModuleSelfTests(): {
   acc17: ReturnType<typeof runAgent17Acc17DevTests>;
   recovery: ReturnType<typeof runAgent17RecoveryPathTests>;
+  depth: ReturnType<typeof runAgent17PlanningDepthTests>;
   success: boolean;
 } {
   const acc17 = runAgent17Acc17DevTests();
   const recovery = runAgent17RecoveryPathTests();
-  return { acc17, recovery, success: acc17.success && recovery.success };
+  const depth = runAgent17PlanningDepthTests();
+  return { acc17, recovery, depth, success: acc17.success && recovery.success && depth.success };
 }
 
 // OP10M_MODULE_END agent-17-command-center

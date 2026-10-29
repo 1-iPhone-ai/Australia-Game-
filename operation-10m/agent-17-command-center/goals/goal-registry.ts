@@ -107,6 +107,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'evaluateAcc17CommandCenterOperations sets recovery objectiveSource.',
     severity: 'critical',
   },
+  {
+    id: 'G17-016',
+    title: 'Planning depth snapshot on evaluation',
+    category: 'telemetry',
+    acceptance: 'Snapshot includes planningDepth with catalogDepth.templateCount ≥ 12.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-017',
+    title: 'Template routing by objective category',
+    category: 'planning',
+    acceptance: 'Trade-flavored objective routes to trade category candidates.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-018',
+    title: 'Delegation analytics matrix complete',
+    category: 'integration',
+    acceptance: 'buildAgent17DelegationAnalytics returns five delegate kinds.',
+    severity: 'minor',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

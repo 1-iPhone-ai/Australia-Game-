@@ -19,6 +19,9 @@ import {
   maybeApplyAgent17RecoveryPath,
   pickAgent17RecoveryTemplateId,
 } from '../planning/recovery-paths.ts';
+import { rankAgent17TemplateCandidates, summarizeAgent17CatalogDepth } from '../planning/template-selector.ts';
+import { buildAgent17DelegationAnalytics } from '../planning/delegation-analytics.ts';
+import { evaluateAcc17CommandCenterOperations } from '../evaluation/operations-evaluator.ts';
 import {
   Agent17RollbackController,
   createAgent17RollbackController,
@@ -242,6 +245,49 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const tradeState: Agent17GameStateSlice = {
+    turnCounter: 4,
+    day: 4,
+    player: { id: 'player', money: 3000, netWorth: 7000, currentRegion: 'NSW' },
+    actorsById: { player: { id: 'player', money: 3000, netWorth: 7000, currentRegion: 'NSW' } },
+    playerTrackedObjective: {
+      title: 'Trade market expansion',
+      sourceType: 'contract',
+      sourceId: 't1',
+    },
+  };
+  const tradeRoute = rankAgent17TemplateCandidates(tradeState, settings, 'player');
+  goalResults.push(
+    result(
+      'G17-017',
+      tradeRoute.matchedCategory === 'trade' &&
+        tradeRoute.candidateTemplateIds.includes('agent17_tpl_trade_arbitrage'),
+      `${tradeRoute.matchedCategory}/${tradeRoute.candidateTemplateIds[0]}`
+    )
+  );
+
+  const depthEval = evaluateAcc17CommandCenterOperations(
+    baseState,
+    settings,
+    'player',
+    createDefaultAcc17CommandCenterOpsState()
+  );
+  goalResults.push(
+    result(
+      'G17-016',
+      (depthEval.snapshot.planningDepth?.catalogDepth.templateCount ?? 0) >= 12,
+      String(depthEval.snapshot.planningDepth?.catalogDepth.templateCount)
+    )
+  );
+
+  const delegationRows = buildAgent17DelegationAnalytics(
+    depthEval.ops,
+    settings
+  );
+  goalResults.push(
+    result('G17-018', delegationRows.length === 5, String(delegationRows.length))
+  );
+
   const passedCount = goalResults.filter(r => r.passed).length;
   const failedCount = goalResults.length - passedCount;
   return {
@@ -279,6 +325,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-013',
     'G17-014',
     'G17-015',
+    'G17-016',
+    'G17-017',
+    'G17-018',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

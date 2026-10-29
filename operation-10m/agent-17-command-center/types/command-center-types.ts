@@ -141,6 +141,44 @@ export interface Acc17OperationsSnapshot {
   verifiedStepsThisTurn: number;
   blockedSteps: Acc17MultiStepPlanStep[];
   recommendedDelegateKind: Acc17DelegateTargetKind;
+  planningDepth?: Agent17PlanningDepthSnapshot;
+}
+
+export interface Agent17PlanHealthBand {
+  band: 'critical' | 'at_risk' | 'steady' | 'strong';
+  score: number;
+  blockedCount: number;
+  verifiedRatio: number;
+  replanCount: number;
+  onTrack: boolean;
+}
+
+export interface Agent17PlanningSuggestion {
+  kind: 'template' | 'recovery' | 'delegate' | 'hold';
+  templateId?: string;
+  delegateKind?: Acc17DelegateTargetKind;
+  headline: string;
+  rationale: string;
+  confidence: number;
+}
+
+export interface Agent17DelegationAnalyticsRow {
+  delegateKind: Acc17DelegateTargetKind;
+  activeProjects: number;
+  completedProjects: number;
+  blockedProjects: number;
+  authorityMix: Record<string, number>;
+  recommendedAdjustment?: string;
+}
+
+export interface Agent17PlanningDepthSnapshot {
+  turn: number;
+  actorId: string;
+  planHealth: Agent17PlanHealthBand;
+  suggestion: Agent17PlanningSuggestion;
+  templateRouting: { matchedCategory: string; candidateTemplateIds: string[] };
+  delegationAnalytics: Agent17DelegationAnalyticsRow[];
+  catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
 export interface Acc17ProjectTemplate {

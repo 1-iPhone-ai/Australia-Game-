@@ -185,6 +185,80 @@ export const AGENT17_DEEP_TEMPLATE_CATALOG: Acc17ProjectTemplate[] = [
       },
     ],
   },
+  {
+    id: 'agent17_tpl_diplomatic_depth',
+    title: 'Diplomatic leverage program (deep)',
+    category: 'diplomacy',
+    delegateKind: 'strategy_planner',
+    stepBlueprints: [
+      {
+        title: 'Map rival intent signals',
+        actionType: 'wait',
+        summary: 'Collect observable diplomacy telemetry only.',
+      },
+      {
+        title: 'Travel to negotiation hub',
+        actionType: 'travel',
+        summary: 'Position in region with active negotiation window.',
+        requirements: { prerequisiteStepIndices: [0] },
+      },
+      {
+        title: 'Execute trade sweetener',
+        actionType: 'trade',
+        summary: 'Offer structured trade to shift standing.',
+        requirements: { prerequisiteStepIndices: [1], minCash: 600 },
+      },
+      {
+        title: 'Deposit goodwill buffer',
+        actionType: 'deposit',
+        summary: 'Lock goodwill into regional deposit.',
+        requirements: { prerequisiteStepIndices: [2] },
+      },
+      {
+        title: 'Verify diplomatic milestone',
+        actionType: 'verify_objective',
+        summary: 'Confirm diplomacy objective progress.',
+        requirements: { prerequisiteStepIndices: [3] },
+      },
+    ],
+  },
+  {
+    id: 'agent17_tpl_automation_oversight',
+    title: 'Automation oversight ladder',
+    category: 'intelligence',
+    delegateKind: 'copilot',
+    stepBlueprints: [
+      {
+        title: 'Review autonomy ceiling',
+        actionType: 'wait',
+        summary: 'Confirm AI communication autonomy matches plan.',
+      },
+      {
+        title: 'Delegate verification pass',
+        actionType: 'contract',
+        summary: 'Run delegated step with assisted ceiling.',
+        requirements: { prerequisiteStepIndices: [0] },
+      },
+      {
+        title: 'Copilot session sync',
+        actionType: 'invest',
+        summary: 'Align copilot session with active plan id.',
+        requirements: { prerequisiteStepIndices: [1] },
+      },
+      {
+        title: 'Manual override checkpoint',
+        actionType: 'wait',
+        summary: 'Player confirms no silent automation.',
+        requirements: { prerequisiteStepIndices: [2] },
+      },
+      {
+        title: 'Verify oversight log',
+        actionType: 'verify_objective',
+        summary: 'Close oversight ladder with fingerprint proof.',
+        requirements: { prerequisiteStepIndices: [3] },
+      },
+    ],
+  },
 ];
 
 export type DeepTemplateBlueprint = Acc17ProjectTemplate['stepBlueprints'][number] & {

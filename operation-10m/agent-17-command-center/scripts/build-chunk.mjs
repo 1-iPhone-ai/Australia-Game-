@@ -20,12 +20,17 @@ const FILES = [
   'planning/templates.ts',
   'planning/ops-state.ts',
   'planning/recovery-paths.ts',
+  'planning/template-selector.ts',
+  'planning/plan-health.ts',
+  'planning/delegation-analytics.ts',
+  'planning/planning-orchestrator.ts',
   'evaluation/operations-evaluator.ts',
   'rollback/rollback-controller.ts',
   'goals/goal-registry.ts',
   'validation/goal-verification.ts',
   'harness/run-acc17-dev-tests.ts',
   'harness/run-recovery-path-tests.ts',
+  'harness/run-planning-depth-tests.ts',
 ];
 
 function stripModulePreamble(source) {
@@ -60,11 +65,13 @@ for (const rel of FILES) {
 parts.push(`export function runAgent17Op10mModuleSelfTests(): {
   acc17: ReturnType<typeof runAgent17Acc17DevTests>;
   recovery: ReturnType<typeof runAgent17RecoveryPathTests>;
+  depth: ReturnType<typeof runAgent17PlanningDepthTests>;
   success: boolean;
 } {
   const acc17 = runAgent17Acc17DevTests();
   const recovery = runAgent17RecoveryPathTests();
-  return { acc17, recovery, success: acc17.success && recovery.success };
+  const depth = runAgent17PlanningDepthTests();
+  return { acc17, recovery, depth, success: acc17.success && recovery.success && depth.success };
 }`);
 parts.push('');
 parts.push('// OP10M_MODULE_END agent-17-command-center');
