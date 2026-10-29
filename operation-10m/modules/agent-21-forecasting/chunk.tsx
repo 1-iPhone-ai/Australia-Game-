@@ -102,7 +102,7 @@ export function ag21Provenance(
   };
 }
 
-export const O10M_AGENT21_MODULE_VERSION = '1.4.0';
+export const O10M_AGENT21_MODULE_VERSION = '1.5.0';
 export const O10M_AGENT21_MODULE_ID = 'forecasting_policy_lab';
 
 // --- bundled from counterfactual-experiments.ts ---
@@ -1434,6 +1434,265 @@ export function runAg21ForecastAuditSelfChecks(): { id: string; passed: boolean;
   return out;
 }
 
+// --- bundled from forecast-ensemble-projection.ts ---
+/**
+ * Agent 21 — ensemble projection bands (fuse lab signals on isolated snapshots).
+ */
+
+
+export interface Ag21EnsembleBand {
+  label: 'p10' | 'p50' | 'p90';
+  projectedCash: number;
+  projectedDebt: number;
+  uncertainty: Ag21UncertaintyBand;
+}
+
+export interface Ag21EnsembleProjection {
+  seed: number;
+  baselineFingerprint: string;
+  bands: Ag21EnsembleBand[];
+  dispersion: number;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritativeMutationDetected: boolean;
+}
+
+function ag21Percentile(values: number[], p: number): number {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor(p * (sorted.length - 1))));
+  return sorted[idx];
+}
+
+export function buildAg21EnsembleProjection(ctx: Ag21ForecastContext): Ag21EnsembleProjection {
+  const subject: Ag21ForecastContext = { ...ctx, nationalPriorityMomentum: ctx.nationalPriorityMomentum ?? 'stable' };
+  const baselineFingerprint = ag21FingerprintSnapshot(subject);
+
+  const iso = ag21VerifyIsolatedExperiment(subject, copy => {
+    const ladder = buildAg21MultiHorizonProjection(copy);
+    const sensitivity = runAg21PolicySensitivitySweep(copy);
+    const cashSamples = [
+      ...ladder.steps.map(s => s.projectedCash),
+      ...sensitivity.rows.map(r => r.projectedCash)
+    ];
+    const debtSamples = [
+      ...ladder.steps.map(s => s.projectedDebt),
+      ...sensitivity.rows.map(r => r.projectedDebt)
+    ];
+    const p10Cash = ag21Percentile(cashSamples, 0.1);
+    const p50Cash = ag21Percentile(cashSamples, 0.5);
+    const p90Cash = ag21Percentile(cashSamples, 0.9);
+    const p10Debt = ag21Percentile(debtSamples, 0.1);
+    const p50Debt = ag21Percentile(debtSamples, 0.5);
+    const p90Debt = ag21Percentile(debtSamples, 0.9);
+    const dispersion = Math.abs(p90Cash - p10Cash) / Math.max(1, Math.abs(p50Cash));
+
+    const bandUncertainty = (spread: number): Ag21UncertaintyBand =>
+      spread > 0.55 ? 'high' : spread > 0.25 ? 'moderate' : 'low';
+
+    const bands: Ag21EnsembleBand[] = [
+      { label: 'p10', projectedCash: p10Cash, projectedDebt: p10Debt, uncertainty: bandUncertainty(dispersion * 0.8) },
+      { label: 'p50', projectedCash: p50Cash, projectedDebt: p50Debt, uncertainty: bandUncertainty(dispersion * 0.5) },
+      { label: 'p90', projectedCash: p90Cash, projectedDebt: p90Debt, uncertainty: bandUncertainty(dispersion) }
+    ];
+    return { bands, dispersion };
+  });
+
+  const payload = iso.result as { bands: Ag21EnsembleBand[]; dispersion: number };
+  const overallBand: Ag21UncertaintyBand =
+    payload.dispersion > 0.55 ? 'high' : payload.dispersion > 0.28 ? 'moderate' : 'low';
+
+  return {
+    seed: subject.seed,
+    baselineFingerprint,
+    bands: payload.bands,
+    dispersion: payload.dispersion,
+    overallUncertainty: ag21LabelUncertainty(overallBand, [`bands=3`, `dispersion=${payload.dispersion.toFixed(2)}`]),
+    authoritativeMutationDetected: baselineFingerprint !== ag21FingerprintSnapshot(subject)
+  };
+}
+
+export function runAg21EnsembleProjectionSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 7, seed: 58, actorCash: 1100, actorDebt: 140, regionsControlled: 3 };
+  const before = ag21FingerprintSnapshot(ctx);
+  const ensemble = buildAg21EnsembleProjection(ctx);
+  push('ensemble_bands', ensemble.bands.length === 3, String(ensemble.bands.length));
+  push('ensemble_order', ensemble.bands[0].projectedCash <= ensemble.bands[2].projectedCash, 'p10<=p90');
+  push('ensemble_no_mutation', before === ag21FingerprintSnapshot(ctx), 'fp');
+  push('ensemble_non_auth', ensemble.overallUncertainty.playerFacing.includes('Non-authoritative'), 'copy');
+
+  return out;
+}
+
+// --- bundled from forecast-calibration-drift.ts ---
+/**
+ * Agent 21 — calibration drift diagnostics (compare isolated forecast contexts).
+ */
+
+
+export interface Ag21CalibrationDriftReport {
+  baselineFingerprint: string;
+  candidateFingerprint: string;
+  cashDriftPct: number;
+  debtDriftPct: number;
+  regionDrift: number;
+  driftScore: number;
+  severity: 'stable' | 'watch' | 'elevated' | 'critical';
+  uncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+function ag21PctDelta(baseline: number, candidate: number): number {
+  return Math.abs(candidate - baseline) / Math.max(1, Math.abs(baseline));
+}
+
+function ag21Severity(score: number): Ag21CalibrationDriftReport['severity'] {
+  if (score >= 0.65) return 'critical';
+  if (score >= 0.4) return 'elevated';
+  if (score >= 0.18) return 'watch';
+  return 'stable';
+}
+
+function ag21BandFromSeverity(severity: Ag21CalibrationDriftReport['severity']): Ag21UncertaintyBand {
+  if (severity === 'critical') return 'high';
+  if (severity === 'elevated') return 'moderate';
+  if (severity === 'watch') return 'moderate';
+  return 'low';
+}
+
+/** Read-only drift check between two lab contexts (does not mutate either input). */
+export function measureAg21CalibrationDrift(
+  baseline: Ag21ForecastContext,
+  candidate: Ag21ForecastContext
+): Ag21CalibrationDriftReport {
+  const baselineFingerprint = ag21FingerprintSnapshot(baseline);
+  const candidateFingerprint = ag21FingerprintSnapshot(candidate);
+  const cashDriftPct = ag21PctDelta(baseline.actorCash, candidate.actorCash);
+  const debtDriftPct = ag21PctDelta(baseline.actorDebt, candidate.actorDebt);
+  const regionDrift = Math.abs(baseline.regionsControlled - candidate.regionsControlled);
+  const driftScore = Math.min(1, cashDriftPct * 0.45 + debtDriftPct * 0.35 + regionDrift * 0.12);
+  const severity = ag21Severity(driftScore);
+
+  return {
+    baselineFingerprint,
+    candidateFingerprint,
+    cashDriftPct,
+    debtDriftPct,
+    regionDrift,
+    driftScore,
+    severity,
+    uncertainty: ag21LabelUncertainty(ag21BandFromSeverity(severity), [`severity=${severity}`]),
+    authoritative: false
+  };
+}
+
+export function runAg21CalibrationDriftSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const base: Ag21ForecastContext = { turn: 4, seed: 10, actorCash: 1000, actorDebt: 100, regionsControlled: 2 };
+  const near: Ag21ForecastContext = { ...base, actorCash: 980 };
+  const far: Ag21ForecastContext = { ...base, actorCash: 400, actorDebt: 900, regionsControlled: 0 };
+
+  const stable = measureAg21CalibrationDrift(base, near);
+  const critical = measureAg21CalibrationDrift(base, far);
+  push('drift_stable', stable.severity === 'stable' || stable.severity === 'watch', stable.severity);
+  push('drift_critical', critical.severity === 'critical' || critical.severity === 'elevated', critical.severity);
+  push('drift_non_auth', stable.authoritative === false && critical.authoritative === false, 'flags');
+
+  return out;
+}
+
+// --- bundled from forecast-trajectory-fusion.ts ---
+/**
+ * Agent 21 — trajectory fusion (scenario + ensemble alignment, read-only).
+ */
+
+
+export interface Ag21TrajectoryFusionPoint {
+  scenarioId: string;
+  domain: string;
+  alignmentScore: number;
+  driftSeverity: ReturnType<typeof measureAg21CalibrationDrift>['severity'];
+  uncertainty: Ag21UncertaintyBand;
+}
+
+export interface Ag21TrajectoryFusionReport {
+  points: Ag21TrajectoryFusionPoint[];
+  fusionScore: number;
+  headline: string;
+  overallUncertainty: ReturnType<typeof ag21LabelUncertainty>;
+  authoritative: false;
+}
+
+function ag21ScenarioContext(base: Ag21ForecastContext, scenarioId: string): Ag21ForecastContext {
+  const scenario = lookupAg21Scenario(scenarioId);
+  const domainBoost =
+    scenario?.domain === 'fiscal' ? -80 :
+    scenario?.domain === 'workforce' ? 40 :
+    scenario?.domain === 'resilience' ? -120 :
+    0;
+  return {
+    ...base,
+    actorCash: Math.max(0, base.actorCash + domainBoost),
+    actorDebt: Math.max(0, base.actorDebt + (scenario?.defaultUncertainty === 'high' ? 60 : 20))
+  };
+}
+
+export function fuseAg21ScenarioTrajectories(
+  baseCtx: Ag21ForecastContext,
+  scenarioIds: string[]
+): Ag21TrajectoryFusionReport {
+  const ensemble = buildAg21EnsembleProjection(baseCtx);
+  const p50 = ensemble.bands.find(b => b.label === 'p50') ?? ensemble.bands[1];
+
+  const points: Ag21TrajectoryFusionPoint[] = scenarioIds.map(id => {
+    const scenario = lookupAg21Scenario(id);
+    const candidate = ag21ScenarioContext(baseCtx, id);
+    const drift = measureAg21CalibrationDrift(baseCtx, candidate);
+    const cashGap = Math.abs((p50?.projectedCash ?? baseCtx.actorCash) - candidate.actorCash);
+    const alignmentScore = Math.max(0, 1 - cashGap / Math.max(1, baseCtx.actorCash));
+    const uncertainty: Ag21UncertaintyBand =
+      drift.severity === 'critical' ? 'high' :
+      drift.severity === 'elevated' ? 'moderate' :
+      scenario?.defaultUncertainty ?? 'moderate';
+
+    return {
+      scenarioId: id,
+      domain: scenario?.domain ?? 'unknown',
+      alignmentScore,
+      driftSeverity: drift.severity,
+      uncertainty
+    };
+  });
+
+  const fusionScore = points.reduce((sum, p) => sum + p.alignmentScore, 0) / Math.max(1, points.length);
+  const overallBand: Ag21UncertaintyBand = fusionScore < 0.45 ? 'high' : fusionScore < 0.7 ? 'moderate' : 'low';
+
+  return {
+    points,
+    fusionScore,
+    headline: `Fusion score ${(fusionScore * 100).toFixed(0)}% across ${points.length} scenario trajectories.`,
+    overallUncertainty: ag21LabelUncertainty(overallBand, [`ensemble_dispersion=${ensemble.dispersion.toFixed(2)}`]),
+    authoritative: false
+  };
+}
+
+export function runAg21TrajectoryFusionSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 6, seed: 21, actorCash: 950, actorDebt: 80, regionsControlled: 2 };
+  const fusion = fuseAg21ScenarioTrajectories(ctx, ['ag21_sc_002', 'ag21_sc_006', 'ag21_sc_012']);
+  push('fusion_points', fusion.points.length === 3, String(fusion.points.length));
+  push('fusion_score_range', fusion.fusionScore >= 0 && fusion.fusionScore <= 1, String(fusion.fusionScore));
+  push('fusion_non_auth', fusion.authoritative === false, fusion.headline);
+
+  return out;
+}
+
 // --- bundled from scenario-comparison-ui.tsx ---
 /**
  * Agent 21 — scenario comparison UI fragment (non-authoritative lab review).
@@ -1681,6 +1940,43 @@ export const Ag21ForecastRound2Console: React.FC<{ seed?: number }> = ({ seed = 
   );
 };
 
+// --- bundled from forecast-round3-console.tsx ---
+/**
+ * Agent 21 — scale wave round 3 console (ensemble + drift + trajectory fusion).
+ */
+
+
+export const Ag21ForecastRound3Console: React.FC<{ seed?: number }> = ({ seed = 29 }) => {
+  const base = useMemo(() => createDefaultAg21ForecastContext({ seed, turn: 12 }), [seed]);
+  const stressed = useMemo(
+    () => ({ ...base, actorCash: Math.round(base.actorCash * 0.7), actorDebt: base.actorDebt + 200 }),
+    [base]
+  );
+
+  const ensemble = useMemo(() => buildAg21EnsembleProjection(base), [base]);
+  const drift = useMemo(() => measureAg21CalibrationDrift(base, stressed), [base, stressed]);
+  const fusion = useMemo(
+    () => fuseAg21ScenarioTrajectories(base, ['ag21_sc_003', 'ag21_sc_015', 'ag21_sc_027', 'ag21_sc_039']),
+    [base]
+  );
+
+  return (
+    <div className="border border-rose-500/30 rounded-lg p-3 bg-slate-950/85 text-xs space-y-2" data-testid="ag21-round3-console">
+      <div className="font-bold text-rose-200">
+        🛰️ Forecast Lab Round 3 <span className="text-[10px] font-normal opacity-70">(non-authoritative)</span>
+      </div>
+      <div data-testid="ag21-round3-ensemble">
+        Ensemble · dispersion {(ensemble.dispersion * 100).toFixed(0)}% · p50 cash{' '}
+        {ensemble.bands.find(b => b.label === 'p50')?.projectedCash ?? 0}
+      </div>
+      <div data-testid="ag21-round3-drift">
+        Drift · severity {drift.severity} · score {(drift.driftScore * 100).toFixed(0)}%
+      </div>
+      <div data-testid="ag21-round3-fusion">{fusion.headline}</div>
+    </div>
+  );
+};
+
 
 
 /** Agent 25 — modular self-tests (subset of npm run test:ag21). */
@@ -1706,6 +2002,15 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21ForecastAuditSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21EnsembleProjectionSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21CalibrationDriftSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21TrajectoryFusionSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({

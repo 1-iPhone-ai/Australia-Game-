@@ -8,7 +8,7 @@
 ## Module identity
 
 - `O10M_AGENT21_MODULE_ID` = `forecasting_policy_lab`
-- `O10M_AGENT21_MODULE_VERSION` = `1.4.0`
+- `O10M_AGENT21_MODULE_VERSION` = `1.5.0`
 
 ## Assembly chunk
 
@@ -36,6 +36,9 @@
 | `runAg21PolicySensitivitySweep` / `buildAg21DomainStressMatrix` | Round 2 policy sensitivity + domain stress matrix |
 | `appendAg21ForecastAuditEntry` / `summarizeAg21ForecastAuditLedger` | In-memory lab audit ledger |
 | `Ag21ForecastRound2Console` | Round 2 UI (`data-testid="ag21-round2-console"`) |
+| `buildAg21EnsembleProjection` / `measureAg21CalibrationDrift` | Round 3 ensemble bands + drift diagnostics |
+| `fuseAg21ScenarioTrajectories` | Scenario trajectory fusion report |
+| `Ag21ForecastRound3Console` | Round 3 UI (`data-testid="ag21-round3-console"`) |
 
 ## Upstream dependencies (canonical only)
 
