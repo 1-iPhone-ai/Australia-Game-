@@ -13,7 +13,7 @@ describe('OP10M pipeline stage registry', () => {
     const ids = listRegisteredPipelineStageIds();
     assert.ok(ids.includes('ag02:phase.main'));
     assert.ok(ids.includes('ag02:effects.obligations'));
-    assert.equal(ids.length, 8);
+    assert.equal(ids.length, 9);
   });
 
   it('derives phase and effect hits from a full turn step', () => {

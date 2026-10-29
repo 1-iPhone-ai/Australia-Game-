@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
 // @ts-nocheck
-// content-sha256-prefix: c9cdd8fa8d6ed011
+// content-sha256-prefix: af1857f624bf79a2
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -871,6 +871,7 @@ export const OP10M_AGENT02_PIPELINE_STAGE_IDS = [
   'ag02:effects.obligations',
   'ag02:effects.events',
   'ag02:effects.construction',
+  'ag02:effects.follow_ups',
   'ag02:clock.roll',
   'ag02:advance.blocked',
 ] as const;
@@ -923,6 +924,9 @@ export function derivePipelineStageHits(
       case 'construction_labor':
       case 'construction_completed':
         pushHit(hits, 'ag02:effects.construction', entry);
+        break;
+      case 'follow_up_scheduled':
+        pushHit(hits, 'ag02:effects.follow_ups', entry);
         break;
       case 'advance_blocked':
         pushHit(hits, 'ag02:advance.blocked', entry);
@@ -1159,6 +1163,95 @@ export function tryConsumeTurnAdvanceBudget(
 
 export function advanceBudgetRemaining(state: TurnAdvanceBudgetState): number {
   return Math.max(0, state.limit - state.consumed);
+}
+
+// --- src/external-day-plan.ts ---
+
+export interface ExternalDayPlanMergeResult {
+  turnIndex: number;
+  scheduledDueIds: string[];
+  externalEventIds: string[];
+  /** In Agent 05 plan but not scheduled on Agent 02 engine for this turn. */
+  externalOnly: string[];
+  /** Scheduled due on turn but absent from external narrative plan. */
+  scheduledOnly: string[];
+  ok: boolean;
+}
+
+function scheduledEventIdsDueOnTurn(snapshot: TurnTimeSnapshot, turnIndex: number): string[] {
+  return snapshot.events
+    .filter((e) => e.status === 'queued' && e.dueTurn === turnIndex)
+    .map((e) => e.id)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * XS-02 prep: reconcile Agent 05 narrative event ids with Agent 02 scheduled queue for one turn.
+ * When `strict` is true, both orphan lists must be empty for `ok`.
+ */
+export function mergeExternalDayPlan(
+  snapshot: TurnTimeSnapshot,
+  turnIndex: number,
+  externalEventIds: string[],
+  strict = true,
+): ExternalDayPlanMergeResult {
+  const scheduledDueIds = scheduledEventIdsDueOnTurn(snapshot, turnIndex);
+  const externalSorted = [...new Set(externalEventIds)].sort((a, b) => a.localeCompare(b));
+  const scheduledSet = new Set(scheduledDueIds);
+  const externalSet = new Set(externalSorted);
+  const externalOnly = externalSorted.filter((id) => !scheduledSet.has(id));
+  const scheduledOnly = scheduledDueIds.filter((id) => !externalSet.has(id));
+  const ok = strict ? externalOnly.length === 0 && scheduledOnly.length === 0 : externalOnly.length === 0;
+  return {
+    turnIndex,
+    scheduledDueIds,
+    externalEventIds: externalSorted,
+    externalOnly,
+    scheduledOnly,
+    ok,
+  };
+}
+
+// --- src/turn-pipeline-report.ts ---
+
+export interface Agent02TurnPipelineReport {
+  turnIndex: number;
+  dayIndex: number;
+  registeredStageCount: number;
+  stageHitCount: number;
+  incompleteTurns: number[];
+  pipelineDigest: string;
+  reconcileOk: boolean | null;
+}
+
+function pipelineDigestPayload(snapshot: TurnTimeSnapshot): string {
+  const hits = derivePipelineStageHits(snapshot.trace);
+  const summaries = summarizePipelineByTurn(snapshot.trace, snapshot.clock.turnIndex);
+  return JSON.stringify({
+    turnIndex: snapshot.clock.turnIndex,
+    hits: hits.map((h) => [h.stageId, h.turnIndex, h.sequence]),
+    summaries: summaries.map((s) => [s.turnIndex, s.blocked, s.rolled, s.stageIds]),
+  });
+}
+
+export function computeTurnPipelineDigest(snapshot: TurnTimeSnapshot): string {
+  return fnv1a64Hex(pipelineDigestPayload(snapshot));
+}
+
+export function buildAgent02TurnPipelineReport(
+  after: TurnTimeSnapshot,
+  before?: TurnTimeSnapshot,
+): Agent02TurnPipelineReport {
+  const reconcileOk = before ? reconcileLastStepHorizon(before, after).ok : null;
+  return {
+    turnIndex: after.clock.turnIndex,
+    dayIndex: after.clock.dayIndex,
+    registeredStageCount: listRegisteredPipelineStageIds().length,
+    stageHitCount: derivePipelineStageHits(after.trace).length,
+    incompleteTurns: incompletePipelineTurns(after.trace, after.clock.turnIndex),
+    pipelineDigest: computeTurnPipelineDigest(after),
+    reconcileOk,
+  };
 }
 
 // --- src/diagnostics.ts ---
@@ -1617,6 +1710,22 @@ export class TurnTimeEngine {
     return reconcileLastStepHorizon(before, this.snapshot());
   }
 
+  mergeExternalDayPlan(
+    turnIndex: number,
+    externalEventIds: string[],
+    strict = true,
+  ): ExternalDayPlanMergeResult {
+    return mergeExternalDayPlan(this.snapshot(), turnIndex, externalEventIds, strict);
+  }
+
+  buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {
+    return buildAgent02TurnPipelineReport(this.snapshot(), before);
+  }
+
+  getTurnPipelineDigest(): string {
+    return computeTurnPipelineDigest(this.snapshot());
+  }
+
   registerFollowUp(input: RegisterFollowUpInput): void {
     this.followUpRules = registerFollowUpRule(this.followUpRules, input);
   }
@@ -1883,6 +1992,46 @@ export class TurnTimeEngine {
   }
 }
 
+// --- src/batch-advance.ts ---
+
+export interface BatchAdvanceResult {
+  steps: StepTurnResult[];
+  budget: TurnAdvanceBudgetState;
+  completed: number;
+  stoppedReason?: string;
+}
+
+/**
+ * Steps up to `maxSteps` full turns, consuming advance budget per successful step.
+ * Stops early on pause block or budget exhaustion.
+ */
+export function stepTurnsWithBudget(
+  engine: TurnTimeEngine,
+  maxSteps: number,
+  budget: TurnAdvanceBudgetState,
+): BatchAdvanceResult {
+  const cap = Math.max(0, Math.floor(maxSteps));
+  const steps: StepTurnResult[] = [];
+  let currentBudget = budget;
+  let completed = 0;
+
+  for (let i = 0; i < cap; i += 1) {
+    const consume = tryConsumeTurnAdvanceBudget(currentBudget, 1);
+    if (!consume.allowed) {
+      return { steps, budget: currentBudget, completed, stoppedReason: consume.detail };
+    }
+    const step = engine.stepFullTurn();
+    steps.push(step);
+    currentBudget = consume.state;
+    completed += 1;
+    if (step.blockedByPause) {
+      return { steps, budget: currentBudget, completed, stoppedReason: 'paused' };
+    }
+  }
+
+  return { steps, budget: currentBudget, completed };
+}
+
 // --- src/fast-forward.ts ---
 
 export interface FastForwardResult {
@@ -2033,7 +2182,7 @@ export function turnsBetweenInclusive(fromTurn: number, toTurn: number): number[
 
 export const AGENT_02_MODULE_ID = 'operation-10m/agent-02-turns-time';
 
-export const AGENT_02_MODULE_VERSION = '1.4.0';
+export const AGENT_02_MODULE_VERSION = '1.5.0';
 
 
 
@@ -2173,11 +2322,25 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
 
     passed:
 
-      pipeline.listRegisteredPipelineStageIds().length === 8 &&
+      pipeline.listRegisteredPipelineStageIds().length === 9 &&
 
       pipeline.getPipelineStageHits().some((h) => h.stageId === 'ag02:phase.end') &&
 
       pipeline.reconcileLastStepHorizon(pipeBefore).ok,
+
+  });
+
+  const dayPlan = new TurnTimeEngine();
+
+  dayPlan.scheduleEvent({ id: 'xs_ev', dueTurn: 1, kind: 'xs' });
+
+  results.push({
+
+    id: 'agent02_day_plan',
+
+    name: 'external day plan merge ok when aligned',
+
+    passed: dayPlan.mergeExternalDayPlan(1, ['xs_ev']).ok,
 
   });
 

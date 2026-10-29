@@ -16,4 +16,7 @@ export * from './fast-forward.js';
 export * from './pipeline-stages.js';
 export * from './plan-actual-reconcile.js';
 export * from './advance-budget.js';
+export * from './external-day-plan.js';
+export * from './turn-pipeline-report.js';
+export * from './batch-advance.js';
 export * from './engine.js';

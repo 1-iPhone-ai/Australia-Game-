@@ -8,6 +8,7 @@ export const OP10M_AGENT02_PIPELINE_STAGE_IDS = [
   'ag02:effects.obligations',
   'ag02:effects.events',
   'ag02:effects.construction',
+  'ag02:effects.follow_ups',
   'ag02:clock.roll',
   'ag02:advance.blocked',
 ] as const;
@@ -60,6 +61,9 @@ export function derivePipelineStageHits(
       case 'construction_labor':
       case 'construction_completed':
         pushHit(hits, 'ag02:effects.construction', entry);
+        break;
+      case 'follow_up_scheduled':
+        pushHit(hits, 'ag02:effects.follow_ups', entry);
         break;
       case 'advance_blocked':
         pushHit(hits, 'ag02:advance.blocked', entry);

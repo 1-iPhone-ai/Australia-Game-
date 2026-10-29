@@ -23,6 +23,10 @@ npm run bundle:chunk
 | `src/diagnostics.ts` | Trace ledger and integrity validation |
 | `src/event-scheduling-queue.ts` | Phase-aware scheduled event queue |
 | `src/pause-resume.ts` | Pause/resume state and blocked-advance diagnostics |
+| `src/pipeline-stages.ts` | OP10M stage registry (XS-01) |
+| `src/external-day-plan.ts` | Agent 05 narrative plan merge (XS-02) |
+| `src/turn-pipeline-report.ts` | Pipeline digest + report for Agent 25 |
+| `src/batch-advance.ts` | Multi-step advance with budget cap |
 | `src/engine.ts` | Composed `TurnTimeEngine` API |
 | `tests/` | Proves no duplicate or skipped scheduled effects |
 

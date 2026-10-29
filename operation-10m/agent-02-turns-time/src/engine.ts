@@ -51,6 +51,12 @@ import {
   type Op10mAgent02PipelineStageId,
 } from './pipeline-stages.js';
 import { reconcileLastStepHorizon, type HorizonReconcileRow } from './plan-actual-reconcile.js';
+import { mergeExternalDayPlan, type ExternalDayPlanMergeResult } from './external-day-plan.js';
+import {
+  buildAgent02TurnPipelineReport,
+  computeTurnPipelineDigest,
+  type Agent02TurnPipelineReport,
+} from './turn-pipeline-report.js';
 import {
   createInitialPauseState,
   clonePauseState,
@@ -166,6 +172,22 @@ export class TurnTimeEngine {
 
   reconcileLastStepHorizon(before: TurnTimeSnapshot): HorizonReconcileRow {
     return reconcileLastStepHorizon(before, this.snapshot());
+  }
+
+  mergeExternalDayPlan(
+    turnIndex: number,
+    externalEventIds: string[],
+    strict = true,
+  ): ExternalDayPlanMergeResult {
+    return mergeExternalDayPlan(this.snapshot(), turnIndex, externalEventIds, strict);
+  }
+
+  buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {
+    return buildAgent02TurnPipelineReport(this.snapshot(), before);
+  }
+
+  getTurnPipelineDigest(): string {
+    return computeTurnPipelineDigest(this.snapshot());
   }
 
   registerFollowUp(input: RegisterFollowUpInput): void {
