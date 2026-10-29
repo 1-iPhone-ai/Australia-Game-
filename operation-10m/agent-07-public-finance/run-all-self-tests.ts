@@ -111,6 +111,8 @@ import { runFiscalBufferReconciliationOutlookBridgeSelfTests } from './modules/f
 import { runSovereignGrantOutlookCoherenceSelfTests } from './modules/sovereign-grant-outlook-coherence/self-tests';
 import { runSovereignBufferReconciliationOutlookBridgeSelfTests } from './modules/sovereign-buffer-reconciliation-outlook-bridge/self-tests';
 import { runGrantFiscalReconciliationOutlookCoherenceSelfTests } from './modules/grant-fiscal-reconciliation-outlook-coherence/self-tests';
+import { runFiscalSovereignReconciliationOutlookBridgeSelfTests } from './modules/fiscal-sovereign-reconciliation-outlook-bridge/self-tests';
+import { runBufferGrantReconciliationOutlookCoherenceSelfTests } from './modules/buffer-grant-reconciliation-outlook-coherence/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -231,6 +233,8 @@ ok = runSuite('Fiscal buffer reconciliation outlook bridge', runFiscalBufferReco
 ok = runSuite('Sovereign grant outlook coherence', runSovereignGrantOutlookCoherenceSelfTests) && ok;
 ok = runSuite('Sovereign buffer reconciliation outlook bridge', runSovereignBufferReconciliationOutlookBridgeSelfTests) && ok;
 ok = runSuite('Grant fiscal reconciliation outlook coherence', runGrantFiscalReconciliationOutlookCoherenceSelfTests) && ok;
+ok = runSuite('Fiscal sovereign reconciliation outlook bridge', runFiscalSovereignReconciliationOutlookBridgeSelfTests) && ok;
+ok = runSuite('Buffer grant reconciliation outlook coherence', runBufferGrantReconciliationOutlookCoherenceSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);

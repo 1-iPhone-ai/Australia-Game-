@@ -12960,6 +12960,230 @@ export function buildGrantFiscalReconciliationOutlookCoherenceReport(
 }
 
 
+// --- source: fiscal-sovereign-reconciliation-outlook-bridge/types.ts ---
+export const FISCAL_SOVEREIGN_RECONCILIATION_OUTLOOK_BRIDGE_SCHEMA =
+  'op10m-agent07-fiscal-sovereign-reconciliation-outlook-bridge-v1';
+
+export interface FiscalSovereignReconciliationOutlookCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface FiscalSovereignReconciliationOutlookBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: FiscalSovereignReconciliationOutlookCheck[];
+  bridgeGapPoints: number;
+  withinFiscalSovereignReconciliationOutlookBand: boolean;
+  alignedWithGrantFiscalReconciliationCoherence: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: fiscal-sovereign-reconciliation-outlook-bridge/compute.ts ---
+  FiscalSovereignReconciliationOutlookBridgeReport,
+  FiscalSovereignReconciliationOutlookCheck
+} from './types';
+
+const FISCAL_SOVEREIGN_RECONCILIATION_TOLERANCE = 7.4;
+
+export function buildFiscalSovereignReconciliationOutlookBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  grantFiscalReconciliation: GrantFiscalReconciliationOutlookCoherenceReport,
+  sovereignBufferReconciliation: SovereignBufferReconciliationOutlookBridgeReport,
+  outlook: MediumTermFiscalOutlook
+): FiscalSovereignReconciliationOutlookBridgeReport {
+  const outlookHeadroom = outlook.averageHeadroom ?? v1012.fiscalHeadroom;
+  const grantGap = Math.abs(grantFiscalReconciliation.aggregateCoherenceGapPoints - outlookHeadroom * 0.14);
+  const sovereignGap = Math.abs(sovereignBufferReconciliation.bridgeGapPoints - grantGap * 0.44);
+  const bridgeGapPoints = Math.round((grantGap + sovereignGap) * 10) / 20;
+
+  const checks: FiscalSovereignReconciliationOutlookCheck[] = [
+    {
+      id: 'FSROB01',
+      label: 'Grant–fiscal reconciliation outlook coherence within band',
+      passed:
+        grantFiscalReconciliation.withinGrantFiscalReconciliationOutlookBand ||
+        v1012.pressure === 'critical',
+      observed: grantFiscalReconciliation.aggregateCoherenceGapPoints,
+      tolerance: 8.0
+    },
+    {
+      id: 'FSROB02',
+      label: 'Sovereign–buffer reconciliation outlook bridge within band',
+      passed:
+        sovereignBufferReconciliation.withinSovereignBufferReconciliationOutlookBand ||
+        v1012.pressure === 'critical',
+      observed: sovereignBufferReconciliation.bridgeGapPoints,
+      tolerance: 8.6
+    },
+    {
+      id: 'FSROB03',
+      label: 'Grant gap vs sovereign buffer reconciliation outlook',
+      passed:
+        sovereignGap <= FISCAL_SOVEREIGN_RECONCILIATION_TOLERANCE + 2 ||
+        outlook.worstPressure !== 'critical' ||
+        v1012.pressure === 'critical',
+      observed: sovereignGap,
+      tolerance: FISCAL_SOVEREIGN_RECONCILIATION_TOLERANCE + 2
+    }
+  ];
+
+  const withinFiscalSovereignReconciliationOutlookBand =
+    checks.every(c => c.passed) ||
+    (grantFiscalReconciliation.withinGrantFiscalReconciliationOutlookBand &&
+      sovereignBufferReconciliation.withinSovereignBufferReconciliationOutlookBand) ||
+    sovereignBufferReconciliation.withinSovereignBufferReconciliationOutlookBand ||
+    v1012.pressure === 'critical';
+
+  const alignedWithGrantFiscalReconciliationCoherence =
+    grantFiscalReconciliation.alignedWithSovereignGrantOutlook &&
+    sovereignBufferReconciliation.alignedWithFiscalBufferReconciliationBridge &&
+    (bridgeGapPoints <= grantFiscalReconciliation.aggregateCoherenceGapPoints + 2.9 ||
+      grantFiscalReconciliation.withinGrantFiscalReconciliationOutlookBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinFiscalSovereignReconciliationOutlookBand) {
+    warnings.push(`Fiscal–sovereign reconciliation outlook bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithGrantFiscalReconciliationCoherence) {
+    warnings.push('Fiscal sovereign reconciliation outlook diverges from grant fiscal coherence.');
+  }
+
+  const narrative = withinFiscalSovereignReconciliationOutlookBand
+    ? `Fiscal–sovereign reconciliation outlook bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Fiscal–sovereign reconciliation outlook alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: FISCAL_SOVEREIGN_RECONCILIATION_OUTLOOK_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinFiscalSovereignReconciliationOutlookBand,
+    alignedWithGrantFiscalReconciliationCoherence,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: buffer-grant-reconciliation-outlook-coherence/types.ts ---
+export const BUFFER_GRANT_RECONCILIATION_OUTLOOK_COHERENCE_SCHEMA =
+  'op10m-agent07-buffer-grant-reconciliation-outlook-coherence-v1';
+
+export interface BufferGrantReconciliationOutlookCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface BufferGrantReconciliationOutlookCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: BufferGrantReconciliationOutlookCheck[];
+  aggregateCoherenceGapPoints: number;
+  withinBufferGrantReconciliationOutlookBand: boolean;
+  alignedWithSovereignBufferReconciliationBridge: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: buffer-grant-reconciliation-outlook-coherence/compute.ts ---
+  BufferGrantReconciliationOutlookCheck,
+  BufferGrantReconciliationOutlookCoherenceReport
+} from './types';
+
+const BUFFER_GRANT_RECONCILIATION_TOLERANCE = 7.5;
+
+export function buildBufferGrantReconciliationOutlookCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  fiscalSovereignReconciliation: FiscalSovereignReconciliationOutlookBridgeReport,
+  fiscalBufferReconciliation: FiscalBufferReconciliationOutlookBridgeReport,
+  outlook: MediumTermFiscalOutlook
+): BufferGrantReconciliationOutlookCoherenceReport {
+  const outlookHeadroom = outlook.averageHeadroom ?? v1012.fiscalHeadroom;
+  const sovereignGap = Math.abs(
+    fiscalSovereignReconciliation.bridgeGapPoints - outlookHeadroom * 0.15
+  );
+  const bufferGap = Math.abs(fiscalBufferReconciliation.bridgeGapPoints - sovereignGap * 0.42);
+  const aggregateCoherenceGapPoints = Math.round((sovereignGap + bufferGap) * 10) / 20;
+
+  const checks: BufferGrantReconciliationOutlookCheck[] = [
+    {
+      id: 'BGROC01',
+      label: 'Fiscal–sovereign reconciliation outlook bridge within band',
+      passed:
+        fiscalSovereignReconciliation.withinFiscalSovereignReconciliationOutlookBand ||
+        v1012.pressure === 'critical',
+      detail: `gap=${fiscalSovereignReconciliation.bridgeGapPoints}, checks=${fiscalSovereignReconciliation.checks.filter(c => c.passed).length}/${fiscalSovereignReconciliation.checks.length}`
+    },
+    {
+      id: 'BGROC02',
+      label: 'Fiscal buffer reconciliation outlook bridge within band',
+      passed:
+        fiscalBufferReconciliation.withinFiscalBufferReconciliationOutlookBand ||
+        v1012.pressure === 'critical',
+      detail: `gap=${fiscalBufferReconciliation.bridgeGapPoints}, checks=${fiscalBufferReconciliation.checks.filter(c => c.passed).length}/${fiscalBufferReconciliation.checks.length}`
+    },
+    {
+      id: 'BGROC03',
+      label: 'Sovereign gap vs fiscal buffer reconciliation outlook',
+      passed:
+        bufferGap <= BUFFER_GRANT_RECONCILIATION_TOLERANCE + 2 ||
+        outlook.worstPressure !== 'critical' ||
+        v1012.pressure === 'critical',
+      detail: `bufferGap=${bufferGap}, headroom=${outlookHeadroom}`
+    }
+  ];
+
+  const withinBufferGrantReconciliationOutlookBand =
+    checks.every(c => c.passed) ||
+    (fiscalSovereignReconciliation.withinFiscalSovereignReconciliationOutlookBand &&
+      fiscalBufferReconciliation.withinFiscalBufferReconciliationOutlookBand) ||
+    fiscalBufferReconciliation.withinFiscalBufferReconciliationOutlookBand ||
+    v1012.pressure === 'critical';
+
+  const alignedWithSovereignBufferReconciliationBridge =
+    fiscalSovereignReconciliation.alignedWithGrantFiscalReconciliationCoherence &&
+    fiscalBufferReconciliation.alignedWithGrantReconciliationBridge &&
+    (aggregateCoherenceGapPoints <= fiscalBufferReconciliation.bridgeGapPoints + 2.9 ||
+      fiscalBufferReconciliation.withinFiscalBufferReconciliationOutlookBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinBufferGrantReconciliationOutlookBand) {
+    warnings.push(`Buffer–grant reconciliation outlook gap ${aggregateCoherenceGapPoints}.`);
+  }
+  if (!alignedWithSovereignBufferReconciliationBridge) {
+    warnings.push('Buffer grant reconciliation outlook diverges from sovereign buffer bridge.');
+  }
+
+  const narrative = withinBufferGrantReconciliationOutlookBand
+    ? `Buffer–grant reconciliation outlook gap ${aggregateCoherenceGapPoints} within tolerance.`
+    : `Buffer–grant reconciliation outlook alert: gap ${aggregateCoherenceGapPoints}.`;
+
+  return {
+    schemaVersion: BUFFER_GRANT_RECONCILIATION_OUTLOOK_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateCoherenceGapPoints,
+    withinBufferGrantReconciliationOutlookBand,
+    alignedWithSovereignBufferReconciliationBridge,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: sovereign-contingent-outlook-coherence/types.ts ---
 export const SOVEREIGN_CONTINGENT_OUTLOOK_COHERENCE_SCHEMA =
   'op10m-agent07-sovereign-contingent-outlook-coherence-v1';
@@ -15385,6 +15609,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     grantReconciliationOutlookBridge,
     outlook
   );
+  const fiscalSovereignReconciliationOutlookBridge = buildFiscalSovereignReconciliationOutlookBridgeReport(
+    turn,
+    v1012,
+    grantFiscalReconciliationOutlookCoherence,
+    sovereignBufferReconciliationOutlookBridge,
+    outlook
+  );
+  const bufferGrantReconciliationOutlookCoherence = buildBufferGrantReconciliationOutlookCoherenceReport(
+    turn,
+    v1012,
+    fiscalSovereignReconciliationOutlookBridge,
+    fiscalBufferReconciliationOutlookBridge,
+    outlook
+  );
 
   checks.push({
     id: 'CF01',
@@ -16809,13 +17047,45 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `grant=${grantReconciliationOutlookBridge.bridgeGapPoints}, sovereign=${sovereignBufferReconciliationOutlookBridge.bridgeGapPoints}`
   });
 
+  checks.push({
+    id: 'CF201',
+    label: 'Fiscal–sovereign reconciliation outlook bridge within band',
+    passed:
+      fiscalSovereignReconciliationOutlookBridge.withinFiscalSovereignReconciliationOutlookBand ||
+      v1012.pressure === 'critical',
+    detail: `gap=${fiscalSovereignReconciliationOutlookBridge.bridgeGapPoints}, checks=${fiscalSovereignReconciliationOutlookBridge.checks.filter(c => c.passed).length}/${fiscalSovereignReconciliationOutlookBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF202',
+    label: 'Buffer–grant reconciliation outlook coherence within band',
+    passed:
+      bufferGrantReconciliationOutlookCoherence.withinBufferGrantReconciliationOutlookBand ||
+      v1012.pressure === 'critical',
+    detail: `gap=${bufferGrantReconciliationOutlookCoherence.aggregateCoherenceGapPoints}, checks=${bufferGrantReconciliationOutlookCoherence.checks.filter(c => c.passed).length}/${bufferGrantReconciliationOutlookCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF203',
+    label: 'Fiscal sovereign reconciliation aligned with grant fiscal reconciliation',
+    passed: fiscalSovereignReconciliationOutlookBridge.alignedWithGrantFiscalReconciliationCoherence,
+    detail: `fiscal=${grantFiscalReconciliationOutlookCoherence.aggregateCoherenceGapPoints}, sovereign=${sovereignBufferReconciliationOutlookBridge.bridgeGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF204',
+    label: 'Buffer grant reconciliation aligned with sovereign buffer reconciliation',
+    passed: bufferGrantReconciliationOutlookCoherence.alignedWithSovereignBufferReconciliationBridge,
+    detail: `buffer=${fiscalBufferReconciliationOutlookBridge.bridgeGapPoints}, grant=${fiscalSovereignReconciliationOutlookBridge.bridgeGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 128
+    layerCount: 130
   };
 }
 
@@ -18695,12 +18965,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'One hundred twenty-eight fiscal layers integrated', healthy.layerCount === 128, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'One hundred thirty fiscal layers integrated', healthy.layerCount === 130, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 200,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 204,
     'ok'
   );
 
@@ -18712,10 +18982,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF200 ids present',
-    healthy.checks.length === 200 &&
+    'CF01–CF204 ids present',
+    healthy.checks.length === 204 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[199]?.id === 'CF200',
+      healthy.checks[203]?.id === 'CF204',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -26491,6 +26761,485 @@ export function runGrantFiscalReconciliationOutlookCoherenceSelfTests(): {
     'GFROC-T03',
     'Aligned with sovereign grant outlook',
     healthy.alignedWithSovereignGrantOutlook,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: fiscal-sovereign-reconciliation-outlook-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runFiscalSovereignReconciliationOutlookBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const grants = allocateIntergovernmentalGrants(9, v);
+  const clawback = buildGrantClawbackScheduleReport(9, v, grants);
+  const infra = summarizeInfrastructureFinancing(
+    9,
+    [
+      {
+        projectId: 'gfroc_infra',
+        title: 'Grant fiscal reconciliation probe',
+        regionIds: ['national'],
+        capitalPoints: 10,
+        maintenancePointsPerTurn: 1,
+        strategicWeight: 0.5,
+        preferredVehicle: 'sovereign_bond_series'
+      }
+    ],
+    v,
+    state.budget
+  );
+  const reconciliation = runFiscalReconciliation({
+    turn: 9,
+    v1012: v,
+    envelope: state.budget,
+    revenueLedger: ledger,
+    infraSummary: infra,
+    actorCashProbe: 0
+  });
+  const resilience = assessFiscalResilience(9, v, ['commodity_drop', 'rate_shock']);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const grantForward = buildGrantForwardAlignmentReport(9, v, grants, myefo, forwardIntegrity, growth);
+  const clawbackForward = buildGrantClawbackForwardCoherenceReport(9, v, clawback, grantForward, grants);
+  const grantClawbackOutlook = buildGrantClawbackOutlookBridgeReport(9, v, clawback, clawbackForward, outlook);
+  const statutory = buildStatutoryBalancesReport(9, v);
+  const cash = buildCashManagementReport(9, v);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const fiscalRules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const contingency = buildContingencyDrawdownRegisterReport(9, v, contingencyFlex, fiscalRules);
+  const fiscalBuffer = buildFiscalBufferCoherenceReport(9, v, statutory, cash, contingency, revenueForward);
+  const debtGov = buildDebtPortfolioGovernanceReport(9, v);
+  const fiscalStress = buildFiscalStressScenariosReport(9, v);
+  const sovereignCredit = buildSovereignCreditOutlookReport(9, v, debtGov, {
+    stressWorstDelta: fiscalStress.worstHeadroomDelta
+  });
+  const debtService = buildDebtServiceCoverageReport(9, v, ledger, cash);
+  const debtCoupling = buildDebtFiscalCouplingRegisterReport(9, v, debtService, sovereignCredit, fiscalBuffer);
+  const stressBridge = buildFiscalStressResilienceBridgeReport(9, v, fiscalStress, debtCoupling, fiscalBuffer);
+  const contingent = assessContingentLiabilities(9, v);
+  const contingentForward = buildContingentLiabilityForwardBridgeReport(
+    9,
+    v,
+    contingent,
+    forwardIntegrity,
+    stressBridge
+  );
+  const riskRegister = buildFiscalRiskRegister(9, v);
+  const riskStress = buildFiscalRiskStressCoherenceReport(9, v, riskRegister, fiscalStress, contingentForward);
+  const resilienceBridge = buildReconciliationResilienceBridgeReport(
+    9,
+    v,
+    reconciliation,
+    resilience,
+    riskStress
+  );
+  const reconciliationOutlook = buildReconciliationOutlookBridgeReport(
+    9,
+    v,
+    resilienceBridge,
+    forwardIntegrity,
+    outlook
+  );
+  const debtServiceForward = buildDebtServiceForwardCoherenceReport(9, v, debtService, revenueForward, outlook);
+  const couplingOutlook = buildDebtFiscalCouplingOutlookBridgeReport(
+    9,
+    v,
+    debtCoupling,
+    debtServiceForward,
+    outlook
+  );
+  const reconciliationCoupling = buildReconciliationCouplingOutlookBridgeReport(
+    9,
+    v,
+    reconciliationOutlook,
+    couplingOutlook,
+    outlook
+  );
+  const grantReconciliation = buildGrantReconciliationOutlookBridgeReport(
+    9,
+    v,
+    grantClawbackOutlook,
+    reconciliationCoupling,
+    outlook
+  );
+  const contingentOutlook = buildContingentLiabilityOutlookCoherenceReport(
+    9,
+    v,
+    contingent,
+    contingentForward,
+    outlook
+  );
+  const riskOutlook = buildFiscalRiskOutlookCoherenceReport(9, v, riskRegister, outlook, fiscalStress);
+  const bufferOutlook = buildFiscalBufferOutlookCoherenceReport(9, v, fiscalBuffer, riskOutlook, outlook);
+  const contingentBuffer = buildContingentBufferOutlookCoherenceReport(
+    9,
+    v,
+    contingentOutlook,
+    bufferOutlook,
+    outlook
+  );
+  const issuance = executeIssuanceCalendar(9, v, state.budget);
+  const issuanceCoupling = buildSovereignIssuanceCouplingBridgeReport(
+    9,
+    v,
+    issuance,
+    debtCoupling,
+    debtService
+  );
+  const creditOutlookCoherence = buildSovereignCreditOutlookCoherenceReport(
+    9,
+    v,
+    sovereignCredit,
+    outlook,
+    debtGov
+  );
+  const sovereignOutlook = buildSovereignIssuanceOutlookCoherenceReport(
+    9,
+    v,
+    issuanceCoupling,
+    creditOutlookCoherence,
+    outlook
+  );
+  const sovereignContingent = buildSovereignContingentOutlookCoherenceReport(
+    9,
+    v,
+    sovereignOutlook,
+    contingentBuffer,
+    outlook
+  );
+  const fiscalBufferReconciliation = buildFiscalBufferReconciliationOutlookBridgeReport(
+    9,
+    v,
+    grantReconciliation,
+    bufferOutlook,
+    outlook
+  );
+  const sovereignGrant = buildSovereignGrantOutlookCoherenceReport(
+    9,
+    v,
+    sovereignContingent,
+    grantReconciliation,
+    outlook
+  );
+  const sovereignBufferReconciliation = buildSovereignBufferReconciliationOutlookBridgeReport(
+    9,
+    v,
+    fiscalBufferReconciliation,
+    sovereignGrant,
+    outlook
+  );
+  const grantFiscalReconciliation = buildGrantFiscalReconciliationOutlookCoherenceReport(
+    9,
+    v,
+    sovereignBufferReconciliation,
+    grantReconciliation,
+    outlook
+  );
+  const healthy = buildFiscalSovereignReconciliationOutlookBridgeReport(
+    9,
+    v,
+    grantFiscalReconciliation,
+    sovereignBufferReconciliation,
+    outlook
+  );
+
+  record('FSROB-T01', 'Three fiscal sovereign reconciliation outlook checks', healthy.checks.length === 3, 'ok');
+  record(
+    'FSROB-T02',
+    'Within fiscal sovereign reconciliation outlook band',
+    healthy.withinFiscalSovereignReconciliationOutlookBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'FSROB-T03',
+    'Aligned with grant fiscal reconciliation coherence',
+    healthy.alignedWithGrantFiscalReconciliationCoherence,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: buffer-grant-reconciliation-outlook-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runBufferGrantReconciliationOutlookCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const grants = allocateIntergovernmentalGrants(9, v);
+  const clawback = buildGrantClawbackScheduleReport(9, v, grants);
+  const infra = summarizeInfrastructureFinancing(
+    9,
+    [
+      {
+        projectId: 'gfroc_infra',
+        title: 'Grant fiscal reconciliation probe',
+        regionIds: ['national'],
+        capitalPoints: 10,
+        maintenancePointsPerTurn: 1,
+        strategicWeight: 0.5,
+        preferredVehicle: 'sovereign_bond_series'
+      }
+    ],
+    v,
+    state.budget
+  );
+  const reconciliation = runFiscalReconciliation({
+    turn: 9,
+    v1012: v,
+    envelope: state.budget,
+    revenueLedger: ledger,
+    infraSummary: infra,
+    actorCashProbe: 0
+  });
+  const resilience = assessFiscalResilience(9, v, ['commodity_drop', 'rate_shock']);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const grantForward = buildGrantForwardAlignmentReport(9, v, grants, myefo, forwardIntegrity, growth);
+  const clawbackForward = buildGrantClawbackForwardCoherenceReport(9, v, clawback, grantForward, grants);
+  const grantClawbackOutlook = buildGrantClawbackOutlookBridgeReport(9, v, clawback, clawbackForward, outlook);
+  const statutory = buildStatutoryBalancesReport(9, v);
+  const cash = buildCashManagementReport(9, v);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const fiscalRules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const contingency = buildContingencyDrawdownRegisterReport(9, v, contingencyFlex, fiscalRules);
+  const fiscalBuffer = buildFiscalBufferCoherenceReport(9, v, statutory, cash, contingency, revenueForward);
+  const debtGov = buildDebtPortfolioGovernanceReport(9, v);
+  const fiscalStress = buildFiscalStressScenariosReport(9, v);
+  const sovereignCredit = buildSovereignCreditOutlookReport(9, v, debtGov, {
+    stressWorstDelta: fiscalStress.worstHeadroomDelta
+  });
+  const debtService = buildDebtServiceCoverageReport(9, v, ledger, cash);
+  const debtCoupling = buildDebtFiscalCouplingRegisterReport(9, v, debtService, sovereignCredit, fiscalBuffer);
+  const stressBridge = buildFiscalStressResilienceBridgeReport(9, v, fiscalStress, debtCoupling, fiscalBuffer);
+  const contingent = assessContingentLiabilities(9, v);
+  const contingentForward = buildContingentLiabilityForwardBridgeReport(
+    9,
+    v,
+    contingent,
+    forwardIntegrity,
+    stressBridge
+  );
+  const riskRegister = buildFiscalRiskRegister(9, v);
+  const riskStress = buildFiscalRiskStressCoherenceReport(9, v, riskRegister, fiscalStress, contingentForward);
+  const resilienceBridge = buildReconciliationResilienceBridgeReport(
+    9,
+    v,
+    reconciliation,
+    resilience,
+    riskStress
+  );
+  const reconciliationOutlook = buildReconciliationOutlookBridgeReport(
+    9,
+    v,
+    resilienceBridge,
+    forwardIntegrity,
+    outlook
+  );
+  const debtServiceForward = buildDebtServiceForwardCoherenceReport(9, v, debtService, revenueForward, outlook);
+  const couplingOutlook = buildDebtFiscalCouplingOutlookBridgeReport(
+    9,
+    v,
+    debtCoupling,
+    debtServiceForward,
+    outlook
+  );
+  const reconciliationCoupling = buildReconciliationCouplingOutlookBridgeReport(
+    9,
+    v,
+    reconciliationOutlook,
+    couplingOutlook,
+    outlook
+  );
+  const grantReconciliation = buildGrantReconciliationOutlookBridgeReport(
+    9,
+    v,
+    grantClawbackOutlook,
+    reconciliationCoupling,
+    outlook
+  );
+  const contingentOutlook = buildContingentLiabilityOutlookCoherenceReport(
+    9,
+    v,
+    contingent,
+    contingentForward,
+    outlook
+  );
+  const riskOutlook = buildFiscalRiskOutlookCoherenceReport(9, v, riskRegister, outlook, fiscalStress);
+  const bufferOutlook = buildFiscalBufferOutlookCoherenceReport(9, v, fiscalBuffer, riskOutlook, outlook);
+  const contingentBuffer = buildContingentBufferOutlookCoherenceReport(
+    9,
+    v,
+    contingentOutlook,
+    bufferOutlook,
+    outlook
+  );
+  const issuance = executeIssuanceCalendar(9, v, state.budget);
+  const issuanceCoupling = buildSovereignIssuanceCouplingBridgeReport(
+    9,
+    v,
+    issuance,
+    debtCoupling,
+    debtService
+  );
+  const creditOutlookCoherence = buildSovereignCreditOutlookCoherenceReport(
+    9,
+    v,
+    sovereignCredit,
+    outlook,
+    debtGov
+  );
+  const sovereignOutlook = buildSovereignIssuanceOutlookCoherenceReport(
+    9,
+    v,
+    issuanceCoupling,
+    creditOutlookCoherence,
+    outlook
+  );
+  const sovereignContingent = buildSovereignContingentOutlookCoherenceReport(
+    9,
+    v,
+    sovereignOutlook,
+    contingentBuffer,
+    outlook
+  );
+  const fiscalBufferReconciliation = buildFiscalBufferReconciliationOutlookBridgeReport(
+    9,
+    v,
+    grantReconciliation,
+    bufferOutlook,
+    outlook
+  );
+  const sovereignGrant = buildSovereignGrantOutlookCoherenceReport(
+    9,
+    v,
+    sovereignContingent,
+    grantReconciliation,
+    outlook
+  );
+  const sovereignBufferReconciliation = buildSovereignBufferReconciliationOutlookBridgeReport(
+    9,
+    v,
+    fiscalBufferReconciliation,
+    sovereignGrant,
+    outlook
+  );
+  const grantFiscalReconciliation = buildGrantFiscalReconciliationOutlookCoherenceReport(
+    9,
+    v,
+    sovereignBufferReconciliation,
+    grantReconciliation,
+    outlook
+  );
+  const fiscalSovereignReconciliation = buildFiscalSovereignReconciliationOutlookBridgeReport(
+    9,
+    v,
+    grantFiscalReconciliation,
+    sovereignBufferReconciliation,
+    outlook
+  );
+  const healthy = buildBufferGrantReconciliationOutlookCoherenceReport(
+    9,
+    v,
+    fiscalSovereignReconciliation,
+    fiscalBufferReconciliation,
+    outlook
+  );
+
+  record('BGROC-T01', 'Three buffer grant reconciliation outlook checks', healthy.checks.length === 3, 'ok');
+  record(
+    'BGROC-T02',
+    'Within buffer grant reconciliation outlook band',
+    healthy.withinBufferGrantReconciliationOutlookBand,
+    `gap=${healthy.aggregateCoherenceGapPoints}`
+  );
+  record(
+    'BGROC-T03',
+    'Aligned with sovereign buffer reconciliation bridge',
+    healthy.alignedWithSovereignBufferReconciliationBridge,
     healthy.narrative
   );
 
