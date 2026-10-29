@@ -1,0 +1,31 @@
+import type { V1019MtrdLaneGraphEdge } from '../../types/core.ts';
+
+/** Corridor graph shard 062 (shipping lane cross-system coupling). */
+export const V1019_MTRD_LANE_GRAPH_SHARD_062: readonly V1019MtrdLaneGraphEdge[] = [
+  { fromSystem: 'water', toSystem: 'food', weight: 0.344, lagTurns: 9, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.351, lagTurns: 10, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.358, lagTurns: 11, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.365, lagTurns: 9, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.372, lagTurns: 10, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.379, lagTurns: 11, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.386, lagTurns: 9, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.393, lagTurns: 10, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.295, lagTurns: 11, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.302, lagTurns: 9, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.309, lagTurns: 10, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.316, lagTurns: 11, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.323, lagTurns: 9, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.33, lagTurns: 10, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.337, lagTurns: 11, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.344, lagTurns: 9, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.351, lagTurns: 10, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.358, lagTurns: 11, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.365, lagTurns: 9, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.372, lagTurns: 10, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.379, lagTurns: 11, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.386, lagTurns: 9, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.393, lagTurns: 10, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.295, lagTurns: 11, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.302, lagTurns: 9, nodeId: 'port_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.309, lagTurns: 10, nodeId: 'port_14' },
+];

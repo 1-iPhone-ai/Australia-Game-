@@ -1,0 +1,31 @@
+import type { V1019MtrdLaneGraphEdge } from '../../types/core.ts';
+
+/** Corridor graph shard 033 (shipping lane cross-system coupling). */
+export const V1019_MTRD_LANE_GRAPH_SHARD_033: readonly V1019MtrdLaneGraphEdge[] = [
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.631, lagTurns: 4, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.638, lagTurns: 5, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.645, lagTurns: 6, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.652, lagTurns: 4, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.659, lagTurns: 5, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.666, lagTurns: 6, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.673, lagTurns: 4, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.68, lagTurns: 5, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.687, lagTurns: 6, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.694, lagTurns: 4, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.701, lagTurns: 5, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.708, lagTurns: 6, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.61, lagTurns: 4, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.617, lagTurns: 5, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.624, lagTurns: 6, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.631, lagTurns: 4, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.638, lagTurns: 5, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.645, lagTurns: 6, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.652, lagTurns: 4, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.659, lagTurns: 5, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.666, lagTurns: 6, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.673, lagTurns: 4, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.68, lagTurns: 5, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.687, lagTurns: 6, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.694, lagTurns: 4, nodeId: 'port_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.701, lagTurns: 5, nodeId: 'port_09' },
+];

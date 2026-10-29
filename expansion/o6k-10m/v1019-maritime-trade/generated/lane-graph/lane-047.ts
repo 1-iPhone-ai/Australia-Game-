@@ -1,0 +1,31 @@
+import type { V1019MtrdLaneGraphEdge } from '../../types/core.ts';
+
+/** Corridor graph shard 047 (shipping lane cross-system coupling). */
+export const V1019_MTRD_LANE_GRAPH_SHARD_047: readonly V1019MtrdLaneGraphEdge[] = [
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.484, lagTurns: 10, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.491, lagTurns: 11, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.498, lagTurns: 12, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.505, lagTurns: 10, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.512, lagTurns: 11, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.519, lagTurns: 12, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.526, lagTurns: 10, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.533, lagTurns: 11, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.435, lagTurns: 12, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.442, lagTurns: 10, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.449, lagTurns: 11, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.456, lagTurns: 12, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.463, lagTurns: 10, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.47, lagTurns: 11, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.477, lagTurns: 12, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.484, lagTurns: 10, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.491, lagTurns: 11, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.498, lagTurns: 12, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.505, lagTurns: 10, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.512, lagTurns: 11, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.519, lagTurns: 12, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.526, lagTurns: 10, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.533, lagTurns: 11, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.435, lagTurns: 12, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.442, lagTurns: 10, nodeId: 'port_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.449, lagTurns: 11, nodeId: 'port_23' },
+];
