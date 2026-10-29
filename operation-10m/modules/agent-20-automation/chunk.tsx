@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-20-automation
-// OP10M_MANIFEST_SHA256: 04c31d1f582b0340793b04e5b0221a7745cd0be695c735012e63781613b129ce
-// OP10M_MODULE_VERSION: 10m.1.15.0-agent20
+// OP10M_MANIFEST_SHA256: e90f99ceb64a613953b66be6f487fca3df17e6ded6b4e465e1d5ba2830bf9408
+// OP10M_MODULE_VERSION: 10m.1.16.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
@@ -7754,6 +7754,441 @@ export function runO10Agent20IdleGovernanceProgramDirectorPassSelfTests(): O10Se
 }
 
 
+// --- source: automation-idle-governance-program-remediation-plan.ts ---
+
+export interface O10IdleGovernanceProgramRemediationItem {
+  priority: number;
+  actionKey: string;
+  rationale: string;
+}
+
+export interface O10IdleGovernanceProgramRemediationPlan {
+  schema: '10m.agent20.idle-governance-program-remediation-plan.v1';
+  items: O10IdleGovernanceProgramRemediationItem[];
+  summaryLine: string;
+  planMarkdown: string;
+}
+
+function buildRemediationPlanMarkdown(items: O10IdleGovernanceProgramRemediationItem[]): string {
+  const lines = ['## Agent 20 idle governance remediation plan', ''];
+  for (const item of items) {
+    lines.push(`- [p${item.priority}] \`${item.actionKey}\` — ${item.rationale}`);
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
+/** Round-16 remediation backlog from compliance band + registry rollup recommendation. */
+export function buildIdleGovernanceProgramRemediationPlan(
+  compliance: O10IdleGovernanceProgramComplianceScore,
+  rollup: O10IdleGovernanceProgramRegistryRollupResult
+): O10IdleGovernanceProgramRemediationPlan {
+  const items: O10IdleGovernanceProgramRemediationItem[] = [];
+
+  if (compliance.band === 'red') {
+    items.push({
+      priority: 1,
+      actionKey: 'pause_autonomous_idle_steward',
+      rationale: 'Compliance band red — latch manual override until attestation recovers.',
+    });
+    items.push({
+      priority: 2,
+      actionKey: 'run_program_attestation_audit',
+      rationale: 'Reconcile failed attestations against replay tape frames.',
+    });
+  } else if (compliance.band === 'amber') {
+    items.push({
+      priority: 1,
+      actionKey: 'tighten_watch_cadence',
+      rationale: 'Amber band — increase sustained watch frequency for one ops window.',
+    });
+    items.push({
+      priority: 2,
+      actionKey: 'refresh_program_charter',
+      rationale: 'Re-read charter policy line before next program pass.',
+    });
+  } else {
+    items.push({
+      priority: 1,
+      actionKey: 'maintain_program_cadence',
+      rationale: 'Green band — continue scheduled program operations.',
+    });
+  }
+
+  if (rollup.recommendation === 'director_escalate_takeover') {
+    items.push({
+      priority: 0,
+      actionKey: 'escalate_human_takeover',
+      rationale: 'Registry rollup recommends director escalation to human takeover.',
+    });
+  } else if (rollup.recommendation === 'director_audit_program_attestations') {
+    items.push({
+      priority: 1,
+      actionKey: 'audit_program_attestations',
+      rationale: 'Registry rollup flagged low attest ok ratio.',
+    });
+  }
+
+  items.sort((a, b) => a.priority - b.priority);
+
+  const summaryLine = [
+    'gov_program_remediation',
+    `band=${compliance.band}`,
+    `items=${items.length}`,
+    `rollup=${rollup.recommendation}`,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-remediation-plan.v1',
+    items,
+    summaryLine,
+    planMarkdown: buildRemediationPlanMarkdown(items),
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramRemediationPlanSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const rollupBase: O10IdleGovernanceProgramRegistryRollupResult = {
+    schema: '10m.agent20.idle-governance-program-registry-rollup.v1',
+    entryCount: 2,
+    attestOkRatio: 0.5,
+    escalationCount: 0,
+    dominantRollup: 'continue_scheduled_watch',
+    recommendation: 'director_audit_program_attestations',
+    summaryLine: 'rollup',
+  };
+
+  const amberPlan = buildIdleGovernanceProgramRemediationPlan(
+    {
+      schema: '10m.agent20.idle-governance-program-compliance-score.v1',
+      score: 55,
+      band: 'amber',
+      factors: [],
+      summaryLine: 'amber',
+    },
+    rollupBase
+  );
+  push(
+    'gov_prog_remed_amber',
+    'amber plan includes watch + audit actions',
+    amberPlan.items.some(i => i.actionKey === 'tighten_watch_cadence') &&
+      amberPlan.items.some(i => i.actionKey === 'audit_program_attestations')
+  );
+
+  const redPlan = buildIdleGovernanceProgramRemediationPlan(
+    {
+      schema: '10m.agent20.idle-governance-program-compliance-score.v1',
+      score: 30,
+      band: 'red',
+      factors: ['stress'],
+      summaryLine: 'red',
+    },
+    { ...rollupBase, recommendation: 'director_escalate_takeover', escalationCount: 2 }
+  );
+  push(
+    'gov_prog_remed_red',
+    'red plan prioritizes pause and takeover',
+    redPlan.items[0]?.actionKey === 'escalate_human_takeover' &&
+      redPlan.items.some(i => i.actionKey === 'pause_autonomous_idle_steward')
+  );
+
+  push(
+    'gov_prog_remed_schema',
+    'remediation plan schema marker',
+    amberPlan.schema === '10m.agent20.idle-governance-program-remediation-plan.v1'
+  );
+  push(
+    'gov_prog_remed_markdown',
+    'plan markdown header present',
+    amberPlan.planMarkdown.includes('remediation plan')
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-board-certification.ts ---
+
+export type O10IdleGovernanceProgramBoardDecision = 'certify' | 'hold' | 'escalate';
+
+export interface O10IdleGovernanceProgramBoardCertification {
+  schema: '10m.agent20.idle-governance-program-board-certification.v1';
+  decision: O10IdleGovernanceProgramBoardDecision;
+  rationale: string[];
+  certificationMarkdown: string;
+  summaryLine: string;
+}
+
+function buildBoardCertificationMarkdown(
+  decision: O10IdleGovernanceProgramBoardDecision,
+  rationale: string[]
+): string {
+  return [
+    '## Agent 20 idle governance board certification',
+    '',
+    `- decision=${decision}`,
+    ...rationale.map(r => `- ${r}`),
+    '',
+  ].join('\n');
+}
+
+/** Round-16 board certification from director pass outputs + remediation backlog. */
+export function certifyIdleGovernanceProgramBoard(
+  director: O10IdleGovernanceProgramDirectorPassResult,
+  remediation: O10IdleGovernanceProgramRemediationPlan
+): O10IdleGovernanceProgramBoardCertification {
+  const compliance: O10IdleGovernanceProgramComplianceScore = director.complianceScore;
+  const rollup = director.registryRollup;
+  const rationale: string[] = [
+    compliance.summaryLine,
+    rollup.summaryLine,
+    remediation.summaryLine,
+  ];
+
+  let decision: O10IdleGovernanceProgramBoardDecision = 'hold';
+
+  if (remediation.items.some(i => i.actionKey === 'escalate_human_takeover')) {
+    decision = 'escalate';
+    rationale.push('Remediation backlog requires human takeover escalation.');
+  } else if (compliance.band === 'green' && rollup.recommendation === 'director_certify_program') {
+    decision = 'certify';
+    rationale.push('Green compliance with director certify recommendation.');
+  } else if (compliance.band === 'red') {
+    decision = 'escalate';
+    rationale.push('Red compliance band blocks certification.');
+  } else if (compliance.band === 'amber') {
+    decision = 'hold';
+    rationale.push('Amber band — hold pending remediation execution.');
+  } else if (compliance.band === 'green') {
+    decision = 'certify';
+    rationale.push('Green compliance — board certifies program cadence.');
+  }
+
+  const summaryLine = ['gov_program_board', `decision=${decision}`, `score=${compliance.score}`].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-board-certification.v1',
+    decision,
+    rationale,
+    certificationMarkdown: buildBoardCertificationMarkdown(decision, rationale),
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramBoardCertificationSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const mockDirector = (band: 'red' | 'amber' | 'green', rollupRec: string, score: number) =>
+    ({
+      schema: '10m.agent20.idle-governance-program-director-pass.v1',
+      operations: {} as O10IdleGovernanceProgramDirectorPassResult['operations'],
+      registryRollup: {
+        schema: '10m.agent20.idle-governance-program-registry-rollup.v1',
+        entryCount: 1,
+        attestOkRatio: band === 'green' ? 1 : 0.4,
+        escalationCount: 0,
+        dominantRollup: 'continue_scheduled_watch',
+        recommendation: rollupRec,
+        summaryLine: 'rollup',
+      },
+      complianceScore: {
+        schema: '10m.agent20.idle-governance-program-compliance-score.v1',
+        score,
+        band,
+        factors: [],
+        summaryLine: `band=${band}`,
+      },
+      directorMarkdown: 'brief',
+      summaryLine: 'director',
+    }) satisfies O10IdleGovernanceProgramDirectorPassResult;
+
+  const mockRemediation = (items: O10IdleGovernanceProgramRemediationPlan['items']) =>
+    ({
+      schema: '10m.agent20.idle-governance-program-remediation-plan.v1',
+      items,
+      summaryLine: 'remediation',
+      planMarkdown: 'plan',
+    }) satisfies O10IdleGovernanceProgramRemediationPlan;
+
+  const certify = certifyIdleGovernanceProgramBoard(
+    mockDirector('green', 'director_certify_program', 88),
+    mockRemediation([{ priority: 1, actionKey: 'maintain_program_cadence', rationale: 'ok' }])
+  );
+  push('gov_prog_board_certify', 'green + certify recommendation certifies', certify.decision === 'certify');
+
+  const hold = certifyIdleGovernanceProgramBoard(
+    mockDirector('amber', 'director_audit_program_attestations', 52),
+    mockRemediation([{ priority: 1, actionKey: 'tighten_watch_cadence', rationale: 'watch' }])
+  );
+  push('gov_prog_board_hold', 'amber band holds', hold.decision === 'hold');
+
+  const escalate = certifyIdleGovernanceProgramBoard(
+    mockDirector('red', 'director_escalate_takeover', 25),
+    mockRemediation([{ priority: 0, actionKey: 'escalate_human_takeover', rationale: 'takeover' }])
+  );
+  push('gov_prog_board_escalate', 'takeover remediation escalates', escalate.decision === 'escalate');
+
+  push(
+    'gov_prog_board_schema',
+    'board certification schema marker',
+    certify.schema === '10m.agent20.idle-governance-program-board-certification.v1'
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-executive-pass.ts ---
+  createEmptyIdleGovernanceProgramRegistry,
+  type O10IdleGovernanceProgramRegistry,
+} from './automation-idle-governance-program-registry.js';
+
+export interface O10IdleGovernanceProgramExecutivePassResult {
+  schema: '10m.agent20.idle-governance-program-executive-pass.v1';
+  director: ReturnType<typeof runIdleGovernanceProgramDirectorPass>;
+  remediation: ReturnType<typeof buildIdleGovernanceProgramRemediationPlan>;
+  board: ReturnType<typeof certifyIdleGovernanceProgramBoard>;
+  executiveMarkdown: string;
+  summaryLine: string;
+}
+
+export function buildIdleGovernanceProgramExecutiveMarkdown(
+  director: ReturnType<typeof runIdleGovernanceProgramDirectorPass>,
+  remediation: ReturnType<typeof buildIdleGovernanceProgramRemediationPlan>,
+  board: ReturnType<typeof certifyIdleGovernanceProgramBoard>
+): string {
+  return [
+    '# Agent 20 idle governance executive pass',
+    '',
+    director.directorMarkdown,
+    '',
+    remediation.planMarkdown,
+    '',
+    board.certificationMarkdown,
+  ].join('\n');
+}
+
+/** Round-16 executive pass: director + remediation plan + board certification. */
+export function runIdleGovernanceProgramExecutivePass(
+  spec: O10IdleOpsWindowSpec,
+  rule: PortableHumanAutomationRule,
+  startTurn: number,
+  requestedCycles: number,
+  priorRegistry: O10IdleGovernanceProgramRegistry = createEmptyIdleGovernanceProgramRegistry()
+): O10IdleGovernanceProgramExecutivePassResult {
+  const director = runIdleGovernanceProgramDirectorPass(spec, rule, startTurn, requestedCycles, priorRegistry);
+  const remediation = buildIdleGovernanceProgramRemediationPlan(director.complianceScore, director.registryRollup);
+  const board = certifyIdleGovernanceProgramBoard(director, remediation);
+  const executiveMarkdown = buildIdleGovernanceProgramExecutiveMarkdown(director, remediation, board);
+
+  const summaryLine = [
+    'gov_program_executive',
+    board.summaryLine,
+    remediation.summaryLine,
+    director.summaryLine,
+  ].join(' | ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-executive-pass.v1',
+    director,
+    remediation,
+    board,
+    executiveMarkdown,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramExecutivePassSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const sampleRule: PortableHumanAutomationRule = {
+    id: 'exec1',
+    name: 'Executive pass',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 5,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 10, maxRunsTotal: null, cooldownTurns: 0 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: null,
+      lastRunTurn: null,
+      runsToday: 0,
+      runsTodayDay: -1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+  };
+
+  const calmSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 2,
+    humanCommittedEvery: 1,
+    idleMsStart: 0,
+    idleMsStep: 0,
+    consecutiveIdleStart: 0,
+  };
+
+  const executive = runIdleGovernanceProgramExecutivePass(calmSpec, sampleRule, 1, 3);
+  push(
+    'gov_prog_exec_calm',
+    'calm executive pass chains director remediation board',
+    executive.executiveMarkdown.includes('executive pass') &&
+      executive.director.registryRollup.entryCount === 1 &&
+      executive.remediation.items.length >= 1 &&
+      executive.board.decision.length > 0
+  );
+
+  const stressSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 6,
+    humanCommittedEvery: 0,
+    idleMsStart: 240_000,
+    idleMsStep: 110_000,
+    consecutiveIdleStart: 10,
+  };
+  const executive2 = runIdleGovernanceProgramExecutivePass(
+    stressSpec,
+    sampleRule,
+    5,
+    4,
+    executive.director.operations.registry
+  );
+  push(
+    'gov_prog_exec_chain',
+    'chained executive pass accumulates registry',
+    executive2.director.registryRollup.entryCount === 2 && executive2.summaryLine.includes('gov_program_executive')
+  );
+
+  push(
+    'gov_prog_exec_schema',
+    'executive pass schema marker',
+    executive.schema === '10m.agent20.idle-governance-program-executive-pass.v1'
+  );
+
+  return results;
+}
+
+
 // --- source: index.ts ---
 
 
@@ -7834,6 +8269,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceProgramRegistryRollupSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramComplianceScoreSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramDirectorPassSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramRemediationPlanSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramBoardCertificationSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramExecutivePassSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }
