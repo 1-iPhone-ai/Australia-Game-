@@ -1,0 +1,213 @@
+/**
+ * Agent 03 self-tests + integration contract validation.
+ * Run: npm run test:agent-03
+ */
+import {
+  AGENT03_CATALOG,
+  RESEARCH_BRANCH_NODES,
+  RESEARCH_NODE_BY_ID,
+  STRATEGY_HOOKS,
+  STRATEGY_HOOK_BY_ID,
+  V94_CAPABILITY_IDS,
+  V94_MEGAPROJECT_KINDS,
+  branchNodeTopologicalOrder,
+  computeResearchProgress,
+  createEmptyResearchProgressState,
+  detectPrerequisiteCycle,
+  evaluateNodePrerequisites,
+  type Agent03SelfTestResult,
+  type ResearchProgressInputs,
+} from '../src/index.ts';
+
+function assert(cond: boolean, detail?: string): void {
+  if (!cond) throw new Error(detail || 'assertion failed');
+}
+
+function test(id: string, fn: () => void): Agent03SelfTestResult {
+  try {
+    fn();
+    return { id, passed: true };
+  } catch (e) {
+    return { id, passed: false, detail: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+function baseInputs(overrides: Partial<ResearchProgressInputs> = {}): ResearchProgressInputs {
+  return {
+    turn: 10,
+    regions: [
+      { code: 'ACT', sectors: { research: 40, technology: 35 } },
+      { code: 'VIC', sectors: { manufacturing: 45, technology: 30 } },
+      { code: 'WA', sectors: { mining: 50, technology: 20 } },
+      { code: 'NSW', sectors: { research: 25, agriculture: 30 } },
+      { code: 'SA', sectors: { renewables: 40, energy: 35 } },
+      { code: 'QLD', sectors: { mining: 30, renewables: 25 } },
+      { code: 'TAS', sectors: { research: 15, technology: 10 } },
+      { code: 'NT', sectors: { mining: 20 } },
+      { code: 'AAT', sectors: { research: 5 } },
+    ],
+    capabilities: {},
+    projects: [],
+    completedContracts: [],
+    megaprojects: {},
+    factionStanding: {},
+    ...overrides,
+  };
+}
+
+const tests: Agent03SelfTestResult[] = [];
+
+tests.push(
+  test('catalog_no_prerequisite_cycles', () => {
+    assert(detectPrerequisiteCycle() === null, detectPrerequisiteCycle() ?? undefined);
+  })
+);
+
+tests.push(
+  test('every_node_hook_id_registered', () => {
+    for (const node of RESEARCH_BRANCH_NODES) {
+      for (const hid of node.hookIds) {
+        assert(!!STRATEGY_HOOK_BY_ID[hid], `missing hook ${hid} on ${node.id}`);
+      }
+    }
+  })
+);
+
+tests.push(
+  test('integration_contract_capability_ids', () => {
+    for (const node of RESEARCH_BRANCH_NODES) {
+      for (const ext of node.external) {
+        if (ext.kind === 'capability') {
+          assert(V94_CAPABILITY_IDS.includes(ext.capability), ext.capability);
+        }
+        if (ext.kind === 'megaproject_stage') {
+          assert(V94_MEGAPROJECT_KINDS.includes(ext.program), ext.program);
+        }
+      }
+    }
+  })
+);
+
+tests.push(
+  test('strategy_hooks_reference_valid_capabilities', () => {
+    for (const hook of STRATEGY_HOOKS) {
+      hook.targets.capabilities?.forEach(c => assert(V94_CAPABILITY_IDS.includes(c.id), c.id));
+      hook.targets.megaprojects?.forEach(m => assert(V94_MEGAPROJECT_KINDS.includes(m), m));
+    }
+  })
+);
+
+tests.push(
+  test('topological_order_respects_tiers', () => {
+    for (const branch of AGENT03_CATALOG.branches) {
+      const order = branchNodeTopologicalOrder(branch.id);
+      const tierOf = (id: string) => RESEARCH_NODE_BY_ID[id].tier;
+      for (let i = 1; i < order.length; i++) {
+        assert(tierOf(order[i]) >= tierOf(order[i - 1]), branch.id);
+      }
+    }
+  })
+);
+
+tests.push(
+  test('prerequisites_block_until_external_met', () => {
+    const inputs = baseInputs({
+      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'planned' }],
+    });
+    const ev = evaluateNodePrerequisites(inputs, 'df_t1_campus_foundation', new Set());
+    assert(!ev.satisfied, 'should block inactive project');
+  })
+);
+
+tests.push(
+  test('unlock_campus_when_project_active', () => {
+    const inputs = baseInputs({
+      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
+    });
+    const state = computeResearchProgress(inputs, createEmptyResearchProgressState());
+    assert(state.unlockedNodes.some(u => u.nodeId === 'df_t1_campus_foundation'));
+    assert(state.activeHookIds.includes('hook_df_campus_online'));
+  })
+);
+
+tests.push(
+  test('diffusion_increases_after_unlock', () => {
+    const inputs = baseInputs({
+      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
+      factionStanding: { csiro_ai_directorate: 45 },
+    });
+    const state = computeResearchProgress(inputs, null);
+    const act = state.diffusion.find(d => d.regionId === 'ACT');
+    assert(act != null && act.score > 0, `ACT score ${act?.score}`);
+    assert(act!.level !== 'latent' || act!.score > 0);
+  })
+);
+
+tests.push(
+  test('monotonic_unlocks_preserved', () => {
+    const inputs = baseInputs({
+      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
+    });
+    const s1 = computeResearchProgress(inputs, null);
+    const s2 = computeResearchProgress({ ...inputs, turn: 11, projects: [] }, s1);
+    assert(
+      s2.unlockedNodes.some(u => u.nodeId === 'df_t1_campus_foundation'),
+      'prior unlock must persist even if inputs regress'
+    );
+  })
+);
+
+tests.push(
+  test('late_game_hook_requires_tier', () => {
+    const inputs = baseInputs({
+      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
+    });
+    const state = computeResearchProgress(inputs, null);
+    assert(!state.activeHookIds.includes('hook_endgame_digital_sovereignty'));
+  })
+);
+
+tests.push(
+  test('endgame_digital_unlock_chain', () => {
+    const inputs = baseInputs({
+      turn: 120,
+      projects: [
+        { id: 'c1', regionId: 'ACT', projectType: 'research_campus', status: 'active' },
+        { id: 's1', regionId: 'NSW', projectType: 'subsea_cable_hub', status: 'active' },
+        { id: 'd1', regionId: 'ACT', projectType: 'data_center', status: 'active' },
+      ],
+      capabilities: {
+        ai_compute_infrastructure: { maturity: 'nationally_integrated', activeRegionIds: ['ACT', 'NSW'] },
+      },
+      megaprojects: {
+        continental_digital_backbone: { completedStages: 3, status: 'under_construction' },
+      },
+      factionStanding: { csiro_ai_directorate: 60 },
+    });
+    const state = computeResearchProgress(inputs, null);
+    assert(state.unlockedNodes.some(u => u.nodeId === 'df_t4_continental_integrated'));
+    assert(state.activeHookIds.includes('hook_endgame_digital_sovereignty'));
+  })
+);
+
+tests.push(
+  test('readiness_reflects_institution_standing', () => {
+    const low = computeResearchProgress(
+      baseInputs({ factionStanding: { csiro_ai_directorate: 10 } }),
+      null
+    );
+    const high = computeResearchProgress(
+      baseInputs({ factionStanding: { csiro_ai_directorate: 55 } }),
+      null
+    );
+    assert(high.readinessByBranch.digital_frontier > low.readinessByBranch.digital_frontier);
+  })
+);
+
+const passed = tests.filter(t => t.passed).length;
+const failed = tests.filter(t => !t.passed);
+
+console.log(`Agent 03 self-tests: ${passed}/${tests.length} passed`);
+failed.forEach(t => console.error(`FAIL ${t.id}: ${t.detail}`));
+
+process.exit(failed.length > 0 ? 1 : 0);
