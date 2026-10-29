@@ -379,8 +379,14 @@ export type WildfireAirtankerStagingPolicy = 'baseline' | 'surge';
 
 export type SuburbanMicroFulfillmentLogisticsPolicy = 'baseline' | 'expand';
 
+export type DeepGeothermalExportPolicy = 'baseline' | 'accelerate';
+
+export type CoastalFloodEvacStagingPolicy = 'baseline' | 'surge';
+
+export type WarehouseRobotSortationLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/38';
+  schemaVersion: 'agent12/39';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -650,6 +656,14 @@ export interface TransportInfrastructureState {
   suburbanMicroFulfillmentLogisticsShare: number;
   nationalSuburbanMicroFulfillmentLogisticsThroughputIndex: number;
   suburbanMicroFulfillmentLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalDeepGeothermalExportIndex: number;
+  deepGeothermalExportByRegion: Record<AuRegionCode, number>;
+  coastalFloodEvacStagingShare: number;
+  nationalCoastalFloodEvacStagingIndex: number;
+  coastalFloodEvacStagingByRegion: Record<AuRegionCode, number>;
+  warehouseRobotSortationLogisticsShare: number;
+  nationalWarehouseRobotSortationLogisticsThroughputIndex: number;
+  warehouseRobotSortationLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -754,6 +768,9 @@ export interface TransportInfrastructureOptions {
   pumpedHydroRenewableExportPolicy?: PumpedHydroRenewableExportPolicy;
   wildfireAirtankerStagingPolicy?: WildfireAirtankerStagingPolicy;
   suburbanMicroFulfillmentLogisticsPolicy?: SuburbanMicroFulfillmentLogisticsPolicy;
+  deepGeothermalExportPolicy?: DeepGeothermalExportPolicy;
+  coastalFloodEvacStagingPolicy?: CoastalFloodEvacStagingPolicy;
+  warehouseRobotSortationLogisticsPolicy?: WarehouseRobotSortationLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -2367,6 +2384,48 @@ export const TRANSPORT_CORRIDORS_ROUND37: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round38.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND38: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_sa_deep_geothermal',
+    name: 'WA–SA Deep Geothermal',
+    networkKind: 'trade',
+    regionSequence: ['WA', 'SA'],
+    requiredTagsByRegion: {
+      WA: ['deep_geothermal_export', 'geothermal_heat_rail_feed', 'baseload_renewable_export'],
+      SA: ['deep_geothermal_export', 'geothermal_heat_rail_feed', 'baseload_renewable_export'],
+    },
+    productivitySynergyPoints: 6.2,
+    logisticsRelief: 0.039,
+  },
+  {
+    id: 'corr_qld_nsw_coastal_flood_evac',
+    name: 'QLD–NSW Coastal Flood Evac',
+    networkKind: 'mobility',
+    regionSequence: ['QLD', 'NSW'],
+    requiredTagsByRegion: {
+      QLD: ['coastal_flood_evac_staging', 'levee_evac_hub', 'storm_surge_logistics'],
+      NSW: ['coastal_flood_evac_staging', 'levee_evac_hub', 'storm_surge_logistics'],
+    },
+    productivitySynergyPoints: 6.0,
+    logisticsRelief: 0.034,
+  },
+  {
+    id: 'corr_vic_nsw_warehouse_robot_sortation',
+    name: 'VIC–NSW Warehouse Robot Sortation',
+    networkKind: 'freight',
+    regionSequence: ['VIC', 'NSW'],
+    requiredTagsByRegion: {
+      VIC: ['warehouse_robot_sortation', 'automated_pallet_hub', 'ecom_robot_logistics'],
+      NSW: ['warehouse_robot_sortation', 'automated_pallet_hub', 'ecom_robot_logistics'],
+    },
+    productivitySynergyPoints: 5.9,
+    logisticsRelief: 0.035,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -2551,6 +2610,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND35,
   ...TRANSPORT_CORRIDORS_ROUND36,
   ...TRANSPORT_CORRIDORS_ROUND37,
+  ...TRANSPORT_CORRIDORS_ROUND38,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -4655,6 +4715,62 @@ export const TRANSPORT_SCENARIOS_ROUND37: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round38.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND38: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_geothermal_export_surge',
+    label: 'WA Geothermal Export Surge',
+    description: 'Pilbara heat export overloads Hedland berths.',
+    targetRegions: ['WA', 'SA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_sa_baseload_feed_delay',
+    label: 'SA Baseload Feed Delay',
+    description: 'Heat delays Olympic Dam geothermal staging.',
+    targetRegions: ['SA', 'WA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'road'],
+  },
+  {
+    id: 'scn_qld_storm_surge_evac',
+    label: 'Queensland Storm Surge Evac',
+    description: 'Cyclone watch strains Townsville evac hub.',
+    targetRegions: ['QLD', 'NSW'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.29,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_vic_robot_sortation_peak',
+    label: 'Victoria Robot Sortation Peak',
+    description: 'Sale season peaks Truganina robot hub.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+  {
+    id: 'scn_nsw_botany_robot_backlog',
+    label: 'NSW Botany Robot Backlog',
+    description: 'Port robot sortation backlog delays pallets.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -4853,6 +4969,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND35,
   ...TRANSPORT_SCENARIOS_ROUND36,
   ...TRANSPORT_SCENARIOS_ROUND37,
+  ...TRANSPORT_SCENARIOS_ROUND38,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -14015,6 +14132,233 @@ export const SCALE_WAVE_ROUND37_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round38-assets.ts ---
+
+export const ROUND38_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_pilbara_geothermal_haul',
+    category: 'road',
+    name: 'Pilbara Geothermal Haul',
+    description: 'WA deep geothermal export staging road.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['deep_geothermal_export', 'geothermal_heat_rail_feed', 'baseload_renewable_export'],
+    laneKilometres: 26,
+    designSpeedKmh: 82,
+    freightShare: 0.33,
+    urbanShare: 0.08,
+    tollRoad: false,
+  },
+  {
+    id: 'road_sa_olympic_dam_geothermal_feed',
+    category: 'road',
+    name: 'Olympic Dam Geothermal Feed',
+    description: 'SA baseload renewable export connector.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['trade'],
+    tags: ['deep_geothermal_export', 'geothermal_heat_rail_feed', 'baseload_renewable_export'],
+    laneKilometres: 22,
+    designSpeedKmh: 79,
+    freightShare: 0.3,
+    urbanShare: 0.11,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_cairns_flood_evac_access',
+    category: 'road',
+    name: 'Cairns Flood Evac Access',
+    description: 'QLD storm surge evacuation road feed.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['mobility'],
+    tags: ['coastal_flood_evac_staging', 'levee_evac_hub', 'storm_surge_logistics'],
+    laneKilometres: 19,
+    designSpeedKmh: 76,
+    freightShare: 0.1,
+    urbanShare: 0.21,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_ballina_flood_evac_staging',
+    category: 'road',
+    name: 'Ballina Flood Evac Staging',
+    description: 'NSW levee evac hub connector.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['coastal_flood_evac_staging', 'levee_evac_hub', 'storm_surge_logistics'],
+    laneKilometres: 16,
+    designSpeedKmh: 74,
+    freightShare: 0.09,
+    urbanShare: 0.2,
+    tollRoad: false,
+  },
+];
+
+export const ROUND38_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_pilbara_geothermal_rail',
+    category: 'rail',
+    name: 'Pilbara Geothermal Rail',
+    description: 'WA deep geothermal heat rail export feed.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['deep_geothermal_export', 'geothermal_heat_rail_feed', 'baseload_renewable_export'],
+    trackKilometres: 48,
+    dualTrackShare: 0.46,
+    electrifiedShare: 0.62,
+    designFreightTonnesPerYear: 4_000_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_sa_spencer_geothermal_link',
+    category: 'rail',
+    name: 'Spencer Geothermal Link',
+    description: 'SA baseload renewable export rail handoff.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['trade'],
+    tags: ['deep_geothermal_export', 'geothermal_heat_rail_feed', 'baseload_renewable_export'],
+    trackKilometres: 36,
+    dualTrackShare: 0.51,
+    electrifiedShare: 0.57,
+    designFreightTonnesPerYear: 3_100_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_vic_dandenong_robot_sortation',
+    category: 'rail',
+    name: 'Dandenong Robot Sortation Rail',
+    description: 'VIC automated pallet hub rail feed.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['warehouse_robot_sortation', 'automated_pallet_hub', 'ecom_robot_logistics'],
+    trackKilometres: 30,
+    dualTrackShare: 0.54,
+    electrifiedShare: 0.5,
+    designFreightTonnesPerYear: 2_700_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND38_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_port_hedland_geothermal_export',
+    category: 'port',
+    name: 'Port Hedland Geothermal Export',
+    description: 'WA deep geothermal export port.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['trade'],
+    tags: ['deep_geothermal_export', 'geothermal_heat_rail_feed', 'baseload_renewable_export'],
+    berthCount: 3,
+    maxDraftMetres: 13.0,
+    teuCapacityPerYear: 105_000,
+    automationLevel: 2,
+    bulkShare: 0.4,
+  },
+  {
+    id: 'port_qld_townsville_flood_evac_hub',
+    category: 'port',
+    name: 'Townsville Flood Evac Hub',
+    description: 'Queensland storm surge logistics port.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['coastal_flood_evac_staging', 'levee_evac_hub', 'storm_surge_logistics'],
+    berthCount: 2,
+    maxDraftMetres: 11.9,
+    teuCapacityPerYear: 165_000,
+    automationLevel: 1,
+    bulkShare: 0.13,
+  },
+  {
+    id: 'port_nsw_botany_robot_sortation',
+    category: 'port',
+    name: 'Botany Robot Sortation',
+    description: 'NSW e-commerce robot logistics port.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['warehouse_robot_sortation', 'automated_pallet_hub', 'ecom_robot_logistics'],
+    berthCount: 3,
+    maxDraftMetres: 12.4,
+    teuCapacityPerYear: 225_000,
+    automationLevel: 3,
+    bulkShare: 0.08,
+  },
+];
+
+export const ROUND38_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_wa_karratha_geothermal_stores',
+    category: 'logistics',
+    name: 'Karratha Geothermal Stores',
+    description: 'WA baseload renewable export yard.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['trade'],
+    tags: ['deep_geothermal_export', 'geothermal_heat_rail_feed', 'baseload_renewable_export'],
+    warehouseSqm: 52_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 40,
+  },
+  {
+    id: 'log_nsw_lismore_flood_evac_stores',
+    category: 'logistics',
+    name: 'Lismore Flood Evac Stores',
+    description: 'NSW coastal flood evac consolidation.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['mobility'],
+    tags: ['coastal_flood_evac_staging', 'levee_evac_hub', 'storm_surge_logistics'],
+    warehouseSqm: 34_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 54,
+  },
+  {
+    id: 'log_vic_truganina_robot_hub',
+    category: 'logistics',
+    name: 'Truganina Robot Hub',
+    description: 'VIC warehouse robot sortation yard.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['freight'],
+    tags: ['warehouse_robot_sortation', 'automated_pallet_hub', 'ecom_robot_logistics'],
+    warehouseSqm: 62_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 72,
+  },
+];
+
+export const SCALE_WAVE_ROUND38_ASSETS = [
+  ...ROUND38_ROADS,
+  ...ROUND38_RAIL,
+  ...ROUND38_PORTS,
+  ...ROUND38_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -14060,6 +14404,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND35_ASSETS,
     ...SCALE_WAVE_ROUND36_ASSETS,
     ...SCALE_WAVE_ROUND37_ASSETS,
+    ...SCALE_WAVE_ROUND38_ASSETS,
   ];
 }
 
@@ -16152,6 +16497,65 @@ export function pumpedHydroRenewableExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.035 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.04 + policyBoost, 0.93, 1.1);
+}
+
+
+// --- source: network/deep-geothermal-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type DeepGeothermalExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 deep geothermal export throughput by region. */
+export function computeDeepGeothermalExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) =>
+        t === 'deep_geothermal_export' ||
+        t === 'geothermal_heat_rail_feed' ||
+        t === 'baseload_renewable_export',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.95 + asset.maxDraftMetres * 0.35;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 74_000 + asset.intermodalLinks.length * 0.72;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 490;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 9_400_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalDeepGeothermalExportIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.49 + max * 0.51, 5, 73) * 10) / 10;
+}
+
+export function deepGeothermalExportProductivityMultiplier(
+  index: number,
+  policy: DeepGeothermalExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.034 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.039 + policyBoost, 0.93, 1.1);
 }
 
 
@@ -18842,6 +19246,96 @@ export function wildfireAirtankerStagingProductivityMultiplier(
 ): number {
   const bias = policy === 'surge' ? 1.02 : 1;
   return (1 + (share - 0.052) * 0.025) * bias;
+}
+
+
+// --- source: operations/coastal-flood-evac-staging-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type CoastalFloodEvacStagingPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 coastal flood evacuation staging readiness by region. */
+export function computeCoastalFloodEvacStagingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'coastal_flood_evac_staging' ||
+          t === 'levee_evac_hub' ||
+          t === 'storm_surge_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 68_000 + (asset.coldChainCapable ? 1.1 : 0.7);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 460;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.88;
+    }
+    if (asset.category === 'rail' && 'passengerCapable' in asset && asset.passengerCapable) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 300;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.036 - stress * 0.023), 5, 77) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalCoastalFloodEvacStagingIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.52 + max * 0.48, 6, 75) * 10) / 10;
+}
+
+export function computeCoastalFloodEvacStagingShare(
+  operationalAssets: TransportAsset[],
+  policy: CoastalFloodEvacStagingPolicy = 'baseline',
+): number {
+  let evacUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('coastal_flood_evac_staging') || asset.tags.includes('storm_surge_logistics')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 61_000;
+        evacUnits += (asset.warehouseSqm / 61_000) * 0.54;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 430;
+        evacUnits += (asset.laneKilometres / 430) * 0.48;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.036;
+  const policyBoost = policy === 'surge' ? 0.027 : 0;
+  return Math.round(clamp(evacUnits / totalUnits + policyBoost, 0.035, 0.25) * 1000) / 1000;
+}
+
+export function coastalFloodEvacStagingProductivityMultiplier(
+  share: number,
+  policy: CoastalFloodEvacStagingPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.019 : 1;
+  return (1 + (share - 0.05) * 0.024) * bias;
 }
 
 
@@ -21778,6 +22272,98 @@ export function nationalSuburbanMicroFulfillmentLogisticsThroughputIndex(
 }
 
 
+// --- source: productivity/warehouse-robot-sortation-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type TransportAsset,
+  type WarehouseRobotSortationLogisticsPolicy,
+} from '../types.ts';
+
+/** 0–1 share of logistics supporting warehouse robot sortation. */
+export function computeWarehouseRobotSortationLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: WarehouseRobotSortationLogisticsPolicy = 'baseline',
+): number {
+  let robotUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) =>
+          t === 'warehouse_robot_sortation' ||
+          t === 'automated_pallet_hub' ||
+          t === 'ecom_robot_logistics',
+      )
+    ) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.15 + asset.teuCapacityPerYear / 360_000;
+        robotUnits += (asset.berthCount * 1.15) * 0.6;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 55_000;
+        robotUnits += (asset.warehouseSqm / 55_000) * 0.57;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.037;
+  const policyBoost = policy === 'expand' ? 0.029 : 0;
+  return Math.round(clamp(robotUnits / totalUnits + policyBoost, 0.036, 0.28) * 1000) / 1000;
+}
+
+export function warehouseRobotSortationLogisticsProductivityMultiplier(
+  share: number,
+  policy: WarehouseRobotSortationLogisticsPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.021 : 1;
+  return (1 + (share - 0.056) * 0.025) * bias;
+}
+
+export function computeWarehouseRobotSortationLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'warehouse_robot_sortation' ||
+          t === 'automated_pallet_hub' ||
+          t === 'ecom_robot_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.55 + asset.teuCapacityPerYear / 330_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 60_000 + asset.lastMileCoveragePct / 115;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 420;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalWarehouseRobotSortationLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.51 + max * 0.49, 2, 54) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -22421,6 +23007,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalSuburbanMicroFulfillmentLogisticsThroughputIndex,
   suburbanMicroFulfillmentLogisticsProductivityMultiplier,
 } from './suburban-micro-fulfillment-logistics-index.ts';
+  computeDeepGeothermalExportByRegion,
+  deepGeothermalExportProductivityMultiplier,
+  nationalDeepGeothermalExportIndex,
+} from '../network/deep-geothermal-export-index.ts';
+  coastalFloodEvacStagingProductivityMultiplier,
+  computeCoastalFloodEvacStagingByRegion,
+  computeCoastalFloodEvacStagingShare,
+  nationalCoastalFloodEvacStagingIndex,
+} from '../operations/coastal-flood-evac-staging-index.ts';
+  computeWarehouseRobotSortationLogisticsShare,
+  computeWarehouseRobotSortationLogisticsThroughputByRegion,
+  nationalWarehouseRobotSortationLogisticsThroughputIndex,
+  warehouseRobotSortationLogisticsProductivityMultiplier,
+} from './warehouse-robot-sortation-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -23660,6 +24260,35 @@ export function computeTransportInfrastructureState(
     suburbanMicroFulfillmentLogisticsShare,
     options?.suburbanMicroFulfillmentLogisticsPolicy ?? 'baseline',
   );
+  const deepGeothermalExportByRegion = computeDeepGeothermalExportByRegion(ops);
+  const nationalGeothermal = nationalDeepGeothermalExportIndex(deepGeothermalExportByRegion);
+  const geothermalMult = deepGeothermalExportProductivityMultiplier(
+    nationalGeothermal,
+    options?.deepGeothermalExportPolicy ?? 'baseline',
+  );
+  const coastalFloodEvacStagingByRegion = computeCoastalFloodEvacStagingByRegion(ops, networkStress);
+  const nationalFloodEvac = nationalCoastalFloodEvacStagingIndex(coastalFloodEvacStagingByRegion);
+  const coastalFloodEvacStagingShare = computeCoastalFloodEvacStagingShare(
+    ops,
+    options?.coastalFloodEvacStagingPolicy ?? 'baseline',
+  );
+  const floodEvacMult = coastalFloodEvacStagingProductivityMultiplier(
+    coastalFloodEvacStagingShare,
+    options?.coastalFloodEvacStagingPolicy ?? 'baseline',
+  );
+  const warehouseRobotSortationLogisticsThroughputByRegion =
+    computeWarehouseRobotSortationLogisticsThroughputByRegion(ops);
+  const nationalRobotSortation = nationalWarehouseRobotSortationLogisticsThroughputIndex(
+    warehouseRobotSortationLogisticsThroughputByRegion,
+  );
+  const warehouseRobotSortationLogisticsShare = computeWarehouseRobotSortationLogisticsShare(
+    ops,
+    options?.warehouseRobotSortationLogisticsPolicy ?? 'baseline',
+  );
+  const robotSortationMult = warehouseRobotSortationLogisticsProductivityMultiplier(
+    warehouseRobotSortationLogisticsShare,
+    options?.warehouseRobotSortationLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -23728,6 +24357,9 @@ export function computeTransportInfrastructureState(
     const pumpedHydroBoost = (pumpedHydroRenewableExportByRegion[code] - 5) * 0.0031;
     const wildfireTankerBoost = (wildfireAirtankerStagingByRegion[code] - 6) * 0.0027;
     const suburbanMicroBoost = (suburbanMicroFulfillmentLogisticsThroughputByRegion[code] - 2) * 0.0023;
+    const geothermalBoost = (deepGeothermalExportByRegion[code] - 5) * 0.003;
+    const floodEvacBoost = (coastalFloodEvacStagingByRegion[code] - 6) * 0.0026;
+    const robotSortationBoost = (warehouseRobotSortationLogisticsThroughputByRegion[code] - 2) * 0.0022;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -23795,7 +24427,10 @@ export function computeTransportInfrastructureState(
         reefLogisticsBoost +
         pumpedHydroBoost +
         wildfireTankerBoost +
-        suburbanMicroBoost) *
+        suburbanMicroBoost +
+        geothermalBoost +
+        floodEvacBoost +
+        robotSortationBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -23861,7 +24496,10 @@ export function computeTransportInfrastructureState(
       reefLogisticsMult *
       pumpedHydroMult *
       wildfireTankerMult *
-      suburbanMicroMult;
+      suburbanMicroMult *
+      geothermalMult *
+      floodEvacMult *
+      robotSortationMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -23950,7 +24588,10 @@ export function computeTransportInfrastructureState(
     nationalReefLogistics * 0.003 +
     nationalPumpedHydro * 0.003 +
     nationalWildfireTanker * 0.003 +
-    nationalSuburbanMicro * 0.003;
+    nationalSuburbanMicro * 0.003 +
+    nationalGeothermal * 0.003 +
+    nationalFloodEvac * 0.003 +
+    nationalRobotSortation * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -23965,7 +24606,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/38',
+    schemaVersion: 'agent12/39',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -24235,6 +24876,14 @@ export function computeTransportInfrastructureState(
     suburbanMicroFulfillmentLogisticsShare,
     nationalSuburbanMicroFulfillmentLogisticsThroughputIndex: nationalSuburbanMicro,
     suburbanMicroFulfillmentLogisticsThroughputByRegion,
+    nationalDeepGeothermalExportIndex: nationalGeothermal,
+    deepGeothermalExportByRegion,
+    coastalFloodEvacStagingShare,
+    nationalCoastalFloodEvacStagingIndex: nationalFloodEvac,
+    coastalFloodEvacStagingByRegion,
+    warehouseRobotSortationLogisticsShare,
+    nationalWarehouseRobotSortationLogisticsThroughputIndex: nationalRobotSortation,
+    warehouseRobotSortationLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -24317,7 +24966,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/38' &&
+      infra.schemaVersion === 'agent12/39' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -24451,8 +25100,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalPumpedHydroRenewableExportIndex >= 5 &&
       infra.nationalWildfireAirtankerStagingIndex >= 6 &&
       infra.suburbanMicroFulfillmentLogisticsShare >= 0.03 &&
-      infra.nationalSuburbanMicroFulfillmentLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} pumped=${infra.nationalPumpedHydroRenewableExportIndex.toFixed(1)} tanker=${infra.nationalWildfireAirtankerStagingIndex.toFixed(1)} micro=${infra.nationalSuburbanMicroFulfillmentLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalSuburbanMicroFulfillmentLogisticsThroughputIndex >= 2 &&
+      infra.nationalDeepGeothermalExportIndex >= 5 &&
+      infra.nationalCoastalFloodEvacStagingIndex >= 6 &&
+      infra.warehouseRobotSortationLogisticsShare >= 0.03 &&
+      infra.nationalWarehouseRobotSortationLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} geo=${infra.nationalDeepGeothermalExportIndex.toFixed(1)} evac=${infra.nationalCoastalFloodEvacStagingIndex.toFixed(1)} robot=${infra.nationalWarehouseRobotSortationLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;
