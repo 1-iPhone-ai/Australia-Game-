@@ -7,6 +7,8 @@ export interface Agent17CommandSnapshot {
   macroAlertLevel: 'green' | 'amber' | 'red';
   inflationFusionScore: number;
   coordinatedTighteningSuggested: boolean;
+  /** Round 16: command center farmgate / food-supply alert. */
+  farmgateSupplyAlertActive?: boolean;
 }
 
 export function mergeAgent17IntoMacroFinancialInputs(
@@ -25,10 +27,21 @@ export function mergeAgent17IntoMacroFinancialInputs(
   if (snapshot.inflationFusionScore > 0.72) {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
   }
+  if (snapshot.farmgateSupplyAlertActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.08, 0.85, 1.45);
+  }
 
   let highInflationScenario = base.highInflationScenario;
-  if (snapshot.macroAlertLevel === 'red' && snapshot.inflationFusionScore > 0.65) {
+  if (
+    (snapshot.macroAlertLevel === 'red' && snapshot.inflationFusionScore > 0.65) ||
+    snapshot.farmgateSupplyAlertActive
+  ) {
     highInflationScenario = true;
+  }
+
+  let householdInflationScenarioActive = base.householdInflationScenarioActive;
+  if (snapshot.farmgateSupplyAlertActive) {
+    householdInflationScenarioActive = true;
   }
 
   return {
@@ -36,6 +49,7 @@ export function mergeAgent17IntoMacroFinancialInputs(
     turn: Math.max(base.turn, snapshot.turn),
     inflationSettingMultiplier,
     highInflationScenario,
+    householdInflationScenarioActive,
   };
 }
 

@@ -2885,6 +2885,139 @@ export function retailTradeMarginInflationScoreAdjustment(band: RetailTradeMargi
 }
 
 
+// --- source: inflation/financial-services-fee-inflation.ts ---
+
+export type FinancialServicesFeeBand = 'subdued' | 'firming' | 'elevated' | 'fee_shock';
+
+export interface FinancialServicesFeeInflationAssessment {
+  feeBand: FinancialServicesFeeBand;
+  servicesIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Banking, mortgage servicing, and payment fees in macro CPI metadata (not asset prices). */
+export function assessFinancialServicesFeeInflation(input: {
+  fundingCostPassThrough: 'low' | 'medium' | 'high';
+  complianceCostStackActive: boolean;
+  depositRateCompetitionBand: 'weak' | 'normal' | 'intense';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): FinancialServicesFeeInflationAssessment {
+  let pressure = 0;
+  if (input.fundingCostPassThrough === 'high') pressure += 0.36;
+  else if (input.fundingCostPassThrough === 'medium') pressure += 0.18;
+
+  if (input.complianceCostStackActive) pressure += 0.14;
+  if (input.depositRateCompetitionBand === 'intense') pressure += 0.12;
+  else if (input.depositRateCompetitionBand === 'weak') pressure += 0.06;
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.09;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.0045, 0, 1.05);
+  const servicesIndex = finRound(100 + pressure * 16, 1);
+
+  let feeBand: FinancialServicesFeeBand = 'subdued';
+  if (pressure >= 0.58) feeBand = 'fee_shock';
+  else if (pressure >= 0.38) feeBand = 'elevated';
+  else if (pressure >= 0.18) feeBand = 'firming';
+
+  const inflationScoreNudge =
+    feeBand === 'fee_shock'
+      ? 0.08
+      : feeBand === 'elevated'
+        ? 0.05
+        : feeBand === 'firming'
+          ? 0.03
+          : 0;
+
+  const narrative =
+    feeBand === 'fee_shock' || feeBand === 'elevated'
+      ? 'Financial services fees are lifting CPI through funding and compliance pass-through.'
+      : feeBand === 'firming'
+        ? 'Fee inflation firming as deposit competition and funding costs bite.'
+        : 'Financial services fee inflation subdued versus headline.';
+
+  return { feeBand, servicesIndex, inflationScoreNudge, narrative };
+}
+
+export function financialServicesFeeInflationScoreAdjustment(band: FinancialServicesFeeBand): number {
+  if (band === 'fee_shock') return 4;
+  if (band === 'elevated') return 3;
+  if (band === 'firming') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/agricultural-farmgate-inflation.ts ---
+
+export type AgriculturalFarmgatePressureBand = 'soft' | 'firming' | 'sharp' | 'harvest_crisis';
+
+export interface AgriculturalFarmgateInflationAssessment {
+  pressureBand: AgriculturalFarmgatePressureBand;
+  farmgateIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Farmgate and agricultural supply-chain CPI (household food pipeline — not export commodity boundary). */
+export function assessAgriculturalFarmgateInflation(input: {
+  harvestStressBand: 'normal' | 'weak' | 'severe';
+  transportToMarketBand: 'smooth' | 'strained' | 'critical';
+  inputCostPassThrough: boolean;
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): AgriculturalFarmgateInflationAssessment {
+  let pressure = 0;
+  if (input.harvestStressBand === 'severe') pressure += 0.4;
+  else if (input.harvestStressBand === 'weak') pressure += 0.22;
+
+  if (input.transportToMarketBand === 'critical') pressure += 0.28;
+  else if (input.transportToMarketBand === 'strained') pressure += 0.14;
+
+  if (input.inputCostPassThrough) pressure += 0.16;
+
+  if (input.inflationBand === 'elevated' || input.inflationBand === 'high') {
+    pressure += 0.06;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.005, 0, 1.05);
+  const farmgateIndex = finRound(100 + pressure * 17, 1);
+
+  let pressureBand: AgriculturalFarmgatePressureBand = 'soft';
+  if (pressure >= 0.6) pressureBand = 'harvest_crisis';
+  else if (pressure >= 0.38) pressureBand = 'sharp';
+  else if (pressure >= 0.2) pressureBand = 'firming';
+
+  const inflationScoreNudge =
+    pressureBand === 'harvest_crisis'
+      ? 0.09
+      : pressureBand === 'sharp'
+        ? 0.06
+        : pressureBand === 'firming'
+          ? 0.03
+          : 0;
+
+  const narrative =
+    pressureBand === 'harvest_crisis' || pressureBand === 'sharp'
+      ? 'Farmgate prices are feeding grocery CPI through harvest stress and logistics.'
+      : pressureBand === 'firming'
+        ? 'Agricultural farmgate inflation firming on input and freight pass-through.'
+        : 'Farmgate inflation soft relative to food services basket.';
+
+  return { pressureBand, farmgateIndex, inflationScoreNudge, narrative };
+}
+
+export function agriculturalFarmgateInflationScoreAdjustment(band: AgriculturalFarmgatePressureBand): number {
+  if (band === 'harvest_crisis') return 4;
+  if (band === 'sharp') return 3;
+  if (band === 'firming') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -3609,6 +3742,42 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
       publicStability: 40,
     },
     tags: ['inflation', 'dashboard', 'round15'],
+  },
+  {
+    id: 'financial_services_fee_shock',
+    label: 'Financial services fee shock',
+    description: 'Funding and compliance stack lifts financial-services CPI.',
+    patch: {
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.24,
+      highInflationScenario: true,
+      fiscalPressure: 'strained',
+    },
+    tags: ['inflation', 'finance', 'round16'],
+  },
+  {
+    id: 'agricultural_farmgate_harvest_stress',
+    label: 'Agricultural farmgate harvest stress',
+    description: 'Severe harvest with strained logistics — farmgate CPI.',
+    patch: {
+      systemicLiquidityBand: 'critical',
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.23,
+      householdAffordability: 'strained',
+    },
+    tags: ['inflation', 'farmgate', 'round16'],
+  },
+  {
+    id: 'command_fusion_red_farmgate_alert',
+    label: 'Command fusion red farmgate alert',
+    description: 'Red macro alert with farmgate supply warning.',
+    patch: {
+      inflationSettingMultiplier: 1.27,
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      publicStability: 38,
+    },
+    tags: ['inflation', 'command', 'round16'],
   },
 ] as const;
 
@@ -4978,6 +5147,8 @@ export interface Agent16GuardianSnapshot {
   inflationGuardrailTripped: boolean;
   stabilityInterventionBand: 'none' | 'advisory' | 'urgent';
   narrativeShockSeverity: 'low' | 'medium' | 'high';
+  /** Round 16: guardian flags financial-services fee shock feeding CPI metadata. */
+  financialServicesFeeShockActive?: boolean;
 }
 
 export function mergeAgent16IntoMacroFinancialInputs(
@@ -4989,6 +5160,9 @@ export function mergeAgent16IntoMacroFinancialInputs(
   let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
   if (snapshot.inflationGuardrailTripped) {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.07, 0.85, 1.45);
+  }
+  if (snapshot.financialServicesFeeShockActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
   }
   if (snapshot.narrativeShockSeverity === 'high') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
@@ -5002,8 +5176,16 @@ export function mergeAgent16IntoMacroFinancialInputs(
   }
 
   let highInflationScenario = base.highInflationScenario;
-  if (snapshot.inflationGuardrailTripped && snapshot.stabilityInterventionBand === 'urgent') {
+  if (
+    (snapshot.inflationGuardrailTripped && snapshot.stabilityInterventionBand === 'urgent') ||
+    snapshot.financialServicesFeeShockActive
+  ) {
     highInflationScenario = true;
+  }
+
+  let creditShockActive = base.creditShockActive;
+  if (snapshot.financialServicesFeeShockActive) {
+    creditShockActive = true;
   }
 
   return {
@@ -5012,6 +5194,7 @@ export function mergeAgent16IntoMacroFinancialInputs(
     inflationSettingMultiplier,
     publicStability,
     highInflationScenario,
+    creditShockActive,
   };
 }
 
@@ -5028,6 +5211,8 @@ export interface Agent17CommandSnapshot {
   macroAlertLevel: 'green' | 'amber' | 'red';
   inflationFusionScore: number;
   coordinatedTighteningSuggested: boolean;
+  /** Round 16: command center farmgate / food-supply alert. */
+  farmgateSupplyAlertActive?: boolean;
 }
 
 export function mergeAgent17IntoMacroFinancialInputs(
@@ -5046,10 +5231,21 @@ export function mergeAgent17IntoMacroFinancialInputs(
   if (snapshot.inflationFusionScore > 0.72) {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
   }
+  if (snapshot.farmgateSupplyAlertActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.08, 0.85, 1.45);
+  }
 
   let highInflationScenario = base.highInflationScenario;
-  if (snapshot.macroAlertLevel === 'red' && snapshot.inflationFusionScore > 0.65) {
+  if (
+    (snapshot.macroAlertLevel === 'red' && snapshot.inflationFusionScore > 0.65) ||
+    snapshot.farmgateSupplyAlertActive
+  ) {
     highInflationScenario = true;
+  }
+
+  let householdInflationScenarioActive = base.householdInflationScenarioActive;
+  if (snapshot.farmgateSupplyAlertActive) {
+    householdInflationScenarioActive = true;
   }
 
   return {
@@ -5057,6 +5253,7 @@ export function mergeAgent17IntoMacroFinancialInputs(
     turn: Math.max(base.turn, snapshot.turn),
     inflationSettingMultiplier,
     highInflationScenario,
+    householdInflationScenarioActive,
   };
 }
 
@@ -5446,6 +5643,12 @@ export function agent23DashboardsBridgeIntegrationNote(): string {
   assessRetailTradeMarginInflation,
   type RetailTradeMarginBand,
 } from '../inflation/retail-trade-margin-inflation.js';
+  assessFinancialServicesFeeInflation,
+  type FinancialServicesFeeBand,
+} from '../inflation/financial-services-fee-inflation.js';
+  assessAgriculturalFarmgateInflation,
+  type AgriculturalFarmgatePressureBand,
+} from '../inflation/agricultural-farmgate-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -5476,6 +5679,8 @@ export interface InflationForecastPoint {
   domesticTravelPressureBand: DomesticTravelPressureBand;
   constructionMaterialsPressureBand: ConstructionMaterialsPressureBand;
   retailTradeMarginBand: RetailTradeMarginBand;
+  financialServicesFeeBand: FinancialServicesFeeBand;
+  agriculturalFarmgatePressureBand: AgriculturalFarmgatePressureBand;
 }
 
 export interface InflationForecastPath {
@@ -5659,6 +5864,20 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const financialFees = assessFinancialServicesFeeInflation({
+      fundingCostPassThrough: inputs.creditShockActive ? 'high' : inputs.fiscalPressure === 'critical' ? 'medium' : 'low',
+      complianceCostStackActive: inputs.fiscalPressure === 'critical' || inputs.activeCrises > 0,
+      depositRateCompetitionBand: inputs.highInflationScenario ? 'intense' : 'normal',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const farmgate = assessAgriculturalFarmgateInflation({
+      harvestStressBand: inputs.systemicLiquidityBand === 'critical' ? 'severe' : inputs.highInflationScenario ? 'weak' : 'normal',
+      transportToMarketBand: inputs.systemicLiquidityBand === 'strained' || inputs.systemicLiquidityBand === 'critical' ? 'strained' : 'smooth',
+      inputCostPassThrough: inputs.householdInflationScenarioActive,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -5689,6 +5908,8 @@ export function projectInflationForecastPath(
       domesticTravelPressureBand: domesticTravel.pressureBand,
       constructionMaterialsPressureBand: constructionMaterials.pressureBand,
       retailTradeMarginBand: retailMargin.marginBand,
+      financialServicesFeeBand: financialFees.feeBand,
+      agriculturalFarmgatePressureBand: farmgate.pressureBand,
     });
   }
 
@@ -5794,7 +6015,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r15';
+  schemaVersion: '10.14.agent10.r16';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -5820,6 +6041,8 @@ export interface Agent21InflationForecastBundle {
   terminalDomesticTravelPressure: DomesticTravelPressureBand;
   terminalConstructionMaterialsPressure: ConstructionMaterialsPressureBand;
   terminalRetailTradeMargin: RetailTradeMarginBand;
+  terminalFinancialServicesFee: FinancialServicesFeeBand;
+  terminalAgriculturalFarmgatePressure: AgriculturalFarmgatePressureBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -5848,7 +6071,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r15',
+    schemaVersion: '10.14.agent10.r16',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -5874,6 +6097,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalDomesticTravelPressure: lastPoint?.domesticTravelPressureBand ?? 'subdued',
     terminalConstructionMaterialsPressure: lastPoint?.constructionMaterialsPressureBand ?? 'soft',
     terminalRetailTradeMargin: lastPoint?.retailTradeMarginBand ?? 'stable',
+    terminalFinancialServicesFee: lastPoint?.financialServicesFeeBand ?? 'subdued',
+    terminalAgriculturalFarmgatePressure: lastPoint?.agriculturalFarmgatePressureBand ?? 'soft',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -6061,6 +6286,12 @@ export function effectiveTierLoanRate(
   assessRetailTradeMarginInflation,
   retailTradeMarginInflationScoreAdjustment,
 } from './inflation/retail-trade-margin-inflation.js';
+  assessFinancialServicesFeeInflation,
+  financialServicesFeeInflationScoreAdjustment,
+} from './inflation/financial-services-fee-inflation.js';
+  assessAgriculturalFarmgateInflation,
+  agriculturalFarmgateInflationScoreAdjustment,
+} from './inflation/agricultural-farmgate-inflation.js';
   mergeAgent22IntoMacroFinancialInputs,
   agent22UiBridgeIntegrationNote,
 } from './integration/agent22-ui-bridge.js';
@@ -6465,7 +6696,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r15');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r16');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -6612,7 +6843,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r15' &&
+      bundle.schemaVersion === '10.14.agent10.r16' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -6704,7 +6935,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r15' &&
+      bundle.schemaVersion === '10.14.agent10.r16' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -6803,7 +7034,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r15' &&
+      bundle.schemaVersion === '10.14.agent10.r16' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -6901,7 +7132,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r15' &&
+      bundle.schemaVersion === '10.14.agent10.r16' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -6999,7 +7230,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r15' &&
+      bundle.schemaVersion === '10.14.agent10.r16' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -7089,7 +7320,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r12_10',
       'agent21 r12 fields',
-      bundle.schemaVersion === '10.14.agent10.r15' &&
+      bundle.schemaVersion === '10.14.agent10.r16' &&
         bundle.terminalRecreationLeisurePressure !== undefined &&
         bundle.terminalProfessionalServicesFee !== undefined,
     );
@@ -7179,7 +7410,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r13_10',
       'agent21 r13 fields',
-      bundle.schemaVersion === '10.14.agent10.r15' &&
+      bundle.schemaVersion === '10.14.agent10.r16' &&
         bundle.terminalChildcareServicesPressure !== undefined &&
         bundle.terminalGovernmentChargesPressure !== undefined,
     );
@@ -7269,7 +7500,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r14_10',
       'agent21 r14 fields',
-      bundle.schemaVersion === '10.14.agent10.r15' &&
+      bundle.schemaVersion === '10.14.agent10.r16' &&
         bundle.terminalWaterUtilitiesPressure !== undefined &&
         bundle.terminalDomesticTravelPressure !== undefined,
     );
@@ -7359,7 +7590,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r15_10',
       'agent21 r15 fields',
-      bundle.schemaVersion === '10.14.agent10.r15' &&
+      bundle.schemaVersion === '10.14.agent10.r16' &&
         bundle.terminalConstructionMaterialsPressure !== undefined &&
         bundle.terminalRetailTradeMargin !== undefined,
     );
@@ -7385,6 +7616,98 @@ export function runAgent10FinanceSelfTests(): {
     'round15 preset dashboard heatmap',
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'dashboard_regional_heatmap_alert');
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.25;
+    })(),
+  );
+
+  // --- Round 16 scale wave ---
+  {
+    const fees = assessFinancialServicesFeeInflation({
+      fundingCostPassThrough: 'high',
+      complianceCostStackActive: true,
+      depositRateCompetitionBand: 'intense',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check('a10_r16_01', 'financial fees elevated or shock', fees.feeBand === 'elevated' || fees.feeBand === 'fee_shock');
+    check('a10_r16_02', 'financial fees score adj', financialServicesFeeInflationScoreAdjustment(fees.feeBand) >= 3);
+  }
+  {
+    const farmgate = assessAgriculturalFarmgateInflation({
+      harvestStressBand: 'severe',
+      transportToMarketBand: 'critical',
+      inputCostPassThrough: true,
+      inflationBand: 'elevated',
+      turn: 3,
+    });
+    check('a10_r16_03', 'farmgate sharp or harvest crisis', farmgate.pressureBand === 'sharp' || farmgate.pressureBand === 'harvest_crisis');
+    check('a10_r16_04', 'farmgate score adj', agriculturalFarmgateInflationScoreAdjustment(farmgate.pressureBand) >= 3);
+  }
+  {
+    const merged16 = mergeAgent16IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      inflationGuardrailTripped: true,
+      stabilityInterventionBand: 'advisory',
+      narrativeShockSeverity: 'medium',
+      financialServicesFeeShockActive: true,
+    });
+    check('a10_r16_05', 'agent16 fee shock merge', merged16.creditShockActive === true && merged16.highInflationScenario === true);
+    check('a10_r16_06', 'agent16 bridge note', agent16GuardianBridgeIntegrationNote().includes('Agent 16'));
+  }
+  {
+    const merged17 = mergeAgent17IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      macroAlertLevel: 'red',
+      inflationFusionScore: 0.8,
+      coordinatedTighteningSuggested: true,
+      farmgateSupplyAlertActive: true,
+    });
+    check('a10_r16_07', 'agent17 farmgate merge', merged17.householdInflationScenarioActive === true);
+    check('a10_r16_08', 'agent17 bridge note', agent17CommandBridgeIntegrationNote().includes('Agent 17'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r16_09',
+      'forecast financial and farmgate fields',
+      path.points.every((p) => !!p.financialServicesFeeBand && !!p.agriculturalFarmgatePressureBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r16_10',
+      'agent21 r16 fields',
+      bundle.schemaVersion === '10.14.agent10.r16' &&
+        bundle.terminalFinancialServicesFee !== undefined &&
+        bundle.terminalAgriculturalFarmgatePressure !== undefined,
+    );
+  }
+  check(
+    'a10_r16_11',
+    'round16 preset financial fee shock',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'financial_services_fee_shock');
+      return inp?.creditShockActive === true && inp.highInflationScenario === true;
+    })(),
+  );
+  check(
+    'a10_r16_12',
+    'round16 preset farmgate harvest',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'agricultural_farmgate_harvest_stress');
+      return inp?.householdInflationScenarioActive === true && inp.systemicLiquidityBand === 'critical';
+    })(),
+  );
+  check(
+    'a10_r16_13',
+    'round16 preset command red alert',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'command_fusion_red_farmgate_alert');
       return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.25;
     })(),
   );
@@ -8192,6 +8515,72 @@ export function ConstructionRetailDashboardInflationPanel(props: ConstructionRet
       </p>
       <p data-testid="construction-retail-materials-note">{materials.narrative}</p>
       <p>{retail.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/FinancialServicesFarmgateCommandInflationPanel.tsx ---
+  assessFinancialServicesFeeInflation,
+  financialServicesFeeInflationScoreAdjustment,
+} from '../inflation/financial-services-fee-inflation.js';
+  assessAgriculturalFarmgateInflation,
+  agriculturalFarmgateInflationScoreAdjustment,
+} from '../inflation/agricultural-farmgate-inflation.js';
+
+export interface FinancialServicesFarmgateCommandInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent16?: Agent16GuardianSnapshot | null;
+  agent17?: Agent17CommandSnapshot | null;
+}
+
+export function FinancialServicesFarmgateCommandInflationPanel(props: FinancialServicesFarmgateCommandInflationPanelProps) {
+  const guardian = props.agent16 ?? {
+    turn: props.inputs.turn,
+    inflationGuardrailTripped: props.inputs.highInflationScenario,
+    stabilityInterventionBand: props.inputs.fiscalPressure === 'critical' ? ('urgent' as const) : ('advisory' as const),
+    narrativeShockSeverity: props.inputs.creditShockActive ? ('high' as const) : ('medium' as const),
+    financialServicesFeeShockActive: props.inputs.creditShockActive,
+  };
+
+  const command = props.agent17 ?? {
+    turn: props.inputs.turn,
+    macroAlertLevel: props.inputs.highInflationScenario ? ('red' as const) : ('amber' as const),
+    inflationFusionScore: props.inputs.householdInflationScenarioActive ? 0.78 : 0.52,
+    coordinatedTighteningSuggested: props.inputs.fiscalPressure === 'critical',
+    farmgateSupplyAlertActive: props.inputs.systemicLiquidityBand === 'critical',
+  };
+
+  const fees = assessFinancialServicesFeeInflation({
+    fundingCostPassThrough: guardian.financialServicesFeeShockActive ? 'high' : props.inputs.creditShockActive ? 'medium' : 'low',
+    complianceCostStackActive: guardian.inflationGuardrailTripped,
+    depositRateCompetitionBand: command.coordinatedTighteningSuggested ? 'intense' : 'normal',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const farmgate = assessAgriculturalFarmgateInflation({
+    harvestStressBand: command.farmgateSupplyAlertActive ? 'severe' : props.inputs.fiscalPressure === 'critical' ? 'weak' : 'normal',
+    transportToMarketBand: props.inputs.systemicLiquidityBand === 'critical' ? 'critical' : 'strained',
+    inputCostPassThrough: guardian.narrativeShockSeverity === 'high',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-financial-farmgate-command-inflation" data-testid="financial-farmgate-command-inflation-panel">
+      <h4>Financial services, farmgate & command (round 16)</h4>
+      <p>
+        Fees {fees.feeBand} · index {fees.servicesIndex.toFixed(0)} · score adj{' '}
+        {financialServicesFeeInflationScoreAdjustment(fees.feeBand)}
+      </p>
+      <p>
+        Farmgate {farmgate.pressureBand} · index {farmgate.farmgateIndex.toFixed(0)} · score adj{' '}
+        {agriculturalFarmgateInflationScoreAdjustment(farmgate.pressureBand)}
+      </p>
+      <p data-testid="financial-farmgate-fees-note">{fees.narrative}</p>
+      <p>{farmgate.narrative}</p>
     </div>
   );
 }

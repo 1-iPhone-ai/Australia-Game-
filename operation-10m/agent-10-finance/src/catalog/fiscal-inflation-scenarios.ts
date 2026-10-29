@@ -487,6 +487,42 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'dashboard', 'round15'],
   },
+  {
+    id: 'financial_services_fee_shock',
+    label: 'Financial services fee shock',
+    description: 'Funding and compliance stack lifts financial-services CPI.',
+    patch: {
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.24,
+      highInflationScenario: true,
+      fiscalPressure: 'strained',
+    },
+    tags: ['inflation', 'finance', 'round16'],
+  },
+  {
+    id: 'agricultural_farmgate_harvest_stress',
+    label: 'Agricultural farmgate harvest stress',
+    description: 'Severe harvest with strained logistics — farmgate CPI.',
+    patch: {
+      systemicLiquidityBand: 'critical',
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.23,
+      householdAffordability: 'strained',
+    },
+    tags: ['inflation', 'farmgate', 'round16'],
+  },
+  {
+    id: 'command_fusion_red_farmgate_alert',
+    label: 'Command fusion red farmgate alert',
+    description: 'Red macro alert with farmgate supply warning.',
+    patch: {
+      inflationSettingMultiplier: 1.27,
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      publicStability: 38,
+    },
+    tags: ['inflation', 'command', 'round16'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

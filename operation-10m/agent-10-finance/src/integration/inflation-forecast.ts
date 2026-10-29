@@ -87,6 +87,14 @@ import {
   assessRetailTradeMarginInflation,
   type RetailTradeMarginBand,
 } from '../inflation/retail-trade-margin-inflation.js';
+import {
+  assessFinancialServicesFeeInflation,
+  type FinancialServicesFeeBand,
+} from '../inflation/financial-services-fee-inflation.js';
+import {
+  assessAgriculturalFarmgateInflation,
+  type AgriculturalFarmgatePressureBand,
+} from '../inflation/agricultural-farmgate-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -117,6 +125,8 @@ export interface InflationForecastPoint {
   domesticTravelPressureBand: DomesticTravelPressureBand;
   constructionMaterialsPressureBand: ConstructionMaterialsPressureBand;
   retailTradeMarginBand: RetailTradeMarginBand;
+  financialServicesFeeBand: FinancialServicesFeeBand;
+  agriculturalFarmgatePressureBand: AgriculturalFarmgatePressureBand;
 }
 
 export interface InflationForecastPath {
@@ -300,6 +310,20 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const financialFees = assessFinancialServicesFeeInflation({
+      fundingCostPassThrough: inputs.creditShockActive ? 'high' : inputs.fiscalPressure === 'critical' ? 'medium' : 'low',
+      complianceCostStackActive: inputs.fiscalPressure === 'critical' || inputs.activeCrises > 0,
+      depositRateCompetitionBand: inputs.highInflationScenario ? 'intense' : 'normal',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const farmgate = assessAgriculturalFarmgateInflation({
+      harvestStressBand: inputs.systemicLiquidityBand === 'critical' ? 'severe' : inputs.highInflationScenario ? 'weak' : 'normal',
+      transportToMarketBand: inputs.systemicLiquidityBand === 'strained' || inputs.systemicLiquidityBand === 'critical' ? 'strained' : 'smooth',
+      inputCostPassThrough: inputs.householdInflationScenarioActive,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -330,6 +354,8 @@ export function projectInflationForecastPath(
       domesticTravelPressureBand: domesticTravel.pressureBand,
       constructionMaterialsPressureBand: constructionMaterials.pressureBand,
       retailTradeMarginBand: retailMargin.marginBand,
+      financialServicesFeeBand: financialFees.feeBand,
+      agriculturalFarmgatePressureBand: farmgate.pressureBand,
     });
   }
 

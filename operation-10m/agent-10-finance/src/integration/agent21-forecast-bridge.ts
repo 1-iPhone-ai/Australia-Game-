@@ -24,11 +24,13 @@ import type { WaterUtilitiesPressureBand } from '../inflation/water-utilities-in
 import type { DomesticTravelPressureBand } from '../inflation/domestic-travel-inflation.js';
 import type { ConstructionMaterialsPressureBand } from '../inflation/construction-materials-inflation.js';
 import type { RetailTradeMarginBand } from '../inflation/retail-trade-margin-inflation.js';
+import type { FinancialServicesFeeBand } from '../inflation/financial-services-fee-inflation.js';
+import type { AgriculturalFarmgatePressureBand } from '../inflation/agricultural-farmgate-inflation.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r15';
+  schemaVersion: '10.14.agent10.r16';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -54,6 +56,8 @@ export interface Agent21InflationForecastBundle {
   terminalDomesticTravelPressure: DomesticTravelPressureBand;
   terminalConstructionMaterialsPressure: ConstructionMaterialsPressureBand;
   terminalRetailTradeMargin: RetailTradeMarginBand;
+  terminalFinancialServicesFee: FinancialServicesFeeBand;
+  terminalAgriculturalFarmgatePressure: AgriculturalFarmgatePressureBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -82,7 +86,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r15',
+    schemaVersion: '10.14.agent10.r16',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -108,6 +112,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalDomesticTravelPressure: lastPoint?.domesticTravelPressureBand ?? 'subdued',
     terminalConstructionMaterialsPressure: lastPoint?.constructionMaterialsPressureBand ?? 'soft',
     terminalRetailTradeMargin: lastPoint?.retailTradeMarginBand ?? 'stable',
+    terminalFinancialServicesFee: lastPoint?.financialServicesFeeBand ?? 'subdued',
+    terminalAgriculturalFarmgatePressure: lastPoint?.agriculturalFarmgatePressureBand ?? 'soft',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

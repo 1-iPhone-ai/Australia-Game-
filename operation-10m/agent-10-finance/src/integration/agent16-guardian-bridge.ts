@@ -7,6 +7,8 @@ export interface Agent16GuardianSnapshot {
   inflationGuardrailTripped: boolean;
   stabilityInterventionBand: 'none' | 'advisory' | 'urgent';
   narrativeShockSeverity: 'low' | 'medium' | 'high';
+  /** Round 16: guardian flags financial-services fee shock feeding CPI metadata. */
+  financialServicesFeeShockActive?: boolean;
 }
 
 export function mergeAgent16IntoMacroFinancialInputs(
@@ -18,6 +20,9 @@ export function mergeAgent16IntoMacroFinancialInputs(
   let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
   if (snapshot.inflationGuardrailTripped) {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.07, 0.85, 1.45);
+  }
+  if (snapshot.financialServicesFeeShockActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
   }
   if (snapshot.narrativeShockSeverity === 'high') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
@@ -31,8 +36,16 @@ export function mergeAgent16IntoMacroFinancialInputs(
   }
 
   let highInflationScenario = base.highInflationScenario;
-  if (snapshot.inflationGuardrailTripped && snapshot.stabilityInterventionBand === 'urgent') {
+  if (
+    (snapshot.inflationGuardrailTripped && snapshot.stabilityInterventionBand === 'urgent') ||
+    snapshot.financialServicesFeeShockActive
+  ) {
     highInflationScenario = true;
+  }
+
+  let creditShockActive = base.creditShockActive;
+  if (snapshot.financialServicesFeeShockActive) {
+    creditShockActive = true;
   }
 
   return {
@@ -41,6 +54,7 @@ export function mergeAgent16IntoMacroFinancialInputs(
     inflationSettingMultiplier,
     publicStability,
     highInflationScenario,
+    creditShockActive,
   };
 }
 

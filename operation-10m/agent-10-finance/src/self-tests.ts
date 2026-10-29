@@ -206,6 +206,14 @@ import {
   retailTradeMarginInflationScoreAdjustment,
 } from './inflation/retail-trade-margin-inflation.js';
 import {
+  assessFinancialServicesFeeInflation,
+  financialServicesFeeInflationScoreAdjustment,
+} from './inflation/financial-services-fee-inflation.js';
+import {
+  assessAgriculturalFarmgateInflation,
+  agriculturalFarmgateInflationScoreAdjustment,
+} from './inflation/agricultural-farmgate-inflation.js';
+import {
   mergeAgent22IntoMacroFinancialInputs,
   agent22UiBridgeIntegrationNote,
 } from './integration/agent22-ui-bridge.js';
@@ -611,7 +619,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r15');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r16');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -758,7 +766,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r15' &&
+      bundle.schemaVersion === '10.14.agent10.r16' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -850,7 +858,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r15' &&
+      bundle.schemaVersion === '10.14.agent10.r16' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -949,7 +957,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r15' &&
+      bundle.schemaVersion === '10.14.agent10.r16' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -1047,7 +1055,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r15' &&
+      bundle.schemaVersion === '10.14.agent10.r16' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -1145,7 +1153,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r15' &&
+      bundle.schemaVersion === '10.14.agent10.r16' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -1235,7 +1243,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r12_10',
       'agent21 r12 fields',
-      bundle.schemaVersion === '10.14.agent10.r15' &&
+      bundle.schemaVersion === '10.14.agent10.r16' &&
         bundle.terminalRecreationLeisurePressure !== undefined &&
         bundle.terminalProfessionalServicesFee !== undefined,
     );
@@ -1325,7 +1333,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r13_10',
       'agent21 r13 fields',
-      bundle.schemaVersion === '10.14.agent10.r15' &&
+      bundle.schemaVersion === '10.14.agent10.r16' &&
         bundle.terminalChildcareServicesPressure !== undefined &&
         bundle.terminalGovernmentChargesPressure !== undefined,
     );
@@ -1415,7 +1423,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r14_10',
       'agent21 r14 fields',
-      bundle.schemaVersion === '10.14.agent10.r15' &&
+      bundle.schemaVersion === '10.14.agent10.r16' &&
         bundle.terminalWaterUtilitiesPressure !== undefined &&
         bundle.terminalDomesticTravelPressure !== undefined,
     );
@@ -1505,7 +1513,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r15_10',
       'agent21 r15 fields',
-      bundle.schemaVersion === '10.14.agent10.r15' &&
+      bundle.schemaVersion === '10.14.agent10.r16' &&
         bundle.terminalConstructionMaterialsPressure !== undefined &&
         bundle.terminalRetailTradeMargin !== undefined,
     );
@@ -1531,6 +1539,98 @@ export function runAgent10FinanceSelfTests(): {
     'round15 preset dashboard heatmap',
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'dashboard_regional_heatmap_alert');
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.25;
+    })(),
+  );
+
+  // --- Round 16 scale wave ---
+  {
+    const fees = assessFinancialServicesFeeInflation({
+      fundingCostPassThrough: 'high',
+      complianceCostStackActive: true,
+      depositRateCompetitionBand: 'intense',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check('a10_r16_01', 'financial fees elevated or shock', fees.feeBand === 'elevated' || fees.feeBand === 'fee_shock');
+    check('a10_r16_02', 'financial fees score adj', financialServicesFeeInflationScoreAdjustment(fees.feeBand) >= 3);
+  }
+  {
+    const farmgate = assessAgriculturalFarmgateInflation({
+      harvestStressBand: 'severe',
+      transportToMarketBand: 'critical',
+      inputCostPassThrough: true,
+      inflationBand: 'elevated',
+      turn: 3,
+    });
+    check('a10_r16_03', 'farmgate sharp or harvest crisis', farmgate.pressureBand === 'sharp' || farmgate.pressureBand === 'harvest_crisis');
+    check('a10_r16_04', 'farmgate score adj', agriculturalFarmgateInflationScoreAdjustment(farmgate.pressureBand) >= 3);
+  }
+  {
+    const merged16 = mergeAgent16IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      inflationGuardrailTripped: true,
+      stabilityInterventionBand: 'advisory',
+      narrativeShockSeverity: 'medium',
+      financialServicesFeeShockActive: true,
+    });
+    check('a10_r16_05', 'agent16 fee shock merge', merged16.creditShockActive === true && merged16.highInflationScenario === true);
+    check('a10_r16_06', 'agent16 bridge note', agent16GuardianBridgeIntegrationNote().includes('Agent 16'));
+  }
+  {
+    const merged17 = mergeAgent17IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      macroAlertLevel: 'red',
+      inflationFusionScore: 0.8,
+      coordinatedTighteningSuggested: true,
+      farmgateSupplyAlertActive: true,
+    });
+    check('a10_r16_07', 'agent17 farmgate merge', merged17.householdInflationScenarioActive === true);
+    check('a10_r16_08', 'agent17 bridge note', agent17CommandBridgeIntegrationNote().includes('Agent 17'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r16_09',
+      'forecast financial and farmgate fields',
+      path.points.every((p) => !!p.financialServicesFeeBand && !!p.agriculturalFarmgatePressureBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r16_10',
+      'agent21 r16 fields',
+      bundle.schemaVersion === '10.14.agent10.r16' &&
+        bundle.terminalFinancialServicesFee !== undefined &&
+        bundle.terminalAgriculturalFarmgatePressure !== undefined,
+    );
+  }
+  check(
+    'a10_r16_11',
+    'round16 preset financial fee shock',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'financial_services_fee_shock');
+      return inp?.creditShockActive === true && inp.highInflationScenario === true;
+    })(),
+  );
+  check(
+    'a10_r16_12',
+    'round16 preset farmgate harvest',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'agricultural_farmgate_harvest_stress');
+      return inp?.householdInflationScenarioActive === true && inp.systemicLiquidityBand === 'critical';
+    })(),
+  );
+  check(
+    'a10_r16_13',
+    'round16 preset command red alert',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'command_fusion_red_farmgate_alert');
       return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.25;
     })(),
   );
