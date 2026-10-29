@@ -39,6 +39,7 @@ const FILES = [
   'production-transition-consolidation.ts',
   'production-transition-sustainment.ts',
   'production-transition-resilience.ts',
+  'production-transition-equilibrium.ts',
   'chunk-exports.ts',
 ];
 

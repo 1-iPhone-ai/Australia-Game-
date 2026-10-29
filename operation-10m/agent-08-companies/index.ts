@@ -421,6 +421,23 @@ export type {
   TransitionResilienceBand,
 } from './production-transition-resilience';
 
+export {
+  AGENT08_TRANSITION_EQUILIBRIUM_SCHEMA_VERSION,
+  buildFirmProductionTransitionEquilibrium,
+  classifyNationalEquilibriumBand,
+  computeNationalEquilibriumPressure,
+  computeNationalProductionTransitionEquilibrium,
+  summarizeRegionalTransitionEquilibrium,
+  runAgent08TransitionEquilibriumSelfTests,
+} from './production-transition-equilibrium';
+
+export type {
+  FirmProductionTransitionEquilibrium,
+  NationalProductionTransitionEquilibrium,
+  RegionalTransitionEquilibriumSummary,
+  TransitionEquilibriumBand,
+} from './production-transition-equilibrium';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -446,6 +463,7 @@ import { runAgent08TransitionValidationSelfTests } from './production-transition
 import { runAgent08TransitionConsolidationSelfTests } from './production-transition-consolidation';
 import { runAgent08TransitionSustainmentSelfTests } from './production-transition-sustainment';
 import { runAgent08TransitionResilienceSelfTests } from './production-transition-resilience';
+import { runAgent08TransitionEquilibriumSelfTests } from './production-transition-equilibrium';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -575,6 +593,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionEquilibrium = runAgent08TransitionEquilibriumSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -601,5 +624,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...transitionConsolidation,
     ...transitionSustainment,
     ...transitionResilience,
+    ...transitionEquilibrium,
   ];
 }
