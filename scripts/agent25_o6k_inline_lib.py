@@ -155,6 +155,31 @@ def public_services_paths() -> list[str]:
     return core + generated + tail
 
 
+def energy_environment_paths() -> list[str]:
+    base = ROOT / "expansion/o6k-10m/energy-environment/src"
+    catalog = sorted(str(p.relative_to(ROOT)) for p in (base / "catalog").glob("*.ts"))
+    core = [
+        "expansion/o6k-10m/energy-environment/src/types.ts",
+        "expansion/o6k-10m/energy-environment/src/primitives.ts",
+        "expansion/o6k-10m/energy-environment/src/persistence.ts",
+    ]
+    engines = [
+        "expansion/o6k-10m/energy-environment/src/engine-grid-stability.ts",
+        "expansion/o6k-10m/energy-environment/src/engine-extraction-depletion.ts",
+        "expansion/o6k-10m/energy-environment/src/engine-renewable-intermittency.ts",
+        "expansion/o6k-10m/energy-environment/src/engine-carbon-budgets.ts",
+        "expansion/o6k-10m/energy-environment/src/engine-contingency.ts",
+        "expansion/o6k-10m/energy-environment/src/engine-coupling.ts",
+    ]
+    adapters = sorted(str(p.relative_to(ROOT)) for p in (base / "adapters").glob("*.ts"))
+    tail = [
+        "expansion/o6k-10m/energy-environment/src/compute.ts",
+        "expansion/o6k-10m/energy-environment/src/self-test-fixtures.ts",
+        "expansion/o6k-10m/energy-environment/src/self-tests.ts",
+    ]
+    return core + catalog + engines + adapters + tail
+
+
 def insert_before(text: str, block: str, marker: str, label: str) -> str:
     if marker in text:
         print(f"skip insert {label} (marker present)")

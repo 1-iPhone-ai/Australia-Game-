@@ -14,6 +14,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     ANCHOR,
     V94,
     bundle_local_files,
+    energy_environment_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -23,6 +24,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
 TRADE_MARKER = "export function runV1014TradeDepthTurn"
 REPLAY_MARKER = "export function runV1014ReplayCounterfactualSelfTests"
 PUBSVC_MARKER = "export function V1014_PUBSVC_computePublicServicesCrosswalk"
+ENERGY_MARKER = "export function V1014_ENERGY_DEPTH_turnHook"
 
 TRADE_SECTION = (
     "// ============================================================================\n"
@@ -39,6 +41,12 @@ REPLAY_SECTION = (
 PUBSVC_SECTION = (
     "// ============================================================================\n"
     "// SECTION 20AZ: V10.14 PUBLIC SERVICES CROSSWALK v2 (T6-5)\n"
+    "// ============================================================================\n"
+)
+
+ENERGY_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20BC: V10.14 ENERGY DEPTH — GRID, DEPLETION, INTERMITTENCY, CARBON (T6-4)\n"
     "// ============================================================================\n"
 )
 
@@ -186,6 +194,93 @@ def wire_pubsvc_day_hook(text: str) -> str:
     return text.replace(trade_tail, trade_tail + PUBSVC_DAY_HOOK, 1)
 
 
+ENERGY_HELPERS = """
+function V1014_ENERGY_DEPTH_readPersistedFromGameState(gs: any): V1014EnergyDepthPersisted | null {
+  const raw = gs?.save?.meta?.v1014?.energy_depth;
+  return raw ? sanitizeV1014EnergyDepthPersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1014_ENERGY_DEPTH_applyEnergyDepthToGameState(
+  gs: any,
+  out: { state: V1014EnergyDepthState; persisted: V1014EnergyDepthPersisted },
+): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1014 = { ...(meta.v1014 || {}) };
+  v1014.energy_depth = out.persisted;
+  meta.v1014 = v1014;
+  save.meta = meta;
+  return { ...gs, save, energyDepth: out.state };
+}
+"""
+
+ENERGY_DAY_HOOK = """
+      if (typeof V1014_ENERGY_DEPTH_turnHook === 'function') {
+        try {
+          const eIn = buildV1014EnergyDepthInputs({
+            turn: passCtx.turnCounter,
+            enabled: settings?.energyDepthEnabled !== false,
+            gameState: mergedGameState,
+            industrialEnergyState: mergedGameState?.industrialEnergy ?? null,
+            industriesState: mergedGameState?.industries ?? null,
+            infrastructureState: mergedGameState?.infrastructureNetworks ?? null,
+            systemicRiskState: mergedGameState?.systemicRisk ?? null,
+          });
+          const eOut = V1014_ENERGY_DEPTH_turnHook({
+            inputs: eIn,
+            persisted: V1014_ENERGY_DEPTH_readPersistedFromGameState(mergedGameState),
+            prevState: mergedGameState?.energyDepth ?? null,
+          });
+          mergedGameState = V1014_ENERGY_DEPTH_applyEnergyDepthToGameState(mergedGameState, eOut);
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_energy_day_hook(text: str) -> str:
+    marker = "V1014_ENERGY_DEPTH_applyEnergyDepthToGameState(mergedGameState, eOut)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:18000]
+    if marker in day_slice:
+        print("skip energy day hook (present)")
+        return text
+    pubsvc_tail = """      if (typeof V1014_PUBSVC_computePublicServicesCrosswalk === 'function') {
+        try {
+          const inputs = buildV1014PubsSvcCrosswalkInputsFromGameState(mergedGameState, passCtx.turnCounter);
+          const prev6 = V1014_PUBSVC_readSection6Slice(mergedGameState);
+          const cross = V1014_PUBSVC_computePublicServicesCrosswalk(inputs, prev6);
+          mergedGameState = V1014_PUBSVC_patchSection6Slice(mergedGameState, cross.persisted);
+          mergedGameState = { ...mergedGameState, v1014PublicServicesCrosswalk: cross.snapshot };
+        } catch (_) { /* isolated */ }
+      }"""
+    if pubsvc_tail not in text:
+        raise SystemExit("pubsvc day hook anchor missing for energy hook")
+    return text.replace(pubsvc_tail, pubsvc_tail + ENERGY_DAY_HOOK, 1)
+
+
+def wire_energy_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState) {\n    const pubsRaw = (migrated.gameState as any)?.save?.meta?.v1014?.public_services_v2;"
+    patch = (
+        "  if (migrated.gameState) {\n"
+        "    const energyRaw = (migrated.gameState as any)?.save?.meta?.v1014?.energy_depth;\n"
+        "    if (energyRaw && typeof sanitizeV1014EnergyDepthPersisted === 'function') {\n"
+        "      const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "      const meta = { ...(save.meta || {}) };\n"
+        "      const v1014 = { ...(meta.v1014 || {}) };\n"
+        "      v1014.energy_depth = sanitizeV1014EnergyDepthPersisted(energyRaw, Number((migrated.gameState as any).turnCounter || 0));\n"
+        "      meta.v1014 = v1014;\n"
+        "      save.meta = meta;\n"
+        "      migrated.gameState = { ...(migrated.gameState as any), save };\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1014.energy_depth = sanitizeV1014EnergyDepthPersisted" in text:
+        print("skip energy §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("pubsvc §6 anchor missing for energy migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
 def wire_day_hooks(text: str, extra_hook: str, hook_id: str) -> str:
     anchor = "        v1014SupplyChain: supplyOut?.persisted ?? mergedGameState?.v1014SupplyChain,\n      };"
     runtime_marker = extra_hook.strip().split("\n", 1)[0].strip()
@@ -291,6 +386,17 @@ def push_pubsvc(text: str) -> str:
     return text
 
 
+def push_energy(text: str) -> str:
+    block = ENERGY_SECTION + bundle_local_files(energy_environment_paths()) + ENERGY_HELPERS
+    text = insert_before(text, block, ENERGY_MARKER, "T6 push #5 energy-environment (PR #330)")
+    text = wire_energy_day_hook(text)
+    text = wire_energy_migration(text)
+    lab = """  { id: 'v1014_energy_depth', label: 'V10.14 Energy depth (grid, depletion, intermittency, carbon)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014EnergyDepthSelfTests() },
+"""
+    text = wire_lab(text, lab, "v1014_energy_depth")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -305,7 +411,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -316,6 +422,8 @@ def main() -> None:
         text = push_replay(text)
     elif args.push == 4:
         text = push_pubsvc(text)
+    elif args.push == 5:
+        text = push_energy(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")
