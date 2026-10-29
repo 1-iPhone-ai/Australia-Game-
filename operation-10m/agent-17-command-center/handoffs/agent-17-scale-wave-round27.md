@@ -11,7 +11,7 @@ Round 26 parent on branch: **`a327dff1`**.
 | Field | Value |
 |-------|-------|
 | Subject | `feat(op10m): O10-185 scale wave round 27 realm depth` |
-| SHA | **PLACEHOLDER** |
+| SHA | **`9f4a7ae9`** (`9f4a7ae967ab0c0d4504bcddbe6f480f00a2d9b5`) |
 
 ## Chunk
 
