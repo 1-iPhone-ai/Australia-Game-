@@ -5,9 +5,11 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "bundle:chunk": "tsx scripts/bundle-chunk-for-agent25.ts"
   },
   "devDependencies": {
+    "tsx": "4.20.3",
     "typescript": "5.9.3",
     "vitest": "3.2.4"
   }

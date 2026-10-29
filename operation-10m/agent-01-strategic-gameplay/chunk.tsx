@@ -1,0 +1,1219 @@
+// OP10M_MODULE_BEGIN agent-01-strategic-gameplay
+// content-sha256-prefix: c4cc6ddc1090e4ac
+// Operation 10M — Agent 01 Strategic Gameplay
+
+// Bundled for Agent 25 assembly (no external imports).
+
+// --- src/contracts/economy.ts ---
+
+/**
+ * Agent 01 — integration contracts (economy slice).
+ * Canonical V9.4 adapters implement these shapes; this module consumes snapshots and emits patches.
+ */
+
+export type EconomyDomainId =
+  | 'treasury'
+  | 'markets'
+  | 'investments'
+  | 'trade'
+  | 'households';
+
+export interface EconomySnapshot {
+  day: number;
+  cashOnHand: number;
+  treasuryReserve: number;
+  debtOutstanding: number;
+  inflationIndex: number;
+  priceMultiplier: number;
+  investmentLockout: boolean;
+  netWorthEstimate: number;
+}
+
+export interface EconomyPatch {
+  cashDelta?: number;
+  treasuryDelta?: number;
+  debtDelta?: number;
+  inflationDelta?: number;
+  priceMultiplierFactor?: number;
+  investmentLockout?: boolean;
+  netWorthMultiplier?: number;
+  domainsTouched?: EconomyDomainId[];
+  ledgerNote?: string;
+}
+
+export interface EconomyContract {
+  readonly moduleId: 'agent-01-economy';
+  snapshot(): EconomySnapshot;
+  applyPatch(patch: EconomyPatch): EconomySnapshot;
+  canAfford(cashCost: number, treasuryCost?: number): boolean;
+}
+
+// --- src/contracts/government.ts ---
+
+/** Agent 01 — government / governance contract slice. */
+
+export type GovernanceAuthorityMode = 'off' | 'shadow' | 'shared' | 'mandate';
+
+export interface GovernanceSnapshot {
+  day: number;
+  approvalRating: number;
+  directiveSlotsUsed: number;
+  directiveSlotCap: number;
+  authorityMode: GovernanceAuthorityMode;
+  pendingReliefClaims: number;
+  regulatoryBurden: number;
+}
+
+export interface GovernancePatch {
+  approvalDelta?: number;
+  directiveSlotsDelta?: number;
+  regulatoryBurdenDelta?: number;
+  reliefClaimsDelta?: number;
+  authorityMode?: GovernanceAuthorityMode;
+  issuedDirectiveId?: string;
+  ledgerNote?: string;
+}
+
+export interface GovernmentContract {
+  readonly moduleId: 'agent-01-government';
+  snapshot(): GovernanceSnapshot;
+  applyPatch(patch: GovernancePatch): GovernanceSnapshot;
+  canIssueDirective(apCost: number): boolean;
+}
+
+// --- src/contracts/population.ts ---
+
+/** Agent 01 — population / household contract slice. */
+
+export interface PopulationSnapshot {
+  day: number;
+  totalPopulation: number;
+  migrationBalance: number;
+  essentialAccessIndex: number;
+  affordabilityStress: number;
+  publicStability: number;
+}
+
+export interface PopulationPatch {
+  populationDelta?: number;
+  migrationDelta?: number;
+  essentialAccessDelta?: number;
+  affordabilityStressDelta?: number;
+  publicStabilityDelta?: number;
+  ledgerNote?: string;
+}
+
+export interface PopulationContract {
+  readonly moduleId: 'agent-01-population';
+  snapshot(): PopulationSnapshot;
+  applyPatch(patch: PopulationPatch): PopulationSnapshot;
+  stressBand(): 'stable' | 'strained' | 'critical';
+}
+
+// --- src/contracts/tech.ts ---
+
+/** Agent 01 — technology / innovation contract slice. */
+
+export type TechTrackId =
+  | 'digital_infrastructure'
+  | 'renewable_energy'
+  | 'advanced_manufacturing'
+  | 'biotech'
+  | 'defence_dual_use';
+
+export interface TechSnapshot {
+  day: number;
+  researchPoints: number;
+  unlockedTracks: TechTrackId[];
+  readinessByTrack: Record<TechTrackId, number>;
+  innovationMomentum: number;
+}
+
+export interface TechPatch {
+  researchDelta?: number;
+  unlockTrack?: TechTrackId;
+  readinessDelta?: Partial<Record<TechTrackId, number>>;
+  momentumDelta?: number;
+  ledgerNote?: string;
+}
+
+export interface TechContract {
+  readonly moduleId: 'agent-01-tech';
+  snapshot(): TechSnapshot;
+  applyPatch(patch: TechPatch): TechSnapshot;
+  meetsPrerequisite(track: TechTrackId, minReadiness: number): boolean;
+}
+
+// --- src/contracts/ui.ts ---
+
+/** Agent 01 — UI / intent surfacing contract slice (no React in this module). */
+
+export interface StrategicChoicePresentation {
+  choiceId: string;
+  stageId: string;
+  title: string;
+  summary: string;
+  optionLabels: string[];
+  blockedReason?: string;
+  nationalPriorityHint?: string;
+  delayedTradeOffPreview?: string;
+}
+
+export interface StrategicActionToast {
+  id: string;
+  severity: 'info' | 'warning' | 'success';
+  title: string;
+  body: string;
+  day: number;
+}
+
+export interface UiContract {
+  readonly moduleId: 'agent-01-ui';
+  presentChoice(model: StrategicChoicePresentation): void;
+  pushToast(toast: StrategicActionToast): void;
+  setActionHudSummary(actionsUsed: number, actionsMax: number, pendingDelayed: number): void;
+}
+
+// --- src/types/national-priority.ts ---
+
+/** Mirrors V9.4 NationalPriorityId vocabulary for assembly alignment. */
+
+export type NationalPriorityId =
+  | 'water_security'
+  | 'energy_resilience'
+  | 'freight_modernization'
+  | 'supply_chain_security'
+  | 'economic_diversification'
+  | 'technology_competitiveness';
+
+export type NationalPriorityUrgency = 'watch' | 'important' | 'urgent' | 'critical';
+
+export type NationalPriorityAlignmentBand =
+  | 'strong'
+  | 'moderate'
+  | 'weak'
+  | 'none'
+  | 'conflict';
+
+export interface NationalPrioritySnapshot {
+  id: NationalPriorityId;
+  title: string;
+  urgency: NationalPriorityUrgency;
+  progress: number;
+  isPrimary: boolean;
+}
+
+export interface NationalPriorityAlignment {
+  score: number;
+  band: NationalPriorityAlignmentBand;
+  reason: string;
+  priorityId: NationalPriorityId;
+}
+
+export interface NationalPriorityRankingContext {
+  day: number;
+  priorities: NationalPrioritySnapshot[];
+  playerFocusId: NationalPriorityId | null;
+}
+
+// --- src/types/strategic-action.ts ---
+
+export type StrategicActionCategory =
+  | 'investment'
+  | 'governance'
+  | 'population'
+  | 'research'
+  | 'trade_off';
+
+export interface DomainEffectBundle {
+  economy?: EconomyPatch;
+  government?: GovernancePatch;
+  population?: PopulationPatch;
+  tech?: TechPatch;
+}
+
+export interface DelayedTradeOff {
+  id: string;
+  firesOnDay: number;
+  sourceActionId: string;
+  label: string;
+  effects: DomainEffectBundle;
+  /** Shown when scheduled — honest preview of downstream cost. */
+  warning: string;
+}
+
+export interface StrategicActionDefinition {
+  id: string;
+  title: string;
+  category: StrategicActionCategory;
+  apCost: number;
+  cashCost: number;
+  treasuryCost: number;
+  minApproval: number;
+  alignedPriorities: NationalPriorityId[];
+  conflictingPriorities: NationalPriorityId[];
+  immediateEffects: DomainEffectBundle;
+  delayedTradeOffs: Omit<DelayedTradeOff, 'id' | 'firesOnDay' | 'sourceActionId'>[];
+  tags: string[];
+}
+
+export interface MultiStageChoiceOption {
+  optionId: string;
+  label: string;
+  description: string;
+  nextStageId: string | null;
+  /** Terminal options carry the action to execute. */
+  resolvesActionId?: string;
+  requirements?: StrategicValidationRequirement[];
+}
+
+export interface MultiStageChoiceStage {
+  stageId: string;
+  prompt: string;
+  options: MultiStageChoiceOption[];
+}
+
+export interface MultiStageChoiceDefinition {
+  choiceId: string;
+  title: string;
+  entryStageId: string;
+  stages: MultiStageChoiceStage[];
+  linkedActionId: string;
+}
+
+export type StrategicValidationRequirement =
+  | { kind: 'min_cash'; amount: number }
+  | { kind: 'min_treasury'; amount: number }
+  | { kind: 'min_approval'; rating: number }
+  | { kind: 'max_affordability_stress'; max: number }
+  | { kind: 'tech_readiness'; track: import('../contracts/tech.ts').TechTrackId; min: number }
+  | { kind: 'no_investment_lockout' }
+  | { kind: 'directive_slot_available' };
+
+export interface StrategicValidationIssue {
+  code: string;
+  message: string;
+  requirement: StrategicValidationRequirement;
+}
+
+export interface PlayerActionBudget {
+  actionsUsedThisTurn: number;
+  actionsPerTurn: number;
+}
+
+export interface StrategicGameplayState {
+  day: number;
+  pendingDelayed: DelayedTradeOff[];
+  completedActionIds: string[];
+  activeChoice: {
+    choiceId: string;
+    stageId: string;
+  } | null;
+}
+
+export interface ExecuteActionResult {
+  ok: boolean;
+  issues?: StrategicValidationIssue[];
+  state: StrategicGameplayState;
+  appliedActionId?: string;
+  scheduledTradeOffs?: DelayedTradeOff[];
+}
+
+// --- src/engine/validation.ts ---
+
+export function evaluateRequirements(
+  requirements: StrategicValidationRequirement[] | undefined,
+  contracts: StrategicGameplayContracts,
+  budget: PlayerActionBudget,
+  action?: Pick<
+    StrategicActionDefinition,
+    'apCost' | 'cashCost' | 'treasuryCost' | 'minApproval'
+  >,
+): StrategicValidationIssue[] {
+  const issues: StrategicValidationIssue[] = [];
+  const econ = contracts.economy.snapshot();
+  const gov = contracts.government.snapshot();
+  const pop = contracts.population.snapshot();
+  const tech = contracts.tech.snapshot();
+
+  if (action) {
+    if (budget.actionsUsedThisTurn + action.apCost > budget.actionsPerTurn) {
+      issues.push({
+        code: 'AP_EXHAUSTED',
+        message: 'Not enough action points remaining this turn.',
+        requirement: { kind: 'directive_slot_available' },
+      });
+    }
+    if (!contracts.economy.canAfford(action.cashCost, action.treasuryCost)) {
+      issues.push({
+        code: 'INSUFFICIENT_FUNDS',
+        message: 'Cash or treasury cannot cover this action.',
+        requirement: { kind: 'min_cash', amount: action.cashCost },
+      });
+    }
+    if (gov.approvalRating < action.minApproval) {
+      issues.push({
+        code: 'LOW_APPROVAL',
+        message: `Approval ${gov.approvalRating} below required ${action.minApproval}.`,
+        requirement: { kind: 'min_approval', rating: action.minApproval },
+      });
+    }
+  }
+
+  for (const req of requirements ?? []) {
+    switch (req.kind) {
+      case 'min_cash':
+        if (econ.cashOnHand < req.amount) {
+          issues.push({
+            code: 'MIN_CASH',
+            message: `Need at least $${req.amount} cash.`,
+            requirement: req,
+          });
+        }
+        break;
+      case 'min_treasury':
+        if (econ.treasuryReserve < req.amount) {
+          issues.push({
+            code: 'MIN_TREASURY',
+            message: `Treasury reserve below ${req.amount}.`,
+            requirement: req,
+          });
+        }
+        break;
+      case 'min_approval':
+        if (gov.approvalRating < req.rating) {
+          issues.push({
+            code: 'MIN_APPROVAL',
+            message: `Approval must be at least ${req.rating}.`,
+            requirement: req,
+          });
+        }
+        break;
+      case 'max_affordability_stress':
+        if (pop.affordabilityStress > req.max) {
+          issues.push({
+            code: 'POPULATION_STRESS',
+            message: 'Household affordability stress is too high for this path.',
+            requirement: req,
+          });
+        }
+        break;
+      case 'tech_readiness':
+        if (!contracts.tech.meetsPrerequisite(req.track, req.min)) {
+          issues.push({
+            code: 'TECH_NOT_READY',
+            message: `${req.track} readiness below ${req.min}.`,
+            requirement: req,
+          });
+        }
+        break;
+      case 'no_investment_lockout':
+        if (econ.investmentLockout) {
+          issues.push({
+            code: 'INVESTMENT_LOCKOUT',
+            message: 'Markets are in investment lockout.',
+            requirement: req,
+          });
+        }
+        break;
+      case 'directive_slot_available':
+        if (!contracts.government.canIssueDirective(0)) {
+          issues.push({
+            code: 'NO_DIRECTIVE_SLOT',
+            message: 'No governance directive capacity remaining.',
+            requirement: req,
+          });
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  return issues;
+}
+
+export function validateAction(
+  action: StrategicActionDefinition,
+  contracts: StrategicGameplayContracts,
+  budget: PlayerActionBudget,
+  extraRequirements: StrategicValidationRequirement[] = [],
+): StrategicValidationIssue[] {
+  return evaluateRequirements(extraRequirements, contracts, budget, action);
+}
+
+export function validateChoiceOption(
+  choice: MultiStageChoiceDefinition,
+  stageId: string,
+  optionId: string,
+  contracts: StrategicGameplayContracts,
+  budget: PlayerActionBudget,
+): StrategicValidationIssue[] {
+  const stage = choice.stages.find((s) => s.stageId === stageId);
+  const option = stage?.options.find((o) => o.optionId === optionId);
+  if (!stage || !option) {
+    return [
+      {
+        code: 'UNKNOWN_CHOICE',
+        message: 'Invalid choice stage or option.',
+        requirement: { kind: 'min_cash', amount: 0 },
+      },
+    ];
+  }
+  return evaluateRequirements(option.requirements, contracts, budget);
+}
+
+export function scoreNationalPriorityAlignment(
+  action: StrategicActionDefinition,
+  ctx: NationalPriorityRankingContext | null,
+): NationalPriorityAlignment | null {
+  if (!ctx || ctx.priorities.length === 0) return null;
+  const primary = ctx.priorities.find((p) => p.isPrimary) ?? ctx.priorities[0];
+  if (action.conflictingPriorities.includes(primary.id)) {
+    return {
+      score: -25,
+      band: 'conflict',
+      reason: `Undermines primary priority: ${primary.title}.`,
+      priorityId: primary.id,
+    };
+  }
+  if (action.alignedPriorities.includes(primary.id)) {
+    const urgencyBoost =
+      primary.urgency === 'critical'
+        ? 20
+        : primary.urgency === 'urgent'
+          ? 12
+          : primary.urgency === 'important'
+            ? 6
+            : 2;
+    return {
+      score: 15 + urgencyBoost,
+      band: 'strong',
+      reason: `Directly supports ${primary.title}.`,
+      priorityId: primary.id,
+    };
+  }
+  if (action.alignedPriorities.length > 0) {
+    return {
+      score: 8,
+      band: 'moderate',
+      reason: 'Supports a secondary national priority.',
+      priorityId: action.alignedPriorities[0],
+    };
+  }
+  return {
+    score: 0,
+    band: 'none',
+    reason: 'No strong link to current national priorities.',
+    priorityId: primary.id,
+  };
+}
+
+// --- src/engine/delayed-effects.ts ---
+
+let tradeOffSeq = 0;
+
+export function resetDelayedEffectSequence(forTests = 0): void {
+  tradeOffSeq = forTests;
+}
+
+function nextTradeOffId(): string {
+  tradeOffSeq += 1;
+  return `tradeoff_${tradeOffSeq}`;
+}
+
+export function scheduleDelayedTradeOffs(
+  state: StrategicGameplayState,
+  sourceActionId: string,
+  templates: Omit<DelayedTradeOff, 'id' | 'firesOnDay' | 'sourceActionId'>[],
+  delayDays: number,
+): StrategicGameplayState {
+  const scheduled: DelayedTradeOff[] = templates.map((t) => ({
+    ...t,
+    id: nextTradeOffId(),
+    sourceActionId,
+    firesOnDay: state.day + delayDays,
+  }));
+  return {
+    ...state,
+    pendingDelayed: [...state.pendingDelayed, ...scheduled].sort(
+      (a, b) => a.firesOnDay - b.firesOnDay,
+    ),
+  };
+}
+
+export function applyDomainEffects(
+  contracts: StrategicGameplayContracts,
+  bundle: DomainEffectBundle,
+): void {
+  if (bundle.economy) contracts.economy.applyPatch(bundle.economy);
+  if (bundle.government) contracts.government.applyPatch(bundle.government);
+  if (bundle.population) contracts.population.applyPatch(bundle.population);
+  if (bundle.tech) contracts.tech.applyPatch(bundle.tech);
+}
+
+export interface AdvanceDayResult {
+  state: StrategicGameplayState;
+  fired: DelayedTradeOff[];
+}
+
+/** Process due delayed trade-offs when the calendar advances. */
+export function advanceDayAndResolveDelayed(
+  state: StrategicGameplayState,
+  contracts: StrategicGameplayContracts,
+  toDay: number,
+): AdvanceDayResult {
+  const fired: DelayedTradeOff[] = [];
+  let pending = [...state.pendingDelayed];
+  let day = state.day;
+
+  while (day < toDay) {
+    day += 1;
+    const due = pending.filter((p) => p.firesOnDay <= day);
+    pending = pending.filter((p) => p.firesOnDay > day);
+    for (const tradeOff of due) {
+      applyDomainEffects(contracts, tradeOff.effects);
+      fired.push(tradeOff);
+      contracts.ui.pushToast({
+        id: tradeOff.id,
+        severity: 'warning',
+        title: 'Delayed trade-off',
+        body: tradeOff.label,
+        day,
+      });
+    }
+  }
+
+  return {
+    state: { ...state, day, pendingDelayed: pending },
+    fired,
+  };
+}
+
+// --- src/engine/strategic-gameplay-engine.ts ---
+
+export function createInitialStrategicState(day = 1): StrategicGameplayState {
+  return {
+    day,
+    pendingDelayed: [],
+    completedActionIds: [],
+    activeChoice: null,
+  };
+}
+
+export function beginMultiStageChoice(
+  state: StrategicGameplayState,
+  choice: MultiStageChoiceDefinition,
+): StrategicGameplayState {
+  return {
+    ...state,
+    activeChoice: { choiceId: choice.choiceId, stageId: choice.entryStageId },
+  };
+}
+
+export interface AdvanceChoiceResult {
+  state: StrategicGameplayState;
+  resolvedActionId?: string;
+  issues?: ExecuteActionResult['issues'];
+}
+
+export function advanceMultiStageChoice(
+  state: StrategicGameplayState,
+  choice: MultiStageChoiceDefinition,
+  optionId: string,
+  contracts: StrategicGameplayContracts,
+  budget: PlayerActionBudget,
+): AdvanceChoiceResult {
+  if (!state.activeChoice || state.activeChoice.choiceId !== choice.choiceId) {
+    return {
+      state,
+      issues: [
+        {
+          code: 'NO_ACTIVE_CHOICE',
+          message: 'No matching multi-stage choice in progress.',
+          requirement: { kind: 'min_cash', amount: 0 },
+        },
+      ],
+    };
+  }
+
+  const issues = validateChoiceOption(
+    choice,
+    state.activeChoice.stageId,
+    optionId,
+    contracts,
+    budget,
+  );
+  if (issues.length > 0) return { state, issues };
+
+  const stage = choice.stages.find((s) => s.stageId === state.activeChoice!.stageId)!;
+  const option = stage.options.find((o) => o.optionId === optionId)!;
+
+  if (option.nextStageId) {
+    return {
+      state: {
+        ...state,
+        activeChoice: { choiceId: choice.choiceId, stageId: option.nextStageId },
+      },
+    };
+  }
+
+  if (!option.resolvesActionId) {
+    return {
+      state: { ...state, activeChoice: null },
+      issues: [
+        {
+          code: 'DEAD_END',
+          message: 'Choice path does not resolve to an action.',
+          requirement: { kind: 'min_cash', amount: 0 },
+        },
+      ],
+    };
+  }
+
+  return {
+    state: { ...state, activeChoice: null },
+    resolvedActionId: option.resolvesActionId,
+  };
+}
+
+export function executeStrategicAction(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+  contracts: StrategicGameplayContracts,
+  budget: PlayerActionBudget,
+  priorityCtx: NationalPriorityRankingContext | null,
+  options?: { delayDays?: number },
+): ExecuteActionResult {
+  const issues = validateAction(action, contracts, budget);
+  if (issues.length > 0) return { ok: false, issues, state };
+
+  applyDomainEffects(contracts, action.immediateEffects);
+
+  const alignment = scoreNationalPriorityAlignment(action, priorityCtx);
+  if (alignment && alignment.band === 'strong') {
+    contracts.government.applyPatch({ approvalDelta: 1, ledgerNote: alignment.reason });
+  } else if (alignment && alignment.band === 'conflict') {
+    contracts.government.applyPatch({ approvalDelta: -2, ledgerNote: alignment.reason });
+  }
+
+  const delayDays = options?.delayDays ?? 3;
+  let nextState = scheduleDelayedTradeOffs(
+    state,
+    action.id,
+    action.delayedTradeOffs,
+    delayDays,
+  );
+  nextState = {
+    ...nextState,
+    completedActionIds: [...nextState.completedActionIds, action.id],
+  };
+
+  contracts.ui.pushToast({
+    id: `action_${action.id}_${state.day}`,
+    severity: 'success',
+    title: action.title,
+    body:
+      action.delayedTradeOffs.length > 0
+        ? `${action.title} committed — ${action.delayedTradeOffs.length} delayed trade-off(s) scheduled.`
+        : `${action.title} completed.`,
+    day: state.day,
+  });
+
+  contracts.ui.setActionHudSummary(
+    budget.actionsUsedThisTurn + action.apCost,
+    budget.actionsPerTurn,
+    nextState.pendingDelayed.length,
+  );
+
+  return {
+    ok: true,
+    state: nextState,
+    appliedActionId: action.id,
+    scheduledTradeOffs: nextState.pendingDelayed.filter(
+      (p) => p.sourceActionId === action.id,
+    ),
+  };
+}
+
+export function presentActiveChoiceStage(
+  choice: MultiStageChoiceDefinition,
+  state: StrategicGameplayState,
+  contracts: StrategicGameplayContracts,
+  budget: PlayerActionBudget,
+  priorityCtx: NationalPriorityRankingContext | null,
+  actionCatalog: Record<string, StrategicActionDefinition>,
+): void {
+  if (!state.activeChoice) return;
+  const stage = choice.stages.find((s) => s.stageId === state.activeChoice!.stageId);
+  if (!stage) return;
+
+  const linked = actionCatalog[choice.linkedActionId];
+  const alignment = linked ? scoreNationalPriorityAlignment(linked, priorityCtx) : null;
+  const preview =
+    linked?.delayedTradeOffs[0]?.warning ??
+    (linked?.delayedTradeOffs.length ? 'Downstream costs apply later.' : undefined);
+
+  const blocked = stage.options.every(
+    (o) =>
+      validateChoiceOption(choice, stage.stageId, o.optionId, contracts, budget).length > 0,
+  );
+
+  contracts.ui.presentChoice({
+    choiceId: choice.choiceId,
+    stageId: stage.stageId,
+    title: choice.title,
+    summary: stage.prompt,
+    optionLabels: stage.options.map((o) => o.label),
+    blockedReason: blocked ? 'No legal option at this stage.' : undefined,
+    nationalPriorityHint: alignment?.reason,
+    delayedTradeOffPreview: preview,
+  });
+}
+
+// --- src/catalog/strategic-action-catalog.ts ---
+
+export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition> = {
+  'sga_water_grid_upgrade': {
+    id: 'sga_water_grid_upgrade',
+    title: 'National Water Grid Upgrade',
+    category: 'investment',
+    apCost: 2,
+    cashCost: 50_000,
+    treasuryCost: 200_000,
+    minApproval: 45,
+    alignedPriorities: ['water_security', 'energy_resilience'],
+    conflictingPriorities: ['economic_diversification'],
+    tags: ['infrastructure', 'national_priority'],
+    immediateEffects: {
+      economy: {
+        cashDelta: -50_000,
+        treasuryDelta: -200_000,
+        ledgerNote: 'Up-front capital for water grid tranche.',
+      },
+      government: { approvalDelta: 3, directiveSlotsDelta: 1 },
+      population: { essentialAccessDelta: 4, publicStabilityDelta: 2 },
+      tech: { readinessDelta: { renewable_energy: 5 } },
+    },
+    delayedTradeOffs: [
+      {
+        label: 'Maintenance levy hits households',
+        warning: 'In 3 days: affordability stress rises while debt is serviced.',
+        effects: {
+          economy: { debtDelta: 75_000, netWorthMultiplier: 0.98 },
+          population: { affordabilityStressDelta: 6 },
+          government: { approvalDelta: -1 },
+        },
+      },
+    ],
+  },
+  'sga_supply_chain_buffer': {
+    id: 'sga_supply_chain_buffer',
+    title: 'Strategic Supply Chain Buffer',
+    category: 'trade_off',
+    apCost: 1,
+    cashCost: 25_000,
+    treasuryCost: 100_000,
+    minApproval: 40,
+    alignedPriorities: ['supply_chain_security', 'freight_modernization'],
+    conflictingPriorities: [],
+    tags: ['logistics', 'buffer'],
+    immediateEffects: {
+      economy: {
+        cashDelta: -25_000,
+        treasuryDelta: -100_000,
+        priceMultiplierFactor: 0.95,
+      },
+      population: { essentialAccessDelta: 2 },
+      tech: { momentumDelta: 3 },
+    },
+    delayedTradeOffs: [
+      {
+        label: 'Warehouse carrying costs',
+        warning: 'Storage fees reduce treasury reserve next week.',
+        effects: {
+          economy: { treasuryDelta: -40_000 },
+          government: { regulatoryBurdenDelta: 2 },
+        },
+      },
+    ],
+  },
+  'sga_tech_accelerator': {
+    id: 'sga_tech_accelerator',
+    title: 'Technology Competitiveness Accelerator',
+    category: 'research',
+    apCost: 2,
+    cashCost: 80_000,
+    treasuryCost: 50_000,
+    minApproval: 50,
+    alignedPriorities: ['technology_competitiveness', 'economic_diversification'],
+    conflictingPriorities: ['water_security'],
+    tags: ['innovation'],
+    immediateEffects: {
+      economy: { cashDelta: -80_000, treasuryDelta: -50_000 },
+      tech: {
+        researchDelta: 120,
+        readinessDelta: {
+          digital_infrastructure: 8,
+          advanced_manufacturing: 6,
+        },
+        momentumDelta: 10,
+      },
+      government: { approvalDelta: 2 },
+    },
+    delayedTradeOffs: [
+      {
+        label: 'Brain-drain pressure on essential services',
+        warning: 'Skilled migration toward tech hubs strains regional access.',
+        effects: {
+          population: {
+            migrationDelta: -3,
+            essentialAccessDelta: -2,
+            affordabilityStressDelta: 3,
+          },
+        },
+      },
+    ],
+  },
+};
+
+export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefinition> = {
+  'msc_water_commitment': {
+    choiceId: 'msc_water_commitment',
+    title: 'Commit to Water Security',
+    linkedActionId: 'sga_water_grid_upgrade',
+    entryStageId: 'stage_scope',
+    stages: [
+      {
+        stageId: 'stage_scope',
+        prompt: 'Choose the scope of the water grid intervention.',
+        options: [
+          {
+            optionId: 'scope_regional',
+            label: 'Regional tranche only',
+            description: 'Lower cost, slower security gains.',
+            nextStageId: 'stage_finance',
+            requirements: [{ kind: 'min_cash', amount: 30_000 }],
+          },
+          {
+            optionId: 'scope_national',
+            label: 'National backbone',
+            description: 'Full grid upgrade path.',
+            nextStageId: 'stage_finance',
+            requirements: [
+              { kind: 'min_cash', amount: 50_000 },
+              { kind: 'min_treasury', amount: 150_000 },
+            ],
+          },
+        ],
+      },
+      {
+        stageId: 'stage_finance',
+        prompt: 'Select financing — each path has different delayed costs.',
+        options: [
+          {
+            optionId: 'finance_bonds',
+            label: 'Issue recovery bonds',
+            description: 'Spread cost; higher delayed debt load.',
+            nextStageId: 'stage_confirm',
+            requirements: [{ kind: 'min_approval', rating: 45 }],
+          },
+          {
+            optionId: 'finance_treasury',
+            label: 'Direct treasury draw',
+            description: 'Immediate fiscal hit, cleaner long-term books.',
+            nextStageId: 'stage_confirm',
+            requirements: [{ kind: 'directive_slot_available' }],
+          },
+        ],
+      },
+      {
+        stageId: 'stage_confirm',
+        prompt: 'Confirm execution — maintenance levy will apply in 3 days.',
+        options: [
+          {
+            optionId: 'confirm_execute',
+            label: 'Execute upgrade',
+            description: 'Commit to consequential investment.',
+            nextStageId: null,
+            resolvesActionId: 'sga_water_grid_upgrade',
+            requirements: [{ kind: 'max_affordability_stress', max: 85 }],
+          },
+          {
+            optionId: 'confirm_abort',
+            label: 'Defer',
+            description: 'Exit without spending.',
+            nextStageId: null,
+          },
+        ],
+      },
+    ],
+  },
+};
+
+export function getStrategicAction(id: string): StrategicActionDefinition | undefined {
+  return STRATEGIC_ACTION_CATALOG[id];
+}
+
+export function listStrategicActions(): StrategicActionDefinition[] {
+  return Object.values(STRATEGIC_ACTION_CATALOG);
+}
+
+// --- src/adapters/memory-contracts.ts ---
+
+/**
+ * In-memory contract adapters for unit tests and assembly stubs.
+ * Agent 25 replaces these with bridges into canonical V9.4 state.
+ */
+
+
+export interface MemoryAdapterOptions {
+  economy?: Partial<EconomySnapshot>;
+  government?: Partial<GovernanceSnapshot>;
+  population?: Partial<PopulationSnapshot>;
+  tech?: Partial<TechSnapshot>;
+}
+
+const defaultTechReadiness = (): Record<TechTrackId, number> => ({
+  digital_infrastructure: 20,
+  renewable_energy: 15,
+  advanced_manufacturing: 10,
+  biotech: 5,
+  defence_dual_use: 8,
+});
+
+export function createMemoryStrategicContracts(
+  opts: MemoryAdapterOptions = {},
+): StrategicGameplayContracts & {
+  uiLog: { choices: StrategicChoicePresentation[]; toasts: StrategicActionToast[] };
+} {
+  let economy: EconomySnapshot = {
+    day: 1,
+    cashOnHand: 500_000,
+    treasuryReserve: 1_000_000,
+    debtOutstanding: 0,
+    inflationIndex: 1,
+    priceMultiplier: 1,
+    investmentLockout: false,
+    netWorthEstimate: 2_000_000,
+    ...opts.economy,
+  };
+
+  let government: GovernanceSnapshot = {
+    day: 1,
+    approvalRating: 55,
+    directiveSlotsUsed: 0,
+    directiveSlotCap: 3,
+    authorityMode: 'shared',
+    pendingReliefClaims: 0,
+    regulatoryBurden: 10,
+    ...opts.government,
+  };
+
+  let population: PopulationSnapshot = {
+    day: 1,
+    totalPopulation: 26_000_000,
+    migrationBalance: 0,
+    essentialAccessIndex: 70,
+    affordabilityStress: 35,
+    publicStability: 72,
+    ...opts.population,
+  };
+
+  let tech: TechSnapshot = {
+    day: 1,
+    researchPoints: 0,
+    unlockedTracks: ['digital_infrastructure'],
+    readinessByTrack: defaultTechReadiness(),
+    innovationMomentum: 10,
+    ...opts.tech,
+  };
+
+  const uiLog = { choices: [] as StrategicChoicePresentation[], toasts: [] as StrategicActionToast[] };
+  let hud = { used: 0, max: 3, pending: 0 };
+
+  const economyContract: EconomyContract = {
+    moduleId: 'agent-01-economy',
+    snapshot: () => economy,
+    applyPatch(patch: EconomyPatch) {
+      economy = {
+        ...economy,
+        cashOnHand: economy.cashOnHand + (patch.cashDelta ?? 0),
+        treasuryReserve: economy.treasuryReserve + (patch.treasuryDelta ?? 0),
+        debtOutstanding: economy.debtOutstanding + (patch.debtDelta ?? 0),
+        inflationIndex: economy.inflationIndex + (patch.inflationDelta ?? 0),
+        priceMultiplier: patch.priceMultiplierFactor
+          ? economy.priceMultiplier * patch.priceMultiplierFactor
+          : economy.priceMultiplier,
+        investmentLockout: patch.investmentLockout ?? economy.investmentLockout,
+        netWorthEstimate: patch.netWorthMultiplier
+          ? economy.netWorthEstimate * patch.netWorthMultiplier
+          : economy.netWorthEstimate,
+      };
+      return economy;
+    },
+    canAfford(cashCost, treasuryCost = 0) {
+      return (
+        economy.cashOnHand >= cashCost && economy.treasuryReserve >= treasuryCost
+      );
+    },
+  };
+
+  const governmentContract: GovernmentContract = {
+    moduleId: 'agent-01-government',
+    snapshot: () => government,
+    applyPatch(patch: GovernancePatch) {
+      government = {
+        ...government,
+        approvalRating: Math.max(
+          0,
+          Math.min(100, government.approvalRating + (patch.approvalDelta ?? 0)),
+        ),
+        directiveSlotsUsed:
+          government.directiveSlotsUsed + (patch.directiveSlotsDelta ?? 0),
+        regulatoryBurden: government.regulatoryBurden + (patch.regulatoryBurdenDelta ?? 0),
+        pendingReliefClaims:
+          government.pendingReliefClaims + (patch.reliefClaimsDelta ?? 0),
+        authorityMode: patch.authorityMode ?? government.authorityMode,
+      };
+      return government;
+    },
+    canIssueDirective() {
+      return government.directiveSlotsUsed < government.directiveSlotCap;
+    },
+  };
+
+  const populationContract: PopulationContract = {
+    moduleId: 'agent-01-population',
+    snapshot: () => population,
+    applyPatch(patch: PopulationPatch) {
+      population = {
+        ...population,
+        totalPopulation: population.totalPopulation + (patch.populationDelta ?? 0),
+        migrationBalance: population.migrationBalance + (patch.migrationDelta ?? 0),
+        essentialAccessIndex: Math.max(
+          0,
+          Math.min(100, population.essentialAccessIndex + (patch.essentialAccessDelta ?? 0)),
+        ),
+        affordabilityStress: Math.max(
+          0,
+          Math.min(100, population.affordabilityStress + (patch.affordabilityStressDelta ?? 0)),
+        ),
+        publicStability: Math.max(
+          0,
+          Math.min(100, population.publicStability + (patch.publicStabilityDelta ?? 0)),
+        ),
+      };
+      return population;
+    },
+    stressBand() {
+      if (population.affordabilityStress >= 80) return 'critical';
+      if (population.affordabilityStress >= 55) return 'strained';
+      return 'stable';
+    },
+  };
+
+  const techContract: TechContract = {
+    moduleId: 'agent-01-tech',
+    snapshot: () => tech,
+    applyPatch(patch: TechPatch) {
+      const readiness = { ...tech.readinessByTrack };
+      if (patch.readinessDelta) {
+        for (const [track, delta] of Object.entries(patch.readinessDelta)) {
+          const id = track as TechTrackId;
+          readiness[id] = Math.max(0, Math.min(100, (readiness[id] ?? 0) + (delta ?? 0)));
+        }
+      }
+      const unlocked = [...tech.unlockedTracks];
+      if (patch.unlockTrack && !unlocked.includes(patch.unlockTrack)) {
+        unlocked.push(patch.unlockTrack);
+      }
+      tech = {
+        ...tech,
+        researchPoints: tech.researchPoints + (patch.researchDelta ?? 0),
+        unlockedTracks: unlocked,
+        readinessByTrack: readiness,
+        innovationMomentum: tech.innovationMomentum + (patch.momentumDelta ?? 0),
+      };
+      return tech;
+    },
+    meetsPrerequisite(track, minReadiness) {
+      return (tech.readinessByTrack[track] ?? 0) >= minReadiness;
+    },
+  };
+
+  const uiContract: UiContract = {
+    moduleId: 'agent-01-ui',
+    presentChoice(model) {
+      uiLog.choices.push(model);
+    },
+    pushToast(toast) {
+      uiLog.toasts.push(toast);
+    },
+    setActionHudSummary(actionsUsed, actionsMax, pendingDelayed) {
+      hud = { used: actionsUsed, max: actionsMax, pending: pendingDelayed };
+    },
+  };
+
+  return {
+    economy: economyContract,
+    government: governmentContract,
+    population: populationContract,
+    tech: techContract,
+    ui: uiContract,
+    uiLog,
+  };
+}
+
+export const AGENT_01_MODULE_ID = 'operation-10m/agent-01-strategic-gameplay';
+
+export const AGENT_01_MODULE_VERSION = '1.0.0';
+
+
+
+export function runOp10mAgent01StrategicGameplaySelfTests(): {
+
+  passed: number;
+
+  failed: number;
+
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+
+} {
+
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+
+  results.push({
+
+    id: 'agent01_catalog',
+
+    name: 'strategic action catalog non-empty',
+
+    passed: listStrategicActions().length >= 3,
+
+  });
+
+  const contracts = createMemoryStrategicContracts();
+
+  const action = getStrategicAction('sga_supply_chain_buffer');
+
+  results.push({
+
+    id: 'agent01_validate',
+
+    name: 'default validate supply chain action',
+
+    passed:
+
+      !!action &&
+
+      validateAction(action, contracts, { actionsUsedThisTurn: 0, actionsPerTurn: 3 }).length === 0,
+
+  });
+
+  const failed = results.filter((r) => !r.passed).length;
+
+  return { passed: results.length - failed, failed, results };
+
+}
+// OP10M_MODULE_END agent-01-strategic-gameplay

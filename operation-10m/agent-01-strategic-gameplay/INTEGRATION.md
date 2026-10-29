@@ -67,7 +67,10 @@ From module root:
 npm install
 npm test
 npm run typecheck
+npm run bundle:chunk
 ```
+
+Produces `chunk.tsx` with `OP10M_MODULE_BEGIN agent-01-strategic-gameplay` markers for Agent 25 assembly (see repo `operation-10m/INTEGRATION.md` on `op10m/agent-25-integration`).
 
 ## Parent integration doc
 
