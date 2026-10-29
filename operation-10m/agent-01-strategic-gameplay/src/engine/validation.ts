@@ -1,0 +1,200 @@
+import type { StrategicGameplayContracts } from '../contracts/index.ts';
+import type {
+  NationalPriorityAlignment,
+  NationalPriorityRankingContext,
+} from '../types/national-priority.ts';
+import type {
+  MultiStageChoiceDefinition,
+  PlayerActionBudget,
+  StrategicActionDefinition,
+  StrategicValidationIssue,
+  StrategicValidationRequirement,
+} from '../types/strategic-action.ts';
+
+export function evaluateRequirements(
+  requirements: StrategicValidationRequirement[] | undefined,
+  contracts: StrategicGameplayContracts,
+  budget: PlayerActionBudget,
+  action?: Pick<
+    StrategicActionDefinition,
+    'apCost' | 'cashCost' | 'treasuryCost' | 'minApproval'
+  >,
+): StrategicValidationIssue[] {
+  const issues: StrategicValidationIssue[] = [];
+  const econ = contracts.economy.snapshot();
+  const gov = contracts.government.snapshot();
+  const pop = contracts.population.snapshot();
+  const tech = contracts.tech.snapshot();
+
+  if (action) {
+    if (budget.actionsUsedThisTurn + action.apCost > budget.actionsPerTurn) {
+      issues.push({
+        code: 'AP_EXHAUSTED',
+        message: 'Not enough action points remaining this turn.',
+        requirement: { kind: 'directive_slot_available' },
+      });
+    }
+    if (!contracts.economy.canAfford(action.cashCost, action.treasuryCost)) {
+      issues.push({
+        code: 'INSUFFICIENT_FUNDS',
+        message: 'Cash or treasury cannot cover this action.',
+        requirement: { kind: 'min_cash', amount: action.cashCost },
+      });
+    }
+    if (gov.approvalRating < action.minApproval) {
+      issues.push({
+        code: 'LOW_APPROVAL',
+        message: `Approval ${gov.approvalRating} below required ${action.minApproval}.`,
+        requirement: { kind: 'min_approval', rating: action.minApproval },
+      });
+    }
+  }
+
+  for (const req of requirements ?? []) {
+    switch (req.kind) {
+      case 'min_cash':
+        if (econ.cashOnHand < req.amount) {
+          issues.push({
+            code: 'MIN_CASH',
+            message: `Need at least $${req.amount} cash.`,
+            requirement: req,
+          });
+        }
+        break;
+      case 'min_treasury':
+        if (econ.treasuryReserve < req.amount) {
+          issues.push({
+            code: 'MIN_TREASURY',
+            message: `Treasury reserve below ${req.amount}.`,
+            requirement: req,
+          });
+        }
+        break;
+      case 'min_approval':
+        if (gov.approvalRating < req.rating) {
+          issues.push({
+            code: 'MIN_APPROVAL',
+            message: `Approval must be at least ${req.rating}.`,
+            requirement: req,
+          });
+        }
+        break;
+      case 'max_affordability_stress':
+        if (pop.affordabilityStress > req.max) {
+          issues.push({
+            code: 'POPULATION_STRESS',
+            message: 'Household affordability stress is too high for this path.',
+            requirement: req,
+          });
+        }
+        break;
+      case 'tech_readiness':
+        if (!contracts.tech.meetsPrerequisite(req.track, req.min)) {
+          issues.push({
+            code: 'TECH_NOT_READY',
+            message: `${req.track} readiness below ${req.min}.`,
+            requirement: req,
+          });
+        }
+        break;
+      case 'no_investment_lockout':
+        if (econ.investmentLockout) {
+          issues.push({
+            code: 'INVESTMENT_LOCKOUT',
+            message: 'Markets are in investment lockout.',
+            requirement: req,
+          });
+        }
+        break;
+      case 'directive_slot_available':
+        if (!contracts.government.canIssueDirective(0)) {
+          issues.push({
+            code: 'NO_DIRECTIVE_SLOT',
+            message: 'No governance directive capacity remaining.',
+            requirement: req,
+          });
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  return issues;
+}
+
+export function validateAction(
+  action: StrategicActionDefinition,
+  contracts: StrategicGameplayContracts,
+  budget: PlayerActionBudget,
+  extraRequirements: StrategicValidationRequirement[] = [],
+): StrategicValidationIssue[] {
+  return evaluateRequirements(extraRequirements, contracts, budget, action);
+}
+
+export function validateChoiceOption(
+  choice: MultiStageChoiceDefinition,
+  stageId: string,
+  optionId: string,
+  contracts: StrategicGameplayContracts,
+  budget: PlayerActionBudget,
+): StrategicValidationIssue[] {
+  const stage = choice.stages.find((s) => s.stageId === stageId);
+  const option = stage?.options.find((o) => o.optionId === optionId);
+  if (!stage || !option) {
+    return [
+      {
+        code: 'UNKNOWN_CHOICE',
+        message: 'Invalid choice stage or option.',
+        requirement: { kind: 'min_cash', amount: 0 },
+      },
+    ];
+  }
+  return evaluateRequirements(option.requirements, contracts, budget);
+}
+
+export function scoreNationalPriorityAlignment(
+  action: StrategicActionDefinition,
+  ctx: NationalPriorityRankingContext | null,
+): NationalPriorityAlignment | null {
+  if (!ctx || ctx.priorities.length === 0) return null;
+  const primary = ctx.priorities.find((p) => p.isPrimary) ?? ctx.priorities[0];
+  if (action.conflictingPriorities.includes(primary.id)) {
+    return {
+      score: -25,
+      band: 'conflict',
+      reason: `Undermines primary priority: ${primary.title}.`,
+      priorityId: primary.id,
+    };
+  }
+  if (action.alignedPriorities.includes(primary.id)) {
+    const urgencyBoost =
+      primary.urgency === 'critical'
+        ? 20
+        : primary.urgency === 'urgent'
+          ? 12
+          : primary.urgency === 'important'
+            ? 6
+            : 2;
+    return {
+      score: 15 + urgencyBoost,
+      band: 'strong',
+      reason: `Directly supports ${primary.title}.`,
+      priorityId: primary.id,
+    };
+  }
+  if (action.alignedPriorities.length > 0) {
+    return {
+      score: 8,
+      band: 'moderate',
+      reason: 'Supports a secondary national priority.',
+      priorityId: action.alignedPriorities[0],
+    };
+  }
+  return {
+    score: 0,
+    band: 'none',
+    reason: 'No strong link to current national priorities.',
+    priorityId: primary.id,
+  };
+}
