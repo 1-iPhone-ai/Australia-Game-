@@ -212,6 +212,9 @@ export interface NationalLaborDemographicsState {
   seniorWorkforceRetentionOutlook?: NationalSeniorWorkforceRetentionOutlook;
   regionalLaborAbsorptionBrief?: NationalRegionalLaborAbsorptionBrief;
   participationEquityGapBrief?: NationalParticipationEquityGapBrief;
+  credentialMobilityOutlook?: NationalCredentialMobilityOutlook;
+  householdParticipationCouplingBrief?: NationalHouseholdParticipationCouplingBrief;
+  laborRebalancingStressBrief?: NationalLaborRebalancingStressBrief;
 }
 
 export type MigrationShockKind =
@@ -521,6 +524,39 @@ export interface NationalParticipationEquityGapBrief {
   equityIndex: number;
   band: ParticipationEquityBand;
   inclusionEaseLift: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CredentialMobilityBand = 'blocked' | 'narrow' | 'fluid' | 'portable';
+
+export interface NationalCredentialMobilityOutlook {
+  turn: number;
+  mobilityIndex: number;
+  band: CredentialMobilityBand;
+  pathwayLift: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type HouseholdParticipationCouplingBand = 'decoupled' | 'strained' | 'aligned' | 'reinforcing';
+
+export interface NationalHouseholdParticipationCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: HouseholdParticipationCouplingBand;
+  budgetPressureDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type RebalancingStressBand = 'manageable' | 'elevated' | 'acute' | 'critical';
+
+export interface NationalLaborRebalancingStressBrief {
+  turn: number;
+  stressIndex: number;
+  band: RebalancingStressBand;
+  highPriorityMoves: number;
   summary: string;
   stewardNote: string;
 }

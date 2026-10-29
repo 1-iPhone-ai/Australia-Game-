@@ -216,6 +216,9 @@ export interface NationalLaborDemographicsState {
   seniorWorkforceRetentionOutlook?: NationalSeniorWorkforceRetentionOutlook;
   regionalLaborAbsorptionBrief?: NationalRegionalLaborAbsorptionBrief;
   participationEquityGapBrief?: NationalParticipationEquityGapBrief;
+  credentialMobilityOutlook?: NationalCredentialMobilityOutlook;
+  householdParticipationCouplingBrief?: NationalHouseholdParticipationCouplingBrief;
+  laborRebalancingStressBrief?: NationalLaborRebalancingStressBrief;
 }
 
 export type MigrationShockKind =
@@ -525,6 +528,39 @@ export interface NationalParticipationEquityGapBrief {
   equityIndex: number;
   band: ParticipationEquityBand;
   inclusionEaseLift: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CredentialMobilityBand = 'blocked' | 'narrow' | 'fluid' | 'portable';
+
+export interface NationalCredentialMobilityOutlook {
+  turn: number;
+  mobilityIndex: number;
+  band: CredentialMobilityBand;
+  pathwayLift: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type HouseholdParticipationCouplingBand = 'decoupled' | 'strained' | 'aligned' | 'reinforcing';
+
+export interface NationalHouseholdParticipationCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: HouseholdParticipationCouplingBand;
+  budgetPressureDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type RebalancingStressBand = 'manageable' | 'elevated' | 'acute' | 'critical';
+
+export interface NationalLaborRebalancingStressBrief {
+  turn: number;
+  stressIndex: number;
+  band: RebalancingStressBand;
+  highPriorityMoves: number;
   summary: string;
   stewardNote: string;
 }
@@ -1622,7 +1658,10 @@ export type LaborGiQueryTopic =
   | 'hybrid_participation'
   | 'senior_retention'
   | 'labor_absorption'
-  | 'participation_equity';
+  | 'participation_equity'
+  | 'credential_mobility'
+  | 'household_participation_coupling'
+  | 'rebalancing_stress';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -1638,6 +1677,9 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(senior retention|aged workforce retention|elder workforce)/.test(q)) return 'senior_retention';
   if (/\b(labor absorption|regional absorption|absorption headroom)/.test(q)) return 'labor_absorption';
   if (/\b(participation equity|equity gap|inclusion equity)/.test(q)) return 'participation_equity';
+  if (/\b(credential mobility|portable credential|skills portability)/.test(q)) return 'credential_mobility';
+  if (/\b(household participation coupling|budget participation link)/.test(q)) return 'household_participation_coupling';
+  if (/\b(rebalancing stress|corridor stress|interregional stress)/.test(q)) return 'rebalancing_stress';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1867,6 +1909,30 @@ export function answerLaborDemographicsQuestion(
         fact: `Equity band ${state.participationEquityGapBrief?.band ?? 'unknown'}; inclusion ease ${Math.round((state.participationEquityGapBrief?.inclusionEaseLift ?? 0) * 100)}%.`,
         inference: state.participationEquityGapBrief?.stewardNote || state.outlook,
         projection: 'Equity blends inclusion, flexibility, and underemployment slack — not literal demographic gaps.'
+      };
+    case 'credential_mobility':
+      return {
+        topic,
+        headline: state.credentialMobilityOutlook?.summary || 'Credential mobility unavailable.',
+        fact: `Credential band ${state.credentialMobilityOutlook?.band ?? 'unknown'}; pathway lift ${Math.round((state.credentialMobilityOutlook?.pathwayLift ?? 0) * 100)}%.`,
+        inference: state.credentialMobilityOutlook?.stewardNote || state.summary,
+        projection: 'Credential mobility blends pathways, mismatch, and talent flow — bounded indices only.'
+      };
+    case 'household_participation_coupling':
+      return {
+        topic,
+        headline: state.householdParticipationCouplingBrief?.summary || 'Household-participation coupling unavailable.',
+        fact: `Coupling band ${state.householdParticipationCouplingBrief?.band ?? 'unknown'}; budget drag ${Math.round(state.householdParticipationCouplingBrief?.budgetPressureDrag ?? 0)}.`,
+        inference: state.householdParticipationCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling blends budget pressure, participation, equity, and reengagement — not literal income data.'
+      };
+    case 'rebalancing_stress':
+      return {
+        topic,
+        headline: state.laborRebalancingStressBrief?.summary || 'Rebalancing stress unavailable.',
+        fact: `Stress band ${state.laborRebalancingStressBrief?.band ?? 'unknown'}; high-priority moves ${state.laborRebalancingStressBrief?.highPriorityMoves ?? 0}.`,
+        inference: state.laborRebalancingStressBrief?.stewardNote || state.outlook,
+        projection: 'Stress blends corridor moves, absorption, and tightness — not literal relocation counts.'
       };
     default:
       return {
@@ -2277,6 +2343,21 @@ export function buildStewardLaborBrief(
     state.participationEquityGapBrief?.band === 'uneven'
   ) {
     hints.push(state.participationEquityGapBrief.stewardNote);
+  }
+  if (state.credentialMobilityOutlook?.band === 'blocked' || state.credentialMobilityOutlook?.band === 'narrow') {
+    hints.push(state.credentialMobilityOutlook.stewardNote);
+  }
+  if (
+    state.householdParticipationCouplingBrief?.band === 'decoupled' ||
+    state.householdParticipationCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.householdParticipationCouplingBrief.stewardNote);
+  }
+  if (
+    state.laborRebalancingStressBrief?.band === 'critical' ||
+    state.laborRebalancingStressBrief?.band === 'acute'
+  ) {
+    hints.push(state.laborRebalancingStressBrief.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -3271,6 +3352,121 @@ export function flexibilityEaseForRegion(
   );
   if (!matches.length) return 0;
   return matches.reduce((a, l) => a + l.flexibilityStrength, 0) / matches.length;
+}
+
+
+// --- source: catalog/workforce-reengagement-levers.ts ---
+
+export type WorkforceReengagementLeverKind =
+  | 'returnship_band'
+  | 'absence_reentry'
+  | 'part_time_ramp'
+  | 'sector_switch_coach'
+  | 'community_hire_lane';
+
+export interface WorkforceReengagementLever {
+  id: string;
+  kind: WorkforceReengagementLeverKind;
+  targetIndustry: StrategicIndustryKind;
+  hostRegions: readonly string[];
+  reengagementStrength: number;
+  label: string;
+  narrative: string;
+}
+
+export const WORKFORCE_REENGAGEMENT_LEVERS: WorkforceReengagementLever[] = [
+  {
+    id: 'reeng_manufacturing_vic',
+    kind: 'returnship_band',
+    targetIndustry: 'manufacturing',
+    hostRegions: ['VIC', 'SA'],
+    reengagementStrength: 0.71,
+    label: 'Manufacturing returnship band',
+    narrative: 'Returnship indices widen participation after absence without micro hiring sim.'
+  },
+  {
+    id: 'reeng_health_nsw',
+    kind: 'part_time_ramp',
+    targetIndustry: 'research',
+    hostRegions: ['NSW', 'ACT'],
+    reengagementStrength: 0.68,
+    label: 'Capital health part-time ramp',
+    narrative: 'Part-time ramps ease equity gaps in capital research corridors.'
+  },
+  {
+    id: 'reeng_agri_tas',
+    kind: 'community_hire_lane',
+    targetIndustry: 'agriculture',
+    hostRegions: ['TAS', 'SA', 'VIC'],
+    reengagementStrength: 0.6,
+    label: 'Regional agri community hire',
+    narrative: 'Community hire lanes absorb seasonal slack in regional agri hubs.'
+  },
+  {
+    id: 'reeng_tourism_qld',
+    kind: 'absence_reentry',
+    targetIndustry: 'tourism',
+    hostRegions: ['QLD', 'NSW'],
+    reengagementStrength: 0.64,
+    label: 'Coastal tourism reentry pack',
+    narrative: 'Reentry packs stabilize service participation after cyclical absence.'
+  },
+  {
+    id: 'reeng_tech_nsw_vic',
+    kind: 'sector_switch_coach',
+    targetIndustry: 'technology',
+    hostRegions: ['NSW', 'VIC'],
+    reengagementStrength: 0.73,
+    label: 'Tech sector-switch coaching',
+    narrative: 'Switch coaching aligns credential mobility with upskilling pathways.'
+  },
+  {
+    id: 'reeng_mining_wa',
+    kind: 'returnship_band',
+    targetIndustry: 'mining',
+    hostRegions: ['WA', 'QLD', 'NT'],
+    reengagementStrength: 0.67,
+    label: 'Frontier mining returnship',
+    narrative: 'Returnship bands offset participation drag in frontier resource regions.'
+  },
+  {
+    id: 'reeng_energy_nt',
+    kind: 'part_time_ramp',
+    targetIndustry: 'energy',
+    hostRegions: ['NT', 'QLD'],
+    reengagementStrength: 0.62,
+    label: 'Energy corridor part-time ramp',
+    narrative: 'Ramp packs ease rebalancing stress along energy frontier corridors.'
+  },
+  {
+    id: 'reeng_trade_sa',
+    kind: 'community_hire_lane',
+    targetIndustry: 'trade',
+    hostRegions: ['SA', 'WA'],
+    reengagementStrength: 0.59,
+    label: 'Trade logistics community lane',
+    narrative: 'Community lanes smooth household-participation coupling in logistics hubs.'
+  }
+];
+
+export function lookupWorkforceReengagementLever(id: string): WorkforceReengagementLever | undefined {
+  return WORKFORCE_REENGAGEMENT_LEVERS.find(l => l.id === id);
+}
+
+export function reengagementLeversForIndustry(industry: StrategicIndustryKind): WorkforceReengagementLever[] {
+  return WORKFORCE_REENGAGEMENT_LEVERS.filter(l => l.targetIndustry === industry);
+}
+
+export function reengagementPullForRegion(
+  regionId: string,
+  dominantIndustry: StrategicIndustryKind | null | undefined
+): number {
+  if (!dominantIndustry) return 0;
+  const matches = WORKFORCE_REENGAGEMENT_LEVERS.filter(
+    l => l.targetIndustry === dominantIndustry && l.hostRegions.includes(regionId)
+  );
+  if (!matches.length) return 0;
+  return matches.reduce((a, l) => a + l.reengagementStrength, 0) / matches.length;
 }
 
 
@@ -4351,6 +4547,219 @@ export function computeNationalParticipationEquityGapBrief(
 }
 
 
+// --- source: credential-mobility-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type CredentialMobilityBand,
+  type NationalCredentialMobilityOutlook,
+  type NationalLaborDemographicsState,
+  type NationalSkillMismatchIndex,
+  type NationalTalentMobilityOutlook
+} from './types';
+
+function credentialMobilityBand(index: number): CredentialMobilityBand {
+  if (index <= 34) return 'blocked';
+  if (index <= 48) return 'narrow';
+  if (index <= 62) return 'fluid';
+  return 'portable';
+}
+
+export function computeNationalCredentialMobilityOutlook(
+  state: NationalLaborDemographicsState,
+  mismatch: NationalSkillMismatchIndex | null | undefined,
+  mobility: NationalTalentMobilityOutlook | null | undefined
+): NationalCredentialMobilityOutlook {
+  if (!state.enabled || !mismatch || !mobility) {
+    return {
+      turn: state.turn,
+      mobilityIndex: 50,
+      band: 'narrow',
+      pathwayLift: 0,
+      summary: 'Credential mobility idle — mismatch or talent mobility unavailable.',
+      stewardNote: 'Compute skill mismatch and talent mobility before credential guidance.'
+    };
+  }
+
+  let pathwayLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    pathwayLift += skilledPathwayPullForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  pathwayLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const mismatchDrag =
+    mismatch.nationalBand === 'critical_mismatch'
+      ? 18
+      : mismatch.nationalBand === 'elevated_gap'
+        ? 12
+        : mismatch.nationalBand === 'moderate_gap'
+          ? 6
+          : 0;
+  const mobilityLift =
+    mobility.band === 'fluid' || mobility.band === 'hyper_mobile'
+      ? mobility.mobilityIndex * 0.28
+      : mobility.mobilityIndex * 0.18;
+  const linkageLift = state.employmentLinkageScore * 0.15;
+
+  const mobilityIndex = v1014laborClamp(30 + pathwayLift * 24 + mobilityLift + linkageLift - mismatchDrag);
+  const band = credentialMobilityBand(mobilityIndex);
+
+  const stewardNote =
+    band === 'blocked' || band === 'narrow'
+      ? 'Narrow credential mobility — sequence upskilling and reengagement levers before corridor moves.'
+      : band === 'portable'
+        ? 'Portable credentials — avoid hyper-mobility that drains anchor regions.'
+        : 'Fluid credential mobility — align pathway lifts with capacity gaps.';
+
+  return {
+    turn: state.turn,
+    mobilityIndex,
+    band,
+    pathwayLift,
+    summary: `Credential mobility ${band} (index ${Math.round(mobilityIndex)}); pathway lift ${Math.round(pathwayLift * 100)}%.`,
+    stewardNote
+  };
+}
+
+
+// --- source: household-participation-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type HouseholdParticipationCouplingBand,
+  type NationalHouseholdParticipationCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalParticipationEquityGapBrief,
+  type NationalParticipationPressureBrief
+} from './types';
+
+function couplingBand(index: number): HouseholdParticipationCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'aligned';
+  return 'reinforcing';
+}
+
+export function computeNationalHouseholdParticipationCouplingBrief(
+  state: NationalLaborDemographicsState,
+  participation: NationalParticipationPressureBrief | null | undefined,
+  equity: NationalParticipationEquityGapBrief | null | undefined
+): NationalHouseholdParticipationCouplingBrief {
+  if (!state.enabled || !participation || !equity) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      budgetPressureDrag: 0,
+      summary: 'Household-participation coupling idle — participation or equity unavailable.',
+      stewardNote: 'Compute participation and equity before household coupling guidance.'
+    };
+  }
+
+  let budgetPressure = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    budgetPressure += state.regions[regionId]?.householdBudgetPressureScore ?? 50;
+  });
+  budgetPressure /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+  const budgetPressureDrag = v1014laborClamp((budgetPressure - 45) * 0.55);
+
+  let reengagementLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    reengagementLift += reengagementPullForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  reengagementLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const participationLift = participation.participationIndex * 0.32;
+  const equityLift = equity.equityIndex * 0.22;
+  const equityDrag =
+    equity.band === 'wide_gap' ? 14 : equity.band === 'uneven' ? 8 : 0;
+
+  const couplingIndex = v1014laborClamp(
+    28 + participationLift + equityLift + reengagementLift * 20 - budgetPressureDrag - equityDrag
+  );
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained household-participation coupling — ease budget pressure before participation pushes.'
+      : band === 'reinforcing'
+        ? 'Reinforcing coupling — maintain reengagement levers while scaling inclusion packs.'
+        : 'Aligned coupling — monitor equity gaps in severe affordability regions.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    budgetPressureDrag,
+    summary: `Household-participation coupling ${band} (index ${Math.round(couplingIndex)}); budget drag ${Math.round(budgetPressureDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: labor-rebalancing-stress-brief.ts ---
+  InterregionalLaborRebalancingPlan,
+  NationalLaborDemographicsState,
+  NationalLaborMarketTightnessBrief,
+  NationalLaborRebalancingStressBrief,
+  NationalRegionalLaborAbsorptionBrief,
+  RebalancingStressBand
+} from './types';
+
+function stressBand(index: number): RebalancingStressBand {
+  if (index <= 32) return 'manageable';
+  if (index <= 48) return 'elevated';
+  if (index <= 64) return 'acute';
+  return 'critical';
+}
+
+export function computeNationalLaborRebalancingStressBrief(
+  state: NationalLaborDemographicsState,
+  plan: InterregionalLaborRebalancingPlan | null | undefined,
+  absorption: NationalRegionalLaborAbsorptionBrief | null | undefined,
+  tightness: NationalLaborMarketTightnessBrief | null | undefined
+): NationalLaborRebalancingStressBrief {
+  if (!state.enabled || !plan || !absorption || !tightness) {
+    return {
+      turn: state.turn,
+      stressIndex: 50,
+      band: 'elevated',
+      highPriorityMoves: 0,
+      summary: 'Rebalancing stress idle — plan, absorption, or tightness unavailable.',
+      stewardNote: 'Compute rebalancing plan and absorption before stress guidance.'
+    };
+  }
+
+  const highPriorityMoves = plan.moves.filter(m => m.priority === 'high').length;
+  const moveDrag = highPriorityMoves * 6 + plan.moves.length * 1.5;
+  const absorptionDrag =
+    absorption.band === 'saturated'
+      ? 16
+      : absorption.band === 'constrained'
+        ? 10
+        : absorption.band === 'absorbing'
+          ? 4
+          : 0;
+  const tightnessDrag =
+    tightness.band === 'critical_shortage' ? 14 : tightness.band === 'tight' ? 8 : 0;
+
+  const stressIndex = v1014laborClamp(26 + moveDrag + absorptionDrag + tightnessDrag);
+  const band = stressBand(stressIndex);
+
+  const stewardNote =
+    band === 'critical' || band === 'acute'
+      ? 'Acute rebalancing stress — pause stacked corridor moves until absorption headroom returns.'
+      : band === 'manageable'
+        ? 'Manageable stress — align high-priority moves with upskilling before wage surges.'
+        : 'Elevated stress — sequence retention levers before interregional auto commits.';
+
+  return {
+    turn: state.turn,
+    stressIndex,
+    band,
+    highPriorityMoves,
+    summary: `Labor rebalancing stress ${band} (index ${Math.round(stressIndex)}); ${highPriorityMoves} high-priority move(s).`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -4914,6 +5323,22 @@ export function computeNationalLaborDemographics(
     state,
     state.underemploymentPressureBrief
   );
+  state.credentialMobilityOutlook = computeNationalCredentialMobilityOutlook(
+    state,
+    state.skillMismatchIndex,
+    state.talentMobilityOutlook
+  );
+  state.householdParticipationCouplingBrief = computeNationalHouseholdParticipationCouplingBrief(
+    state,
+    state.participationPressureBrief,
+    state.participationEquityGapBrief
+  );
+  state.laborRebalancingStressBrief = computeNationalLaborRebalancingStressBrief(
+    state,
+    state.interregionalRebalancingPlan,
+    state.regionalLaborAbsorptionBrief,
+    state.laborMarketTightnessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -5002,6 +5427,27 @@ export function computeNationalLaborDemographics(
   ) {
     state.evidence.push(state.participationEquityGapBrief.summary.slice(0, 120));
   }
+  if (
+    (state.credentialMobilityOutlook?.band === 'blocked' ||
+      state.credentialMobilityOutlook?.band === 'narrow') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.credentialMobilityOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.householdParticipationCouplingBrief?.band === 'decoupled' ||
+      state.householdParticipationCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.householdParticipationCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.laborRebalancingStressBrief?.band === 'critical' ||
+      state.laborRebalancingStressBrief?.band === 'acute') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.laborRebalancingStressBrief.summary.slice(0, 120));
+  }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
   }
@@ -5045,6 +5491,11 @@ export function computeNationalLaborDemographics(
   flexibilityLeversForIndustry,
   lookupWorkforceFlexibilityLever
 } from './catalog/workforce-flexibility-levers';
+  WORKFORCE_REENGAGEMENT_LEVERS,
+  lookupWorkforceReengagementLever,
+  reengagementLeversForIndustry,
+  reengagementPullForRegion
+} from './catalog/workforce-reengagement-levers';
   STRATEGIC_INDUSTRIES,
   V1014_LABOR_CORE_REGIONS,
   V1014_LABOR_INDUSTRY_LABOR_WEIGHT,
@@ -5536,6 +5987,52 @@ export function runV1014LaborDemographicsSelfTests(): {
     computeNationalParticipationEquityGapBrief(rHhBad.state, rHhBad.state.underemploymentPressureBrief).stewardNote.length >
       8,
     'equity steward note'
+  );
+
+  check('R1001', WORKFORCE_REENGAGEMENT_LEVERS.length >= 8, 'reengagement lever catalog');
+  check('R1002', Boolean(lookupWorkforceReengagementLever('reeng_tech_nsw_vic')?.narrative), 'reengagement lever lookup');
+  check('R1003', reengagementLeversForIndustry('technology').length >= 1, 'technology reengagement levers');
+  check('R1004', reengagementPullForRegion('NSW', 'technology') > 0, 'regional reengagement pull');
+  check('R1005', Boolean(r1.state.credentialMobilityOutlook?.band), 'credential mobility on state');
+  check('R1006', (r1.state.credentialMobilityOutlook?.pathwayLift ?? 0) >= 0, 'pathway lift');
+  check('R1007', Boolean(r1.state.householdParticipationCouplingBrief?.band), 'household coupling on state');
+  check('R1008', Boolean(r1.state.laborRebalancingStressBrief?.band), 'rebalancing stress on state');
+  check('R1009', detectLaborDemographicsQuery('credential mobility portable') === 'credential_mobility', 'GI credential detect');
+  check(
+    'R1010',
+    detectLaborDemographicsQuery('household participation coupling') === 'household_participation_coupling',
+    'GI coupling detect'
+  );
+  check('R1011', detectLaborDemographicsQuery('rebalancing stress corridor') === 'rebalancing_stress', 'GI stress detect');
+  check('R1012', answerLaborDemographicsQuestion(r1.state, 'credential_mobility').headline.length > 5, 'GI credential answer');
+  const credentialOnly = computeNationalCredentialMobilityOutlook(
+    r1.state,
+    r1.state.skillMismatchIndex,
+    r1.state.talentMobilityOutlook
+  );
+  check('R1013', credentialOnly.summary.length > 10, 'credential mobility standalone summary');
+  const couplingOnly = computeNationalHouseholdParticipationCouplingBrief(
+    r1.state,
+    r1.state.participationPressureBrief,
+    r1.state.participationEquityGapBrief
+  );
+  check('R1014', couplingOnly.band.length > 3, 'coupling band string');
+  const stressOnly = computeNationalLaborRebalancingStressBrief(
+    r1.state,
+    r1.state.interregionalRebalancingPlan,
+    r1.state.regionalLaborAbsorptionBrief,
+    r1.state.laborMarketTightnessBrief
+  );
+  check('R1015', stressOnly.highPriorityMoves >= 0, 'stress high priority moves');
+  check(
+    'R1016',
+    computeNationalLaborRebalancingStressBrief(
+      rHhBad.state,
+      rHhBad.state.interregionalRebalancingPlan,
+      rHhBad.state.regionalLaborAbsorptionBrief,
+      rHhBad.state.laborMarketTightnessBrief
+    ).stewardNote.length > 8,
+    'rebalancing stress steward note'
   );
 
   for (let i = 19; i <= 50; i++) {

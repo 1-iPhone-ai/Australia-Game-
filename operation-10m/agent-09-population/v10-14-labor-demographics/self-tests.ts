@@ -55,6 +55,15 @@ import {
 import { computeNationalSeniorWorkforceRetentionOutlook } from './senior-workforce-retention-outlook';
 import { computeNationalRegionalLaborAbsorptionBrief } from './regional-labor-absorption-brief';
 import { computeNationalParticipationEquityGapBrief } from './participation-equity-gap-brief';
+import {
+  WORKFORCE_REENGAGEMENT_LEVERS,
+  lookupWorkforceReengagementLever,
+  reengagementLeversForIndustry,
+  reengagementPullForRegion
+} from './catalog/workforce-reengagement-levers';
+import { computeNationalCredentialMobilityOutlook } from './credential-mobility-outlook';
+import { computeNationalHouseholdParticipationCouplingBrief } from './household-participation-coupling-brief';
+import { computeNationalLaborRebalancingStressBrief } from './labor-rebalancing-stress-brief';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -556,6 +565,52 @@ export function runV1014LaborDemographicsSelfTests(): {
     computeNationalParticipationEquityGapBrief(rHhBad.state, rHhBad.state.underemploymentPressureBrief).stewardNote.length >
       8,
     'equity steward note'
+  );
+
+  check('R1001', WORKFORCE_REENGAGEMENT_LEVERS.length >= 8, 'reengagement lever catalog');
+  check('R1002', Boolean(lookupWorkforceReengagementLever('reeng_tech_nsw_vic')?.narrative), 'reengagement lever lookup');
+  check('R1003', reengagementLeversForIndustry('technology').length >= 1, 'technology reengagement levers');
+  check('R1004', reengagementPullForRegion('NSW', 'technology') > 0, 'regional reengagement pull');
+  check('R1005', Boolean(r1.state.credentialMobilityOutlook?.band), 'credential mobility on state');
+  check('R1006', (r1.state.credentialMobilityOutlook?.pathwayLift ?? 0) >= 0, 'pathway lift');
+  check('R1007', Boolean(r1.state.householdParticipationCouplingBrief?.band), 'household coupling on state');
+  check('R1008', Boolean(r1.state.laborRebalancingStressBrief?.band), 'rebalancing stress on state');
+  check('R1009', detectLaborDemographicsQuery('credential mobility portable') === 'credential_mobility', 'GI credential detect');
+  check(
+    'R1010',
+    detectLaborDemographicsQuery('household participation coupling') === 'household_participation_coupling',
+    'GI coupling detect'
+  );
+  check('R1011', detectLaborDemographicsQuery('rebalancing stress corridor') === 'rebalancing_stress', 'GI stress detect');
+  check('R1012', answerLaborDemographicsQuestion(r1.state, 'credential_mobility').headline.length > 5, 'GI credential answer');
+  const credentialOnly = computeNationalCredentialMobilityOutlook(
+    r1.state,
+    r1.state.skillMismatchIndex,
+    r1.state.talentMobilityOutlook
+  );
+  check('R1013', credentialOnly.summary.length > 10, 'credential mobility standalone summary');
+  const couplingOnly = computeNationalHouseholdParticipationCouplingBrief(
+    r1.state,
+    r1.state.participationPressureBrief,
+    r1.state.participationEquityGapBrief
+  );
+  check('R1014', couplingOnly.band.length > 3, 'coupling band string');
+  const stressOnly = computeNationalLaborRebalancingStressBrief(
+    r1.state,
+    r1.state.interregionalRebalancingPlan,
+    r1.state.regionalLaborAbsorptionBrief,
+    r1.state.laborMarketTightnessBrief
+  );
+  check('R1015', stressOnly.highPriorityMoves >= 0, 'stress high priority moves');
+  check(
+    'R1016',
+    computeNationalLaborRebalancingStressBrief(
+      rHhBad.state,
+      rHhBad.state.interregionalRebalancingPlan,
+      rHhBad.state.regionalLaborAbsorptionBrief,
+      rHhBad.state.laborMarketTightnessBrief
+    ).stewardNote.length > 8,
+    'rebalancing stress steward note'
   );
 
   for (let i = 19; i <= 50; i++) {

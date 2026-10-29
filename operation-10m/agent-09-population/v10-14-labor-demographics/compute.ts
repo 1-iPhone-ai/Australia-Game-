@@ -53,6 +53,9 @@ import { computeNationalHybridParticipationFrictionOutlook } from './hybrid-part
 import { computeNationalSeniorWorkforceRetentionOutlook } from './senior-workforce-retention-outlook';
 import { computeNationalRegionalLaborAbsorptionBrief } from './regional-labor-absorption-brief';
 import { computeNationalParticipationEquityGapBrief } from './participation-equity-gap-brief';
+import { computeNationalCredentialMobilityOutlook } from './credential-mobility-outlook';
+import { computeNationalHouseholdParticipationCouplingBrief } from './household-participation-coupling-brief';
+import { computeNationalLaborRebalancingStressBrief } from './labor-rebalancing-stress-brief';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -445,6 +448,22 @@ export function computeNationalLaborDemographics(
     state,
     state.underemploymentPressureBrief
   );
+  state.credentialMobilityOutlook = computeNationalCredentialMobilityOutlook(
+    state,
+    state.skillMismatchIndex,
+    state.talentMobilityOutlook
+  );
+  state.householdParticipationCouplingBrief = computeNationalHouseholdParticipationCouplingBrief(
+    state,
+    state.participationPressureBrief,
+    state.participationEquityGapBrief
+  );
+  state.laborRebalancingStressBrief = computeNationalLaborRebalancingStressBrief(
+    state,
+    state.interregionalRebalancingPlan,
+    state.regionalLaborAbsorptionBrief,
+    state.laborMarketTightnessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -532,6 +551,27 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.participationEquityGapBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.credentialMobilityOutlook?.band === 'blocked' ||
+      state.credentialMobilityOutlook?.band === 'narrow') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.credentialMobilityOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.householdParticipationCouplingBrief?.band === 'decoupled' ||
+      state.householdParticipationCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.householdParticipationCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.laborRebalancingStressBrief?.band === 'critical' ||
+      state.laborRebalancingStressBrief?.band === 'acute') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.laborRebalancingStressBrief.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);

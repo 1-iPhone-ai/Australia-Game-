@@ -30,7 +30,10 @@ export type LaborGiQueryTopic =
   | 'hybrid_participation'
   | 'senior_retention'
   | 'labor_absorption'
-  | 'participation_equity';
+  | 'participation_equity'
+  | 'credential_mobility'
+  | 'household_participation_coupling'
+  | 'rebalancing_stress';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -46,6 +49,9 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(senior retention|aged workforce retention|elder workforce)/.test(q)) return 'senior_retention';
   if (/\b(labor absorption|regional absorption|absorption headroom)/.test(q)) return 'labor_absorption';
   if (/\b(participation equity|equity gap|inclusion equity)/.test(q)) return 'participation_equity';
+  if (/\b(credential mobility|portable credential|skills portability)/.test(q)) return 'credential_mobility';
+  if (/\b(household participation coupling|budget participation link)/.test(q)) return 'household_participation_coupling';
+  if (/\b(rebalancing stress|corridor stress|interregional stress)/.test(q)) return 'rebalancing_stress';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -275,6 +281,30 @@ export function answerLaborDemographicsQuestion(
         fact: `Equity band ${state.participationEquityGapBrief?.band ?? 'unknown'}; inclusion ease ${Math.round((state.participationEquityGapBrief?.inclusionEaseLift ?? 0) * 100)}%.`,
         inference: state.participationEquityGapBrief?.stewardNote || state.outlook,
         projection: 'Equity blends inclusion, flexibility, and underemployment slack — not literal demographic gaps.'
+      };
+    case 'credential_mobility':
+      return {
+        topic,
+        headline: state.credentialMobilityOutlook?.summary || 'Credential mobility unavailable.',
+        fact: `Credential band ${state.credentialMobilityOutlook?.band ?? 'unknown'}; pathway lift ${Math.round((state.credentialMobilityOutlook?.pathwayLift ?? 0) * 100)}%.`,
+        inference: state.credentialMobilityOutlook?.stewardNote || state.summary,
+        projection: 'Credential mobility blends pathways, mismatch, and talent flow — bounded indices only.'
+      };
+    case 'household_participation_coupling':
+      return {
+        topic,
+        headline: state.householdParticipationCouplingBrief?.summary || 'Household-participation coupling unavailable.',
+        fact: `Coupling band ${state.householdParticipationCouplingBrief?.band ?? 'unknown'}; budget drag ${Math.round(state.householdParticipationCouplingBrief?.budgetPressureDrag ?? 0)}.`,
+        inference: state.householdParticipationCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling blends budget pressure, participation, equity, and reengagement — not literal income data.'
+      };
+    case 'rebalancing_stress':
+      return {
+        topic,
+        headline: state.laborRebalancingStressBrief?.summary || 'Rebalancing stress unavailable.',
+        fact: `Stress band ${state.laborRebalancingStressBrief?.band ?? 'unknown'}; high-priority moves ${state.laborRebalancingStressBrief?.highPriorityMoves ?? 0}.`,
+        inference: state.laborRebalancingStressBrief?.stewardNote || state.outlook,
+        projection: 'Stress blends corridor moves, absorption, and tightness — not literal relocation counts.'
       };
     default:
       return {
