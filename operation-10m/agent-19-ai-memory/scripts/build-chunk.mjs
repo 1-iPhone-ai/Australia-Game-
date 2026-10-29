@@ -272,7 +272,12 @@ const FILES = [
   'session-projection-export-bundle.ts',
   'lattice-projection-bridge.ts',
   'match-explainability-resonance-gate.ts',
-  'projection-recovery-orchestrator.ts',
+  'projection-recovery-orchestrator.ts',  'match-explainability-synthesis-bundle.ts',
+  'session-synthesis-export-bundle.ts',
+  'resonance-synthesis-bridge.ts',
+  'match-explainability-harmony-gate.ts',
+  'synthesis-recovery-orchestrator.ts',
+
 
   'crest-recovery-orchestrator.ts',
   'influence-audit.ts',

@@ -14474,6 +14474,289 @@ export function projectionRecoveryOrchestratorWithinCap(report: ProjectionRecove
 }
 
 
+// --- source: match-explainability-synthesis-bundle.ts ---
+  auditMatchExplainabilityLatticeGate,
+  matchExplainabilityLatticeAllowed,
+} from './match-explainability-lattice-gate.ts';
+  buildMatchExplainabilitySynthesisBundle,
+  matchExplainabilitySynthesisReady,
+} from './match-explainability-projection-bundle.ts';
+  buildSessionSynthesisExportBundle,
+  sessionSynthesisExportShipped,
+} from './session-projection-export-bundle.ts';
+
+export const AGENT19_CONVERGENCE_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilitySynthesisBundle {
+  synthesisReady: boolean;
+  synthesisAllowed: boolean;
+  projectionReady: boolean;
+  projectionExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type SynthesisParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Synthesis bundle: synthesis gate and projection export must both be green. */
+export function buildMatchExplainabilitySynthesisBundle(
+  packs: TurnExplainabilityPack[],
+  params: SynthesisParams,
+): MatchExplainabilitySynthesisBundle {
+  const synthesis = auditMatchExplainabilityLatticeGate(packs, params);
+  const projection = buildMatchExplainabilitySynthesisBundle(packs, params);
+  const projectionExport = buildSessionSynthesisExportBundle(packs, params);
+  const synthesisAllowed = matchExplainabilityLatticeAllowed(synthesis);
+  const projectionReady = matchExplainabilitySynthesisReady(projection);
+  const projectionExportShipped = sessionSynthesisExportShipped(projectionExport);
+  const synthesisReady = synthesisAllowed && projectionReady && projectionExportShipped;
+  const narrativeLines = [
+    `Match explainability synthesis bundle: ${synthesisReady ? 'READY' : 'PENDING'} (gate ${synthesisAllowed ? 'ok' : 'fail'}, projection ${projectionReady ? 'ok' : 'fail'}).`,
+    ...synthesis.narrativeLines.slice(0, 2),
+    ...projection.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_CONVERGENCE_NARRATIVE_CAP);
+  return {
+    synthesisReady,
+    synthesisAllowed,
+    projectionReady,
+    projectionExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilitySynthesisReady(bundle: MatchExplainabilitySynthesisBundle): boolean {
+  return bundle.synthesisReady;
+}
+
+
+// --- source: session-synthesis-export-bundle.ts ---
+  buildSessionNexusExportBundle,
+  type SessionNexusExportBundle,
+} from './session-nexus-export-bundle.ts';
+  buildMatchExplainabilitySynthesisBundle,
+  matchExplainabilitySynthesisReady,
+} from './match-explainability-synthesis-bundle.ts';
+
+export interface SessionSynthesisExportBundle extends SessionNexusExportBundle {
+  synthesisReady: boolean;
+  synthesisSchema: string;
+}
+
+/** Synthesis export wraps nexus export when synthesis bundle is ready. */
+export function buildSessionSynthesisExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionSynthesisExportBundle {
+  const base = buildSessionNexusExportBundle(packs, params);
+  const synthesis = buildMatchExplainabilitySynthesisBundle(packs, params);
+  const synthesisReady = matchExplainabilitySynthesisReady(synthesis);
+  const exports = synthesisReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    synthesisReady,
+    synthesisSchema: 'agent19.synthesis.v1',
+    releaseReady: synthesisReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Synthesis export: ${synthesisReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionSynthesisExportShipped(bundle: SessionSynthesisExportBundle): boolean {
+  return bundle.synthesisReady && bundle.exports.length > 0 && bundle.synthesisSchema === 'agent19.synthesis.v1';
+}
+
+
+// --- source: resonance-synthesis-bridge.ts ---
+  buildMatchExplainabilitySynthesisBundle,
+  matchExplainabilitySynthesisReady,
+} from './match-explainability-synthesis-bundle.ts';
+  buildMatchExplainabilityProjectionBundle,
+  matchExplainabilityProjectionReady,
+} from './match-explainability-synthesis-bundle.ts';
+
+export interface ResonanceSynthesisBridgeReport {
+  aligned: boolean;
+  synthesisReady: boolean;
+  projectionReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Projection-ready should match projection-ready when synthesis export stack passes. */
+export function auditResonanceSynthesisBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): ResonanceSynthesisBridgeReport {
+  const synthesis = buildMatchExplainabilitySynthesisBundle(packs, params);
+  const projection = buildMatchExplainabilityProjectionBundle(packs, params);
+  const synthesisReady = matchExplainabilitySynthesisReady(synthesis);
+  const projectionReady = matchExplainabilityProjectionReady(projection);
+  const aligned = synthesisReady === projectionReady;
+  const narrativeLines = [
+    `Resonance/synthesis bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (synthesis ${synthesisReady ? 'ok' : 'fail'}, projection ${projectionReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, synthesisReady, projectionReady, narrativeLines };
+}
+
+export function resonanceSynthesisBridgeHealthy(report: ResonanceSynthesisBridgeReport): boolean {
+  return report.synthesisReady && report.projectionReady && report.aligned;
+}
+
+
+// --- source: match-explainability-harmony-gate.ts ---
+  buildMatchExplainabilitySynthesisBundle,
+  matchExplainabilitySynthesisReady,
+} from './match-explainability-synthesis-bundle.ts';
+  buildSessionSynthesisExportBundle,
+  sessionSynthesisExportShipped,
+} from './session-synthesis-export-bundle.ts';
+
+export interface MatchExplainabilityHarmonyGateReport {
+  harmonyAllowed: boolean;
+  synthesisReady: boolean;
+  synthesisExportShipped: boolean;
+  nexusSynthesisHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Harmony gate: synthesis bundle + synthesis export + nexus/synthesis bridge. */
+export function auditMatchExplainabilityHarmonyGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityHarmonyGateReport {
+  const synthesis = buildMatchExplainabilitySynthesisBundle(packs, params);
+  const synthesisExport = buildSessionSynthesisExportBundle(packs, params);
+  const bridge = auditHarmonySynthesisBridge(packs, params);
+  const synthesisReady = matchExplainabilitySynthesisReady(synthesis);
+  const synthesisExportShipped = sessionSynthesisExportShipped(synthesisExport);
+  const nexusSynthesisHealthy = harmonySynthesisBridgeHealthy(bridge);
+  const harmonyAllowed = synthesisReady && synthesisExportShipped && nexusSynthesisHealthy;
+  const narrativeLines = [
+    `Match explainability harmony: ${harmonyAllowed ? 'ALLOWED' : 'DENIED'} (synthesis ${synthesisReady ? 'ok' : 'fail'}, export ${synthesisExportShipped ? 'ok' : 'fail'}).`,
+    ...synthesis.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    harmonyAllowed,
+    synthesisReady,
+    synthesisExportShipped,
+    nexusSynthesisHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityHarmonyAllowed(report: MatchExplainabilityHarmonyGateReport): boolean {
+  return report.harmonyAllowed;
+}
+
+
+// --- source: synthesis-recovery-orchestrator.ts ---
+  auditMatchExplainabilityHarmonyGate,
+  matchExplainabilityHarmonyAllowed,
+} from './match-explainability-harmony-gate.ts';
+
+export const AGENT19_SYNTHESIS_RECOVERY_CAP = 10;
+
+export interface SynthesisRecoveryOrchestratorReport {
+  synthesisBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when synthesis gate blocks harmony rollout. */
+export function buildSynthesisRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): SynthesisRecoveryOrchestratorReport {
+  const synthesis = auditMatchExplainabilityHarmonyGate(packs, params);
+  const synthesisBlocked = !matchExplainabilityHarmonyAllowed(synthesis);
+  const steps: string[] = [];
+  if (synthesisBlocked) {
+    if (!synthesis.resonanceReady) {
+      steps.push('Restore resonance bundle: vertex and resonance export must pass.');
+    }
+    if (!synthesis.resonanceExportShipped) {
+      steps.push('Emit session resonance export before synthesis clearance.');
+    }
+    if (!synthesis.vertexResonanceHealthy) {
+      steps.push('Reconcile vertex/resonance bridge before synthesis.');
+    }
+    steps.push(...buildSynthesisRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const resonance = auditMatchExplainabilityResonanceGate(packs, params);
+    if (!resonance.resonanceReady) {
+      steps.push('Re-run resonance readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Synthesis gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_SYNTHESIS_RECOVERY_CAP);
+  return {
+    synthesisBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Synthesis recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function synthesisRecoveryOrchestratorWithinCap(report: SynthesisRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_SYNTHESIS_RECOVERY_CAP;
+}
+
+
 // --- source: crest-recovery-orchestrator.ts ---
   auditMatchExplainabilityCrestGate,
   matchExplainabilityCrestAllowed,

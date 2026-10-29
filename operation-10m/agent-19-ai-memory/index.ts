@@ -258,6 +258,12 @@ export * from './session-projection-export-bundle.ts';
 export * from './lattice-projection-bridge.ts';
 export * from './match-explainability-resonance-gate.ts';
 export * from './projection-recovery-orchestrator.ts';
+export * from './match-explainability-synthesis-bundle.ts';
+export * from './session-synthesis-export-bundle.ts';
+export * from './resonance-synthesis-bridge.ts';
+export * from './match-explainability-harmony-gate.ts';
+export * from './synthesis-recovery-orchestrator.ts';
+
 
 export * from './crest-recovery-orchestrator.ts';
 export * from './influence-audit.ts';
