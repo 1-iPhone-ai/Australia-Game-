@@ -429,6 +429,16 @@ import {
   createEmptyBilateralAdmittedForwardArcSustainGateSnapshot,
   bilateralAdmittedForwardArcSustainGateExportScale,
 } from './bilateral-admitted-forward-arc-sustain-gate.ts';
+import {
+  computeSustainedAdmittedForwardArcContinuitySnapshot,
+  createEmptySustainedAdmittedForwardArcContinuitySnapshot,
+  sustainedAdmittedForwardArcContinuityExportScale,
+} from './sustained-admitted-forward-arc-continuity.ts';
+import {
+  computeBilateralSustainedForwardArcHandoffGateSnapshot,
+  createEmptyBilateralSustainedForwardArcHandoffGateSnapshot,
+  bilateralSustainedForwardArcHandoffGateExportScale,
+} from './bilateral-sustained-forward-arc-handoff-gate.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -2887,6 +2897,64 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
       bilateralAdmittedForwardArcSustainGateExportScale(sustained) >=
         bilateralAdmittedForwardArcSustainGateExportScale(lost),
       'expected admitted forward arc sustain scale lift',
+    );
+  });
+
+  ok('sustained admitted forward arc continuity improves when sustain gate is sustained', () => {
+    const sustain = {
+      ...createEmptyBilateralAdmittedForwardArcSustainGateSnapshot(),
+      score: 0.95,
+      band: 'sustained' as const,
+    };
+    const continuity = {
+      ...createEmptyEngagedArcForwardAdmissionContinuitySnapshot(),
+      score: 0.94,
+      band: 'stable' as const,
+    };
+    const anchored = computeSustainedAdmittedForwardArcContinuitySnapshot({
+      bilateralAdmittedForwardArcSustainGate: sustain,
+      engagedArcForwardAdmissionContinuity: continuity,
+      persisted: { ...createEmptyGTELPersisted(), sustainedAdmittedForwardArcContinuitySmoothing: 0.99 },
+    }).snapshot;
+    const severed = computeSustainedAdmittedForwardArcContinuitySnapshot({
+      bilateralAdmittedForwardArcSustainGate: { ...sustain, score: 0.12, band: 'lost' },
+      engagedArcForwardAdmissionContinuity: { ...continuity, score: 0.1, band: 'broken' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(anchored.score > severed.score, 'expected sustained arc continuity when gate sustained');
+    gtelAssert(
+      sustainedAdmittedForwardArcContinuityExportScale(anchored) >=
+        sustainedAdmittedForwardArcContinuityExportScale(severed),
+      'expected sustained arc continuity scale lift',
+    );
+  });
+
+  ok('bilateral sustained forward arc handoff gate improves when continuity is anchored', () => {
+    const arcContinuity = {
+      ...createEmptySustainedAdmittedForwardArcContinuitySnapshot(),
+      score: 0.96,
+      band: 'anchored' as const,
+    };
+    const sustain = {
+      ...createEmptyBilateralAdmittedForwardArcSustainGateSnapshot(),
+      score: 0.93,
+      band: 'sustained' as const,
+    };
+    const cleared = computeBilateralSustainedForwardArcHandoffGateSnapshot({
+      sustainedAdmittedForwardArcContinuity: arcContinuity,
+      bilateralAdmittedForwardArcSustainGate: sustain,
+      persisted: { ...createEmptyGTELPersisted(), bilateralSustainedForwardArcHandoffGateSmoothing: 0.99 },
+    }).snapshot;
+    const blocked = computeBilateralSustainedForwardArcHandoffGateSnapshot({
+      sustainedAdmittedForwardArcContinuity: { ...arcContinuity, score: 0.11, band: 'severed' },
+      bilateralAdmittedForwardArcSustainGate: { ...sustain, score: 0.09, band: 'lost' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(cleared.score > blocked.score, 'expected handoff gate when continuity anchored');
+    gtelAssert(
+      bilateralSustainedForwardArcHandoffGateExportScale(cleared) >=
+        bilateralSustainedForwardArcHandoffGateExportScale(blocked),
+      'expected sustained forward arc handoff scale lift',
     );
   });
 

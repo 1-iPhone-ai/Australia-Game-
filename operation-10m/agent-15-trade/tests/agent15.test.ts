@@ -2176,3 +2176,53 @@ test('round 47: blocked admission gate weakens continuity vs admitted baseline',
       blocked.state.engagedArcForwardAdmissionContinuity.score - 0.14,
   );
 });
+
+test('round 48: sustained arc continuity and forward arc handoff gate on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.bilateralAdmittedForwardArcSustainGateSmoothing = 0.75;
+  persisted.sustainedAdmittedForwardArcContinuitySmoothing = 0.73;
+  persisted.bilateralSustainedForwardArcHandoffGateSmoothing = 0.71;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 113,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 148 } } },
+    persisted,
+  });
+  assert.ok(r.state.sustainedAdmittedForwardArcContinuity);
+  assert.ok(
+    ['anchored', 'holding', 'slipping', 'severed'].includes(r.state.sustainedAdmittedForwardArcContinuity.band),
+  );
+  assert.ok(r.state.bilateralSustainedForwardArcHandoffGate);
+  assert.ok(
+    ['cleared', 'staging', 'queued', 'blocked'].includes(r.state.bilateralSustainedForwardArcHandoffGate.band),
+  );
+  assert.ok(r.persisted.sustainedAdmittedForwardArcContinuitySmoothing != null);
+  assert.ok(r.persisted.bilateralSustainedForwardArcHandoffGateSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Sustained admitted forward arc continuity/i.test(n)));
+  assert.ok(notes.some(n => /Bilateral sustained forward arc handoff gate/i.test(n)));
+});
+
+test('round 48: lost sustain gate weakens continuity vs sustained baseline', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.bilateralAdmittedForwardArcSustainGateSmoothing = 0.98;
+  persisted.engagedArcForwardAdmissionContinuitySmoothing = 0.96;
+  const sustained = advanceGlobalTradeEconomyTurn({
+    turn: 114,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 128 } } },
+    persisted: { ...persisted },
+  });
+  persisted.bilateralAdmittedForwardArcSustainGateSmoothing = 0.24;
+  persisted.engagedArcForwardAdmissionContinuitySmoothing = 0.22;
+  const lost = advanceGlobalTradeEconomyTurn({
+    turn: 114,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 278 } } },
+    persisted: { ...persisted },
+  });
+  assert.ok(
+    sustained.state.sustainedAdmittedForwardArcContinuity.score >=
+      lost.state.sustainedAdmittedForwardArcContinuity.score - 0.14,
+  );
+});
