@@ -48,6 +48,12 @@ const FILES = [
   'medium-term-outlook/types.ts',
   'medium-term-outlook/compute.ts',
   'consolidated-fiscal/compute.ts',
+  'fiscal-rules/types.ts',
+  'fiscal-rules/compute.ts',
+  'sovereign-issuance/types.ts',
+  'sovereign-issuance/compute.ts',
+  'program-performance/types.ts',
+  'program-performance/compute.ts',
   'reconciliation/reconcile.ts',
   'fiscal-outcomes/react/FiscalOutcomesInspector.tsx',
   'fiscal-outcomes/self-tests.ts',
@@ -59,7 +65,10 @@ const FILES = [
   'federal-state/self-tests.ts',
   'tax-expenditure/self-tests.ts',
   'medium-term-outlook/self-tests.ts',
-  'consolidated-fiscal/self-tests.ts'
+  'consolidated-fiscal/self-tests.ts',
+  'fiscal-rules/self-tests.ts',
+  'sovereign-issuance/self-tests.ts',
+  'program-performance/self-tests.ts'
 ];
 
 function stripModulePreamble(source) {

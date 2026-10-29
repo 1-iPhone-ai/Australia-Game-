@@ -4591,6 +4591,423 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
 }
 
 
+// --- source: fiscal-rules/types.ts ---
+
+export const FISCAL_RULES_SCHEMA = 'op10m-agent07-fiscal-rules-v1';
+
+export type FiscalRuleId =
+  | 'structural_balance_floor'
+  | 'spending_growth_anchor'
+  | 'debt_service_ceiling'
+  | 'contingency_reserve_min'
+  | 'tax_to_capacity_cap';
+
+export interface FiscalRuleDefinition {
+  id: FiscalRuleId;
+  label: string;
+  description: string;
+  warnOnly: boolean;
+  /** Threshold for pass (interpretation varies by rule). */
+  threshold: number;
+}
+
+export interface FiscalRuleAssessment {
+  ruleId: FiscalRuleId;
+  label: string;
+  compliant: boolean;
+  severity: 'info' | 'caution' | 'major';
+  observed: number;
+  threshold: number;
+  detail: string;
+}
+
+export interface FiscalRulesFrameworkReport {
+  schemaVersion: string;
+  turn: number;
+  assessments: FiscalRuleAssessment[];
+  allCompliant: boolean;
+  breachCount: number;
+  narrative: string;
+}
+
+export interface FiscalRulesInputs {
+  turn: number;
+  v1012: V1012FiscalSnapshot;
+  envelopeContingencyPoints: number;
+  forwardSpendingGrowth: number;
+}
+
+
+// --- source: fiscal-rules/compute.ts ---
+
+export const FISCAL_RULES_CATALOG: FiscalRuleDefinition[] = [
+  {
+    id: 'structural_balance_floor',
+    label: 'Structural balance floor',
+    description: 'Fiscal headroom should not remain deeply negative for sustained periods.',
+    warnOnly: true,
+    threshold: -6
+  },
+  {
+    id: 'spending_growth_anchor',
+    label: 'Spending growth anchor',
+    description: 'Forward spending growth should not exceed revenue capacity growth plus 1pt.',
+    warnOnly: true,
+    threshold: 2.5
+  },
+  {
+    id: 'debt_service_ceiling',
+    label: 'Debt service ceiling',
+    description: 'Soft guard on normalized debt service load.',
+    warnOnly: true,
+    threshold: 18
+  },
+  {
+    id: 'contingency_reserve_min',
+    label: 'Contingency reserve minimum',
+    description: 'Contingency envelope should retain minimum flex for shocks.',
+    warnOnly: true,
+    threshold: 3
+  },
+  {
+    id: 'tax_to_capacity_cap',
+    label: 'Tax-to-capacity cap',
+    description: 'Effective revenue pressure should not imply capacity above 92 without review.',
+    warnOnly: true,
+    threshold: 92
+  }
+];
+
+export function assessFiscalRulesFramework(inputs: FiscalRulesInputs): FiscalRulesFrameworkReport {
+  const { v1012, envelopeContingencyPoints, forwardSpendingGrowth } = inputs;
+  const assessments = FISCAL_RULES_CATALOG.map(rule => {
+    let observed = 0;
+    let compliant = true;
+    let detail = '';
+
+    switch (rule.id) {
+      case 'structural_balance_floor':
+        observed = v1012.fiscalHeadroom;
+        compliant = observed >= rule.threshold;
+        detail = `Headroom ${observed} vs floor ${rule.threshold}.`;
+        break;
+      case 'spending_growth_anchor':
+        observed = forwardSpendingGrowth;
+        compliant = observed <= rule.threshold;
+        detail = `Forward spending growth ${observed} vs anchor ${rule.threshold}.`;
+        break;
+      case 'debt_service_ceiling':
+        observed = v1012.debtServiceLoad;
+        compliant = !v1012.debtEnabled || observed <= rule.threshold;
+        detail = `Debt service ${observed} vs ceiling ${rule.threshold}.`;
+        break;
+      case 'contingency_reserve_min':
+        observed = envelopeContingencyPoints;
+        compliant = observed >= rule.threshold;
+        detail = `Contingency flex ${observed} vs minimum ${rule.threshold}.`;
+        break;
+      case 'tax_to_capacity_cap':
+        observed = v1012.revenueCapacity;
+        compliant = observed <= rule.threshold || v1012.revenuePolicy === 'revenue_focused';
+        detail = `Revenue capacity ${observed} vs cap ${rule.threshold}.`;
+        break;
+    }
+
+    const severity: FiscalRulesFrameworkReport['assessments'][0]['severity'] = compliant
+      ? 'info'
+      : rule.id === 'debt_service_ceiling' || rule.id === 'structural_balance_floor'
+      ? 'major'
+      : 'caution';
+
+    return {
+      ruleId: rule.id,
+      label: rule.label,
+      compliant,
+      severity,
+      observed,
+      threshold: rule.threshold,
+      detail
+    };
+  });
+
+  const breachCount = assessments.filter(a => !a.compliant).length;
+  const allCompliant = breachCount === 0;
+  const narrative = allCompliant
+    ? 'Fiscal rules framework: all soft guards satisfied (warn-only).'
+    : `${breachCount} rule(s) flagged — sequencing and transparency recommended, not automatic blocking.`;
+
+  return {
+    schemaVersion: FISCAL_RULES_SCHEMA,
+    turn: inputs.turn,
+    assessments,
+    allCompliant,
+    breachCount,
+    narrative
+  };
+}
+
+
+// --- source: sovereign-issuance/types.ts ---
+export const SOVEREIGN_ISSUANCE_SCHEMA = 'op10m-agent07-sovereign-issuance-v1';
+
+export type IssuanceTenorBucket = 'short' | 'medium' | 'long' | 'index_linked';
+
+export interface IssuanceProgramLine {
+  id: string;
+  tenor: IssuanceTenorBucket;
+  scheduledTurn: number;
+  targetVolumePoints: number;
+  minimumBidToCover: number;
+  actualBidToCover: number | null;
+  issuedVolumePoints: number;
+  deferred: boolean;
+  explanation: string;
+}
+
+export interface SovereignIssuanceCalendar {
+  schemaVersion: string;
+  turn: number;
+  lines: IssuanceProgramLine[];
+  totalScheduled: number;
+  totalIssued: number;
+  weightedAverageTenorYears: number;
+  liquidityShortfall: boolean;
+  warnings: string[];
+}
+
+
+// --- source: sovereign-issuance/compute.ts ---
+
+const TENOR_YEARS: Record<IssuanceProgramLine['tenor'], number> = {
+  short: 2,
+  medium: 7,
+  long: 15,
+  index_linked: 10
+};
+
+export function defaultIssuanceProgram(baseTurn: number): Omit<IssuanceProgramLine, 'actualBidToCover' | 'issuedVolumePoints' | 'deferred' | 'explanation'>[] {
+  return [
+    { id: 'iss_tbill', tenor: 'short', scheduledTurn: baseTurn, targetVolumePoints: 6, minimumBidToCover: 2.2 },
+    { id: 'iss_nom_7y', tenor: 'medium', scheduledTurn: baseTurn + 1, targetVolumePoints: 10, minimumBidToCover: 2.5 },
+    { id: 'iss_nom_15y', tenor: 'long', scheduledTurn: baseTurn + 1, targetVolumePoints: 14, minimumBidToCover: 2.3 },
+    { id: 'iss_link_10y', tenor: 'index_linked', scheduledTurn: baseTurn + 2, targetVolumePoints: 5, minimumBidToCover: 2.0 }
+  ];
+}
+
+export function executeIssuanceCalendar(turn: number, v1012: V1012FiscalSnapshot): SovereignIssuanceCalendar {
+  const program = defaultIssuanceProgram(turn);
+  const warnings: string[] = [];
+  let liquidityShortfall = false;
+
+  const lines: IssuanceProgramLine[] = program.map(row => {
+    if (!v1012.debtEnabled) {
+      return {
+        ...row,
+        actualBidToCover: null,
+        issuedVolumePoints: 0,
+        deferred: true,
+        explanation: 'Debt program disabled — auction deferred.'
+      };
+    }
+    if (row.scheduledTurn > turn) {
+      return {
+        ...row,
+        actualBidToCover: null,
+        issuedVolumePoints: 0,
+        deferred: true,
+        explanation: `Scheduled turn ${row.scheduledTurn} not reached.`
+      };
+    }
+
+    const marketStress = v1012.pressure === 'critical' ? 0.75 : v1012.pressure === 'strained' ? 0.88 : 1;
+    const actualBidToCover = Math.round((row.minimumBidToCover * marketStress + 0.4) * 10) / 10;
+    const covered = actualBidToCover >= row.minimumBidToCover;
+    const issuedVolumePoints = covered
+      ? row.targetVolumePoints
+      : Math.round(row.targetVolumePoints * (actualBidToCover / row.minimumBidToCover) * 10) / 10;
+
+    if (!covered) {
+      liquidityShortfall = true;
+      warnings.push(`${row.id}: bid-to-cover ${actualBidToCover} below minimum ${row.minimumBidToCover}.`);
+    }
+    if (v1012.fiscalHeadroom < -8 && row.tenor === 'long') {
+      warnings.push(`${row.id}: long issuance under negative headroom — tenor mix skew risk.`);
+    }
+
+    return {
+      ...row,
+      actualBidToCover,
+      issuedVolumePoints,
+      deferred: false,
+      explanation: covered ? 'Auction cleared at or above minimum coverage.' : 'Partial issuance due to weak coverage.'
+    };
+  });
+
+  const issued = lines.filter(l => !l.deferred);
+  const totalScheduled = lines.reduce((s, l) => s + l.targetVolumePoints, 0);
+  const totalIssued = lines.reduce((s, l) => s + l.issuedVolumePoints, 0);
+  const weightedAverageTenorYears =
+    totalIssued > 0
+      ? Math.round(
+          (issued.reduce((s, l) => s + TENOR_YEARS[l.tenor] * l.issuedVolumePoints, 0) / totalIssued) * 10
+        ) / 10
+      : 0;
+
+  return {
+    schemaVersion: SOVEREIGN_ISSUANCE_SCHEMA,
+    turn,
+    lines,
+    totalScheduled,
+    totalIssued,
+    weightedAverageTenorYears,
+    liquidityShortfall,
+    warnings
+  };
+}
+
+
+// --- source: program-performance/types.ts ---
+
+export const PROGRAM_PERFORMANCE_SCHEMA = 'op10m-agent07-program-performance-v1';
+
+export interface ProgramPerformanceTarget {
+  appropriationLineId: string;
+  category: BudgetEnvelopeCategory;
+  title: string;
+  deliveryKpiTarget: number;
+  costEfficiencyTarget: number;
+}
+
+export interface ProgramPerformanceScore {
+  appropriationLineId: string;
+  deliveryScore: number;
+  costEfficiencyScore: number;
+  compositeScore: number;
+  band: 'leading' | 'on_track' | 'at_risk' | 'failing';
+  fiscalFeedbackPoints: number;
+  explanation: string;
+}
+
+export interface ProgramPerformanceReview {
+  schemaVersion: string;
+  turn: number;
+  scores: ProgramPerformanceScore[];
+  aggregateFeedbackPoints: number;
+  programsAtRisk: number;
+  rebalanceRecommendations: string[];
+}
+
+
+// --- source: program-performance/compute.ts ---
+
+export const PROGRAM_PERFORMANCE_TARGETS: ProgramPerformanceTarget[] = [
+  {
+    appropriationLineId: 'ic_transport_corridor',
+    category: 'infrastructure_capital',
+    title: 'Transport corridor capital',
+    deliveryKpiTarget: 72,
+    costEfficiencyTarget: 68
+  },
+  {
+    appropriationLineId: 'cs_health_admin',
+    category: 'core_services',
+    title: 'Health administration',
+    deliveryKpiTarget: 70,
+    costEfficiencyTarget: 75
+  },
+  {
+    appropriationLineId: 'ri_research_council',
+    category: 'research_innovation',
+    title: 'Research councils',
+    deliveryKpiTarget: 65,
+    costEfficiencyTarget: 70
+  },
+  {
+    appropriationLineId: 'rr_disaster_recovery',
+    category: 'resilience_recovery',
+    title: 'Disaster recovery',
+    deliveryKpiTarget: 60,
+    costEfficiencyTarget: 62
+  },
+  {
+    appropriationLineId: 'rd_regional_growth',
+    category: 'regional_development',
+    title: 'Regional growth packages',
+    deliveryKpiTarget: 68,
+    costEfficiencyTarget: 66
+  },
+  {
+    appropriationLineId: 'mb_road_network',
+    category: 'maintenance_backlog',
+    title: 'Road network maintenance',
+    deliveryKpiTarget: 74,
+    costEfficiencyTarget: 71
+  }
+];
+
+function bandFromComposite(score: number): ProgramPerformanceScore['band'] {
+  if (score >= 80) return 'leading';
+  if (score >= 65) return 'on_track';
+  if (score >= 50) return 'at_risk';
+  return 'failing';
+}
+
+function simulateScores(target: ProgramPerformanceTarget, v1012: V1012FiscalSnapshot, turn: number): ProgramPerformanceScore {
+  const pressureDrag = v1012.pressure === 'critical' ? 12 : v1012.pressure === 'strained' ? 6 : 0;
+  const maintenanceBoost = target.category === 'maintenance_backlog' ? v1012.maintenanceLoad * 0.3 : 0;
+  const deliveryScore = Math.max(
+    0,
+    Math.min(100, Math.round(target.deliveryKpiTarget + maintenanceBoost - pressureDrag + ((turn % 5) - 2)))
+  );
+  const costEfficiencyScore = Math.max(
+    0,
+    Math.min(100, Math.round(target.costEfficiencyTarget - pressureDrag * 0.7 + (v1012.fiscalHeadroom > 0 ? 2 : -4)))
+  );
+  const compositeScore = Math.round((deliveryScore * 0.55 + costEfficiencyScore * 0.45) * 10) / 10;
+  const band = bandFromComposite(compositeScore);
+  let fiscalFeedbackPoints = 0;
+  if (band === 'leading') fiscalFeedbackPoints = 1.5;
+  else if (band === 'on_track') fiscalFeedbackPoints = 0;
+  else if (band === 'at_risk') fiscalFeedbackPoints = -1.5;
+  else fiscalFeedbackPoints = -3;
+
+  return {
+    appropriationLineId: target.appropriationLineId,
+    deliveryScore,
+    costEfficiencyScore,
+    compositeScore,
+    band,
+    fiscalFeedbackPoints,
+    explanation: `${target.title}: delivery ${deliveryScore}, efficiency ${costEfficiencyScore} (${band}).`
+  };
+}
+
+export function reviewProgramPerformance(turn: number, v1012: V1012FiscalSnapshot): ProgramPerformanceReview {
+  const scores = PROGRAM_PERFORMANCE_TARGETS.map(t => simulateScores(t, v1012, turn));
+  const aggregateFeedbackPoints = Math.round(scores.reduce((s, p) => s + p.fiscalFeedbackPoints, 0) * 10) / 10;
+  const programsAtRisk = scores.filter(p => p.band === 'at_risk' || p.band === 'failing').length;
+  const rebalanceRecommendations: string[] = [];
+  if (programsAtRisk >= 2) {
+    rebalanceRecommendations.push('Shift contingency to under-performing programs or pause new capital approvals.');
+  }
+  if (aggregateFeedbackPoints < -4) {
+    rebalanceRecommendations.push('Aggregate performance drag — review appropriation weights in next MYEFO pass.');
+  }
+  if (v1012.pressure === 'critical' && programsAtRisk > 0) {
+    rebalanceRecommendations.push('Critical fiscal pressure — prioritize mandatory maintenance over discretionary capital.');
+  }
+
+  return {
+    schemaVersion: PROGRAM_PERFORMANCE_SCHEMA,
+    turn,
+    scores,
+    aggregateFeedbackPoints,
+    programsAtRisk,
+    rebalanceRecommendations
+  };
+}
+
+
 // --- source: reconciliation/reconcile.ts ---
 
 export const RECONCILIATION_SCHEMA = 'op10m-agent07-reconciliation-v1';
@@ -5639,8 +6056,8 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T03',
-    'Strained snapshot runs seven checks',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 7,
+    'Strained snapshot runs full check suite',
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 8,
     'ok'
   );
 
@@ -5656,6 +6073,164 @@ export function runConsolidatedFiscalSelfTests(): {
     healthy.checks.map(c => c.id).join(',') === 'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08',
     'ok'
   );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: fiscal-rules/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 64,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runFiscalRulesSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const env = buildBudgetEnvelope(snap({}));
+  const contingency = env.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const ok = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: snap({}),
+    envelopeContingencyPoints: contingency,
+    forwardSpendingGrowth: 1.8
+  });
+  record('FRU01', 'Healthy baseline all rules compliant', ok.allCompliant, `breaches=${ok.breachCount}`);
+  record('FRU02', 'Five rules in catalog', FISCAL_RULES_CATALOG.length === 5, `n=${FISCAL_RULES_CATALOG.length}`);
+
+  const breach = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: snap({ fiscalHeadroom: -10, debtServiceLoad: 22 }),
+    envelopeContingencyPoints: 1,
+    forwardSpendingGrowth: 4
+  });
+  record('FRU03', 'Stress scenario triggers multiple breaches', breach.breachCount >= 2, `breaches=${breach.breachCount}`);
+
+  const debtOff = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: snap({ debtEnabled: false, debtServiceLoad: 25 }),
+    envelopeContingencyPoints: contingency,
+    forwardSpendingGrowth: 1
+  });
+  const debtRule = debtOff.assessments.find(a => a.ruleId === 'debt_service_ceiling');
+  record('FRU04', 'Debt service rule waived when debt disabled', debtRule?.compliant === true, String(debtRule?.compliant));
+
+  record('FRU05', 'Narrative present on breach', breach.narrative.includes('flagged'), 'ok');
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: sovereign-issuance/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 10,
+    revenueCapacity: partial.revenueCapacity ?? 63,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 5,
+    pressure: partial.pressure ?? 'tight',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 7,
+    debtLevel: partial.debtLevel ?? 28,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runSovereignIssuanceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const cal = executeIssuanceCalendar(10, snap({ turn: 10 }));
+  record('SI01', 'TBill executes on scheduled turn', cal.lines.find(l => l.id === 'iss_tbill')!.issuedVolumePoints > 0, 'ok');
+  record('SI02', 'Future lines deferred', cal.lines.some(l => l.deferred && l.id === 'iss_nom_7y'), 'ok');
+
+  const critical = executeIssuanceCalendar(10, snap({ turn: 10, pressure: 'critical', fiscalHeadroom: -12 }));
+  record('SI03', 'Critical market stress may cause liquidity shortfall', critical.liquidityShortfall || critical.warnings.length > 0, `warnings=${critical.warnings.length}`);
+
+  const off = executeIssuanceCalendar(10, snap({ debtEnabled: false }));
+  record('SI04', 'Debt disabled defers all issuance', off.totalIssued === 0, `issued=${off.totalIssued}`);
+
+  record('SI05', 'Weighted tenor computed when issued', cal.weightedAverageTenorYears > 0, `wavg=${cal.weightedAverageTenorYears}`);
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: program-performance/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 11,
+    revenueCapacity: partial.revenueCapacity ?? 62,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 6,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 4,
+    debtLevel: partial.debtLevel ?? 16,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 9,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runProgramPerformanceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const review = reviewProgramPerformance(11, snap({}));
+  record('PP01', 'Scores for all tracked programs', review.scores.length === PROGRAM_PERFORMANCE_TARGETS.length, `n=${review.scores.length}`);
+  record('PP02', 'Composite scores bounded 0-100', review.scores.every(s => s.compositeScore >= 0 && s.compositeScore <= 100), 'ok');
+
+  const critical = reviewProgramPerformance(11, snap({ pressure: 'critical', fiscalHeadroom: -8 }));
+  record('PP03', 'Critical pressure increases at-risk count', critical.programsAtRisk >= review.programsAtRisk, `crit=${critical.programsAtRisk}, base=${review.programsAtRisk}`);
+
+  record('PP04', 'Failing programs negative feedback', review.scores.every(s => s.band !== 'failing' || s.fiscalFeedbackPoints < 0), 'ok');
+
+  record('PP05', 'Rebalance text when aggregate drag', critical.rebalanceRecommendations.length >= 1, `recs=${critical.rebalanceRecommendations.length}`);
 
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
