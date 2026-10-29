@@ -20,6 +20,8 @@ npm test
 | `src/multi-turn-construction.ts` | Labor-span projects tied to the clock |
 | `src/fast-forward.ts` | Jump across turns without skipping or duplicating effects |
 | `src/diagnostics.ts` | Trace ledger and integrity validation |
+| `src/event-scheduling-queue.ts` | Phase-aware scheduled event queue |
+| `src/pause-resume.ts` | Pause/resume state and blocked-advance diagnostics |
 | `src/engine.ts` | Composed `TurnTimeEngine` API |
 | `tests/` | Proves no duplicate or skipped scheduled effects |
 

@@ -14,6 +14,8 @@ Provide a **pure**, replay-safe turn/time layer that mirrors V9.4 concepts (`tur
 | `endTurnIssuedForTurnKey` | `TurnClock.phaseTokens` — one token per `(turnKey, phase, channel)` |
 | Infrastructure `laborTurnsRequired` | `ConstructionProject.laborTurnsRequired` |
 | Scheduled loan/event due turns | `ScheduledObligation.dueTurn` |
+| Dynamic/world events on a turn phase | `ScheduledEvent` via `scheduleEvent()` |
+| UI pause (modals, overlays) blocking advance | `TurnTimeEngine.setPaused()` / `clearPaused()` |
 
 ## Host wiring (future Agent 25 assembly)
 

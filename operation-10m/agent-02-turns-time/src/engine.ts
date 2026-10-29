@@ -3,6 +3,7 @@ import {
   EffectTraceEntry,
   IntegrityReport,
   RegisterObligationInput,
+  ScheduleEventInput,
   StartConstructionInput,
   TurnClock,
   TurnPhase,
@@ -18,25 +19,43 @@ import {
   fireObligationOnce,
 } from './scheduled-obligations.js';
 import {
+  enqueueScheduledEvent,
+  cancelScheduledEvent,
+  eventsDueForDispatch,
+  dispatchScheduledEventOnce,
+} from './event-scheduling-queue.js';
+import {
   startConstruction,
   tickConstructionLaborOnce,
   activeConstruction,
 } from './multi-turn-construction.js';
 import { appendTrace, validateTurnTimeIntegrity } from './diagnostics.js';
-import type { ConstructionProject, ScheduledObligation } from './types.js';
+import {
+  createInitialPauseState,
+  clonePauseState,
+  pauseTime,
+  resumeTime,
+  recordBlockedAdvance,
+  isTimePaused,
+} from './pause-resume.js';
+import type { ConstructionProject, PauseDiagnosticsState, ScheduledEvent, ScheduledObligation } from './types.js';
 
 export interface StepTurnResult {
   clockBefore: TurnClock;
   clockAfter: TurnClock;
   firedObligationIds: string[];
+  dispatchedEventIds: string[];
   completedProjects: string[];
   traceEntries: EffectTraceEntry[];
+  blockedByPause: boolean;
 }
 
 export class TurnTimeEngine {
   private clock: TurnClock;
   private obligations: ScheduledObligation[];
   private projects: ConstructionProject[];
+  private events: ScheduledEvent[];
+  private pauseState: PauseDiagnosticsState;
   private trace: EffectTraceEntry[];
   private traceConsumedThrough: number;
 
@@ -44,6 +63,8 @@ export class TurnTimeEngine {
     this.clock = snapshot?.clock ? cloneClock(snapshot.clock) : createInitialClock();
     this.obligations = snapshot?.obligations ? snapshot.obligations.map((o) => ({ ...o })) : [];
     this.projects = snapshot?.projects ? snapshot.projects.map((p) => ({ ...p })) : [];
+    this.events = snapshot?.events ? snapshot.events.map((e) => ({ ...e })) : [];
+    this.pauseState = snapshot?.pause ? clonePauseState(snapshot.pause) : createInitialPauseState();
     this.trace = snapshot?.trace ? [...snapshot.trace] : [];
     this.traceConsumedThrough = this.trace.length;
   }
@@ -57,6 +78,8 @@ export class TurnTimeEngine {
       clock: cloneClock(this.clock),
       obligations: this.obligations.map((o) => ({ ...o })),
       projects: this.projects.map((p) => ({ ...p })),
+      events: this.events.map((e) => ({ ...e })),
+      pause: clonePauseState(this.pauseState),
       trace: [...this.trace],
     };
   }
@@ -69,12 +92,42 @@ export class TurnTimeEngine {
     this.obligations = cancelObligation(this.obligations, id);
   }
 
+  scheduleEvent(input: ScheduleEventInput): void {
+    this.events = enqueueScheduledEvent(this.events, this.clock, input);
+  }
+
+  cancelEvent(id: string): void {
+    this.events = cancelScheduledEvent(this.events, id);
+  }
+
   startConstruction(input: StartConstructionInput): void {
     this.projects = startConstruction(this.projects, this.clock, input);
   }
 
+  setPaused(reason: string): void {
+    if (isTimePaused(this.pauseState)) return;
+    const seq = this.clock.effectSequence + 1;
+    const result = pauseTime(this.pauseState, this.clock, reason, seq);
+    this.pauseState = result.pause;
+    this.clock = { ...this.clock, effectSequence: seq };
+    this.trace = appendTrace(this.trace, result.traceEntry);
+  }
+
+  clearPaused(): void {
+    if (!isTimePaused(this.pauseState)) return;
+    const seq = this.clock.effectSequence + 1;
+    const result = resumeTime(this.pauseState, this.clock, seq);
+    this.pauseState = result.pause;
+    this.clock = { ...this.clock, effectSequence: seq };
+    this.trace = appendTrace(this.trace, result.traceEntry);
+  }
+
+  getPauseDiagnostics(): PauseDiagnosticsState {
+    return clonePauseState(this.pauseState);
+  }
+
   validate(): IntegrityReport {
-    return validateTurnTimeIntegrity(this.clock, this.obligations, this.projects);
+    return validateTurnTimeIntegrity(this.clock, this.obligations, this.projects, this.events);
   }
 
   consumeTrace(): EffectTraceEntry[] {
@@ -88,7 +141,27 @@ export class TurnTimeEngine {
    */
   stepFullTurn(options: AdvanceOptions = {}): StepTurnResult {
     const clockBefore = cloneClock(this.clock);
+
+    if (isTimePaused(this.pauseState)) {
+      const seq = this.clock.effectSequence + 1;
+      const blocked = recordBlockedAdvance(this.pauseState, this.clock, seq);
+      this.pauseState = blocked.pause;
+      this.clock = { ...this.clock, effectSequence: seq };
+      const blockedTrace = blocked.traceEntry;
+      this.trace = appendTrace(this.trace, blockedTrace);
+      return {
+        clockBefore,
+        clockAfter: cloneClock(this.clock),
+        firedObligationIds: [],
+        dispatchedEventIds: [],
+        completedProjects: [],
+        traceEntries: [blockedTrace],
+        blockedByPause: true,
+      };
+    }
+
     const firedObligationIds: string[] = [];
+    const dispatchedEventIds: string[] = [];
     const completedProjects: string[] = [];
     const traceEntries: EffectTraceEntry[] = [];
     const scope = options.scope ?? 'global';
@@ -115,6 +188,8 @@ export class TurnTimeEngine {
         this.runDueObligations(clockBefore, phase, firedObligationIds, traceEntries);
       }
 
+      this.runDueEvents(clockBefore, phase, dispatchedEventIds, traceEntries);
+
       if (phase === 'end') {
         this.runConstructionLabor(clockBefore, phase, completedProjects, traceEntries);
         const nextTurn = clockBefore.turnIndex + 1;
@@ -133,8 +208,10 @@ export class TurnTimeEngine {
       clockBefore,
       clockAfter: cloneClock(this.clock),
       firedObligationIds,
+      dispatchedEventIds,
       completedProjects,
       traceEntries,
+      blockedByPause: false,
     };
   }
 
@@ -164,6 +241,34 @@ export class TurnTimeEngine {
         kind: 'obligation_fired' as const,
         refId: obligation.id,
         detail: obligation.kind,
+      };
+      this.trace = appendTrace(this.trace, t);
+      traceEntries.push(t);
+    }
+  }
+
+  private runDueEvents(
+    turnView: TurnClock,
+    phase: TurnPhase,
+    dispatchedEventIds: string[],
+    traceEntries: EffectTraceEntry[],
+  ): void {
+    const due = eventsDueForDispatch(this.events, turnView, phase);
+    for (const event of due) {
+      const seq = this.clock.effectSequence + 1;
+      const result = dispatchScheduledEventOnce(this.events, event.id, turnView, seq);
+      this.events = result.events;
+      if (!result.dispatched) continue;
+      this.clock = { ...this.clock, effectSequence: seq };
+      dispatchedEventIds.push(event.id);
+      const t = {
+        sequence: seq,
+        turnIndex: turnView.turnIndex,
+        dayIndex: turnView.dayIndex,
+        phase,
+        kind: 'event_dispatched' as const,
+        refId: event.id,
+        detail: event.kind,
       };
       this.trace = appendTrace(this.trace, t);
       traceEntries.push(t);

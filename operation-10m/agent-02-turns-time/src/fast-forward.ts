@@ -6,7 +6,7 @@ import {
   TurnTimeSnapshot,
 } from './types.js';
 import { TurnTimeEngine, StepTurnResult } from './engine.js';
-import { stableFiredIdList, traceObligationFirings } from './diagnostics.js';
+import { stableFiredIdList, stableDispatchedEventIds, traceObligationFirings, traceEventDispatches } from './diagnostics.js';
 
 export interface FastForwardResult {
   snapshot: TurnTimeSnapshot;
@@ -80,14 +80,22 @@ export function proveFastForwardParity(
 
   const steppedFired = stableFiredIdList(stepped.snapshot().obligations);
   const fastFired = stableFiredIdList(fast.snapshot().obligations);
+  const steppedEvents = stableDispatchedEventIds(stepped.snapshot().events);
+  const fastEvents = stableDispatchedEventIds(fast.snapshot().events);
   const steppedTrace = traceObligationFirings(stepped.snapshot().trace);
   const fastTrace = traceObligationFirings(fast.snapshot().trace);
+  const steppedEventTrace = traceEventDispatches(stepped.snapshot().trace);
+  const fastEventTrace = traceEventDispatches(fast.snapshot().trace);
 
   const ok =
     steppedFired.length === fastFired.length &&
     steppedFired.every((id, i) => id === fastFired[i]) &&
+    steppedEvents.length === fastEvents.length &&
+    steppedEvents.every((id, i) => id === fastEvents[i]) &&
     steppedTrace.length === fastTrace.length &&
-    steppedTrace.every((id, i) => id === fastTrace[i]);
+    steppedTrace.every((id, i) => id === fastTrace[i]) &&
+    steppedEventTrace.length === fastEventTrace.length &&
+    steppedEventTrace.every((id, i) => id === fastEventTrace[i]);
 
   return { ok, steppedFired, fastFired, steppedTrace, fastTrace };
 }

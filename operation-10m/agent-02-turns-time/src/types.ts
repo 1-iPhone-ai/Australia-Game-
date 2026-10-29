@@ -56,9 +56,13 @@ export interface ConstructionProject {
 export type TraceKind =
   | 'phase_enter'
   | 'obligation_fired'
+  | 'event_dispatched'
   | 'construction_labor'
   | 'construction_completed'
-  | 'fast_forward_step';
+  | 'fast_forward_step'
+  | 'time_paused'
+  | 'time_resumed'
+  | 'advance_blocked';
 
 export interface EffectTraceEntry {
   sequence: number;
@@ -76,13 +80,45 @@ export interface IntegrityReport {
   skippedDue: string[];
   orphanPastPending: string[];
   constructionOverLabor: string[];
+  duplicateDispatchedEvents: string[];
+  skippedDueEvents: string[];
   messages: string[];
+}
+
+export type ScheduledEventStatus = 'queued' | 'dispatched' | 'cancelled';
+
+export interface ScheduledEvent {
+  id: string;
+  dueTurn: number;
+  dueDay?: number;
+  /** Defaults to `main` when dispatching. */
+  duePhase?: TurnPhase;
+  priority: number;
+  kind: string;
+  payload?: unknown;
+  status: ScheduledEventStatus;
+  enqueuedAtTurn: number;
+  enqueuedAtSequence: number;
+  dispatchedAtTurn?: number;
+  dispatchedAtSequence?: number;
+}
+
+export interface PauseDiagnosticsState {
+  paused: boolean;
+  reason?: string;
+  pausedAtTurn?: number;
+  pausedAtDay?: number;
+  pausedAtSequence?: number;
+  resumeGeneration: number;
+  blockedAdvanceCount: number;
 }
 
 export interface TurnTimeSnapshot {
   clock: TurnClock;
   obligations: ScheduledObligation[];
   projects: ConstructionProject[];
+  events: ScheduledEvent[];
+  pause: PauseDiagnosticsState;
   trace: EffectTraceEntry[];
 }
 
@@ -114,6 +150,16 @@ export interface StartConstructionInput {
   laborTurnsRequired: number;
   startedTurn?: number;
   startedDay?: number;
+}
+
+export interface ScheduleEventInput {
+  id: string;
+  dueTurn: number;
+  dueDay?: number;
+  duePhase?: TurnPhase;
+  priority?: number;
+  kind: string;
+  payload?: unknown;
 }
 
 export function deterministicEpochIso(turnIndex: number): string {

@@ -2,11 +2,13 @@ import {
   EffectTraceEntry,
   IntegrityReport,
   ScheduledObligation,
+  ScheduledEvent,
   ConstructionProject,
   TurnClock,
   TurnPhase,
 } from './types.js';
 import { pendingBeforeTurn, firedIds } from './scheduled-obligations.js';
+import { queuedEventsBeforeTurn, dispatchedEventIds } from './event-scheduling-queue.js';
 import { constructionDueForCompletion } from './multi-turn-construction.js';
 
 export function appendTrace(trace: EffectTraceEntry[], entry: Omit<EffectTraceEntry, 'sequence'> & { sequence: number }): EffectTraceEntry[] {
@@ -17,6 +19,7 @@ export function validateTurnTimeIntegrity(
   clock: TurnClock,
   obligations: ScheduledObligation[],
   projects: ConstructionProject[],
+  events: ScheduledEvent[] = [],
 ): IntegrityReport {
   const duplicateFired: string[] = [];
   const seenFired = new Map<string, number>();
@@ -47,14 +50,34 @@ export function validateTurnTimeIntegrity(
     }
   }
 
+  const duplicateDispatchedEvents: string[] = [];
+  const seenDispatched = new Map<string, number>();
+  for (const e of events) {
+    if (e.status !== 'dispatched') continue;
+    const count = (seenDispatched.get(e.id) ?? 0) + 1;
+    seenDispatched.set(e.id, count);
+    if (count > 1) duplicateDispatchedEvents.push(e.id);
+  }
+
+  const skippedDueEvents: string[] = [];
+  for (const e of queuedEventsBeforeTurn(events, clock.turnIndex)) {
+    skippedDueEvents.push(e.id);
+    skippedDue.push(`event:${e.id}`);
+  }
+
   const messages: string[] = [];
   if (duplicateFired.length) messages.push(`Duplicate fired obligations: ${duplicateFired.join(', ')}`);
+  if (duplicateDispatchedEvents.length) {
+    messages.push(`Duplicate dispatched events: ${duplicateDispatchedEvents.join(', ')}`);
+  }
   if (skippedDue.length) messages.push(`Skipped due effects: ${skippedDue.join(', ')}`);
+  if (skippedDueEvents.length) messages.push(`Skipped due events: ${skippedDueEvents.join(', ')}`);
   if (orphanPastPending.length) messages.push(`Past-due pending: ${orphanPastPending.join(', ')}`);
   if (constructionOverLabor.length) messages.push(`Construction over-labor: ${constructionOverLabor.join(', ')}`);
 
   const ok =
     duplicateFired.length === 0 &&
+    duplicateDispatchedEvents.length === 0 &&
     skippedDue.length === 0 &&
     orphanPastPending.length === 0 &&
     constructionOverLabor.length === 0;
@@ -65,6 +88,8 @@ export function validateTurnTimeIntegrity(
     skippedDue,
     orphanPastPending,
     constructionOverLabor,
+    duplicateDispatchedEvents,
+    skippedDueEvents,
     messages,
   };
 }
@@ -109,8 +134,20 @@ export function traceObligationFirings(trace: EffectTraceEntry[]): string[] {
   return trace.filter((t) => t.kind === 'obligation_fired').map((t) => t.refId ?? '');
 }
 
+export function traceEventDispatches(trace: EffectTraceEntry[]): string[] {
+  return trace.filter((t) => t.kind === 'event_dispatched').map((t) => t.refId ?? '');
+}
+
+export function traceAdvanceBlocks(trace: EffectTraceEntry[]): number {
+  return trace.filter((t) => t.kind === 'advance_blocked').length;
+}
+
 export function stableFiredIdList(obligations: ScheduledObligation[]): string[] {
   return firedIds(obligations).sort((a, b) => a.localeCompare(b));
+}
+
+export function stableDispatchedEventIds(events: ScheduledEvent[]): string[] {
+  return dispatchedEventIds(events).sort((a, b) => a.localeCompare(b));
 }
 
 export function projectsBehindSchedule(projects: ConstructionProject[], clock: TurnClock): ConstructionProject[] {
