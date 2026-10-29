@@ -183,8 +183,18 @@ export interface CorridorActivation {
   synergyPoints: number;
 }
 
+export type TransportInvestmentTier = 'emerging' | 'regional' | 'integrated' | 'national_gateway';
+
+export interface FleetCapacitySnapshot {
+  roadIndex: number;
+  railIndex: number;
+  portIndex: number;
+  logisticsIndex: number;
+  nationalComposite: number;
+}
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/3';
+  schemaVersion: 'agent12/4';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -193,24 +203,27 @@ export interface TransportInfrastructureState {
   appliedScenarioIds: string[];
   bottleneckAssetIds: string[];
   maintenanceWarnings: string[];
-  /** 0–100 composite resilience from redundancy + corridor coverage. */
   resilienceScoreByRegion: Record<AuRegionCode, number>;
-  /** 0–100 port↔rail coupling strength (export efficiency proxy). */
   portRailCouplingByRegion: Record<AuRegionCode, number>;
   investmentTierByRegion: Record<AuRegionCode, TransportInvestmentTier>;
   scenarioStackFactor: number;
   projectedBacklogNextTurn: Record<string, number>;
+  spilloverBonusByRegion: Record<AuRegionCode, number>;
+  fleetCapacity: FleetCapacitySnapshot;
+  climateModifierFactor: number;
+  pipelineUnlockPoints: number;
+  activePipelineStageIds: string[];
   computeMs: number;
 }
 
-export type TransportInvestmentTier = 'emerging' | 'regional' | 'integrated' | 'national_gateway';
+export type ClimateTransportBand = 'mild' | 'warm' | 'hot' | 'extreme';
 
 export interface TransportInfrastructureOptions {
   activeScenarioIds?: ReadonlySet<string>;
-  /** 0–100 deferred maintenance score per asset id. */
   maintenanceBacklogByAssetId?: ReadonlyMap<string, number>;
-  /** Annualised maintenance spend index 0–100 (lowers backlog drift). */
   maintenanceSpendIndex?: number;
+  fundedPipelineStageIds?: ReadonlySet<string>;
+  climateBand?: ClimateTransportBand;
 }
 
 export interface V94ProjectSnapshot {
@@ -332,6 +345,57 @@ export const TRANSPORT_CORRIDORS_ROUND2: TransportCorridorDefinition[] = [
     },
     productivitySynergyPoints: 4.8,
     logisticsRelief: 0.032,
+  },
+];
+
+
+// --- source: catalog/corridors-round3.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND3: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_nsw_sydney_freight_ring',
+    name: 'Sydney Freight Ring',
+    networkKind: 'freight',
+    regionSequence: ['NSW'],
+    requiredTagsByRegion: {
+      NSW: ['intermodal', 'port_rail', 'container'],
+    },
+    productivitySynergyPoints: 6,
+    logisticsRelief: 0.038,
+  },
+  {
+    id: 'corr_qld_coal_chain',
+    name: 'Queensland Coal Export Chain',
+    networkKind: 'trade',
+    regionSequence: ['QLD'],
+    requiredTagsByRegion: {
+      QLD: ['bulk', 'mining', 'freight_rail'],
+    },
+    productivitySynergyPoints: 7.5,
+    logisticsRelief: 0.045,
+  },
+  {
+    id: 'corr_vic_western_distribution',
+    name: 'Western Melbourne Distribution Hub',
+    networkKind: 'freight',
+    regionSequence: ['VIC'],
+    requiredTagsByRegion: {
+      VIC: ['warehouse', 'intermodal', 'motorway'],
+    },
+    productivitySynergyPoints: 5.5,
+    logisticsRelief: 0.032,
+  },
+  {
+    id: 'corr_tas_devonport_bass',
+    name: 'Devonport Bass Gateway',
+    networkKind: 'trade',
+    regionSequence: ['TAS', 'VIC'],
+    requiredTagsByRegion: {
+      TAS: ['island', 'container'],
+      VIC: ['intermodal'],
+    },
+    productivitySynergyPoints: 4.2,
+    logisticsRelief: 0.028,
   },
 ];
 
@@ -485,6 +549,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
     logisticsRelief: 0.04,
   },
   ...TRANSPORT_CORRIDORS_ROUND2,
+  ...TRANSPORT_CORRIDORS_ROUND3,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -587,6 +652,90 @@ export const TRANSPORT_SCENARIOS_ROUND2: TransportStressScenario[] = [
     utilizationAdd: 0.14,
     conditionPenaltySteps: 1,
     affectedCategories: ['port'],
+  },
+];
+
+
+// --- source: catalog/scenarios-round3.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND3: TransportStressScenario[] = [
+  {
+    id: 'scn_nsw_port_kembla_congestion',
+    label: 'Port Kembla Berth Congestion',
+    description: 'Steel and coal export queue at Port Kembla.',
+    targetRegions: ['NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.21,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_qld_coal_rail_bottleneck',
+    label: 'Bowen Basin Rail Bottleneck',
+    description: 'Coal train cycle times blow out.',
+    targetRegions: ['QLD'],
+    networkKind: 'freight',
+    utilizationAdd: 0.29,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail'],
+  },
+  {
+    id: 'scn_vic_western_distribution_peak',
+    label: 'Western Melbourne Peak Season',
+    description: 'Mega-warehouse saturation pre-Christmas.',
+    targetRegions: ['VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+  {
+    id: 'scn_wa_northwest_cyclone',
+    label: 'North West Cyclone Season',
+    description: 'Karratha–Hedland road and port holds.',
+    targetRegions: ['WA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['road', 'port'],
+  },
+  {
+    id: 'scn_tas_devonport_rollover',
+    label: 'Devonport Ro-Ro Rollover Delay',
+    description: 'Bass Strait vessel delays cascade.',
+    targetRegions: ['TAS', 'VIC'],
+    networkKind: 'trade',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_sa_wingfield_labour',
+    label: 'Adelaide Warehouse Labour Gap',
+    description: 'Pick/pack capacity constrained.',
+    targetRegions: ['SA'],
+    networkKind: 'freight',
+    utilizationAdd: 0.15,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_climate_heat_slow_orders',
+    label: 'National Heat Slow Orders',
+    description: 'Track and road speed restrictions in heatwave.',
+    targetRegions: ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'NT'],
+    networkKind: 'freight',
+    utilizationAdd: 0.12,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['road', 'rail'],
+  },
+  {
+    id: 'scn_investment_pipeline_delay',
+    label: 'Public Investment Pipeline Delay',
+    description: 'Procurement delays slow corridor upgrades.',
+    targetRegions: ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'],
+    utilizationAdd: 0.09,
+    conditionPenaltySteps: 1,
   },
 ];
 
@@ -754,6 +903,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
     conditionPenaltySteps: 1,
   },
   ...TRANSPORT_SCENARIOS_ROUND2,
+  ...TRANSPORT_SCENARIOS_ROUND3,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -762,6 +912,32 @@ export function getScenarioById(id: string): TransportStressScenario | undefined
 
 export function scenariosForRegion(regionId: string): TransportStressScenario[] {
   return TRANSPORT_STRESS_SCENARIOS.filter((s) => s.targetRegions.includes(regionId as never));
+}
+
+
+// --- source: climate/climate-transport-modifiers.ts ---
+export type ClimateTransportBand = 'mild' | 'warm' | 'hot' | 'extreme';
+
+export const CLIMATE_BAND_UTILIZATION: Record<ClimateTransportBand, number> = {
+  mild: 0,
+  warm: 0.04,
+  hot: 0.1,
+  extreme: 0.18,
+};
+
+export const CLIMATE_BAND_CONDITION_PENALTY: Record<ClimateTransportBand, number> = {
+  mild: 0,
+  warm: 0,
+  hot: 1,
+  extreme: 1,
+};
+
+export function climateModifierFactor(band: ClimateTransportBand): number {
+  return 1 - CLIMATE_BAND_UTILIZATION[band] * 0.15;
+}
+
+export function isClimateTransportBand(value: string): value is ClimateTransportBand {
+  return value === 'mild' || value === 'warm' || value === 'hot' || value === 'extreme';
 }
 
 
@@ -2046,6 +2222,185 @@ export const ROUND2_LOGISTICS: LogisticsNodeAsset[] = [
 export const SCALE_WAVE_ROUND2_ASSETS = [...ROUND2_ROADS, ...ROUND2_RAIL, ...ROUND2_PORTS, ...ROUND2_LOGISTICS];
 
 
+// --- source: catalog/scale-wave-round3-assets.ts ---
+
+export const ROUND3_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_vic_great_ocean',
+    category: 'road',
+    name: 'Great Ocean Road Freight Feed',
+    description: 'South-west VIC tourism and timber logistics.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC'],
+    baseProductivityPoints: 2.8,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['regional', 'freight'],
+    laneKilometres: 240,
+    designSpeedKmh: 80,
+    freightShare: 0.25,
+    urbanShare: 0.08,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_flinders',
+    category: 'road',
+    name: 'Flinders Highway',
+    description: 'Townsville–Mt Isa mining supply corridor.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NT'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['freight'],
+    tags: ['mining', 'remote', 'freight'],
+    laneKilometres: 880,
+    designSpeedKmh: 100,
+    freightShare: 0.5,
+    urbanShare: 0.05,
+    tollRoad: false,
+  },
+  {
+    id: 'road_wa_north_west_coastal',
+    category: 'road',
+    name: 'North West Coastal Highway',
+    description: 'Karratha–Port Hedland linkage.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['mining', 'port_access'],
+    laneKilometres: 420,
+    designSpeedKmh: 110,
+    freightShare: 0.52,
+    urbanShare: 0.06,
+    tollRoad: false,
+  },
+];
+
+export const ROUND3_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_nsw_sydney_freight_ring',
+    category: 'rail',
+    name: 'Sydney Metropolitan Freight Ring',
+    description: 'Port Botany–Enfield–intermodal paths.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW'],
+    baseProductivityPoints: 6.4,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['port_rail', 'intermodal', 'freight_rail'],
+    trackKilometres: 95,
+    dualTrackShare: 0.55,
+    electrifiedShare: 0.7,
+    designFreightTonnesPerYear: 7_500_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_qld_coal_export',
+    category: 'rail',
+    name: 'Central QLD Coal Export Rail',
+    description: 'Bowen Basin to Hay Point and Gladstone.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 8.1,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['bulk', 'mining', 'freight_rail'],
+    trackKilometres: 520,
+    dualTrackShare: 0.48,
+    electrifiedShare: 0.25,
+    designFreightTonnesPerYear: 120_000_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND3_PORTS: PortAsset[] = [
+  {
+    id: 'port_nsw_port_kembla',
+    category: 'port',
+    name: 'Port Kembla',
+    description: 'Steel, coal, and container exports south of Sydney.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 7.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['bulk', 'container'],
+    berthCount: 20,
+    maxDraftMetres: 14.8,
+    teuCapacityPerYear: 520_000,
+    automationLevel: 1,
+    bulkShare: 0.55,
+  },
+  {
+    id: 'port_tas_devonport',
+    category: 'port',
+    name: 'Port of Devonport',
+    description: 'Bass Strait ro-ro and container gateway.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['island', 'container'],
+    berthCount: 8,
+    maxDraftMetres: 11.5,
+    teuCapacityPerYear: 210_000,
+    automationLevel: 0,
+    bulkShare: 0.35,
+  },
+];
+
+export const ROUND3_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_vic_truganina',
+    category: 'logistics',
+    name: 'Truganina National Distribution',
+    description: 'Western Melbourne mega-logistics precinct.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'SA', 'NSW'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['warehouse', 'intermodal'],
+    warehouseSqm: 520_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 74,
+  },
+  {
+    id: 'log_wa_forrestfield',
+    category: 'logistics',
+    name: 'Forrestfield Intermodal Terminal',
+    description: 'Perth eastern rail–road terminal.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 4,
+    strategicNetworks: ['freight'],
+    tags: ['intermodal', 'port'],
+    warehouseSqm: 150_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 54,
+  },
+  {
+    id: 'log_sa_wingfield',
+    category: 'logistics',
+    name: 'Wingfield Industrial Logistics',
+    description: 'Adelaide north freight consolidation.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NT'],
+    baseProductivityPoints: 3.6,
+    strategicNetworks: ['freight'],
+    tags: ['warehouse', 'intermodal'],
+    warehouseSqm: 175_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 57,
+  },
+];
+
+export const SCALE_WAVE_ROUND3_ASSETS = [
+  ...ROUND3_ROADS,
+  ...ROUND3_RAIL,
+  ...ROUND3_PORTS,
+  ...ROUND3_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -2056,6 +2411,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...LOGISTICS_CATALOG,
     ...SCALE_WAVE_ASSETS,
     ...SCALE_WAVE_ROUND2_ASSETS,
+    ...SCALE_WAVE_ROUND3_ASSETS,
   ];
 }
 
@@ -2242,6 +2598,81 @@ export function nationalResilienceIndex(scores: Record<AuRegionCode, number>): n
 }
 
 
+// --- source: network/cross-region-spillover.ts ---
+
+/** Stylized productivity spillover when corridors serve multiple regions. */
+const SPILLOVER: Partial<Record<AuRegionCode, Partial<Record<AuRegionCode, number>>>> = {
+  NSW: { VIC: 0.12, QLD: 0.08, ACT: 0.15, SA: 0.05 },
+  VIC: { NSW: 0.11, TAS: 0.14, SA: 0.09 },
+  QLD: { NSW: 0.1, NT: 0.11 },
+  WA: { SA: 0.13, NT: 0.06 },
+  SA: { WA: 0.1, VIC: 0.08, NSW: 0.06 },
+  TAS: { VIC: 0.18 },
+  NT: { QLD: 0.09, WA: 0.07, SA: 0.05 },
+  ACT: { NSW: 0.2 },
+};
+
+export function computeSpilloverBonusByRegion(
+  operationalAssets: TransportAsset[],
+  regionalProductivityBonus: Record<AuRegionCode, number>,
+): Record<AuRegionCode, number> {
+  const hostPoints = {} as Record<AuRegionCode, number>;
+  for (const code of AU_REGION_CODES) hostPoints[code] = 0;
+  for (const asset of operationalAssets) {
+    hostPoints[asset.hostRegion] += asset.baseProductivityPoints;
+  }
+
+  const out = {} as Record<AuRegionCode, number>;
+  for (const code of AU_REGION_CODES) {
+    let bonus = 0;
+    const edges = SPILLOVER[code];
+    if (edges) {
+      for (const [target, weight] of Object.entries(edges)) {
+        const t = target as AuRegionCode;
+        bonus += (regionalProductivityBonus[t] ?? 0) * weight * 0.08;
+        bonus += hostPoints[t] * weight * 0.05;
+      }
+    }
+    out[code] = Math.round(bonus * 100) / 100;
+  }
+  return out;
+}
+
+
+// --- source: climate/apply-climate-band.ts ---
+
+export function applyClimateBandToInputs(
+  inputs: TransportProductivityInputs,
+  band: ClimateTransportBand | undefined,
+): { inputs: TransportProductivityInputs; climateModifierFactor: number } {
+  if (!band || band === 'mild') {
+    return { inputs, climateModifierFactor: 1 };
+  }
+
+  const add = CLIMATE_BAND_UTILIZATION[band];
+  const networkUtilization = {
+    ...(inputs.networkUtilization ?? {}),
+    freight: Math.min(1.25, (inputs.networkUtilization?.freight ?? 0) + add),
+    mobility: Math.min(1.25, (inputs.networkUtilization?.mobility ?? 0) + add * 0.5),
+  };
+
+  const conditionByAssetId = new Map(inputs.conditionByAssetId ?? []);
+  if (band === 'hot' || band === 'extreme') {
+    for (const asset of inputs.assets) {
+      if (!inputs.operationalAssetIds.has(asset.id)) continue;
+      if (asset.category !== 'road' && asset.category !== 'rail') continue;
+      const prior = conditionByAssetId.get(asset.id) ?? 'good';
+      conditionByAssetId.set(asset.id, worsenCondition(prior, 1));
+    }
+  }
+
+  return {
+    inputs: { ...inputs, networkUtilization, conditionByAssetId },
+    climateModifierFactor: climateModifierFactor(band),
+  };
+}
+
+
 // --- source: scenarios/apply-transport-scenarios.ts ---
   StrategicNetworkKind,
   TransportAsset,
@@ -2377,6 +2808,83 @@ export function aggregateNetworkStress(
 }
 
 
+// --- source: operations/investment-pipeline.ts ---
+
+export interface TransportPipelineStage {
+  id: string;
+  label: string;
+  regionId: AuRegionCode;
+  requiredFunding: number;
+  productivityUnlock: number;
+  logisticsRelief: number;
+}
+
+export const TRANSPORT_INVESTMENT_PIPELINE: TransportPipelineStage[] = [
+  {
+    id: 'pipe_nsw_botany_rail',
+    label: 'Port Botany Rail Duplication',
+    regionId: 'NSW',
+    requiredFunding: 120_000,
+    productivityUnlock: 4.5,
+    logisticsRelief: 0.025,
+  },
+  {
+    id: 'pipe_vic_inland_port_shuttle',
+    label: 'Melbourne Port Rail Shuttle Expansion',
+    regionId: 'VIC',
+    requiredFunding: 95_000,
+    productivityUnlock: 3.8,
+    logisticsRelief: 0.022,
+  },
+  {
+    id: 'pipe_qld_inland_rail_stage',
+    label: 'Inland Rail Stage Completion',
+    regionId: 'QLD',
+    requiredFunding: 200_000,
+    productivityUnlock: 6.2,
+    logisticsRelief: 0.035,
+  },
+  {
+    id: 'pipe_wa_hedland_road',
+    label: 'Pilbara Last-Mile Road Hardening',
+    regionId: 'WA',
+    requiredFunding: 80_000,
+    productivityUnlock: 3.2,
+    logisticsRelief: 0.02,
+  },
+  {
+    id: 'pipe_sa_gillman_upgrade',
+    label: 'Gillman Intermodal Upgrade',
+    regionId: 'SA',
+    requiredFunding: 65_000,
+    productivityUnlock: 2.8,
+    logisticsRelief: 0.018,
+  },
+];
+
+export function computePipelineUnlocks(
+  fundedStageIds: ReadonlySet<string> | undefined,
+): { productivityPoints: number; logisticsRelief: number; activeStageIds: string[] } {
+  if (!fundedStageIds || fundedStageIds.size === 0) {
+    return { productivityPoints: 0, logisticsRelief: 0, activeStageIds: [] };
+  }
+  let productivityPoints = 0;
+  let logisticsRelief = 0;
+  const activeStageIds: string[] = [];
+  for (const stage of TRANSPORT_INVESTMENT_PIPELINE) {
+    if (!fundedStageIds.has(stage.id)) continue;
+    activeStageIds.push(stage.id);
+    productivityPoints += stage.productivityUnlock;
+    logisticsRelief += stage.logisticsRelief;
+  }
+  return {
+    productivityPoints,
+    logisticsRelief: Math.min(0.12, logisticsRelief),
+    activeStageIds,
+  };
+}
+
+
 // --- source: productivity/regional-investment-tiers.ts ---
 
 const TIERS: TransportInvestmentTier[] = ['emerging', 'regional', 'integrated', 'national_gateway'];
@@ -2421,6 +2929,44 @@ export function tierProductivityMultiplier(tier: TransportInvestmentTier): numbe
 
 export function isKnownTier(value: string): value is TransportInvestmentTier {
   return TIERS.includes(value as TransportInvestmentTier);
+}
+
+
+// --- source: productivity/fleet-capacity-planner.ts ---
+
+export function computeFleetCapacitySnapshot(operationalAssets: TransportAsset[]): FleetCapacitySnapshot {
+  let roadIndex = 0;
+  let railIndex = 0;
+  let portIndex = 0;
+  let logisticsIndex = 0;
+
+  for (const asset of operationalAssets) {
+    const idx = assetFreightCapacityIndex(asset);
+    switch (asset.category) {
+      case 'road':
+        roadIndex += idx;
+        break;
+      case 'rail':
+        railIndex += idx;
+        break;
+      case 'port':
+        portIndex += idx;
+        break;
+      case 'logistics':
+        logisticsIndex += idx;
+        break;
+    }
+  }
+
+  const nationalComposite = (roadIndex + railIndex + portIndex + logisticsIndex) / Math.max(1, operationalAssets.length);
+
+  return {
+    roadIndex: Math.round(roadIndex * 10) / 10,
+    railIndex: Math.round(railIndex * 10) / 10,
+    portIndex: Math.round(portIndex * 10) / 10,
+    logisticsIndex: Math.round(logisticsIndex * 10) / 10,
+    nationalComposite: Math.round(nationalComposite * 10) / 10,
+  };
 }
 
 
@@ -2755,6 +3301,12 @@ export function computeTransportInfrastructureState(
     networkUtilization: applyScenarioStackToUtilization(scenarioInputs.networkUtilization, scenarioStackFactor),
   };
 
+  const climateApplied = applyClimateBandToInputs(inputs, options?.climateBand);
+  inputs = climateApplied.inputs;
+  const climateModifierFactor = climateApplied.climateModifierFactor;
+
+  const pipeline = computePipelineUnlocks(options?.fundedPipelineStageIds);
+
   let productivity = computeNationalTransportProductivity(inputs);
   const ops = operationalAssets(inputs);
 
@@ -2787,15 +3339,30 @@ export function computeTransportInfrastructureState(
     );
   }
 
-  productivity.nationalProductivityIndexBonus = AU_REGION_CODES.reduce(
-    (s, c) => s + productivity.byRegion[c].productivityIndexBonus,
-    0,
-  );
   productivity.nationalLogisticsCostMultiplier = clamp(
-    productivity.nationalLogisticsCostMultiplier - logisticsRelief,
+    productivity.nationalLogisticsCostMultiplier - logisticsRelief - pipeline.logisticsRelief,
     0.5,
     1.05,
   );
+
+  const spilloverBonusByRegion = computeSpilloverBonusByRegion(
+    ops,
+    Object.fromEntries(AU_REGION_CODES.map((c) => [c, productivity.byRegion[c].productivityIndexBonus])) as Record<
+      AuRegionCode,
+      number
+    >,
+  );
+
+  for (const code of AU_REGION_CODES) {
+    productivity.byRegion[code].productivityIndexBonus += spilloverBonusByRegion[code];
+    productivity.byRegion[code].productivityIndexBonus *= climateModifierFactor;
+  }
+
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints;
+
+  const fleetCapacity = computeFleetCapacitySnapshot(ops);
 
   const maintenanceWarnings = maintenanceWarningsFromBacklog(options?.maintenanceBacklogByAssetId);
   const bottleneckAssetIds = detectBottlenecks(productivity, ops, inputs);
@@ -2812,7 +3379,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/3',
+    schemaVersion: 'agent12/4',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -2826,6 +3393,11 @@ export function computeTransportInfrastructureState(
     investmentTierByRegion,
     scenarioStackFactor,
     projectedBacklogNextTurn,
+    spilloverBonusByRegion,
+    fleetCapacity,
+    climateModifierFactor,
+    pipelineUnlockPoints: pipeline.productivityPoints,
+    activePipelineStageIds: pipeline.activeStageIds,
     computeMs,
   };
 }
@@ -2854,7 +3426,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   const integrity = getCatalogIntegrityReport();
   results.push({
     id: 'catalog_integrity',
-    ok: integrity.duplicateIds.length === 0 && integrity.invalidRegions.length === 0 && integrity.totalAssets >= 61,
+    ok: integrity.duplicateIds.length === 0 && integrity.invalidRegions.length === 0 && integrity.totalAssets >= 71,
     detail: JSON.stringify(integrity),
   });
 
@@ -2906,9 +3478,9 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
 
   const infra = computeTransportInfrastructureState(defaultInfrastructureInputs(5));
   results.push({
-    id: 'infrastructure_state_v2',
+    id: 'infrastructure_state_v4',
     ok:
-      infra.schemaVersion === 'agent12/3' &&
+      infra.schemaVersion === 'agent12/4' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1,

@@ -19,7 +19,7 @@ import { tierProductivityMultiplier } from '../productivity/regional-investment-
 describe('Agent 12 round 2 catalog growth', () => {
   it('reaches 61+ assets and 17+ corridors / 24+ scenarios', () => {
     const integrity = getCatalogIntegrityReport();
-    assert.ok(integrity.totalAssets >= 61);
+    assert.ok(integrity.totalAssets >= 71);
     assert.ok(TRANSPORT_CORRIDORS.length >= 17);
     assert.ok(TRANSPORT_STRESS_SCENARIOS.length >= 24);
   });
@@ -63,7 +63,7 @@ describe('Agent 12 round 2 analytics', () => {
       activeScenarioIds: new Set(['scn_multi_coastal_compound', 'scn_national_fuel_spike']),
       maintenanceSpendIndex: 55,
     });
-    assert.equal(state.schemaVersion, 'agent12/3');
+    assert.equal(state.schemaVersion, 'agent12/4');
     assert.ok(state.scenarioStackFactor > 1);
     assert.ok(nationalResilienceIndex(state.resilienceScoreByRegion) > 50);
     assert.ok(Object.keys(state.projectedBacklogNextTurn).length > 50);

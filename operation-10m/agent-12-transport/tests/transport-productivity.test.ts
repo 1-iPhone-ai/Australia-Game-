@@ -21,7 +21,7 @@ describe('Agent 12 catalog', () => {
     assert.ok(report.byCategory.rail >= 6);
     assert.ok(report.byCategory.port >= 6);
     assert.ok(report.byCategory.logistics >= 6);
-    assert.ok(report.totalAssets >= 61);
+    assert.ok(report.totalAssets >= 71);
   });
 
   it('assigns measurable freight indices to roads', () => {

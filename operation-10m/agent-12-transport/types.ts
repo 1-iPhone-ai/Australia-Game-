@@ -179,8 +179,18 @@ export interface CorridorActivation {
   synergyPoints: number;
 }
 
+export type TransportInvestmentTier = 'emerging' | 'regional' | 'integrated' | 'national_gateway';
+
+export interface FleetCapacitySnapshot {
+  roadIndex: number;
+  railIndex: number;
+  portIndex: number;
+  logisticsIndex: number;
+  nationalComposite: number;
+}
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/3';
+  schemaVersion: 'agent12/4';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -189,24 +199,27 @@ export interface TransportInfrastructureState {
   appliedScenarioIds: string[];
   bottleneckAssetIds: string[];
   maintenanceWarnings: string[];
-  /** 0–100 composite resilience from redundancy + corridor coverage. */
   resilienceScoreByRegion: Record<AuRegionCode, number>;
-  /** 0–100 port↔rail coupling strength (export efficiency proxy). */
   portRailCouplingByRegion: Record<AuRegionCode, number>;
   investmentTierByRegion: Record<AuRegionCode, TransportInvestmentTier>;
   scenarioStackFactor: number;
   projectedBacklogNextTurn: Record<string, number>;
+  spilloverBonusByRegion: Record<AuRegionCode, number>;
+  fleetCapacity: FleetCapacitySnapshot;
+  climateModifierFactor: number;
+  pipelineUnlockPoints: number;
+  activePipelineStageIds: string[];
   computeMs: number;
 }
 
-export type TransportInvestmentTier = 'emerging' | 'regional' | 'integrated' | 'national_gateway';
+export type ClimateTransportBand = 'mild' | 'warm' | 'hot' | 'extreme';
 
 export interface TransportInfrastructureOptions {
   activeScenarioIds?: ReadonlySet<string>;
-  /** 0–100 deferred maintenance score per asset id. */
   maintenanceBacklogByAssetId?: ReadonlyMap<string, number>;
-  /** Annualised maintenance spend index 0–100 (lowers backlog drift). */
   maintenanceSpendIndex?: number;
+  fundedPipelineStageIds?: ReadonlySet<string>;
+  climateBand?: ClimateTransportBand;
 }
 
 export interface V94ProjectSnapshot {

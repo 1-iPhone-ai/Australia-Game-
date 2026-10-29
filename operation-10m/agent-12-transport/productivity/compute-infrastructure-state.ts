@@ -25,15 +25,19 @@ import {
 } from '../scenarios/scenario-stack-policy.ts';
 import { computePortRailCouplingByRegion } from '../network/port-rail-coupling.ts';
 import { computeResilienceScoreByRegion } from '../network/resilience-score.ts';
+import { computeSpilloverBonusByRegion } from '../network/cross-region-spillover.ts';
+import { applyClimateBandToInputs } from '../climate/apply-climate-band.ts';
 import {
   aggregateNetworkStress,
   projectMaintenanceBacklogNextTurn,
 } from '../operations/maintenance-decay.ts';
+import { computePipelineUnlocks } from '../operations/investment-pipeline.ts';
 import {
   computeInvestmentTierByRegion,
   tierProductivityMultiplier,
 } from './regional-investment-tiers.ts';
 import { computeIntermodalSynergyByRegion } from './intermodal-synergy.ts';
+import { computeFleetCapacitySnapshot } from './fleet-capacity-planner.ts';
 import { computeNationalTransportProductivity } from './compute-national-productivity.ts';
 import { clamp } from './formulas.ts';
 
@@ -111,6 +115,12 @@ export function computeTransportInfrastructureState(
     networkUtilization: applyScenarioStackToUtilization(scenarioInputs.networkUtilization, scenarioStackFactor),
   };
 
+  const climateApplied = applyClimateBandToInputs(inputs, options?.climateBand);
+  inputs = climateApplied.inputs;
+  const climateModifierFactor = climateApplied.climateModifierFactor;
+
+  const pipeline = computePipelineUnlocks(options?.fundedPipelineStageIds);
+
   let productivity = computeNationalTransportProductivity(inputs);
   const ops = operationalAssets(inputs);
 
@@ -143,15 +153,30 @@ export function computeTransportInfrastructureState(
     );
   }
 
-  productivity.nationalProductivityIndexBonus = AU_REGION_CODES.reduce(
-    (s, c) => s + productivity.byRegion[c].productivityIndexBonus,
-    0,
-  );
   productivity.nationalLogisticsCostMultiplier = clamp(
-    productivity.nationalLogisticsCostMultiplier - logisticsRelief,
+    productivity.nationalLogisticsCostMultiplier - logisticsRelief - pipeline.logisticsRelief,
     0.5,
     1.05,
   );
+
+  const spilloverBonusByRegion = computeSpilloverBonusByRegion(
+    ops,
+    Object.fromEntries(AU_REGION_CODES.map((c) => [c, productivity.byRegion[c].productivityIndexBonus])) as Record<
+      AuRegionCode,
+      number
+    >,
+  );
+
+  for (const code of AU_REGION_CODES) {
+    productivity.byRegion[code].productivityIndexBonus += spilloverBonusByRegion[code];
+    productivity.byRegion[code].productivityIndexBonus *= climateModifierFactor;
+  }
+
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints;
+
+  const fleetCapacity = computeFleetCapacitySnapshot(ops);
 
   const maintenanceWarnings = maintenanceWarningsFromBacklog(options?.maintenanceBacklogByAssetId);
   const bottleneckAssetIds = detectBottlenecks(productivity, ops, inputs);
@@ -168,7 +193,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/3',
+    schemaVersion: 'agent12/4',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -182,6 +207,11 @@ export function computeTransportInfrastructureState(
     investmentTierByRegion,
     scenarioStackFactor,
     projectedBacklogNextTurn,
+    spilloverBonusByRegion,
+    fleetCapacity,
+    climateModifierFactor,
+    pipelineUnlockPoints: pipeline.productivityPoints,
+    activePipelineStageIds: pipeline.activeStageIds,
     computeMs,
   };
 }
