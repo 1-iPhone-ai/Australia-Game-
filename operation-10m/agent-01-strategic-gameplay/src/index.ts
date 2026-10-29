@@ -120,6 +120,7 @@ export {
   omniversalSynthesisRankingBonus,
   hyperversalHarmonizationRankingBonus,
   transcendentOmniumRankingBonus,
+  supremeConvergenceRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -435,6 +436,16 @@ export {
   applyTranscendentOmniumMandateBonus,
 } from './engine/coalition-transcendent-omnium.ts';
 
+export { coalitionSupremeConvergenceStreakIssues } from './engine/coalition-supreme-convergence-gates.ts';
+
+export {
+  SUPREME_COALITION_CONVERGENCE_THRESHOLD,
+  advanceCoalitionSupremeConvergenceStreak,
+  resetCoalitionSupremeConvergenceStreak,
+  isSupremeCoalitionConvergence,
+  applySupremeConvergenceMandateBonus,
+} from './engine/coalition-supreme-convergence.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '4.2.0';
+export const AGENT_01_MODULE_VERSION = '4.3.0';

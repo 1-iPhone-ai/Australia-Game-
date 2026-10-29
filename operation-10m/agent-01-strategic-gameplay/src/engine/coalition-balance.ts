@@ -298,3 +298,13 @@ export function transcendentOmniumRankingBonus(
   if (streak >= action.minCoalitionTranscendentOmniumStreakDays) return 25;
   return 2;
 }
+
+export function supremeConvergenceRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionSupremeConvergenceStreakDays === undefined) return 0;
+  const streak = state.coalitionSupremeConvergenceStreakDays ?? 0;
+  if (streak >= action.minCoalitionSupremeConvergenceStreakDays) return 26;
+  return 2;
+}

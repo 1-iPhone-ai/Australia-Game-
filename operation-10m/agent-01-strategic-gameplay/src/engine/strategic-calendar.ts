@@ -98,6 +98,10 @@ import {
   advanceCoalitionTranscendentOmniumStreak,
   applyTranscendentOmniumMandateBonus,
 } from './coalition-transcendent-omnium.ts';
+import {
+  advanceCoalitionSupremeConvergenceStreak,
+  applySupremeConvergenceMandateBonus,
+} from './coalition-supreme-convergence.ts';
 import { advanceCoalitionRecoveryStreak } from './coalition-recovery.ts';
 import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
 import type { StakeholderGroupId, StakeholderSentiment } from '../types/coalition-mandate.ts';
@@ -201,6 +205,8 @@ export function advanceStrategicGameplayCalendar(
   next = applyHyperversalHarmonizationMandateBonus(next, daysAdvanced);
   next = advanceCoalitionTranscendentOmniumStreak(next, daysAdvanced);
   next = applyTranscendentOmniumMandateBonus(next, daysAdvanced);
+  next = advanceCoalitionSupremeConvergenceStreak(next, daysAdvanced);
+  next = applySupremeConvergenceMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 

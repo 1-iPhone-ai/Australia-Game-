@@ -34,6 +34,7 @@ import { isMetaversalCoalitionContinuity } from './coalition-metaversal-continui
 import { isOmniversalCoalitionSynthesis } from './coalition-omniversal-synthesis.ts';
 import { isHyperversalCoalitionHarmonization } from './coalition-hyperversal-harmonization.ts';
 import { isTranscendentCoalitionOmnium } from './coalition-transcendent-omnium.ts';
+import { isSupremeCoalitionConvergence } from './coalition-supreme-convergence.ts';
 import { listStakeholderWarnings } from './stakeholder-coalition.ts';
 import { rankStrategicActions } from './strategic-recommendations.ts';
 import { listStrategicActions } from '../catalog/strategic-action-catalog.ts';
@@ -116,6 +117,8 @@ export function buildTurnStrategicBriefing(
       state.coalitionHyperversalHarmonizationStreakDays ?? 0,
     transcendentCoalitionOmnium: isTranscendentCoalitionOmnium(state),
     coalitionTranscendentOmniumStreakDays: state.coalitionTranscendentOmniumStreakDays ?? 0,
+    supremeCoalitionConvergence: isSupremeCoalitionConvergence(state),
+    coalitionSupremeConvergenceStreakDays: state.coalitionSupremeConvergenceStreakDays ?? 0,
     mandateDriftRisk: classifyMandateDriftRisk(state),
     completedActionCount: state.completedActionIds.length,
     activeChoiceId: state.activeChoice?.choiceId ?? null,
