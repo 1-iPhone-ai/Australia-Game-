@@ -258,3 +258,13 @@ export function multiversalPersistenceRankingBonus(
   if (streak >= action.minCoalitionMultiversalPersistenceStreakDays) return 21;
   return 2;
 }
+
+export function metaversalContinuityRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionMetaversalContinuityStreakDays === undefined) return 0;
+  const streak = state.coalitionMetaversalContinuityStreakDays ?? 0;
+  if (streak >= action.minCoalitionMetaversalContinuityStreakDays) return 22;
+  return 2;
+}

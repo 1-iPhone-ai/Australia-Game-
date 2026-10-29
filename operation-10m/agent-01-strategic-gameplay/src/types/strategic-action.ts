@@ -115,6 +115,8 @@ export interface StrategicActionDefinition {
   minCoalitionQuantumOmnipresenceStreakDays?: number;
   /** Action requires multiversal persistence streak after quantum omnipresence. */
   minCoalitionMultiversalPersistenceStreakDays?: number;
+  /** Action requires metaversal continuity streak after multiversal persistence. */
+  minCoalitionMetaversalContinuityStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -178,7 +180,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_coalition_galactic_infinity_streak'; minDays: number }
   | { kind: 'min_coalition_stellar_transcendence_streak'; minDays: number }
   | { kind: 'min_coalition_quantum_omnipresence_streak'; minDays: number }
-  | { kind: 'min_coalition_multiversal_persistence_streak'; minDays: number };
+  | { kind: 'min_coalition_multiversal_persistence_streak'; minDays: number }
+  | { kind: 'min_coalition_metaversal_continuity_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -268,6 +271,8 @@ export interface StrategicGameplayState {
   coalitionQuantumOmnipresenceStreakDays?: number;
   /** Days quantum omnipresence held multiversal persistence eligibility. */
   coalitionMultiversalPersistenceStreakDays?: number;
+  /** Days multiversal persistence held metaversal continuity eligibility. */
+  coalitionMetaversalContinuityStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;

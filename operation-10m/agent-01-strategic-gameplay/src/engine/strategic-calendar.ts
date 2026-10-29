@@ -82,6 +82,10 @@ import {
   advanceCoalitionMultiversalPersistenceStreak,
   applyMultiversalPersistenceMandateBonus,
 } from './coalition-multiversal-persistence.ts';
+import {
+  advanceCoalitionMetaversalContinuityStreak,
+  applyMetaversalContinuityMandateBonus,
+} from './coalition-metaversal-continuity.ts';
 import { advanceCoalitionRecoveryStreak } from './coalition-recovery.ts';
 import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
 import type { StakeholderGroupId, StakeholderSentiment } from '../types/coalition-mandate.ts';
@@ -177,6 +181,8 @@ export function advanceStrategicGameplayCalendar(
   next = applyQuantumOmnipresenceMandateBonus(next, daysAdvanced);
   next = advanceCoalitionMultiversalPersistenceStreak(next, daysAdvanced);
   next = applyMultiversalPersistenceMandateBonus(next, daysAdvanced);
+  next = advanceCoalitionMetaversalContinuityStreak(next, daysAdvanced);
+  next = applyMetaversalContinuityMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 

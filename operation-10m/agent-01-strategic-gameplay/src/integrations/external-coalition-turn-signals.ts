@@ -23,6 +23,7 @@ import { isGalacticCoalitionInfinity } from '../engine/coalition-galactic-infini
 import { isStellarCoalitionTranscendence } from '../engine/coalition-stellar-transcendence.ts';
 import { isQuantumCoalitionOmnipresence } from '../engine/coalition-quantum-omnipresence.ts';
 import { isMultiversalCoalitionPersistence } from '../engine/coalition-multiversal-persistence.ts';
+import { isMetaversalCoalitionContinuity } from '../engine/coalition-metaversal-continuity.ts';
 
 /** Outbound coalition telemetry for Agent 02 / Agent 05 assembly hooks (round 10+). */
 export interface ExternalCoalitionTurnSignals {
@@ -69,6 +70,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionQuantumOmnipresenceStreakDays: number;
   multiversalCoalitionPersistence: boolean;
   coalitionMultiversalPersistenceStreakDays: number;
+  metaversalCoalitionContinuity: boolean;
+  coalitionMetaversalContinuityStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -119,6 +122,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionQuantumOmnipresenceStreakDays: state.coalitionQuantumOmnipresenceStreakDays ?? 0,
     multiversalCoalitionPersistence: isMultiversalCoalitionPersistence(state),
     coalitionMultiversalPersistenceStreakDays: state.coalitionMultiversalPersistenceStreakDays ?? 0,
+    metaversalCoalitionContinuity: isMetaversalCoalitionContinuity(state),
+    coalitionMetaversalContinuityStreakDays: state.coalitionMetaversalContinuityStreakDays ?? 0,
   };
 }
 
@@ -169,5 +174,7 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionQuantumOmnipresenceStreakDays: raw?.coalitionQuantumOmnipresenceStreakDays ?? 0,
     multiversalCoalitionPersistence: raw?.multiversalCoalitionPersistence ?? false,
     coalitionMultiversalPersistenceStreakDays: raw?.coalitionMultiversalPersistenceStreakDays ?? 0,
+    metaversalCoalitionContinuity: raw?.metaversalCoalitionContinuity ?? false,
+    coalitionMetaversalContinuityStreakDays: raw?.coalitionMetaversalContinuityStreakDays ?? 0,
   };
 }

@@ -49,6 +49,7 @@ import { resetCoalitionGalacticInfinityStreak } from './coalition-galactic-infin
 import { resetCoalitionStellarTranscendenceStreak } from './coalition-stellar-transcendence.ts';
 import { resetCoalitionQuantumOmnipresenceStreak } from './coalition-quantum-omnipresence.ts';
 import { resetCoalitionMultiversalPersistenceStreak } from './coalition-multiversal-persistence.ts';
+import { resetCoalitionMetaversalContinuityStreak } from './coalition-metaversal-continuity.ts';
 import {
   scoreNationalPriorityAlignment,
   validateAction,
@@ -93,6 +94,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     coalitionStellarTranscendenceStreakDays: 0,
     coalitionQuantumOmnipresenceStreakDays: 0,
     coalitionMultiversalPersistenceStreakDays: 0,
+    coalitionMetaversalContinuityStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -367,6 +369,12 @@ export function executeStrategicAction(
   }
   if (action.id === 'sga_coalition_multiversal_continuity_pact') {
     nextState = resetCoalitionMultiversalPersistenceStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_metaversal_continuity_charter') {
+    nextState = resetCoalitionMetaversalContinuityStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_metaversal_permanence_endowment') {
+    nextState = resetCoalitionMetaversalContinuityStreak(nextState);
   }
 
   contracts.ui.pushToast({

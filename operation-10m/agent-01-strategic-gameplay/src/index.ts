@@ -116,6 +116,7 @@ export {
   stellarTranscendenceRankingBonus,
   quantumOmnipresenceRankingBonus,
   multiversalPersistenceRankingBonus,
+  metaversalContinuityRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -391,6 +392,16 @@ export {
   applyMultiversalPersistenceMandateBonus,
 } from './engine/coalition-multiversal-persistence.ts';
 
+export { coalitionMetaversalContinuityStreakIssues } from './engine/coalition-metaversal-continuity-gates.ts';
+
+export {
+  METAVERSE_COALITION_CONTINUITY_THRESHOLD,
+  advanceCoalitionMetaversalContinuityStreak,
+  resetCoalitionMetaversalContinuityStreak,
+  isMetaversalCoalitionContinuity,
+  applyMetaversalContinuityMandateBonus,
+} from './engine/coalition-metaversal-continuity.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '3.8.0';
+export const AGENT_01_MODULE_VERSION = '3.9.0';
