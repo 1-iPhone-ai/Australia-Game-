@@ -1394,6 +1394,63 @@ export function assessInflationTargetBreach(
 }
 
 
+// --- source: rates/real-rate-gap.ts ---
+
+export interface RealRateGapAssessment {
+  nominalPolicyRatePercent: number;
+  impliedInflationPercent: number;
+  realRatePercent: number;
+  gapBand: 'deeply_negative' | 'negative' | 'neutral' | 'positive' | 'restrictive';
+  inflationScore: number;
+  narrative: string;
+}
+
+/** Real rate = nominal policy minus implied CPI — metadata for co-pilot / dashboards. */
+export function assessRealRateGap(
+  inflationScore: number,
+  stance: MonetaryPolicyStance,
+  inflationBand: InflationConditionsBand,
+): RealRateGapAssessment {
+  const nominalPolicyRatePercent = referencePolicyRate(stance, 'neutral') * 100;
+  const impliedInflationPercent = inflationScoreToImpliedTargetPercent(inflationScore);
+  const realRatePercent = finRound(nominalPolicyRatePercent - impliedInflationPercent, 2);
+
+  let gapBand: RealRateGapAssessment['gapBand'] = 'neutral';
+  if (realRatePercent <= -2.5) gapBand = 'deeply_negative';
+  else if (realRatePercent < -0.35) gapBand = 'negative';
+  else if (realRatePercent <= 1.2) gapBand = 'neutral';
+  else if (realRatePercent <= 3.5) gapBand = 'positive';
+  else gapBand = 'restrictive';
+
+  if (inflationBand === 'scenario_runaway' && gapBand === 'neutral') {
+    gapBand = 'negative';
+  }
+
+  const narrative =
+    gapBand === 'deeply_negative' || gapBand === 'negative'
+      ? 'Real rates are accommodative — inflation may persist unless stance tightens.'
+      : gapBand === 'restrictive' || gapBand === 'positive'
+        ? 'Real rates are firm — disinflation channel active in metadata layer.'
+        : 'Real rates near neutral relative to implied inflation.';
+
+  return {
+    nominalPolicyRatePercent: finRound(nominalPolicyRatePercent, 2),
+    impliedInflationPercent: finRound(impliedInflationPercent, 2),
+    realRatePercent: finClamp(realRatePercent, -8, 8),
+    gapBand,
+    inflationScore: finRound(inflationScore, 1),
+    narrative,
+  };
+}
+
+export function realRateGapTighteningBias(gap: RealRateGapAssessment): number {
+  if (gap.gapBand === 'deeply_negative') return 0.35;
+  if (gap.gapBand === 'negative') return 0.18;
+  if (gap.gapBand === 'restrictive') return -0.12;
+  return 0;
+}
+
+
 // --- source: fiscal/fiscal-dominance.ts ---
 
 export type FiscalDominanceBand = 'contained' | 'elevated' | 'dominant';
@@ -1440,6 +1497,195 @@ export function assessFiscalDominance(inputs: MacroFinancialSystemInputs): Fisca
     narrative,
     dampensAnchoring,
   };
+}
+
+
+// --- source: credit/credit-inflation-feedback.ts ---
+
+export interface CreditInflationFeedbackAssessment {
+  feedbackLoop: 'dampening' | 'neutral' | 'amplifying' | 'vicious';
+  creditInflationCoupling: number;
+  creditScoreNudge: number;
+  inflationScoreNudge: number;
+  summary: string;
+}
+
+const CREDIT_RANK: Record<CreditConditionsBand, number> = {
+  frozen: 0,
+  restricted: 1,
+  tight: 1.5,
+  neutral: 2,
+  accommodative: 3,
+};
+
+/** Two-way credit–inflation coupling read for macro financial layer. */
+export function assessCreditInflationFeedback(
+  inflationBand: InflationConditionsBand,
+  creditBand: CreditConditionsBand,
+  creditShockActive: boolean,
+): CreditInflationFeedbackAssessment {
+  const inflRank = inflationBandSeverityRank(inflationBand);
+  const credRank = CREDIT_RANK[creditBand];
+
+  let coupling = finRound((inflRank - 2) * 0.18 + (2 - credRank) * 0.12, 3);
+  if (creditShockActive) coupling += 0.15;
+  coupling = finClamp(coupling, -0.5, 0.85);
+
+  let feedbackLoop: CreditInflationFeedbackAssessment['feedbackLoop'] = 'neutral';
+  if (inflRank >= 4 && credRank <= 1) {
+    feedbackLoop = creditShockActive ? 'vicious' : 'amplifying';
+  } else if (inflRank <= 2 && credRank >= 2) {
+    feedbackLoop = 'dampening';
+  } else if (coupling > 0.35) {
+    feedbackLoop = 'amplifying';
+  } else if (coupling < -0.1) {
+    feedbackLoop = 'dampening';
+  }
+
+  const inflationScoreNudge =
+    feedbackLoop === 'vicious' ? 1.8 : feedbackLoop === 'amplifying' ? 0.9 : feedbackLoop === 'dampening' ? -0.6 : 0;
+  const creditScoreNudge =
+    feedbackLoop === 'vicious' ? -2.2 : feedbackLoop === 'amplifying' ? -1.1 : feedbackLoop === 'dampening' ? 0.4 : 0;
+
+  const summary =
+    feedbackLoop === 'vicious'
+      ? 'Credit stress and high inflation reinforce each other in the macro channel.'
+      : feedbackLoop === 'amplifying'
+        ? 'Tight credit is not yet breaking the inflation loop.'
+        : feedbackLoop === 'dampening'
+          ? 'Credit conditions are helping contain inflation pressures.'
+          : 'Credit and inflation moving largely independently.';
+
+  return {
+    feedbackLoop,
+    creditInflationCoupling: coupling,
+    creditScoreNudge: finRound(creditScoreNudge, 2),
+    inflationScoreNudge: finRound(inflationScoreNudge, 2),
+    summary,
+  };
+}
+
+
+// --- source: inflation/inflation-momentum.ts ---
+
+export interface InflationMomentumSnapshot {
+  turn: number;
+  momentumScore: number;
+  direction: 'disinflating' | 'stable' | 'accelerating' | 'runaway';
+  bandDelta: number;
+  streakTurns: number;
+}
+
+export interface InflationMomentumState {
+  priorBand: InflationConditionsBand | null;
+  streakTurns: number;
+  lastMomentumScore: number;
+}
+
+export function createInitialInflationMomentumState(): InflationMomentumState {
+  return { priorBand: null, streakTurns: 0, lastMomentumScore: 50 };
+}
+
+/** Deterministic band-to-band momentum — macro CPI channel only. */
+export function stepInflationMomentum(
+  state: InflationMomentumState,
+  turn: number,
+  currentBand: InflationConditionsBand,
+): { state: InflationMomentumState; snapshot: InflationMomentumSnapshot } {
+  const curRank = inflationBandSeverityRank(currentBand);
+  const priorRank = state.priorBand ? inflationBandSeverityRank(state.priorBand) : curRank;
+  const bandDelta = curRank - priorRank;
+
+  let streakTurns = state.streakTurns;
+  if (state.priorBand === currentBand) {
+    streakTurns += 1;
+  } else {
+    streakTurns = 1;
+  }
+
+  let momentumScore = state.lastMomentumScore + bandDelta * 9;
+  if (currentBand === 'scenario_runaway') {
+    momentumScore += 6;
+  } else if (bandDelta < 0) {
+    momentumScore -= 2;
+  }
+  momentumScore = finClamp(momentumScore, 0, 100);
+
+  let direction: InflationMomentumSnapshot['direction'] = 'stable';
+  if (currentBand === 'scenario_runaway' || momentumScore >= 78) {
+    direction = 'runaway';
+  } else if (bandDelta > 0 || momentumScore >= 58) {
+    direction = 'accelerating';
+  } else if (bandDelta < 0 || momentumScore <= 38) {
+    direction = 'disinflating';
+  }
+
+  const snapshot: InflationMomentumSnapshot = {
+    turn,
+    momentumScore: finRound(momentumScore, 1),
+    direction,
+    bandDelta,
+    streakTurns,
+  };
+
+  return {
+    state: {
+      priorBand: currentBand,
+      streakTurns,
+      lastMomentumScore: momentumScore,
+    },
+    snapshot,
+  };
+}
+
+export function inflationMomentumInflationScoreNudge(snapshot: InflationMomentumSnapshot): number {
+  if (snapshot.direction === 'runaway') return 2.5;
+  if (snapshot.direction === 'accelerating') return finRound(snapshot.bandDelta * 1.2 + 0.8, 2);
+  if (snapshot.direction === 'disinflating') return finRound(Math.min(snapshot.bandDelta * 1.5, -0.5), 2);
+  return 0;
+}
+
+
+// --- source: inflation/disinflation-sacrifice.ts ---
+
+export interface DisinflationSacrificeEstimate {
+  sacrificeRatio: number;
+  outputCostBand: 'low' | 'moderate' | 'high' | 'severe';
+  turnsToAnchor: number;
+  narrative: string;
+}
+
+/** Okun-style sacrifice ratio metaphor for disinflation paths (metadata only). */
+export function estimateDisinflationSacrifice(
+  inflationBand: InflationConditionsBand,
+  inflationScore: number,
+  momentum: InflationMomentumSnapshot | null,
+): DisinflationSacrificeEstimate {
+  const rank = inflationBandSeverityRank(inflationBand);
+  const scoreGap = finClamp(inflationScore - 45, 0, 55);
+  let sacrificeRatio = finRound(0.35 + rank * 0.22 + scoreGap * 0.012, 2);
+  if (momentum?.direction === 'accelerating' || momentum?.direction === 'runaway') {
+    sacrificeRatio = finRound(sacrificeRatio + 0.25, 2);
+  }
+  sacrificeRatio = finClamp(sacrificeRatio, 0.2, 3.5);
+
+  const outputCostBand: DisinflationSacrificeEstimate['outputCostBand'] =
+    sacrificeRatio >= 2.4
+      ? 'severe'
+      : sacrificeRatio >= 1.6
+        ? 'high'
+        : sacrificeRatio >= 0.9
+          ? 'moderate'
+          : 'low';
+
+  const turnsToAnchor = Math.round(finClamp(2 + rank * 1.5 + scoreGap * 0.08 + (momentum?.streakTurns ?? 0) * 0.3, 2, 14));
+
+  const narrative =
+    outputCostBand === 'severe' || outputCostBand === 'high'
+      ? 'Disinflation likely requires sustained tight financial conditions and fiscal restraint.'
+      : 'Moderate sacrifice ratio — anchoring achievable with coordinated policy.';
+
+  return { sacrificeRatio, outputCostBand, turnsToAnchor, narrative };
 }
 
 
@@ -1807,6 +2053,43 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
       inflationSettingMultiplier: 1.15,
     },
     tags: ['inflation', 'credit', 'round5'],
+  },
+  {
+    id: 'real_rate_accommodative_stack',
+    label: 'Real rate accommodative stack',
+    description: 'High inflation score with accommodative credit — negative real rate gap stress.',
+    patch: {
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.32,
+      creditShockActive: false,
+      actorCreditStressIndex: 0.42,
+    },
+    tags: ['inflation', 'rates', 'round6'],
+  },
+  {
+    id: 'disinflation_sacrifice_path',
+    label: 'Disinflation sacrifice path',
+    description: 'Elevated inflation with improving fiscal consolidation metaphor.',
+    patch: {
+      highInflationScenario: true,
+      fiscalPressure: 'strained',
+      inflationSettingMultiplier: 1.1,
+      publicStability: 55,
+    },
+    tags: ['inflation', 'disinflation', 'round6'],
+  },
+  {
+    id: 'credit_inflation_vicious_loop',
+    label: 'Credit–inflation vicious loop',
+    description: 'Credit shock with household extreme stress — amplifying feedback.',
+    patch: {
+      creditShockActive: true,
+      householdAffordability: 'severe_pressure',
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.24,
+    },
+    tags: ['inflation', 'credit', 'round6'],
   },
 ] as const;
 
@@ -2596,11 +2879,129 @@ export function agent06BridgeIntegrationNote(): string {
 }
 
 
+// --- source: integration/agent07-fiscal-bridge.ts ---
+
+/** Read-only fiscal snapshot from Agent 07 public finance (contract only). */
+export interface Agent07FiscalSnapshot {
+  turn: number;
+  consolidatedDeficitBand: 'surplus' | 'balanced' | 'moderate_deficit' | 'large_deficit';
+  revenueMomentum: 'weak' | 'steady' | 'strong';
+  debtServicePressure: 'low' | 'moderate' | 'elevated' | 'critical';
+}
+
+export function mergeAgent07IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent07FiscalSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let fiscalPressure = base.fiscalPressure;
+  if (snapshot.consolidatedDeficitBand === 'large_deficit') {
+    if (snapshot.debtServicePressure === 'critical' || fiscalPressure === 'strained') {
+      fiscalPressure = 'critical';
+    } else if (fiscalPressure === 'healthy') {
+      fiscalPressure = 'strained';
+    } else if (fiscalPressure === 'tight') {
+      fiscalPressure = 'critical';
+    }
+  } else if (snapshot.consolidatedDeficitBand === 'moderate_deficit' && fiscalPressure === 'healthy') {
+    fiscalPressure = 'tight';
+  }
+
+  let sovereignDebtPressure = base.sovereignDebtPressure;
+  if (snapshot.debtServicePressure === 'critical') {
+    sovereignDebtPressure = 'critical';
+  } else if (snapshot.debtServicePressure === 'elevated' && sovereignDebtPressure === 'manageable') {
+    sovereignDebtPressure = 'elevated';
+  }
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.revenueMomentum === 'weak' && snapshot.debtServicePressure !== 'low') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
+  let fiscalSustainability = base.fiscalSustainability;
+  if (snapshot.debtServicePressure === 'critical') {
+    fiscalSustainability = 'vulnerable';
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    fiscalPressure,
+    sovereignDebtPressure,
+    fiscalSustainability,
+    inflationSettingMultiplier,
+  };
+}
+
+export function agent07FiscalBridgeIntegrationNote(): string {
+  return 'Agent 07 fiscal snapshot adjusts fiscal pressure and debt bands only; no direct commodity price writes.';
+}
+
+
+// --- source: integration/agent09-household-bridge.ts ---
+
+/** Read-only household economy snapshot from Agent 09 (contract only). */
+export interface Agent09HouseholdSnapshot {
+  turn: number;
+  laborParticipationBand: 'weak' | 'steady' | 'strong';
+  wageGrowthBand: 'subdued' | 'moderate' | 'elevated' | 'surge';
+  costOfLivingStress: 'low' | 'moderate' | 'high' | 'extreme';
+}
+
+export function mergeAgent09IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent09HouseholdSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let householdAffordability = base.householdAffordability;
+  if (snapshot.costOfLivingStress === 'extreme') {
+    householdAffordability = 'severe_pressure';
+  } else if (snapshot.costOfLivingStress === 'high' && householdAffordability === 'healthy') {
+    householdAffordability = 'strained';
+  }
+
+  let householdInflationScenarioActive = base.householdInflationScenarioActive;
+  if (snapshot.wageGrowthBand === 'surge' || snapshot.costOfLivingStress === 'extreme') {
+    householdInflationScenarioActive = true;
+  }
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.wageGrowthBand === 'elevated' || snapshot.wageGrowthBand === 'surge') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  }
+
+  let actorCreditStressIndex = base.actorCreditStressIndex ?? 0.35;
+  if (snapshot.costOfLivingStress === 'extreme') {
+    actorCreditStressIndex = finClamp(actorCreditStressIndex + 0.08, 0, 1);
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    householdAffordability,
+    householdInflationScenarioActive,
+    inflationSettingMultiplier,
+    actorCreditStressIndex,
+  };
+}
+
+export function agent09HouseholdBridgeIntegrationNote(): string {
+  return 'Agent 09 household snapshot adjusts affordability and service-cost inflation flags; macro CPI only.';
+}
+
+
 // --- source: integration/inflation-forecast.ts ---
   stepInflationRegimeTracker,
   createInitialInflationRegimeTracker,
   type InflationRegimeLabel,
 } from './inflation-regime-tracker.js';
+  createInitialInflationMomentumState,
+  stepInflationMomentum,
+  type InflationMomentumSnapshot,
+} from '../inflation/inflation-momentum.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -2611,6 +3012,8 @@ export interface InflationForecastPoint {
   headlineCpiIndex: number;
   coreCpiIndex: number;
   regime: InflationRegimeLabel;
+  momentumScore: number;
+  momentumDirection: InflationMomentumSnapshot['direction'];
 }
 
 export interface InflationForecastPath {
@@ -2628,6 +3031,7 @@ export function projectInflationForecastPath(
   let anchoring = initialInflationAnchoringScore();
   let maxCost = 1;
   let regimeState = createInitialInflationRegimeTracker();
+  let momentumState = createInitialInflationMomentumState();
 
   for (let t = 1; t <= horizonTurns; t++) {
     const inputs = { ...(seedInputs ?? makeDefaultMacroFinancialTestInputs()), turn: t };
@@ -2655,6 +3059,8 @@ export function projectInflationForecastPath(
       fiscalCritical: inputs.fiscalPressure === 'critical',
     });
     const regimeSnap = regimeState.history[regimeState.history.length - 1];
+    const mom = stepInflationMomentum(momentumState, t, r.state.inflation);
+    momentumState = mom.state;
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -2665,6 +3071,8 @@ export function projectInflationForecastPath(
       headlineCpiIndex: cpi.headlineIndex,
       coreCpiIndex: coreSpread.coreIndex,
       regime: regimeSnap?.regime ?? 'anchored_soft',
+      momentumScore: mom.snapshot.momentumScore,
+      momentumDirection: mom.snapshot.direction,
     });
   }
 
@@ -2770,11 +3178,14 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r5';
+  schemaVersion: '10.14.agent10.r6';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
   meanAnchoringScore: number;
+  terminalMomentumDirection: InflationMomentumSnapshot['direction'];
+  realRateGapBand: RealRateGapAssessment['gapBand'];
+  creditInflationFeedback: CreditInflationFeedbackAssessment['feedbackLoop'];
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -2788,6 +3199,9 @@ export function buildAgent21InflationForecastBundle(input: {
   shock: InflationShockClassification;
   fiscalDominance: FiscalDominanceAssessment;
   targetBreach: InflationTargetBreach;
+  momentum?: InflationMomentumSnapshot | null;
+  realRateGap?: RealRateGapAssessment | null;
+  creditFeedback?: CreditInflationFeedbackAssessment | null;
 }): Agent21InflationForecastBundle {
   const meanAnchoring =
     input.path.points.length === 0
@@ -2797,12 +3211,17 @@ export function buildAgent21InflationForecastBundle(input: {
           1,
         );
 
+  const lastPoint = input.path.points[input.path.points.length - 1];
+
   return {
-    schemaVersion: '10.14.agent10.r5',
+    schemaVersion: '10.14.agent10.r6',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
     meanAnchoringScore: meanAnchoring,
+    terminalMomentumDirection: input.momentum?.direction ?? lastPoint?.momentumDirection ?? 'stable',
+    realRateGapBand: input.realRateGap?.gapBand ?? 'neutral',
+    creditInflationFeedback: input.creditFeedback?.feedbackLoop ?? 'neutral',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -2878,6 +3297,16 @@ export function effectiveTierLoanRate(
   createInitialInflationRegimeTracker,
   inflationRegimePersistenceHalfLifeTurns,
 } from './integration/inflation-regime-tracker.js';
+  createInitialInflationMomentumState,
+  stepInflationMomentum,
+  inflationMomentumInflationScoreNudge,
+} from './inflation/inflation-momentum.js';
+  mergeAgent07IntoMacroFinancialInputs,
+  agent07FiscalBridgeIntegrationNote,
+} from './integration/agent07-fiscal-bridge.js';
+  mergeAgent09IntoMacroFinancialInputs,
+  agent09HouseholdBridgeIntegrationNote,
+} from './integration/agent09-household-bridge.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -3276,7 +3705,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r5');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r6');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -3288,6 +3717,81 @@ export function runAgent10FinanceSelfTests(): {
     })(),
   );
   check('a10_r5_13', 'agent21 bridge note', agent21ForecastBridgeIntegrationNote().includes('Agent 21'));
+
+  // --- Round 6 scale wave ---
+  {
+    const gap = assessRealRateGap(82, 'accommodative', 'high');
+    check('a10_r6_01', 'real rate gap negative when hot', gap.gapBand === 'negative' || gap.gapBand === 'deeply_negative');
+    check('a10_r6_02', 'real rate tightening bias', realRateGapTighteningBias(gap) > 0);
+  }
+  {
+    let mom = createInitialInflationMomentumState();
+    let snap = stepInflationMomentum(mom, 1, 'anchored').snapshot;
+    const stepped = stepInflationMomentum(stepInflationMomentum(mom, 1, 'anchored').state, 2, 'elevated');
+    snap = stepped.snapshot;
+    check('a10_r6_03', 'momentum accelerating', snap.direction === 'accelerating' || snap.bandDelta > 0);
+    check('a10_r6_04', 'momentum nudge', inflationMomentumInflationScoreNudge(snap) >= 0);
+  }
+  {
+    const sacrifice = estimateDisinflationSacrifice('high', 78, null);
+    check('a10_r6_05', 'disinflation sacrifice ratio', sacrifice.sacrificeRatio >= 0.5);
+    check('a10_r6_06', 'turns to anchor', sacrifice.turnsToAnchor >= 2);
+  }
+  {
+    const fb = assessCreditInflationFeedback('high', 'restricted', true);
+    check('a10_r6_07', 'credit inflation vicious or amplifying', fb.feedbackLoop === 'vicious' || fb.feedbackLoop === 'amplifying');
+  }
+  {
+    const merged07 = mergeAgent07IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      consolidatedDeficitBand: 'large_deficit',
+      revenueMomentum: 'weak',
+      debtServicePressure: 'critical',
+    });
+    check('a10_r6_08', 'agent07 fiscal merge', merged07.fiscalPressure === 'critical');
+    check('a10_r6_09', 'agent07 bridge note', agent07FiscalBridgeIntegrationNote().includes('Agent 07'));
+  }
+  {
+    const merged09 = mergeAgent09IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      laborParticipationBand: 'steady',
+      wageGrowthBand: 'surge',
+      costOfLivingStress: 'extreme',
+    });
+    check('a10_r6_10', 'agent09 household merge', merged09.householdAffordability === 'severe_pressure');
+    check('a10_r6_11', 'agent09 bridge note', agent09HouseholdBridgeIntegrationNote().includes('Agent 09'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check('a10_r6_12', 'forecast momentum fields', path.points.every((p) => p.momentumScore >= 0 && !!p.momentumDirection));
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(60),
+      momentum: path.points[path.points.length - 1]
+        ? {
+            turn: path.points[path.points.length - 1].turn,
+            momentumScore: path.points[path.points.length - 1].momentumScore,
+            direction: path.points[path.points.length - 1].momentumDirection,
+            bandDelta: 0,
+            streakTurns: 1,
+          }
+        : null,
+      realRateGap: assessRealRateGap(60, 'neutral', 'elevated'),
+      creditFeedback: assessCreditInflationFeedback('elevated', 'neutral', false),
+    });
+    check('a10_r6_13', 'agent21 r6 fields', bundle.realRateGapBand !== undefined && bundle.creditInflationFeedback !== undefined);
+  }
+  check(
+    'a10_r6_14',
+    'round6 preset vicious loop',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'credit_inflation_vicious_loop');
+      return inp?.creditShockActive === true && inp.householdInflationScenarioActive === true;
+    })(),
+  );
 
   const passed = results.filter((r) => r.passed).length;
   const failed = results.length - passed;
@@ -3465,6 +3969,56 @@ export function InflationRegimePanel(props: InflationRegimePanelProps) {
         {target.breachSeverity}
       </p>
       <p>{shock.summary}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/InflationMomentumPanel.tsx ---
+  createInitialInflationMomentumState,
+  stepInflationMomentum,
+} from '../inflation/inflation-momentum.js';
+
+export interface InflationMomentumPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  inflationScore: number;
+  agent07?: Agent07FiscalSnapshot | null;
+  agent09?: Agent09HouseholdSnapshot | null;
+}
+
+export function InflationMomentumPanel(props: InflationMomentumPanelProps) {
+  const { snapshot } = stepInflationMomentum(
+    createInitialInflationMomentumState(),
+    props.inputs.turn,
+    props.state.inflation,
+  );
+  const sacrifice = estimateDisinflationSacrifice(props.state.inflation, props.inflationScore, snapshot);
+  const realGap = assessRealRateGap(props.inflationScore, props.state.stance, props.state.inflation);
+  const feedback = assessCreditInflationFeedback(
+    props.state.inflation,
+    props.state.credit,
+    props.inputs.creditShockActive,
+  );
+
+  return (
+    <div className="op10m-inflation-momentum" data-testid="inflation-momentum-panel">
+      <h4>Inflation momentum (round 6)</h4>
+      <p>
+        Momentum {snapshot.momentumScore.toFixed(0)} · {snapshot.direction} · real rate gap {realGap.gapBand}
+      </p>
+      <p>
+        Credit–inflation {feedback.feedbackLoop} · sacrifice ratio {sacrifice.sacrificeRatio.toFixed(2)} (
+        {sacrifice.outputCostBand})
+      </p>
+      <p>{realGap.narrative}</p>
+      {(props.agent07 || props.agent09) && (
+        <p data-testid="inflation-momentum-bridges">
+          Bridges: {props.agent07 ? 'Agent07 fiscal' : ''}
+          {props.agent07 && props.agent09 ? ' · ' : ''}
+          {props.agent09 ? 'Agent09 household' : ''}
+        </p>
+      )}
     </div>
   );
 }

@@ -51,6 +51,12 @@ import { assessFiscalDominance } from '../src/fiscal/fiscal-dominance.js';
 import { assessInflationTargetBreach } from '../src/rates/inflation-target-breach.js';
 import { stepInflationRegimeTracker, createInitialInflationRegimeTracker } from '../src/integration/inflation-regime-tracker.js';
 import { buildAgent21InflationForecastBundle } from '../src/integration/agent21-forecast-bridge.js';
+import { assessRealRateGap } from '../src/rates/real-rate-gap.js';
+import { stepInflationMomentum, createInitialInflationMomentumState } from '../src/inflation/inflation-momentum.js';
+import { estimateDisinflationSacrifice } from '../src/inflation/disinflation-sacrifice.js';
+import { assessCreditInflationFeedback } from '../src/credit/credit-inflation-feedback.js';
+import { mergeAgent07IntoMacroFinancialInputs } from '../src/integration/agent07-fiscal-bridge.js';
+import { mergeAgent09IntoMacroFinancialInputs } from '../src/integration/agent09-household-bridge.js';
 
 describe('Agent 10 glossary & boundaries', () => {
   it('defines coherent finance terms', () => {
@@ -360,5 +366,67 @@ describe('Agent 10 scale-wave extensions', () => {
   it('round-5 scenario preset stagflation', () => {
     const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'stagflation_risk_blend');
     assert.ok(inp?.creditShockActive && inp.householdAffordability === 'severe_pressure');
+  });
+
+  it('round-6 real rate gap under high inflation', () => {
+    const g = assessRealRateGap(85, 'accommodative', 'high');
+    assert.ok(g.realRatePercent < g.impliedInflationPercent);
+  });
+
+  it('round-6 inflation momentum step', () => {
+    const s = stepInflationMomentum(createInitialInflationMomentumState(), 1, 'high');
+    assert.ok(s.snapshot.momentumScore >= 0);
+  });
+
+  it('round-6 disinflation sacrifice', () => {
+    const d = estimateDisinflationSacrifice('elevated', 70, null);
+    assert.ok(d.sacrificeRatio > 0 && d.turnsToAnchor >= 2);
+  });
+
+  it('round-6 credit inflation feedback', () => {
+    const f = assessCreditInflationFeedback('scenario_runaway', 'frozen', true);
+    assert.equal(f.feedbackLoop, 'vicious');
+  });
+
+  it('round-6 agent07 fiscal bridge', () => {
+    const m = mergeAgent07IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      consolidatedDeficitBand: 'large_deficit',
+      revenueMomentum: 'weak',
+      debtServicePressure: 'elevated',
+    });
+    assert.notEqual(m.fiscalPressure, 'healthy');
+  });
+
+  it('round-6 agent09 household bridge', () => {
+    const m = mergeAgent09IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      laborParticipationBand: 'strong',
+      wageGrowthBand: 'elevated',
+      costOfLivingStress: 'high',
+    });
+    assert.ok((m.inflationSettingMultiplier ?? 1) > 1);
+  });
+
+  it('round-6 forecast momentum on path', () => {
+    const p = projectInflationForecastPath(3);
+    assert.ok(p.points.every((pt) => typeof pt.momentumScore === 'number'));
+  });
+
+  it('round-6 agent21 bundle r6', () => {
+    const path = projectInflationForecastPath(2);
+    const b = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('high', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(80),
+    });
+    assert.equal(b.schemaVersion, '10.14.agent10.r6');
+  });
+
+  it('round-6 scenario preset credit vicious loop', () => {
+    const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'credit_inflation_vicious_loop');
+    assert.ok(inp?.creditShockActive && inp.fiscalPressure === 'critical');
   });
 });

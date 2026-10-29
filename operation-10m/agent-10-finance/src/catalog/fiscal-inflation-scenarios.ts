@@ -127,6 +127,43 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'credit', 'round5'],
   },
+  {
+    id: 'real_rate_accommodative_stack',
+    label: 'Real rate accommodative stack',
+    description: 'High inflation score with accommodative credit — negative real rate gap stress.',
+    patch: {
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.32,
+      creditShockActive: false,
+      actorCreditStressIndex: 0.42,
+    },
+    tags: ['inflation', 'rates', 'round6'],
+  },
+  {
+    id: 'disinflation_sacrifice_path',
+    label: 'Disinflation sacrifice path',
+    description: 'Elevated inflation with improving fiscal consolidation metaphor.',
+    patch: {
+      highInflationScenario: true,
+      fiscalPressure: 'strained',
+      inflationSettingMultiplier: 1.1,
+      publicStability: 55,
+    },
+    tags: ['inflation', 'disinflation', 'round6'],
+  },
+  {
+    id: 'credit_inflation_vicious_loop',
+    label: 'Credit–inflation vicious loop',
+    description: 'Credit shock with household extreme stress — amplifying feedback.',
+    patch: {
+      creditShockActive: true,
+      householdAffordability: 'severe_pressure',
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.24,
+    },
+    tags: ['inflation', 'credit', 'round6'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

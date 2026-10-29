@@ -10,6 +10,11 @@ import {
   createInitialInflationRegimeTracker,
   type InflationRegimeLabel,
 } from './inflation-regime-tracker.js';
+import {
+  createInitialInflationMomentumState,
+  stepInflationMomentum,
+  type InflationMomentumSnapshot,
+} from '../inflation/inflation-momentum.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -20,6 +25,8 @@ export interface InflationForecastPoint {
   headlineCpiIndex: number;
   coreCpiIndex: number;
   regime: InflationRegimeLabel;
+  momentumScore: number;
+  momentumDirection: InflationMomentumSnapshot['direction'];
 }
 
 export interface InflationForecastPath {
@@ -37,6 +44,7 @@ export function projectInflationForecastPath(
   let anchoring = initialInflationAnchoringScore();
   let maxCost = 1;
   let regimeState = createInitialInflationRegimeTracker();
+  let momentumState = createInitialInflationMomentumState();
 
   for (let t = 1; t <= horizonTurns; t++) {
     const inputs = { ...(seedInputs ?? makeDefaultMacroFinancialTestInputs()), turn: t };
@@ -64,6 +72,8 @@ export function projectInflationForecastPath(
       fiscalCritical: inputs.fiscalPressure === 'critical',
     });
     const regimeSnap = regimeState.history[regimeState.history.length - 1];
+    const mom = stepInflationMomentum(momentumState, t, r.state.inflation);
+    momentumState = mom.state;
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -74,6 +84,8 @@ export function projectInflationForecastPath(
       headlineCpiIndex: cpi.headlineIndex,
       coreCpiIndex: coreSpread.coreIndex,
       regime: regimeSnap?.regime ?? 'anchored_soft',
+      momentumScore: mom.snapshot.momentumScore,
+      momentumDirection: mom.snapshot.direction,
     });
   }
 
