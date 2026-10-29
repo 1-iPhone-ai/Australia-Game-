@@ -15,7 +15,7 @@ function actionKey(action: ReliefDispatchAction): string {
 
 export function createInitialReliefFulfillment(): ReliefFulfillmentPersisted {
   return {
-    schemaVersion: '10.14.22-scale-wave-22' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.23-scale-wave-23' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     openActions: [],
     cumulativeFulfilled: 0,
@@ -32,7 +32,7 @@ export function sanitizeReliefFulfillment(
       )
     : [];
   return {
-    schemaVersion: '10.14.22-scale-wave-22' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.23-scale-wave-23' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     openActions,
     cumulativeFulfilled:
