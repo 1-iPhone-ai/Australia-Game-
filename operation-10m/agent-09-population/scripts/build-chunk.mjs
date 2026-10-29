@@ -1,0 +1,70 @@
+#!/usr/bin/env node
+/**
+ * Bundles v10-14-labor-demographics sources into operation-10m/modules/agent-09-population/chunk.tsx
+ * (no top-level import lines — inline-ready for Agent 25 / OP10M assembly).
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, '../../..');
+const srcRoot = path.join(repoRoot, 'operation-10m/agent-09-population/v10-14-labor-demographics');
+const outDir = path.join(repoRoot, 'operation-10m/modules/agent-09-population');
+const outFile = path.join(outDir, 'chunk.tsx');
+
+const FILES = [
+  'types.ts',
+  'boundaries.ts',
+  'bands.ts',
+  'demographics.ts',
+  'wages.ts',
+  'migration.ts',
+  'employment-linkage.ts',
+  'automation-feedback.ts',
+  'household-budget-detail.ts',
+  'migration-shocks.ts',
+  'persistence.ts',
+  'inputs.ts',
+  'validate.ts',
+  'compute.ts',
+  'self-tests.ts',
+  'react/LaborDemographicsCenterPanel.tsx'
+];
+
+function stripModulePreamble(source) {
+  return source
+    .split('\n')
+    .filter(line => {
+      const t = line.trim();
+      if (t.startsWith('import ')) return false;
+      if (t.startsWith('export * from')) return false;
+      return true;
+    })
+    .join('\n');
+}
+
+const parts = [
+  '// OP10M_MODULE_BEGIN agent-09-population',
+  '// Agent 09 — V10.14 labor demographics (generated; source: operation-10m/agent-09-population/v10-14-labor-demographics/)',
+  ''
+];
+
+for (const rel of FILES) {
+  const abs = path.join(srcRoot, rel);
+  if (!fs.existsSync(abs)) {
+    console.error('Missing source file:', rel);
+    process.exit(1);
+  }
+  parts.push(`// --- source: ${rel} ---`);
+  parts.push(stripModulePreamble(fs.readFileSync(abs, 'utf8')));
+  parts.push('');
+}
+
+parts.push('// OP10M_MODULE_END agent-09-population');
+parts.push('');
+
+fs.mkdirSync(outDir, { recursive: true });
+const body = parts.join('\n');
+fs.writeFileSync(outFile, body);
+console.log('Wrote', outFile, `(${body.split('\n').length} lines)`);

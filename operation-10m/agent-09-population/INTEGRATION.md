@@ -26,6 +26,12 @@ Persisted field on game state (canonical): `laborDemographics` / `laborDemograph
 - Guardian warn-only hooks (employment / wage stress — future slice)
 - Idle / Auto Mode steward hints via `computeLaborAutomationFeedback` (`stewardHints`)
 
+## Assembly chunk
+
+- Path: `operation-10m/modules/agent-09-population/chunk.tsx`
+- Markers: `OP10M_MODULE_BEGIN agent-09-population` … `OP10M_MODULE_END agent-09-population`
+- Regenerate: `npm run build:agent09-chunk` (after editing `v10-14-labor-demographics/`)
+
 ## Export surface (bundle for inline)
 
 From `v10-14-labor-demographics/index.ts`:
@@ -37,7 +43,7 @@ From `v10-14-labor-demographics/index.ts`:
 - Household budget: `computeNationalHouseholdBudgetDetail`, `householdBudgetLaborAdjustments`
 - Migration shocks: `detectMigrationShocks`, `applyMigrationShocksToRegions`, persisted `activeMigrationShocks`
 - UI (optional inline): `LaborDemographicsCenterPanel`
-- Tests: `runV1014LaborDemographicsSelfTests`
+- Tests: `runV1014LaborDemographicsSelfTests` (**66** cases)
 
 ## Namespace on merge
 
