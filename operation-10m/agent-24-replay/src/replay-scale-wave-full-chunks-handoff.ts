@@ -31,6 +31,7 @@ import {
   O6K_AGENT24_WAVE48_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE50_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE51_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE52_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE49_INTEGRATION_BASELINE_SHA,
 } from './replay-scale-wave-integration-closeout.ts';
 
@@ -69,7 +70,9 @@ export function buildAgent24ReplayScaleWaveFullChunksHandoffSeal(
   const waveRound = input.replayScaleWaveDryrunVerification.waveRound;
   const fullChunksBaselineSha =
     input.fullChunksBaselineSha ??
-    (waveRound >= 51
+    (waveRound >= 52
+      ? O6K_AGENT24_WAVE52_INTEGRATION_BASELINE_SHA
+      : waveRound >= 51
       ? O6K_AGENT24_WAVE51_INTEGRATION_BASELINE_SHA
       : waveRound >= 50
       ? O6K_AGENT24_WAVE50_INTEGRATION_BASELINE_SHA
