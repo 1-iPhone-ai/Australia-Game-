@@ -7,8 +7,10 @@ import {
 import { type BatchAdvanceResult } from './batch-advance.js';
 import {
   gateBatchAdvanceReadiness,
+  type BatchAdvanceReadinessGateOptions,
   type BatchAdvanceReadinessGateResult,
 } from './batch-advance-readiness-gate.js';
+import type { ExternalStabilizationTurnSignals } from './external-stabilization-signals.js';
 
 export interface BatchAdvanceWithReadinessGate {
   batch: BatchAdvanceResult;
@@ -21,8 +23,16 @@ export function stepTurnsWithBudgetReadinessGate(
   maxSteps: number,
   budget: TurnAdvanceBudgetState,
   externalByTurn?: Readonly<Record<number, readonly string[]>>,
+  stabilizationByTurn?: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+  options?: BatchAdvanceReadinessGateOptions,
 ): BatchAdvanceWithReadinessGate {
   const { batch, rollup } = stepTurnsWithBudgetObservability(engine, maxSteps, budget);
-  const readiness = gateBatchAdvanceReadiness(engine.snapshot(), rollup, externalByTurn);
+  const readiness = gateBatchAdvanceReadiness(
+    engine.snapshot(),
+    rollup,
+    externalByTurn,
+    stabilizationByTurn,
+    options,
+  );
   return { batch, rollup, readiness };
 }

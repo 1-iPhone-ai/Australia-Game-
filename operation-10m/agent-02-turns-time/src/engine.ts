@@ -100,12 +100,25 @@ import {
 } from './advance-budget-batch-report.js';
 import {
   gateBatchAdvanceReadiness,
+  type BatchAdvanceReadinessGateOptions,
   type BatchAdvanceReadinessGateResult,
 } from './batch-advance-readiness-gate.js';
 import {
   stepTurnsWithBudgetReadinessGate,
   type BatchAdvanceWithReadinessGate,
 } from './batch-advance-gated-step.js';
+import {
+  buildBatchStabilizationReconcileReport,
+  type BatchStabilizationReconcileReport,
+} from './batch-stabilization-reconcile-report.js';
+import { computeBatchStabilizationDigest } from './batch-stabilization-digest.js';
+import {
+  gateExternalStabilizationForBatch,
+  type ExternalStabilizationBatchGateOptions,
+  type ExternalStabilizationBatchGateResult,
+} from './external-stabilization-batch-gate.js';
+import { queueDepthFromSnapshot } from './agent02-stabilization-inference.js';
+import type { ExternalStabilizationTurnSignals } from './external-stabilization-signals.js';
 import {
   buildBatchHorizonReconcileReport,
   type BatchHorizonReconcileReport,
@@ -335,16 +348,57 @@ export class TurnTimeEngine {
   gateBatchAdvanceReadiness(
     rollup: BatchAdvanceObservabilityRollup,
     externalByTurn?: Readonly<Record<number, readonly string[]>>,
+    stabilizationByTurn?: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+    options?: BatchAdvanceReadinessGateOptions,
   ): BatchAdvanceReadinessGateResult {
-    return gateBatchAdvanceReadiness(this.snapshot(), rollup, externalByTurn);
+    return gateBatchAdvanceReadiness(
+      this.snapshot(),
+      rollup,
+      externalByTurn,
+      stabilizationByTurn,
+      options,
+    );
   }
 
   stepTurnsWithBudgetReadinessGate(
     maxSteps: number,
     budget: TurnAdvanceBudgetState,
     externalByTurn?: Readonly<Record<number, readonly string[]>>,
+    stabilizationByTurn?: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+    options?: BatchAdvanceReadinessGateOptions,
   ): BatchAdvanceWithReadinessGate {
-    return stepTurnsWithBudgetReadinessGate(this, maxSteps, budget, externalByTurn);
+    return stepTurnsWithBudgetReadinessGate(
+      this,
+      maxSteps,
+      budget,
+      externalByTurn,
+      stabilizationByTurn,
+      options,
+    );
+  }
+
+  buildBatchStabilizationReconcileReport(
+    batch: BatchAdvanceResult,
+    stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+    options?: ExternalStabilizationBatchGateOptions,
+  ): BatchStabilizationReconcileReport {
+    return buildBatchStabilizationReconcileReport(batch, stabilizationByTurn, options);
+  }
+
+  gateExternalStabilizationForBatch(
+    batch: BatchAdvanceResult,
+    stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+    options?: ExternalStabilizationBatchGateOptions,
+  ): ExternalStabilizationBatchGateResult {
+    return gateExternalStabilizationForBatch(batch, stabilizationByTurn, options);
+  }
+
+  computeBatchStabilizationDigest(report: BatchStabilizationReconcileReport): string {
+    return computeBatchStabilizationDigest(report);
+  }
+
+  getQueueDepthSnapshot(): ReturnType<typeof queueDepthFromSnapshot> {
+    return queueDepthFromSnapshot(this.snapshot());
   }
 
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {
