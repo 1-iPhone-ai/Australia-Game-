@@ -35,6 +35,8 @@ import { buildAppropriationCarryForwardReport } from '../appropriation-carry-for
 import { buildExpenditureGrowthBenchmarkReport } from '../expenditure-growth-benchmark/compute';
 import { buildEfficiencyDividendRegisterReport } from '../efficiency-dividend-register/compute';
 import { buildRevenueForwardReconciliationReport } from '../revenue-forward-reconciliation/compute';
+import { buildPortfolioReprioritisationLedgerReport } from '../portfolio-reprioritisation-ledger/compute';
+import { buildFiscalBufferCoherenceReport } from '../fiscal-buffer-coherence/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -190,6 +192,21 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     ledger,
     myefo,
     expenditureGrowthBenchmark
+  );
+  const portfolioReprioritisationLedger = buildPortfolioReprioritisationLedgerReport(
+    turn,
+    v1012,
+    spendingOffsets,
+    portfolioOutturn,
+    efficiencyDividendRegister
+  );
+  const fiscalBufferCoherence = buildFiscalBufferCoherenceReport(
+    turn,
+    v1012,
+    statutory,
+    cashMgmt,
+    contingencyDrawdownRegister,
+    revenueForwardReconciliation
   );
 
   checks.push({
@@ -656,12 +673,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `band=${expenditureGrowthBenchmark.revenueCapacityGrowthBand}, growth=${expenditureGrowthBenchmark.aggregateGrowthRate}`
   });
 
+  checks.push({
+    id: 'CF65',
+    label: 'Portfolio reprioritisation within envelope',
+    passed: portfolioReprioritisationLedger.withinPortfolioEnvelope || v1012.pressure === 'critical',
+    detail: `realized=${portfolioReprioritisationLedger.aggregateRealizedPoints}, planned=${portfolioReprioritisationLedger.aggregatePlannedPoints}`
+  });
+
+  checks.push({
+    id: 'CF66',
+    label: 'Fiscal buffer coherence passes',
+    passed: fiscalBufferCoherence.allPassed || v1012.pressure === 'critical',
+    detail: `buffer=${fiscalBufferCoherence.aggregateBufferPoints}, checks=${fiscalBufferCoherence.checks.filter(c => c.passed).length}/${fiscalBufferCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF67',
+    label: 'Reprioritisation aligned with efficiency dividend',
+    passed: portfolioReprioritisationLedger.alignedWithEfficiencyDividend,
+    detail: `efficiencyRealized=${efficiencyDividendRegister.aggregateRealizedPoints}, reprior=${portfolioReprioritisationLedger.aggregateRealizedPoints}`
+  });
+
+  checks.push({
+    id: 'CF68',
+    label: 'Fiscal buffer aligned with revenue forward',
+    passed: fiscalBufferCoherence.alignedWithRevenueForward,
+    detail: `gap=${revenueForwardReconciliation.aggregateGapPoints}, buffer=${fiscalBufferCoherence.aggregateBufferPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 60
+    layerCount: 62
   };
 }

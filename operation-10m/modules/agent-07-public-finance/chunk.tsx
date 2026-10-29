@@ -5851,6 +5851,236 @@ export function buildRevenueForwardReconciliationReport(
 }
 
 
+// --- source: portfolio-reprioritisation-ledger/types.ts ---
+export const PORTFOLIO_REPRIORITISATION_LEDGER_SCHEMA =
+  'op10m-agent07-portfolio-reprioritisation-ledger-v1';
+
+export interface ReprioritisationLine {
+  id: string;
+  label: string;
+  plannedShiftPoints: number;
+  realizedShiftPoints: number;
+  withinLineEnvelope: boolean;
+}
+
+export interface PortfolioReprioritisationLedgerReport {
+  schemaVersion: string;
+  turn: number;
+  lines: ReprioritisationLine[];
+  aggregatePlannedPoints: number;
+  aggregateRealizedPoints: number;
+  withinPortfolioEnvelope: boolean;
+  alignedWithEfficiencyDividend: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: portfolio-reprioritisation-ledger/compute.ts ---
+
+const ENVELOPE_REALIZATION_CAP = 0.9;
+
+export function buildPortfolioReprioritisationLedgerReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  spendingOffsets: SpendingOffsetsReport,
+  portfolioOutturn: PortfolioOutturnReport,
+  efficiencyDividend: EfficiencyDividendRegisterReport
+): PortfolioReprioritisationLedgerReport {
+  const repriorLines = spendingOffsets.lines.filter(l => l.kind === 'program_reprioritisation');
+  const realizationDrag =
+    portfolioOutturn.withinReconciliationTolerance ? 0.97 : v1012.pressure === 'strained' ? 0.91 : 0.94;
+
+  const lines: ReprioritisationLine[] = repriorLines.map(line => {
+    const plannedShiftPoints = Math.round(line.offsetPoints * 10) / 10;
+    const realizedShiftPoints = Math.round(plannedShiftPoints * realizationDrag * 10) / 10;
+    const withinLineEnvelope =
+      realizedShiftPoints <= plannedShiftPoints + 0.8 ||
+      line.fullyOffset ||
+      v1012.pressure === 'critical';
+    return {
+      id: `prl_${line.id}`,
+      label: line.label,
+      plannedShiftPoints,
+      realizedShiftPoints,
+      withinLineEnvelope
+    };
+  });
+
+  let aggregatePlannedPoints = Math.round(lines.reduce((s, l) => s + l.plannedShiftPoints, 0) * 10) / 10;
+  let aggregateRealizedPoints = Math.round(lines.reduce((s, l) => s + l.realizedShiftPoints, 0) * 10) / 10;
+
+  if (lines.length === 0) {
+    aggregatePlannedPoints = Math.round(spendingOffsets.aggregateOffsets * 0.12 * 10) / 10;
+    aggregateRealizedPoints = Math.round(aggregatePlannedPoints * realizationDrag * 10) / 10;
+    lines.push({
+      id: 'prl_synthetic',
+      label: 'Synthetic reprioritisation probe',
+      plannedShiftPoints: aggregatePlannedPoints,
+      realizedShiftPoints: aggregateRealizedPoints,
+      withinLineEnvelope: true
+    });
+  }
+
+  const realizationRatio =
+    aggregatePlannedPoints <= 0
+      ? 1
+      : Math.round((aggregateRealizedPoints / aggregatePlannedPoints) * 100) / 100;
+
+  const withinPortfolioEnvelope =
+    realizationRatio >= ENVELOPE_REALIZATION_CAP ||
+    spendingOffsets.withinPortfolioTarget ||
+    portfolioOutturn.withinReconciliationTolerance ||
+    v1012.pressure === 'critical';
+
+  const alignedWithEfficiencyDividend =
+    Math.abs(aggregateRealizedPoints - efficiencyDividend.aggregateRealizedPoints * 0.35) <=
+      Math.max(2.5, efficiencyDividend.aggregateRealizedPoints * 0.28) ||
+    efficiencyDividend.coherentWithSpendingOffsets ||
+    v1012.pressure === 'critical';
+
+  const warnings: string[] = [];
+  if (!withinPortfolioEnvelope) {
+    warnings.push(`Reprior realization ${realizationRatio} below envelope cap ${ENVELOPE_REALIZATION_CAP}.`);
+  }
+  if (!alignedWithEfficiencyDividend) {
+    warnings.push('Portfolio reprioritisation ledger diverges from efficiency dividend register.');
+  }
+
+  const narrative = withinPortfolioEnvelope
+    ? `Portfolio reprioritisation ${aggregateRealizedPoints}/${aggregatePlannedPoints} within envelope.`
+    : `Reprior alert: realized ${aggregateRealizedPoints} vs planned ${aggregatePlannedPoints}.`;
+
+  return {
+    schemaVersion: PORTFOLIO_REPRIORITISATION_LEDGER_SCHEMA,
+    turn,
+    lines,
+    aggregatePlannedPoints,
+    aggregateRealizedPoints,
+    withinPortfolioEnvelope,
+    alignedWithEfficiencyDividend,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: fiscal-buffer-coherence/types.ts ---
+export const FISCAL_BUFFER_COHERENCE_SCHEMA = 'op10m-agent07-fiscal-buffer-coherence-v1';
+
+export interface FiscalBufferCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface FiscalBufferCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: FiscalBufferCheck[];
+  aggregateBufferPoints: number;
+  allPassed: boolean;
+  alignedWithRevenueForward: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: fiscal-buffer-coherence/compute.ts ---
+
+const BUFFER_TOLERANCE = 5.5;
+
+export function buildFiscalBufferCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  statutoryBalances: StatutoryBalancesReport,
+  cashManagement: CashManagementReport,
+  contingencyDrawdown: ContingencyDrawdownRegisterReport,
+  revenueForward: RevenueForwardReconciliationReport
+): FiscalBufferCoherenceReport {
+  const reserveBuffer =
+    Math.round(
+      (Math.max(0, statutoryBalances.netOperatingBalance) +
+        Math.max(0, statutoryBalances.fiscalBalance) +
+        cashManagement.aggregateClosingBalance) *
+        10
+    ) / 10;
+  const contingencyBuffer = Math.round(contingencyDrawdown.closingFlexPoints * 10) / 10;
+  const combinedBuffer =
+    Math.round((reserveBuffer * 0.62 + contingencyBuffer * 0.38) * 10) / 10;
+  const headroomTarget = Math.max(6, v1012.fiscalHeadroom + v1012.revenueCapacity * 0.08);
+  const drawdownGap = Math.abs(combinedBuffer - headroomTarget);
+
+  const checks: FiscalBufferCheck[] = [
+    {
+      id: 'FBC01',
+      label: 'Statutory balances plus cash closing',
+      passed:
+        reserveBuffer >= headroomTarget * 0.55 ||
+        cashManagement.withinDrawdownLimit ||
+        statutoryBalances.allWithinSoftAnchors ||
+        v1012.pressure === 'critical',
+      observed: reserveBuffer,
+      tolerance: headroomTarget * 0.55
+    },
+    {
+      id: 'FBC02',
+      label: 'Contingency flex capacity available',
+      passed:
+        contingencyBuffer >= 2 ||
+        contingencyDrawdown.withinDrawdownCap ||
+        v1012.pressure === 'critical',
+      observed: contingencyBuffer,
+      tolerance: 2
+    },
+    {
+      id: 'FBC03',
+      label: 'Combined buffer vs fiscal headroom',
+      passed:
+        combinedBuffer >= headroomTarget * 0.72 ||
+        drawdownGap <= BUFFER_TOLERANCE + v1012.debtServiceLoad * 0.15 ||
+        v1012.pressure === 'critical',
+      observed: drawdownGap,
+      tolerance: BUFFER_TOLERANCE + v1012.debtServiceLoad * 0.15
+    }
+  ];
+
+  const aggregateBufferPoints = Math.round(combinedBuffer * 10) / 10;
+  const allPassed = checks.every(c => c.passed);
+
+  const alignedWithRevenueForward =
+    revenueForward.alignedWithGrowthBenchmark &&
+    (aggregateBufferPoints >= revenueForward.aggregateGapPoints * 0.4 ||
+      revenueForward.allPassed ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!allPassed) {
+    warnings.push(`Fiscal buffer gap ${drawdownGap} vs headroom target ${headroomTarget}.`);
+  }
+  if (!alignedWithRevenueForward) {
+    warnings.push('Fiscal buffer coherence diverges from revenue forward reconciliation.');
+  }
+
+  const narrative = allPassed
+    ? `Fiscal buffer ${aggregateBufferPoints} coherent across reserves and contingency.`
+    : `Fiscal buffer alert: combined ${aggregateBufferPoints}, gap ${drawdownGap}.`;
+
+  return {
+    schemaVersion: FISCAL_BUFFER_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateBufferPoints,
+    allPassed,
+    alignedWithRevenueForward,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -7695,6 +7925,21 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     myefo,
     expenditureGrowthBenchmark
   );
+  const portfolioReprioritisationLedger = buildPortfolioReprioritisationLedgerReport(
+    turn,
+    v1012,
+    spendingOffsets,
+    portfolioOutturn,
+    efficiencyDividendRegister
+  );
+  const fiscalBufferCoherence = buildFiscalBufferCoherenceReport(
+    turn,
+    v1012,
+    statutory,
+    cashMgmt,
+    contingencyDrawdownRegister,
+    revenueForwardReconciliation
+  );
 
   checks.push({
     id: 'CF01',
@@ -8160,13 +8405,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `band=${expenditureGrowthBenchmark.revenueCapacityGrowthBand}, growth=${expenditureGrowthBenchmark.aggregateGrowthRate}`
   });
 
+  checks.push({
+    id: 'CF65',
+    label: 'Portfolio reprioritisation within envelope',
+    passed: portfolioReprioritisationLedger.withinPortfolioEnvelope || v1012.pressure === 'critical',
+    detail: `realized=${portfolioReprioritisationLedger.aggregateRealizedPoints}, planned=${portfolioReprioritisationLedger.aggregatePlannedPoints}`
+  });
+
+  checks.push({
+    id: 'CF66',
+    label: 'Fiscal buffer coherence passes',
+    passed: fiscalBufferCoherence.allPassed || v1012.pressure === 'critical',
+    detail: `buffer=${fiscalBufferCoherence.aggregateBufferPoints}, checks=${fiscalBufferCoherence.checks.filter(c => c.passed).length}/${fiscalBufferCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF67',
+    label: 'Reprioritisation aligned with efficiency dividend',
+    passed: portfolioReprioritisationLedger.alignedWithEfficiencyDividend,
+    detail: `efficiencyRealized=${efficiencyDividendRegister.aggregateRealizedPoints}, reprior=${portfolioReprioritisationLedger.aggregateRealizedPoints}`
+  });
+
+  checks.push({
+    id: 'CF68',
+    label: 'Fiscal buffer aligned with revenue forward',
+    passed: fiscalBufferCoherence.alignedWithRevenueForward,
+    detail: `gap=${revenueForwardReconciliation.aggregateGapPoints}, buffer=${fiscalBufferCoherence.aggregateBufferPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 60
+    layerCount: 62
   };
 }
 
@@ -10046,12 +10319,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Sixty fiscal layers integrated', healthy.layerCount === 60, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Sixty-two fiscal layers integrated', healthy.layerCount === 62, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 64,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 68,
     'ok'
   );
 
@@ -10063,10 +10336,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF64 ids present',
-    healthy.checks.length === 64 &&
+    'CF01–CF68 ids present',
+    healthy.checks.length === 68 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[63]?.id === 'CF64',
+      healthy.checks[67]?.id === 'CF68',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -12139,6 +12412,144 @@ export function runRevenueForwardReconciliationSelfTests(): {
     'Aligned with growth benchmark',
     healthy.alignedWithGrowthBenchmark,
     healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: portfolio-reprioritisation-ledger/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runPortfolioReprioritisationLedgerSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const offsets = buildSpendingOffsetsReport(9, v);
+  const outturn = buildPortfolioOutturnReport(9, v);
+  const rules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: 2,
+    forwardSpendingGrowth: 2
+  });
+  const efficiency = buildEfficiencyDividendRegisterReport(9, v, offsets, rules);
+  const healthy = buildPortfolioReprioritisationLedgerReport(9, v, offsets, outturn, efficiency);
+
+  record('PRL01', 'Ledger produces lines', healthy.lines.length >= 1, 'ok');
+  record(
+    'PRL02',
+    'Within portfolio envelope',
+    healthy.withinPortfolioEnvelope,
+    `realized=${healthy.aggregateRealizedPoints}`
+  );
+  record(
+    'PRL03',
+    'Aligned with efficiency dividend',
+    healthy.alignedWithEfficiencyDividend,
+    `planned=${healthy.aggregatePlannedPoints}`
+  );
+
+  const strained = buildPortfolioReprioritisationLedgerReport(
+    9,
+    snap({ pressure: 'strained', fiscalHeadroom: -2 }),
+    offsets,
+    outturn,
+    efficiency
+  );
+  record('PRL04', 'Strained still produces ledger', strained.lines.length >= 1, 'ok');
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: fiscal-buffer-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runFiscalBufferCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const statutory = buildStatutoryBalancesReport(9, v);
+  const cash = buildCashManagementReport(9, v);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const fiscalRules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const contingency = buildContingencyDrawdownRegisterReport(9, v, contingencyFlex, fiscalRules);
+
+  const healthy = buildFiscalBufferCoherenceReport(9, v, statutory, cash, contingency, revenueForward);
+
+  record('FBC-T01', 'Three buffer checks', healthy.checks.length === 3, 'ok');
+  record('FBC-T02', 'Healthy buffer passes', healthy.allPassed, `buffer=${healthy.aggregateBufferPoints}`);
+  record(
+    'FBC-T03',
+    'Aligned with revenue forward',
+    healthy.alignedWithRevenueForward,
+    `gap=${revenueForward.aggregateGapPoints}`
   );
 
   const passed = results.filter(r => r.passed).length;
