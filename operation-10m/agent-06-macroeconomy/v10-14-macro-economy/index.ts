@@ -232,3 +232,6 @@ export * from './self-tests.ts';
 export { MacroEconomyInspectorLab } from './react/MacroEconomyInspectorLab.tsx';
 export * from './bridge-v1026-replay-wave-round52-export.ts';
 export * from './bridge-v1027-integration-health-wave-round52-export.ts';
+export * from './bridge-v1027-replay-wave-round53-export.ts';
+export * from './bridge-v1028-integration-health-wave-round53-export.ts';
+export * from './round53-self-tests.ts';
