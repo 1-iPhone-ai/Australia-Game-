@@ -76006,6 +76006,15 @@ export function executeAgent02SingleDayBoundary(
           mergedGameState = V1014_AI_FIDELITY_applyToGameState(mergedGameState, aiOut);
         } catch (_) { /* isolated */ }
       }
+      if (typeof runV1014WorkforceMigrationTurn === 'function') {
+        try {
+          const wfIn = buildV1014WorkforceMigrationTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          wfIn.persisted = V1014_WORKFORCE_readPersistedFromGameState(mergedGameState);
+          const wfOut = runV1014WorkforceMigrationTurn(wfIn);
+          mergedGameState = V1014_WORKFORCE_applyToGameState(mergedGameState, wfOut);
+        } catch (_) { /* isolated */ }
+      }
+
 
 
 
@@ -118803,6 +118812,18 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   // V1015 / V10.1 supply depth (Operation 600K T6): null-default on old saves.
   if (migrated.gameState) migrated.gameState.v1015Orchestrator = sanitizeV1015OrchestratorPersisted(migrated.gameState.v1015Orchestrator);
   if (migrated.gameState) migrated.gameState.v1014SupplyChain = sanitizeV1014SupplyChainPersisted(migrated.gameState.v1014SupplyChain);
+  if (migrated.gameState) {
+    const wfRaw = (migrated.gameState as any)?.save?.meta?.v1014?.workforce_v2;
+    if (wfRaw && typeof sanitizeV1014WorkforceMigrationPersisted === 'function') {
+      const save = { ...((migrated.gameState as any).save || {}) };
+      const meta = { ...(save.meta || {}) };
+      const v1014 = { ...(meta.v1014 || {}) };
+      v1014.workforce_v2 = sanitizeV1014WorkforceMigrationPersisted(wfRaw, Number((migrated.gameState as any).turnCounter || 0));
+      meta.v1014 = v1014;
+      save.meta = meta;
+      migrated.gameState = { ...(migrated.gameState as any), save };
+    }
+  }
   if (migrated.gameState) {
     const aiRaw = (migrated.gameState as any)?.save?.meta?.v1014?.ai_fidelity;
     if (aiRaw && typeof sanitizeV1014AiFidelityPersisted === 'function') {
@@ -194457,6 +194478,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1014_energy_depth', label: 'V10.14 Energy depth (grid, depletion, intermittency, carbon)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014EnergyDepthSelfTests() },
   { id: 'v1014_scenarios_v2', label: 'V10.14 Scenario engine v2 (T6-2)', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV1014ScenarioV2SelfTests().map((r) => ({ id: r.id, name: r.name, passed: r.passed, detail: r.detail })) },
   { id: 'v1014_ai_fidelity', label: 'V10.14 AI fidelity (T6-8 plan/act/verify + UI gates)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014AiFidelitySelfTestsForLab() },
+  { id: 'v1014_workforce_v2', label: 'V10.14 Workforce migration v2 (20BF / 20AC part 4)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014WorkforceMigrationSelfTestsForLab() },
   { id: 'v1014_fiscal', label: 'V10.14 Fiscal outcomes (Agent 07)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014FiscalOutcomesSelfTests() },
   { id: 'a03_innovation', label: 'Agent 03 innovation commercialization', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runAgent03InnovationSelfTests() },
   { id: 'agent05_events', label: 'Agent 05 dynamic events & chains', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => { const r = runAgent05ConditionalSelfTests(); return [{ id: 'agent05', name: 'Agent 05 self-tests', passed: r.failures.length === 0, detail: r.failures.join('; ') || 'ok' }]; } },
@@ -486362,6 +486384,25272 @@ function V1014_AI_FIDELITY_applyToGameState(gs: any, out: V1014AiFidelityTurnRes
   meta.v1014 = v1014;
   save.meta = meta;
   return { ...gs, save, v1014AiFidelity: out.state };
+}
+
+
+// ============================================================================
+// Agent 25 tranche 6 — T6 push #8 workforce-migration (PR #338)
+// ============================================================================
+// ============================================================================
+// SECTION 20BF: V10.14 WORKFORCE MIGRATION v2 — SKILLS GRAPH & 20AJ SCENARIOS (O6K-25)
+// Renumbered from shard 20BD (canonical 20BD = scenario packs, 20BE = AI fidelity)
+// ============================================================================
+/**
+ * V1014_WORKFORCE — core types (SECTION 20BD / O6K-25 — 20AC part 4).
+ * Cross-wire: 20AC skills graph, 20AJ migration catalogs, 20AF household demand.
+ */
+
+export const V1014_WORKFORCE_SCHEMA_VERSION = '10.14.workforce_v2.1' as const;
+
+export type V1014WorkforceRegionId = 'NSW' | 'VIC' | 'QLD' | 'WA' | 'SA' | 'TAS' | 'NT' | 'ACT';
+
+export type V1014WorkforceSkillDomain =
+  | 'engineering'
+  | 'healthcare'
+  | 'trades'
+  | 'digital'
+  | 'logistics'
+  | 'education'
+  | 'mining'
+  | 'agriculture'
+  | 'hospitality'
+  | 'public_admin';
+
+export type V1014WorkforceMigrationFlowBand = 'surge' | 'balanced' | 'constrained' | 'outflow';
+
+export type V1014WorkforceReadinessBand = 'strong' | 'adequate' | 'strained' | 'weak' | 'blocking';
+
+export interface V1014WorkforceAc20Slice {
+  turn: number;
+  nationalReadiness: number;
+  specialistGap: number;
+  regionalSkillSupply: Partial<Record<V1014WorkforceRegionId, number>>;
+  domainDepth?: Partial<Record<V1014WorkforceSkillDomain, number>>;
+}
+
+export interface V1014WorkforceAj20Slice {
+  turn: number;
+  migrationFlowBand: V1014WorkforceMigrationFlowBand;
+  regionalAttractiveness: Partial<Record<V1014WorkforceRegionId, number>>;
+  wagePressureIndex: number;
+  visaBacklogTurns?: number;
+}
+
+export interface V1014WorkforceAf20Slice {
+  turn: number;
+  affordabilityStress: number;
+  regionalLivingStandard: Partial<Record<V1014WorkforceRegionId, number>>;
+  domesticDemandPull: number;
+}
+
+export interface V1014WorkforceSkillsGraphEdge {
+  fromDomain: V1014WorkforceSkillDomain;
+  toDomain: V1014WorkforceSkillDomain;
+  weight: number;
+  retrainTurns: number;
+  corridorId: string;
+}
+
+export interface V1014WorkforceMigrationScenarioSnapshot {
+  scenarioId: string;
+  regionId: V1014WorkforceRegionId;
+  flowBand: V1014WorkforceMigrationFlowBand;
+  netInflow: number;
+  skillMismatchIndex: number;
+  readinessBand: V1014WorkforceReadinessBand;
+}
+
+export interface V1014WorkforcePersisted {
+  schemaVersion: typeof V1014_WORKFORCE_SCHEMA_VERSION;
+  revision: number;
+  lastProcessedTurn: number | null;
+  migrationSnapshots: Record<string, V1014WorkforceMigrationScenarioSnapshot>;
+  skillsGraphRevision: number;
+  regionalAggregates: Partial<
+    Record<
+      V1014WorkforceRegionId,
+      {
+        queuePressure: number;
+        mismatchIndex: number;
+        migrationLoopGain: number;
+        compositeReadiness: number;
+      }
+    >
+  >;
+  historyTail: Array<{ turn: number; inputHash: string; aggregateMismatch: number }>;
+  aiReadCache: Record<string, string>;
+}
+
+export interface V1014WorkforceTurnInput {
+  turn: number;
+  seed: number;
+  ac20: V1014WorkforceAc20Slice;
+  aj20: V1014WorkforceAj20Slice;
+  af20: V1014WorkforceAf20Slice;
+  fiscalHeadroom: number;
+  policyRetrainFocus: number;
+  activeScenarioIds: string[];
+  activeCorridorIds: string[];
+  persisted: V1014WorkforcePersisted | null;
+}
+
+export interface V1014WorkforceRuntimeState {
+  turn: number;
+  aggregateMismatchIndex: number;
+  aggregateMigrationPressure: number;
+  nationalReadinessScore: number;
+  householdLaborIncomeEffect: number;
+  skillsGraphHash: string;
+  inputHash: string;
+  briefing: string;
+}
+
+export interface V1014WorkforceAc20Bridge {
+  readinessDelta: number;
+  specialistGapDelta: number;
+  domainPressure: Partial<Record<V1014WorkforceSkillDomain, number>>;
+}
+
+export interface V1014WorkforceAj20Bridge {
+  flowBandHint: V1014WorkforceMigrationFlowBand;
+  attractivenessDelta: Partial<Record<V1014WorkforceRegionId, number>>;
+  wagePressureContribution: number;
+}
+
+export interface V1014WorkforceAf20Bridge {
+  affordabilityDrag: number;
+  domesticDemandMultiplier: number;
+  livingStandardDelta: Partial<Record<V1014WorkforceRegionId, number>>;
+}
+
+export interface V1014WorkforceTurnResult {
+  state: V1014WorkforceRuntimeState;
+  persisted: V1014WorkforcePersisted;
+  worldEvents: Array<{ id: string; turn: number; kind: string; title: string; summary: string }>;
+}
+
+export interface V1014WorkforceSelfTestResult {
+  id: string;
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+
+export const V1014_WORKFORCE_REGION_IDS: readonly V1014WorkforceRegionId[] = [
+  'NSW',
+  'VIC',
+  'QLD',
+  'WA',
+  'SA',
+  'TAS',
+  'NT',
+  'ACT',
+];
+
+export const V1014_WORKFORCE_SKILL_DOMAINS: readonly V1014WorkforceSkillDomain[] = [
+  'engineering',
+  'healthcare',
+  'trades',
+  'digital',
+  'logistics',
+  'education',
+  'mining',
+  'agriculture',
+  'hospitality',
+  'public_admin',
+];
+
+export const V1014_WORKFORCE_LIMITS = {
+  section6HistoryDepth: 12,
+  maxActiveScenarios: 32,
+  maxCorridorBacklogTurns: 36,
+} as const;
+
+/**
+ * §6 persistence keys — V1014 workforce migration v2 (O6K-25).
+ */
+export const V1014_WORKFORCE_SAVE_META_KEY = 'save.meta.v1014.workforce_v2' as const;
+export const V1014_WORKFORCE_LAB_SUITE_ID = 'v1014_workforce_v2' as const;
+
+export const V1014_WORKFORCE_PERSISTENCE_PATHS = {
+  root: V1014_WORKFORCE_SAVE_META_KEY,
+  migration: `${V1014_WORKFORCE_SAVE_META_KEY}.migration`,
+  skillsGraph: `${V1014_WORKFORCE_SAVE_META_KEY}.skills_graph`,
+  regional: `${V1014_WORKFORCE_SAVE_META_KEY}.regional`,
+  history: `${V1014_WORKFORCE_SAVE_META_KEY}.history`,
+  aiCache: `${V1014_WORKFORCE_SAVE_META_KEY}.ai_read_cache`,
+} as const;
+
+
+const V1014_WORKFORCE_MIG_REGIONS: V1014WorkforceRegionId[] = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'];
+
+export function createEmptyV1014WorkforceMigrationPersisted(): V1014WorkforcePersisted {
+  const regionalAggregates: V1014WorkforcePersisted['regionalAggregates'] = {};
+  V1014_WORKFORCE_MIG_REGIONS.forEach((r, i) => {
+    regionalAggregates[r] = {
+      queuePressure: 42 + (i % 5),
+      mismatchIndex: 38 + (i % 7),
+      migrationLoopGain: 0.55,
+      compositeReadiness: 52 + (i % 4),
+    };
+  });
+  return {
+    schemaVersion: V1014_WORKFORCE_SCHEMA_VERSION,
+    revision: 0,
+    lastProcessedTurn: null,
+    migrationSnapshots: {},
+    skillsGraphRevision: 0,
+    regionalAggregates,
+    historyTail: [],
+    aiReadCache: {},
+  };
+}
+
+function clampNum(n: number, lo: number, hi: number): number {
+  if (!Number.isFinite(n)) return lo;
+  return Math.min(hi, Math.max(lo, n));
+}
+
+export function sanitizeV1014WorkforceMigrationPersisted(
+  raw: unknown,
+  turn: number,
+): V1014WorkforcePersisted {
+  const base = createEmptyV1014WorkforceMigrationPersisted();
+  if (!raw || typeof raw !== 'object') return base;
+  const o = raw as Partial<V1014WorkforcePersisted>;
+  const schema =
+    o.schemaVersion === V1014_WORKFORCE_SCHEMA_VERSION ? o.schemaVersion : V1014_WORKFORCE_SCHEMA_VERSION;
+  return {
+    schemaVersion: schema,
+    revision: clampNum(Number(o.revision ?? 0), 0, 1_000_000),
+    lastProcessedTurn: o.lastProcessedTurn == null ? null : clampNum(Number(o.lastProcessedTurn), 0, 1_000_000),
+    migrationSnapshots:
+      o.migrationSnapshots && typeof o.migrationSnapshots === 'object' ? { ...o.migrationSnapshots } : {},
+    skillsGraphRevision: clampNum(Number(o.skillsGraphRevision ?? 0), 0, 1_000_000),
+    regionalAggregates: { ...base.regionalAggregates, ...(o.regionalAggregates ?? {}) },
+    historyTail: Array.isArray(o.historyTail)
+      ? o.historyTail.slice(-12).map((h) => ({
+          turn: clampNum(Number((h as { turn?: number }).turn ?? turn), 0, 1_000_000),
+          inputHash: String((h as { inputHash?: string }).inputHash ?? ''),
+          aggregateMismatch: clampNum(Number((h as { aggregateMismatch?: number }).aggregateMismatch ?? 0), 0, 100),
+        }))
+      : [],
+    aiReadCache: o.aiReadCache && typeof o.aiReadCache === 'object' ? { ...o.aiReadCache } : {},
+  };
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_00_META = {
+  id: 'corr_00',
+  origin: 'NSW' as V1014WorkforceRegionId,
+  destination: 'QLD' as V1014WorkforceRegionId,
+  defaultBand: 'surge' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_00_STEPS = [
+  { step: 0, capacity: 0.35, backlogTurns: 0 },
+  { step: 1, capacity: 0.36, backlogTurns: 1 },
+  { step: 2, capacity: 0.37, backlogTurns: 2 },
+  { step: 3, capacity: 0.38, backlogTurns: 3 },
+  { step: 4, capacity: 0.39, backlogTurns: 4 },
+  { step: 5, capacity: 0.4, backlogTurns: 5 },
+  { step: 6, capacity: 0.41, backlogTurns: 6 },
+  { step: 7, capacity: 0.42, backlogTurns: 7 },
+  { step: 8, capacity: 0.43, backlogTurns: 8 },
+  { step: 9, capacity: 0.44, backlogTurns: 0 },
+  { step: 10, capacity: 0.45, backlogTurns: 1 },
+  { step: 11, capacity: 0.46, backlogTurns: 2 },
+  { step: 12, capacity: 0.47, backlogTurns: 3 },
+  { step: 13, capacity: 0.48, backlogTurns: 4 },
+  { step: 14, capacity: 0.49, backlogTurns: 5 },
+  { step: 15, capacity: 0.5, backlogTurns: 6 },
+  { step: 16, capacity: 0.51, backlogTurns: 7 },
+  { step: 17, capacity: 0.52, backlogTurns: 8 },
+  { step: 18, capacity: 0.53, backlogTurns: 0 },
+  { step: 19, capacity: 0.54, backlogTurns: 1 },
+  { step: 20, capacity: 0.55, backlogTurns: 2 },
+  { step: 21, capacity: 0.56, backlogTurns: 3 },
+  { step: 22, capacity: 0.57, backlogTurns: 4 },
+  { step: 23, capacity: 0.58, backlogTurns: 5 },
+  { step: 24, capacity: 0.59, backlogTurns: 6 },
+  { step: 25, capacity: 0.6, backlogTurns: 7 },
+  { step: 26, capacity: 0.61, backlogTurns: 8 },
+  { step: 27, capacity: 0.62, backlogTurns: 0 },
+  { step: 28, capacity: 0.63, backlogTurns: 1 },
+  { step: 29, capacity: 0.64, backlogTurns: 2 },
+  { step: 30, capacity: 0.65, backlogTurns: 3 },
+  { step: 31, capacity: 0.66, backlogTurns: 4 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_00_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_00_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_00_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_00_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_00_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_00_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_01_META = {
+  id: 'corr_01',
+  origin: 'VIC' as V1014WorkforceRegionId,
+  destination: 'WA' as V1014WorkforceRegionId,
+  defaultBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_01_STEPS = [
+  { step: 0, capacity: 0.48, backlogTurns: 1 },
+  { step: 1, capacity: 0.49, backlogTurns: 2 },
+  { step: 2, capacity: 0.5, backlogTurns: 3 },
+  { step: 3, capacity: 0.51, backlogTurns: 4 },
+  { step: 4, capacity: 0.52, backlogTurns: 5 },
+  { step: 5, capacity: 0.53, backlogTurns: 6 },
+  { step: 6, capacity: 0.54, backlogTurns: 7 },
+  { step: 7, capacity: 0.55, backlogTurns: 8 },
+  { step: 8, capacity: 0.56, backlogTurns: 0 },
+  { step: 9, capacity: 0.57, backlogTurns: 1 },
+  { step: 10, capacity: 0.58, backlogTurns: 2 },
+  { step: 11, capacity: 0.59, backlogTurns: 3 },
+  { step: 12, capacity: 0.6, backlogTurns: 4 },
+  { step: 13, capacity: 0.61, backlogTurns: 5 },
+  { step: 14, capacity: 0.62, backlogTurns: 6 },
+  { step: 15, capacity: 0.63, backlogTurns: 7 },
+  { step: 16, capacity: 0.64, backlogTurns: 8 },
+  { step: 17, capacity: 0.65, backlogTurns: 0 },
+  { step: 18, capacity: 0.66, backlogTurns: 1 },
+  { step: 19, capacity: 0.67, backlogTurns: 2 },
+  { step: 20, capacity: 0.68, backlogTurns: 3 },
+  { step: 21, capacity: 0.69, backlogTurns: 4 },
+  { step: 22, capacity: 0.7, backlogTurns: 5 },
+  { step: 23, capacity: 0.71, backlogTurns: 6 },
+  { step: 24, capacity: 0.72, backlogTurns: 7 },
+  { step: 25, capacity: 0.73, backlogTurns: 8 },
+  { step: 26, capacity: 0.74, backlogTurns: 0 },
+  { step: 27, capacity: 0.35, backlogTurns: 1 },
+  { step: 28, capacity: 0.36, backlogTurns: 2 },
+  { step: 29, capacity: 0.37, backlogTurns: 3 },
+  { step: 30, capacity: 0.38, backlogTurns: 4 },
+  { step: 31, capacity: 0.39, backlogTurns: 5 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_01_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_01_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_01_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_01_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_01_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_01_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_02_META = {
+  id: 'corr_02',
+  origin: 'QLD' as V1014WorkforceRegionId,
+  destination: 'SA' as V1014WorkforceRegionId,
+  defaultBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_02_STEPS = [
+  { step: 0, capacity: 0.61, backlogTurns: 2 },
+  { step: 1, capacity: 0.62, backlogTurns: 3 },
+  { step: 2, capacity: 0.63, backlogTurns: 4 },
+  { step: 3, capacity: 0.64, backlogTurns: 5 },
+  { step: 4, capacity: 0.65, backlogTurns: 6 },
+  { step: 5, capacity: 0.66, backlogTurns: 7 },
+  { step: 6, capacity: 0.67, backlogTurns: 8 },
+  { step: 7, capacity: 0.68, backlogTurns: 0 },
+  { step: 8, capacity: 0.69, backlogTurns: 1 },
+  { step: 9, capacity: 0.7, backlogTurns: 2 },
+  { step: 10, capacity: 0.71, backlogTurns: 3 },
+  { step: 11, capacity: 0.72, backlogTurns: 4 },
+  { step: 12, capacity: 0.73, backlogTurns: 5 },
+  { step: 13, capacity: 0.74, backlogTurns: 6 },
+  { step: 14, capacity: 0.35, backlogTurns: 7 },
+  { step: 15, capacity: 0.36, backlogTurns: 8 },
+  { step: 16, capacity: 0.37, backlogTurns: 0 },
+  { step: 17, capacity: 0.38, backlogTurns: 1 },
+  { step: 18, capacity: 0.39, backlogTurns: 2 },
+  { step: 19, capacity: 0.4, backlogTurns: 3 },
+  { step: 20, capacity: 0.41, backlogTurns: 4 },
+  { step: 21, capacity: 0.42, backlogTurns: 5 },
+  { step: 22, capacity: 0.43, backlogTurns: 6 },
+  { step: 23, capacity: 0.44, backlogTurns: 7 },
+  { step: 24, capacity: 0.45, backlogTurns: 8 },
+  { step: 25, capacity: 0.46, backlogTurns: 0 },
+  { step: 26, capacity: 0.47, backlogTurns: 1 },
+  { step: 27, capacity: 0.48, backlogTurns: 2 },
+  { step: 28, capacity: 0.49, backlogTurns: 3 },
+  { step: 29, capacity: 0.5, backlogTurns: 4 },
+  { step: 30, capacity: 0.51, backlogTurns: 5 },
+  { step: 31, capacity: 0.52, backlogTurns: 6 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_02_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_02_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_02_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_02_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_02_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_02_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_03_META = {
+  id: 'corr_03',
+  origin: 'WA' as V1014WorkforceRegionId,
+  destination: 'TAS' as V1014WorkforceRegionId,
+  defaultBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_03_STEPS = [
+  { step: 0, capacity: 0.74, backlogTurns: 3 },
+  { step: 1, capacity: 0.35, backlogTurns: 4 },
+  { step: 2, capacity: 0.36, backlogTurns: 5 },
+  { step: 3, capacity: 0.37, backlogTurns: 6 },
+  { step: 4, capacity: 0.38, backlogTurns: 7 },
+  { step: 5, capacity: 0.39, backlogTurns: 8 },
+  { step: 6, capacity: 0.4, backlogTurns: 0 },
+  { step: 7, capacity: 0.41, backlogTurns: 1 },
+  { step: 8, capacity: 0.42, backlogTurns: 2 },
+  { step: 9, capacity: 0.43, backlogTurns: 3 },
+  { step: 10, capacity: 0.44, backlogTurns: 4 },
+  { step: 11, capacity: 0.45, backlogTurns: 5 },
+  { step: 12, capacity: 0.46, backlogTurns: 6 },
+  { step: 13, capacity: 0.47, backlogTurns: 7 },
+  { step: 14, capacity: 0.48, backlogTurns: 8 },
+  { step: 15, capacity: 0.49, backlogTurns: 0 },
+  { step: 16, capacity: 0.5, backlogTurns: 1 },
+  { step: 17, capacity: 0.51, backlogTurns: 2 },
+  { step: 18, capacity: 0.52, backlogTurns: 3 },
+  { step: 19, capacity: 0.53, backlogTurns: 4 },
+  { step: 20, capacity: 0.54, backlogTurns: 5 },
+  { step: 21, capacity: 0.55, backlogTurns: 6 },
+  { step: 22, capacity: 0.56, backlogTurns: 7 },
+  { step: 23, capacity: 0.57, backlogTurns: 8 },
+  { step: 24, capacity: 0.58, backlogTurns: 0 },
+  { step: 25, capacity: 0.59, backlogTurns: 1 },
+  { step: 26, capacity: 0.6, backlogTurns: 2 },
+  { step: 27, capacity: 0.61, backlogTurns: 3 },
+  { step: 28, capacity: 0.62, backlogTurns: 4 },
+  { step: 29, capacity: 0.63, backlogTurns: 5 },
+  { step: 30, capacity: 0.64, backlogTurns: 6 },
+  { step: 31, capacity: 0.65, backlogTurns: 7 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_03_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_03_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_03_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_03_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_03_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_03_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_04_META = {
+  id: 'corr_04',
+  origin: 'SA' as V1014WorkforceRegionId,
+  destination: 'NT' as V1014WorkforceRegionId,
+  defaultBand: 'surge' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_04_STEPS = [
+  { step: 0, capacity: 0.47, backlogTurns: 4 },
+  { step: 1, capacity: 0.48, backlogTurns: 5 },
+  { step: 2, capacity: 0.49, backlogTurns: 6 },
+  { step: 3, capacity: 0.5, backlogTurns: 7 },
+  { step: 4, capacity: 0.51, backlogTurns: 8 },
+  { step: 5, capacity: 0.52, backlogTurns: 0 },
+  { step: 6, capacity: 0.53, backlogTurns: 1 },
+  { step: 7, capacity: 0.54, backlogTurns: 2 },
+  { step: 8, capacity: 0.55, backlogTurns: 3 },
+  { step: 9, capacity: 0.56, backlogTurns: 4 },
+  { step: 10, capacity: 0.57, backlogTurns: 5 },
+  { step: 11, capacity: 0.58, backlogTurns: 6 },
+  { step: 12, capacity: 0.59, backlogTurns: 7 },
+  { step: 13, capacity: 0.6, backlogTurns: 8 },
+  { step: 14, capacity: 0.61, backlogTurns: 0 },
+  { step: 15, capacity: 0.62, backlogTurns: 1 },
+  { step: 16, capacity: 0.63, backlogTurns: 2 },
+  { step: 17, capacity: 0.64, backlogTurns: 3 },
+  { step: 18, capacity: 0.65, backlogTurns: 4 },
+  { step: 19, capacity: 0.66, backlogTurns: 5 },
+  { step: 20, capacity: 0.67, backlogTurns: 6 },
+  { step: 21, capacity: 0.68, backlogTurns: 7 },
+  { step: 22, capacity: 0.69, backlogTurns: 8 },
+  { step: 23, capacity: 0.7, backlogTurns: 0 },
+  { step: 24, capacity: 0.71, backlogTurns: 1 },
+  { step: 25, capacity: 0.72, backlogTurns: 2 },
+  { step: 26, capacity: 0.73, backlogTurns: 3 },
+  { step: 27, capacity: 0.74, backlogTurns: 4 },
+  { step: 28, capacity: 0.35, backlogTurns: 5 },
+  { step: 29, capacity: 0.36, backlogTurns: 6 },
+  { step: 30, capacity: 0.37, backlogTurns: 7 },
+  { step: 31, capacity: 0.38, backlogTurns: 8 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_04_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_04_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_04_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_04_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_04_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_04_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_05_META = {
+  id: 'corr_05',
+  origin: 'TAS' as V1014WorkforceRegionId,
+  destination: 'ACT' as V1014WorkforceRegionId,
+  defaultBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_05_STEPS = [
+  { step: 0, capacity: 0.6, backlogTurns: 5 },
+  { step: 1, capacity: 0.61, backlogTurns: 6 },
+  { step: 2, capacity: 0.62, backlogTurns: 7 },
+  { step: 3, capacity: 0.63, backlogTurns: 8 },
+  { step: 4, capacity: 0.64, backlogTurns: 0 },
+  { step: 5, capacity: 0.65, backlogTurns: 1 },
+  { step: 6, capacity: 0.66, backlogTurns: 2 },
+  { step: 7, capacity: 0.67, backlogTurns: 3 },
+  { step: 8, capacity: 0.68, backlogTurns: 4 },
+  { step: 9, capacity: 0.69, backlogTurns: 5 },
+  { step: 10, capacity: 0.7, backlogTurns: 6 },
+  { step: 11, capacity: 0.71, backlogTurns: 7 },
+  { step: 12, capacity: 0.72, backlogTurns: 8 },
+  { step: 13, capacity: 0.73, backlogTurns: 0 },
+  { step: 14, capacity: 0.74, backlogTurns: 1 },
+  { step: 15, capacity: 0.35, backlogTurns: 2 },
+  { step: 16, capacity: 0.36, backlogTurns: 3 },
+  { step: 17, capacity: 0.37, backlogTurns: 4 },
+  { step: 18, capacity: 0.38, backlogTurns: 5 },
+  { step: 19, capacity: 0.39, backlogTurns: 6 },
+  { step: 20, capacity: 0.4, backlogTurns: 7 },
+  { step: 21, capacity: 0.41, backlogTurns: 8 },
+  { step: 22, capacity: 0.42, backlogTurns: 0 },
+  { step: 23, capacity: 0.43, backlogTurns: 1 },
+  { step: 24, capacity: 0.44, backlogTurns: 2 },
+  { step: 25, capacity: 0.45, backlogTurns: 3 },
+  { step: 26, capacity: 0.46, backlogTurns: 4 },
+  { step: 27, capacity: 0.47, backlogTurns: 5 },
+  { step: 28, capacity: 0.48, backlogTurns: 6 },
+  { step: 29, capacity: 0.49, backlogTurns: 7 },
+  { step: 30, capacity: 0.5, backlogTurns: 8 },
+  { step: 31, capacity: 0.51, backlogTurns: 0 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_05_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_05_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_05_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_05_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_05_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_05_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_06_META = {
+  id: 'corr_06',
+  origin: 'NT' as V1014WorkforceRegionId,
+  destination: 'NSW' as V1014WorkforceRegionId,
+  defaultBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_06_STEPS = [
+  { step: 0, capacity: 0.73, backlogTurns: 6 },
+  { step: 1, capacity: 0.74, backlogTurns: 7 },
+  { step: 2, capacity: 0.35, backlogTurns: 8 },
+  { step: 3, capacity: 0.36, backlogTurns: 0 },
+  { step: 4, capacity: 0.37, backlogTurns: 1 },
+  { step: 5, capacity: 0.38, backlogTurns: 2 },
+  { step: 6, capacity: 0.39, backlogTurns: 3 },
+  { step: 7, capacity: 0.4, backlogTurns: 4 },
+  { step: 8, capacity: 0.41, backlogTurns: 5 },
+  { step: 9, capacity: 0.42, backlogTurns: 6 },
+  { step: 10, capacity: 0.43, backlogTurns: 7 },
+  { step: 11, capacity: 0.44, backlogTurns: 8 },
+  { step: 12, capacity: 0.45, backlogTurns: 0 },
+  { step: 13, capacity: 0.46, backlogTurns: 1 },
+  { step: 14, capacity: 0.47, backlogTurns: 2 },
+  { step: 15, capacity: 0.48, backlogTurns: 3 },
+  { step: 16, capacity: 0.49, backlogTurns: 4 },
+  { step: 17, capacity: 0.5, backlogTurns: 5 },
+  { step: 18, capacity: 0.51, backlogTurns: 6 },
+  { step: 19, capacity: 0.52, backlogTurns: 7 },
+  { step: 20, capacity: 0.53, backlogTurns: 8 },
+  { step: 21, capacity: 0.54, backlogTurns: 0 },
+  { step: 22, capacity: 0.55, backlogTurns: 1 },
+  { step: 23, capacity: 0.56, backlogTurns: 2 },
+  { step: 24, capacity: 0.57, backlogTurns: 3 },
+  { step: 25, capacity: 0.58, backlogTurns: 4 },
+  { step: 26, capacity: 0.59, backlogTurns: 5 },
+  { step: 27, capacity: 0.6, backlogTurns: 6 },
+  { step: 28, capacity: 0.61, backlogTurns: 7 },
+  { step: 29, capacity: 0.62, backlogTurns: 8 },
+  { step: 30, capacity: 0.63, backlogTurns: 0 },
+  { step: 31, capacity: 0.64, backlogTurns: 1 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_06_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_06_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_06_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_06_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_06_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_06_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_07_META = {
+  id: 'corr_07',
+  origin: 'ACT' as V1014WorkforceRegionId,
+  destination: 'VIC' as V1014WorkforceRegionId,
+  defaultBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_07_STEPS = [
+  { step: 0, capacity: 0.46, backlogTurns: 7 },
+  { step: 1, capacity: 0.47, backlogTurns: 8 },
+  { step: 2, capacity: 0.48, backlogTurns: 0 },
+  { step: 3, capacity: 0.49, backlogTurns: 1 },
+  { step: 4, capacity: 0.5, backlogTurns: 2 },
+  { step: 5, capacity: 0.51, backlogTurns: 3 },
+  { step: 6, capacity: 0.52, backlogTurns: 4 },
+  { step: 7, capacity: 0.53, backlogTurns: 5 },
+  { step: 8, capacity: 0.54, backlogTurns: 6 },
+  { step: 9, capacity: 0.55, backlogTurns: 7 },
+  { step: 10, capacity: 0.56, backlogTurns: 8 },
+  { step: 11, capacity: 0.57, backlogTurns: 0 },
+  { step: 12, capacity: 0.58, backlogTurns: 1 },
+  { step: 13, capacity: 0.59, backlogTurns: 2 },
+  { step: 14, capacity: 0.6, backlogTurns: 3 },
+  { step: 15, capacity: 0.61, backlogTurns: 4 },
+  { step: 16, capacity: 0.62, backlogTurns: 5 },
+  { step: 17, capacity: 0.63, backlogTurns: 6 },
+  { step: 18, capacity: 0.64, backlogTurns: 7 },
+  { step: 19, capacity: 0.65, backlogTurns: 8 },
+  { step: 20, capacity: 0.66, backlogTurns: 0 },
+  { step: 21, capacity: 0.67, backlogTurns: 1 },
+  { step: 22, capacity: 0.68, backlogTurns: 2 },
+  { step: 23, capacity: 0.69, backlogTurns: 3 },
+  { step: 24, capacity: 0.7, backlogTurns: 4 },
+  { step: 25, capacity: 0.71, backlogTurns: 5 },
+  { step: 26, capacity: 0.72, backlogTurns: 6 },
+  { step: 27, capacity: 0.73, backlogTurns: 7 },
+  { step: 28, capacity: 0.74, backlogTurns: 8 },
+  { step: 29, capacity: 0.35, backlogTurns: 0 },
+  { step: 30, capacity: 0.36, backlogTurns: 1 },
+  { step: 31, capacity: 0.37, backlogTurns: 2 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_07_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_07_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_07_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_07_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_07_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_07_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_08_META = {
+  id: 'corr_08',
+  origin: 'NSW' as V1014WorkforceRegionId,
+  destination: 'QLD' as V1014WorkforceRegionId,
+  defaultBand: 'surge' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_08_STEPS = [
+  { step: 0, capacity: 0.59, backlogTurns: 8 },
+  { step: 1, capacity: 0.6, backlogTurns: 0 },
+  { step: 2, capacity: 0.61, backlogTurns: 1 },
+  { step: 3, capacity: 0.62, backlogTurns: 2 },
+  { step: 4, capacity: 0.63, backlogTurns: 3 },
+  { step: 5, capacity: 0.64, backlogTurns: 4 },
+  { step: 6, capacity: 0.65, backlogTurns: 5 },
+  { step: 7, capacity: 0.66, backlogTurns: 6 },
+  { step: 8, capacity: 0.67, backlogTurns: 7 },
+  { step: 9, capacity: 0.68, backlogTurns: 8 },
+  { step: 10, capacity: 0.69, backlogTurns: 0 },
+  { step: 11, capacity: 0.7, backlogTurns: 1 },
+  { step: 12, capacity: 0.71, backlogTurns: 2 },
+  { step: 13, capacity: 0.72, backlogTurns: 3 },
+  { step: 14, capacity: 0.73, backlogTurns: 4 },
+  { step: 15, capacity: 0.74, backlogTurns: 5 },
+  { step: 16, capacity: 0.35, backlogTurns: 6 },
+  { step: 17, capacity: 0.36, backlogTurns: 7 },
+  { step: 18, capacity: 0.37, backlogTurns: 8 },
+  { step: 19, capacity: 0.38, backlogTurns: 0 },
+  { step: 20, capacity: 0.39, backlogTurns: 1 },
+  { step: 21, capacity: 0.4, backlogTurns: 2 },
+  { step: 22, capacity: 0.41, backlogTurns: 3 },
+  { step: 23, capacity: 0.42, backlogTurns: 4 },
+  { step: 24, capacity: 0.43, backlogTurns: 5 },
+  { step: 25, capacity: 0.44, backlogTurns: 6 },
+  { step: 26, capacity: 0.45, backlogTurns: 7 },
+  { step: 27, capacity: 0.46, backlogTurns: 8 },
+  { step: 28, capacity: 0.47, backlogTurns: 0 },
+  { step: 29, capacity: 0.48, backlogTurns: 1 },
+  { step: 30, capacity: 0.49, backlogTurns: 2 },
+  { step: 31, capacity: 0.5, backlogTurns: 3 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_08_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_08_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_08_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_08_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_08_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_08_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_09_META = {
+  id: 'corr_09',
+  origin: 'VIC' as V1014WorkforceRegionId,
+  destination: 'WA' as V1014WorkforceRegionId,
+  defaultBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_09_STEPS = [
+  { step: 0, capacity: 0.72, backlogTurns: 0 },
+  { step: 1, capacity: 0.73, backlogTurns: 1 },
+  { step: 2, capacity: 0.74, backlogTurns: 2 },
+  { step: 3, capacity: 0.35, backlogTurns: 3 },
+  { step: 4, capacity: 0.36, backlogTurns: 4 },
+  { step: 5, capacity: 0.37, backlogTurns: 5 },
+  { step: 6, capacity: 0.38, backlogTurns: 6 },
+  { step: 7, capacity: 0.39, backlogTurns: 7 },
+  { step: 8, capacity: 0.4, backlogTurns: 8 },
+  { step: 9, capacity: 0.41, backlogTurns: 0 },
+  { step: 10, capacity: 0.42, backlogTurns: 1 },
+  { step: 11, capacity: 0.43, backlogTurns: 2 },
+  { step: 12, capacity: 0.44, backlogTurns: 3 },
+  { step: 13, capacity: 0.45, backlogTurns: 4 },
+  { step: 14, capacity: 0.46, backlogTurns: 5 },
+  { step: 15, capacity: 0.47, backlogTurns: 6 },
+  { step: 16, capacity: 0.48, backlogTurns: 7 },
+  { step: 17, capacity: 0.49, backlogTurns: 8 },
+  { step: 18, capacity: 0.5, backlogTurns: 0 },
+  { step: 19, capacity: 0.51, backlogTurns: 1 },
+  { step: 20, capacity: 0.52, backlogTurns: 2 },
+  { step: 21, capacity: 0.53, backlogTurns: 3 },
+  { step: 22, capacity: 0.54, backlogTurns: 4 },
+  { step: 23, capacity: 0.55, backlogTurns: 5 },
+  { step: 24, capacity: 0.56, backlogTurns: 6 },
+  { step: 25, capacity: 0.57, backlogTurns: 7 },
+  { step: 26, capacity: 0.58, backlogTurns: 8 },
+  { step: 27, capacity: 0.59, backlogTurns: 0 },
+  { step: 28, capacity: 0.6, backlogTurns: 1 },
+  { step: 29, capacity: 0.61, backlogTurns: 2 },
+  { step: 30, capacity: 0.62, backlogTurns: 3 },
+  { step: 31, capacity: 0.63, backlogTurns: 4 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_09_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_09_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_09_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_09_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_09_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_09_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_10_META = {
+  id: 'corr_10',
+  origin: 'QLD' as V1014WorkforceRegionId,
+  destination: 'SA' as V1014WorkforceRegionId,
+  defaultBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_10_STEPS = [
+  { step: 0, capacity: 0.45, backlogTurns: 1 },
+  { step: 1, capacity: 0.46, backlogTurns: 2 },
+  { step: 2, capacity: 0.47, backlogTurns: 3 },
+  { step: 3, capacity: 0.48, backlogTurns: 4 },
+  { step: 4, capacity: 0.49, backlogTurns: 5 },
+  { step: 5, capacity: 0.5, backlogTurns: 6 },
+  { step: 6, capacity: 0.51, backlogTurns: 7 },
+  { step: 7, capacity: 0.52, backlogTurns: 8 },
+  { step: 8, capacity: 0.53, backlogTurns: 0 },
+  { step: 9, capacity: 0.54, backlogTurns: 1 },
+  { step: 10, capacity: 0.55, backlogTurns: 2 },
+  { step: 11, capacity: 0.56, backlogTurns: 3 },
+  { step: 12, capacity: 0.57, backlogTurns: 4 },
+  { step: 13, capacity: 0.58, backlogTurns: 5 },
+  { step: 14, capacity: 0.59, backlogTurns: 6 },
+  { step: 15, capacity: 0.6, backlogTurns: 7 },
+  { step: 16, capacity: 0.61, backlogTurns: 8 },
+  { step: 17, capacity: 0.62, backlogTurns: 0 },
+  { step: 18, capacity: 0.63, backlogTurns: 1 },
+  { step: 19, capacity: 0.64, backlogTurns: 2 },
+  { step: 20, capacity: 0.65, backlogTurns: 3 },
+  { step: 21, capacity: 0.66, backlogTurns: 4 },
+  { step: 22, capacity: 0.67, backlogTurns: 5 },
+  { step: 23, capacity: 0.68, backlogTurns: 6 },
+  { step: 24, capacity: 0.69, backlogTurns: 7 },
+  { step: 25, capacity: 0.7, backlogTurns: 8 },
+  { step: 26, capacity: 0.71, backlogTurns: 0 },
+  { step: 27, capacity: 0.72, backlogTurns: 1 },
+  { step: 28, capacity: 0.73, backlogTurns: 2 },
+  { step: 29, capacity: 0.74, backlogTurns: 3 },
+  { step: 30, capacity: 0.35, backlogTurns: 4 },
+  { step: 31, capacity: 0.36, backlogTurns: 5 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_10_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_10_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_10_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_10_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_10_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_10_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_11_META = {
+  id: 'corr_11',
+  origin: 'WA' as V1014WorkforceRegionId,
+  destination: 'TAS' as V1014WorkforceRegionId,
+  defaultBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_11_STEPS = [
+  { step: 0, capacity: 0.58, backlogTurns: 2 },
+  { step: 1, capacity: 0.59, backlogTurns: 3 },
+  { step: 2, capacity: 0.6, backlogTurns: 4 },
+  { step: 3, capacity: 0.61, backlogTurns: 5 },
+  { step: 4, capacity: 0.62, backlogTurns: 6 },
+  { step: 5, capacity: 0.63, backlogTurns: 7 },
+  { step: 6, capacity: 0.64, backlogTurns: 8 },
+  { step: 7, capacity: 0.65, backlogTurns: 0 },
+  { step: 8, capacity: 0.66, backlogTurns: 1 },
+  { step: 9, capacity: 0.67, backlogTurns: 2 },
+  { step: 10, capacity: 0.68, backlogTurns: 3 },
+  { step: 11, capacity: 0.69, backlogTurns: 4 },
+  { step: 12, capacity: 0.7, backlogTurns: 5 },
+  { step: 13, capacity: 0.71, backlogTurns: 6 },
+  { step: 14, capacity: 0.72, backlogTurns: 7 },
+  { step: 15, capacity: 0.73, backlogTurns: 8 },
+  { step: 16, capacity: 0.74, backlogTurns: 0 },
+  { step: 17, capacity: 0.35, backlogTurns: 1 },
+  { step: 18, capacity: 0.36, backlogTurns: 2 },
+  { step: 19, capacity: 0.37, backlogTurns: 3 },
+  { step: 20, capacity: 0.38, backlogTurns: 4 },
+  { step: 21, capacity: 0.39, backlogTurns: 5 },
+  { step: 22, capacity: 0.4, backlogTurns: 6 },
+  { step: 23, capacity: 0.41, backlogTurns: 7 },
+  { step: 24, capacity: 0.42, backlogTurns: 8 },
+  { step: 25, capacity: 0.43, backlogTurns: 0 },
+  { step: 26, capacity: 0.44, backlogTurns: 1 },
+  { step: 27, capacity: 0.45, backlogTurns: 2 },
+  { step: 28, capacity: 0.46, backlogTurns: 3 },
+  { step: 29, capacity: 0.47, backlogTurns: 4 },
+  { step: 30, capacity: 0.48, backlogTurns: 5 },
+  { step: 31, capacity: 0.49, backlogTurns: 6 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_11_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_11_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_11_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_11_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_11_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_11_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_12_META = {
+  id: 'corr_12',
+  origin: 'SA' as V1014WorkforceRegionId,
+  destination: 'NT' as V1014WorkforceRegionId,
+  defaultBand: 'surge' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_12_STEPS = [
+  { step: 0, capacity: 0.71, backlogTurns: 3 },
+  { step: 1, capacity: 0.72, backlogTurns: 4 },
+  { step: 2, capacity: 0.73, backlogTurns: 5 },
+  { step: 3, capacity: 0.74, backlogTurns: 6 },
+  { step: 4, capacity: 0.35, backlogTurns: 7 },
+  { step: 5, capacity: 0.36, backlogTurns: 8 },
+  { step: 6, capacity: 0.37, backlogTurns: 0 },
+  { step: 7, capacity: 0.38, backlogTurns: 1 },
+  { step: 8, capacity: 0.39, backlogTurns: 2 },
+  { step: 9, capacity: 0.4, backlogTurns: 3 },
+  { step: 10, capacity: 0.41, backlogTurns: 4 },
+  { step: 11, capacity: 0.42, backlogTurns: 5 },
+  { step: 12, capacity: 0.43, backlogTurns: 6 },
+  { step: 13, capacity: 0.44, backlogTurns: 7 },
+  { step: 14, capacity: 0.45, backlogTurns: 8 },
+  { step: 15, capacity: 0.46, backlogTurns: 0 },
+  { step: 16, capacity: 0.47, backlogTurns: 1 },
+  { step: 17, capacity: 0.48, backlogTurns: 2 },
+  { step: 18, capacity: 0.49, backlogTurns: 3 },
+  { step: 19, capacity: 0.5, backlogTurns: 4 },
+  { step: 20, capacity: 0.51, backlogTurns: 5 },
+  { step: 21, capacity: 0.52, backlogTurns: 6 },
+  { step: 22, capacity: 0.53, backlogTurns: 7 },
+  { step: 23, capacity: 0.54, backlogTurns: 8 },
+  { step: 24, capacity: 0.55, backlogTurns: 0 },
+  { step: 25, capacity: 0.56, backlogTurns: 1 },
+  { step: 26, capacity: 0.57, backlogTurns: 2 },
+  { step: 27, capacity: 0.58, backlogTurns: 3 },
+  { step: 28, capacity: 0.59, backlogTurns: 4 },
+  { step: 29, capacity: 0.6, backlogTurns: 5 },
+  { step: 30, capacity: 0.61, backlogTurns: 6 },
+  { step: 31, capacity: 0.62, backlogTurns: 7 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_12_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_12_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_12_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_12_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_12_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_12_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_13_META = {
+  id: 'corr_13',
+  origin: 'TAS' as V1014WorkforceRegionId,
+  destination: 'ACT' as V1014WorkforceRegionId,
+  defaultBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_13_STEPS = [
+  { step: 0, capacity: 0.44, backlogTurns: 4 },
+  { step: 1, capacity: 0.45, backlogTurns: 5 },
+  { step: 2, capacity: 0.46, backlogTurns: 6 },
+  { step: 3, capacity: 0.47, backlogTurns: 7 },
+  { step: 4, capacity: 0.48, backlogTurns: 8 },
+  { step: 5, capacity: 0.49, backlogTurns: 0 },
+  { step: 6, capacity: 0.5, backlogTurns: 1 },
+  { step: 7, capacity: 0.51, backlogTurns: 2 },
+  { step: 8, capacity: 0.52, backlogTurns: 3 },
+  { step: 9, capacity: 0.53, backlogTurns: 4 },
+  { step: 10, capacity: 0.54, backlogTurns: 5 },
+  { step: 11, capacity: 0.55, backlogTurns: 6 },
+  { step: 12, capacity: 0.56, backlogTurns: 7 },
+  { step: 13, capacity: 0.57, backlogTurns: 8 },
+  { step: 14, capacity: 0.58, backlogTurns: 0 },
+  { step: 15, capacity: 0.59, backlogTurns: 1 },
+  { step: 16, capacity: 0.6, backlogTurns: 2 },
+  { step: 17, capacity: 0.61, backlogTurns: 3 },
+  { step: 18, capacity: 0.62, backlogTurns: 4 },
+  { step: 19, capacity: 0.63, backlogTurns: 5 },
+  { step: 20, capacity: 0.64, backlogTurns: 6 },
+  { step: 21, capacity: 0.65, backlogTurns: 7 },
+  { step: 22, capacity: 0.66, backlogTurns: 8 },
+  { step: 23, capacity: 0.67, backlogTurns: 0 },
+  { step: 24, capacity: 0.68, backlogTurns: 1 },
+  { step: 25, capacity: 0.69, backlogTurns: 2 },
+  { step: 26, capacity: 0.7, backlogTurns: 3 },
+  { step: 27, capacity: 0.71, backlogTurns: 4 },
+  { step: 28, capacity: 0.72, backlogTurns: 5 },
+  { step: 29, capacity: 0.73, backlogTurns: 6 },
+  { step: 30, capacity: 0.74, backlogTurns: 7 },
+  { step: 31, capacity: 0.35, backlogTurns: 8 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_13_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_13_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_13_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_13_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_13_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_13_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_14_META = {
+  id: 'corr_14',
+  origin: 'NT' as V1014WorkforceRegionId,
+  destination: 'NSW' as V1014WorkforceRegionId,
+  defaultBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_14_STEPS = [
+  { step: 0, capacity: 0.57, backlogTurns: 5 },
+  { step: 1, capacity: 0.58, backlogTurns: 6 },
+  { step: 2, capacity: 0.59, backlogTurns: 7 },
+  { step: 3, capacity: 0.6, backlogTurns: 8 },
+  { step: 4, capacity: 0.61, backlogTurns: 0 },
+  { step: 5, capacity: 0.62, backlogTurns: 1 },
+  { step: 6, capacity: 0.63, backlogTurns: 2 },
+  { step: 7, capacity: 0.64, backlogTurns: 3 },
+  { step: 8, capacity: 0.65, backlogTurns: 4 },
+  { step: 9, capacity: 0.66, backlogTurns: 5 },
+  { step: 10, capacity: 0.67, backlogTurns: 6 },
+  { step: 11, capacity: 0.68, backlogTurns: 7 },
+  { step: 12, capacity: 0.69, backlogTurns: 8 },
+  { step: 13, capacity: 0.7, backlogTurns: 0 },
+  { step: 14, capacity: 0.71, backlogTurns: 1 },
+  { step: 15, capacity: 0.72, backlogTurns: 2 },
+  { step: 16, capacity: 0.73, backlogTurns: 3 },
+  { step: 17, capacity: 0.74, backlogTurns: 4 },
+  { step: 18, capacity: 0.35, backlogTurns: 5 },
+  { step: 19, capacity: 0.36, backlogTurns: 6 },
+  { step: 20, capacity: 0.37, backlogTurns: 7 },
+  { step: 21, capacity: 0.38, backlogTurns: 8 },
+  { step: 22, capacity: 0.39, backlogTurns: 0 },
+  { step: 23, capacity: 0.4, backlogTurns: 1 },
+  { step: 24, capacity: 0.41, backlogTurns: 2 },
+  { step: 25, capacity: 0.42, backlogTurns: 3 },
+  { step: 26, capacity: 0.43, backlogTurns: 4 },
+  { step: 27, capacity: 0.44, backlogTurns: 5 },
+  { step: 28, capacity: 0.45, backlogTurns: 6 },
+  { step: 29, capacity: 0.46, backlogTurns: 7 },
+  { step: 30, capacity: 0.47, backlogTurns: 8 },
+  { step: 31, capacity: 0.48, backlogTurns: 0 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_14_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_14_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_14_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_14_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_14_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_14_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_15_META = {
+  id: 'corr_15',
+  origin: 'ACT' as V1014WorkforceRegionId,
+  destination: 'VIC' as V1014WorkforceRegionId,
+  defaultBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_15_STEPS = [
+  { step: 0, capacity: 0.7, backlogTurns: 6 },
+  { step: 1, capacity: 0.71, backlogTurns: 7 },
+  { step: 2, capacity: 0.72, backlogTurns: 8 },
+  { step: 3, capacity: 0.73, backlogTurns: 0 },
+  { step: 4, capacity: 0.74, backlogTurns: 1 },
+  { step: 5, capacity: 0.35, backlogTurns: 2 },
+  { step: 6, capacity: 0.36, backlogTurns: 3 },
+  { step: 7, capacity: 0.37, backlogTurns: 4 },
+  { step: 8, capacity: 0.38, backlogTurns: 5 },
+  { step: 9, capacity: 0.39, backlogTurns: 6 },
+  { step: 10, capacity: 0.4, backlogTurns: 7 },
+  { step: 11, capacity: 0.41, backlogTurns: 8 },
+  { step: 12, capacity: 0.42, backlogTurns: 0 },
+  { step: 13, capacity: 0.43, backlogTurns: 1 },
+  { step: 14, capacity: 0.44, backlogTurns: 2 },
+  { step: 15, capacity: 0.45, backlogTurns: 3 },
+  { step: 16, capacity: 0.46, backlogTurns: 4 },
+  { step: 17, capacity: 0.47, backlogTurns: 5 },
+  { step: 18, capacity: 0.48, backlogTurns: 6 },
+  { step: 19, capacity: 0.49, backlogTurns: 7 },
+  { step: 20, capacity: 0.5, backlogTurns: 8 },
+  { step: 21, capacity: 0.51, backlogTurns: 0 },
+  { step: 22, capacity: 0.52, backlogTurns: 1 },
+  { step: 23, capacity: 0.53, backlogTurns: 2 },
+  { step: 24, capacity: 0.54, backlogTurns: 3 },
+  { step: 25, capacity: 0.55, backlogTurns: 4 },
+  { step: 26, capacity: 0.56, backlogTurns: 5 },
+  { step: 27, capacity: 0.57, backlogTurns: 6 },
+  { step: 28, capacity: 0.58, backlogTurns: 7 },
+  { step: 29, capacity: 0.59, backlogTurns: 8 },
+  { step: 30, capacity: 0.6, backlogTurns: 0 },
+  { step: 31, capacity: 0.61, backlogTurns: 1 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_15_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_15_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_15_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_15_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_15_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_15_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_16_META = {
+  id: 'corr_16',
+  origin: 'NSW' as V1014WorkforceRegionId,
+  destination: 'QLD' as V1014WorkforceRegionId,
+  defaultBand: 'surge' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_16_STEPS = [
+  { step: 0, capacity: 0.43, backlogTurns: 7 },
+  { step: 1, capacity: 0.44, backlogTurns: 8 },
+  { step: 2, capacity: 0.45, backlogTurns: 0 },
+  { step: 3, capacity: 0.46, backlogTurns: 1 },
+  { step: 4, capacity: 0.47, backlogTurns: 2 },
+  { step: 5, capacity: 0.48, backlogTurns: 3 },
+  { step: 6, capacity: 0.49, backlogTurns: 4 },
+  { step: 7, capacity: 0.5, backlogTurns: 5 },
+  { step: 8, capacity: 0.51, backlogTurns: 6 },
+  { step: 9, capacity: 0.52, backlogTurns: 7 },
+  { step: 10, capacity: 0.53, backlogTurns: 8 },
+  { step: 11, capacity: 0.54, backlogTurns: 0 },
+  { step: 12, capacity: 0.55, backlogTurns: 1 },
+  { step: 13, capacity: 0.56, backlogTurns: 2 },
+  { step: 14, capacity: 0.57, backlogTurns: 3 },
+  { step: 15, capacity: 0.58, backlogTurns: 4 },
+  { step: 16, capacity: 0.59, backlogTurns: 5 },
+  { step: 17, capacity: 0.6, backlogTurns: 6 },
+  { step: 18, capacity: 0.61, backlogTurns: 7 },
+  { step: 19, capacity: 0.62, backlogTurns: 8 },
+  { step: 20, capacity: 0.63, backlogTurns: 0 },
+  { step: 21, capacity: 0.64, backlogTurns: 1 },
+  { step: 22, capacity: 0.65, backlogTurns: 2 },
+  { step: 23, capacity: 0.66, backlogTurns: 3 },
+  { step: 24, capacity: 0.67, backlogTurns: 4 },
+  { step: 25, capacity: 0.68, backlogTurns: 5 },
+  { step: 26, capacity: 0.69, backlogTurns: 6 },
+  { step: 27, capacity: 0.7, backlogTurns: 7 },
+  { step: 28, capacity: 0.71, backlogTurns: 8 },
+  { step: 29, capacity: 0.72, backlogTurns: 0 },
+  { step: 30, capacity: 0.73, backlogTurns: 1 },
+  { step: 31, capacity: 0.74, backlogTurns: 2 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_16_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_16_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_16_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_16_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_16_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_16_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_17_META = {
+  id: 'corr_17',
+  origin: 'VIC' as V1014WorkforceRegionId,
+  destination: 'WA' as V1014WorkforceRegionId,
+  defaultBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_17_STEPS = [
+  { step: 0, capacity: 0.56, backlogTurns: 8 },
+  { step: 1, capacity: 0.57, backlogTurns: 0 },
+  { step: 2, capacity: 0.58, backlogTurns: 1 },
+  { step: 3, capacity: 0.59, backlogTurns: 2 },
+  { step: 4, capacity: 0.6, backlogTurns: 3 },
+  { step: 5, capacity: 0.61, backlogTurns: 4 },
+  { step: 6, capacity: 0.62, backlogTurns: 5 },
+  { step: 7, capacity: 0.63, backlogTurns: 6 },
+  { step: 8, capacity: 0.64, backlogTurns: 7 },
+  { step: 9, capacity: 0.65, backlogTurns: 8 },
+  { step: 10, capacity: 0.66, backlogTurns: 0 },
+  { step: 11, capacity: 0.67, backlogTurns: 1 },
+  { step: 12, capacity: 0.68, backlogTurns: 2 },
+  { step: 13, capacity: 0.69, backlogTurns: 3 },
+  { step: 14, capacity: 0.7, backlogTurns: 4 },
+  { step: 15, capacity: 0.71, backlogTurns: 5 },
+  { step: 16, capacity: 0.72, backlogTurns: 6 },
+  { step: 17, capacity: 0.73, backlogTurns: 7 },
+  { step: 18, capacity: 0.74, backlogTurns: 8 },
+  { step: 19, capacity: 0.35, backlogTurns: 0 },
+  { step: 20, capacity: 0.36, backlogTurns: 1 },
+  { step: 21, capacity: 0.37, backlogTurns: 2 },
+  { step: 22, capacity: 0.38, backlogTurns: 3 },
+  { step: 23, capacity: 0.39, backlogTurns: 4 },
+  { step: 24, capacity: 0.4, backlogTurns: 5 },
+  { step: 25, capacity: 0.41, backlogTurns: 6 },
+  { step: 26, capacity: 0.42, backlogTurns: 7 },
+  { step: 27, capacity: 0.43, backlogTurns: 8 },
+  { step: 28, capacity: 0.44, backlogTurns: 0 },
+  { step: 29, capacity: 0.45, backlogTurns: 1 },
+  { step: 30, capacity: 0.46, backlogTurns: 2 },
+  { step: 31, capacity: 0.47, backlogTurns: 3 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_17_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_17_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_17_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_17_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_17_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_17_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_18_META = {
+  id: 'corr_18',
+  origin: 'QLD' as V1014WorkforceRegionId,
+  destination: 'SA' as V1014WorkforceRegionId,
+  defaultBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_18_STEPS = [
+  { step: 0, capacity: 0.69, backlogTurns: 0 },
+  { step: 1, capacity: 0.7, backlogTurns: 1 },
+  { step: 2, capacity: 0.71, backlogTurns: 2 },
+  { step: 3, capacity: 0.72, backlogTurns: 3 },
+  { step: 4, capacity: 0.73, backlogTurns: 4 },
+  { step: 5, capacity: 0.74, backlogTurns: 5 },
+  { step: 6, capacity: 0.35, backlogTurns: 6 },
+  { step: 7, capacity: 0.36, backlogTurns: 7 },
+  { step: 8, capacity: 0.37, backlogTurns: 8 },
+  { step: 9, capacity: 0.38, backlogTurns: 0 },
+  { step: 10, capacity: 0.39, backlogTurns: 1 },
+  { step: 11, capacity: 0.4, backlogTurns: 2 },
+  { step: 12, capacity: 0.41, backlogTurns: 3 },
+  { step: 13, capacity: 0.42, backlogTurns: 4 },
+  { step: 14, capacity: 0.43, backlogTurns: 5 },
+  { step: 15, capacity: 0.44, backlogTurns: 6 },
+  { step: 16, capacity: 0.45, backlogTurns: 7 },
+  { step: 17, capacity: 0.46, backlogTurns: 8 },
+  { step: 18, capacity: 0.47, backlogTurns: 0 },
+  { step: 19, capacity: 0.48, backlogTurns: 1 },
+  { step: 20, capacity: 0.49, backlogTurns: 2 },
+  { step: 21, capacity: 0.5, backlogTurns: 3 },
+  { step: 22, capacity: 0.51, backlogTurns: 4 },
+  { step: 23, capacity: 0.52, backlogTurns: 5 },
+  { step: 24, capacity: 0.53, backlogTurns: 6 },
+  { step: 25, capacity: 0.54, backlogTurns: 7 },
+  { step: 26, capacity: 0.55, backlogTurns: 8 },
+  { step: 27, capacity: 0.56, backlogTurns: 0 },
+  { step: 28, capacity: 0.57, backlogTurns: 1 },
+  { step: 29, capacity: 0.58, backlogTurns: 2 },
+  { step: 30, capacity: 0.59, backlogTurns: 3 },
+  { step: 31, capacity: 0.6, backlogTurns: 4 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_18_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_18_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_18_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_18_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_18_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_18_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_19_META = {
+  id: 'corr_19',
+  origin: 'WA' as V1014WorkforceRegionId,
+  destination: 'TAS' as V1014WorkforceRegionId,
+  defaultBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_19_STEPS = [
+  { step: 0, capacity: 0.42, backlogTurns: 1 },
+  { step: 1, capacity: 0.43, backlogTurns: 2 },
+  { step: 2, capacity: 0.44, backlogTurns: 3 },
+  { step: 3, capacity: 0.45, backlogTurns: 4 },
+  { step: 4, capacity: 0.46, backlogTurns: 5 },
+  { step: 5, capacity: 0.47, backlogTurns: 6 },
+  { step: 6, capacity: 0.48, backlogTurns: 7 },
+  { step: 7, capacity: 0.49, backlogTurns: 8 },
+  { step: 8, capacity: 0.5, backlogTurns: 0 },
+  { step: 9, capacity: 0.51, backlogTurns: 1 },
+  { step: 10, capacity: 0.52, backlogTurns: 2 },
+  { step: 11, capacity: 0.53, backlogTurns: 3 },
+  { step: 12, capacity: 0.54, backlogTurns: 4 },
+  { step: 13, capacity: 0.55, backlogTurns: 5 },
+  { step: 14, capacity: 0.56, backlogTurns: 6 },
+  { step: 15, capacity: 0.57, backlogTurns: 7 },
+  { step: 16, capacity: 0.58, backlogTurns: 8 },
+  { step: 17, capacity: 0.59, backlogTurns: 0 },
+  { step: 18, capacity: 0.6, backlogTurns: 1 },
+  { step: 19, capacity: 0.61, backlogTurns: 2 },
+  { step: 20, capacity: 0.62, backlogTurns: 3 },
+  { step: 21, capacity: 0.63, backlogTurns: 4 },
+  { step: 22, capacity: 0.64, backlogTurns: 5 },
+  { step: 23, capacity: 0.65, backlogTurns: 6 },
+  { step: 24, capacity: 0.66, backlogTurns: 7 },
+  { step: 25, capacity: 0.67, backlogTurns: 8 },
+  { step: 26, capacity: 0.68, backlogTurns: 0 },
+  { step: 27, capacity: 0.69, backlogTurns: 1 },
+  { step: 28, capacity: 0.7, backlogTurns: 2 },
+  { step: 29, capacity: 0.71, backlogTurns: 3 },
+  { step: 30, capacity: 0.72, backlogTurns: 4 },
+  { step: 31, capacity: 0.73, backlogTurns: 5 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_19_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_19_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_19_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_19_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_19_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_19_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_20_META = {
+  id: 'corr_20',
+  origin: 'SA' as V1014WorkforceRegionId,
+  destination: 'NT' as V1014WorkforceRegionId,
+  defaultBand: 'surge' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_20_STEPS = [
+  { step: 0, capacity: 0.55, backlogTurns: 2 },
+  { step: 1, capacity: 0.56, backlogTurns: 3 },
+  { step: 2, capacity: 0.57, backlogTurns: 4 },
+  { step: 3, capacity: 0.58, backlogTurns: 5 },
+  { step: 4, capacity: 0.59, backlogTurns: 6 },
+  { step: 5, capacity: 0.6, backlogTurns: 7 },
+  { step: 6, capacity: 0.61, backlogTurns: 8 },
+  { step: 7, capacity: 0.62, backlogTurns: 0 },
+  { step: 8, capacity: 0.63, backlogTurns: 1 },
+  { step: 9, capacity: 0.64, backlogTurns: 2 },
+  { step: 10, capacity: 0.65, backlogTurns: 3 },
+  { step: 11, capacity: 0.66, backlogTurns: 4 },
+  { step: 12, capacity: 0.67, backlogTurns: 5 },
+  { step: 13, capacity: 0.68, backlogTurns: 6 },
+  { step: 14, capacity: 0.69, backlogTurns: 7 },
+  { step: 15, capacity: 0.7, backlogTurns: 8 },
+  { step: 16, capacity: 0.71, backlogTurns: 0 },
+  { step: 17, capacity: 0.72, backlogTurns: 1 },
+  { step: 18, capacity: 0.73, backlogTurns: 2 },
+  { step: 19, capacity: 0.74, backlogTurns: 3 },
+  { step: 20, capacity: 0.35, backlogTurns: 4 },
+  { step: 21, capacity: 0.36, backlogTurns: 5 },
+  { step: 22, capacity: 0.37, backlogTurns: 6 },
+  { step: 23, capacity: 0.38, backlogTurns: 7 },
+  { step: 24, capacity: 0.39, backlogTurns: 8 },
+  { step: 25, capacity: 0.4, backlogTurns: 0 },
+  { step: 26, capacity: 0.41, backlogTurns: 1 },
+  { step: 27, capacity: 0.42, backlogTurns: 2 },
+  { step: 28, capacity: 0.43, backlogTurns: 3 },
+  { step: 29, capacity: 0.44, backlogTurns: 4 },
+  { step: 30, capacity: 0.45, backlogTurns: 5 },
+  { step: 31, capacity: 0.46, backlogTurns: 6 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_20_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_20_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_20_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_20_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_20_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_20_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_21_META = {
+  id: 'corr_21',
+  origin: 'TAS' as V1014WorkforceRegionId,
+  destination: 'ACT' as V1014WorkforceRegionId,
+  defaultBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_21_STEPS = [
+  { step: 0, capacity: 0.68, backlogTurns: 3 },
+  { step: 1, capacity: 0.69, backlogTurns: 4 },
+  { step: 2, capacity: 0.7, backlogTurns: 5 },
+  { step: 3, capacity: 0.71, backlogTurns: 6 },
+  { step: 4, capacity: 0.72, backlogTurns: 7 },
+  { step: 5, capacity: 0.73, backlogTurns: 8 },
+  { step: 6, capacity: 0.74, backlogTurns: 0 },
+  { step: 7, capacity: 0.35, backlogTurns: 1 },
+  { step: 8, capacity: 0.36, backlogTurns: 2 },
+  { step: 9, capacity: 0.37, backlogTurns: 3 },
+  { step: 10, capacity: 0.38, backlogTurns: 4 },
+  { step: 11, capacity: 0.39, backlogTurns: 5 },
+  { step: 12, capacity: 0.4, backlogTurns: 6 },
+  { step: 13, capacity: 0.41, backlogTurns: 7 },
+  { step: 14, capacity: 0.42, backlogTurns: 8 },
+  { step: 15, capacity: 0.43, backlogTurns: 0 },
+  { step: 16, capacity: 0.44, backlogTurns: 1 },
+  { step: 17, capacity: 0.45, backlogTurns: 2 },
+  { step: 18, capacity: 0.46, backlogTurns: 3 },
+  { step: 19, capacity: 0.47, backlogTurns: 4 },
+  { step: 20, capacity: 0.48, backlogTurns: 5 },
+  { step: 21, capacity: 0.49, backlogTurns: 6 },
+  { step: 22, capacity: 0.5, backlogTurns: 7 },
+  { step: 23, capacity: 0.51, backlogTurns: 8 },
+  { step: 24, capacity: 0.52, backlogTurns: 0 },
+  { step: 25, capacity: 0.53, backlogTurns: 1 },
+  { step: 26, capacity: 0.54, backlogTurns: 2 },
+  { step: 27, capacity: 0.55, backlogTurns: 3 },
+  { step: 28, capacity: 0.56, backlogTurns: 4 },
+  { step: 29, capacity: 0.57, backlogTurns: 5 },
+  { step: 30, capacity: 0.58, backlogTurns: 6 },
+  { step: 31, capacity: 0.59, backlogTurns: 7 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_21_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_21_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_21_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_21_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_21_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_21_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_22_META = {
+  id: 'corr_22',
+  origin: 'NT' as V1014WorkforceRegionId,
+  destination: 'NSW' as V1014WorkforceRegionId,
+  defaultBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_22_STEPS = [
+  { step: 0, capacity: 0.41, backlogTurns: 4 },
+  { step: 1, capacity: 0.42, backlogTurns: 5 },
+  { step: 2, capacity: 0.43, backlogTurns: 6 },
+  { step: 3, capacity: 0.44, backlogTurns: 7 },
+  { step: 4, capacity: 0.45, backlogTurns: 8 },
+  { step: 5, capacity: 0.46, backlogTurns: 0 },
+  { step: 6, capacity: 0.47, backlogTurns: 1 },
+  { step: 7, capacity: 0.48, backlogTurns: 2 },
+  { step: 8, capacity: 0.49, backlogTurns: 3 },
+  { step: 9, capacity: 0.5, backlogTurns: 4 },
+  { step: 10, capacity: 0.51, backlogTurns: 5 },
+  { step: 11, capacity: 0.52, backlogTurns: 6 },
+  { step: 12, capacity: 0.53, backlogTurns: 7 },
+  { step: 13, capacity: 0.54, backlogTurns: 8 },
+  { step: 14, capacity: 0.55, backlogTurns: 0 },
+  { step: 15, capacity: 0.56, backlogTurns: 1 },
+  { step: 16, capacity: 0.57, backlogTurns: 2 },
+  { step: 17, capacity: 0.58, backlogTurns: 3 },
+  { step: 18, capacity: 0.59, backlogTurns: 4 },
+  { step: 19, capacity: 0.6, backlogTurns: 5 },
+  { step: 20, capacity: 0.61, backlogTurns: 6 },
+  { step: 21, capacity: 0.62, backlogTurns: 7 },
+  { step: 22, capacity: 0.63, backlogTurns: 8 },
+  { step: 23, capacity: 0.64, backlogTurns: 0 },
+  { step: 24, capacity: 0.65, backlogTurns: 1 },
+  { step: 25, capacity: 0.66, backlogTurns: 2 },
+  { step: 26, capacity: 0.67, backlogTurns: 3 },
+  { step: 27, capacity: 0.68, backlogTurns: 4 },
+  { step: 28, capacity: 0.69, backlogTurns: 5 },
+  { step: 29, capacity: 0.7, backlogTurns: 6 },
+  { step: 30, capacity: 0.71, backlogTurns: 7 },
+  { step: 31, capacity: 0.72, backlogTurns: 8 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_22_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_22_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_22_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_22_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_22_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_22_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_23_META = {
+  id: 'corr_23',
+  origin: 'ACT' as V1014WorkforceRegionId,
+  destination: 'VIC' as V1014WorkforceRegionId,
+  defaultBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_23_STEPS = [
+  { step: 0, capacity: 0.54, backlogTurns: 5 },
+  { step: 1, capacity: 0.55, backlogTurns: 6 },
+  { step: 2, capacity: 0.56, backlogTurns: 7 },
+  { step: 3, capacity: 0.57, backlogTurns: 8 },
+  { step: 4, capacity: 0.58, backlogTurns: 0 },
+  { step: 5, capacity: 0.59, backlogTurns: 1 },
+  { step: 6, capacity: 0.6, backlogTurns: 2 },
+  { step: 7, capacity: 0.61, backlogTurns: 3 },
+  { step: 8, capacity: 0.62, backlogTurns: 4 },
+  { step: 9, capacity: 0.63, backlogTurns: 5 },
+  { step: 10, capacity: 0.64, backlogTurns: 6 },
+  { step: 11, capacity: 0.65, backlogTurns: 7 },
+  { step: 12, capacity: 0.66, backlogTurns: 8 },
+  { step: 13, capacity: 0.67, backlogTurns: 0 },
+  { step: 14, capacity: 0.68, backlogTurns: 1 },
+  { step: 15, capacity: 0.69, backlogTurns: 2 },
+  { step: 16, capacity: 0.7, backlogTurns: 3 },
+  { step: 17, capacity: 0.71, backlogTurns: 4 },
+  { step: 18, capacity: 0.72, backlogTurns: 5 },
+  { step: 19, capacity: 0.73, backlogTurns: 6 },
+  { step: 20, capacity: 0.74, backlogTurns: 7 },
+  { step: 21, capacity: 0.35, backlogTurns: 8 },
+  { step: 22, capacity: 0.36, backlogTurns: 0 },
+  { step: 23, capacity: 0.37, backlogTurns: 1 },
+  { step: 24, capacity: 0.38, backlogTurns: 2 },
+  { step: 25, capacity: 0.39, backlogTurns: 3 },
+  { step: 26, capacity: 0.4, backlogTurns: 4 },
+  { step: 27, capacity: 0.41, backlogTurns: 5 },
+  { step: 28, capacity: 0.42, backlogTurns: 6 },
+  { step: 29, capacity: 0.43, backlogTurns: 7 },
+  { step: 30, capacity: 0.44, backlogTurns: 8 },
+  { step: 31, capacity: 0.45, backlogTurns: 0 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_23_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_23_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_23_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_23_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_23_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_23_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_24_META = {
+  id: 'corr_24',
+  origin: 'NSW' as V1014WorkforceRegionId,
+  destination: 'QLD' as V1014WorkforceRegionId,
+  defaultBand: 'surge' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_24_STEPS = [
+  { step: 0, capacity: 0.67, backlogTurns: 6 },
+  { step: 1, capacity: 0.68, backlogTurns: 7 },
+  { step: 2, capacity: 0.69, backlogTurns: 8 },
+  { step: 3, capacity: 0.7, backlogTurns: 0 },
+  { step: 4, capacity: 0.71, backlogTurns: 1 },
+  { step: 5, capacity: 0.72, backlogTurns: 2 },
+  { step: 6, capacity: 0.73, backlogTurns: 3 },
+  { step: 7, capacity: 0.74, backlogTurns: 4 },
+  { step: 8, capacity: 0.35, backlogTurns: 5 },
+  { step: 9, capacity: 0.36, backlogTurns: 6 },
+  { step: 10, capacity: 0.37, backlogTurns: 7 },
+  { step: 11, capacity: 0.38, backlogTurns: 8 },
+  { step: 12, capacity: 0.39, backlogTurns: 0 },
+  { step: 13, capacity: 0.4, backlogTurns: 1 },
+  { step: 14, capacity: 0.41, backlogTurns: 2 },
+  { step: 15, capacity: 0.42, backlogTurns: 3 },
+  { step: 16, capacity: 0.43, backlogTurns: 4 },
+  { step: 17, capacity: 0.44, backlogTurns: 5 },
+  { step: 18, capacity: 0.45, backlogTurns: 6 },
+  { step: 19, capacity: 0.46, backlogTurns: 7 },
+  { step: 20, capacity: 0.47, backlogTurns: 8 },
+  { step: 21, capacity: 0.48, backlogTurns: 0 },
+  { step: 22, capacity: 0.49, backlogTurns: 1 },
+  { step: 23, capacity: 0.5, backlogTurns: 2 },
+  { step: 24, capacity: 0.51, backlogTurns: 3 },
+  { step: 25, capacity: 0.52, backlogTurns: 4 },
+  { step: 26, capacity: 0.53, backlogTurns: 5 },
+  { step: 27, capacity: 0.54, backlogTurns: 6 },
+  { step: 28, capacity: 0.55, backlogTurns: 7 },
+  { step: 29, capacity: 0.56, backlogTurns: 8 },
+  { step: 30, capacity: 0.57, backlogTurns: 0 },
+  { step: 31, capacity: 0.58, backlogTurns: 1 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_24_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_24_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_24_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_24_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_24_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_24_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_25_META = {
+  id: 'corr_25',
+  origin: 'VIC' as V1014WorkforceRegionId,
+  destination: 'WA' as V1014WorkforceRegionId,
+  defaultBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_25_STEPS = [
+  { step: 0, capacity: 0.4, backlogTurns: 7 },
+  { step: 1, capacity: 0.41, backlogTurns: 8 },
+  { step: 2, capacity: 0.42, backlogTurns: 0 },
+  { step: 3, capacity: 0.43, backlogTurns: 1 },
+  { step: 4, capacity: 0.44, backlogTurns: 2 },
+  { step: 5, capacity: 0.45, backlogTurns: 3 },
+  { step: 6, capacity: 0.46, backlogTurns: 4 },
+  { step: 7, capacity: 0.47, backlogTurns: 5 },
+  { step: 8, capacity: 0.48, backlogTurns: 6 },
+  { step: 9, capacity: 0.49, backlogTurns: 7 },
+  { step: 10, capacity: 0.5, backlogTurns: 8 },
+  { step: 11, capacity: 0.51, backlogTurns: 0 },
+  { step: 12, capacity: 0.52, backlogTurns: 1 },
+  { step: 13, capacity: 0.53, backlogTurns: 2 },
+  { step: 14, capacity: 0.54, backlogTurns: 3 },
+  { step: 15, capacity: 0.55, backlogTurns: 4 },
+  { step: 16, capacity: 0.56, backlogTurns: 5 },
+  { step: 17, capacity: 0.57, backlogTurns: 6 },
+  { step: 18, capacity: 0.58, backlogTurns: 7 },
+  { step: 19, capacity: 0.59, backlogTurns: 8 },
+  { step: 20, capacity: 0.6, backlogTurns: 0 },
+  { step: 21, capacity: 0.61, backlogTurns: 1 },
+  { step: 22, capacity: 0.62, backlogTurns: 2 },
+  { step: 23, capacity: 0.63, backlogTurns: 3 },
+  { step: 24, capacity: 0.64, backlogTurns: 4 },
+  { step: 25, capacity: 0.65, backlogTurns: 5 },
+  { step: 26, capacity: 0.66, backlogTurns: 6 },
+  { step: 27, capacity: 0.67, backlogTurns: 7 },
+  { step: 28, capacity: 0.68, backlogTurns: 8 },
+  { step: 29, capacity: 0.69, backlogTurns: 0 },
+  { step: 30, capacity: 0.7, backlogTurns: 1 },
+  { step: 31, capacity: 0.71, backlogTurns: 2 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_25_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_25_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_25_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_25_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_25_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_25_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_26_META = {
+  id: 'corr_26',
+  origin: 'QLD' as V1014WorkforceRegionId,
+  destination: 'SA' as V1014WorkforceRegionId,
+  defaultBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_26_STEPS = [
+  { step: 0, capacity: 0.53, backlogTurns: 8 },
+  { step: 1, capacity: 0.54, backlogTurns: 0 },
+  { step: 2, capacity: 0.55, backlogTurns: 1 },
+  { step: 3, capacity: 0.56, backlogTurns: 2 },
+  { step: 4, capacity: 0.57, backlogTurns: 3 },
+  { step: 5, capacity: 0.58, backlogTurns: 4 },
+  { step: 6, capacity: 0.59, backlogTurns: 5 },
+  { step: 7, capacity: 0.6, backlogTurns: 6 },
+  { step: 8, capacity: 0.61, backlogTurns: 7 },
+  { step: 9, capacity: 0.62, backlogTurns: 8 },
+  { step: 10, capacity: 0.63, backlogTurns: 0 },
+  { step: 11, capacity: 0.64, backlogTurns: 1 },
+  { step: 12, capacity: 0.65, backlogTurns: 2 },
+  { step: 13, capacity: 0.66, backlogTurns: 3 },
+  { step: 14, capacity: 0.67, backlogTurns: 4 },
+  { step: 15, capacity: 0.68, backlogTurns: 5 },
+  { step: 16, capacity: 0.69, backlogTurns: 6 },
+  { step: 17, capacity: 0.7, backlogTurns: 7 },
+  { step: 18, capacity: 0.71, backlogTurns: 8 },
+  { step: 19, capacity: 0.72, backlogTurns: 0 },
+  { step: 20, capacity: 0.73, backlogTurns: 1 },
+  { step: 21, capacity: 0.74, backlogTurns: 2 },
+  { step: 22, capacity: 0.35, backlogTurns: 3 },
+  { step: 23, capacity: 0.36, backlogTurns: 4 },
+  { step: 24, capacity: 0.37, backlogTurns: 5 },
+  { step: 25, capacity: 0.38, backlogTurns: 6 },
+  { step: 26, capacity: 0.39, backlogTurns: 7 },
+  { step: 27, capacity: 0.4, backlogTurns: 8 },
+  { step: 28, capacity: 0.41, backlogTurns: 0 },
+  { step: 29, capacity: 0.42, backlogTurns: 1 },
+  { step: 30, capacity: 0.43, backlogTurns: 2 },
+  { step: 31, capacity: 0.44, backlogTurns: 3 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_26_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_26_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_26_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_26_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_26_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_26_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export const V1014_WORKFORCE_CORRIDOR_27_META = {
+  id: 'corr_27',
+  origin: 'WA' as V1014WorkforceRegionId,
+  destination: 'TAS' as V1014WorkforceRegionId,
+  defaultBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+} as const;
+
+const V1014_WORKFORCE_CORRIDOR_27_STEPS = [
+  { step: 0, capacity: 0.66, backlogTurns: 0 },
+  { step: 1, capacity: 0.67, backlogTurns: 1 },
+  { step: 2, capacity: 0.68, backlogTurns: 2 },
+  { step: 3, capacity: 0.69, backlogTurns: 3 },
+  { step: 4, capacity: 0.7, backlogTurns: 4 },
+  { step: 5, capacity: 0.71, backlogTurns: 5 },
+  { step: 6, capacity: 0.72, backlogTurns: 6 },
+  { step: 7, capacity: 0.73, backlogTurns: 7 },
+  { step: 8, capacity: 0.74, backlogTurns: 8 },
+  { step: 9, capacity: 0.35, backlogTurns: 0 },
+  { step: 10, capacity: 0.36, backlogTurns: 1 },
+  { step: 11, capacity: 0.37, backlogTurns: 2 },
+  { step: 12, capacity: 0.38, backlogTurns: 3 },
+  { step: 13, capacity: 0.39, backlogTurns: 4 },
+  { step: 14, capacity: 0.4, backlogTurns: 5 },
+  { step: 15, capacity: 0.41, backlogTurns: 6 },
+  { step: 16, capacity: 0.42, backlogTurns: 7 },
+  { step: 17, capacity: 0.43, backlogTurns: 8 },
+  { step: 18, capacity: 0.44, backlogTurns: 0 },
+  { step: 19, capacity: 0.45, backlogTurns: 1 },
+  { step: 20, capacity: 0.46, backlogTurns: 2 },
+  { step: 21, capacity: 0.47, backlogTurns: 3 },
+  { step: 22, capacity: 0.48, backlogTurns: 4 },
+  { step: 23, capacity: 0.49, backlogTurns: 5 },
+  { step: 24, capacity: 0.5, backlogTurns: 6 },
+  { step: 25, capacity: 0.51, backlogTurns: 7 },
+  { step: 26, capacity: 0.52, backlogTurns: 8 },
+  { step: 27, capacity: 0.53, backlogTurns: 0 },
+  { step: 28, capacity: 0.54, backlogTurns: 1 },
+  { step: 29, capacity: 0.55, backlogTurns: 2 },
+  { step: 30, capacity: 0.56, backlogTurns: 3 },
+  { step: 31, capacity: 0.57, backlogTurns: 4 },
+] as const;
+
+export function V1014_WORKFORCE_CORRIDOR_27_pressure(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1014_WORKFORCE_CORRIDOR_27_STEPS.length; i++) {
+    const row = V1014_WORKFORCE_CORRIDOR_27_STEPS[i];
+    acc += row.capacity * (1 + (turn + row.step) % 5) * 0.02;
+  }
+  return V1014_WORKFORCE_clamp(acc / V1014_WORKFORCE_CORRIDOR_27_STEPS.length, 0, 1);
+}
+
+export function V1014_WORKFORCE_CORRIDOR_27_backlog(turn: number): number {
+  return V1014_WORKFORCE_clamp(
+    V1014_WORKFORCE_CORRIDOR_27_STEPS.reduce((sum, row) => sum + row.backlogTurns * (1 + ((turn + row.step) % 3)), 0) / 40,
+  );
+}
+
+
+export function V1014_WORKFORCE_mergeSkillsEdges(
+  base: readonly V1014WorkforceSkillsGraphEdge[],
+  extension: readonly V1014WorkforceSkillsGraphEdge[],
+): V1014WorkforceSkillsGraphEdge[] {
+  const map = new Map<string, V1014WorkforceSkillsGraphEdge>();
+  [...base, ...extension].forEach((edge) => {
+    const key = `${edge.fromDomain}:${edge.toDomain}:${edge.corridorId}`;
+    const prev = map.get(key);
+    if (!prev || edge.weight > prev.weight) map.set(key, edge);
+  });
+  return [...map.values()];
+}
+
+export function V1014_WORKFORCE_skillsGraphHash(edges: readonly V1014WorkforceSkillsGraphEdge[]): string {
+  return V1014_WORKFORCE_hash({
+    n: edges.length,
+    head: edges.slice(0, 8).map((e) => [e.fromDomain, e.toDomain, e.weight]),
+  });
+}
+
+export function V1014_WORKFORCE_retrainCost(
+  from: V1014WorkforceSkillDomain,
+  to: V1014WorkforceSkillDomain,
+  fiscalHeadroom: number,
+): number {
+  const base = from === to ? 0 : 12 + Math.abs(from.charCodeAt(0) - to.charCodeAt(0)) % 9;
+  const discount = V1014_WORKFORCE_clamp(fiscalHeadroom / 120, 0, 0.35);
+  return V1014_WORKFORCE_clamp(base * (1 - discount), 0, 48);
+}
+
+export function V1014_WORKFORCE_pathPressure(
+  edges: readonly V1014WorkforceSkillsGraphEdge[],
+  domain: V1014WorkforceSkillDomain,
+): number {
+  const inbound = edges.filter((e) => e.toDomain === domain);
+  if (!inbound.length) return 0;
+  const sum = inbound.reduce((acc, e) => acc + e.weight, 0);
+  return V1014_WORKFORCE_clamp(sum / inbound.length, 0, 1);
+}
+
+
+/** Generated migration scenario 000 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_000_META = {
+  id: 'mig_000',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'engineering' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 29,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_000_COEF = {
+  k0: 14.5000,
+  k1: 17.4000,
+  k2: 20.3000,
+  k3: 23.2000,
+  k4: 26.1000,
+  k5: 29.0000,
+  k6: 31.9000,
+  k7: 34.8000,
+  k8: 37.7000,
+  k9: 40.6000,
+  k10: 43.5000,
+  k11: 46.4000,
+  k12: 49.3000,
+  k13: 52.2000,
+  k14: 55.1000,
+  k15: 58.0000,
+  k16: 60.9000,
+  k17: 63.8000,
+  k18: 66.7000,
+  k19: 69.6000,
+  k20: 72.5000,
+  k21: 75.4000,
+  k22: 78.3000,
+  k23: 81.2000,
+  k24: 84.1000,
+  k25: 87.0000,
+  k26: 89.9000,
+  k27: 92.8000,
+  k28: 95.7000,
+  k29: 98.6000,
+  k30: 1.8000,
+  k31: 4.7000,
+  k32: 7.6000,
+  k33: 10.5000,
+  k34: 13.4000,
+  k35: 16.3000,
+  k36: 19.2000,
+  k37: 22.1000,
+  k38: 25.0000,
+  k39: 27.9000,
+  k40: 30.8000,
+  k41: 33.7000,
+  k42: 36.6000,
+  k43: 39.5000,
+  k44: 42.4000,
+  k45: 45.3000,
+  k46: 48.2000,
+  k47: 51.1000,
+  k48: 54.0000,
+  k49: 56.9000,
+  k50: 59.8000,
+  k51: 62.7000,
+  k52: 65.6000,
+  k53: 68.5000,
+  k54: 71.4000,
+  k55: 74.3000,
+  k56: 77.2000,
+  k57: 80.1000,
+  k58: 83.0000,
+  k59: 85.9000,
+  k60: 88.8000,
+  k61: 91.7000,
+  k62: 94.6000,
+  k63: 97.5000,
+  k64: 0.7000,
+  k65: 3.6000,
+  k66: 6.5000,
+  k67: 9.4000,
+  k68: 12.3000,
+  k69: 15.2000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_000_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_000_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_000_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_000_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_000_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_000_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_000_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_000_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_000_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_000_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_000_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 001 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_001_META = {
+  id: 'mig_001',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'healthcare' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 1020,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_001_COEF = {
+  k0: 11.5000,
+  k1: 13.8000,
+  k2: 16.1000,
+  k3: 18.4000,
+  k4: 20.7000,
+  k5: 23.0000,
+  k6: 25.3000,
+  k7: 27.6000,
+  k8: 29.9000,
+  k9: 32.2000,
+  k10: 34.5000,
+  k11: 36.8000,
+  k12: 39.1000,
+  k13: 41.4000,
+  k14: 43.7000,
+  k15: 46.0000,
+  k16: 48.3000,
+  k17: 50.6000,
+  k18: 52.9000,
+  k19: 55.2000,
+  k20: 57.5000,
+  k21: 59.8000,
+  k22: 62.1000,
+  k23: 64.4000,
+  k24: 66.7000,
+  k25: 69.0000,
+  k26: 71.3000,
+  k27: 73.6000,
+  k28: 75.9000,
+  k29: 78.2000,
+  k30: 80.5000,
+  k31: 82.8000,
+  k32: 85.1000,
+  k33: 87.4000,
+  k34: 89.7000,
+  k35: 92.0000,
+  k36: 94.3000,
+  k37: 96.6000,
+  k38: 98.9000,
+  k39: 1.5000,
+  k40: 3.8000,
+  k41: 6.1000,
+  k42: 8.4000,
+  k43: 10.7000,
+  k44: 13.0000,
+  k45: 15.3000,
+  k46: 17.6000,
+  k47: 19.9000,
+  k48: 22.2000,
+  k49: 24.5000,
+  k50: 26.8000,
+  k51: 29.1000,
+  k52: 31.4000,
+  k53: 33.7000,
+  k54: 36.0000,
+  k55: 38.3000,
+  k56: 40.6000,
+  k57: 42.9000,
+  k58: 45.2000,
+  k59: 47.5000,
+  k60: 49.8000,
+  k61: 52.1000,
+  k62: 54.4000,
+  k63: 56.7000,
+  k64: 59.0000,
+  k65: 61.3000,
+  k66: 63.6000,
+  k67: 65.9000,
+  k68: 68.2000,
+  k69: 70.5000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_001_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_001_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_001_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_001_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_001_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_001_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_001_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_001_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_001_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_001_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_001_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 002 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_002_META = {
+  id: 'mig_002',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'trades' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 2011,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_002_COEF = {
+  k0: 8.5000,
+  k1: 10.2000,
+  k2: 11.9000,
+  k3: 13.6000,
+  k4: 15.3000,
+  k5: 17.0000,
+  k6: 18.7000,
+  k7: 20.4000,
+  k8: 22.1000,
+  k9: 23.8000,
+  k10: 25.5000,
+  k11: 27.2000,
+  k12: 28.9000,
+  k13: 30.6000,
+  k14: 32.3000,
+  k15: 34.0000,
+  k16: 35.7000,
+  k17: 37.4000,
+  k18: 39.1000,
+  k19: 40.8000,
+  k20: 42.5000,
+  k21: 44.2000,
+  k22: 45.9000,
+  k23: 47.6000,
+  k24: 49.3000,
+  k25: 51.0000,
+  k26: 52.7000,
+  k27: 54.4000,
+  k28: 56.1000,
+  k29: 57.8000,
+  k30: 59.5000,
+  k31: 61.2000,
+  k32: 62.9000,
+  k33: 64.6000,
+  k34: 66.3000,
+  k35: 68.0000,
+  k36: 69.7000,
+  k37: 71.4000,
+  k38: 73.1000,
+  k39: 74.8000,
+  k40: 76.5000,
+  k41: 78.2000,
+  k42: 79.9000,
+  k43: 81.6000,
+  k44: 83.3000,
+  k45: 85.0000,
+  k46: 86.7000,
+  k47: 88.4000,
+  k48: 90.1000,
+  k49: 91.8000,
+  k50: 93.5000,
+  k51: 95.2000,
+  k52: 96.9000,
+  k53: 98.6000,
+  k54: 0.6000,
+  k55: 2.3000,
+  k56: 4.0000,
+  k57: 5.7000,
+  k58: 7.4000,
+  k59: 9.1000,
+  k60: 10.8000,
+  k61: 12.5000,
+  k62: 14.2000,
+  k63: 15.9000,
+  k64: 17.6000,
+  k65: 19.3000,
+  k66: 21.0000,
+  k67: 22.7000,
+  k68: 24.4000,
+  k69: 26.1000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_002_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_002_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_002_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_002_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_002_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_002_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_002_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_002_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_002_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_002_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_002_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 003 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_003_META = {
+  id: 'mig_003',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'digital' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 3002,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_003_COEF = {
+  k0: 5.5000,
+  k1: 6.6000,
+  k2: 7.7000,
+  k3: 8.8000,
+  k4: 9.9000,
+  k5: 11.0000,
+  k6: 12.1000,
+  k7: 13.2000,
+  k8: 14.3000,
+  k9: 15.4000,
+  k10: 16.5000,
+  k11: 17.6000,
+  k12: 18.7000,
+  k13: 19.8000,
+  k14: 20.9000,
+  k15: 22.0000,
+  k16: 23.1000,
+  k17: 24.2000,
+  k18: 25.3000,
+  k19: 26.4000,
+  k20: 27.5000,
+  k21: 28.6000,
+  k22: 29.7000,
+  k23: 30.8000,
+  k24: 31.9000,
+  k25: 33.0000,
+  k26: 34.1000,
+  k27: 35.2000,
+  k28: 36.3000,
+  k29: 37.4000,
+  k30: 38.5000,
+  k31: 39.6000,
+  k32: 40.7000,
+  k33: 41.8000,
+  k34: 42.9000,
+  k35: 44.0000,
+  k36: 45.1000,
+  k37: 46.2000,
+  k38: 47.3000,
+  k39: 48.4000,
+  k40: 49.5000,
+  k41: 50.6000,
+  k42: 51.7000,
+  k43: 52.8000,
+  k44: 53.9000,
+  k45: 55.0000,
+  k46: 56.1000,
+  k47: 57.2000,
+  k48: 58.3000,
+  k49: 59.4000,
+  k50: 60.5000,
+  k51: 61.6000,
+  k52: 62.7000,
+  k53: 63.8000,
+  k54: 64.9000,
+  k55: 66.0000,
+  k56: 67.1000,
+  k57: 68.2000,
+  k58: 69.3000,
+  k59: 70.4000,
+  k60: 71.5000,
+  k61: 72.6000,
+  k62: 73.7000,
+  k63: 74.8000,
+  k64: 75.9000,
+  k65: 77.0000,
+  k66: 78.1000,
+  k67: 79.2000,
+  k68: 80.3000,
+  k69: 81.4000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_003_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_003_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_003_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_003_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_003_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_003_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_003_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_003_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_003_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_003_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_003_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 004 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_004_META = {
+  id: 'mig_004',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'logistics' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 3993,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_004_COEF = {
+  k0: 2.5000,
+  k1: 3.0000,
+  k2: 3.5000,
+  k3: 4.0000,
+  k4: 4.5000,
+  k5: 5.0000,
+  k6: 5.5000,
+  k7: 6.0000,
+  k8: 6.5000,
+  k9: 7.0000,
+  k10: 7.5000,
+  k11: 8.0000,
+  k12: 8.5000,
+  k13: 9.0000,
+  k14: 9.5000,
+  k15: 10.0000,
+  k16: 10.5000,
+  k17: 11.0000,
+  k18: 11.5000,
+  k19: 12.0000,
+  k20: 12.5000,
+  k21: 13.0000,
+  k22: 13.5000,
+  k23: 14.0000,
+  k24: 14.5000,
+  k25: 15.0000,
+  k26: 15.5000,
+  k27: 16.0000,
+  k28: 16.5000,
+  k29: 17.0000,
+  k30: 17.5000,
+  k31: 18.0000,
+  k32: 18.5000,
+  k33: 19.0000,
+  k34: 19.5000,
+  k35: 20.0000,
+  k36: 20.5000,
+  k37: 21.0000,
+  k38: 21.5000,
+  k39: 22.0000,
+  k40: 22.5000,
+  k41: 23.0000,
+  k42: 23.5000,
+  k43: 24.0000,
+  k44: 24.5000,
+  k45: 25.0000,
+  k46: 25.5000,
+  k47: 26.0000,
+  k48: 26.5000,
+  k49: 27.0000,
+  k50: 27.5000,
+  k51: 28.0000,
+  k52: 28.5000,
+  k53: 29.0000,
+  k54: 29.5000,
+  k55: 30.0000,
+  k56: 30.5000,
+  k57: 31.0000,
+  k58: 31.5000,
+  k59: 32.0000,
+  k60: 32.5000,
+  k61: 33.0000,
+  k62: 33.5000,
+  k63: 34.0000,
+  k64: 34.5000,
+  k65: 35.0000,
+  k66: 35.5000,
+  k67: 36.0000,
+  k68: 36.5000,
+  k69: 37.0000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_004_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_004_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_004_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_004_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_004_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_004_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_004_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_004_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_004_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_004_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_004_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 005 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_005_META = {
+  id: 'mig_005',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'education' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 4984,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_005_COEF = {
+  k0: 99.2000,
+  k1: 99.1000,
+  k2: 99.0000,
+  k3: 98.9000,
+  k4: 98.8000,
+  k5: 98.7000,
+  k6: 98.6000,
+  k7: 98.5000,
+  k8: 98.4000,
+  k9: 98.3000,
+  k10: 98.2000,
+  k11: 98.1000,
+  k12: 98.0000,
+  k13: 97.9000,
+  k14: 97.8000,
+  k15: 97.7000,
+  k16: 97.6000,
+  k17: 97.5000,
+  k18: 97.4000,
+  k19: 97.3000,
+  k20: 97.2000,
+  k21: 97.1000,
+  k22: 97.0000,
+  k23: 96.9000,
+  k24: 96.8000,
+  k25: 96.7000,
+  k26: 96.6000,
+  k27: 96.5000,
+  k28: 96.4000,
+  k29: 96.3000,
+  k30: 96.2000,
+  k31: 96.1000,
+  k32: 96.0000,
+  k33: 95.9000,
+  k34: 95.8000,
+  k35: 95.7000,
+  k36: 95.6000,
+  k37: 95.5000,
+  k38: 95.4000,
+  k39: 95.3000,
+  k40: 95.2000,
+  k41: 95.1000,
+  k42: 95.0000,
+  k43: 94.9000,
+  k44: 94.8000,
+  k45: 94.7000,
+  k46: 94.6000,
+  k47: 94.5000,
+  k48: 94.4000,
+  k49: 94.3000,
+  k50: 94.2000,
+  k51: 94.1000,
+  k52: 94.0000,
+  k53: 93.9000,
+  k54: 93.8000,
+  k55: 93.7000,
+  k56: 93.6000,
+  k57: 93.5000,
+  k58: 93.4000,
+  k59: 93.3000,
+  k60: 93.2000,
+  k61: 93.1000,
+  k62: 93.0000,
+  k63: 92.9000,
+  k64: 92.8000,
+  k65: 92.7000,
+  k66: 92.6000,
+  k67: 92.5000,
+  k68: 92.4000,
+  k69: 92.3000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_005_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_005_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_005_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_005_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_005_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_005_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_005_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_005_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_005_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_005_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_005_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 006 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_006_META = {
+  id: 'mig_006',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'mining' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 5975,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_006_COEF = {
+  k0: 96.2000,
+  k1: 95.5000,
+  k2: 94.8000,
+  k3: 94.1000,
+  k4: 93.4000,
+  k5: 92.7000,
+  k6: 92.0000,
+  k7: 91.3000,
+  k8: 90.6000,
+  k9: 89.9000,
+  k10: 89.2000,
+  k11: 88.5000,
+  k12: 87.8000,
+  k13: 87.1000,
+  k14: 86.4000,
+  k15: 85.7000,
+  k16: 85.0000,
+  k17: 84.3000,
+  k18: 83.6000,
+  k19: 82.9000,
+  k20: 82.2000,
+  k21: 81.5000,
+  k22: 80.8000,
+  k23: 80.1000,
+  k24: 79.4000,
+  k25: 78.7000,
+  k26: 78.0000,
+  k27: 77.3000,
+  k28: 76.6000,
+  k29: 75.9000,
+  k30: 75.2000,
+  k31: 74.5000,
+  k32: 73.8000,
+  k33: 73.1000,
+  k34: 72.4000,
+  k35: 71.7000,
+  k36: 71.0000,
+  k37: 70.3000,
+  k38: 69.6000,
+  k39: 68.9000,
+  k40: 68.2000,
+  k41: 67.5000,
+  k42: 66.8000,
+  k43: 66.1000,
+  k44: 65.4000,
+  k45: 64.7000,
+  k46: 64.0000,
+  k47: 63.3000,
+  k48: 62.6000,
+  k49: 61.9000,
+  k50: 61.2000,
+  k51: 60.5000,
+  k52: 59.8000,
+  k53: 59.1000,
+  k54: 58.4000,
+  k55: 57.7000,
+  k56: 57.0000,
+  k57: 56.3000,
+  k58: 55.6000,
+  k59: 54.9000,
+  k60: 54.2000,
+  k61: 53.5000,
+  k62: 52.8000,
+  k63: 52.1000,
+  k64: 51.4000,
+  k65: 50.7000,
+  k66: 50.0000,
+  k67: 49.3000,
+  k68: 48.6000,
+  k69: 47.9000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_006_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_006_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_006_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_006_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_006_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_006_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_006_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_006_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_006_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_006_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_006_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 007 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_007_META = {
+  id: 'mig_007',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'agriculture' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 6966,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_007_COEF = {
+  k0: 93.2000,
+  k1: 91.9000,
+  k2: 90.6000,
+  k3: 89.3000,
+  k4: 88.0000,
+  k5: 86.7000,
+  k6: 85.4000,
+  k7: 84.1000,
+  k8: 82.8000,
+  k9: 81.5000,
+  k10: 80.2000,
+  k11: 78.9000,
+  k12: 77.6000,
+  k13: 76.3000,
+  k14: 75.0000,
+  k15: 73.7000,
+  k16: 72.4000,
+  k17: 71.1000,
+  k18: 69.8000,
+  k19: 68.5000,
+  k20: 67.2000,
+  k21: 65.9000,
+  k22: 64.6000,
+  k23: 63.3000,
+  k24: 62.0000,
+  k25: 60.7000,
+  k26: 59.4000,
+  k27: 58.1000,
+  k28: 56.8000,
+  k29: 55.5000,
+  k30: 54.2000,
+  k31: 52.9000,
+  k32: 51.6000,
+  k33: 50.3000,
+  k34: 49.0000,
+  k35: 47.7000,
+  k36: 46.4000,
+  k37: 45.1000,
+  k38: 43.8000,
+  k39: 42.5000,
+  k40: 41.2000,
+  k41: 39.9000,
+  k42: 38.6000,
+  k43: 37.3000,
+  k44: 36.0000,
+  k45: 34.7000,
+  k46: 33.4000,
+  k47: 32.1000,
+  k48: 30.8000,
+  k49: 29.5000,
+  k50: 28.2000,
+  k51: 26.9000,
+  k52: 25.6000,
+  k53: 24.3000,
+  k54: 23.0000,
+  k55: 21.7000,
+  k56: 20.4000,
+  k57: 19.1000,
+  k58: 17.8000,
+  k59: 16.5000,
+  k60: 15.2000,
+  k61: 13.9000,
+  k62: 12.6000,
+  k63: 11.3000,
+  k64: 10.0000,
+  k65: 8.7000,
+  k66: 7.4000,
+  k67: 6.1000,
+  k68: 4.8000,
+  k69: 3.5000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_007_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_007_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_007_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_007_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_007_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_007_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_007_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_007_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_007_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_007_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_007_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 008 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_008_META = {
+  id: 'mig_008',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'hospitality' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 7957,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_008_COEF = {
+  k0: 90.2000,
+  k1: 88.3000,
+  k2: 86.4000,
+  k3: 84.5000,
+  k4: 82.6000,
+  k5: 80.7000,
+  k6: 78.8000,
+  k7: 76.9000,
+  k8: 75.0000,
+  k9: 73.1000,
+  k10: 71.2000,
+  k11: 69.3000,
+  k12: 67.4000,
+  k13: 65.5000,
+  k14: 63.6000,
+  k15: 61.7000,
+  k16: 59.8000,
+  k17: 57.9000,
+  k18: 56.0000,
+  k19: 54.1000,
+  k20: 52.2000,
+  k21: 50.3000,
+  k22: 48.4000,
+  k23: 46.5000,
+  k24: 44.6000,
+  k25: 42.7000,
+  k26: 40.8000,
+  k27: 38.9000,
+  k28: 37.0000,
+  k29: 35.1000,
+  k30: 33.2000,
+  k31: 31.3000,
+  k32: 29.4000,
+  k33: 27.5000,
+  k34: 25.6000,
+  k35: 23.7000,
+  k36: 21.8000,
+  k37: 19.9000,
+  k38: 18.0000,
+  k39: 16.1000,
+  k40: 14.2000,
+  k41: 12.3000,
+  k42: 10.4000,
+  k43: 8.5000,
+  k44: 6.6000,
+  k45: 4.7000,
+  k46: 2.8000,
+  k47: 0.9000,
+  k48: 98.7000,
+  k49: 96.8000,
+  k50: 94.9000,
+  k51: 93.0000,
+  k52: 91.1000,
+  k53: 89.2000,
+  k54: 87.3000,
+  k55: 85.4000,
+  k56: 83.5000,
+  k57: 81.6000,
+  k58: 79.7000,
+  k59: 77.8000,
+  k60: 75.9000,
+  k61: 74.0000,
+  k62: 72.1000,
+  k63: 70.2000,
+  k64: 68.3000,
+  k65: 66.4000,
+  k66: 64.5000,
+  k67: 62.6000,
+  k68: 60.7000,
+  k69: 58.8000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_008_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_008_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_008_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_008_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_008_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_008_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_008_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_008_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_008_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_008_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_008_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 009 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_009_META = {
+  id: 'mig_009',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'public_admin' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 8948,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_009_COEF = {
+  k0: 87.2000,
+  k1: 84.7000,
+  k2: 82.2000,
+  k3: 79.7000,
+  k4: 77.2000,
+  k5: 74.7000,
+  k6: 72.2000,
+  k7: 69.7000,
+  k8: 67.2000,
+  k9: 64.7000,
+  k10: 62.2000,
+  k11: 59.7000,
+  k12: 57.2000,
+  k13: 54.7000,
+  k14: 52.2000,
+  k15: 49.7000,
+  k16: 47.2000,
+  k17: 44.7000,
+  k18: 42.2000,
+  k19: 39.7000,
+  k20: 37.2000,
+  k21: 34.7000,
+  k22: 32.2000,
+  k23: 29.7000,
+  k24: 27.2000,
+  k25: 24.7000,
+  k26: 22.2000,
+  k27: 19.7000,
+  k28: 17.2000,
+  k29: 14.7000,
+  k30: 12.2000,
+  k31: 9.7000,
+  k32: 7.2000,
+  k33: 4.7000,
+  k34: 2.2000,
+  k35: 99.4000,
+  k36: 96.9000,
+  k37: 94.4000,
+  k38: 91.9000,
+  k39: 89.4000,
+  k40: 86.9000,
+  k41: 84.4000,
+  k42: 81.9000,
+  k43: 79.4000,
+  k44: 76.9000,
+  k45: 74.4000,
+  k46: 71.9000,
+  k47: 69.4000,
+  k48: 66.9000,
+  k49: 64.4000,
+  k50: 61.9000,
+  k51: 59.4000,
+  k52: 56.9000,
+  k53: 54.4000,
+  k54: 51.9000,
+  k55: 49.4000,
+  k56: 46.9000,
+  k57: 44.4000,
+  k58: 41.9000,
+  k59: 39.4000,
+  k60: 36.9000,
+  k61: 34.4000,
+  k62: 31.9000,
+  k63: 29.4000,
+  k64: 26.9000,
+  k65: 24.4000,
+  k66: 21.9000,
+  k67: 19.4000,
+  k68: 16.9000,
+  k69: 14.4000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_009_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_009_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_009_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_009_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_009_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_009_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_009_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_009_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_009_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_009_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_009_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 010 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_010_META = {
+  id: 'mig_010',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'engineering' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 9939,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_010_COEF = {
+  k0: 84.2000,
+  k1: 81.1000,
+  k2: 78.0000,
+  k3: 74.9000,
+  k4: 71.8000,
+  k5: 68.7000,
+  k6: 65.6000,
+  k7: 62.5000,
+  k8: 59.4000,
+  k9: 56.3000,
+  k10: 53.2000,
+  k11: 50.1000,
+  k12: 47.0000,
+  k13: 43.9000,
+  k14: 40.8000,
+  k15: 37.7000,
+  k16: 34.6000,
+  k17: 31.5000,
+  k18: 28.4000,
+  k19: 25.3000,
+  k20: 22.2000,
+  k21: 19.1000,
+  k22: 16.0000,
+  k23: 12.9000,
+  k24: 9.8000,
+  k25: 6.7000,
+  k26: 3.6000,
+  k27: 0.5000,
+  k28: 97.1000,
+  k29: 94.0000,
+  k30: 90.9000,
+  k31: 87.8000,
+  k32: 84.7000,
+  k33: 81.6000,
+  k34: 78.5000,
+  k35: 75.4000,
+  k36: 72.3000,
+  k37: 69.2000,
+  k38: 66.1000,
+  k39: 63.0000,
+  k40: 59.9000,
+  k41: 56.8000,
+  k42: 53.7000,
+  k43: 50.6000,
+  k44: 47.5000,
+  k45: 44.4000,
+  k46: 41.3000,
+  k47: 38.2000,
+  k48: 35.1000,
+  k49: 32.0000,
+  k50: 28.9000,
+  k51: 25.8000,
+  k52: 22.7000,
+  k53: 19.6000,
+  k54: 16.5000,
+  k55: 13.4000,
+  k56: 10.3000,
+  k57: 7.2000,
+  k58: 4.1000,
+  k59: 1.0000,
+  k60: 97.6000,
+  k61: 94.5000,
+  k62: 91.4000,
+  k63: 88.3000,
+  k64: 85.2000,
+  k65: 82.1000,
+  k66: 79.0000,
+  k67: 75.9000,
+  k68: 72.8000,
+  k69: 69.7000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_010_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_010_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_010_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_010_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_010_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_010_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_010_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_010_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_010_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_010_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_010_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 011 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_011_META = {
+  id: 'mig_011',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'healthcare' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 10930,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_011_COEF = {
+  k0: 81.2000,
+  k1: 77.5000,
+  k2: 73.8000,
+  k3: 70.1000,
+  k4: 66.4000,
+  k5: 62.7000,
+  k6: 59.0000,
+  k7: 55.3000,
+  k8: 51.6000,
+  k9: 47.9000,
+  k10: 44.2000,
+  k11: 40.5000,
+  k12: 36.8000,
+  k13: 33.1000,
+  k14: 29.4000,
+  k15: 25.7000,
+  k16: 22.0000,
+  k17: 18.3000,
+  k18: 14.6000,
+  k19: 10.9000,
+  k20: 7.2000,
+  k21: 3.5000,
+  k22: 99.5000,
+  k23: 95.8000,
+  k24: 92.1000,
+  k25: 88.4000,
+  k26: 84.7000,
+  k27: 81.0000,
+  k28: 77.3000,
+  k29: 73.6000,
+  k30: 69.9000,
+  k31: 66.2000,
+  k32: 62.5000,
+  k33: 58.8000,
+  k34: 55.1000,
+  k35: 51.4000,
+  k36: 47.7000,
+  k37: 44.0000,
+  k38: 40.3000,
+  k39: 36.6000,
+  k40: 32.9000,
+  k41: 29.2000,
+  k42: 25.5000,
+  k43: 21.8000,
+  k44: 18.1000,
+  k45: 14.4000,
+  k46: 10.7000,
+  k47: 7.0000,
+  k48: 3.3000,
+  k49: 99.3000,
+  k50: 95.6000,
+  k51: 91.9000,
+  k52: 88.2000,
+  k53: 84.5000,
+  k54: 80.8000,
+  k55: 77.1000,
+  k56: 73.4000,
+  k57: 69.7000,
+  k58: 66.0000,
+  k59: 62.3000,
+  k60: 58.6000,
+  k61: 54.9000,
+  k62: 51.2000,
+  k63: 47.5000,
+  k64: 43.8000,
+  k65: 40.1000,
+  k66: 36.4000,
+  k67: 32.7000,
+  k68: 29.0000,
+  k69: 25.3000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_011_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_011_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_011_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_011_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_011_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_011_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_011_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_011_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_011_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_011_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_011_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 012 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_012_META = {
+  id: 'mig_012',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'trades' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 11921,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_012_COEF = {
+  k0: 78.2000,
+  k1: 73.9000,
+  k2: 69.6000,
+  k3: 65.3000,
+  k4: 61.0000,
+  k5: 56.7000,
+  k6: 52.4000,
+  k7: 48.1000,
+  k8: 43.8000,
+  k9: 39.5000,
+  k10: 35.2000,
+  k11: 30.9000,
+  k12: 26.6000,
+  k13: 22.3000,
+  k14: 18.0000,
+  k15: 13.7000,
+  k16: 9.4000,
+  k17: 5.1000,
+  k18: 0.8000,
+  k19: 96.2000,
+  k20: 91.9000,
+  k21: 87.6000,
+  k22: 83.3000,
+  k23: 79.0000,
+  k24: 74.7000,
+  k25: 70.4000,
+  k26: 66.1000,
+  k27: 61.8000,
+  k28: 57.5000,
+  k29: 53.2000,
+  k30: 48.9000,
+  k31: 44.6000,
+  k32: 40.3000,
+  k33: 36.0000,
+  k34: 31.7000,
+  k35: 27.4000,
+  k36: 23.1000,
+  k37: 18.8000,
+  k38: 14.5000,
+  k39: 10.2000,
+  k40: 5.9000,
+  k41: 1.6000,
+  k42: 97.0000,
+  k43: 92.7000,
+  k44: 88.4000,
+  k45: 84.1000,
+  k46: 79.8000,
+  k47: 75.5000,
+  k48: 71.2000,
+  k49: 66.9000,
+  k50: 62.6000,
+  k51: 58.3000,
+  k52: 54.0000,
+  k53: 49.7000,
+  k54: 45.4000,
+  k55: 41.1000,
+  k56: 36.8000,
+  k57: 32.5000,
+  k58: 28.2000,
+  k59: 23.9000,
+  k60: 19.6000,
+  k61: 15.3000,
+  k62: 11.0000,
+  k63: 6.7000,
+  k64: 2.4000,
+  k65: 97.8000,
+  k66: 93.5000,
+  k67: 89.2000,
+  k68: 84.9000,
+  k69: 80.6000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_012_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_012_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_012_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_012_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_012_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_012_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_012_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_012_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_012_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_012_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_012_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 013 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_013_META = {
+  id: 'mig_013',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'digital' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 12912,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_013_COEF = {
+  k0: 75.2000,
+  k1: 70.3000,
+  k2: 65.4000,
+  k3: 60.5000,
+  k4: 55.6000,
+  k5: 50.7000,
+  k6: 45.8000,
+  k7: 40.9000,
+  k8: 36.0000,
+  k9: 31.1000,
+  k10: 26.2000,
+  k11: 21.3000,
+  k12: 16.4000,
+  k13: 11.5000,
+  k14: 6.6000,
+  k15: 1.7000,
+  k16: 96.5000,
+  k17: 91.6000,
+  k18: 86.7000,
+  k19: 81.8000,
+  k20: 76.9000,
+  k21: 72.0000,
+  k22: 67.1000,
+  k23: 62.2000,
+  k24: 57.3000,
+  k25: 52.4000,
+  k26: 47.5000,
+  k27: 42.6000,
+  k28: 37.7000,
+  k29: 32.8000,
+  k30: 27.9000,
+  k31: 23.0000,
+  k32: 18.1000,
+  k33: 13.2000,
+  k34: 8.3000,
+  k35: 3.4000,
+  k36: 98.2000,
+  k37: 93.3000,
+  k38: 88.4000,
+  k39: 83.5000,
+  k40: 78.6000,
+  k41: 73.7000,
+  k42: 68.8000,
+  k43: 63.9000,
+  k44: 59.0000,
+  k45: 54.1000,
+  k46: 49.2000,
+  k47: 44.3000,
+  k48: 39.4000,
+  k49: 34.5000,
+  k50: 29.6000,
+  k51: 24.7000,
+  k52: 19.8000,
+  k53: 14.9000,
+  k54: 10.0000,
+  k55: 5.1000,
+  k56: 0.2000,
+  k57: 95.0000,
+  k58: 90.1000,
+  k59: 85.2000,
+  k60: 80.3000,
+  k61: 75.4000,
+  k62: 70.5000,
+  k63: 65.6000,
+  k64: 60.7000,
+  k65: 55.8000,
+  k66: 50.9000,
+  k67: 46.0000,
+  k68: 41.1000,
+  k69: 36.2000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_013_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_013_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_013_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_013_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_013_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_013_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_013_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_013_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_013_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_013_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_013_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 014 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_014_META = {
+  id: 'mig_014',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'logistics' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 13903,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_014_COEF = {
+  k0: 72.2000,
+  k1: 66.7000,
+  k2: 61.2000,
+  k3: 55.7000,
+  k4: 50.2000,
+  k5: 44.7000,
+  k6: 39.2000,
+  k7: 33.7000,
+  k8: 28.2000,
+  k9: 22.7000,
+  k10: 17.2000,
+  k11: 11.7000,
+  k12: 6.2000,
+  k13: 0.7000,
+  k14: 94.9000,
+  k15: 89.4000,
+  k16: 83.9000,
+  k17: 78.4000,
+  k18: 72.9000,
+  k19: 67.4000,
+  k20: 61.9000,
+  k21: 56.4000,
+  k22: 50.9000,
+  k23: 45.4000,
+  k24: 39.9000,
+  k25: 34.4000,
+  k26: 28.9000,
+  k27: 23.4000,
+  k28: 17.9000,
+  k29: 12.4000,
+  k30: 6.9000,
+  k31: 1.4000,
+  k32: 95.6000,
+  k33: 90.1000,
+  k34: 84.6000,
+  k35: 79.1000,
+  k36: 73.6000,
+  k37: 68.1000,
+  k38: 62.6000,
+  k39: 57.1000,
+  k40: 51.6000,
+  k41: 46.1000,
+  k42: 40.6000,
+  k43: 35.1000,
+  k44: 29.6000,
+  k45: 24.1000,
+  k46: 18.6000,
+  k47: 13.1000,
+  k48: 7.6000,
+  k49: 2.1000,
+  k50: 96.3000,
+  k51: 90.8000,
+  k52: 85.3000,
+  k53: 79.8000,
+  k54: 74.3000,
+  k55: 68.8000,
+  k56: 63.3000,
+  k57: 57.8000,
+  k58: 52.3000,
+  k59: 46.8000,
+  k60: 41.3000,
+  k61: 35.8000,
+  k62: 30.3000,
+  k63: 24.8000,
+  k64: 19.3000,
+  k65: 13.8000,
+  k66: 8.3000,
+  k67: 2.8000,
+  k68: 97.0000,
+  k69: 91.5000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_014_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_014_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_014_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_014_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_014_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_014_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_014_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_014_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_014_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_014_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_014_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 015 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_015_META = {
+  id: 'mig_015',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'education' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 14894,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_015_COEF = {
+  k0: 69.2000,
+  k1: 63.1000,
+  k2: 57.0000,
+  k3: 50.9000,
+  k4: 44.8000,
+  k5: 38.7000,
+  k6: 32.6000,
+  k7: 26.5000,
+  k8: 20.4000,
+  k9: 14.3000,
+  k10: 8.2000,
+  k11: 2.1000,
+  k12: 95.7000,
+  k13: 89.6000,
+  k14: 83.5000,
+  k15: 77.4000,
+  k16: 71.3000,
+  k17: 65.2000,
+  k18: 59.1000,
+  k19: 53.0000,
+  k20: 46.9000,
+  k21: 40.8000,
+  k22: 34.7000,
+  k23: 28.6000,
+  k24: 22.5000,
+  k25: 16.4000,
+  k26: 10.3000,
+  k27: 4.2000,
+  k28: 97.8000,
+  k29: 91.7000,
+  k30: 85.6000,
+  k31: 79.5000,
+  k32: 73.4000,
+  k33: 67.3000,
+  k34: 61.2000,
+  k35: 55.1000,
+  k36: 49.0000,
+  k37: 42.9000,
+  k38: 36.8000,
+  k39: 30.7000,
+  k40: 24.6000,
+  k41: 18.5000,
+  k42: 12.4000,
+  k43: 6.3000,
+  k44: 0.2000,
+  k45: 93.8000,
+  k46: 87.7000,
+  k47: 81.6000,
+  k48: 75.5000,
+  k49: 69.4000,
+  k50: 63.3000,
+  k51: 57.2000,
+  k52: 51.1000,
+  k53: 45.0000,
+  k54: 38.9000,
+  k55: 32.8000,
+  k56: 26.7000,
+  k57: 20.6000,
+  k58: 14.5000,
+  k59: 8.4000,
+  k60: 2.3000,
+  k61: 95.9000,
+  k62: 89.8000,
+  k63: 83.7000,
+  k64: 77.6000,
+  k65: 71.5000,
+  k66: 65.4000,
+  k67: 59.3000,
+  k68: 53.2000,
+  k69: 47.1000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_015_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_015_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_015_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_015_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_015_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_015_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_015_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_015_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_015_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_015_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_015_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 016 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_016_META = {
+  id: 'mig_016',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'mining' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 15885,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_016_COEF = {
+  k0: 66.2000,
+  k1: 59.5000,
+  k2: 52.8000,
+  k3: 46.1000,
+  k4: 39.4000,
+  k5: 32.7000,
+  k6: 26.0000,
+  k7: 19.3000,
+  k8: 12.6000,
+  k9: 5.9000,
+  k10: 98.9000,
+  k11: 92.2000,
+  k12: 85.5000,
+  k13: 78.8000,
+  k14: 72.1000,
+  k15: 65.4000,
+  k16: 58.7000,
+  k17: 52.0000,
+  k18: 45.3000,
+  k19: 38.6000,
+  k20: 31.9000,
+  k21: 25.2000,
+  k22: 18.5000,
+  k23: 11.8000,
+  k24: 5.1000,
+  k25: 98.1000,
+  k26: 91.4000,
+  k27: 84.7000,
+  k28: 78.0000,
+  k29: 71.3000,
+  k30: 64.6000,
+  k31: 57.9000,
+  k32: 51.2000,
+  k33: 44.5000,
+  k34: 37.8000,
+  k35: 31.1000,
+  k36: 24.4000,
+  k37: 17.7000,
+  k38: 11.0000,
+  k39: 4.3000,
+  k40: 97.3000,
+  k41: 90.6000,
+  k42: 83.9000,
+  k43: 77.2000,
+  k44: 70.5000,
+  k45: 63.8000,
+  k46: 57.1000,
+  k47: 50.4000,
+  k48: 43.7000,
+  k49: 37.0000,
+  k50: 30.3000,
+  k51: 23.6000,
+  k52: 16.9000,
+  k53: 10.2000,
+  k54: 3.5000,
+  k55: 96.5000,
+  k56: 89.8000,
+  k57: 83.1000,
+  k58: 76.4000,
+  k59: 69.7000,
+  k60: 63.0000,
+  k61: 56.3000,
+  k62: 49.6000,
+  k63: 42.9000,
+  k64: 36.2000,
+  k65: 29.5000,
+  k66: 22.8000,
+  k67: 16.1000,
+  k68: 9.4000,
+  k69: 2.7000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_016_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_016_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_016_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_016_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_016_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_016_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_016_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_016_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_016_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_016_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_016_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 017 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_017_META = {
+  id: 'mig_017',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'agriculture' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 16876,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_017_COEF = {
+  k0: 63.2000,
+  k1: 55.9000,
+  k2: 48.6000,
+  k3: 41.3000,
+  k4: 34.0000,
+  k5: 26.7000,
+  k6: 19.4000,
+  k7: 12.1000,
+  k8: 4.8000,
+  k9: 97.2000,
+  k10: 89.9000,
+  k11: 82.6000,
+  k12: 75.3000,
+  k13: 68.0000,
+  k14: 60.7000,
+  k15: 53.4000,
+  k16: 46.1000,
+  k17: 38.8000,
+  k18: 31.5000,
+  k19: 24.2000,
+  k20: 16.9000,
+  k21: 9.6000,
+  k22: 2.3000,
+  k23: 94.7000,
+  k24: 87.4000,
+  k25: 80.1000,
+  k26: 72.8000,
+  k27: 65.5000,
+  k28: 58.2000,
+  k29: 50.9000,
+  k30: 43.6000,
+  k31: 36.3000,
+  k32: 29.0000,
+  k33: 21.7000,
+  k34: 14.4000,
+  k35: 7.1000,
+  k36: 99.5000,
+  k37: 92.2000,
+  k38: 84.9000,
+  k39: 77.6000,
+  k40: 70.3000,
+  k41: 63.0000,
+  k42: 55.7000,
+  k43: 48.4000,
+  k44: 41.1000,
+  k45: 33.8000,
+  k46: 26.5000,
+  k47: 19.2000,
+  k48: 11.9000,
+  k49: 4.6000,
+  k50: 97.0000,
+  k51: 89.7000,
+  k52: 82.4000,
+  k53: 75.1000,
+  k54: 67.8000,
+  k55: 60.5000,
+  k56: 53.2000,
+  k57: 45.9000,
+  k58: 38.6000,
+  k59: 31.3000,
+  k60: 24.0000,
+  k61: 16.7000,
+  k62: 9.4000,
+  k63: 2.1000,
+  k64: 94.5000,
+  k65: 87.2000,
+  k66: 79.9000,
+  k67: 72.6000,
+  k68: 65.3000,
+  k69: 58.0000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_017_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_017_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_017_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_017_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_017_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_017_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_017_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_017_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_017_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_017_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_017_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 018 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_018_META = {
+  id: 'mig_018',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'hospitality' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 17867,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_018_COEF = {
+  k0: 60.2000,
+  k1: 52.3000,
+  k2: 44.4000,
+  k3: 36.5000,
+  k4: 28.6000,
+  k5: 20.7000,
+  k6: 12.8000,
+  k7: 4.9000,
+  k8: 96.7000,
+  k9: 88.8000,
+  k10: 80.9000,
+  k11: 73.0000,
+  k12: 65.1000,
+  k13: 57.2000,
+  k14: 49.3000,
+  k15: 41.4000,
+  k16: 33.5000,
+  k17: 25.6000,
+  k18: 17.7000,
+  k19: 9.8000,
+  k20: 1.9000,
+  k21: 93.7000,
+  k22: 85.8000,
+  k23: 77.9000,
+  k24: 70.0000,
+  k25: 62.1000,
+  k26: 54.2000,
+  k27: 46.3000,
+  k28: 38.4000,
+  k29: 30.5000,
+  k30: 22.6000,
+  k31: 14.7000,
+  k32: 6.8000,
+  k33: 98.6000,
+  k34: 90.7000,
+  k35: 82.8000,
+  k36: 74.9000,
+  k37: 67.0000,
+  k38: 59.1000,
+  k39: 51.2000,
+  k40: 43.3000,
+  k41: 35.4000,
+  k42: 27.5000,
+  k43: 19.6000,
+  k44: 11.7000,
+  k45: 3.8000,
+  k46: 95.6000,
+  k47: 87.7000,
+  k48: 79.8000,
+  k49: 71.9000,
+  k50: 64.0000,
+  k51: 56.1000,
+  k52: 48.2000,
+  k53: 40.3000,
+  k54: 32.4000,
+  k55: 24.5000,
+  k56: 16.6000,
+  k57: 8.7000,
+  k58: 0.8000,
+  k59: 92.6000,
+  k60: 84.7000,
+  k61: 76.8000,
+  k62: 68.9000,
+  k63: 61.0000,
+  k64: 53.1000,
+  k65: 45.2000,
+  k66: 37.3000,
+  k67: 29.4000,
+  k68: 21.5000,
+  k69: 13.6000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_018_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_018_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_018_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_018_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_018_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_018_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_018_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_018_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_018_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_018_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_018_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 019 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_019_META = {
+  id: 'mig_019',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'public_admin' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 18858,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_019_COEF = {
+  k0: 57.2000,
+  k1: 48.7000,
+  k2: 40.2000,
+  k3: 31.7000,
+  k4: 23.2000,
+  k5: 14.7000,
+  k6: 6.2000,
+  k7: 97.4000,
+  k8: 88.9000,
+  k9: 80.4000,
+  k10: 71.9000,
+  k11: 63.4000,
+  k12: 54.9000,
+  k13: 46.4000,
+  k14: 37.9000,
+  k15: 29.4000,
+  k16: 20.9000,
+  k17: 12.4000,
+  k18: 3.9000,
+  k19: 95.1000,
+  k20: 86.6000,
+  k21: 78.1000,
+  k22: 69.6000,
+  k23: 61.1000,
+  k24: 52.6000,
+  k25: 44.1000,
+  k26: 35.6000,
+  k27: 27.1000,
+  k28: 18.6000,
+  k29: 10.1000,
+  k30: 1.6000,
+  k31: 92.8000,
+  k32: 84.3000,
+  k33: 75.8000,
+  k34: 67.3000,
+  k35: 58.8000,
+  k36: 50.3000,
+  k37: 41.8000,
+  k38: 33.3000,
+  k39: 24.8000,
+  k40: 16.3000,
+  k41: 7.8000,
+  k42: 99.0000,
+  k43: 90.5000,
+  k44: 82.0000,
+  k45: 73.5000,
+  k46: 65.0000,
+  k47: 56.5000,
+  k48: 48.0000,
+  k49: 39.5000,
+  k50: 31.0000,
+  k51: 22.5000,
+  k52: 14.0000,
+  k53: 5.5000,
+  k54: 96.7000,
+  k55: 88.2000,
+  k56: 79.7000,
+  k57: 71.2000,
+  k58: 62.7000,
+  k59: 54.2000,
+  k60: 45.7000,
+  k61: 37.2000,
+  k62: 28.7000,
+  k63: 20.2000,
+  k64: 11.7000,
+  k65: 3.2000,
+  k66: 94.4000,
+  k67: 85.9000,
+  k68: 77.4000,
+  k69: 68.9000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_019_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_019_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_019_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_019_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_019_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_019_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_019_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_019_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_019_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_019_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_019_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 020 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_020_META = {
+  id: 'mig_020',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'engineering' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 19849,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_020_COEF = {
+  k0: 54.2000,
+  k1: 45.1000,
+  k2: 36.0000,
+  k3: 26.9000,
+  k4: 17.8000,
+  k5: 8.7000,
+  k6: 99.3000,
+  k7: 90.2000,
+  k8: 81.1000,
+  k9: 72.0000,
+  k10: 62.9000,
+  k11: 53.8000,
+  k12: 44.7000,
+  k13: 35.6000,
+  k14: 26.5000,
+  k15: 17.4000,
+  k16: 8.3000,
+  k17: 98.9000,
+  k18: 89.8000,
+  k19: 80.7000,
+  k20: 71.6000,
+  k21: 62.5000,
+  k22: 53.4000,
+  k23: 44.3000,
+  k24: 35.2000,
+  k25: 26.1000,
+  k26: 17.0000,
+  k27: 7.9000,
+  k28: 98.5000,
+  k29: 89.4000,
+  k30: 80.3000,
+  k31: 71.2000,
+  k32: 62.1000,
+  k33: 53.0000,
+  k34: 43.9000,
+  k35: 34.8000,
+  k36: 25.7000,
+  k37: 16.6000,
+  k38: 7.5000,
+  k39: 98.1000,
+  k40: 89.0000,
+  k41: 79.9000,
+  k42: 70.8000,
+  k43: 61.7000,
+  k44: 52.6000,
+  k45: 43.5000,
+  k46: 34.4000,
+  k47: 25.3000,
+  k48: 16.2000,
+  k49: 7.1000,
+  k50: 97.7000,
+  k51: 88.6000,
+  k52: 79.5000,
+  k53: 70.4000,
+  k54: 61.3000,
+  k55: 52.2000,
+  k56: 43.1000,
+  k57: 34.0000,
+  k58: 24.9000,
+  k59: 15.8000,
+  k60: 6.7000,
+  k61: 97.3000,
+  k62: 88.2000,
+  k63: 79.1000,
+  k64: 70.0000,
+  k65: 60.9000,
+  k66: 51.8000,
+  k67: 42.7000,
+  k68: 33.6000,
+  k69: 24.5000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_020_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_020_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_020_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_020_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_020_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_020_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_020_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_020_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_020_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_020_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_020_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 021 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_021_META = {
+  id: 'mig_021',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'healthcare' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 20840,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_021_COEF = {
+  k0: 51.2000,
+  k1: 41.5000,
+  k2: 31.8000,
+  k3: 22.1000,
+  k4: 12.4000,
+  k5: 2.7000,
+  k6: 92.7000,
+  k7: 83.0000,
+  k8: 73.3000,
+  k9: 63.6000,
+  k10: 53.9000,
+  k11: 44.2000,
+  k12: 34.5000,
+  k13: 24.8000,
+  k14: 15.1000,
+  k15: 5.4000,
+  k16: 95.4000,
+  k17: 85.7000,
+  k18: 76.0000,
+  k19: 66.3000,
+  k20: 56.6000,
+  k21: 46.9000,
+  k22: 37.2000,
+  k23: 27.5000,
+  k24: 17.8000,
+  k25: 8.1000,
+  k26: 98.1000,
+  k27: 88.4000,
+  k28: 78.7000,
+  k29: 69.0000,
+  k30: 59.3000,
+  k31: 49.6000,
+  k32: 39.9000,
+  k33: 30.2000,
+  k34: 20.5000,
+  k35: 10.8000,
+  k36: 1.1000,
+  k37: 91.1000,
+  k38: 81.4000,
+  k39: 71.7000,
+  k40: 62.0000,
+  k41: 52.3000,
+  k42: 42.6000,
+  k43: 32.9000,
+  k44: 23.2000,
+  k45: 13.5000,
+  k46: 3.8000,
+  k47: 93.8000,
+  k48: 84.1000,
+  k49: 74.4000,
+  k50: 64.7000,
+  k51: 55.0000,
+  k52: 45.3000,
+  k53: 35.6000,
+  k54: 25.9000,
+  k55: 16.2000,
+  k56: 6.5000,
+  k57: 96.5000,
+  k58: 86.8000,
+  k59: 77.1000,
+  k60: 67.4000,
+  k61: 57.7000,
+  k62: 48.0000,
+  k63: 38.3000,
+  k64: 28.6000,
+  k65: 18.9000,
+  k66: 9.2000,
+  k67: 99.2000,
+  k68: 89.5000,
+  k69: 79.8000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_021_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_021_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_021_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_021_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_021_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_021_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_021_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_021_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_021_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_021_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_021_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 022 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_022_META = {
+  id: 'mig_022',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'trades' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 21831,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_022_COEF = {
+  k0: 48.2000,
+  k1: 37.9000,
+  k2: 27.6000,
+  k3: 17.3000,
+  k4: 7.0000,
+  k5: 96.4000,
+  k6: 86.1000,
+  k7: 75.8000,
+  k8: 65.5000,
+  k9: 55.2000,
+  k10: 44.9000,
+  k11: 34.6000,
+  k12: 24.3000,
+  k13: 14.0000,
+  k14: 3.7000,
+  k15: 93.1000,
+  k16: 82.8000,
+  k17: 72.5000,
+  k18: 62.2000,
+  k19: 51.9000,
+  k20: 41.6000,
+  k21: 31.3000,
+  k22: 21.0000,
+  k23: 10.7000,
+  k24: 0.4000,
+  k25: 89.8000,
+  k26: 79.5000,
+  k27: 69.2000,
+  k28: 58.9000,
+  k29: 48.6000,
+  k30: 38.3000,
+  k31: 28.0000,
+  k32: 17.7000,
+  k33: 7.4000,
+  k34: 96.8000,
+  k35: 86.5000,
+  k36: 76.2000,
+  k37: 65.9000,
+  k38: 55.6000,
+  k39: 45.3000,
+  k40: 35.0000,
+  k41: 24.7000,
+  k42: 14.4000,
+  k43: 4.1000,
+  k44: 93.5000,
+  k45: 83.2000,
+  k46: 72.9000,
+  k47: 62.6000,
+  k48: 52.3000,
+  k49: 42.0000,
+  k50: 31.7000,
+  k51: 21.4000,
+  k52: 11.1000,
+  k53: 0.8000,
+  k54: 90.2000,
+  k55: 79.9000,
+  k56: 69.6000,
+  k57: 59.3000,
+  k58: 49.0000,
+  k59: 38.7000,
+  k60: 28.4000,
+  k61: 18.1000,
+  k62: 7.8000,
+  k63: 97.2000,
+  k64: 86.9000,
+  k65: 76.6000,
+  k66: 66.3000,
+  k67: 56.0000,
+  k68: 45.7000,
+  k69: 35.4000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_022_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_022_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_022_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_022_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_022_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_022_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_022_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_022_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_022_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_022_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_022_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 023 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_023_META = {
+  id: 'mig_023',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'digital' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 22822,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_023_COEF = {
+  k0: 45.2000,
+  k1: 34.3000,
+  k2: 23.4000,
+  k3: 12.5000,
+  k4: 1.6000,
+  k5: 90.4000,
+  k6: 79.5000,
+  k7: 68.6000,
+  k8: 57.7000,
+  k9: 46.8000,
+  k10: 35.9000,
+  k11: 25.0000,
+  k12: 14.1000,
+  k13: 3.2000,
+  k14: 92.0000,
+  k15: 81.1000,
+  k16: 70.2000,
+  k17: 59.3000,
+  k18: 48.4000,
+  k19: 37.5000,
+  k20: 26.6000,
+  k21: 15.7000,
+  k22: 4.8000,
+  k23: 93.6000,
+  k24: 82.7000,
+  k25: 71.8000,
+  k26: 60.9000,
+  k27: 50.0000,
+  k28: 39.1000,
+  k29: 28.2000,
+  k30: 17.3000,
+  k31: 6.4000,
+  k32: 95.2000,
+  k33: 84.3000,
+  k34: 73.4000,
+  k35: 62.5000,
+  k36: 51.6000,
+  k37: 40.7000,
+  k38: 29.8000,
+  k39: 18.9000,
+  k40: 8.0000,
+  k41: 96.8000,
+  k42: 85.9000,
+  k43: 75.0000,
+  k44: 64.1000,
+  k45: 53.2000,
+  k46: 42.3000,
+  k47: 31.4000,
+  k48: 20.5000,
+  k49: 9.6000,
+  k50: 98.4000,
+  k51: 87.5000,
+  k52: 76.6000,
+  k53: 65.7000,
+  k54: 54.8000,
+  k55: 43.9000,
+  k56: 33.0000,
+  k57: 22.1000,
+  k58: 11.2000,
+  k59: 0.3000,
+  k60: 89.1000,
+  k61: 78.2000,
+  k62: 67.3000,
+  k63: 56.4000,
+  k64: 45.5000,
+  k65: 34.6000,
+  k66: 23.7000,
+  k67: 12.8000,
+  k68: 1.9000,
+  k69: 90.7000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_023_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_023_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_023_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_023_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_023_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_023_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_023_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_023_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_023_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_023_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_023_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 024 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_024_META = {
+  id: 'mig_024',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'logistics' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 23813,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_024_COEF = {
+  k0: 42.2000,
+  k1: 30.7000,
+  k2: 19.2000,
+  k3: 7.7000,
+  k4: 95.9000,
+  k5: 84.4000,
+  k6: 72.9000,
+  k7: 61.4000,
+  k8: 49.9000,
+  k9: 38.4000,
+  k10: 26.9000,
+  k11: 15.4000,
+  k12: 3.9000,
+  k13: 92.1000,
+  k14: 80.6000,
+  k15: 69.1000,
+  k16: 57.6000,
+  k17: 46.1000,
+  k18: 34.6000,
+  k19: 23.1000,
+  k20: 11.6000,
+  k21: 0.1000,
+  k22: 88.3000,
+  k23: 76.8000,
+  k24: 65.3000,
+  k25: 53.8000,
+  k26: 42.3000,
+  k27: 30.8000,
+  k28: 19.3000,
+  k29: 7.8000,
+  k30: 96.0000,
+  k31: 84.5000,
+  k32: 73.0000,
+  k33: 61.5000,
+  k34: 50.0000,
+  k35: 38.5000,
+  k36: 27.0000,
+  k37: 15.5000,
+  k38: 4.0000,
+  k39: 92.2000,
+  k40: 80.7000,
+  k41: 69.2000,
+  k42: 57.7000,
+  k43: 46.2000,
+  k44: 34.7000,
+  k45: 23.2000,
+  k46: 11.7000,
+  k47: 0.2000,
+  k48: 88.4000,
+  k49: 76.9000,
+  k50: 65.4000,
+  k51: 53.9000,
+  k52: 42.4000,
+  k53: 30.9000,
+  k54: 19.4000,
+  k55: 7.9000,
+  k56: 96.1000,
+  k57: 84.6000,
+  k58: 73.1000,
+  k59: 61.6000,
+  k60: 50.1000,
+  k61: 38.6000,
+  k62: 27.1000,
+  k63: 15.6000,
+  k64: 4.1000,
+  k65: 92.3000,
+  k66: 80.8000,
+  k67: 69.3000,
+  k68: 57.8000,
+  k69: 46.3000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_024_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_024_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_024_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_024_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_024_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_024_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_024_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_024_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_024_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_024_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_024_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 025 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_025_META = {
+  id: 'mig_025',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'education' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 24804,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_025_COEF = {
+  k0: 39.2000,
+  k1: 27.1000,
+  k2: 15.0000,
+  k3: 2.9000,
+  k4: 90.5000,
+  k5: 78.4000,
+  k6: 66.3000,
+  k7: 54.2000,
+  k8: 42.1000,
+  k9: 30.0000,
+  k10: 17.9000,
+  k11: 5.8000,
+  k12: 93.4000,
+  k13: 81.3000,
+  k14: 69.2000,
+  k15: 57.1000,
+  k16: 45.0000,
+  k17: 32.9000,
+  k18: 20.8000,
+  k19: 8.7000,
+  k20: 96.3000,
+  k21: 84.2000,
+  k22: 72.1000,
+  k23: 60.0000,
+  k24: 47.9000,
+  k25: 35.8000,
+  k26: 23.7000,
+  k27: 11.6000,
+  k28: 99.2000,
+  k29: 87.1000,
+  k30: 75.0000,
+  k31: 62.9000,
+  k32: 50.8000,
+  k33: 38.7000,
+  k34: 26.6000,
+  k35: 14.5000,
+  k36: 2.4000,
+  k37: 90.0000,
+  k38: 77.9000,
+  k39: 65.8000,
+  k40: 53.7000,
+  k41: 41.6000,
+  k42: 29.5000,
+  k43: 17.4000,
+  k44: 5.3000,
+  k45: 92.9000,
+  k46: 80.8000,
+  k47: 68.7000,
+  k48: 56.6000,
+  k49: 44.5000,
+  k50: 32.4000,
+  k51: 20.3000,
+  k52: 8.2000,
+  k53: 95.8000,
+  k54: 83.7000,
+  k55: 71.6000,
+  k56: 59.5000,
+  k57: 47.4000,
+  k58: 35.3000,
+  k59: 23.2000,
+  k60: 11.1000,
+  k61: 98.7000,
+  k62: 86.6000,
+  k63: 74.5000,
+  k64: 62.4000,
+  k65: 50.3000,
+  k66: 38.2000,
+  k67: 26.1000,
+  k68: 14.0000,
+  k69: 1.9000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_025_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_025_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_025_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_025_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_025_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_025_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_025_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_025_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_025_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_025_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_025_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 026 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_026_META = {
+  id: 'mig_026',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'mining' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 25795,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_026_COEF = {
+  k0: 36.2000,
+  k1: 23.5000,
+  k2: 10.8000,
+  k3: 97.8000,
+  k4: 85.1000,
+  k5: 72.4000,
+  k6: 59.7000,
+  k7: 47.0000,
+  k8: 34.3000,
+  k9: 21.6000,
+  k10: 8.9000,
+  k11: 95.9000,
+  k12: 83.2000,
+  k13: 70.5000,
+  k14: 57.8000,
+  k15: 45.1000,
+  k16: 32.4000,
+  k17: 19.7000,
+  k18: 7.0000,
+  k19: 94.0000,
+  k20: 81.3000,
+  k21: 68.6000,
+  k22: 55.9000,
+  k23: 43.2000,
+  k24: 30.5000,
+  k25: 17.8000,
+  k26: 5.1000,
+  k27: 92.1000,
+  k28: 79.4000,
+  k29: 66.7000,
+  k30: 54.0000,
+  k31: 41.3000,
+  k32: 28.6000,
+  k33: 15.9000,
+  k34: 3.2000,
+  k35: 90.2000,
+  k36: 77.5000,
+  k37: 64.8000,
+  k38: 52.1000,
+  k39: 39.4000,
+  k40: 26.7000,
+  k41: 14.0000,
+  k42: 1.3000,
+  k43: 88.3000,
+  k44: 75.6000,
+  k45: 62.9000,
+  k46: 50.2000,
+  k47: 37.5000,
+  k48: 24.8000,
+  k49: 12.1000,
+  k50: 99.1000,
+  k51: 86.4000,
+  k52: 73.7000,
+  k53: 61.0000,
+  k54: 48.3000,
+  k55: 35.6000,
+  k56: 22.9000,
+  k57: 10.2000,
+  k58: 97.2000,
+  k59: 84.5000,
+  k60: 71.8000,
+  k61: 59.1000,
+  k62: 46.4000,
+  k63: 33.7000,
+  k64: 21.0000,
+  k65: 8.3000,
+  k66: 95.3000,
+  k67: 82.6000,
+  k68: 69.9000,
+  k69: 57.2000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_026_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_026_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_026_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_026_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_026_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_026_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_026_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_026_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_026_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_026_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_026_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 027 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_027_META = {
+  id: 'mig_027',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'agriculture' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 26786,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_027_COEF = {
+  k0: 33.2000,
+  k1: 19.9000,
+  k2: 6.6000,
+  k3: 93.0000,
+  k4: 79.7000,
+  k5: 66.4000,
+  k6: 53.1000,
+  k7: 39.8000,
+  k8: 26.5000,
+  k9: 13.2000,
+  k10: 99.6000,
+  k11: 86.3000,
+  k12: 73.0000,
+  k13: 59.7000,
+  k14: 46.4000,
+  k15: 33.1000,
+  k16: 19.8000,
+  k17: 6.5000,
+  k18: 92.9000,
+  k19: 79.6000,
+  k20: 66.3000,
+  k21: 53.0000,
+  k22: 39.7000,
+  k23: 26.4000,
+  k24: 13.1000,
+  k25: 99.5000,
+  k26: 86.2000,
+  k27: 72.9000,
+  k28: 59.6000,
+  k29: 46.3000,
+  k30: 33.0000,
+  k31: 19.7000,
+  k32: 6.4000,
+  k33: 92.8000,
+  k34: 79.5000,
+  k35: 66.2000,
+  k36: 52.9000,
+  k37: 39.6000,
+  k38: 26.3000,
+  k39: 13.0000,
+  k40: 99.4000,
+  k41: 86.1000,
+  k42: 72.8000,
+  k43: 59.5000,
+  k44: 46.2000,
+  k45: 32.9000,
+  k46: 19.6000,
+  k47: 6.3000,
+  k48: 92.7000,
+  k49: 79.4000,
+  k50: 66.1000,
+  k51: 52.8000,
+  k52: 39.5000,
+  k53: 26.2000,
+  k54: 12.9000,
+  k55: 99.3000,
+  k56: 86.0000,
+  k57: 72.7000,
+  k58: 59.4000,
+  k59: 46.1000,
+  k60: 32.8000,
+  k61: 19.5000,
+  k62: 6.2000,
+  k63: 92.6000,
+  k64: 79.3000,
+  k65: 66.0000,
+  k66: 52.7000,
+  k67: 39.4000,
+  k68: 26.1000,
+  k69: 12.8000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_027_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_027_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_027_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_027_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_027_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_027_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_027_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_027_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_027_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_027_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_027_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 028 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_028_META = {
+  id: 'mig_028',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'hospitality' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 27777,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_028_COEF = {
+  k0: 30.2000,
+  k1: 16.3000,
+  k2: 2.4000,
+  k3: 88.2000,
+  k4: 74.3000,
+  k5: 60.4000,
+  k6: 46.5000,
+  k7: 32.6000,
+  k8: 18.7000,
+  k9: 4.8000,
+  k10: 90.6000,
+  k11: 76.7000,
+  k12: 62.8000,
+  k13: 48.9000,
+  k14: 35.0000,
+  k15: 21.1000,
+  k16: 7.2000,
+  k17: 93.0000,
+  k18: 79.1000,
+  k19: 65.2000,
+  k20: 51.3000,
+  k21: 37.4000,
+  k22: 23.5000,
+  k23: 9.6000,
+  k24: 95.4000,
+  k25: 81.5000,
+  k26: 67.6000,
+  k27: 53.7000,
+  k28: 39.8000,
+  k29: 25.9000,
+  k30: 12.0000,
+  k31: 97.8000,
+  k32: 83.9000,
+  k33: 70.0000,
+  k34: 56.1000,
+  k35: 42.2000,
+  k36: 28.3000,
+  k37: 14.4000,
+  k38: 0.5000,
+  k39: 86.3000,
+  k40: 72.4000,
+  k41: 58.5000,
+  k42: 44.6000,
+  k43: 30.7000,
+  k44: 16.8000,
+  k45: 2.9000,
+  k46: 88.7000,
+  k47: 74.8000,
+  k48: 60.9000,
+  k49: 47.0000,
+  k50: 33.1000,
+  k51: 19.2000,
+  k52: 5.3000,
+  k53: 91.1000,
+  k54: 77.2000,
+  k55: 63.3000,
+  k56: 49.4000,
+  k57: 35.5000,
+  k58: 21.6000,
+  k59: 7.7000,
+  k60: 93.5000,
+  k61: 79.6000,
+  k62: 65.7000,
+  k63: 51.8000,
+  k64: 37.9000,
+  k65: 24.0000,
+  k66: 10.1000,
+  k67: 95.9000,
+  k68: 82.0000,
+  k69: 68.1000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_028_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_028_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_028_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_028_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_028_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_028_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_028_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_028_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_028_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_028_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_028_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 029 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_029_META = {
+  id: 'mig_029',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'public_admin' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 28768,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_029_COEF = {
+  k0: 27.2000,
+  k1: 12.7000,
+  k2: 97.9000,
+  k3: 83.4000,
+  k4: 68.9000,
+  k5: 54.4000,
+  k6: 39.9000,
+  k7: 25.4000,
+  k8: 10.9000,
+  k9: 96.1000,
+  k10: 81.6000,
+  k11: 67.1000,
+  k12: 52.6000,
+  k13: 38.1000,
+  k14: 23.6000,
+  k15: 9.1000,
+  k16: 94.3000,
+  k17: 79.8000,
+  k18: 65.3000,
+  k19: 50.8000,
+  k20: 36.3000,
+  k21: 21.8000,
+  k22: 7.3000,
+  k23: 92.5000,
+  k24: 78.0000,
+  k25: 63.5000,
+  k26: 49.0000,
+  k27: 34.5000,
+  k28: 20.0000,
+  k29: 5.5000,
+  k30: 90.7000,
+  k31: 76.2000,
+  k32: 61.7000,
+  k33: 47.2000,
+  k34: 32.7000,
+  k35: 18.2000,
+  k36: 3.7000,
+  k37: 88.9000,
+  k38: 74.4000,
+  k39: 59.9000,
+  k40: 45.4000,
+  k41: 30.9000,
+  k42: 16.4000,
+  k43: 1.9000,
+  k44: 87.1000,
+  k45: 72.6000,
+  k46: 58.1000,
+  k47: 43.6000,
+  k48: 29.1000,
+  k49: 14.6000,
+  k50: 0.1000,
+  k51: 85.3000,
+  k52: 70.8000,
+  k53: 56.3000,
+  k54: 41.8000,
+  k55: 27.3000,
+  k56: 12.8000,
+  k57: 98.0000,
+  k58: 83.5000,
+  k59: 69.0000,
+  k60: 54.5000,
+  k61: 40.0000,
+  k62: 25.5000,
+  k63: 11.0000,
+  k64: 96.2000,
+  k65: 81.7000,
+  k66: 67.2000,
+  k67: 52.7000,
+  k68: 38.2000,
+  k69: 23.7000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_029_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_029_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_029_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_029_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_029_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_029_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_029_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_029_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_029_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_029_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_029_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 030 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_030_META = {
+  id: 'mig_030',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'engineering' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 29759,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_030_COEF = {
+  k0: 24.2000,
+  k1: 9.1000,
+  k2: 93.7000,
+  k3: 78.6000,
+  k4: 63.5000,
+  k5: 48.4000,
+  k6: 33.3000,
+  k7: 18.2000,
+  k8: 3.1000,
+  k9: 87.7000,
+  k10: 72.6000,
+  k11: 57.5000,
+  k12: 42.4000,
+  k13: 27.3000,
+  k14: 12.2000,
+  k15: 96.8000,
+  k16: 81.7000,
+  k17: 66.6000,
+  k18: 51.5000,
+  k19: 36.4000,
+  k20: 21.3000,
+  k21: 6.2000,
+  k22: 90.8000,
+  k23: 75.7000,
+  k24: 60.6000,
+  k25: 45.5000,
+  k26: 30.4000,
+  k27: 15.3000,
+  k28: 0.2000,
+  k29: 84.8000,
+  k30: 69.7000,
+  k31: 54.6000,
+  k32: 39.5000,
+  k33: 24.4000,
+  k34: 9.3000,
+  k35: 93.9000,
+  k36: 78.8000,
+  k37: 63.7000,
+  k38: 48.6000,
+  k39: 33.5000,
+  k40: 18.4000,
+  k41: 3.3000,
+  k42: 87.9000,
+  k43: 72.8000,
+  k44: 57.7000,
+  k45: 42.6000,
+  k46: 27.5000,
+  k47: 12.4000,
+  k48: 97.0000,
+  k49: 81.9000,
+  k50: 66.8000,
+  k51: 51.7000,
+  k52: 36.6000,
+  k53: 21.5000,
+  k54: 6.4000,
+  k55: 91.0000,
+  k56: 75.9000,
+  k57: 60.8000,
+  k58: 45.7000,
+  k59: 30.6000,
+  k60: 15.5000,
+  k61: 0.4000,
+  k62: 85.0000,
+  k63: 69.9000,
+  k64: 54.8000,
+  k65: 39.7000,
+  k66: 24.6000,
+  k67: 9.5000,
+  k68: 94.1000,
+  k69: 79.0000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_030_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_030_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_030_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_030_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_030_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_030_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_030_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_030_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_030_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_030_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_030_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 031 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_031_META = {
+  id: 'mig_031',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'healthcare' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 30750,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_031_COEF = {
+  k0: 21.2000,
+  k1: 5.5000,
+  k2: 89.5000,
+  k3: 73.8000,
+  k4: 58.1000,
+  k5: 42.4000,
+  k6: 26.7000,
+  k7: 11.0000,
+  k8: 95.0000,
+  k9: 79.3000,
+  k10: 63.6000,
+  k11: 47.9000,
+  k12: 32.2000,
+  k13: 16.5000,
+  k14: 0.8000,
+  k15: 84.8000,
+  k16: 69.1000,
+  k17: 53.4000,
+  k18: 37.7000,
+  k19: 22.0000,
+  k20: 6.3000,
+  k21: 90.3000,
+  k22: 74.6000,
+  k23: 58.9000,
+  k24: 43.2000,
+  k25: 27.5000,
+  k26: 11.8000,
+  k27: 95.8000,
+  k28: 80.1000,
+  k29: 64.4000,
+  k30: 48.7000,
+  k31: 33.0000,
+  k32: 17.3000,
+  k33: 1.6000,
+  k34: 85.6000,
+  k35: 69.9000,
+  k36: 54.2000,
+  k37: 38.5000,
+  k38: 22.8000,
+  k39: 7.1000,
+  k40: 91.1000,
+  k41: 75.4000,
+  k42: 59.7000,
+  k43: 44.0000,
+  k44: 28.3000,
+  k45: 12.6000,
+  k46: 96.6000,
+  k47: 80.9000,
+  k48: 65.2000,
+  k49: 49.5000,
+  k50: 33.8000,
+  k51: 18.1000,
+  k52: 2.4000,
+  k53: 86.4000,
+  k54: 70.7000,
+  k55: 55.0000,
+  k56: 39.3000,
+  k57: 23.6000,
+  k58: 7.9000,
+  k59: 91.9000,
+  k60: 76.2000,
+  k61: 60.5000,
+  k62: 44.8000,
+  k63: 29.1000,
+  k64: 13.4000,
+  k65: 97.4000,
+  k66: 81.7000,
+  k67: 66.0000,
+  k68: 50.3000,
+  k69: 34.6000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_031_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_031_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_031_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_031_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_031_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_031_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_031_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_031_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_031_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_031_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_031_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 032 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_032_META = {
+  id: 'mig_032',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'trades' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 31741,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_032_COEF = {
+  k0: 18.2000,
+  k1: 1.9000,
+  k2: 85.3000,
+  k3: 69.0000,
+  k4: 52.7000,
+  k5: 36.4000,
+  k6: 20.1000,
+  k7: 3.8000,
+  k8: 87.2000,
+  k9: 70.9000,
+  k10: 54.6000,
+  k11: 38.3000,
+  k12: 22.0000,
+  k13: 5.7000,
+  k14: 89.1000,
+  k15: 72.8000,
+  k16: 56.5000,
+  k17: 40.2000,
+  k18: 23.9000,
+  k19: 7.6000,
+  k20: 91.0000,
+  k21: 74.7000,
+  k22: 58.4000,
+  k23: 42.1000,
+  k24: 25.8000,
+  k25: 9.5000,
+  k26: 92.9000,
+  k27: 76.6000,
+  k28: 60.3000,
+  k29: 44.0000,
+  k30: 27.7000,
+  k31: 11.4000,
+  k32: 94.8000,
+  k33: 78.5000,
+  k34: 62.2000,
+  k35: 45.9000,
+  k36: 29.6000,
+  k37: 13.3000,
+  k38: 96.7000,
+  k39: 80.4000,
+  k40: 64.1000,
+  k41: 47.8000,
+  k42: 31.5000,
+  k43: 15.2000,
+  k44: 98.6000,
+  k45: 82.3000,
+  k46: 66.0000,
+  k47: 49.7000,
+  k48: 33.4000,
+  k49: 17.1000,
+  k50: 0.8000,
+  k51: 84.2000,
+  k52: 67.9000,
+  k53: 51.6000,
+  k54: 35.3000,
+  k55: 19.0000,
+  k56: 2.7000,
+  k57: 86.1000,
+  k58: 69.8000,
+  k59: 53.5000,
+  k60: 37.2000,
+  k61: 20.9000,
+  k62: 4.6000,
+  k63: 88.0000,
+  k64: 71.7000,
+  k65: 55.4000,
+  k66: 39.1000,
+  k67: 22.8000,
+  k68: 6.5000,
+  k69: 89.9000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_032_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_032_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_032_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_032_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_032_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_032_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_032_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_032_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_032_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_032_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_032_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 033 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_033_META = {
+  id: 'mig_033',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'digital' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 32732,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_033_COEF = {
+  k0: 15.2000,
+  k1: 98.0000,
+  k2: 81.1000,
+  k3: 64.2000,
+  k4: 47.3000,
+  k5: 30.4000,
+  k6: 13.5000,
+  k7: 96.3000,
+  k8: 79.4000,
+  k9: 62.5000,
+  k10: 45.6000,
+  k11: 28.7000,
+  k12: 11.8000,
+  k13: 94.6000,
+  k14: 77.7000,
+  k15: 60.8000,
+  k16: 43.9000,
+  k17: 27.0000,
+  k18: 10.1000,
+  k19: 92.9000,
+  k20: 76.0000,
+  k21: 59.1000,
+  k22: 42.2000,
+  k23: 25.3000,
+  k24: 8.4000,
+  k25: 91.2000,
+  k26: 74.3000,
+  k27: 57.4000,
+  k28: 40.5000,
+  k29: 23.6000,
+  k30: 6.7000,
+  k31: 89.5000,
+  k32: 72.6000,
+  k33: 55.7000,
+  k34: 38.8000,
+  k35: 21.9000,
+  k36: 5.0000,
+  k37: 87.8000,
+  k38: 70.9000,
+  k39: 54.0000,
+  k40: 37.1000,
+  k41: 20.2000,
+  k42: 3.3000,
+  k43: 86.1000,
+  k44: 69.2000,
+  k45: 52.3000,
+  k46: 35.4000,
+  k47: 18.5000,
+  k48: 1.6000,
+  k49: 84.4000,
+  k50: 67.5000,
+  k51: 50.6000,
+  k52: 33.7000,
+  k53: 16.8000,
+  k54: 99.6000,
+  k55: 82.7000,
+  k56: 65.8000,
+  k57: 48.9000,
+  k58: 32.0000,
+  k59: 15.1000,
+  k60: 97.9000,
+  k61: 81.0000,
+  k62: 64.1000,
+  k63: 47.2000,
+  k64: 30.3000,
+  k65: 13.4000,
+  k66: 96.2000,
+  k67: 79.3000,
+  k68: 62.4000,
+  k69: 45.5000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_033_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_033_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_033_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_033_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_033_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_033_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_033_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_033_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_033_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_033_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_033_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 034 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_034_META = {
+  id: 'mig_034',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'logistics' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 33723,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_034_COEF = {
+  k0: 12.2000,
+  k1: 94.4000,
+  k2: 76.9000,
+  k3: 59.4000,
+  k4: 41.9000,
+  k5: 24.4000,
+  k6: 6.9000,
+  k7: 89.1000,
+  k8: 71.6000,
+  k9: 54.1000,
+  k10: 36.6000,
+  k11: 19.1000,
+  k12: 1.6000,
+  k13: 83.8000,
+  k14: 66.3000,
+  k15: 48.8000,
+  k16: 31.3000,
+  k17: 13.8000,
+  k18: 96.0000,
+  k19: 78.5000,
+  k20: 61.0000,
+  k21: 43.5000,
+  k22: 26.0000,
+  k23: 8.5000,
+  k24: 90.7000,
+  k25: 73.2000,
+  k26: 55.7000,
+  k27: 38.2000,
+  k28: 20.7000,
+  k29: 3.2000,
+  k30: 85.4000,
+  k31: 67.9000,
+  k32: 50.4000,
+  k33: 32.9000,
+  k34: 15.4000,
+  k35: 97.6000,
+  k36: 80.1000,
+  k37: 62.6000,
+  k38: 45.1000,
+  k39: 27.6000,
+  k40: 10.1000,
+  k41: 92.3000,
+  k42: 74.8000,
+  k43: 57.3000,
+  k44: 39.8000,
+  k45: 22.3000,
+  k46: 4.8000,
+  k47: 87.0000,
+  k48: 69.5000,
+  k49: 52.0000,
+  k50: 34.5000,
+  k51: 17.0000,
+  k52: 99.2000,
+  k53: 81.7000,
+  k54: 64.2000,
+  k55: 46.7000,
+  k56: 29.2000,
+  k57: 11.7000,
+  k58: 93.9000,
+  k59: 76.4000,
+  k60: 58.9000,
+  k61: 41.4000,
+  k62: 23.9000,
+  k63: 6.4000,
+  k64: 88.6000,
+  k65: 71.1000,
+  k66: 53.6000,
+  k67: 36.1000,
+  k68: 18.6000,
+  k69: 1.1000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_034_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_034_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_034_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_034_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_034_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_034_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_034_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_034_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_034_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_034_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_034_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 035 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_035_META = {
+  id: 'mig_035',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'education' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 34714,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_035_COEF = {
+  k0: 9.2000,
+  k1: 90.8000,
+  k2: 72.7000,
+  k3: 54.6000,
+  k4: 36.5000,
+  k5: 18.4000,
+  k6: 0.3000,
+  k7: 81.9000,
+  k8: 63.8000,
+  k9: 45.7000,
+  k10: 27.6000,
+  k11: 9.5000,
+  k12: 91.1000,
+  k13: 73.0000,
+  k14: 54.9000,
+  k15: 36.8000,
+  k16: 18.7000,
+  k17: 0.6000,
+  k18: 82.2000,
+  k19: 64.1000,
+  k20: 46.0000,
+  k21: 27.9000,
+  k22: 9.8000,
+  k23: 91.4000,
+  k24: 73.3000,
+  k25: 55.2000,
+  k26: 37.1000,
+  k27: 19.0000,
+  k28: 0.9000,
+  k29: 82.5000,
+  k30: 64.4000,
+  k31: 46.3000,
+  k32: 28.2000,
+  k33: 10.1000,
+  k34: 91.7000,
+  k35: 73.6000,
+  k36: 55.5000,
+  k37: 37.4000,
+  k38: 19.3000,
+  k39: 1.2000,
+  k40: 82.8000,
+  k41: 64.7000,
+  k42: 46.6000,
+  k43: 28.5000,
+  k44: 10.4000,
+  k45: 92.0000,
+  k46: 73.9000,
+  k47: 55.8000,
+  k48: 37.7000,
+  k49: 19.6000,
+  k50: 1.5000,
+  k51: 83.1000,
+  k52: 65.0000,
+  k53: 46.9000,
+  k54: 28.8000,
+  k55: 10.7000,
+  k56: 92.3000,
+  k57: 74.2000,
+  k58: 56.1000,
+  k59: 38.0000,
+  k60: 19.9000,
+  k61: 1.8000,
+  k62: 83.4000,
+  k63: 65.3000,
+  k64: 47.2000,
+  k65: 29.1000,
+  k66: 11.0000,
+  k67: 92.6000,
+  k68: 74.5000,
+  k69: 56.4000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_035_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_035_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_035_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_035_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_035_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_035_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_035_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_035_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_035_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_035_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_035_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 036 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_036_META = {
+  id: 'mig_036',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'mining' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 35705,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_036_COEF = {
+  k0: 6.2000,
+  k1: 87.2000,
+  k2: 68.5000,
+  k3: 49.8000,
+  k4: 31.1000,
+  k5: 12.4000,
+  k6: 93.4000,
+  k7: 74.7000,
+  k8: 56.0000,
+  k9: 37.3000,
+  k10: 18.6000,
+  k11: 99.6000,
+  k12: 80.9000,
+  k13: 62.2000,
+  k14: 43.5000,
+  k15: 24.8000,
+  k16: 6.1000,
+  k17: 87.1000,
+  k18: 68.4000,
+  k19: 49.7000,
+  k20: 31.0000,
+  k21: 12.3000,
+  k22: 93.3000,
+  k23: 74.6000,
+  k24: 55.9000,
+  k25: 37.2000,
+  k26: 18.5000,
+  k27: 99.5000,
+  k28: 80.8000,
+  k29: 62.1000,
+  k30: 43.4000,
+  k31: 24.7000,
+  k32: 6.0000,
+  k33: 87.0000,
+  k34: 68.3000,
+  k35: 49.6000,
+  k36: 30.9000,
+  k37: 12.2000,
+  k38: 93.2000,
+  k39: 74.5000,
+  k40: 55.8000,
+  k41: 37.1000,
+  k42: 18.4000,
+  k43: 99.4000,
+  k44: 80.7000,
+  k45: 62.0000,
+  k46: 43.3000,
+  k47: 24.6000,
+  k48: 5.9000,
+  k49: 86.9000,
+  k50: 68.2000,
+  k51: 49.5000,
+  k52: 30.8000,
+  k53: 12.1000,
+  k54: 93.1000,
+  k55: 74.4000,
+  k56: 55.7000,
+  k57: 37.0000,
+  k58: 18.3000,
+  k59: 99.3000,
+  k60: 80.6000,
+  k61: 61.9000,
+  k62: 43.2000,
+  k63: 24.5000,
+  k64: 5.8000,
+  k65: 86.8000,
+  k66: 68.1000,
+  k67: 49.4000,
+  k68: 30.7000,
+  k69: 12.0000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_036_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_036_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_036_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_036_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_036_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_036_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_036_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_036_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_036_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_036_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_036_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 037 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_037_META = {
+  id: 'mig_037',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'agriculture' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 36696,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_037_COEF = {
+  k0: 3.2000,
+  k1: 83.6000,
+  k2: 64.3000,
+  k3: 45.0000,
+  k4: 25.7000,
+  k5: 6.4000,
+  k6: 86.8000,
+  k7: 67.5000,
+  k8: 48.2000,
+  k9: 28.9000,
+  k10: 9.6000,
+  k11: 90.0000,
+  k12: 70.7000,
+  k13: 51.4000,
+  k14: 32.1000,
+  k15: 12.8000,
+  k16: 93.2000,
+  k17: 73.9000,
+  k18: 54.6000,
+  k19: 35.3000,
+  k20: 16.0000,
+  k21: 96.4000,
+  k22: 77.1000,
+  k23: 57.8000,
+  k24: 38.5000,
+  k25: 19.2000,
+  k26: 99.6000,
+  k27: 80.3000,
+  k28: 61.0000,
+  k29: 41.7000,
+  k30: 22.4000,
+  k31: 3.1000,
+  k32: 83.5000,
+  k33: 64.2000,
+  k34: 44.9000,
+  k35: 25.6000,
+  k36: 6.3000,
+  k37: 86.7000,
+  k38: 67.4000,
+  k39: 48.1000,
+  k40: 28.8000,
+  k41: 9.5000,
+  k42: 89.9000,
+  k43: 70.6000,
+  k44: 51.3000,
+  k45: 32.0000,
+  k46: 12.7000,
+  k47: 93.1000,
+  k48: 73.8000,
+  k49: 54.5000,
+  k50: 35.2000,
+  k51: 15.9000,
+  k52: 96.3000,
+  k53: 77.0000,
+  k54: 57.7000,
+  k55: 38.4000,
+  k56: 19.1000,
+  k57: 99.5000,
+  k58: 80.2000,
+  k59: 60.9000,
+  k60: 41.6000,
+  k61: 22.3000,
+  k62: 3.0000,
+  k63: 83.4000,
+  k64: 64.1000,
+  k65: 44.8000,
+  k66: 25.5000,
+  k67: 6.2000,
+  k68: 86.6000,
+  k69: 67.3000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_037_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_037_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_037_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_037_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_037_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_037_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_037_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_037_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_037_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_037_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_037_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 038 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_038_META = {
+  id: 'mig_038',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'hospitality' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 37687,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_038_COEF = {
+  k0: 0.2000,
+  k1: 80.0000,
+  k2: 60.1000,
+  k3: 40.2000,
+  k4: 20.3000,
+  k5: 0.4000,
+  k6: 80.2000,
+  k7: 60.3000,
+  k8: 40.4000,
+  k9: 20.5000,
+  k10: 0.6000,
+  k11: 80.4000,
+  k12: 60.5000,
+  k13: 40.6000,
+  k14: 20.7000,
+  k15: 0.8000,
+  k16: 80.6000,
+  k17: 60.7000,
+  k18: 40.8000,
+  k19: 20.9000,
+  k20: 1.0000,
+  k21: 80.8000,
+  k22: 60.9000,
+  k23: 41.0000,
+  k24: 21.1000,
+  k25: 1.2000,
+  k26: 81.0000,
+  k27: 61.1000,
+  k28: 41.2000,
+  k29: 21.3000,
+  k30: 1.4000,
+  k31: 81.2000,
+  k32: 61.3000,
+  k33: 41.4000,
+  k34: 21.5000,
+  k35: 1.6000,
+  k36: 81.4000,
+  k37: 61.5000,
+  k38: 41.6000,
+  k39: 21.7000,
+  k40: 1.8000,
+  k41: 81.6000,
+  k42: 61.7000,
+  k43: 41.8000,
+  k44: 21.9000,
+  k45: 2.0000,
+  k46: 81.8000,
+  k47: 61.9000,
+  k48: 42.0000,
+  k49: 22.1000,
+  k50: 2.2000,
+  k51: 82.0000,
+  k52: 62.1000,
+  k53: 42.2000,
+  k54: 22.3000,
+  k55: 2.4000,
+  k56: 82.2000,
+  k57: 62.3000,
+  k58: 42.4000,
+  k59: 22.5000,
+  k60: 2.6000,
+  k61: 82.4000,
+  k62: 62.5000,
+  k63: 42.6000,
+  k64: 22.7000,
+  k65: 2.8000,
+  k66: 82.6000,
+  k67: 62.7000,
+  k68: 42.8000,
+  k69: 22.9000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_038_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_038_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_038_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_038_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_038_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_038_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_038_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_038_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_038_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_038_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_038_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 039 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_039_META = {
+  id: 'mig_039',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'public_admin' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 38678,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_039_COEF = {
+  k0: 96.9000,
+  k1: 76.4000,
+  k2: 55.9000,
+  k3: 35.4000,
+  k4: 14.9000,
+  k5: 94.1000,
+  k6: 73.6000,
+  k7: 53.1000,
+  k8: 32.6000,
+  k9: 12.1000,
+  k10: 91.3000,
+  k11: 70.8000,
+  k12: 50.3000,
+  k13: 29.8000,
+  k14: 9.3000,
+  k15: 88.5000,
+  k16: 68.0000,
+  k17: 47.5000,
+  k18: 27.0000,
+  k19: 6.5000,
+  k20: 85.7000,
+  k21: 65.2000,
+  k22: 44.7000,
+  k23: 24.2000,
+  k24: 3.7000,
+  k25: 82.9000,
+  k26: 62.4000,
+  k27: 41.9000,
+  k28: 21.4000,
+  k29: 0.9000,
+  k30: 80.1000,
+  k31: 59.6000,
+  k32: 39.1000,
+  k33: 18.6000,
+  k34: 97.8000,
+  k35: 77.3000,
+  k36: 56.8000,
+  k37: 36.3000,
+  k38: 15.8000,
+  k39: 95.0000,
+  k40: 74.5000,
+  k41: 54.0000,
+  k42: 33.5000,
+  k43: 13.0000,
+  k44: 92.2000,
+  k45: 71.7000,
+  k46: 51.2000,
+  k47: 30.7000,
+  k48: 10.2000,
+  k49: 89.4000,
+  k50: 68.9000,
+  k51: 48.4000,
+  k52: 27.9000,
+  k53: 7.4000,
+  k54: 86.6000,
+  k55: 66.1000,
+  k56: 45.6000,
+  k57: 25.1000,
+  k58: 4.6000,
+  k59: 83.8000,
+  k60: 63.3000,
+  k61: 42.8000,
+  k62: 22.3000,
+  k63: 1.8000,
+  k64: 81.0000,
+  k65: 60.5000,
+  k66: 40.0000,
+  k67: 19.5000,
+  k68: 98.7000,
+  k69: 78.2000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_039_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_039_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_039_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_039_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_039_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_039_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_039_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_039_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_039_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_039_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_039_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 040 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_040_META = {
+  id: 'mig_040',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'engineering' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 39669,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_040_COEF = {
+  k0: 93.9000,
+  k1: 72.8000,
+  k2: 51.7000,
+  k3: 30.6000,
+  k4: 9.5000,
+  k5: 88.1000,
+  k6: 67.0000,
+  k7: 45.9000,
+  k8: 24.8000,
+  k9: 3.7000,
+  k10: 82.3000,
+  k11: 61.2000,
+  k12: 40.1000,
+  k13: 19.0000,
+  k14: 97.6000,
+  k15: 76.5000,
+  k16: 55.4000,
+  k17: 34.3000,
+  k18: 13.2000,
+  k19: 91.8000,
+  k20: 70.7000,
+  k21: 49.6000,
+  k22: 28.5000,
+  k23: 7.4000,
+  k24: 86.0000,
+  k25: 64.9000,
+  k26: 43.8000,
+  k27: 22.7000,
+  k28: 1.6000,
+  k29: 80.2000,
+  k30: 59.1000,
+  k31: 38.0000,
+  k32: 16.9000,
+  k33: 95.5000,
+  k34: 74.4000,
+  k35: 53.3000,
+  k36: 32.2000,
+  k37: 11.1000,
+  k38: 89.7000,
+  k39: 68.6000,
+  k40: 47.5000,
+  k41: 26.4000,
+  k42: 5.3000,
+  k43: 83.9000,
+  k44: 62.8000,
+  k45: 41.7000,
+  k46: 20.6000,
+  k47: 99.2000,
+  k48: 78.1000,
+  k49: 57.0000,
+  k50: 35.9000,
+  k51: 14.8000,
+  k52: 93.4000,
+  k53: 72.3000,
+  k54: 51.2000,
+  k55: 30.1000,
+  k56: 9.0000,
+  k57: 87.6000,
+  k58: 66.5000,
+  k59: 45.4000,
+  k60: 24.3000,
+  k61: 3.2000,
+  k62: 81.8000,
+  k63: 60.7000,
+  k64: 39.6000,
+  k65: 18.5000,
+  k66: 97.1000,
+  k67: 76.0000,
+  k68: 54.9000,
+  k69: 33.8000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_040_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_040_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_040_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_040_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_040_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_040_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_040_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_040_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_040_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_040_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_040_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 041 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_041_META = {
+  id: 'mig_041',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'healthcare' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 40660,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_041_COEF = {
+  k0: 90.9000,
+  k1: 69.2000,
+  k2: 47.5000,
+  k3: 25.8000,
+  k4: 4.1000,
+  k5: 82.1000,
+  k6: 60.4000,
+  k7: 38.7000,
+  k8: 17.0000,
+  k9: 95.0000,
+  k10: 73.3000,
+  k11: 51.6000,
+  k12: 29.9000,
+  k13: 8.2000,
+  k14: 86.2000,
+  k15: 64.5000,
+  k16: 42.8000,
+  k17: 21.1000,
+  k18: 99.1000,
+  k19: 77.4000,
+  k20: 55.7000,
+  k21: 34.0000,
+  k22: 12.3000,
+  k23: 90.3000,
+  k24: 68.6000,
+  k25: 46.9000,
+  k26: 25.2000,
+  k27: 3.5000,
+  k28: 81.5000,
+  k29: 59.8000,
+  k30: 38.1000,
+  k31: 16.4000,
+  k32: 94.4000,
+  k33: 72.7000,
+  k34: 51.0000,
+  k35: 29.3000,
+  k36: 7.6000,
+  k37: 85.6000,
+  k38: 63.9000,
+  k39: 42.2000,
+  k40: 20.5000,
+  k41: 98.5000,
+  k42: 76.8000,
+  k43: 55.1000,
+  k44: 33.4000,
+  k45: 11.7000,
+  k46: 89.7000,
+  k47: 68.0000,
+  k48: 46.3000,
+  k49: 24.6000,
+  k50: 2.9000,
+  k51: 80.9000,
+  k52: 59.2000,
+  k53: 37.5000,
+  k54: 15.8000,
+  k55: 93.8000,
+  k56: 72.1000,
+  k57: 50.4000,
+  k58: 28.7000,
+  k59: 7.0000,
+  k60: 85.0000,
+  k61: 63.3000,
+  k62: 41.6000,
+  k63: 19.9000,
+  k64: 97.9000,
+  k65: 76.2000,
+  k66: 54.5000,
+  k67: 32.8000,
+  k68: 11.1000,
+  k69: 89.1000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_041_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_041_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_041_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_041_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_041_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_041_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_041_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_041_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_041_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_041_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_041_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 042 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_042_META = {
+  id: 'mig_042',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'trades' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 41651,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_042_COEF = {
+  k0: 87.9000,
+  k1: 65.6000,
+  k2: 43.3000,
+  k3: 21.0000,
+  k4: 98.4000,
+  k5: 76.1000,
+  k6: 53.8000,
+  k7: 31.5000,
+  k8: 9.2000,
+  k9: 86.6000,
+  k10: 64.3000,
+  k11: 42.0000,
+  k12: 19.7000,
+  k13: 97.1000,
+  k14: 74.8000,
+  k15: 52.5000,
+  k16: 30.2000,
+  k17: 7.9000,
+  k18: 85.3000,
+  k19: 63.0000,
+  k20: 40.7000,
+  k21: 18.4000,
+  k22: 95.8000,
+  k23: 73.5000,
+  k24: 51.2000,
+  k25: 28.9000,
+  k26: 6.6000,
+  k27: 84.0000,
+  k28: 61.7000,
+  k29: 39.4000,
+  k30: 17.1000,
+  k31: 94.5000,
+  k32: 72.2000,
+  k33: 49.9000,
+  k34: 27.6000,
+  k35: 5.3000,
+  k36: 82.7000,
+  k37: 60.4000,
+  k38: 38.1000,
+  k39: 15.8000,
+  k40: 93.2000,
+  k41: 70.9000,
+  k42: 48.6000,
+  k43: 26.3000,
+  k44: 4.0000,
+  k45: 81.4000,
+  k46: 59.1000,
+  k47: 36.8000,
+  k48: 14.5000,
+  k49: 91.9000,
+  k50: 69.6000,
+  k51: 47.3000,
+  k52: 25.0000,
+  k53: 2.7000,
+  k54: 80.1000,
+  k55: 57.8000,
+  k56: 35.5000,
+  k57: 13.2000,
+  k58: 90.6000,
+  k59: 68.3000,
+  k60: 46.0000,
+  k61: 23.7000,
+  k62: 1.4000,
+  k63: 78.8000,
+  k64: 56.5000,
+  k65: 34.2000,
+  k66: 11.9000,
+  k67: 89.3000,
+  k68: 67.0000,
+  k69: 44.7000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_042_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_042_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_042_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_042_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_042_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_042_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_042_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_042_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_042_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_042_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_042_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 043 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_043_META = {
+  id: 'mig_043',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'digital' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 42642,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_043_COEF = {
+  k0: 84.9000,
+  k1: 62.0000,
+  k2: 39.1000,
+  k3: 16.2000,
+  k4: 93.0000,
+  k5: 70.1000,
+  k6: 47.2000,
+  k7: 24.3000,
+  k8: 1.4000,
+  k9: 78.2000,
+  k10: 55.3000,
+  k11: 32.4000,
+  k12: 9.5000,
+  k13: 86.3000,
+  k14: 63.4000,
+  k15: 40.5000,
+  k16: 17.6000,
+  k17: 94.4000,
+  k18: 71.5000,
+  k19: 48.6000,
+  k20: 25.7000,
+  k21: 2.8000,
+  k22: 79.6000,
+  k23: 56.7000,
+  k24: 33.8000,
+  k25: 10.9000,
+  k26: 87.7000,
+  k27: 64.8000,
+  k28: 41.9000,
+  k29: 19.0000,
+  k30: 95.8000,
+  k31: 72.9000,
+  k32: 50.0000,
+  k33: 27.1000,
+  k34: 4.2000,
+  k35: 81.0000,
+  k36: 58.1000,
+  k37: 35.2000,
+  k38: 12.3000,
+  k39: 89.1000,
+  k40: 66.2000,
+  k41: 43.3000,
+  k42: 20.4000,
+  k43: 97.2000,
+  k44: 74.3000,
+  k45: 51.4000,
+  k46: 28.5000,
+  k47: 5.6000,
+  k48: 82.4000,
+  k49: 59.5000,
+  k50: 36.6000,
+  k51: 13.7000,
+  k52: 90.5000,
+  k53: 67.6000,
+  k54: 44.7000,
+  k55: 21.8000,
+  k56: 98.6000,
+  k57: 75.7000,
+  k58: 52.8000,
+  k59: 29.9000,
+  k60: 7.0000,
+  k61: 83.8000,
+  k62: 60.9000,
+  k63: 38.0000,
+  k64: 15.1000,
+  k65: 91.9000,
+  k66: 69.0000,
+  k67: 46.1000,
+  k68: 23.2000,
+  k69: 0.3000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_043_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_043_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_043_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_043_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_043_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_043_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_043_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_043_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_043_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_043_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_043_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 044 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_044_META = {
+  id: 'mig_044',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'logistics' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 43633,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_044_COEF = {
+  k0: 81.9000,
+  k1: 58.4000,
+  k2: 34.9000,
+  k3: 11.4000,
+  k4: 87.6000,
+  k5: 64.1000,
+  k6: 40.6000,
+  k7: 17.1000,
+  k8: 93.3000,
+  k9: 69.8000,
+  k10: 46.3000,
+  k11: 22.8000,
+  k12: 99.0000,
+  k13: 75.5000,
+  k14: 52.0000,
+  k15: 28.5000,
+  k16: 5.0000,
+  k17: 81.2000,
+  k18: 57.7000,
+  k19: 34.2000,
+  k20: 10.7000,
+  k21: 86.9000,
+  k22: 63.4000,
+  k23: 39.9000,
+  k24: 16.4000,
+  k25: 92.6000,
+  k26: 69.1000,
+  k27: 45.6000,
+  k28: 22.1000,
+  k29: 98.3000,
+  k30: 74.8000,
+  k31: 51.3000,
+  k32: 27.8000,
+  k33: 4.3000,
+  k34: 80.5000,
+  k35: 57.0000,
+  k36: 33.5000,
+  k37: 10.0000,
+  k38: 86.2000,
+  k39: 62.7000,
+  k40: 39.2000,
+  k41: 15.7000,
+  k42: 91.9000,
+  k43: 68.4000,
+  k44: 44.9000,
+  k45: 21.4000,
+  k46: 97.6000,
+  k47: 74.1000,
+  k48: 50.6000,
+  k49: 27.1000,
+  k50: 3.6000,
+  k51: 79.8000,
+  k52: 56.3000,
+  k53: 32.8000,
+  k54: 9.3000,
+  k55: 85.5000,
+  k56: 62.0000,
+  k57: 38.5000,
+  k58: 15.0000,
+  k59: 91.2000,
+  k60: 67.7000,
+  k61: 44.2000,
+  k62: 20.7000,
+  k63: 96.9000,
+  k64: 73.4000,
+  k65: 49.9000,
+  k66: 26.4000,
+  k67: 2.9000,
+  k68: 79.1000,
+  k69: 55.6000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_044_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_044_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_044_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_044_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_044_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_044_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_044_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_044_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_044_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_044_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_044_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 045 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_045_META = {
+  id: 'mig_045',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'education' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 44624,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_045_COEF = {
+  k0: 78.9000,
+  k1: 54.8000,
+  k2: 30.7000,
+  k3: 6.6000,
+  k4: 82.2000,
+  k5: 58.1000,
+  k6: 34.0000,
+  k7: 9.9000,
+  k8: 85.5000,
+  k9: 61.4000,
+  k10: 37.3000,
+  k11: 13.2000,
+  k12: 88.8000,
+  k13: 64.7000,
+  k14: 40.6000,
+  k15: 16.5000,
+  k16: 92.1000,
+  k17: 68.0000,
+  k18: 43.9000,
+  k19: 19.8000,
+  k20: 95.4000,
+  k21: 71.3000,
+  k22: 47.2000,
+  k23: 23.1000,
+  k24: 98.7000,
+  k25: 74.6000,
+  k26: 50.5000,
+  k27: 26.4000,
+  k28: 2.3000,
+  k29: 77.9000,
+  k30: 53.8000,
+  k31: 29.7000,
+  k32: 5.6000,
+  k33: 81.2000,
+  k34: 57.1000,
+  k35: 33.0000,
+  k36: 8.9000,
+  k37: 84.5000,
+  k38: 60.4000,
+  k39: 36.3000,
+  k40: 12.2000,
+  k41: 87.8000,
+  k42: 63.7000,
+  k43: 39.6000,
+  k44: 15.5000,
+  k45: 91.1000,
+  k46: 67.0000,
+  k47: 42.9000,
+  k48: 18.8000,
+  k49: 94.4000,
+  k50: 70.3000,
+  k51: 46.2000,
+  k52: 22.1000,
+  k53: 97.7000,
+  k54: 73.6000,
+  k55: 49.5000,
+  k56: 25.4000,
+  k57: 1.3000,
+  k58: 76.9000,
+  k59: 52.8000,
+  k60: 28.7000,
+  k61: 4.6000,
+  k62: 80.2000,
+  k63: 56.1000,
+  k64: 32.0000,
+  k65: 7.9000,
+  k66: 83.5000,
+  k67: 59.4000,
+  k68: 35.3000,
+  k69: 11.2000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_045_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_045_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_045_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_045_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_045_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_045_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_045_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_045_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_045_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_045_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_045_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 046 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_046_META = {
+  id: 'mig_046',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'mining' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 45615,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_046_COEF = {
+  k0: 75.9000,
+  k1: 51.2000,
+  k2: 26.5000,
+  k3: 1.8000,
+  k4: 76.8000,
+  k5: 52.1000,
+  k6: 27.4000,
+  k7: 2.7000,
+  k8: 77.7000,
+  k9: 53.0000,
+  k10: 28.3000,
+  k11: 3.6000,
+  k12: 78.6000,
+  k13: 53.9000,
+  k14: 29.2000,
+  k15: 4.5000,
+  k16: 79.5000,
+  k17: 54.8000,
+  k18: 30.1000,
+  k19: 5.4000,
+  k20: 80.4000,
+  k21: 55.7000,
+  k22: 31.0000,
+  k23: 6.3000,
+  k24: 81.3000,
+  k25: 56.6000,
+  k26: 31.9000,
+  k27: 7.2000,
+  k28: 82.2000,
+  k29: 57.5000,
+  k30: 32.8000,
+  k31: 8.1000,
+  k32: 83.1000,
+  k33: 58.4000,
+  k34: 33.7000,
+  k35: 9.0000,
+  k36: 84.0000,
+  k37: 59.3000,
+  k38: 34.6000,
+  k39: 9.9000,
+  k40: 84.9000,
+  k41: 60.2000,
+  k42: 35.5000,
+  k43: 10.8000,
+  k44: 85.8000,
+  k45: 61.1000,
+  k46: 36.4000,
+  k47: 11.7000,
+  k48: 86.7000,
+  k49: 62.0000,
+  k50: 37.3000,
+  k51: 12.6000,
+  k52: 87.6000,
+  k53: 62.9000,
+  k54: 38.2000,
+  k55: 13.5000,
+  k56: 88.5000,
+  k57: 63.8000,
+  k58: 39.1000,
+  k59: 14.4000,
+  k60: 89.4000,
+  k61: 64.7000,
+  k62: 40.0000,
+  k63: 15.3000,
+  k64: 90.3000,
+  k65: 65.6000,
+  k66: 40.9000,
+  k67: 16.2000,
+  k68: 91.2000,
+  k69: 66.5000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_046_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_046_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_046_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_046_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_046_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_046_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_046_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_046_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_046_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_046_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_046_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 047 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_047_META = {
+  id: 'mig_047',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'agriculture' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 46606,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_047_COEF = {
+  k0: 72.9000,
+  k1: 47.6000,
+  k2: 22.3000,
+  k3: 96.7000,
+  k4: 71.4000,
+  k5: 46.1000,
+  k6: 20.8000,
+  k7: 95.2000,
+  k8: 69.9000,
+  k9: 44.6000,
+  k10: 19.3000,
+  k11: 93.7000,
+  k12: 68.4000,
+  k13: 43.1000,
+  k14: 17.8000,
+  k15: 92.2000,
+  k16: 66.9000,
+  k17: 41.6000,
+  k18: 16.3000,
+  k19: 90.7000,
+  k20: 65.4000,
+  k21: 40.1000,
+  k22: 14.8000,
+  k23: 89.2000,
+  k24: 63.9000,
+  k25: 38.6000,
+  k26: 13.3000,
+  k27: 87.7000,
+  k28: 62.4000,
+  k29: 37.1000,
+  k30: 11.8000,
+  k31: 86.2000,
+  k32: 60.9000,
+  k33: 35.6000,
+  k34: 10.3000,
+  k35: 84.7000,
+  k36: 59.4000,
+  k37: 34.1000,
+  k38: 8.8000,
+  k39: 83.2000,
+  k40: 57.9000,
+  k41: 32.6000,
+  k42: 7.3000,
+  k43: 81.7000,
+  k44: 56.4000,
+  k45: 31.1000,
+  k46: 5.8000,
+  k47: 80.2000,
+  k48: 54.9000,
+  k49: 29.6000,
+  k50: 4.3000,
+  k51: 78.7000,
+  k52: 53.4000,
+  k53: 28.1000,
+  k54: 2.8000,
+  k55: 77.2000,
+  k56: 51.9000,
+  k57: 26.6000,
+  k58: 1.3000,
+  k59: 75.7000,
+  k60: 50.4000,
+  k61: 25.1000,
+  k62: 99.5000,
+  k63: 74.2000,
+  k64: 48.9000,
+  k65: 23.6000,
+  k66: 98.0000,
+  k67: 72.7000,
+  k68: 47.4000,
+  k69: 22.1000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_047_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_047_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_047_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_047_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_047_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_047_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_047_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_047_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_047_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_047_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_047_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 048 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_048_META = {
+  id: 'mig_048',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'hospitality' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 47597,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_048_COEF = {
+  k0: 69.9000,
+  k1: 44.0000,
+  k2: 18.1000,
+  k3: 91.9000,
+  k4: 66.0000,
+  k5: 40.1000,
+  k6: 14.2000,
+  k7: 88.0000,
+  k8: 62.1000,
+  k9: 36.2000,
+  k10: 10.3000,
+  k11: 84.1000,
+  k12: 58.2000,
+  k13: 32.3000,
+  k14: 6.4000,
+  k15: 80.2000,
+  k16: 54.3000,
+  k17: 28.4000,
+  k18: 2.5000,
+  k19: 76.3000,
+  k20: 50.4000,
+  k21: 24.5000,
+  k22: 98.3000,
+  k23: 72.4000,
+  k24: 46.5000,
+  k25: 20.6000,
+  k26: 94.4000,
+  k27: 68.5000,
+  k28: 42.6000,
+  k29: 16.7000,
+  k30: 90.5000,
+  k31: 64.6000,
+  k32: 38.7000,
+  k33: 12.8000,
+  k34: 86.6000,
+  k35: 60.7000,
+  k36: 34.8000,
+  k37: 8.9000,
+  k38: 82.7000,
+  k39: 56.8000,
+  k40: 30.9000,
+  k41: 5.0000,
+  k42: 78.8000,
+  k43: 52.9000,
+  k44: 27.0000,
+  k45: 1.1000,
+  k46: 74.9000,
+  k47: 49.0000,
+  k48: 23.1000,
+  k49: 96.9000,
+  k50: 71.0000,
+  k51: 45.1000,
+  k52: 19.2000,
+  k53: 93.0000,
+  k54: 67.1000,
+  k55: 41.2000,
+  k56: 15.3000,
+  k57: 89.1000,
+  k58: 63.2000,
+  k59: 37.3000,
+  k60: 11.4000,
+  k61: 85.2000,
+  k62: 59.3000,
+  k63: 33.4000,
+  k64: 7.5000,
+  k65: 81.3000,
+  k66: 55.4000,
+  k67: 29.5000,
+  k68: 3.6000,
+  k69: 77.4000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_048_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_048_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_048_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_048_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_048_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_048_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_048_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_048_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_048_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_048_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_048_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 049 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_049_META = {
+  id: 'mig_049',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'public_admin' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 48588,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_049_COEF = {
+  k0: 66.9000,
+  k1: 40.4000,
+  k2: 13.9000,
+  k3: 87.1000,
+  k4: 60.6000,
+  k5: 34.1000,
+  k6: 7.6000,
+  k7: 80.8000,
+  k8: 54.3000,
+  k9: 27.8000,
+  k10: 1.3000,
+  k11: 74.5000,
+  k12: 48.0000,
+  k13: 21.5000,
+  k14: 94.7000,
+  k15: 68.2000,
+  k16: 41.7000,
+  k17: 15.2000,
+  k18: 88.4000,
+  k19: 61.9000,
+  k20: 35.4000,
+  k21: 8.9000,
+  k22: 82.1000,
+  k23: 55.6000,
+  k24: 29.1000,
+  k25: 2.6000,
+  k26: 75.8000,
+  k27: 49.3000,
+  k28: 22.8000,
+  k29: 96.0000,
+  k30: 69.5000,
+  k31: 43.0000,
+  k32: 16.5000,
+  k33: 89.7000,
+  k34: 63.2000,
+  k35: 36.7000,
+  k36: 10.2000,
+  k37: 83.4000,
+  k38: 56.9000,
+  k39: 30.4000,
+  k40: 3.9000,
+  k41: 77.1000,
+  k42: 50.6000,
+  k43: 24.1000,
+  k44: 97.3000,
+  k45: 70.8000,
+  k46: 44.3000,
+  k47: 17.8000,
+  k48: 91.0000,
+  k49: 64.5000,
+  k50: 38.0000,
+  k51: 11.5000,
+  k52: 84.7000,
+  k53: 58.2000,
+  k54: 31.7000,
+  k55: 5.2000,
+  k56: 78.4000,
+  k57: 51.9000,
+  k58: 25.4000,
+  k59: 98.6000,
+  k60: 72.1000,
+  k61: 45.6000,
+  k62: 19.1000,
+  k63: 92.3000,
+  k64: 65.8000,
+  k65: 39.3000,
+  k66: 12.8000,
+  k67: 86.0000,
+  k68: 59.5000,
+  k69: 33.0000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_049_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_049_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_049_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_049_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_049_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_049_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_049_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_049_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_049_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_049_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_049_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 050 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_050_META = {
+  id: 'mig_050',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'engineering' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 49579,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_050_COEF = {
+  k0: 63.9000,
+  k1: 36.8000,
+  k2: 9.7000,
+  k3: 82.3000,
+  k4: 55.2000,
+  k5: 28.1000,
+  k6: 1.0000,
+  k7: 73.6000,
+  k8: 46.5000,
+  k9: 19.4000,
+  k10: 92.0000,
+  k11: 64.9000,
+  k12: 37.8000,
+  k13: 10.7000,
+  k14: 83.3000,
+  k15: 56.2000,
+  k16: 29.1000,
+  k17: 2.0000,
+  k18: 74.6000,
+  k19: 47.5000,
+  k20: 20.4000,
+  k21: 93.0000,
+  k22: 65.9000,
+  k23: 38.8000,
+  k24: 11.7000,
+  k25: 84.3000,
+  k26: 57.2000,
+  k27: 30.1000,
+  k28: 3.0000,
+  k29: 75.6000,
+  k30: 48.5000,
+  k31: 21.4000,
+  k32: 94.0000,
+  k33: 66.9000,
+  k34: 39.8000,
+  k35: 12.7000,
+  k36: 85.3000,
+  k37: 58.2000,
+  k38: 31.1000,
+  k39: 4.0000,
+  k40: 76.6000,
+  k41: 49.5000,
+  k42: 22.4000,
+  k43: 95.0000,
+  k44: 67.9000,
+  k45: 40.8000,
+  k46: 13.7000,
+  k47: 86.3000,
+  k48: 59.2000,
+  k49: 32.1000,
+  k50: 5.0000,
+  k51: 77.6000,
+  k52: 50.5000,
+  k53: 23.4000,
+  k54: 96.0000,
+  k55: 68.9000,
+  k56: 41.8000,
+  k57: 14.7000,
+  k58: 87.3000,
+  k59: 60.2000,
+  k60: 33.1000,
+  k61: 6.0000,
+  k62: 78.6000,
+  k63: 51.5000,
+  k64: 24.4000,
+  k65: 97.0000,
+  k66: 69.9000,
+  k67: 42.8000,
+  k68: 15.7000,
+  k69: 88.3000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_050_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_050_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_050_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_050_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_050_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_050_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_050_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_050_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_050_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_050_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_050_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 051 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_051_META = {
+  id: 'mig_051',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'healthcare' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 50570,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_051_COEF = {
+  k0: 60.9000,
+  k1: 33.2000,
+  k2: 5.5000,
+  k3: 77.5000,
+  k4: 49.8000,
+  k5: 22.1000,
+  k6: 94.1000,
+  k7: 66.4000,
+  k8: 38.7000,
+  k9: 11.0000,
+  k10: 83.0000,
+  k11: 55.3000,
+  k12: 27.6000,
+  k13: 99.6000,
+  k14: 71.9000,
+  k15: 44.2000,
+  k16: 16.5000,
+  k17: 88.5000,
+  k18: 60.8000,
+  k19: 33.1000,
+  k20: 5.4000,
+  k21: 77.4000,
+  k22: 49.7000,
+  k23: 22.0000,
+  k24: 94.0000,
+  k25: 66.3000,
+  k26: 38.6000,
+  k27: 10.9000,
+  k28: 82.9000,
+  k29: 55.2000,
+  k30: 27.5000,
+  k31: 99.5000,
+  k32: 71.8000,
+  k33: 44.1000,
+  k34: 16.4000,
+  k35: 88.4000,
+  k36: 60.7000,
+  k37: 33.0000,
+  k38: 5.3000,
+  k39: 77.3000,
+  k40: 49.6000,
+  k41: 21.9000,
+  k42: 93.9000,
+  k43: 66.2000,
+  k44: 38.5000,
+  k45: 10.8000,
+  k46: 82.8000,
+  k47: 55.1000,
+  k48: 27.4000,
+  k49: 99.4000,
+  k50: 71.7000,
+  k51: 44.0000,
+  k52: 16.3000,
+  k53: 88.3000,
+  k54: 60.6000,
+  k55: 32.9000,
+  k56: 5.2000,
+  k57: 77.2000,
+  k58: 49.5000,
+  k59: 21.8000,
+  k60: 93.8000,
+  k61: 66.1000,
+  k62: 38.4000,
+  k63: 10.7000,
+  k64: 82.7000,
+  k65: 55.0000,
+  k66: 27.3000,
+  k67: 99.3000,
+  k68: 71.6000,
+  k69: 43.9000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_051_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_051_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_051_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_051_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_051_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_051_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_051_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_051_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_051_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_051_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_051_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 052 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_052_META = {
+  id: 'mig_052',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'trades' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 51561,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_052_COEF = {
+  k0: 57.9000,
+  k1: 29.6000,
+  k2: 1.3000,
+  k3: 72.7000,
+  k4: 44.4000,
+  k5: 16.1000,
+  k6: 87.5000,
+  k7: 59.2000,
+  k8: 30.9000,
+  k9: 2.6000,
+  k10: 74.0000,
+  k11: 45.7000,
+  k12: 17.4000,
+  k13: 88.8000,
+  k14: 60.5000,
+  k15: 32.2000,
+  k16: 3.9000,
+  k17: 75.3000,
+  k18: 47.0000,
+  k19: 18.7000,
+  k20: 90.1000,
+  k21: 61.8000,
+  k22: 33.5000,
+  k23: 5.2000,
+  k24: 76.6000,
+  k25: 48.3000,
+  k26: 20.0000,
+  k27: 91.4000,
+  k28: 63.1000,
+  k29: 34.8000,
+  k30: 6.5000,
+  k31: 77.9000,
+  k32: 49.6000,
+  k33: 21.3000,
+  k34: 92.7000,
+  k35: 64.4000,
+  k36: 36.1000,
+  k37: 7.8000,
+  k38: 79.2000,
+  k39: 50.9000,
+  k40: 22.6000,
+  k41: 94.0000,
+  k42: 65.7000,
+  k43: 37.4000,
+  k44: 9.1000,
+  k45: 80.5000,
+  k46: 52.2000,
+  k47: 23.9000,
+  k48: 95.3000,
+  k49: 67.0000,
+  k50: 38.7000,
+  k51: 10.4000,
+  k52: 81.8000,
+  k53: 53.5000,
+  k54: 25.2000,
+  k55: 96.6000,
+  k56: 68.3000,
+  k57: 40.0000,
+  k58: 11.7000,
+  k59: 83.1000,
+  k60: 54.8000,
+  k61: 26.5000,
+  k62: 97.9000,
+  k63: 69.6000,
+  k64: 41.3000,
+  k65: 13.0000,
+  k66: 84.4000,
+  k67: 56.1000,
+  k68: 27.8000,
+  k69: 99.2000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_052_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_052_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_052_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_052_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_052_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_052_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_052_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_052_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_052_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_052_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_052_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 053 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_053_META = {
+  id: 'mig_053',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'digital' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 52552,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_053_COEF = {
+  k0: 54.9000,
+  k1: 26.0000,
+  k2: 96.8000,
+  k3: 67.9000,
+  k4: 39.0000,
+  k5: 10.1000,
+  k6: 80.9000,
+  k7: 52.0000,
+  k8: 23.1000,
+  k9: 93.9000,
+  k10: 65.0000,
+  k11: 36.1000,
+  k12: 7.2000,
+  k13: 78.0000,
+  k14: 49.1000,
+  k15: 20.2000,
+  k16: 91.0000,
+  k17: 62.1000,
+  k18: 33.2000,
+  k19: 4.3000,
+  k20: 75.1000,
+  k21: 46.2000,
+  k22: 17.3000,
+  k23: 88.1000,
+  k24: 59.2000,
+  k25: 30.3000,
+  k26: 1.4000,
+  k27: 72.2000,
+  k28: 43.3000,
+  k29: 14.4000,
+  k30: 85.2000,
+  k31: 56.3000,
+  k32: 27.4000,
+  k33: 98.2000,
+  k34: 69.3000,
+  k35: 40.4000,
+  k36: 11.5000,
+  k37: 82.3000,
+  k38: 53.4000,
+  k39: 24.5000,
+  k40: 95.3000,
+  k41: 66.4000,
+  k42: 37.5000,
+  k43: 8.6000,
+  k44: 79.4000,
+  k45: 50.5000,
+  k46: 21.6000,
+  k47: 92.4000,
+  k48: 63.5000,
+  k49: 34.6000,
+  k50: 5.7000,
+  k51: 76.5000,
+  k52: 47.6000,
+  k53: 18.7000,
+  k54: 89.5000,
+  k55: 60.6000,
+  k56: 31.7000,
+  k57: 2.8000,
+  k58: 73.6000,
+  k59: 44.7000,
+  k60: 15.8000,
+  k61: 86.6000,
+  k62: 57.7000,
+  k63: 28.8000,
+  k64: 99.6000,
+  k65: 70.7000,
+  k66: 41.8000,
+  k67: 12.9000,
+  k68: 83.7000,
+  k69: 54.8000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_053_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_053_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_053_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_053_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_053_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_053_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_053_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_053_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_053_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_053_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_053_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 054 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_054_META = {
+  id: 'mig_054',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'logistics' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 53543,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_054_COEF = {
+  k0: 51.9000,
+  k1: 22.4000,
+  k2: 92.6000,
+  k3: 63.1000,
+  k4: 33.6000,
+  k5: 4.1000,
+  k6: 74.3000,
+  k7: 44.8000,
+  k8: 15.3000,
+  k9: 85.5000,
+  k10: 56.0000,
+  k11: 26.5000,
+  k12: 96.7000,
+  k13: 67.2000,
+  k14: 37.7000,
+  k15: 8.2000,
+  k16: 78.4000,
+  k17: 48.9000,
+  k18: 19.4000,
+  k19: 89.6000,
+  k20: 60.1000,
+  k21: 30.6000,
+  k22: 1.1000,
+  k23: 71.3000,
+  k24: 41.8000,
+  k25: 12.3000,
+  k26: 82.5000,
+  k27: 53.0000,
+  k28: 23.5000,
+  k29: 93.7000,
+  k30: 64.2000,
+  k31: 34.7000,
+  k32: 5.2000,
+  k33: 75.4000,
+  k34: 45.9000,
+  k35: 16.4000,
+  k36: 86.6000,
+  k37: 57.1000,
+  k38: 27.6000,
+  k39: 97.8000,
+  k40: 68.3000,
+  k41: 38.8000,
+  k42: 9.3000,
+  k43: 79.5000,
+  k44: 50.0000,
+  k45: 20.5000,
+  k46: 90.7000,
+  k47: 61.2000,
+  k48: 31.7000,
+  k49: 2.2000,
+  k50: 72.4000,
+  k51: 42.9000,
+  k52: 13.4000,
+  k53: 83.6000,
+  k54: 54.1000,
+  k55: 24.6000,
+  k56: 94.8000,
+  k57: 65.3000,
+  k58: 35.8000,
+  k59: 6.3000,
+  k60: 76.5000,
+  k61: 47.0000,
+  k62: 17.5000,
+  k63: 87.7000,
+  k64: 58.2000,
+  k65: 28.7000,
+  k66: 98.9000,
+  k67: 69.4000,
+  k68: 39.9000,
+  k69: 10.4000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_054_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_054_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_054_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_054_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_054_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_054_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_054_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_054_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_054_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_054_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_054_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 055 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_055_META = {
+  id: 'mig_055',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'education' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 54534,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_055_COEF = {
+  k0: 48.9000,
+  k1: 18.8000,
+  k2: 88.4000,
+  k3: 58.3000,
+  k4: 28.2000,
+  k5: 97.8000,
+  k6: 67.7000,
+  k7: 37.6000,
+  k8: 7.5000,
+  k9: 77.1000,
+  k10: 47.0000,
+  k11: 16.9000,
+  k12: 86.5000,
+  k13: 56.4000,
+  k14: 26.3000,
+  k15: 95.9000,
+  k16: 65.8000,
+  k17: 35.7000,
+  k18: 5.6000,
+  k19: 75.2000,
+  k20: 45.1000,
+  k21: 15.0000,
+  k22: 84.6000,
+  k23: 54.5000,
+  k24: 24.4000,
+  k25: 94.0000,
+  k26: 63.9000,
+  k27: 33.8000,
+  k28: 3.7000,
+  k29: 73.3000,
+  k30: 43.2000,
+  k31: 13.1000,
+  k32: 82.7000,
+  k33: 52.6000,
+  k34: 22.5000,
+  k35: 92.1000,
+  k36: 62.0000,
+  k37: 31.9000,
+  k38: 1.8000,
+  k39: 71.4000,
+  k40: 41.3000,
+  k41: 11.2000,
+  k42: 80.8000,
+  k43: 50.7000,
+  k44: 20.6000,
+  k45: 90.2000,
+  k46: 60.1000,
+  k47: 30.0000,
+  k48: 99.6000,
+  k49: 69.5000,
+  k50: 39.4000,
+  k51: 9.3000,
+  k52: 78.9000,
+  k53: 48.8000,
+  k54: 18.7000,
+  k55: 88.3000,
+  k56: 58.2000,
+  k57: 28.1000,
+  k58: 97.7000,
+  k59: 67.6000,
+  k60: 37.5000,
+  k61: 7.4000,
+  k62: 77.0000,
+  k63: 46.9000,
+  k64: 16.8000,
+  k65: 86.4000,
+  k66: 56.3000,
+  k67: 26.2000,
+  k68: 95.8000,
+  k69: 65.7000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_055_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_055_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_055_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_055_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_055_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_055_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_055_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_055_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_055_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_055_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_055_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 056 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_056_META = {
+  id: 'mig_056',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'mining' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 55525,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_056_COEF = {
+  k0: 45.9000,
+  k1: 15.2000,
+  k2: 84.2000,
+  k3: 53.5000,
+  k4: 22.8000,
+  k5: 91.8000,
+  k6: 61.1000,
+  k7: 30.4000,
+  k8: 99.4000,
+  k9: 68.7000,
+  k10: 38.0000,
+  k11: 7.3000,
+  k12: 76.3000,
+  k13: 45.6000,
+  k14: 14.9000,
+  k15: 83.9000,
+  k16: 53.2000,
+  k17: 22.5000,
+  k18: 91.5000,
+  k19: 60.8000,
+  k20: 30.1000,
+  k21: 99.1000,
+  k22: 68.4000,
+  k23: 37.7000,
+  k24: 7.0000,
+  k25: 76.0000,
+  k26: 45.3000,
+  k27: 14.6000,
+  k28: 83.6000,
+  k29: 52.9000,
+  k30: 22.2000,
+  k31: 91.2000,
+  k32: 60.5000,
+  k33: 29.8000,
+  k34: 98.8000,
+  k35: 68.1000,
+  k36: 37.4000,
+  k37: 6.7000,
+  k38: 75.7000,
+  k39: 45.0000,
+  k40: 14.3000,
+  k41: 83.3000,
+  k42: 52.6000,
+  k43: 21.9000,
+  k44: 90.9000,
+  k45: 60.2000,
+  k46: 29.5000,
+  k47: 98.5000,
+  k48: 67.8000,
+  k49: 37.1000,
+  k50: 6.4000,
+  k51: 75.4000,
+  k52: 44.7000,
+  k53: 14.0000,
+  k54: 83.0000,
+  k55: 52.3000,
+  k56: 21.6000,
+  k57: 90.6000,
+  k58: 59.9000,
+  k59: 29.2000,
+  k60: 98.2000,
+  k61: 67.5000,
+  k62: 36.8000,
+  k63: 6.1000,
+  k64: 75.1000,
+  k65: 44.4000,
+  k66: 13.7000,
+  k67: 82.7000,
+  k68: 52.0000,
+  k69: 21.3000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_056_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_056_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_056_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_056_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_056_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_056_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_056_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_056_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_056_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_056_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_056_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 057 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_057_META = {
+  id: 'mig_057',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'agriculture' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 56516,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_057_COEF = {
+  k0: 42.9000,
+  k1: 11.6000,
+  k2: 80.0000,
+  k3: 48.7000,
+  k4: 17.4000,
+  k5: 85.8000,
+  k6: 54.5000,
+  k7: 23.2000,
+  k8: 91.6000,
+  k9: 60.3000,
+  k10: 29.0000,
+  k11: 97.4000,
+  k12: 66.1000,
+  k13: 34.8000,
+  k14: 3.5000,
+  k15: 71.9000,
+  k16: 40.6000,
+  k17: 9.3000,
+  k18: 77.7000,
+  k19: 46.4000,
+  k20: 15.1000,
+  k21: 83.5000,
+  k22: 52.2000,
+  k23: 20.9000,
+  k24: 89.3000,
+  k25: 58.0000,
+  k26: 26.7000,
+  k27: 95.1000,
+  k28: 63.8000,
+  k29: 32.5000,
+  k30: 1.2000,
+  k31: 69.6000,
+  k32: 38.3000,
+  k33: 7.0000,
+  k34: 75.4000,
+  k35: 44.1000,
+  k36: 12.8000,
+  k37: 81.2000,
+  k38: 49.9000,
+  k39: 18.6000,
+  k40: 87.0000,
+  k41: 55.7000,
+  k42: 24.4000,
+  k43: 92.8000,
+  k44: 61.5000,
+  k45: 30.2000,
+  k46: 98.6000,
+  k47: 67.3000,
+  k48: 36.0000,
+  k49: 4.7000,
+  k50: 73.1000,
+  k51: 41.8000,
+  k52: 10.5000,
+  k53: 78.9000,
+  k54: 47.6000,
+  k55: 16.3000,
+  k56: 84.7000,
+  k57: 53.4000,
+  k58: 22.1000,
+  k59: 90.5000,
+  k60: 59.2000,
+  k61: 27.9000,
+  k62: 96.3000,
+  k63: 65.0000,
+  k64: 33.7000,
+  k65: 2.4000,
+  k66: 70.8000,
+  k67: 39.5000,
+  k68: 8.2000,
+  k69: 76.6000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_057_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_057_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_057_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_057_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_057_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_057_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_057_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_057_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_057_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_057_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_057_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 058 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_058_META = {
+  id: 'mig_058',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'hospitality' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 57507,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_058_COEF = {
+  k0: 39.9000,
+  k1: 8.0000,
+  k2: 75.8000,
+  k3: 43.9000,
+  k4: 12.0000,
+  k5: 79.8000,
+  k6: 47.9000,
+  k7: 16.0000,
+  k8: 83.8000,
+  k9: 51.9000,
+  k10: 20.0000,
+  k11: 87.8000,
+  k12: 55.9000,
+  k13: 24.0000,
+  k14: 91.8000,
+  k15: 59.9000,
+  k16: 28.0000,
+  k17: 95.8000,
+  k18: 63.9000,
+  k19: 32.0000,
+  k20: 0.1000,
+  k21: 67.9000,
+  k22: 36.0000,
+  k23: 4.1000,
+  k24: 71.9000,
+  k25: 40.0000,
+  k26: 8.1000,
+  k27: 75.9000,
+  k28: 44.0000,
+  k29: 12.1000,
+  k30: 79.9000,
+  k31: 48.0000,
+  k32: 16.1000,
+  k33: 83.9000,
+  k34: 52.0000,
+  k35: 20.1000,
+  k36: 87.9000,
+  k37: 56.0000,
+  k38: 24.1000,
+  k39: 91.9000,
+  k40: 60.0000,
+  k41: 28.1000,
+  k42: 95.9000,
+  k43: 64.0000,
+  k44: 32.1000,
+  k45: 0.2000,
+  k46: 68.0000,
+  k47: 36.1000,
+  k48: 4.2000,
+  k49: 72.0000,
+  k50: 40.1000,
+  k51: 8.2000,
+  k52: 76.0000,
+  k53: 44.1000,
+  k54: 12.2000,
+  k55: 80.0000,
+  k56: 48.1000,
+  k57: 16.2000,
+  k58: 84.0000,
+  k59: 52.1000,
+  k60: 20.2000,
+  k61: 88.0000,
+  k62: 56.1000,
+  k63: 24.2000,
+  k64: 92.0000,
+  k65: 60.1000,
+  k66: 28.2000,
+  k67: 96.0000,
+  k68: 64.1000,
+  k69: 32.2000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_058_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_058_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_058_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_058_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_058_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_058_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_058_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_058_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_058_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_058_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_058_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 059 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_059_META = {
+  id: 'mig_059',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'public_admin' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 58498,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_059_COEF = {
+  k0: 36.9000,
+  k1: 4.4000,
+  k2: 71.6000,
+  k3: 39.1000,
+  k4: 6.6000,
+  k5: 73.8000,
+  k6: 41.3000,
+  k7: 8.8000,
+  k8: 76.0000,
+  k9: 43.5000,
+  k10: 11.0000,
+  k11: 78.2000,
+  k12: 45.7000,
+  k13: 13.2000,
+  k14: 80.4000,
+  k15: 47.9000,
+  k16: 15.4000,
+  k17: 82.6000,
+  k18: 50.1000,
+  k19: 17.6000,
+  k20: 84.8000,
+  k21: 52.3000,
+  k22: 19.8000,
+  k23: 87.0000,
+  k24: 54.5000,
+  k25: 22.0000,
+  k26: 89.2000,
+  k27: 56.7000,
+  k28: 24.2000,
+  k29: 91.4000,
+  k30: 58.9000,
+  k31: 26.4000,
+  k32: 93.6000,
+  k33: 61.1000,
+  k34: 28.6000,
+  k35: 95.8000,
+  k36: 63.3000,
+  k37: 30.8000,
+  k38: 98.0000,
+  k39: 65.5000,
+  k40: 33.0000,
+  k41: 0.5000,
+  k42: 67.7000,
+  k43: 35.2000,
+  k44: 2.7000,
+  k45: 69.9000,
+  k46: 37.4000,
+  k47: 4.9000,
+  k48: 72.1000,
+  k49: 39.6000,
+  k50: 7.1000,
+  k51: 74.3000,
+  k52: 41.8000,
+  k53: 9.3000,
+  k54: 76.5000,
+  k55: 44.0000,
+  k56: 11.5000,
+  k57: 78.7000,
+  k58: 46.2000,
+  k59: 13.7000,
+  k60: 80.9000,
+  k61: 48.4000,
+  k62: 15.9000,
+  k63: 83.1000,
+  k64: 50.6000,
+  k65: 18.1000,
+  k66: 85.3000,
+  k67: 52.8000,
+  k68: 20.3000,
+  k69: 87.5000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_059_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_059_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_059_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_059_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_059_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_059_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_059_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_059_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_059_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_059_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_059_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 060 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_060_META = {
+  id: 'mig_060',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'engineering' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 59489,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_060_COEF = {
+  k0: 33.9000,
+  k1: 0.8000,
+  k2: 67.4000,
+  k3: 34.3000,
+  k4: 1.2000,
+  k5: 67.8000,
+  k6: 34.7000,
+  k7: 1.6000,
+  k8: 68.2000,
+  k9: 35.1000,
+  k10: 2.0000,
+  k11: 68.6000,
+  k12: 35.5000,
+  k13: 2.4000,
+  k14: 69.0000,
+  k15: 35.9000,
+  k16: 2.8000,
+  k17: 69.4000,
+  k18: 36.3000,
+  k19: 3.2000,
+  k20: 69.8000,
+  k21: 36.7000,
+  k22: 3.6000,
+  k23: 70.2000,
+  k24: 37.1000,
+  k25: 4.0000,
+  k26: 70.6000,
+  k27: 37.5000,
+  k28: 4.4000,
+  k29: 71.0000,
+  k30: 37.9000,
+  k31: 4.8000,
+  k32: 71.4000,
+  k33: 38.3000,
+  k34: 5.2000,
+  k35: 71.8000,
+  k36: 38.7000,
+  k37: 5.6000,
+  k38: 72.2000,
+  k39: 39.1000,
+  k40: 6.0000,
+  k41: 72.6000,
+  k42: 39.5000,
+  k43: 6.4000,
+  k44: 73.0000,
+  k45: 39.9000,
+  k46: 6.8000,
+  k47: 73.4000,
+  k48: 40.3000,
+  k49: 7.2000,
+  k50: 73.8000,
+  k51: 40.7000,
+  k52: 7.6000,
+  k53: 74.2000,
+  k54: 41.1000,
+  k55: 8.0000,
+  k56: 74.6000,
+  k57: 41.5000,
+  k58: 8.4000,
+  k59: 75.0000,
+  k60: 41.9000,
+  k61: 8.8000,
+  k62: 75.4000,
+  k63: 42.3000,
+  k64: 9.2000,
+  k65: 75.8000,
+  k66: 42.7000,
+  k67: 9.6000,
+  k68: 76.2000,
+  k69: 43.1000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_060_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_060_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_060_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_060_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_060_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_060_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_060_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_060_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_060_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_060_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_060_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 061 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_061_META = {
+  id: 'mig_061',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'healthcare' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 60480,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_061_COEF = {
+  k0: 30.9000,
+  k1: 96.9000,
+  k2: 63.2000,
+  k3: 29.5000,
+  k4: 95.5000,
+  k5: 61.8000,
+  k6: 28.1000,
+  k7: 94.1000,
+  k8: 60.4000,
+  k9: 26.7000,
+  k10: 92.7000,
+  k11: 59.0000,
+  k12: 25.3000,
+  k13: 91.3000,
+  k14: 57.6000,
+  k15: 23.9000,
+  k16: 89.9000,
+  k17: 56.2000,
+  k18: 22.5000,
+  k19: 88.5000,
+  k20: 54.8000,
+  k21: 21.1000,
+  k22: 87.1000,
+  k23: 53.4000,
+  k24: 19.7000,
+  k25: 85.7000,
+  k26: 52.0000,
+  k27: 18.3000,
+  k28: 84.3000,
+  k29: 50.6000,
+  k30: 16.9000,
+  k31: 82.9000,
+  k32: 49.2000,
+  k33: 15.5000,
+  k34: 81.5000,
+  k35: 47.8000,
+  k36: 14.1000,
+  k37: 80.1000,
+  k38: 46.4000,
+  k39: 12.7000,
+  k40: 78.7000,
+  k41: 45.0000,
+  k42: 11.3000,
+  k43: 77.3000,
+  k44: 43.6000,
+  k45: 9.9000,
+  k46: 75.9000,
+  k47: 42.2000,
+  k48: 8.5000,
+  k49: 74.5000,
+  k50: 40.8000,
+  k51: 7.1000,
+  k52: 73.1000,
+  k53: 39.4000,
+  k54: 5.7000,
+  k55: 71.7000,
+  k56: 38.0000,
+  k57: 4.3000,
+  k58: 70.3000,
+  k59: 36.6000,
+  k60: 2.9000,
+  k61: 68.9000,
+  k62: 35.2000,
+  k63: 1.5000,
+  k64: 67.5000,
+  k65: 33.8000,
+  k66: 0.1000,
+  k67: 66.1000,
+  k68: 32.4000,
+  k69: 98.4000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_061_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_061_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_061_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_061_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_061_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_061_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_061_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_061_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_061_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_061_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_061_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 062 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_062_META = {
+  id: 'mig_062',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'trades' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 61471,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_062_COEF = {
+  k0: 27.9000,
+  k1: 93.3000,
+  k2: 59.0000,
+  k3: 24.7000,
+  k4: 90.1000,
+  k5: 55.8000,
+  k6: 21.5000,
+  k7: 86.9000,
+  k8: 52.6000,
+  k9: 18.3000,
+  k10: 83.7000,
+  k11: 49.4000,
+  k12: 15.1000,
+  k13: 80.5000,
+  k14: 46.2000,
+  k15: 11.9000,
+  k16: 77.3000,
+  k17: 43.0000,
+  k18: 8.7000,
+  k19: 74.1000,
+  k20: 39.8000,
+  k21: 5.5000,
+  k22: 70.9000,
+  k23: 36.6000,
+  k24: 2.3000,
+  k25: 67.7000,
+  k26: 33.4000,
+  k27: 98.8000,
+  k28: 64.5000,
+  k29: 30.2000,
+  k30: 95.6000,
+  k31: 61.3000,
+  k32: 27.0000,
+  k33: 92.4000,
+  k34: 58.1000,
+  k35: 23.8000,
+  k36: 89.2000,
+  k37: 54.9000,
+  k38: 20.6000,
+  k39: 86.0000,
+  k40: 51.7000,
+  k41: 17.4000,
+  k42: 82.8000,
+  k43: 48.5000,
+  k44: 14.2000,
+  k45: 79.6000,
+  k46: 45.3000,
+  k47: 11.0000,
+  k48: 76.4000,
+  k49: 42.1000,
+  k50: 7.8000,
+  k51: 73.2000,
+  k52: 38.9000,
+  k53: 4.6000,
+  k54: 70.0000,
+  k55: 35.7000,
+  k56: 1.4000,
+  k57: 66.8000,
+  k58: 32.5000,
+  k59: 97.9000,
+  k60: 63.6000,
+  k61: 29.3000,
+  k62: 94.7000,
+  k63: 60.4000,
+  k64: 26.1000,
+  k65: 91.5000,
+  k66: 57.2000,
+  k67: 22.9000,
+  k68: 88.3000,
+  k69: 54.0000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_062_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_062_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_062_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_062_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_062_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_062_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_062_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_062_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_062_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_062_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_062_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 063 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_063_META = {
+  id: 'mig_063',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'digital' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 62462,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_063_COEF = {
+  k0: 24.9000,
+  k1: 89.7000,
+  k2: 54.8000,
+  k3: 19.9000,
+  k4: 84.7000,
+  k5: 49.8000,
+  k6: 14.9000,
+  k7: 79.7000,
+  k8: 44.8000,
+  k9: 9.9000,
+  k10: 74.7000,
+  k11: 39.8000,
+  k12: 4.9000,
+  k13: 69.7000,
+  k14: 34.8000,
+  k15: 99.6000,
+  k16: 64.7000,
+  k17: 29.8000,
+  k18: 94.6000,
+  k19: 59.7000,
+  k20: 24.8000,
+  k21: 89.6000,
+  k22: 54.7000,
+  k23: 19.8000,
+  k24: 84.6000,
+  k25: 49.7000,
+  k26: 14.8000,
+  k27: 79.6000,
+  k28: 44.7000,
+  k29: 9.8000,
+  k30: 74.6000,
+  k31: 39.7000,
+  k32: 4.8000,
+  k33: 69.6000,
+  k34: 34.7000,
+  k35: 99.5000,
+  k36: 64.6000,
+  k37: 29.7000,
+  k38: 94.5000,
+  k39: 59.6000,
+  k40: 24.7000,
+  k41: 89.5000,
+  k42: 54.6000,
+  k43: 19.7000,
+  k44: 84.5000,
+  k45: 49.6000,
+  k46: 14.7000,
+  k47: 79.5000,
+  k48: 44.6000,
+  k49: 9.7000,
+  k50: 74.5000,
+  k51: 39.6000,
+  k52: 4.7000,
+  k53: 69.5000,
+  k54: 34.6000,
+  k55: 99.4000,
+  k56: 64.5000,
+  k57: 29.6000,
+  k58: 94.4000,
+  k59: 59.5000,
+  k60: 24.6000,
+  k61: 89.4000,
+  k62: 54.5000,
+  k63: 19.6000,
+  k64: 84.4000,
+  k65: 49.5000,
+  k66: 14.6000,
+  k67: 79.4000,
+  k68: 44.5000,
+  k69: 9.6000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_063_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_063_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_063_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_063_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_063_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_063_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_063_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_063_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_063_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_063_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_063_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 064 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_064_META = {
+  id: 'mig_064',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'logistics' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 63453,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_064_COEF = {
+  k0: 21.9000,
+  k1: 86.1000,
+  k2: 50.6000,
+  k3: 15.1000,
+  k4: 79.3000,
+  k5: 43.8000,
+  k6: 8.3000,
+  k7: 72.5000,
+  k8: 37.0000,
+  k9: 1.5000,
+  k10: 65.7000,
+  k11: 30.2000,
+  k12: 94.4000,
+  k13: 58.9000,
+  k14: 23.4000,
+  k15: 87.6000,
+  k16: 52.1000,
+  k17: 16.6000,
+  k18: 80.8000,
+  k19: 45.3000,
+  k20: 9.8000,
+  k21: 74.0000,
+  k22: 38.5000,
+  k23: 3.0000,
+  k24: 67.2000,
+  k25: 31.7000,
+  k26: 95.9000,
+  k27: 60.4000,
+  k28: 24.9000,
+  k29: 89.1000,
+  k30: 53.6000,
+  k31: 18.1000,
+  k32: 82.3000,
+  k33: 46.8000,
+  k34: 11.3000,
+  k35: 75.5000,
+  k36: 40.0000,
+  k37: 4.5000,
+  k38: 68.7000,
+  k39: 33.2000,
+  k40: 97.4000,
+  k41: 61.9000,
+  k42: 26.4000,
+  k43: 90.6000,
+  k44: 55.1000,
+  k45: 19.6000,
+  k46: 83.8000,
+  k47: 48.3000,
+  k48: 12.8000,
+  k49: 77.0000,
+  k50: 41.5000,
+  k51: 6.0000,
+  k52: 70.2000,
+  k53: 34.7000,
+  k54: 98.9000,
+  k55: 63.4000,
+  k56: 27.9000,
+  k57: 92.1000,
+  k58: 56.6000,
+  k59: 21.1000,
+  k60: 85.3000,
+  k61: 49.8000,
+  k62: 14.3000,
+  k63: 78.5000,
+  k64: 43.0000,
+  k65: 7.5000,
+  k66: 71.7000,
+  k67: 36.2000,
+  k68: 0.7000,
+  k69: 64.9000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_064_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_064_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_064_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_064_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_064_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_064_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_064_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_064_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_064_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_064_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_064_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 065 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_065_META = {
+  id: 'mig_065',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'education' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 64444,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_065_COEF = {
+  k0: 18.9000,
+  k1: 82.5000,
+  k2: 46.4000,
+  k3: 10.3000,
+  k4: 73.9000,
+  k5: 37.8000,
+  k6: 1.7000,
+  k7: 65.3000,
+  k8: 29.2000,
+  k9: 92.8000,
+  k10: 56.7000,
+  k11: 20.6000,
+  k12: 84.2000,
+  k13: 48.1000,
+  k14: 12.0000,
+  k15: 75.6000,
+  k16: 39.5000,
+  k17: 3.4000,
+  k18: 67.0000,
+  k19: 30.9000,
+  k20: 94.5000,
+  k21: 58.4000,
+  k22: 22.3000,
+  k23: 85.9000,
+  k24: 49.8000,
+  k25: 13.7000,
+  k26: 77.3000,
+  k27: 41.2000,
+  k28: 5.1000,
+  k29: 68.7000,
+  k30: 32.6000,
+  k31: 96.2000,
+  k32: 60.1000,
+  k33: 24.0000,
+  k34: 87.6000,
+  k35: 51.5000,
+  k36: 15.4000,
+  k37: 79.0000,
+  k38: 42.9000,
+  k39: 6.8000,
+  k40: 70.4000,
+  k41: 34.3000,
+  k42: 97.9000,
+  k43: 61.8000,
+  k44: 25.7000,
+  k45: 89.3000,
+  k46: 53.2000,
+  k47: 17.1000,
+  k48: 80.7000,
+  k49: 44.6000,
+  k50: 8.5000,
+  k51: 72.1000,
+  k52: 36.0000,
+  k53: 99.6000,
+  k54: 63.5000,
+  k55: 27.4000,
+  k56: 91.0000,
+  k57: 54.9000,
+  k58: 18.8000,
+  k59: 82.4000,
+  k60: 46.3000,
+  k61: 10.2000,
+  k62: 73.8000,
+  k63: 37.7000,
+  k64: 1.6000,
+  k65: 65.2000,
+  k66: 29.1000,
+  k67: 92.7000,
+  k68: 56.6000,
+  k69: 20.5000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_065_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_065_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_065_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_065_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_065_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_065_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_065_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_065_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_065_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_065_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_065_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 066 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_066_META = {
+  id: 'mig_066',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'mining' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 65435,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_066_COEF = {
+  k0: 15.9000,
+  k1: 78.9000,
+  k2: 42.2000,
+  k3: 5.5000,
+  k4: 68.5000,
+  k5: 31.8000,
+  k6: 94.8000,
+  k7: 58.1000,
+  k8: 21.4000,
+  k9: 84.4000,
+  k10: 47.7000,
+  k11: 11.0000,
+  k12: 74.0000,
+  k13: 37.3000,
+  k14: 0.6000,
+  k15: 63.6000,
+  k16: 26.9000,
+  k17: 89.9000,
+  k18: 53.2000,
+  k19: 16.5000,
+  k20: 79.5000,
+  k21: 42.8000,
+  k22: 6.1000,
+  k23: 69.1000,
+  k24: 32.4000,
+  k25: 95.4000,
+  k26: 58.7000,
+  k27: 22.0000,
+  k28: 85.0000,
+  k29: 48.3000,
+  k30: 11.6000,
+  k31: 74.6000,
+  k32: 37.9000,
+  k33: 1.2000,
+  k34: 64.2000,
+  k35: 27.5000,
+  k36: 90.5000,
+  k37: 53.8000,
+  k38: 17.1000,
+  k39: 80.1000,
+  k40: 43.4000,
+  k41: 6.7000,
+  k42: 69.7000,
+  k43: 33.0000,
+  k44: 96.0000,
+  k45: 59.3000,
+  k46: 22.6000,
+  k47: 85.6000,
+  k48: 48.9000,
+  k49: 12.2000,
+  k50: 75.2000,
+  k51: 38.5000,
+  k52: 1.8000,
+  k53: 64.8000,
+  k54: 28.1000,
+  k55: 91.1000,
+  k56: 54.4000,
+  k57: 17.7000,
+  k58: 80.7000,
+  k59: 44.0000,
+  k60: 7.3000,
+  k61: 70.3000,
+  k62: 33.6000,
+  k63: 96.6000,
+  k64: 59.9000,
+  k65: 23.2000,
+  k66: 86.2000,
+  k67: 49.5000,
+  k68: 12.8000,
+  k69: 75.8000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_066_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_066_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_066_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_066_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_066_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_066_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_066_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_066_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_066_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_066_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_066_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 067 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_067_META = {
+  id: 'mig_067',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'agriculture' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 66426,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_067_COEF = {
+  k0: 12.9000,
+  k1: 75.3000,
+  k2: 38.0000,
+  k3: 0.7000,
+  k4: 63.1000,
+  k5: 25.8000,
+  k6: 88.2000,
+  k7: 50.9000,
+  k8: 13.6000,
+  k9: 76.0000,
+  k10: 38.7000,
+  k11: 1.4000,
+  k12: 63.8000,
+  k13: 26.5000,
+  k14: 88.9000,
+  k15: 51.6000,
+  k16: 14.3000,
+  k17: 76.7000,
+  k18: 39.4000,
+  k19: 2.1000,
+  k20: 64.5000,
+  k21: 27.2000,
+  k22: 89.6000,
+  k23: 52.3000,
+  k24: 15.0000,
+  k25: 77.4000,
+  k26: 40.1000,
+  k27: 2.8000,
+  k28: 65.2000,
+  k29: 27.9000,
+  k30: 90.3000,
+  k31: 53.0000,
+  k32: 15.7000,
+  k33: 78.1000,
+  k34: 40.8000,
+  k35: 3.5000,
+  k36: 65.9000,
+  k37: 28.6000,
+  k38: 91.0000,
+  k39: 53.7000,
+  k40: 16.4000,
+  k41: 78.8000,
+  k42: 41.5000,
+  k43: 4.2000,
+  k44: 66.6000,
+  k45: 29.3000,
+  k46: 91.7000,
+  k47: 54.4000,
+  k48: 17.1000,
+  k49: 79.5000,
+  k50: 42.2000,
+  k51: 4.9000,
+  k52: 67.3000,
+  k53: 30.0000,
+  k54: 92.4000,
+  k55: 55.1000,
+  k56: 17.8000,
+  k57: 80.2000,
+  k58: 42.9000,
+  k59: 5.6000,
+  k60: 68.0000,
+  k61: 30.7000,
+  k62: 93.1000,
+  k63: 55.8000,
+  k64: 18.5000,
+  k65: 80.9000,
+  k66: 43.6000,
+  k67: 6.3000,
+  k68: 68.7000,
+  k69: 31.4000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_067_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_067_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_067_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_067_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_067_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_067_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_067_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_067_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_067_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_067_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_067_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 068 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_068_META = {
+  id: 'mig_068',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'hospitality' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 67417,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_068_COEF = {
+  k0: 9.9000,
+  k1: 71.7000,
+  k2: 33.8000,
+  k3: 95.6000,
+  k4: 57.7000,
+  k5: 19.8000,
+  k6: 81.6000,
+  k7: 43.7000,
+  k8: 5.8000,
+  k9: 67.6000,
+  k10: 29.7000,
+  k11: 91.5000,
+  k12: 53.6000,
+  k13: 15.7000,
+  k14: 77.5000,
+  k15: 39.6000,
+  k16: 1.7000,
+  k17: 63.5000,
+  k18: 25.6000,
+  k19: 87.4000,
+  k20: 49.5000,
+  k21: 11.6000,
+  k22: 73.4000,
+  k23: 35.5000,
+  k24: 97.3000,
+  k25: 59.4000,
+  k26: 21.5000,
+  k27: 83.3000,
+  k28: 45.4000,
+  k29: 7.5000,
+  k30: 69.3000,
+  k31: 31.4000,
+  k32: 93.2000,
+  k33: 55.3000,
+  k34: 17.4000,
+  k35: 79.2000,
+  k36: 41.3000,
+  k37: 3.4000,
+  k38: 65.2000,
+  k39: 27.3000,
+  k40: 89.1000,
+  k41: 51.2000,
+  k42: 13.3000,
+  k43: 75.1000,
+  k44: 37.2000,
+  k45: 99.0000,
+  k46: 61.1000,
+  k47: 23.2000,
+  k48: 85.0000,
+  k49: 47.1000,
+  k50: 9.2000,
+  k51: 71.0000,
+  k52: 33.1000,
+  k53: 94.9000,
+  k54: 57.0000,
+  k55: 19.1000,
+  k56: 80.9000,
+  k57: 43.0000,
+  k58: 5.1000,
+  k59: 66.9000,
+  k60: 29.0000,
+  k61: 90.8000,
+  k62: 52.9000,
+  k63: 15.0000,
+  k64: 76.8000,
+  k65: 38.9000,
+  k66: 1.0000,
+  k67: 62.8000,
+  k68: 24.9000,
+  k69: 86.7000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_068_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_068_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_068_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_068_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_068_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_068_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_068_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_068_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_068_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_068_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_068_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 069 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_069_META = {
+  id: 'mig_069',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'public_admin' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 68408,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_069_COEF = {
+  k0: 6.9000,
+  k1: 68.1000,
+  k2: 29.6000,
+  k3: 90.8000,
+  k4: 52.3000,
+  k5: 13.8000,
+  k6: 75.0000,
+  k7: 36.5000,
+  k8: 97.7000,
+  k9: 59.2000,
+  k10: 20.7000,
+  k11: 81.9000,
+  k12: 43.4000,
+  k13: 4.9000,
+  k14: 66.1000,
+  k15: 27.6000,
+  k16: 88.8000,
+  k17: 50.3000,
+  k18: 11.8000,
+  k19: 73.0000,
+  k20: 34.5000,
+  k21: 95.7000,
+  k22: 57.2000,
+  k23: 18.7000,
+  k24: 79.9000,
+  k25: 41.4000,
+  k26: 2.9000,
+  k27: 64.1000,
+  k28: 25.6000,
+  k29: 86.8000,
+  k30: 48.3000,
+  k31: 9.8000,
+  k32: 71.0000,
+  k33: 32.5000,
+  k34: 93.7000,
+  k35: 55.2000,
+  k36: 16.7000,
+  k37: 77.9000,
+  k38: 39.4000,
+  k39: 0.9000,
+  k40: 62.1000,
+  k41: 23.6000,
+  k42: 84.8000,
+  k43: 46.3000,
+  k44: 7.8000,
+  k45: 69.0000,
+  k46: 30.5000,
+  k47: 91.7000,
+  k48: 53.2000,
+  k49: 14.7000,
+  k50: 75.9000,
+  k51: 37.4000,
+  k52: 98.6000,
+  k53: 60.1000,
+  k54: 21.6000,
+  k55: 82.8000,
+  k56: 44.3000,
+  k57: 5.8000,
+  k58: 67.0000,
+  k59: 28.5000,
+  k60: 89.7000,
+  k61: 51.2000,
+  k62: 12.7000,
+  k63: 73.9000,
+  k64: 35.4000,
+  k65: 96.6000,
+  k66: 58.1000,
+  k67: 19.6000,
+  k68: 80.8000,
+  k69: 42.3000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_069_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_069_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_069_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_069_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_069_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_069_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_069_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_069_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_069_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_069_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_069_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 070 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_070_META = {
+  id: 'mig_070',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'engineering' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 69399,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_070_COEF = {
+  k0: 3.9000,
+  k1: 64.5000,
+  k2: 25.4000,
+  k3: 86.0000,
+  k4: 46.9000,
+  k5: 7.8000,
+  k6: 68.4000,
+  k7: 29.3000,
+  k8: 89.9000,
+  k9: 50.8000,
+  k10: 11.7000,
+  k11: 72.3000,
+  k12: 33.2000,
+  k13: 93.8000,
+  k14: 54.7000,
+  k15: 15.6000,
+  k16: 76.2000,
+  k17: 37.1000,
+  k18: 97.7000,
+  k19: 58.6000,
+  k20: 19.5000,
+  k21: 80.1000,
+  k22: 41.0000,
+  k23: 1.9000,
+  k24: 62.5000,
+  k25: 23.4000,
+  k26: 84.0000,
+  k27: 44.9000,
+  k28: 5.8000,
+  k29: 66.4000,
+  k30: 27.3000,
+  k31: 87.9000,
+  k32: 48.8000,
+  k33: 9.7000,
+  k34: 70.3000,
+  k35: 31.2000,
+  k36: 91.8000,
+  k37: 52.7000,
+  k38: 13.6000,
+  k39: 74.2000,
+  k40: 35.1000,
+  k41: 95.7000,
+  k42: 56.6000,
+  k43: 17.5000,
+  k44: 78.1000,
+  k45: 39.0000,
+  k46: 99.6000,
+  k47: 60.5000,
+  k48: 21.4000,
+  k49: 82.0000,
+  k50: 42.9000,
+  k51: 3.8000,
+  k52: 64.4000,
+  k53: 25.3000,
+  k54: 85.9000,
+  k55: 46.8000,
+  k56: 7.7000,
+  k57: 68.3000,
+  k58: 29.2000,
+  k59: 89.8000,
+  k60: 50.7000,
+  k61: 11.6000,
+  k62: 72.2000,
+  k63: 33.1000,
+  k64: 93.7000,
+  k65: 54.6000,
+  k66: 15.5000,
+  k67: 76.1000,
+  k68: 37.0000,
+  k69: 97.6000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_070_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_070_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_070_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_070_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_070_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_070_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_070_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_070_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_070_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_070_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_070_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 071 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_071_META = {
+  id: 'mig_071',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'healthcare' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 70390,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_071_COEF = {
+  k0: 0.9000,
+  k1: 60.9000,
+  k2: 21.2000,
+  k3: 81.2000,
+  k4: 41.5000,
+  k5: 1.8000,
+  k6: 61.8000,
+  k7: 22.1000,
+  k8: 82.1000,
+  k9: 42.4000,
+  k10: 2.7000,
+  k11: 62.7000,
+  k12: 23.0000,
+  k13: 83.0000,
+  k14: 43.3000,
+  k15: 3.6000,
+  k16: 63.6000,
+  k17: 23.9000,
+  k18: 83.9000,
+  k19: 44.2000,
+  k20: 4.5000,
+  k21: 64.5000,
+  k22: 24.8000,
+  k23: 84.8000,
+  k24: 45.1000,
+  k25: 5.4000,
+  k26: 65.4000,
+  k27: 25.7000,
+  k28: 85.7000,
+  k29: 46.0000,
+  k30: 6.3000,
+  k31: 66.3000,
+  k32: 26.6000,
+  k33: 86.6000,
+  k34: 46.9000,
+  k35: 7.2000,
+  k36: 67.2000,
+  k37: 27.5000,
+  k38: 87.5000,
+  k39: 47.8000,
+  k40: 8.1000,
+  k41: 68.1000,
+  k42: 28.4000,
+  k43: 88.4000,
+  k44: 48.7000,
+  k45: 9.0000,
+  k46: 69.0000,
+  k47: 29.3000,
+  k48: 89.3000,
+  k49: 49.6000,
+  k50: 9.9000,
+  k51: 69.9000,
+  k52: 30.2000,
+  k53: 90.2000,
+  k54: 50.5000,
+  k55: 10.8000,
+  k56: 70.8000,
+  k57: 31.1000,
+  k58: 91.1000,
+  k59: 51.4000,
+  k60: 11.7000,
+  k61: 71.7000,
+  k62: 32.0000,
+  k63: 92.0000,
+  k64: 52.3000,
+  k65: 12.6000,
+  k66: 72.6000,
+  k67: 32.9000,
+  k68: 92.9000,
+  k69: 53.2000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_071_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_071_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_071_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_071_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_071_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_071_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_071_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_071_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_071_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_071_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_071_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 072 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_072_META = {
+  id: 'mig_072',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'trades' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 71381,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_072_COEF = {
+  k0: 97.6000,
+  k1: 57.3000,
+  k2: 17.0000,
+  k3: 76.4000,
+  k4: 36.1000,
+  k5: 95.5000,
+  k6: 55.2000,
+  k7: 14.9000,
+  k8: 74.3000,
+  k9: 34.0000,
+  k10: 93.4000,
+  k11: 53.1000,
+  k12: 12.8000,
+  k13: 72.2000,
+  k14: 31.9000,
+  k15: 91.3000,
+  k16: 51.0000,
+  k17: 10.7000,
+  k18: 70.1000,
+  k19: 29.8000,
+  k20: 89.2000,
+  k21: 48.9000,
+  k22: 8.6000,
+  k23: 68.0000,
+  k24: 27.7000,
+  k25: 87.1000,
+  k26: 46.8000,
+  k27: 6.5000,
+  k28: 65.9000,
+  k29: 25.6000,
+  k30: 85.0000,
+  k31: 44.7000,
+  k32: 4.4000,
+  k33: 63.8000,
+  k34: 23.5000,
+  k35: 82.9000,
+  k36: 42.6000,
+  k37: 2.3000,
+  k38: 61.7000,
+  k39: 21.4000,
+  k40: 80.8000,
+  k41: 40.5000,
+  k42: 0.2000,
+  k43: 59.6000,
+  k44: 19.3000,
+  k45: 78.7000,
+  k46: 38.4000,
+  k47: 97.8000,
+  k48: 57.5000,
+  k49: 17.2000,
+  k50: 76.6000,
+  k51: 36.3000,
+  k52: 95.7000,
+  k53: 55.4000,
+  k54: 15.1000,
+  k55: 74.5000,
+  k56: 34.2000,
+  k57: 93.6000,
+  k58: 53.3000,
+  k59: 13.0000,
+  k60: 72.4000,
+  k61: 32.1000,
+  k62: 91.5000,
+  k63: 51.2000,
+  k64: 10.9000,
+  k65: 70.3000,
+  k66: 30.0000,
+  k67: 89.4000,
+  k68: 49.1000,
+  k69: 8.8000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_072_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_072_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_072_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_072_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_072_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_072_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_072_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_072_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_072_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_072_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_072_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 073 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_073_META = {
+  id: 'mig_073',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'digital' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 72372,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_073_COEF = {
+  k0: 94.6000,
+  k1: 53.7000,
+  k2: 12.8000,
+  k3: 71.6000,
+  k4: 30.7000,
+  k5: 89.5000,
+  k6: 48.6000,
+  k7: 7.7000,
+  k8: 66.5000,
+  k9: 25.6000,
+  k10: 84.4000,
+  k11: 43.5000,
+  k12: 2.6000,
+  k13: 61.4000,
+  k14: 20.5000,
+  k15: 79.3000,
+  k16: 38.4000,
+  k17: 97.2000,
+  k18: 56.3000,
+  k19: 15.4000,
+  k20: 74.2000,
+  k21: 33.3000,
+  k22: 92.1000,
+  k23: 51.2000,
+  k24: 10.3000,
+  k25: 69.1000,
+  k26: 28.2000,
+  k27: 87.0000,
+  k28: 46.1000,
+  k29: 5.2000,
+  k30: 64.0000,
+  k31: 23.1000,
+  k32: 81.9000,
+  k33: 41.0000,
+  k34: 0.1000,
+  k35: 58.9000,
+  k36: 18.0000,
+  k37: 76.8000,
+  k38: 35.9000,
+  k39: 94.7000,
+  k40: 53.8000,
+  k41: 12.9000,
+  k42: 71.7000,
+  k43: 30.8000,
+  k44: 89.6000,
+  k45: 48.7000,
+  k46: 7.8000,
+  k47: 66.6000,
+  k48: 25.7000,
+  k49: 84.5000,
+  k50: 43.6000,
+  k51: 2.7000,
+  k52: 61.5000,
+  k53: 20.6000,
+  k54: 79.4000,
+  k55: 38.5000,
+  k56: 97.3000,
+  k57: 56.4000,
+  k58: 15.5000,
+  k59: 74.3000,
+  k60: 33.4000,
+  k61: 92.2000,
+  k62: 51.3000,
+  k63: 10.4000,
+  k64: 69.2000,
+  k65: 28.3000,
+  k66: 87.1000,
+  k67: 46.2000,
+  k68: 5.3000,
+  k69: 64.1000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_073_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_073_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_073_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_073_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_073_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_073_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_073_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_073_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_073_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_073_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_073_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 074 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_074_META = {
+  id: 'mig_074',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'logistics' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 73363,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_074_COEF = {
+  k0: 91.6000,
+  k1: 50.1000,
+  k2: 8.6000,
+  k3: 66.8000,
+  k4: 25.3000,
+  k5: 83.5000,
+  k6: 42.0000,
+  k7: 0.5000,
+  k8: 58.7000,
+  k9: 17.2000,
+  k10: 75.4000,
+  k11: 33.9000,
+  k12: 92.1000,
+  k13: 50.6000,
+  k14: 9.1000,
+  k15: 67.3000,
+  k16: 25.8000,
+  k17: 84.0000,
+  k18: 42.5000,
+  k19: 1.0000,
+  k20: 59.2000,
+  k21: 17.7000,
+  k22: 75.9000,
+  k23: 34.4000,
+  k24: 92.6000,
+  k25: 51.1000,
+  k26: 9.6000,
+  k27: 67.8000,
+  k28: 26.3000,
+  k29: 84.5000,
+  k30: 43.0000,
+  k31: 1.5000,
+  k32: 59.7000,
+  k33: 18.2000,
+  k34: 76.4000,
+  k35: 34.9000,
+  k36: 93.1000,
+  k37: 51.6000,
+  k38: 10.1000,
+  k39: 68.3000,
+  k40: 26.8000,
+  k41: 85.0000,
+  k42: 43.5000,
+  k43: 2.0000,
+  k44: 60.2000,
+  k45: 18.7000,
+  k46: 76.9000,
+  k47: 35.4000,
+  k48: 93.6000,
+  k49: 52.1000,
+  k50: 10.6000,
+  k51: 68.8000,
+  k52: 27.3000,
+  k53: 85.5000,
+  k54: 44.0000,
+  k55: 2.5000,
+  k56: 60.7000,
+  k57: 19.2000,
+  k58: 77.4000,
+  k59: 35.9000,
+  k60: 94.1000,
+  k61: 52.6000,
+  k62: 11.1000,
+  k63: 69.3000,
+  k64: 27.8000,
+  k65: 86.0000,
+  k66: 44.5000,
+  k67: 3.0000,
+  k68: 61.2000,
+  k69: 19.7000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_074_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_074_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_074_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_074_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_074_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_074_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_074_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_074_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_074_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_074_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_074_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 075 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_075_META = {
+  id: 'mig_075',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'education' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 74354,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_075_COEF = {
+  k0: 88.6000,
+  k1: 46.5000,
+  k2: 4.4000,
+  k3: 62.0000,
+  k4: 19.9000,
+  k5: 77.5000,
+  k6: 35.4000,
+  k7: 93.0000,
+  k8: 50.9000,
+  k9: 8.8000,
+  k10: 66.4000,
+  k11: 24.3000,
+  k12: 81.9000,
+  k13: 39.8000,
+  k14: 97.4000,
+  k15: 55.3000,
+  k16: 13.2000,
+  k17: 70.8000,
+  k18: 28.7000,
+  k19: 86.3000,
+  k20: 44.2000,
+  k21: 2.1000,
+  k22: 59.7000,
+  k23: 17.6000,
+  k24: 75.2000,
+  k25: 33.1000,
+  k26: 90.7000,
+  k27: 48.6000,
+  k28: 6.5000,
+  k29: 64.1000,
+  k30: 22.0000,
+  k31: 79.6000,
+  k32: 37.5000,
+  k33: 95.1000,
+  k34: 53.0000,
+  k35: 10.9000,
+  k36: 68.5000,
+  k37: 26.4000,
+  k38: 84.0000,
+  k39: 41.9000,
+  k40: 99.5000,
+  k41: 57.4000,
+  k42: 15.3000,
+  k43: 72.9000,
+  k44: 30.8000,
+  k45: 88.4000,
+  k46: 46.3000,
+  k47: 4.2000,
+  k48: 61.8000,
+  k49: 19.7000,
+  k50: 77.3000,
+  k51: 35.2000,
+  k52: 92.8000,
+  k53: 50.7000,
+  k54: 8.6000,
+  k55: 66.2000,
+  k56: 24.1000,
+  k57: 81.7000,
+  k58: 39.6000,
+  k59: 97.2000,
+  k60: 55.1000,
+  k61: 13.0000,
+  k62: 70.6000,
+  k63: 28.5000,
+  k64: 86.1000,
+  k65: 44.0000,
+  k66: 1.9000,
+  k67: 59.5000,
+  k68: 17.4000,
+  k69: 75.0000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_075_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_075_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_075_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_075_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_075_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_075_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_075_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_075_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_075_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_075_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_075_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 076 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_076_META = {
+  id: 'mig_076',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'mining' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 75345,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_076_COEF = {
+  k0: 85.6000,
+  k1: 42.9000,
+  k2: 0.2000,
+  k3: 57.2000,
+  k4: 14.5000,
+  k5: 71.5000,
+  k6: 28.8000,
+  k7: 85.8000,
+  k8: 43.1000,
+  k9: 0.4000,
+  k10: 57.4000,
+  k11: 14.7000,
+  k12: 71.7000,
+  k13: 29.0000,
+  k14: 86.0000,
+  k15: 43.3000,
+  k16: 0.6000,
+  k17: 57.6000,
+  k18: 14.9000,
+  k19: 71.9000,
+  k20: 29.2000,
+  k21: 86.2000,
+  k22: 43.5000,
+  k23: 0.8000,
+  k24: 57.8000,
+  k25: 15.1000,
+  k26: 72.1000,
+  k27: 29.4000,
+  k28: 86.4000,
+  k29: 43.7000,
+  k30: 1.0000,
+  k31: 58.0000,
+  k32: 15.3000,
+  k33: 72.3000,
+  k34: 29.6000,
+  k35: 86.6000,
+  k36: 43.9000,
+  k37: 1.2000,
+  k38: 58.2000,
+  k39: 15.5000,
+  k40: 72.5000,
+  k41: 29.8000,
+  k42: 86.8000,
+  k43: 44.1000,
+  k44: 1.4000,
+  k45: 58.4000,
+  k46: 15.7000,
+  k47: 72.7000,
+  k48: 30.0000,
+  k49: 87.0000,
+  k50: 44.3000,
+  k51: 1.6000,
+  k52: 58.6000,
+  k53: 15.9000,
+  k54: 72.9000,
+  k55: 30.2000,
+  k56: 87.2000,
+  k57: 44.5000,
+  k58: 1.8000,
+  k59: 58.8000,
+  k60: 16.1000,
+  k61: 73.1000,
+  k62: 30.4000,
+  k63: 87.4000,
+  k64: 44.7000,
+  k65: 2.0000,
+  k66: 59.0000,
+  k67: 16.3000,
+  k68: 73.3000,
+  k69: 30.6000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_076_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_076_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_076_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_076_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_076_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_076_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_076_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_076_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_076_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_076_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_076_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 077 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_077_META = {
+  id: 'mig_077',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'agriculture' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 76336,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_077_COEF = {
+  k0: 82.6000,
+  k1: 39.3000,
+  k2: 95.7000,
+  k3: 52.4000,
+  k4: 9.1000,
+  k5: 65.5000,
+  k6: 22.2000,
+  k7: 78.6000,
+  k8: 35.3000,
+  k9: 91.7000,
+  k10: 48.4000,
+  k11: 5.1000,
+  k12: 61.5000,
+  k13: 18.2000,
+  k14: 74.6000,
+  k15: 31.3000,
+  k16: 87.7000,
+  k17: 44.4000,
+  k18: 1.1000,
+  k19: 57.5000,
+  k20: 14.2000,
+  k21: 70.6000,
+  k22: 27.3000,
+  k23: 83.7000,
+  k24: 40.4000,
+  k25: 96.8000,
+  k26: 53.5000,
+  k27: 10.2000,
+  k28: 66.6000,
+  k29: 23.3000,
+  k30: 79.7000,
+  k31: 36.4000,
+  k32: 92.8000,
+  k33: 49.5000,
+  k34: 6.2000,
+  k35: 62.6000,
+  k36: 19.3000,
+  k37: 75.7000,
+  k38: 32.4000,
+  k39: 88.8000,
+  k40: 45.5000,
+  k41: 2.2000,
+  k42: 58.6000,
+  k43: 15.3000,
+  k44: 71.7000,
+  k45: 28.4000,
+  k46: 84.8000,
+  k47: 41.5000,
+  k48: 97.9000,
+  k49: 54.6000,
+  k50: 11.3000,
+  k51: 67.7000,
+  k52: 24.4000,
+  k53: 80.8000,
+  k54: 37.5000,
+  k55: 93.9000,
+  k56: 50.6000,
+  k57: 7.3000,
+  k58: 63.7000,
+  k59: 20.4000,
+  k60: 76.8000,
+  k61: 33.5000,
+  k62: 89.9000,
+  k63: 46.6000,
+  k64: 3.3000,
+  k65: 59.7000,
+  k66: 16.4000,
+  k67: 72.8000,
+  k68: 29.5000,
+  k69: 85.9000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_077_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_077_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_077_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_077_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_077_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_077_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_077_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_077_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_077_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_077_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_077_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 078 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_078_META = {
+  id: 'mig_078',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'hospitality' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 77327,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_078_COEF = {
+  k0: 79.6000,
+  k1: 35.7000,
+  k2: 91.5000,
+  k3: 47.6000,
+  k4: 3.7000,
+  k5: 59.5000,
+  k6: 15.6000,
+  k7: 71.4000,
+  k8: 27.5000,
+  k9: 83.3000,
+  k10: 39.4000,
+  k11: 95.2000,
+  k12: 51.3000,
+  k13: 7.4000,
+  k14: 63.2000,
+  k15: 19.3000,
+  k16: 75.1000,
+  k17: 31.2000,
+  k18: 87.0000,
+  k19: 43.1000,
+  k20: 98.9000,
+  k21: 55.0000,
+  k22: 11.1000,
+  k23: 66.9000,
+  k24: 23.0000,
+  k25: 78.8000,
+  k26: 34.9000,
+  k27: 90.7000,
+  k28: 46.8000,
+  k29: 2.9000,
+  k30: 58.7000,
+  k31: 14.8000,
+  k32: 70.6000,
+  k33: 26.7000,
+  k34: 82.5000,
+  k35: 38.6000,
+  k36: 94.4000,
+  k37: 50.5000,
+  k38: 6.6000,
+  k39: 62.4000,
+  k40: 18.5000,
+  k41: 74.3000,
+  k42: 30.4000,
+  k43: 86.2000,
+  k44: 42.3000,
+  k45: 98.1000,
+  k46: 54.2000,
+  k47: 10.3000,
+  k48: 66.1000,
+  k49: 22.2000,
+  k50: 78.0000,
+  k51: 34.1000,
+  k52: 89.9000,
+  k53: 46.0000,
+  k54: 2.1000,
+  k55: 57.9000,
+  k56: 14.0000,
+  k57: 69.8000,
+  k58: 25.9000,
+  k59: 81.7000,
+  k60: 37.8000,
+  k61: 93.6000,
+  k62: 49.7000,
+  k63: 5.8000,
+  k64: 61.6000,
+  k65: 17.7000,
+  k66: 73.5000,
+  k67: 29.6000,
+  k68: 85.4000,
+  k69: 41.5000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_078_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_078_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_078_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_078_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_078_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_078_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_078_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_078_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_078_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_078_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_078_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 079 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_079_META = {
+  id: 'mig_079',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'public_admin' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 78318,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_079_COEF = {
+  k0: 76.6000,
+  k1: 32.1000,
+  k2: 87.3000,
+  k3: 42.8000,
+  k4: 98.0000,
+  k5: 53.5000,
+  k6: 9.0000,
+  k7: 64.2000,
+  k8: 19.7000,
+  k9: 74.9000,
+  k10: 30.4000,
+  k11: 85.6000,
+  k12: 41.1000,
+  k13: 96.3000,
+  k14: 51.8000,
+  k15: 7.3000,
+  k16: 62.5000,
+  k17: 18.0000,
+  k18: 73.2000,
+  k19: 28.7000,
+  k20: 83.9000,
+  k21: 39.4000,
+  k22: 94.6000,
+  k23: 50.1000,
+  k24: 5.6000,
+  k25: 60.8000,
+  k26: 16.3000,
+  k27: 71.5000,
+  k28: 27.0000,
+  k29: 82.2000,
+  k30: 37.7000,
+  k31: 92.9000,
+  k32: 48.4000,
+  k33: 3.9000,
+  k34: 59.1000,
+  k35: 14.6000,
+  k36: 69.8000,
+  k37: 25.3000,
+  k38: 80.5000,
+  k39: 36.0000,
+  k40: 91.2000,
+  k41: 46.7000,
+  k42: 2.2000,
+  k43: 57.4000,
+  k44: 12.9000,
+  k45: 68.1000,
+  k46: 23.6000,
+  k47: 78.8000,
+  k48: 34.3000,
+  k49: 89.5000,
+  k50: 45.0000,
+  k51: 0.5000,
+  k52: 55.7000,
+  k53: 11.2000,
+  k54: 66.4000,
+  k55: 21.9000,
+  k56: 77.1000,
+  k57: 32.6000,
+  k58: 87.8000,
+  k59: 43.3000,
+  k60: 98.5000,
+  k61: 54.0000,
+  k62: 9.5000,
+  k63: 64.7000,
+  k64: 20.2000,
+  k65: 75.4000,
+  k66: 30.9000,
+  k67: 86.1000,
+  k68: 41.6000,
+  k69: 96.8000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_079_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_079_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_079_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_079_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_079_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_079_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_079_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_079_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_079_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_079_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_079_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 080 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_080_META = {
+  id: 'mig_080',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'engineering' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 79309,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_080_COEF = {
+  k0: 73.6000,
+  k1: 28.5000,
+  k2: 83.1000,
+  k3: 38.0000,
+  k4: 92.6000,
+  k5: 47.5000,
+  k6: 2.4000,
+  k7: 57.0000,
+  k8: 11.9000,
+  k9: 66.5000,
+  k10: 21.4000,
+  k11: 76.0000,
+  k12: 30.9000,
+  k13: 85.5000,
+  k14: 40.4000,
+  k15: 95.0000,
+  k16: 49.9000,
+  k17: 4.8000,
+  k18: 59.4000,
+  k19: 14.3000,
+  k20: 68.9000,
+  k21: 23.8000,
+  k22: 78.4000,
+  k23: 33.3000,
+  k24: 87.9000,
+  k25: 42.8000,
+  k26: 97.4000,
+  k27: 52.3000,
+  k28: 7.2000,
+  k29: 61.8000,
+  k30: 16.7000,
+  k31: 71.3000,
+  k32: 26.2000,
+  k33: 80.8000,
+  k34: 35.7000,
+  k35: 90.3000,
+  k36: 45.2000,
+  k37: 0.1000,
+  k38: 54.7000,
+  k39: 9.6000,
+  k40: 64.2000,
+  k41: 19.1000,
+  k42: 73.7000,
+  k43: 28.6000,
+  k44: 83.2000,
+  k45: 38.1000,
+  k46: 92.7000,
+  k47: 47.6000,
+  k48: 2.5000,
+  k49: 57.1000,
+  k50: 12.0000,
+  k51: 66.6000,
+  k52: 21.5000,
+  k53: 76.1000,
+  k54: 31.0000,
+  k55: 85.6000,
+  k56: 40.5000,
+  k57: 95.1000,
+  k58: 50.0000,
+  k59: 4.9000,
+  k60: 59.5000,
+  k61: 14.4000,
+  k62: 69.0000,
+  k63: 23.9000,
+  k64: 78.5000,
+  k65: 33.4000,
+  k66: 88.0000,
+  k67: 42.9000,
+  k68: 97.5000,
+  k69: 52.4000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_080_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_080_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_080_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_080_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_080_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_080_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_080_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_080_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_080_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_080_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_080_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 081 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_081_META = {
+  id: 'mig_081',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'healthcare' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 80300,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_081_COEF = {
+  k0: 70.6000,
+  k1: 24.9000,
+  k2: 78.9000,
+  k3: 33.2000,
+  k4: 87.2000,
+  k5: 41.5000,
+  k6: 95.5000,
+  k7: 49.8000,
+  k8: 4.1000,
+  k9: 58.1000,
+  k10: 12.4000,
+  k11: 66.4000,
+  k12: 20.7000,
+  k13: 74.7000,
+  k14: 29.0000,
+  k15: 83.0000,
+  k16: 37.3000,
+  k17: 91.3000,
+  k18: 45.6000,
+  k19: 99.6000,
+  k20: 53.9000,
+  k21: 8.2000,
+  k22: 62.2000,
+  k23: 16.5000,
+  k24: 70.5000,
+  k25: 24.8000,
+  k26: 78.8000,
+  k27: 33.1000,
+  k28: 87.1000,
+  k29: 41.4000,
+  k30: 95.4000,
+  k31: 49.7000,
+  k32: 4.0000,
+  k33: 58.0000,
+  k34: 12.3000,
+  k35: 66.3000,
+  k36: 20.6000,
+  k37: 74.6000,
+  k38: 28.9000,
+  k39: 82.9000,
+  k40: 37.2000,
+  k41: 91.2000,
+  k42: 45.5000,
+  k43: 99.5000,
+  k44: 53.8000,
+  k45: 8.1000,
+  k46: 62.1000,
+  k47: 16.4000,
+  k48: 70.4000,
+  k49: 24.7000,
+  k50: 78.7000,
+  k51: 33.0000,
+  k52: 87.0000,
+  k53: 41.3000,
+  k54: 95.3000,
+  k55: 49.6000,
+  k56: 3.9000,
+  k57: 57.9000,
+  k58: 12.2000,
+  k59: 66.2000,
+  k60: 20.5000,
+  k61: 74.5000,
+  k62: 28.8000,
+  k63: 82.8000,
+  k64: 37.1000,
+  k65: 91.1000,
+  k66: 45.4000,
+  k67: 99.4000,
+  k68: 53.7000,
+  k69: 8.0000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_081_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_081_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_081_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_081_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_081_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_081_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_081_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_081_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_081_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_081_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_081_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 082 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_082_META = {
+  id: 'mig_082',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'trades' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 81291,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_082_COEF = {
+  k0: 67.6000,
+  k1: 21.3000,
+  k2: 74.7000,
+  k3: 28.4000,
+  k4: 81.8000,
+  k5: 35.5000,
+  k6: 88.9000,
+  k7: 42.6000,
+  k8: 96.0000,
+  k9: 49.7000,
+  k10: 3.4000,
+  k11: 56.8000,
+  k12: 10.5000,
+  k13: 63.9000,
+  k14: 17.6000,
+  k15: 71.0000,
+  k16: 24.7000,
+  k17: 78.1000,
+  k18: 31.8000,
+  k19: 85.2000,
+  k20: 38.9000,
+  k21: 92.3000,
+  k22: 46.0000,
+  k23: 99.4000,
+  k24: 53.1000,
+  k25: 6.8000,
+  k26: 60.2000,
+  k27: 13.9000,
+  k28: 67.3000,
+  k29: 21.0000,
+  k30: 74.4000,
+  k31: 28.1000,
+  k32: 81.5000,
+  k33: 35.2000,
+  k34: 88.6000,
+  k35: 42.3000,
+  k36: 95.7000,
+  k37: 49.4000,
+  k38: 3.1000,
+  k39: 56.5000,
+  k40: 10.2000,
+  k41: 63.6000,
+  k42: 17.3000,
+  k43: 70.7000,
+  k44: 24.4000,
+  k45: 77.8000,
+  k46: 31.5000,
+  k47: 84.9000,
+  k48: 38.6000,
+  k49: 92.0000,
+  k50: 45.7000,
+  k51: 99.1000,
+  k52: 52.8000,
+  k53: 6.5000,
+  k54: 59.9000,
+  k55: 13.6000,
+  k56: 67.0000,
+  k57: 20.7000,
+  k58: 74.1000,
+  k59: 27.8000,
+  k60: 81.2000,
+  k61: 34.9000,
+  k62: 88.3000,
+  k63: 42.0000,
+  k64: 95.4000,
+  k65: 49.1000,
+  k66: 2.8000,
+  k67: 56.2000,
+  k68: 9.9000,
+  k69: 63.3000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_082_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_082_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_082_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_082_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_082_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_082_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_082_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_082_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_082_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_082_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_082_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 083 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_083_META = {
+  id: 'mig_083',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'digital' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 82282,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_083_COEF = {
+  k0: 64.6000,
+  k1: 17.7000,
+  k2: 70.5000,
+  k3: 23.6000,
+  k4: 76.4000,
+  k5: 29.5000,
+  k6: 82.3000,
+  k7: 35.4000,
+  k8: 88.2000,
+  k9: 41.3000,
+  k10: 94.1000,
+  k11: 47.2000,
+  k12: 0.3000,
+  k13: 53.1000,
+  k14: 6.2000,
+  k15: 59.0000,
+  k16: 12.1000,
+  k17: 64.9000,
+  k18: 18.0000,
+  k19: 70.8000,
+  k20: 23.9000,
+  k21: 76.7000,
+  k22: 29.8000,
+  k23: 82.6000,
+  k24: 35.7000,
+  k25: 88.5000,
+  k26: 41.6000,
+  k27: 94.4000,
+  k28: 47.5000,
+  k29: 0.6000,
+  k30: 53.4000,
+  k31: 6.5000,
+  k32: 59.3000,
+  k33: 12.4000,
+  k34: 65.2000,
+  k35: 18.3000,
+  k36: 71.1000,
+  k37: 24.2000,
+  k38: 77.0000,
+  k39: 30.1000,
+  k40: 82.9000,
+  k41: 36.0000,
+  k42: 88.8000,
+  k43: 41.9000,
+  k44: 94.7000,
+  k45: 47.8000,
+  k46: 0.9000,
+  k47: 53.7000,
+  k48: 6.8000,
+  k49: 59.6000,
+  k50: 12.7000,
+  k51: 65.5000,
+  k52: 18.6000,
+  k53: 71.4000,
+  k54: 24.5000,
+  k55: 77.3000,
+  k56: 30.4000,
+  k57: 83.2000,
+  k58: 36.3000,
+  k59: 89.1000,
+  k60: 42.2000,
+  k61: 95.0000,
+  k62: 48.1000,
+  k63: 1.2000,
+  k64: 54.0000,
+  k65: 7.1000,
+  k66: 59.9000,
+  k67: 13.0000,
+  k68: 65.8000,
+  k69: 18.9000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_083_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_083_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_083_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_083_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_083_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_083_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_083_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_083_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_083_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_083_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_083_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 084 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_084_META = {
+  id: 'mig_084',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'logistics' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 83273,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_084_COEF = {
+  k0: 61.6000,
+  k1: 14.1000,
+  k2: 66.3000,
+  k3: 18.8000,
+  k4: 71.0000,
+  k5: 23.5000,
+  k6: 75.7000,
+  k7: 28.2000,
+  k8: 80.4000,
+  k9: 32.9000,
+  k10: 85.1000,
+  k11: 37.6000,
+  k12: 89.8000,
+  k13: 42.3000,
+  k14: 94.5000,
+  k15: 47.0000,
+  k16: 99.2000,
+  k17: 51.7000,
+  k18: 4.2000,
+  k19: 56.4000,
+  k20: 8.9000,
+  k21: 61.1000,
+  k22: 13.6000,
+  k23: 65.8000,
+  k24: 18.3000,
+  k25: 70.5000,
+  k26: 23.0000,
+  k27: 75.2000,
+  k28: 27.7000,
+  k29: 79.9000,
+  k30: 32.4000,
+  k31: 84.6000,
+  k32: 37.1000,
+  k33: 89.3000,
+  k34: 41.8000,
+  k35: 94.0000,
+  k36: 46.5000,
+  k37: 98.7000,
+  k38: 51.2000,
+  k39: 3.7000,
+  k40: 55.9000,
+  k41: 8.4000,
+  k42: 60.6000,
+  k43: 13.1000,
+  k44: 65.3000,
+  k45: 17.8000,
+  k46: 70.0000,
+  k47: 22.5000,
+  k48: 74.7000,
+  k49: 27.2000,
+  k50: 79.4000,
+  k51: 31.9000,
+  k52: 84.1000,
+  k53: 36.6000,
+  k54: 88.8000,
+  k55: 41.3000,
+  k56: 93.5000,
+  k57: 46.0000,
+  k58: 98.2000,
+  k59: 50.7000,
+  k60: 3.2000,
+  k61: 55.4000,
+  k62: 7.9000,
+  k63: 60.1000,
+  k64: 12.6000,
+  k65: 64.8000,
+  k66: 17.3000,
+  k67: 69.5000,
+  k68: 22.0000,
+  k69: 74.2000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_084_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_084_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_084_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_084_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_084_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_084_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_084_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_084_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_084_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_084_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_084_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 085 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_085_META = {
+  id: 'mig_085',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'education' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 84264,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_085_COEF = {
+  k0: 58.6000,
+  k1: 10.5000,
+  k2: 62.1000,
+  k3: 14.0000,
+  k4: 65.6000,
+  k5: 17.5000,
+  k6: 69.1000,
+  k7: 21.0000,
+  k8: 72.6000,
+  k9: 24.5000,
+  k10: 76.1000,
+  k11: 28.0000,
+  k12: 79.6000,
+  k13: 31.5000,
+  k14: 83.1000,
+  k15: 35.0000,
+  k16: 86.6000,
+  k17: 38.5000,
+  k18: 90.1000,
+  k19: 42.0000,
+  k20: 93.6000,
+  k21: 45.5000,
+  k22: 97.1000,
+  k23: 49.0000,
+  k24: 0.9000,
+  k25: 52.5000,
+  k26: 4.4000,
+  k27: 56.0000,
+  k28: 7.9000,
+  k29: 59.5000,
+  k30: 11.4000,
+  k31: 63.0000,
+  k32: 14.9000,
+  k33: 66.5000,
+  k34: 18.4000,
+  k35: 70.0000,
+  k36: 21.9000,
+  k37: 73.5000,
+  k38: 25.4000,
+  k39: 77.0000,
+  k40: 28.9000,
+  k41: 80.5000,
+  k42: 32.4000,
+  k43: 84.0000,
+  k44: 35.9000,
+  k45: 87.5000,
+  k46: 39.4000,
+  k47: 91.0000,
+  k48: 42.9000,
+  k49: 94.5000,
+  k50: 46.4000,
+  k51: 98.0000,
+  k52: 49.9000,
+  k53: 1.8000,
+  k54: 53.4000,
+  k55: 5.3000,
+  k56: 56.9000,
+  k57: 8.8000,
+  k58: 60.4000,
+  k59: 12.3000,
+  k60: 63.9000,
+  k61: 15.8000,
+  k62: 67.4000,
+  k63: 19.3000,
+  k64: 70.9000,
+  k65: 22.8000,
+  k66: 74.4000,
+  k67: 26.3000,
+  k68: 77.9000,
+  k69: 29.8000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_085_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_085_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_085_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_085_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_085_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_085_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_085_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_085_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_085_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_085_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_085_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 086 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_086_META = {
+  id: 'mig_086',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'mining' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 85255,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_086_COEF = {
+  k0: 55.6000,
+  k1: 6.9000,
+  k2: 57.9000,
+  k3: 9.2000,
+  k4: 60.2000,
+  k5: 11.5000,
+  k6: 62.5000,
+  k7: 13.8000,
+  k8: 64.8000,
+  k9: 16.1000,
+  k10: 67.1000,
+  k11: 18.4000,
+  k12: 69.4000,
+  k13: 20.7000,
+  k14: 71.7000,
+  k15: 23.0000,
+  k16: 74.0000,
+  k17: 25.3000,
+  k18: 76.3000,
+  k19: 27.6000,
+  k20: 78.6000,
+  k21: 29.9000,
+  k22: 80.9000,
+  k23: 32.2000,
+  k24: 83.2000,
+  k25: 34.5000,
+  k26: 85.5000,
+  k27: 36.8000,
+  k28: 87.8000,
+  k29: 39.1000,
+  k30: 90.1000,
+  k31: 41.4000,
+  k32: 92.4000,
+  k33: 43.7000,
+  k34: 94.7000,
+  k35: 46.0000,
+  k36: 97.0000,
+  k37: 48.3000,
+  k38: 99.3000,
+  k39: 50.6000,
+  k40: 1.9000,
+  k41: 52.9000,
+  k42: 4.2000,
+  k43: 55.2000,
+  k44: 6.5000,
+  k45: 57.5000,
+  k46: 8.8000,
+  k47: 59.8000,
+  k48: 11.1000,
+  k49: 62.1000,
+  k50: 13.4000,
+  k51: 64.4000,
+  k52: 15.7000,
+  k53: 66.7000,
+  k54: 18.0000,
+  k55: 69.0000,
+  k56: 20.3000,
+  k57: 71.3000,
+  k58: 22.6000,
+  k59: 73.6000,
+  k60: 24.9000,
+  k61: 75.9000,
+  k62: 27.2000,
+  k63: 78.2000,
+  k64: 29.5000,
+  k65: 80.5000,
+  k66: 31.8000,
+  k67: 82.8000,
+  k68: 34.1000,
+  k69: 85.1000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_086_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_086_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_086_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_086_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_086_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_086_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_086_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_086_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_086_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_086_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_086_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 087 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_087_META = {
+  id: 'mig_087',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'agriculture' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 86246,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_087_COEF = {
+  k0: 52.6000,
+  k1: 3.3000,
+  k2: 53.7000,
+  k3: 4.4000,
+  k4: 54.8000,
+  k5: 5.5000,
+  k6: 55.9000,
+  k7: 6.6000,
+  k8: 57.0000,
+  k9: 7.7000,
+  k10: 58.1000,
+  k11: 8.8000,
+  k12: 59.2000,
+  k13: 9.9000,
+  k14: 60.3000,
+  k15: 11.0000,
+  k16: 61.4000,
+  k17: 12.1000,
+  k18: 62.5000,
+  k19: 13.2000,
+  k20: 63.6000,
+  k21: 14.3000,
+  k22: 64.7000,
+  k23: 15.4000,
+  k24: 65.8000,
+  k25: 16.5000,
+  k26: 66.9000,
+  k27: 17.6000,
+  k28: 68.0000,
+  k29: 18.7000,
+  k30: 69.1000,
+  k31: 19.8000,
+  k32: 70.2000,
+  k33: 20.9000,
+  k34: 71.3000,
+  k35: 22.0000,
+  k36: 72.4000,
+  k37: 23.1000,
+  k38: 73.5000,
+  k39: 24.2000,
+  k40: 74.6000,
+  k41: 25.3000,
+  k42: 75.7000,
+  k43: 26.4000,
+  k44: 76.8000,
+  k45: 27.5000,
+  k46: 77.9000,
+  k47: 28.6000,
+  k48: 79.0000,
+  k49: 29.7000,
+  k50: 80.1000,
+  k51: 30.8000,
+  k52: 81.2000,
+  k53: 31.9000,
+  k54: 82.3000,
+  k55: 33.0000,
+  k56: 83.4000,
+  k57: 34.1000,
+  k58: 84.5000,
+  k59: 35.2000,
+  k60: 85.6000,
+  k61: 36.3000,
+  k62: 86.7000,
+  k63: 37.4000,
+  k64: 87.8000,
+  k65: 38.5000,
+  k66: 88.9000,
+  k67: 39.6000,
+  k68: 90.0000,
+  k69: 40.7000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_087_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_087_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_087_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_087_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_087_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_087_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_087_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_087_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_087_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_087_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_087_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 088 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_088_META = {
+  id: 'mig_088',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'hospitality' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 87237,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_088_COEF = {
+  k0: 49.6000,
+  k1: 99.4000,
+  k2: 49.5000,
+  k3: 99.3000,
+  k4: 49.4000,
+  k5: 99.2000,
+  k6: 49.3000,
+  k7: 99.1000,
+  k8: 49.2000,
+  k9: 99.0000,
+  k10: 49.1000,
+  k11: 98.9000,
+  k12: 49.0000,
+  k13: 98.8000,
+  k14: 48.9000,
+  k15: 98.7000,
+  k16: 48.8000,
+  k17: 98.6000,
+  k18: 48.7000,
+  k19: 98.5000,
+  k20: 48.6000,
+  k21: 98.4000,
+  k22: 48.5000,
+  k23: 98.3000,
+  k24: 48.4000,
+  k25: 98.2000,
+  k26: 48.3000,
+  k27: 98.1000,
+  k28: 48.2000,
+  k29: 98.0000,
+  k30: 48.1000,
+  k31: 97.9000,
+  k32: 48.0000,
+  k33: 97.8000,
+  k34: 47.9000,
+  k35: 97.7000,
+  k36: 47.8000,
+  k37: 97.6000,
+  k38: 47.7000,
+  k39: 97.5000,
+  k40: 47.6000,
+  k41: 97.4000,
+  k42: 47.5000,
+  k43: 97.3000,
+  k44: 47.4000,
+  k45: 97.2000,
+  k46: 47.3000,
+  k47: 97.1000,
+  k48: 47.2000,
+  k49: 97.0000,
+  k50: 47.1000,
+  k51: 96.9000,
+  k52: 47.0000,
+  k53: 96.8000,
+  k54: 46.9000,
+  k55: 96.7000,
+  k56: 46.8000,
+  k57: 96.6000,
+  k58: 46.7000,
+  k59: 96.5000,
+  k60: 46.6000,
+  k61: 96.4000,
+  k62: 46.5000,
+  k63: 96.3000,
+  k64: 46.4000,
+  k65: 96.2000,
+  k66: 46.3000,
+  k67: 96.1000,
+  k68: 46.2000,
+  k69: 96.0000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_088_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_088_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_088_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_088_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_088_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_088_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_088_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_088_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_088_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_088_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_088_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 089 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_089_META = {
+  id: 'mig_089',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'public_admin' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 88228,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_089_COEF = {
+  k0: 46.6000,
+  k1: 95.8000,
+  k2: 45.3000,
+  k3: 94.5000,
+  k4: 44.0000,
+  k5: 93.2000,
+  k6: 42.7000,
+  k7: 91.9000,
+  k8: 41.4000,
+  k9: 90.6000,
+  k10: 40.1000,
+  k11: 89.3000,
+  k12: 38.8000,
+  k13: 88.0000,
+  k14: 37.5000,
+  k15: 86.7000,
+  k16: 36.2000,
+  k17: 85.4000,
+  k18: 34.9000,
+  k19: 84.1000,
+  k20: 33.6000,
+  k21: 82.8000,
+  k22: 32.3000,
+  k23: 81.5000,
+  k24: 31.0000,
+  k25: 80.2000,
+  k26: 29.7000,
+  k27: 78.9000,
+  k28: 28.4000,
+  k29: 77.6000,
+  k30: 27.1000,
+  k31: 76.3000,
+  k32: 25.8000,
+  k33: 75.0000,
+  k34: 24.5000,
+  k35: 73.7000,
+  k36: 23.2000,
+  k37: 72.4000,
+  k38: 21.9000,
+  k39: 71.1000,
+  k40: 20.6000,
+  k41: 69.8000,
+  k42: 19.3000,
+  k43: 68.5000,
+  k44: 18.0000,
+  k45: 67.2000,
+  k46: 16.7000,
+  k47: 65.9000,
+  k48: 15.4000,
+  k49: 64.6000,
+  k50: 14.1000,
+  k51: 63.3000,
+  k52: 12.8000,
+  k53: 62.0000,
+  k54: 11.5000,
+  k55: 60.7000,
+  k56: 10.2000,
+  k57: 59.4000,
+  k58: 8.9000,
+  k59: 58.1000,
+  k60: 7.6000,
+  k61: 56.8000,
+  k62: 6.3000,
+  k63: 55.5000,
+  k64: 5.0000,
+  k65: 54.2000,
+  k66: 3.7000,
+  k67: 52.9000,
+  k68: 2.4000,
+  k69: 51.6000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_089_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_089_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_089_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_089_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_089_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_089_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_089_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_089_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_089_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_089_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_089_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 090 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_090_META = {
+  id: 'mig_090',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'engineering' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 89219,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_090_COEF = {
+  k0: 43.6000,
+  k1: 92.2000,
+  k2: 41.1000,
+  k3: 89.7000,
+  k4: 38.6000,
+  k5: 87.2000,
+  k6: 36.1000,
+  k7: 84.7000,
+  k8: 33.6000,
+  k9: 82.2000,
+  k10: 31.1000,
+  k11: 79.7000,
+  k12: 28.6000,
+  k13: 77.2000,
+  k14: 26.1000,
+  k15: 74.7000,
+  k16: 23.6000,
+  k17: 72.2000,
+  k18: 21.1000,
+  k19: 69.7000,
+  k20: 18.6000,
+  k21: 67.2000,
+  k22: 16.1000,
+  k23: 64.7000,
+  k24: 13.6000,
+  k25: 62.2000,
+  k26: 11.1000,
+  k27: 59.7000,
+  k28: 8.6000,
+  k29: 57.2000,
+  k30: 6.1000,
+  k31: 54.7000,
+  k32: 3.6000,
+  k33: 52.2000,
+  k34: 1.1000,
+  k35: 49.7000,
+  k36: 98.3000,
+  k37: 47.2000,
+  k38: 95.8000,
+  k39: 44.7000,
+  k40: 93.3000,
+  k41: 42.2000,
+  k42: 90.8000,
+  k43: 39.7000,
+  k44: 88.3000,
+  k45: 37.2000,
+  k46: 85.8000,
+  k47: 34.7000,
+  k48: 83.3000,
+  k49: 32.2000,
+  k50: 80.8000,
+  k51: 29.7000,
+  k52: 78.3000,
+  k53: 27.2000,
+  k54: 75.8000,
+  k55: 24.7000,
+  k56: 73.3000,
+  k57: 22.2000,
+  k58: 70.8000,
+  k59: 19.7000,
+  k60: 68.3000,
+  k61: 17.2000,
+  k62: 65.8000,
+  k63: 14.7000,
+  k64: 63.3000,
+  k65: 12.2000,
+  k66: 60.8000,
+  k67: 9.7000,
+  k68: 58.3000,
+  k69: 7.2000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_090_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_090_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_090_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_090_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_090_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_090_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_090_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_090_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_090_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_090_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_090_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 091 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_091_META = {
+  id: 'mig_091',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'healthcare' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 90210,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_091_COEF = {
+  k0: 40.6000,
+  k1: 88.6000,
+  k2: 36.9000,
+  k3: 84.9000,
+  k4: 33.2000,
+  k5: 81.2000,
+  k6: 29.5000,
+  k7: 77.5000,
+  k8: 25.8000,
+  k9: 73.8000,
+  k10: 22.1000,
+  k11: 70.1000,
+  k12: 18.4000,
+  k13: 66.4000,
+  k14: 14.7000,
+  k15: 62.7000,
+  k16: 11.0000,
+  k17: 59.0000,
+  k18: 7.3000,
+  k19: 55.3000,
+  k20: 3.6000,
+  k21: 51.6000,
+  k22: 99.6000,
+  k23: 47.9000,
+  k24: 95.9000,
+  k25: 44.2000,
+  k26: 92.2000,
+  k27: 40.5000,
+  k28: 88.5000,
+  k29: 36.8000,
+  k30: 84.8000,
+  k31: 33.1000,
+  k32: 81.1000,
+  k33: 29.4000,
+  k34: 77.4000,
+  k35: 25.7000,
+  k36: 73.7000,
+  k37: 22.0000,
+  k38: 70.0000,
+  k39: 18.3000,
+  k40: 66.3000,
+  k41: 14.6000,
+  k42: 62.6000,
+  k43: 10.9000,
+  k44: 58.9000,
+  k45: 7.2000,
+  k46: 55.2000,
+  k47: 3.5000,
+  k48: 51.5000,
+  k49: 99.5000,
+  k50: 47.8000,
+  k51: 95.8000,
+  k52: 44.1000,
+  k53: 92.1000,
+  k54: 40.4000,
+  k55: 88.4000,
+  k56: 36.7000,
+  k57: 84.7000,
+  k58: 33.0000,
+  k59: 81.0000,
+  k60: 29.3000,
+  k61: 77.3000,
+  k62: 25.6000,
+  k63: 73.6000,
+  k64: 21.9000,
+  k65: 69.9000,
+  k66: 18.2000,
+  k67: 66.2000,
+  k68: 14.5000,
+  k69: 62.5000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_091_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_091_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_091_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_091_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_091_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_091_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_091_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_091_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_091_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_091_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_091_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 092 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_092_META = {
+  id: 'mig_092',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'trades' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 91201,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_092_COEF = {
+  k0: 37.6000,
+  k1: 85.0000,
+  k2: 32.7000,
+  k3: 80.1000,
+  k4: 27.8000,
+  k5: 75.2000,
+  k6: 22.9000,
+  k7: 70.3000,
+  k8: 18.0000,
+  k9: 65.4000,
+  k10: 13.1000,
+  k11: 60.5000,
+  k12: 8.2000,
+  k13: 55.6000,
+  k14: 3.3000,
+  k15: 50.7000,
+  k16: 98.1000,
+  k17: 45.8000,
+  k18: 93.2000,
+  k19: 40.9000,
+  k20: 88.3000,
+  k21: 36.0000,
+  k22: 83.4000,
+  k23: 31.1000,
+  k24: 78.5000,
+  k25: 26.2000,
+  k26: 73.6000,
+  k27: 21.3000,
+  k28: 68.7000,
+  k29: 16.4000,
+  k30: 63.8000,
+  k31: 11.5000,
+  k32: 58.9000,
+  k33: 6.6000,
+  k34: 54.0000,
+  k35: 1.7000,
+  k36: 49.1000,
+  k37: 96.5000,
+  k38: 44.2000,
+  k39: 91.6000,
+  k40: 39.3000,
+  k41: 86.7000,
+  k42: 34.4000,
+  k43: 81.8000,
+  k44: 29.5000,
+  k45: 76.9000,
+  k46: 24.6000,
+  k47: 72.0000,
+  k48: 19.7000,
+  k49: 67.1000,
+  k50: 14.8000,
+  k51: 62.2000,
+  k52: 9.9000,
+  k53: 57.3000,
+  k54: 5.0000,
+  k55: 52.4000,
+  k56: 0.1000,
+  k57: 47.5000,
+  k58: 94.9000,
+  k59: 42.6000,
+  k60: 90.0000,
+  k61: 37.7000,
+  k62: 85.1000,
+  k63: 32.8000,
+  k64: 80.2000,
+  k65: 27.9000,
+  k66: 75.3000,
+  k67: 23.0000,
+  k68: 70.4000,
+  k69: 18.1000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_092_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_092_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_092_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_092_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_092_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_092_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_092_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_092_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_092_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_092_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_092_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 093 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_093_META = {
+  id: 'mig_093',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'digital' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 92192,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_093_COEF = {
+  k0: 34.6000,
+  k1: 81.4000,
+  k2: 28.5000,
+  k3: 75.3000,
+  k4: 22.4000,
+  k5: 69.2000,
+  k6: 16.3000,
+  k7: 63.1000,
+  k8: 10.2000,
+  k9: 57.0000,
+  k10: 4.1000,
+  k11: 50.9000,
+  k12: 97.7000,
+  k13: 44.8000,
+  k14: 91.6000,
+  k15: 38.7000,
+  k16: 85.5000,
+  k17: 32.6000,
+  k18: 79.4000,
+  k19: 26.5000,
+  k20: 73.3000,
+  k21: 20.4000,
+  k22: 67.2000,
+  k23: 14.3000,
+  k24: 61.1000,
+  k25: 8.2000,
+  k26: 55.0000,
+  k27: 2.1000,
+  k28: 48.9000,
+  k29: 95.7000,
+  k30: 42.8000,
+  k31: 89.6000,
+  k32: 36.7000,
+  k33: 83.5000,
+  k34: 30.6000,
+  k35: 77.4000,
+  k36: 24.5000,
+  k37: 71.3000,
+  k38: 18.4000,
+  k39: 65.2000,
+  k40: 12.3000,
+  k41: 59.1000,
+  k42: 6.2000,
+  k43: 53.0000,
+  k44: 0.1000,
+  k45: 46.9000,
+  k46: 93.7000,
+  k47: 40.8000,
+  k48: 87.6000,
+  k49: 34.7000,
+  k50: 81.5000,
+  k51: 28.6000,
+  k52: 75.4000,
+  k53: 22.5000,
+  k54: 69.3000,
+  k55: 16.4000,
+  k56: 63.2000,
+  k57: 10.3000,
+  k58: 57.1000,
+  k59: 4.2000,
+  k60: 51.0000,
+  k61: 97.8000,
+  k62: 44.9000,
+  k63: 91.7000,
+  k64: 38.8000,
+  k65: 85.6000,
+  k66: 32.7000,
+  k67: 79.5000,
+  k68: 26.6000,
+  k69: 73.4000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_093_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_093_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_093_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_093_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_093_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_093_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_093_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_093_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_093_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_093_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_093_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 094 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_094_META = {
+  id: 'mig_094',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'logistics' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 93183,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_094_COEF = {
+  k0: 31.6000,
+  k1: 77.8000,
+  k2: 24.3000,
+  k3: 70.5000,
+  k4: 17.0000,
+  k5: 63.2000,
+  k6: 9.7000,
+  k7: 55.9000,
+  k8: 2.4000,
+  k9: 48.6000,
+  k10: 94.8000,
+  k11: 41.3000,
+  k12: 87.5000,
+  k13: 34.0000,
+  k14: 80.2000,
+  k15: 26.7000,
+  k16: 72.9000,
+  k17: 19.4000,
+  k18: 65.6000,
+  k19: 12.1000,
+  k20: 58.3000,
+  k21: 4.8000,
+  k22: 51.0000,
+  k23: 97.2000,
+  k24: 43.7000,
+  k25: 89.9000,
+  k26: 36.4000,
+  k27: 82.6000,
+  k28: 29.1000,
+  k29: 75.3000,
+  k30: 21.8000,
+  k31: 68.0000,
+  k32: 14.5000,
+  k33: 60.7000,
+  k34: 7.2000,
+  k35: 53.4000,
+  k36: 99.6000,
+  k37: 46.1000,
+  k38: 92.3000,
+  k39: 38.8000,
+  k40: 85.0000,
+  k41: 31.5000,
+  k42: 77.7000,
+  k43: 24.2000,
+  k44: 70.4000,
+  k45: 16.9000,
+  k46: 63.1000,
+  k47: 9.6000,
+  k48: 55.8000,
+  k49: 2.3000,
+  k50: 48.5000,
+  k51: 94.7000,
+  k52: 41.2000,
+  k53: 87.4000,
+  k54: 33.9000,
+  k55: 80.1000,
+  k56: 26.6000,
+  k57: 72.8000,
+  k58: 19.3000,
+  k59: 65.5000,
+  k60: 12.0000,
+  k61: 58.2000,
+  k62: 4.7000,
+  k63: 50.9000,
+  k64: 97.1000,
+  k65: 43.6000,
+  k66: 89.8000,
+  k67: 36.3000,
+  k68: 82.5000,
+  k69: 29.0000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_094_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_094_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_094_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_094_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_094_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_094_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_094_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_094_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_094_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_094_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_094_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 095 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_095_META = {
+  id: 'mig_095',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'education' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 94174,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_095_COEF = {
+  k0: 28.6000,
+  k1: 74.2000,
+  k2: 20.1000,
+  k3: 65.7000,
+  k4: 11.6000,
+  k5: 57.2000,
+  k6: 3.1000,
+  k7: 48.7000,
+  k8: 94.3000,
+  k9: 40.2000,
+  k10: 85.8000,
+  k11: 31.7000,
+  k12: 77.3000,
+  k13: 23.2000,
+  k14: 68.8000,
+  k15: 14.7000,
+  k16: 60.3000,
+  k17: 6.2000,
+  k18: 51.8000,
+  k19: 97.4000,
+  k20: 43.3000,
+  k21: 88.9000,
+  k22: 34.8000,
+  k23: 80.4000,
+  k24: 26.3000,
+  k25: 71.9000,
+  k26: 17.8000,
+  k27: 63.4000,
+  k28: 9.3000,
+  k29: 54.9000,
+  k30: 0.8000,
+  k31: 46.4000,
+  k32: 92.0000,
+  k33: 37.9000,
+  k34: 83.5000,
+  k35: 29.4000,
+  k36: 75.0000,
+  k37: 20.9000,
+  k38: 66.5000,
+  k39: 12.4000,
+  k40: 58.0000,
+  k41: 3.9000,
+  k42: 49.5000,
+  k43: 95.1000,
+  k44: 41.0000,
+  k45: 86.6000,
+  k46: 32.5000,
+  k47: 78.1000,
+  k48: 24.0000,
+  k49: 69.6000,
+  k50: 15.5000,
+  k51: 61.1000,
+  k52: 7.0000,
+  k53: 52.6000,
+  k54: 98.2000,
+  k55: 44.1000,
+  k56: 89.7000,
+  k57: 35.6000,
+  k58: 81.2000,
+  k59: 27.1000,
+  k60: 72.7000,
+  k61: 18.6000,
+  k62: 64.2000,
+  k63: 10.1000,
+  k64: 55.7000,
+  k65: 1.6000,
+  k66: 47.2000,
+  k67: 92.8000,
+  k68: 38.7000,
+  k69: 84.3000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_095_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_095_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_095_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_095_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_095_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_095_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_095_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_095_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_095_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_095_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_095_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 096 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_096_META = {
+  id: 'mig_096',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'mining' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 95165,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_096_COEF = {
+  k0: 25.6000,
+  k1: 70.6000,
+  k2: 15.9000,
+  k3: 60.9000,
+  k4: 6.2000,
+  k5: 51.2000,
+  k6: 96.2000,
+  k7: 41.5000,
+  k8: 86.5000,
+  k9: 31.8000,
+  k10: 76.8000,
+  k11: 22.1000,
+  k12: 67.1000,
+  k13: 12.4000,
+  k14: 57.4000,
+  k15: 2.7000,
+  k16: 47.7000,
+  k17: 92.7000,
+  k18: 38.0000,
+  k19: 83.0000,
+  k20: 28.3000,
+  k21: 73.3000,
+  k22: 18.6000,
+  k23: 63.6000,
+  k24: 8.9000,
+  k25: 53.9000,
+  k26: 98.9000,
+  k27: 44.2000,
+  k28: 89.2000,
+  k29: 34.5000,
+  k30: 79.5000,
+  k31: 24.8000,
+  k32: 69.8000,
+  k33: 15.1000,
+  k34: 60.1000,
+  k35: 5.4000,
+  k36: 50.4000,
+  k37: 95.4000,
+  k38: 40.7000,
+  k39: 85.7000,
+  k40: 31.0000,
+  k41: 76.0000,
+  k42: 21.3000,
+  k43: 66.3000,
+  k44: 11.6000,
+  k45: 56.6000,
+  k46: 1.9000,
+  k47: 46.9000,
+  k48: 91.9000,
+  k49: 37.2000,
+  k50: 82.2000,
+  k51: 27.5000,
+  k52: 72.5000,
+  k53: 17.8000,
+  k54: 62.8000,
+  k55: 8.1000,
+  k56: 53.1000,
+  k57: 98.1000,
+  k58: 43.4000,
+  k59: 88.4000,
+  k60: 33.7000,
+  k61: 78.7000,
+  k62: 24.0000,
+  k63: 69.0000,
+  k64: 14.3000,
+  k65: 59.3000,
+  k66: 4.6000,
+  k67: 49.6000,
+  k68: 94.6000,
+  k69: 39.9000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_096_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_096_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_096_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_096_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_096_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_096_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_096_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_096_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_096_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_096_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_096_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 097 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_097_META = {
+  id: 'mig_097',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'agriculture' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 96156,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_097_COEF = {
+  k0: 22.6000,
+  k1: 67.0000,
+  k2: 11.7000,
+  k3: 56.1000,
+  k4: 0.8000,
+  k5: 45.2000,
+  k6: 89.6000,
+  k7: 34.3000,
+  k8: 78.7000,
+  k9: 23.4000,
+  k10: 67.8000,
+  k11: 12.5000,
+  k12: 56.9000,
+  k13: 1.6000,
+  k14: 46.0000,
+  k15: 90.4000,
+  k16: 35.1000,
+  k17: 79.5000,
+  k18: 24.2000,
+  k19: 68.6000,
+  k20: 13.3000,
+  k21: 57.7000,
+  k22: 2.4000,
+  k23: 46.8000,
+  k24: 91.2000,
+  k25: 35.9000,
+  k26: 80.3000,
+  k27: 25.0000,
+  k28: 69.4000,
+  k29: 14.1000,
+  k30: 58.5000,
+  k31: 3.2000,
+  k32: 47.6000,
+  k33: 92.0000,
+  k34: 36.7000,
+  k35: 81.1000,
+  k36: 25.8000,
+  k37: 70.2000,
+  k38: 14.9000,
+  k39: 59.3000,
+  k40: 4.0000,
+  k41: 48.4000,
+  k42: 92.8000,
+  k43: 37.5000,
+  k44: 81.9000,
+  k45: 26.6000,
+  k46: 71.0000,
+  k47: 15.7000,
+  k48: 60.1000,
+  k49: 4.8000,
+  k50: 49.2000,
+  k51: 93.6000,
+  k52: 38.3000,
+  k53: 82.7000,
+  k54: 27.4000,
+  k55: 71.8000,
+  k56: 16.5000,
+  k57: 60.9000,
+  k58: 5.6000,
+  k59: 50.0000,
+  k60: 94.4000,
+  k61: 39.1000,
+  k62: 83.5000,
+  k63: 28.2000,
+  k64: 72.6000,
+  k65: 17.3000,
+  k66: 61.7000,
+  k67: 6.4000,
+  k68: 50.8000,
+  k69: 95.2000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_097_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_097_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_097_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_097_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_097_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_097_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_097_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_097_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_097_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_097_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_097_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 098 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_098_META = {
+  id: 'mig_098',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'hospitality' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 97147,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_098_COEF = {
+  k0: 19.6000,
+  k1: 63.4000,
+  k2: 7.5000,
+  k3: 51.3000,
+  k4: 95.1000,
+  k5: 39.2000,
+  k6: 83.0000,
+  k7: 27.1000,
+  k8: 70.9000,
+  k9: 15.0000,
+  k10: 58.8000,
+  k11: 2.9000,
+  k12: 46.7000,
+  k13: 90.5000,
+  k14: 34.6000,
+  k15: 78.4000,
+  k16: 22.5000,
+  k17: 66.3000,
+  k18: 10.4000,
+  k19: 54.2000,
+  k20: 98.0000,
+  k21: 42.1000,
+  k22: 85.9000,
+  k23: 30.0000,
+  k24: 73.8000,
+  k25: 17.9000,
+  k26: 61.7000,
+  k27: 5.8000,
+  k28: 49.6000,
+  k29: 93.4000,
+  k30: 37.5000,
+  k31: 81.3000,
+  k32: 25.4000,
+  k33: 69.2000,
+  k34: 13.3000,
+  k35: 57.1000,
+  k36: 1.2000,
+  k37: 45.0000,
+  k38: 88.8000,
+  k39: 32.9000,
+  k40: 76.7000,
+  k41: 20.8000,
+  k42: 64.6000,
+  k43: 8.7000,
+  k44: 52.5000,
+  k45: 96.3000,
+  k46: 40.4000,
+  k47: 84.2000,
+  k48: 28.3000,
+  k49: 72.1000,
+  k50: 16.2000,
+  k51: 60.0000,
+  k52: 4.1000,
+  k53: 47.9000,
+  k54: 91.7000,
+  k55: 35.8000,
+  k56: 79.6000,
+  k57: 23.7000,
+  k58: 67.5000,
+  k59: 11.6000,
+  k60: 55.4000,
+  k61: 99.2000,
+  k62: 43.3000,
+  k63: 87.1000,
+  k64: 31.2000,
+  k65: 75.0000,
+  k66: 19.1000,
+  k67: 62.9000,
+  k68: 7.0000,
+  k69: 50.8000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_098_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_098_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_098_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_098_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_098_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_098_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_098_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_098_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_098_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_098_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_098_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 099 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_099_META = {
+  id: 'mig_099',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'public_admin' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 98138,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_099_COEF = {
+  k0: 16.6000,
+  k1: 59.8000,
+  k2: 3.3000,
+  k3: 46.5000,
+  k4: 89.7000,
+  k5: 33.2000,
+  k6: 76.4000,
+  k7: 19.9000,
+  k8: 63.1000,
+  k9: 6.6000,
+  k10: 49.8000,
+  k11: 93.0000,
+  k12: 36.5000,
+  k13: 79.7000,
+  k14: 23.2000,
+  k15: 66.4000,
+  k16: 9.9000,
+  k17: 53.1000,
+  k18: 96.3000,
+  k19: 39.8000,
+  k20: 83.0000,
+  k21: 26.5000,
+  k22: 69.7000,
+  k23: 13.2000,
+  k24: 56.4000,
+  k25: 99.6000,
+  k26: 43.1000,
+  k27: 86.3000,
+  k28: 29.8000,
+  k29: 73.0000,
+  k30: 16.5000,
+  k31: 59.7000,
+  k32: 3.2000,
+  k33: 46.4000,
+  k34: 89.6000,
+  k35: 33.1000,
+  k36: 76.3000,
+  k37: 19.8000,
+  k38: 63.0000,
+  k39: 6.5000,
+  k40: 49.7000,
+  k41: 92.9000,
+  k42: 36.4000,
+  k43: 79.6000,
+  k44: 23.1000,
+  k45: 66.3000,
+  k46: 9.8000,
+  k47: 53.0000,
+  k48: 96.2000,
+  k49: 39.7000,
+  k50: 82.9000,
+  k51: 26.4000,
+  k52: 69.6000,
+  k53: 13.1000,
+  k54: 56.3000,
+  k55: 99.5000,
+  k56: 43.0000,
+  k57: 86.2000,
+  k58: 29.7000,
+  k59: 72.9000,
+  k60: 16.4000,
+  k61: 59.6000,
+  k62: 3.1000,
+  k63: 46.3000,
+  k64: 89.5000,
+  k65: 33.0000,
+  k66: 76.2000,
+  k67: 19.7000,
+  k68: 62.9000,
+  k69: 6.4000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_099_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_099_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_099_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_099_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_099_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_099_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_099_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_099_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_099_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_099_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_099_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 100 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_100_META = {
+  id: 'mig_100',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'engineering' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 99129,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_100_COEF = {
+  k0: 13.6000,
+  k1: 56.2000,
+  k2: 98.8000,
+  k3: 41.7000,
+  k4: 84.3000,
+  k5: 27.2000,
+  k6: 69.8000,
+  k7: 12.7000,
+  k8: 55.3000,
+  k9: 97.9000,
+  k10: 40.8000,
+  k11: 83.4000,
+  k12: 26.3000,
+  k13: 68.9000,
+  k14: 11.8000,
+  k15: 54.4000,
+  k16: 97.0000,
+  k17: 39.9000,
+  k18: 82.5000,
+  k19: 25.4000,
+  k20: 68.0000,
+  k21: 10.9000,
+  k22: 53.5000,
+  k23: 96.1000,
+  k24: 39.0000,
+  k25: 81.6000,
+  k26: 24.5000,
+  k27: 67.1000,
+  k28: 10.0000,
+  k29: 52.6000,
+  k30: 95.2000,
+  k31: 38.1000,
+  k32: 80.7000,
+  k33: 23.6000,
+  k34: 66.2000,
+  k35: 9.1000,
+  k36: 51.7000,
+  k37: 94.3000,
+  k38: 37.2000,
+  k39: 79.8000,
+  k40: 22.7000,
+  k41: 65.3000,
+  k42: 8.2000,
+  k43: 50.8000,
+  k44: 93.4000,
+  k45: 36.3000,
+  k46: 78.9000,
+  k47: 21.8000,
+  k48: 64.4000,
+  k49: 7.3000,
+  k50: 49.9000,
+  k51: 92.5000,
+  k52: 35.4000,
+  k53: 78.0000,
+  k54: 20.9000,
+  k55: 63.5000,
+  k56: 6.4000,
+  k57: 49.0000,
+  k58: 91.6000,
+  k59: 34.5000,
+  k60: 77.1000,
+  k61: 20.0000,
+  k62: 62.6000,
+  k63: 5.5000,
+  k64: 48.1000,
+  k65: 90.7000,
+  k66: 33.6000,
+  k67: 76.2000,
+  k68: 19.1000,
+  k69: 61.7000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_100_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_100_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_100_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_100_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_100_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_100_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_100_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_100_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_100_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_100_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_100_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 101 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_101_META = {
+  id: 'mig_101',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'healthcare' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 100120,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_101_COEF = {
+  k0: 10.6000,
+  k1: 52.6000,
+  k2: 94.6000,
+  k3: 36.9000,
+  k4: 78.9000,
+  k5: 21.2000,
+  k6: 63.2000,
+  k7: 5.5000,
+  k8: 47.5000,
+  k9: 89.5000,
+  k10: 31.8000,
+  k11: 73.8000,
+  k12: 16.1000,
+  k13: 58.1000,
+  k14: 0.4000,
+  k15: 42.4000,
+  k16: 84.4000,
+  k17: 26.7000,
+  k18: 68.7000,
+  k19: 11.0000,
+  k20: 53.0000,
+  k21: 95.0000,
+  k22: 37.3000,
+  k23: 79.3000,
+  k24: 21.6000,
+  k25: 63.6000,
+  k26: 5.9000,
+  k27: 47.9000,
+  k28: 89.9000,
+  k29: 32.2000,
+  k30: 74.2000,
+  k31: 16.5000,
+  k32: 58.5000,
+  k33: 0.8000,
+  k34: 42.8000,
+  k35: 84.8000,
+  k36: 27.1000,
+  k37: 69.1000,
+  k38: 11.4000,
+  k39: 53.4000,
+  k40: 95.4000,
+  k41: 37.7000,
+  k42: 79.7000,
+  k43: 22.0000,
+  k44: 64.0000,
+  k45: 6.3000,
+  k46: 48.3000,
+  k47: 90.3000,
+  k48: 32.6000,
+  k49: 74.6000,
+  k50: 16.9000,
+  k51: 58.9000,
+  k52: 1.2000,
+  k53: 43.2000,
+  k54: 85.2000,
+  k55: 27.5000,
+  k56: 69.5000,
+  k57: 11.8000,
+  k58: 53.8000,
+  k59: 95.8000,
+  k60: 38.1000,
+  k61: 80.1000,
+  k62: 22.4000,
+  k63: 64.4000,
+  k64: 6.7000,
+  k65: 48.7000,
+  k66: 90.7000,
+  k67: 33.0000,
+  k68: 75.0000,
+  k69: 17.3000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_101_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_101_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_101_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_101_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_101_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_101_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_101_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_101_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_101_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_101_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_101_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 102 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_102_META = {
+  id: 'mig_102',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'trades' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 101111,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_102_COEF = {
+  k0: 7.6000,
+  k1: 49.0000,
+  k2: 90.4000,
+  k3: 32.1000,
+  k4: 73.5000,
+  k5: 15.2000,
+  k6: 56.6000,
+  k7: 98.0000,
+  k8: 39.7000,
+  k9: 81.1000,
+  k10: 22.8000,
+  k11: 64.2000,
+  k12: 5.9000,
+  k13: 47.3000,
+  k14: 88.7000,
+  k15: 30.4000,
+  k16: 71.8000,
+  k17: 13.5000,
+  k18: 54.9000,
+  k19: 96.3000,
+  k20: 38.0000,
+  k21: 79.4000,
+  k22: 21.1000,
+  k23: 62.5000,
+  k24: 4.2000,
+  k25: 45.6000,
+  k26: 87.0000,
+  k27: 28.7000,
+  k28: 70.1000,
+  k29: 11.8000,
+  k30: 53.2000,
+  k31: 94.6000,
+  k32: 36.3000,
+  k33: 77.7000,
+  k34: 19.4000,
+  k35: 60.8000,
+  k36: 2.5000,
+  k37: 43.9000,
+  k38: 85.3000,
+  k39: 27.0000,
+  k40: 68.4000,
+  k41: 10.1000,
+  k42: 51.5000,
+  k43: 92.9000,
+  k44: 34.6000,
+  k45: 76.0000,
+  k46: 17.7000,
+  k47: 59.1000,
+  k48: 0.8000,
+  k49: 42.2000,
+  k50: 83.6000,
+  k51: 25.3000,
+  k52: 66.7000,
+  k53: 8.4000,
+  k54: 49.8000,
+  k55: 91.2000,
+  k56: 32.9000,
+  k57: 74.3000,
+  k58: 16.0000,
+  k59: 57.4000,
+  k60: 98.8000,
+  k61: 40.5000,
+  k62: 81.9000,
+  k63: 23.6000,
+  k64: 65.0000,
+  k65: 6.7000,
+  k66: 48.1000,
+  k67: 89.5000,
+  k68: 31.2000,
+  k69: 72.6000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_102_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_102_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_102_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_102_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_102_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_102_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_102_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_102_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_102_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_102_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_102_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 103 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_103_META = {
+  id: 'mig_103',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'digital' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 102102,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_103_COEF = {
+  k0: 4.6000,
+  k1: 45.4000,
+  k2: 86.2000,
+  k3: 27.3000,
+  k4: 68.1000,
+  k5: 9.2000,
+  k6: 50.0000,
+  k7: 90.8000,
+  k8: 31.9000,
+  k9: 72.7000,
+  k10: 13.8000,
+  k11: 54.6000,
+  k12: 95.4000,
+  k13: 36.5000,
+  k14: 77.3000,
+  k15: 18.4000,
+  k16: 59.2000,
+  k17: 0.3000,
+  k18: 41.1000,
+  k19: 81.9000,
+  k20: 23.0000,
+  k21: 63.8000,
+  k22: 4.9000,
+  k23: 45.7000,
+  k24: 86.5000,
+  k25: 27.6000,
+  k26: 68.4000,
+  k27: 9.5000,
+  k28: 50.3000,
+  k29: 91.1000,
+  k30: 32.2000,
+  k31: 73.0000,
+  k32: 14.1000,
+  k33: 54.9000,
+  k34: 95.7000,
+  k35: 36.8000,
+  k36: 77.6000,
+  k37: 18.7000,
+  k38: 59.5000,
+  k39: 0.6000,
+  k40: 41.4000,
+  k41: 82.2000,
+  k42: 23.3000,
+  k43: 64.1000,
+  k44: 5.2000,
+  k45: 46.0000,
+  k46: 86.8000,
+  k47: 27.9000,
+  k48: 68.7000,
+  k49: 9.8000,
+  k50: 50.6000,
+  k51: 91.4000,
+  k52: 32.5000,
+  k53: 73.3000,
+  k54: 14.4000,
+  k55: 55.2000,
+  k56: 96.0000,
+  k57: 37.1000,
+  k58: 77.9000,
+  k59: 19.0000,
+  k60: 59.8000,
+  k61: 0.9000,
+  k62: 41.7000,
+  k63: 82.5000,
+  k64: 23.6000,
+  k65: 64.4000,
+  k66: 5.5000,
+  k67: 46.3000,
+  k68: 87.1000,
+  k69: 28.2000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_103_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_103_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_103_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_103_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_103_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_103_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_103_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_103_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_103_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_103_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_103_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 104 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_104_META = {
+  id: 'mig_104',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'logistics' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 103093,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_104_COEF = {
+  k0: 1.6000,
+  k1: 41.8000,
+  k2: 82.0000,
+  k3: 22.5000,
+  k4: 62.7000,
+  k5: 3.2000,
+  k6: 43.4000,
+  k7: 83.6000,
+  k8: 24.1000,
+  k9: 64.3000,
+  k10: 4.8000,
+  k11: 45.0000,
+  k12: 85.2000,
+  k13: 25.7000,
+  k14: 65.9000,
+  k15: 6.4000,
+  k16: 46.6000,
+  k17: 86.8000,
+  k18: 27.3000,
+  k19: 67.5000,
+  k20: 8.0000,
+  k21: 48.2000,
+  k22: 88.4000,
+  k23: 28.9000,
+  k24: 69.1000,
+  k25: 9.6000,
+  k26: 49.8000,
+  k27: 90.0000,
+  k28: 30.5000,
+  k29: 70.7000,
+  k30: 11.2000,
+  k31: 51.4000,
+  k32: 91.6000,
+  k33: 32.1000,
+  k34: 72.3000,
+  k35: 12.8000,
+  k36: 53.0000,
+  k37: 93.2000,
+  k38: 33.7000,
+  k39: 73.9000,
+  k40: 14.4000,
+  k41: 54.6000,
+  k42: 94.8000,
+  k43: 35.3000,
+  k44: 75.5000,
+  k45: 16.0000,
+  k46: 56.2000,
+  k47: 96.4000,
+  k48: 36.9000,
+  k49: 77.1000,
+  k50: 17.6000,
+  k51: 57.8000,
+  k52: 98.0000,
+  k53: 38.5000,
+  k54: 78.7000,
+  k55: 19.2000,
+  k56: 59.4000,
+  k57: 99.6000,
+  k58: 40.1000,
+  k59: 80.3000,
+  k60: 20.8000,
+  k61: 61.0000,
+  k62: 1.5000,
+  k63: 41.7000,
+  k64: 81.9000,
+  k65: 22.4000,
+  k66: 62.6000,
+  k67: 3.1000,
+  k68: 43.3000,
+  k69: 83.5000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_104_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_104_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_104_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_104_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_104_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_104_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_104_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_104_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_104_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_104_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_104_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 105 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_105_META = {
+  id: 'mig_105',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'education' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 104084,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_105_COEF = {
+  k0: 98.3000,
+  k1: 38.2000,
+  k2: 77.8000,
+  k3: 17.7000,
+  k4: 57.3000,
+  k5: 96.9000,
+  k6: 36.8000,
+  k7: 76.4000,
+  k8: 16.3000,
+  k9: 55.9000,
+  k10: 95.5000,
+  k11: 35.4000,
+  k12: 75.0000,
+  k13: 14.9000,
+  k14: 54.5000,
+  k15: 94.1000,
+  k16: 34.0000,
+  k17: 73.6000,
+  k18: 13.5000,
+  k19: 53.1000,
+  k20: 92.7000,
+  k21: 32.6000,
+  k22: 72.2000,
+  k23: 12.1000,
+  k24: 51.7000,
+  k25: 91.3000,
+  k26: 31.2000,
+  k27: 70.8000,
+  k28: 10.7000,
+  k29: 50.3000,
+  k30: 89.9000,
+  k31: 29.8000,
+  k32: 69.4000,
+  k33: 9.3000,
+  k34: 48.9000,
+  k35: 88.5000,
+  k36: 28.4000,
+  k37: 68.0000,
+  k38: 7.9000,
+  k39: 47.5000,
+  k40: 87.1000,
+  k41: 27.0000,
+  k42: 66.6000,
+  k43: 6.5000,
+  k44: 46.1000,
+  k45: 85.7000,
+  k46: 25.6000,
+  k47: 65.2000,
+  k48: 5.1000,
+  k49: 44.7000,
+  k50: 84.3000,
+  k51: 24.2000,
+  k52: 63.8000,
+  k53: 3.7000,
+  k54: 43.3000,
+  k55: 82.9000,
+  k56: 22.8000,
+  k57: 62.4000,
+  k58: 2.3000,
+  k59: 41.9000,
+  k60: 81.5000,
+  k61: 21.4000,
+  k62: 61.0000,
+  k63: 0.9000,
+  k64: 40.5000,
+  k65: 80.1000,
+  k66: 20.0000,
+  k67: 59.6000,
+  k68: 99.2000,
+  k69: 39.1000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_105_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_105_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_105_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_105_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_105_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_105_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_105_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_105_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_105_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_105_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_105_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 106 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_106_META = {
+  id: 'mig_106',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'mining' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 105075,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_106_COEF = {
+  k0: 95.3000,
+  k1: 34.6000,
+  k2: 73.6000,
+  k3: 12.9000,
+  k4: 51.9000,
+  k5: 90.9000,
+  k6: 30.2000,
+  k7: 69.2000,
+  k8: 8.5000,
+  k9: 47.5000,
+  k10: 86.5000,
+  k11: 25.8000,
+  k12: 64.8000,
+  k13: 4.1000,
+  k14: 43.1000,
+  k15: 82.1000,
+  k16: 21.4000,
+  k17: 60.4000,
+  k18: 99.4000,
+  k19: 38.7000,
+  k20: 77.7000,
+  k21: 17.0000,
+  k22: 56.0000,
+  k23: 95.0000,
+  k24: 34.3000,
+  k25: 73.3000,
+  k26: 12.6000,
+  k27: 51.6000,
+  k28: 90.6000,
+  k29: 29.9000,
+  k30: 68.9000,
+  k31: 8.2000,
+  k32: 47.2000,
+  k33: 86.2000,
+  k34: 25.5000,
+  k35: 64.5000,
+  k36: 3.8000,
+  k37: 42.8000,
+  k38: 81.8000,
+  k39: 21.1000,
+  k40: 60.1000,
+  k41: 99.1000,
+  k42: 38.4000,
+  k43: 77.4000,
+  k44: 16.7000,
+  k45: 55.7000,
+  k46: 94.7000,
+  k47: 34.0000,
+  k48: 73.0000,
+  k49: 12.3000,
+  k50: 51.3000,
+  k51: 90.3000,
+  k52: 29.6000,
+  k53: 68.6000,
+  k54: 7.9000,
+  k55: 46.9000,
+  k56: 85.9000,
+  k57: 25.2000,
+  k58: 64.2000,
+  k59: 3.5000,
+  k60: 42.5000,
+  k61: 81.5000,
+  k62: 20.8000,
+  k63: 59.8000,
+  k64: 98.8000,
+  k65: 38.1000,
+  k66: 77.1000,
+  k67: 16.4000,
+  k68: 55.4000,
+  k69: 94.4000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_106_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_106_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_106_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_106_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_106_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_106_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_106_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_106_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_106_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_106_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_106_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 107 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_107_META = {
+  id: 'mig_107',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'agriculture' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 106066,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_107_COEF = {
+  k0: 92.3000,
+  k1: 31.0000,
+  k2: 69.4000,
+  k3: 8.1000,
+  k4: 46.5000,
+  k5: 84.9000,
+  k6: 23.6000,
+  k7: 62.0000,
+  k8: 0.7000,
+  k9: 39.1000,
+  k10: 77.5000,
+  k11: 16.2000,
+  k12: 54.6000,
+  k13: 93.0000,
+  k14: 31.7000,
+  k15: 70.1000,
+  k16: 8.8000,
+  k17: 47.2000,
+  k18: 85.6000,
+  k19: 24.3000,
+  k20: 62.7000,
+  k21: 1.4000,
+  k22: 39.8000,
+  k23: 78.2000,
+  k24: 16.9000,
+  k25: 55.3000,
+  k26: 93.7000,
+  k27: 32.4000,
+  k28: 70.8000,
+  k29: 9.5000,
+  k30: 47.9000,
+  k31: 86.3000,
+  k32: 25.0000,
+  k33: 63.4000,
+  k34: 2.1000,
+  k35: 40.5000,
+  k36: 78.9000,
+  k37: 17.6000,
+  k38: 56.0000,
+  k39: 94.4000,
+  k40: 33.1000,
+  k41: 71.5000,
+  k42: 10.2000,
+  k43: 48.6000,
+  k44: 87.0000,
+  k45: 25.7000,
+  k46: 64.1000,
+  k47: 2.8000,
+  k48: 41.2000,
+  k49: 79.6000,
+  k50: 18.3000,
+  k51: 56.7000,
+  k52: 95.1000,
+  k53: 33.8000,
+  k54: 72.2000,
+  k55: 10.9000,
+  k56: 49.3000,
+  k57: 87.7000,
+  k58: 26.4000,
+  k59: 64.8000,
+  k60: 3.5000,
+  k61: 41.9000,
+  k62: 80.3000,
+  k63: 19.0000,
+  k64: 57.4000,
+  k65: 95.8000,
+  k66: 34.5000,
+  k67: 72.9000,
+  k68: 11.6000,
+  k69: 50.0000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_107_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_107_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_107_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_107_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_107_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_107_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_107_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_107_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_107_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_107_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_107_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 108 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_108_META = {
+  id: 'mig_108',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'hospitality' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 107057,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_108_COEF = {
+  k0: 89.3000,
+  k1: 27.4000,
+  k2: 65.2000,
+  k3: 3.3000,
+  k4: 41.1000,
+  k5: 78.9000,
+  k6: 17.0000,
+  k7: 54.8000,
+  k8: 92.6000,
+  k9: 30.7000,
+  k10: 68.5000,
+  k11: 6.6000,
+  k12: 44.4000,
+  k13: 82.2000,
+  k14: 20.3000,
+  k15: 58.1000,
+  k16: 95.9000,
+  k17: 34.0000,
+  k18: 71.8000,
+  k19: 9.9000,
+  k20: 47.7000,
+  k21: 85.5000,
+  k22: 23.6000,
+  k23: 61.4000,
+  k24: 99.2000,
+  k25: 37.3000,
+  k26: 75.1000,
+  k27: 13.2000,
+  k28: 51.0000,
+  k29: 88.8000,
+  k30: 26.9000,
+  k31: 64.7000,
+  k32: 2.8000,
+  k33: 40.6000,
+  k34: 78.4000,
+  k35: 16.5000,
+  k36: 54.3000,
+  k37: 92.1000,
+  k38: 30.2000,
+  k39: 68.0000,
+  k40: 6.1000,
+  k41: 43.9000,
+  k42: 81.7000,
+  k43: 19.8000,
+  k44: 57.6000,
+  k45: 95.4000,
+  k46: 33.5000,
+  k47: 71.3000,
+  k48: 9.4000,
+  k49: 47.2000,
+  k50: 85.0000,
+  k51: 23.1000,
+  k52: 60.9000,
+  k53: 98.7000,
+  k54: 36.8000,
+  k55: 74.6000,
+  k56: 12.7000,
+  k57: 50.5000,
+  k58: 88.3000,
+  k59: 26.4000,
+  k60: 64.2000,
+  k61: 2.3000,
+  k62: 40.1000,
+  k63: 77.9000,
+  k64: 16.0000,
+  k65: 53.8000,
+  k66: 91.6000,
+  k67: 29.7000,
+  k68: 67.5000,
+  k69: 5.6000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_108_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_108_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_108_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_108_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_108_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_108_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_108_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_108_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_108_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_108_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_108_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 109 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_109_META = {
+  id: 'mig_109',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'public_admin' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 108048,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_109_COEF = {
+  k0: 86.3000,
+  k1: 23.8000,
+  k2: 61.0000,
+  k3: 98.2000,
+  k4: 35.7000,
+  k5: 72.9000,
+  k6: 10.4000,
+  k7: 47.6000,
+  k8: 84.8000,
+  k9: 22.3000,
+  k10: 59.5000,
+  k11: 96.7000,
+  k12: 34.2000,
+  k13: 71.4000,
+  k14: 8.9000,
+  k15: 46.1000,
+  k16: 83.3000,
+  k17: 20.8000,
+  k18: 58.0000,
+  k19: 95.2000,
+  k20: 32.7000,
+  k21: 69.9000,
+  k22: 7.4000,
+  k23: 44.6000,
+  k24: 81.8000,
+  k25: 19.3000,
+  k26: 56.5000,
+  k27: 93.7000,
+  k28: 31.2000,
+  k29: 68.4000,
+  k30: 5.9000,
+  k31: 43.1000,
+  k32: 80.3000,
+  k33: 17.8000,
+  k34: 55.0000,
+  k35: 92.2000,
+  k36: 29.7000,
+  k37: 66.9000,
+  k38: 4.4000,
+  k39: 41.6000,
+  k40: 78.8000,
+  k41: 16.3000,
+  k42: 53.5000,
+  k43: 90.7000,
+  k44: 28.2000,
+  k45: 65.4000,
+  k46: 2.9000,
+  k47: 40.1000,
+  k48: 77.3000,
+  k49: 14.8000,
+  k50: 52.0000,
+  k51: 89.2000,
+  k52: 26.7000,
+  k53: 63.9000,
+  k54: 1.4000,
+  k55: 38.6000,
+  k56: 75.8000,
+  k57: 13.3000,
+  k58: 50.5000,
+  k59: 87.7000,
+  k60: 25.2000,
+  k61: 62.4000,
+  k62: 99.6000,
+  k63: 37.1000,
+  k64: 74.3000,
+  k65: 11.8000,
+  k66: 49.0000,
+  k67: 86.2000,
+  k68: 23.7000,
+  k69: 60.9000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_109_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_109_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_109_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_109_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_109_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_109_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_109_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_109_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_109_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_109_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_109_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 110 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_110_META = {
+  id: 'mig_110',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'engineering' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 109039,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_110_COEF = {
+  k0: 83.3000,
+  k1: 20.2000,
+  k2: 56.8000,
+  k3: 93.4000,
+  k4: 30.3000,
+  k5: 66.9000,
+  k6: 3.8000,
+  k7: 40.4000,
+  k8: 77.0000,
+  k9: 13.9000,
+  k10: 50.5000,
+  k11: 87.1000,
+  k12: 24.0000,
+  k13: 60.6000,
+  k14: 97.2000,
+  k15: 34.1000,
+  k16: 70.7000,
+  k17: 7.6000,
+  k18: 44.2000,
+  k19: 80.8000,
+  k20: 17.7000,
+  k21: 54.3000,
+  k22: 90.9000,
+  k23: 27.8000,
+  k24: 64.4000,
+  k25: 1.3000,
+  k26: 37.9000,
+  k27: 74.5000,
+  k28: 11.4000,
+  k29: 48.0000,
+  k30: 84.6000,
+  k31: 21.5000,
+  k32: 58.1000,
+  k33: 94.7000,
+  k34: 31.6000,
+  k35: 68.2000,
+  k36: 5.1000,
+  k37: 41.7000,
+  k38: 78.3000,
+  k39: 15.2000,
+  k40: 51.8000,
+  k41: 88.4000,
+  k42: 25.3000,
+  k43: 61.9000,
+  k44: 98.5000,
+  k45: 35.4000,
+  k46: 72.0000,
+  k47: 8.9000,
+  k48: 45.5000,
+  k49: 82.1000,
+  k50: 19.0000,
+  k51: 55.6000,
+  k52: 92.2000,
+  k53: 29.1000,
+  k54: 65.7000,
+  k55: 2.6000,
+  k56: 39.2000,
+  k57: 75.8000,
+  k58: 12.7000,
+  k59: 49.3000,
+  k60: 85.9000,
+  k61: 22.8000,
+  k62: 59.4000,
+  k63: 96.0000,
+  k64: 32.9000,
+  k65: 69.5000,
+  k66: 6.4000,
+  k67: 43.0000,
+  k68: 79.6000,
+  k69: 16.5000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_110_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_110_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_110_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_110_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_110_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_110_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_110_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_110_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_110_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_110_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_110_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 111 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_111_META = {
+  id: 'mig_111',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'healthcare' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 110030,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_111_COEF = {
+  k0: 80.3000,
+  k1: 16.6000,
+  k2: 52.6000,
+  k3: 88.6000,
+  k4: 24.9000,
+  k5: 60.9000,
+  k6: 96.9000,
+  k7: 33.2000,
+  k8: 69.2000,
+  k9: 5.5000,
+  k10: 41.5000,
+  k11: 77.5000,
+  k12: 13.8000,
+  k13: 49.8000,
+  k14: 85.8000,
+  k15: 22.1000,
+  k16: 58.1000,
+  k17: 94.1000,
+  k18: 30.4000,
+  k19: 66.4000,
+  k20: 2.7000,
+  k21: 38.7000,
+  k22: 74.7000,
+  k23: 11.0000,
+  k24: 47.0000,
+  k25: 83.0000,
+  k26: 19.3000,
+  k27: 55.3000,
+  k28: 91.3000,
+  k29: 27.6000,
+  k30: 63.6000,
+  k31: 99.6000,
+  k32: 35.9000,
+  k33: 71.9000,
+  k34: 8.2000,
+  k35: 44.2000,
+  k36: 80.2000,
+  k37: 16.5000,
+  k38: 52.5000,
+  k39: 88.5000,
+  k40: 24.8000,
+  k41: 60.8000,
+  k42: 96.8000,
+  k43: 33.1000,
+  k44: 69.1000,
+  k45: 5.4000,
+  k46: 41.4000,
+  k47: 77.4000,
+  k48: 13.7000,
+  k49: 49.7000,
+  k50: 85.7000,
+  k51: 22.0000,
+  k52: 58.0000,
+  k53: 94.0000,
+  k54: 30.3000,
+  k55: 66.3000,
+  k56: 2.6000,
+  k57: 38.6000,
+  k58: 74.6000,
+  k59: 10.9000,
+  k60: 46.9000,
+  k61: 82.9000,
+  k62: 19.2000,
+  k63: 55.2000,
+  k64: 91.2000,
+  k65: 27.5000,
+  k66: 63.5000,
+  k67: 99.5000,
+  k68: 35.8000,
+  k69: 71.8000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_111_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_111_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_111_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_111_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_111_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_111_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_111_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_111_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_111_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_111_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_111_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 112 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_112_META = {
+  id: 'mig_112',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'trades' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 111021,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_112_COEF = {
+  k0: 77.3000,
+  k1: 13.0000,
+  k2: 48.4000,
+  k3: 83.8000,
+  k4: 19.5000,
+  k5: 54.9000,
+  k6: 90.3000,
+  k7: 26.0000,
+  k8: 61.4000,
+  k9: 96.8000,
+  k10: 32.5000,
+  k11: 67.9000,
+  k12: 3.6000,
+  k13: 39.0000,
+  k14: 74.4000,
+  k15: 10.1000,
+  k16: 45.5000,
+  k17: 80.9000,
+  k18: 16.6000,
+  k19: 52.0000,
+  k20: 87.4000,
+  k21: 23.1000,
+  k22: 58.5000,
+  k23: 93.9000,
+  k24: 29.6000,
+  k25: 65.0000,
+  k26: 0.7000,
+  k27: 36.1000,
+  k28: 71.5000,
+  k29: 7.2000,
+  k30: 42.6000,
+  k31: 78.0000,
+  k32: 13.7000,
+  k33: 49.1000,
+  k34: 84.5000,
+  k35: 20.2000,
+  k36: 55.6000,
+  k37: 91.0000,
+  k38: 26.7000,
+  k39: 62.1000,
+  k40: 97.5000,
+  k41: 33.2000,
+  k42: 68.6000,
+  k43: 4.3000,
+  k44: 39.7000,
+  k45: 75.1000,
+  k46: 10.8000,
+  k47: 46.2000,
+  k48: 81.6000,
+  k49: 17.3000,
+  k50: 52.7000,
+  k51: 88.1000,
+  k52: 23.8000,
+  k53: 59.2000,
+  k54: 94.6000,
+  k55: 30.3000,
+  k56: 65.7000,
+  k57: 1.4000,
+  k58: 36.8000,
+  k59: 72.2000,
+  k60: 7.9000,
+  k61: 43.3000,
+  k62: 78.7000,
+  k63: 14.4000,
+  k64: 49.8000,
+  k65: 85.2000,
+  k66: 20.9000,
+  k67: 56.3000,
+  k68: 91.7000,
+  k69: 27.4000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_112_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_112_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_112_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_112_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_112_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_112_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_112_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_112_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_112_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_112_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_112_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 113 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_113_META = {
+  id: 'mig_113',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'digital' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 112012,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_113_COEF = {
+  k0: 74.3000,
+  k1: 9.4000,
+  k2: 44.2000,
+  k3: 79.0000,
+  k4: 14.1000,
+  k5: 48.9000,
+  k6: 83.7000,
+  k7: 18.8000,
+  k8: 53.6000,
+  k9: 88.4000,
+  k10: 23.5000,
+  k11: 58.3000,
+  k12: 93.1000,
+  k13: 28.2000,
+  k14: 63.0000,
+  k15: 97.8000,
+  k16: 32.9000,
+  k17: 67.7000,
+  k18: 2.8000,
+  k19: 37.6000,
+  k20: 72.4000,
+  k21: 7.5000,
+  k22: 42.3000,
+  k23: 77.1000,
+  k24: 12.2000,
+  k25: 47.0000,
+  k26: 81.8000,
+  k27: 16.9000,
+  k28: 51.7000,
+  k29: 86.5000,
+  k30: 21.6000,
+  k31: 56.4000,
+  k32: 91.2000,
+  k33: 26.3000,
+  k34: 61.1000,
+  k35: 95.9000,
+  k36: 31.0000,
+  k37: 65.8000,
+  k38: 0.9000,
+  k39: 35.7000,
+  k40: 70.5000,
+  k41: 5.6000,
+  k42: 40.4000,
+  k43: 75.2000,
+  k44: 10.3000,
+  k45: 45.1000,
+  k46: 79.9000,
+  k47: 15.0000,
+  k48: 49.8000,
+  k49: 84.6000,
+  k50: 19.7000,
+  k51: 54.5000,
+  k52: 89.3000,
+  k53: 24.4000,
+  k54: 59.2000,
+  k55: 94.0000,
+  k56: 29.1000,
+  k57: 63.9000,
+  k58: 98.7000,
+  k59: 33.8000,
+  k60: 68.6000,
+  k61: 3.7000,
+  k62: 38.5000,
+  k63: 73.3000,
+  k64: 8.4000,
+  k65: 43.2000,
+  k66: 78.0000,
+  k67: 13.1000,
+  k68: 47.9000,
+  k69: 82.7000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_113_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_113_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_113_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_113_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_113_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_113_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_113_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_113_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_113_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_113_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_113_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 114 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_114_META = {
+  id: 'mig_114',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'logistics' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 113003,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_114_COEF = {
+  k0: 71.3000,
+  k1: 5.8000,
+  k2: 40.0000,
+  k3: 74.2000,
+  k4: 8.7000,
+  k5: 42.9000,
+  k6: 77.1000,
+  k7: 11.6000,
+  k8: 45.8000,
+  k9: 80.0000,
+  k10: 14.5000,
+  k11: 48.7000,
+  k12: 82.9000,
+  k13: 17.4000,
+  k14: 51.6000,
+  k15: 85.8000,
+  k16: 20.3000,
+  k17: 54.5000,
+  k18: 88.7000,
+  k19: 23.2000,
+  k20: 57.4000,
+  k21: 91.6000,
+  k22: 26.1000,
+  k23: 60.3000,
+  k24: 94.5000,
+  k25: 29.0000,
+  k26: 63.2000,
+  k27: 97.4000,
+  k28: 31.9000,
+  k29: 66.1000,
+  k30: 0.6000,
+  k31: 34.8000,
+  k32: 69.0000,
+  k33: 3.5000,
+  k34: 37.7000,
+  k35: 71.9000,
+  k36: 6.4000,
+  k37: 40.6000,
+  k38: 74.8000,
+  k39: 9.3000,
+  k40: 43.5000,
+  k41: 77.7000,
+  k42: 12.2000,
+  k43: 46.4000,
+  k44: 80.6000,
+  k45: 15.1000,
+  k46: 49.3000,
+  k47: 83.5000,
+  k48: 18.0000,
+  k49: 52.2000,
+  k50: 86.4000,
+  k51: 20.9000,
+  k52: 55.1000,
+  k53: 89.3000,
+  k54: 23.8000,
+  k55: 58.0000,
+  k56: 92.2000,
+  k57: 26.7000,
+  k58: 60.9000,
+  k59: 95.1000,
+  k60: 29.6000,
+  k61: 63.8000,
+  k62: 98.0000,
+  k63: 32.5000,
+  k64: 66.7000,
+  k65: 1.2000,
+  k66: 35.4000,
+  k67: 69.6000,
+  k68: 4.1000,
+  k69: 38.3000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_114_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_114_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_114_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_114_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_114_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_114_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_114_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_114_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_114_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_114_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_114_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 115 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_115_META = {
+  id: 'mig_115',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'education' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 113994,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_115_COEF = {
+  k0: 68.3000,
+  k1: 2.2000,
+  k2: 35.8000,
+  k3: 69.4000,
+  k4: 3.3000,
+  k5: 36.9000,
+  k6: 70.5000,
+  k7: 4.4000,
+  k8: 38.0000,
+  k9: 71.6000,
+  k10: 5.5000,
+  k11: 39.1000,
+  k12: 72.7000,
+  k13: 6.6000,
+  k14: 40.2000,
+  k15: 73.8000,
+  k16: 7.7000,
+  k17: 41.3000,
+  k18: 74.9000,
+  k19: 8.8000,
+  k20: 42.4000,
+  k21: 76.0000,
+  k22: 9.9000,
+  k23: 43.5000,
+  k24: 77.1000,
+  k25: 11.0000,
+  k26: 44.6000,
+  k27: 78.2000,
+  k28: 12.1000,
+  k29: 45.7000,
+  k30: 79.3000,
+  k31: 13.2000,
+  k32: 46.8000,
+  k33: 80.4000,
+  k34: 14.3000,
+  k35: 47.9000,
+  k36: 81.5000,
+  k37: 15.4000,
+  k38: 49.0000,
+  k39: 82.6000,
+  k40: 16.5000,
+  k41: 50.1000,
+  k42: 83.7000,
+  k43: 17.6000,
+  k44: 51.2000,
+  k45: 84.8000,
+  k46: 18.7000,
+  k47: 52.3000,
+  k48: 85.9000,
+  k49: 19.8000,
+  k50: 53.4000,
+  k51: 87.0000,
+  k52: 20.9000,
+  k53: 54.5000,
+  k54: 88.1000,
+  k55: 22.0000,
+  k56: 55.6000,
+  k57: 89.2000,
+  k58: 23.1000,
+  k59: 56.7000,
+  k60: 90.3000,
+  k61: 24.2000,
+  k62: 57.8000,
+  k63: 91.4000,
+  k64: 25.3000,
+  k65: 58.9000,
+  k66: 92.5000,
+  k67: 26.4000,
+  k68: 60.0000,
+  k69: 93.6000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_115_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_115_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_115_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_115_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_115_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_115_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_115_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_115_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_115_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_115_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_115_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 116 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_116_META = {
+  id: 'mig_116',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'mining' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 114985,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_116_COEF = {
+  k0: 65.3000,
+  k1: 98.3000,
+  k2: 31.6000,
+  k3: 64.6000,
+  k4: 97.6000,
+  k5: 30.9000,
+  k6: 63.9000,
+  k7: 96.9000,
+  k8: 30.2000,
+  k9: 63.2000,
+  k10: 96.2000,
+  k11: 29.5000,
+  k12: 62.5000,
+  k13: 95.5000,
+  k14: 28.8000,
+  k15: 61.8000,
+  k16: 94.8000,
+  k17: 28.1000,
+  k18: 61.1000,
+  k19: 94.1000,
+  k20: 27.4000,
+  k21: 60.4000,
+  k22: 93.4000,
+  k23: 26.7000,
+  k24: 59.7000,
+  k25: 92.7000,
+  k26: 26.0000,
+  k27: 59.0000,
+  k28: 92.0000,
+  k29: 25.3000,
+  k30: 58.3000,
+  k31: 91.3000,
+  k32: 24.6000,
+  k33: 57.6000,
+  k34: 90.6000,
+  k35: 23.9000,
+  k36: 56.9000,
+  k37: 89.9000,
+  k38: 23.2000,
+  k39: 56.2000,
+  k40: 89.2000,
+  k41: 22.5000,
+  k42: 55.5000,
+  k43: 88.5000,
+  k44: 21.8000,
+  k45: 54.8000,
+  k46: 87.8000,
+  k47: 21.1000,
+  k48: 54.1000,
+  k49: 87.1000,
+  k50: 20.4000,
+  k51: 53.4000,
+  k52: 86.4000,
+  k53: 19.7000,
+  k54: 52.7000,
+  k55: 85.7000,
+  k56: 19.0000,
+  k57: 52.0000,
+  k58: 85.0000,
+  k59: 18.3000,
+  k60: 51.3000,
+  k61: 84.3000,
+  k62: 17.6000,
+  k63: 50.6000,
+  k64: 83.6000,
+  k65: 16.9000,
+  k66: 49.9000,
+  k67: 82.9000,
+  k68: 16.2000,
+  k69: 49.2000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_116_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_116_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_116_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_116_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_116_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_116_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_116_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_116_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_116_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_116_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_116_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 117 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_117_META = {
+  id: 'mig_117',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'agriculture' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 115976,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_117_COEF = {
+  k0: 62.3000,
+  k1: 94.7000,
+  k2: 27.4000,
+  k3: 59.8000,
+  k4: 92.2000,
+  k5: 24.9000,
+  k6: 57.3000,
+  k7: 89.7000,
+  k8: 22.4000,
+  k9: 54.8000,
+  k10: 87.2000,
+  k11: 19.9000,
+  k12: 52.3000,
+  k13: 84.7000,
+  k14: 17.4000,
+  k15: 49.8000,
+  k16: 82.2000,
+  k17: 14.9000,
+  k18: 47.3000,
+  k19: 79.7000,
+  k20: 12.4000,
+  k21: 44.8000,
+  k22: 77.2000,
+  k23: 9.9000,
+  k24: 42.3000,
+  k25: 74.7000,
+  k26: 7.4000,
+  k27: 39.8000,
+  k28: 72.2000,
+  k29: 4.9000,
+  k30: 37.3000,
+  k31: 69.7000,
+  k32: 2.4000,
+  k33: 34.8000,
+  k34: 67.2000,
+  k35: 99.6000,
+  k36: 32.3000,
+  k37: 64.7000,
+  k38: 97.1000,
+  k39: 29.8000,
+  k40: 62.2000,
+  k41: 94.6000,
+  k42: 27.3000,
+  k43: 59.7000,
+  k44: 92.1000,
+  k45: 24.8000,
+  k46: 57.2000,
+  k47: 89.6000,
+  k48: 22.3000,
+  k49: 54.7000,
+  k50: 87.1000,
+  k51: 19.8000,
+  k52: 52.2000,
+  k53: 84.6000,
+  k54: 17.3000,
+  k55: 49.7000,
+  k56: 82.1000,
+  k57: 14.8000,
+  k58: 47.2000,
+  k59: 79.6000,
+  k60: 12.3000,
+  k61: 44.7000,
+  k62: 77.1000,
+  k63: 9.8000,
+  k64: 42.2000,
+  k65: 74.6000,
+  k66: 7.3000,
+  k67: 39.7000,
+  k68: 72.1000,
+  k69: 4.8000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_117_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_117_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_117_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_117_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_117_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_117_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_117_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_117_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_117_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_117_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_117_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 118 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_118_META = {
+  id: 'mig_118',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'hospitality' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 116967,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_118_COEF = {
+  k0: 59.3000,
+  k1: 91.1000,
+  k2: 23.2000,
+  k3: 55.0000,
+  k4: 86.8000,
+  k5: 18.9000,
+  k6: 50.7000,
+  k7: 82.5000,
+  k8: 14.6000,
+  k9: 46.4000,
+  k10: 78.2000,
+  k11: 10.3000,
+  k12: 42.1000,
+  k13: 73.9000,
+  k14: 6.0000,
+  k15: 37.8000,
+  k16: 69.6000,
+  k17: 1.7000,
+  k18: 33.5000,
+  k19: 65.3000,
+  k20: 97.1000,
+  k21: 29.2000,
+  k22: 61.0000,
+  k23: 92.8000,
+  k24: 24.9000,
+  k25: 56.7000,
+  k26: 88.5000,
+  k27: 20.6000,
+  k28: 52.4000,
+  k29: 84.2000,
+  k30: 16.3000,
+  k31: 48.1000,
+  k32: 79.9000,
+  k33: 12.0000,
+  k34: 43.8000,
+  k35: 75.6000,
+  k36: 7.7000,
+  k37: 39.5000,
+  k38: 71.3000,
+  k39: 3.4000,
+  k40: 35.2000,
+  k41: 67.0000,
+  k42: 98.8000,
+  k43: 30.9000,
+  k44: 62.7000,
+  k45: 94.5000,
+  k46: 26.6000,
+  k47: 58.4000,
+  k48: 90.2000,
+  k49: 22.3000,
+  k50: 54.1000,
+  k51: 85.9000,
+  k52: 18.0000,
+  k53: 49.8000,
+  k54: 81.6000,
+  k55: 13.7000,
+  k56: 45.5000,
+  k57: 77.3000,
+  k58: 9.4000,
+  k59: 41.2000,
+  k60: 73.0000,
+  k61: 5.1000,
+  k62: 36.9000,
+  k63: 68.7000,
+  k64: 0.8000,
+  k65: 32.6000,
+  k66: 64.4000,
+  k67: 96.2000,
+  k68: 28.3000,
+  k69: 60.1000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_118_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_118_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_118_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_118_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_118_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_118_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_118_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_118_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_118_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_118_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_118_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 119 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_119_META = {
+  id: 'mig_119',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'public_admin' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 117958,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_119_COEF = {
+  k0: 56.3000,
+  k1: 87.5000,
+  k2: 19.0000,
+  k3: 50.2000,
+  k4: 81.4000,
+  k5: 12.9000,
+  k6: 44.1000,
+  k7: 75.3000,
+  k8: 6.8000,
+  k9: 38.0000,
+  k10: 69.2000,
+  k11: 0.7000,
+  k12: 31.9000,
+  k13: 63.1000,
+  k14: 94.3000,
+  k15: 25.8000,
+  k16: 57.0000,
+  k17: 88.2000,
+  k18: 19.7000,
+  k19: 50.9000,
+  k20: 82.1000,
+  k21: 13.6000,
+  k22: 44.8000,
+  k23: 76.0000,
+  k24: 7.5000,
+  k25: 38.7000,
+  k26: 69.9000,
+  k27: 1.4000,
+  k28: 32.6000,
+  k29: 63.8000,
+  k30: 95.0000,
+  k31: 26.5000,
+  k32: 57.7000,
+  k33: 88.9000,
+  k34: 20.4000,
+  k35: 51.6000,
+  k36: 82.8000,
+  k37: 14.3000,
+  k38: 45.5000,
+  k39: 76.7000,
+  k40: 8.2000,
+  k41: 39.4000,
+  k42: 70.6000,
+  k43: 2.1000,
+  k44: 33.3000,
+  k45: 64.5000,
+  k46: 95.7000,
+  k47: 27.2000,
+  k48: 58.4000,
+  k49: 89.6000,
+  k50: 21.1000,
+  k51: 52.3000,
+  k52: 83.5000,
+  k53: 15.0000,
+  k54: 46.2000,
+  k55: 77.4000,
+  k56: 8.9000,
+  k57: 40.1000,
+  k58: 71.3000,
+  k59: 2.8000,
+  k60: 34.0000,
+  k61: 65.2000,
+  k62: 96.4000,
+  k63: 27.9000,
+  k64: 59.1000,
+  k65: 90.3000,
+  k66: 21.8000,
+  k67: 53.0000,
+  k68: 84.2000,
+  k69: 15.7000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_119_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_119_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_119_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_119_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_119_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_119_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_119_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_119_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_119_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_119_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_119_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 120 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_120_META = {
+  id: 'mig_120',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'engineering' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 118949,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_120_COEF = {
+  k0: 53.3000,
+  k1: 83.9000,
+  k2: 14.8000,
+  k3: 45.4000,
+  k4: 76.0000,
+  k5: 6.9000,
+  k6: 37.5000,
+  k7: 68.1000,
+  k8: 98.7000,
+  k9: 29.6000,
+  k10: 60.2000,
+  k11: 90.8000,
+  k12: 21.7000,
+  k13: 52.3000,
+  k14: 82.9000,
+  k15: 13.8000,
+  k16: 44.4000,
+  k17: 75.0000,
+  k18: 5.9000,
+  k19: 36.5000,
+  k20: 67.1000,
+  k21: 97.7000,
+  k22: 28.6000,
+  k23: 59.2000,
+  k24: 89.8000,
+  k25: 20.7000,
+  k26: 51.3000,
+  k27: 81.9000,
+  k28: 12.8000,
+  k29: 43.4000,
+  k30: 74.0000,
+  k31: 4.9000,
+  k32: 35.5000,
+  k33: 66.1000,
+  k34: 96.7000,
+  k35: 27.6000,
+  k36: 58.2000,
+  k37: 88.8000,
+  k38: 19.7000,
+  k39: 50.3000,
+  k40: 80.9000,
+  k41: 11.8000,
+  k42: 42.4000,
+  k43: 73.0000,
+  k44: 3.9000,
+  k45: 34.5000,
+  k46: 65.1000,
+  k47: 95.7000,
+  k48: 26.6000,
+  k49: 57.2000,
+  k50: 87.8000,
+  k51: 18.7000,
+  k52: 49.3000,
+  k53: 79.9000,
+  k54: 10.8000,
+  k55: 41.4000,
+  k56: 72.0000,
+  k57: 2.9000,
+  k58: 33.5000,
+  k59: 64.1000,
+  k60: 94.7000,
+  k61: 25.6000,
+  k62: 56.2000,
+  k63: 86.8000,
+  k64: 17.7000,
+  k65: 48.3000,
+  k66: 78.9000,
+  k67: 9.8000,
+  k68: 40.4000,
+  k69: 71.0000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_120_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_120_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_120_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_120_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_120_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_120_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_120_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_120_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_120_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_120_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_120_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 121 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_121_META = {
+  id: 'mig_121',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'healthcare' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 119940,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_121_COEF = {
+  k0: 50.3000,
+  k1: 80.3000,
+  k2: 10.6000,
+  k3: 40.6000,
+  k4: 70.6000,
+  k5: 0.9000,
+  k6: 30.9000,
+  k7: 60.9000,
+  k8: 90.9000,
+  k9: 21.2000,
+  k10: 51.2000,
+  k11: 81.2000,
+  k12: 11.5000,
+  k13: 41.5000,
+  k14: 71.5000,
+  k15: 1.8000,
+  k16: 31.8000,
+  k17: 61.8000,
+  k18: 91.8000,
+  k19: 22.1000,
+  k20: 52.1000,
+  k21: 82.1000,
+  k22: 12.4000,
+  k23: 42.4000,
+  k24: 72.4000,
+  k25: 2.7000,
+  k26: 32.7000,
+  k27: 62.7000,
+  k28: 92.7000,
+  k29: 23.0000,
+  k30: 53.0000,
+  k31: 83.0000,
+  k32: 13.3000,
+  k33: 43.3000,
+  k34: 73.3000,
+  k35: 3.6000,
+  k36: 33.6000,
+  k37: 63.6000,
+  k38: 93.6000,
+  k39: 23.9000,
+  k40: 53.9000,
+  k41: 83.9000,
+  k42: 14.2000,
+  k43: 44.2000,
+  k44: 74.2000,
+  k45: 4.5000,
+  k46: 34.5000,
+  k47: 64.5000,
+  k48: 94.5000,
+  k49: 24.8000,
+  k50: 54.8000,
+  k51: 84.8000,
+  k52: 15.1000,
+  k53: 45.1000,
+  k54: 75.1000,
+  k55: 5.4000,
+  k56: 35.4000,
+  k57: 65.4000,
+  k58: 95.4000,
+  k59: 25.7000,
+  k60: 55.7000,
+  k61: 85.7000,
+  k62: 16.0000,
+  k63: 46.0000,
+  k64: 76.0000,
+  k65: 6.3000,
+  k66: 36.3000,
+  k67: 66.3000,
+  k68: 96.3000,
+  k69: 26.6000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_121_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_121_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_121_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_121_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_121_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_121_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_121_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_121_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_121_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_121_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_121_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 122 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_122_META = {
+  id: 'mig_122',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'trades' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 120931,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_122_COEF = {
+  k0: 47.3000,
+  k1: 76.7000,
+  k2: 6.4000,
+  k3: 35.8000,
+  k4: 65.2000,
+  k5: 94.6000,
+  k6: 24.3000,
+  k7: 53.7000,
+  k8: 83.1000,
+  k9: 12.8000,
+  k10: 42.2000,
+  k11: 71.6000,
+  k12: 1.3000,
+  k13: 30.7000,
+  k14: 60.1000,
+  k15: 89.5000,
+  k16: 19.2000,
+  k17: 48.6000,
+  k18: 78.0000,
+  k19: 7.7000,
+  k20: 37.1000,
+  k21: 66.5000,
+  k22: 95.9000,
+  k23: 25.6000,
+  k24: 55.0000,
+  k25: 84.4000,
+  k26: 14.1000,
+  k27: 43.5000,
+  k28: 72.9000,
+  k29: 2.6000,
+  k30: 32.0000,
+  k31: 61.4000,
+  k32: 90.8000,
+  k33: 20.5000,
+  k34: 49.9000,
+  k35: 79.3000,
+  k36: 9.0000,
+  k37: 38.4000,
+  k38: 67.8000,
+  k39: 97.2000,
+  k40: 26.9000,
+  k41: 56.3000,
+  k42: 85.7000,
+  k43: 15.4000,
+  k44: 44.8000,
+  k45: 74.2000,
+  k46: 3.9000,
+  k47: 33.3000,
+  k48: 62.7000,
+  k49: 92.1000,
+  k50: 21.8000,
+  k51: 51.2000,
+  k52: 80.6000,
+  k53: 10.3000,
+  k54: 39.7000,
+  k55: 69.1000,
+  k56: 98.5000,
+  k57: 28.2000,
+  k58: 57.6000,
+  k59: 87.0000,
+  k60: 16.7000,
+  k61: 46.1000,
+  k62: 75.5000,
+  k63: 5.2000,
+  k64: 34.6000,
+  k65: 64.0000,
+  k66: 93.4000,
+  k67: 23.1000,
+  k68: 52.5000,
+  k69: 81.9000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_122_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_122_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_122_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_122_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_122_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_122_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_122_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_122_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_122_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_122_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_122_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 123 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_123_META = {
+  id: 'mig_123',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'digital' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 121922,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_123_COEF = {
+  k0: 44.3000,
+  k1: 73.1000,
+  k2: 2.2000,
+  k3: 31.0000,
+  k4: 59.8000,
+  k5: 88.6000,
+  k6: 17.7000,
+  k7: 46.5000,
+  k8: 75.3000,
+  k9: 4.4000,
+  k10: 33.2000,
+  k11: 62.0000,
+  k12: 90.8000,
+  k13: 19.9000,
+  k14: 48.7000,
+  k15: 77.5000,
+  k16: 6.6000,
+  k17: 35.4000,
+  k18: 64.2000,
+  k19: 93.0000,
+  k20: 22.1000,
+  k21: 50.9000,
+  k22: 79.7000,
+  k23: 8.8000,
+  k24: 37.6000,
+  k25: 66.4000,
+  k26: 95.2000,
+  k27: 24.3000,
+  k28: 53.1000,
+  k29: 81.9000,
+  k30: 11.0000,
+  k31: 39.8000,
+  k32: 68.6000,
+  k33: 97.4000,
+  k34: 26.5000,
+  k35: 55.3000,
+  k36: 84.1000,
+  k37: 13.2000,
+  k38: 42.0000,
+  k39: 70.8000,
+  k40: 99.6000,
+  k41: 28.7000,
+  k42: 57.5000,
+  k43: 86.3000,
+  k44: 15.4000,
+  k45: 44.2000,
+  k46: 73.0000,
+  k47: 2.1000,
+  k48: 30.9000,
+  k49: 59.7000,
+  k50: 88.5000,
+  k51: 17.6000,
+  k52: 46.4000,
+  k53: 75.2000,
+  k54: 4.3000,
+  k55: 33.1000,
+  k56: 61.9000,
+  k57: 90.7000,
+  k58: 19.8000,
+  k59: 48.6000,
+  k60: 77.4000,
+  k61: 6.5000,
+  k62: 35.3000,
+  k63: 64.1000,
+  k64: 92.9000,
+  k65: 22.0000,
+  k66: 50.8000,
+  k67: 79.6000,
+  k68: 8.7000,
+  k69: 37.5000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_123_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_123_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_123_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_123_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_123_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_123_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_123_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_123_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_123_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_123_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_123_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 124 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_124_META = {
+  id: 'mig_124',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'logistics' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 122913,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_124_COEF = {
+  k0: 41.3000,
+  k1: 69.5000,
+  k2: 97.7000,
+  k3: 26.2000,
+  k4: 54.4000,
+  k5: 82.6000,
+  k6: 11.1000,
+  k7: 39.3000,
+  k8: 67.5000,
+  k9: 95.7000,
+  k10: 24.2000,
+  k11: 52.4000,
+  k12: 80.6000,
+  k13: 9.1000,
+  k14: 37.3000,
+  k15: 65.5000,
+  k16: 93.7000,
+  k17: 22.2000,
+  k18: 50.4000,
+  k19: 78.6000,
+  k20: 7.1000,
+  k21: 35.3000,
+  k22: 63.5000,
+  k23: 91.7000,
+  k24: 20.2000,
+  k25: 48.4000,
+  k26: 76.6000,
+  k27: 5.1000,
+  k28: 33.3000,
+  k29: 61.5000,
+  k30: 89.7000,
+  k31: 18.2000,
+  k32: 46.4000,
+  k33: 74.6000,
+  k34: 3.1000,
+  k35: 31.3000,
+  k36: 59.5000,
+  k37: 87.7000,
+  k38: 16.2000,
+  k39: 44.4000,
+  k40: 72.6000,
+  k41: 1.1000,
+  k42: 29.3000,
+  k43: 57.5000,
+  k44: 85.7000,
+  k45: 14.2000,
+  k46: 42.4000,
+  k47: 70.6000,
+  k48: 98.8000,
+  k49: 27.3000,
+  k50: 55.5000,
+  k51: 83.7000,
+  k52: 12.2000,
+  k53: 40.4000,
+  k54: 68.6000,
+  k55: 96.8000,
+  k56: 25.3000,
+  k57: 53.5000,
+  k58: 81.7000,
+  k59: 10.2000,
+  k60: 38.4000,
+  k61: 66.6000,
+  k62: 94.8000,
+  k63: 23.3000,
+  k64: 51.5000,
+  k65: 79.7000,
+  k66: 8.2000,
+  k67: 36.4000,
+  k68: 64.6000,
+  k69: 92.8000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_124_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_124_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_124_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_124_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_124_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_124_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_124_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_124_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_124_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_124_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_124_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 125 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_125_META = {
+  id: 'mig_125',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'education' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 123904,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_125_COEF = {
+  k0: 38.3000,
+  k1: 65.9000,
+  k2: 93.5000,
+  k3: 21.4000,
+  k4: 49.0000,
+  k5: 76.6000,
+  k6: 4.5000,
+  k7: 32.1000,
+  k8: 59.7000,
+  k9: 87.3000,
+  k10: 15.2000,
+  k11: 42.8000,
+  k12: 70.4000,
+  k13: 98.0000,
+  k14: 25.9000,
+  k15: 53.5000,
+  k16: 81.1000,
+  k17: 9.0000,
+  k18: 36.6000,
+  k19: 64.2000,
+  k20: 91.8000,
+  k21: 19.7000,
+  k22: 47.3000,
+  k23: 74.9000,
+  k24: 2.8000,
+  k25: 30.4000,
+  k26: 58.0000,
+  k27: 85.6000,
+  k28: 13.5000,
+  k29: 41.1000,
+  k30: 68.7000,
+  k31: 96.3000,
+  k32: 24.2000,
+  k33: 51.8000,
+  k34: 79.4000,
+  k35: 7.3000,
+  k36: 34.9000,
+  k37: 62.5000,
+  k38: 90.1000,
+  k39: 18.0000,
+  k40: 45.6000,
+  k41: 73.2000,
+  k42: 1.1000,
+  k43: 28.7000,
+  k44: 56.3000,
+  k45: 83.9000,
+  k46: 11.8000,
+  k47: 39.4000,
+  k48: 67.0000,
+  k49: 94.6000,
+  k50: 22.5000,
+  k51: 50.1000,
+  k52: 77.7000,
+  k53: 5.6000,
+  k54: 33.2000,
+  k55: 60.8000,
+  k56: 88.4000,
+  k57: 16.3000,
+  k58: 43.9000,
+  k59: 71.5000,
+  k60: 99.1000,
+  k61: 27.0000,
+  k62: 54.6000,
+  k63: 82.2000,
+  k64: 10.1000,
+  k65: 37.7000,
+  k66: 65.3000,
+  k67: 92.9000,
+  k68: 20.8000,
+  k69: 48.4000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_125_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_125_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_125_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_125_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_125_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_125_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_125_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_125_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_125_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_125_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_125_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 126 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_126_META = {
+  id: 'mig_126',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'mining' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 124895,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_126_COEF = {
+  k0: 35.3000,
+  k1: 62.3000,
+  k2: 89.3000,
+  k3: 16.6000,
+  k4: 43.6000,
+  k5: 70.6000,
+  k6: 97.6000,
+  k7: 24.9000,
+  k8: 51.9000,
+  k9: 78.9000,
+  k10: 6.2000,
+  k11: 33.2000,
+  k12: 60.2000,
+  k13: 87.2000,
+  k14: 14.5000,
+  k15: 41.5000,
+  k16: 68.5000,
+  k17: 95.5000,
+  k18: 22.8000,
+  k19: 49.8000,
+  k20: 76.8000,
+  k21: 4.1000,
+  k22: 31.1000,
+  k23: 58.1000,
+  k24: 85.1000,
+  k25: 12.4000,
+  k26: 39.4000,
+  k27: 66.4000,
+  k28: 93.4000,
+  k29: 20.7000,
+  k30: 47.7000,
+  k31: 74.7000,
+  k32: 2.0000,
+  k33: 29.0000,
+  k34: 56.0000,
+  k35: 83.0000,
+  k36: 10.3000,
+  k37: 37.3000,
+  k38: 64.3000,
+  k39: 91.3000,
+  k40: 18.6000,
+  k41: 45.6000,
+  k42: 72.6000,
+  k43: 99.6000,
+  k44: 26.9000,
+  k45: 53.9000,
+  k46: 80.9000,
+  k47: 8.2000,
+  k48: 35.2000,
+  k49: 62.2000,
+  k50: 89.2000,
+  k51: 16.5000,
+  k52: 43.5000,
+  k53: 70.5000,
+  k54: 97.5000,
+  k55: 24.8000,
+  k56: 51.8000,
+  k57: 78.8000,
+  k58: 6.1000,
+  k59: 33.1000,
+  k60: 60.1000,
+  k61: 87.1000,
+  k62: 14.4000,
+  k63: 41.4000,
+  k64: 68.4000,
+  k65: 95.4000,
+  k66: 22.7000,
+  k67: 49.7000,
+  k68: 76.7000,
+  k69: 4.0000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_126_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_126_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_126_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_126_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_126_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_126_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_126_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_126_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_126_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_126_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_126_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 127 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_127_META = {
+  id: 'mig_127',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'agriculture' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 125886,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_127_COEF = {
+  k0: 32.3000,
+  k1: 58.7000,
+  k2: 85.1000,
+  k3: 11.8000,
+  k4: 38.2000,
+  k5: 64.6000,
+  k6: 91.0000,
+  k7: 17.7000,
+  k8: 44.1000,
+  k9: 70.5000,
+  k10: 96.9000,
+  k11: 23.6000,
+  k12: 50.0000,
+  k13: 76.4000,
+  k14: 3.1000,
+  k15: 29.5000,
+  k16: 55.9000,
+  k17: 82.3000,
+  k18: 9.0000,
+  k19: 35.4000,
+  k20: 61.8000,
+  k21: 88.2000,
+  k22: 14.9000,
+  k23: 41.3000,
+  k24: 67.7000,
+  k25: 94.1000,
+  k26: 20.8000,
+  k27: 47.2000,
+  k28: 73.6000,
+  k29: 0.3000,
+  k30: 26.7000,
+  k31: 53.1000,
+  k32: 79.5000,
+  k33: 6.2000,
+  k34: 32.6000,
+  k35: 59.0000,
+  k36: 85.4000,
+  k37: 12.1000,
+  k38: 38.5000,
+  k39: 64.9000,
+  k40: 91.3000,
+  k41: 18.0000,
+  k42: 44.4000,
+  k43: 70.8000,
+  k44: 97.2000,
+  k45: 23.9000,
+  k46: 50.3000,
+  k47: 76.7000,
+  k48: 3.4000,
+  k49: 29.8000,
+  k50: 56.2000,
+  k51: 82.6000,
+  k52: 9.3000,
+  k53: 35.7000,
+  k54: 62.1000,
+  k55: 88.5000,
+  k56: 15.2000,
+  k57: 41.6000,
+  k58: 68.0000,
+  k59: 94.4000,
+  k60: 21.1000,
+  k61: 47.5000,
+  k62: 73.9000,
+  k63: 0.6000,
+  k64: 27.0000,
+  k65: 53.4000,
+  k66: 79.8000,
+  k67: 6.5000,
+  k68: 32.9000,
+  k69: 59.3000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_127_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_127_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_127_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_127_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_127_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_127_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_127_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_127_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_127_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_127_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_127_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 128 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_128_META = {
+  id: 'mig_128',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'hospitality' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 126877,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_128_COEF = {
+  k0: 29.3000,
+  k1: 55.1000,
+  k2: 80.9000,
+  k3: 7.0000,
+  k4: 32.8000,
+  k5: 58.6000,
+  k6: 84.4000,
+  k7: 10.5000,
+  k8: 36.3000,
+  k9: 62.1000,
+  k10: 87.9000,
+  k11: 14.0000,
+  k12: 39.8000,
+  k13: 65.6000,
+  k14: 91.4000,
+  k15: 17.5000,
+  k16: 43.3000,
+  k17: 69.1000,
+  k18: 94.9000,
+  k19: 21.0000,
+  k20: 46.8000,
+  k21: 72.6000,
+  k22: 98.4000,
+  k23: 24.5000,
+  k24: 50.3000,
+  k25: 76.1000,
+  k26: 2.2000,
+  k27: 28.0000,
+  k28: 53.8000,
+  k29: 79.6000,
+  k30: 5.7000,
+  k31: 31.5000,
+  k32: 57.3000,
+  k33: 83.1000,
+  k34: 9.2000,
+  k35: 35.0000,
+  k36: 60.8000,
+  k37: 86.6000,
+  k38: 12.7000,
+  k39: 38.5000,
+  k40: 64.3000,
+  k41: 90.1000,
+  k42: 16.2000,
+  k43: 42.0000,
+  k44: 67.8000,
+  k45: 93.6000,
+  k46: 19.7000,
+  k47: 45.5000,
+  k48: 71.3000,
+  k49: 97.1000,
+  k50: 23.2000,
+  k51: 49.0000,
+  k52: 74.8000,
+  k53: 0.9000,
+  k54: 26.7000,
+  k55: 52.5000,
+  k56: 78.3000,
+  k57: 4.4000,
+  k58: 30.2000,
+  k59: 56.0000,
+  k60: 81.8000,
+  k61: 7.9000,
+  k62: 33.7000,
+  k63: 59.5000,
+  k64: 85.3000,
+  k65: 11.4000,
+  k66: 37.2000,
+  k67: 63.0000,
+  k68: 88.8000,
+  k69: 14.9000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_128_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_128_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_128_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_128_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_128_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_128_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_128_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_128_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_128_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_128_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_128_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 129 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_129_META = {
+  id: 'mig_129',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'public_admin' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 127868,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_129_COEF = {
+  k0: 26.3000,
+  k1: 51.5000,
+  k2: 76.7000,
+  k3: 2.2000,
+  k4: 27.4000,
+  k5: 52.6000,
+  k6: 77.8000,
+  k7: 3.3000,
+  k8: 28.5000,
+  k9: 53.7000,
+  k10: 78.9000,
+  k11: 4.4000,
+  k12: 29.6000,
+  k13: 54.8000,
+  k14: 80.0000,
+  k15: 5.5000,
+  k16: 30.7000,
+  k17: 55.9000,
+  k18: 81.1000,
+  k19: 6.6000,
+  k20: 31.8000,
+  k21: 57.0000,
+  k22: 82.2000,
+  k23: 7.7000,
+  k24: 32.9000,
+  k25: 58.1000,
+  k26: 83.3000,
+  k27: 8.8000,
+  k28: 34.0000,
+  k29: 59.2000,
+  k30: 84.4000,
+  k31: 9.9000,
+  k32: 35.1000,
+  k33: 60.3000,
+  k34: 85.5000,
+  k35: 11.0000,
+  k36: 36.2000,
+  k37: 61.4000,
+  k38: 86.6000,
+  k39: 12.1000,
+  k40: 37.3000,
+  k41: 62.5000,
+  k42: 87.7000,
+  k43: 13.2000,
+  k44: 38.4000,
+  k45: 63.6000,
+  k46: 88.8000,
+  k47: 14.3000,
+  k48: 39.5000,
+  k49: 64.7000,
+  k50: 89.9000,
+  k51: 15.4000,
+  k52: 40.6000,
+  k53: 65.8000,
+  k54: 91.0000,
+  k55: 16.5000,
+  k56: 41.7000,
+  k57: 66.9000,
+  k58: 92.1000,
+  k59: 17.6000,
+  k60: 42.8000,
+  k61: 68.0000,
+  k62: 93.2000,
+  k63: 18.7000,
+  k64: 43.9000,
+  k65: 69.1000,
+  k66: 94.3000,
+  k67: 19.8000,
+  k68: 45.0000,
+  k69: 70.2000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_129_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_129_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_129_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_129_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_129_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_129_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_129_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_129_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_129_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_129_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_129_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 130 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_130_META = {
+  id: 'mig_130',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'engineering' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 128859,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_130_COEF = {
+  k0: 23.3000,
+  k1: 47.9000,
+  k2: 72.5000,
+  k3: 97.1000,
+  k4: 22.0000,
+  k5: 46.6000,
+  k6: 71.2000,
+  k7: 95.8000,
+  k8: 20.7000,
+  k9: 45.3000,
+  k10: 69.9000,
+  k11: 94.5000,
+  k12: 19.4000,
+  k13: 44.0000,
+  k14: 68.6000,
+  k15: 93.2000,
+  k16: 18.1000,
+  k17: 42.7000,
+  k18: 67.3000,
+  k19: 91.9000,
+  k20: 16.8000,
+  k21: 41.4000,
+  k22: 66.0000,
+  k23: 90.6000,
+  k24: 15.5000,
+  k25: 40.1000,
+  k26: 64.7000,
+  k27: 89.3000,
+  k28: 14.2000,
+  k29: 38.8000,
+  k30: 63.4000,
+  k31: 88.0000,
+  k32: 12.9000,
+  k33: 37.5000,
+  k34: 62.1000,
+  k35: 86.7000,
+  k36: 11.6000,
+  k37: 36.2000,
+  k38: 60.8000,
+  k39: 85.4000,
+  k40: 10.3000,
+  k41: 34.9000,
+  k42: 59.5000,
+  k43: 84.1000,
+  k44: 9.0000,
+  k45: 33.6000,
+  k46: 58.2000,
+  k47: 82.8000,
+  k48: 7.7000,
+  k49: 32.3000,
+  k50: 56.9000,
+  k51: 81.5000,
+  k52: 6.4000,
+  k53: 31.0000,
+  k54: 55.6000,
+  k55: 80.2000,
+  k56: 5.1000,
+  k57: 29.7000,
+  k58: 54.3000,
+  k59: 78.9000,
+  k60: 3.8000,
+  k61: 28.4000,
+  k62: 53.0000,
+  k63: 77.6000,
+  k64: 2.5000,
+  k65: 27.1000,
+  k66: 51.7000,
+  k67: 76.3000,
+  k68: 1.2000,
+  k69: 25.8000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_130_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_130_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_130_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_130_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_130_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_130_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_130_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_130_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_130_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_130_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_130_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 131 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_131_META = {
+  id: 'mig_131',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'healthcare' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 129850,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_131_COEF = {
+  k0: 20.3000,
+  k1: 44.3000,
+  k2: 68.3000,
+  k3: 92.3000,
+  k4: 16.6000,
+  k5: 40.6000,
+  k6: 64.6000,
+  k7: 88.6000,
+  k8: 12.9000,
+  k9: 36.9000,
+  k10: 60.9000,
+  k11: 84.9000,
+  k12: 9.2000,
+  k13: 33.2000,
+  k14: 57.2000,
+  k15: 81.2000,
+  k16: 5.5000,
+  k17: 29.5000,
+  k18: 53.5000,
+  k19: 77.5000,
+  k20: 1.8000,
+  k21: 25.8000,
+  k22: 49.8000,
+  k23: 73.8000,
+  k24: 97.8000,
+  k25: 22.1000,
+  k26: 46.1000,
+  k27: 70.1000,
+  k28: 94.1000,
+  k29: 18.4000,
+  k30: 42.4000,
+  k31: 66.4000,
+  k32: 90.4000,
+  k33: 14.7000,
+  k34: 38.7000,
+  k35: 62.7000,
+  k36: 86.7000,
+  k37: 11.0000,
+  k38: 35.0000,
+  k39: 59.0000,
+  k40: 83.0000,
+  k41: 7.3000,
+  k42: 31.3000,
+  k43: 55.3000,
+  k44: 79.3000,
+  k45: 3.6000,
+  k46: 27.6000,
+  k47: 51.6000,
+  k48: 75.6000,
+  k49: 99.6000,
+  k50: 23.9000,
+  k51: 47.9000,
+  k52: 71.9000,
+  k53: 95.9000,
+  k54: 20.2000,
+  k55: 44.2000,
+  k56: 68.2000,
+  k57: 92.2000,
+  k58: 16.5000,
+  k59: 40.5000,
+  k60: 64.5000,
+  k61: 88.5000,
+  k62: 12.8000,
+  k63: 36.8000,
+  k64: 60.8000,
+  k65: 84.8000,
+  k66: 9.1000,
+  k67: 33.1000,
+  k68: 57.1000,
+  k69: 81.1000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_131_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_131_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_131_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_131_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_131_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_131_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_131_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_131_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_131_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_131_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_131_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 132 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_132_META = {
+  id: 'mig_132',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'trades' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 130841,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_132_COEF = {
+  k0: 17.3000,
+  k1: 40.7000,
+  k2: 64.1000,
+  k3: 87.5000,
+  k4: 11.2000,
+  k5: 34.6000,
+  k6: 58.0000,
+  k7: 81.4000,
+  k8: 5.1000,
+  k9: 28.5000,
+  k10: 51.9000,
+  k11: 75.3000,
+  k12: 98.7000,
+  k13: 22.4000,
+  k14: 45.8000,
+  k15: 69.2000,
+  k16: 92.6000,
+  k17: 16.3000,
+  k18: 39.7000,
+  k19: 63.1000,
+  k20: 86.5000,
+  k21: 10.2000,
+  k22: 33.6000,
+  k23: 57.0000,
+  k24: 80.4000,
+  k25: 4.1000,
+  k26: 27.5000,
+  k27: 50.9000,
+  k28: 74.3000,
+  k29: 97.7000,
+  k30: 21.4000,
+  k31: 44.8000,
+  k32: 68.2000,
+  k33: 91.6000,
+  k34: 15.3000,
+  k35: 38.7000,
+  k36: 62.1000,
+  k37: 85.5000,
+  k38: 9.2000,
+  k39: 32.6000,
+  k40: 56.0000,
+  k41: 79.4000,
+  k42: 3.1000,
+  k43: 26.5000,
+  k44: 49.9000,
+  k45: 73.3000,
+  k46: 96.7000,
+  k47: 20.4000,
+  k48: 43.8000,
+  k49: 67.2000,
+  k50: 90.6000,
+  k51: 14.3000,
+  k52: 37.7000,
+  k53: 61.1000,
+  k54: 84.5000,
+  k55: 8.2000,
+  k56: 31.6000,
+  k57: 55.0000,
+  k58: 78.4000,
+  k59: 2.1000,
+  k60: 25.5000,
+  k61: 48.9000,
+  k62: 72.3000,
+  k63: 95.7000,
+  k64: 19.4000,
+  k65: 42.8000,
+  k66: 66.2000,
+  k67: 89.6000,
+  k68: 13.3000,
+  k69: 36.7000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_132_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_132_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_132_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_132_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_132_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_132_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_132_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_132_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_132_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_132_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_132_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 133 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_133_META = {
+  id: 'mig_133',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'digital' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 131832,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_133_COEF = {
+  k0: 14.3000,
+  k1: 37.1000,
+  k2: 59.9000,
+  k3: 82.7000,
+  k4: 5.8000,
+  k5: 28.6000,
+  k6: 51.4000,
+  k7: 74.2000,
+  k8: 97.0000,
+  k9: 20.1000,
+  k10: 42.9000,
+  k11: 65.7000,
+  k12: 88.5000,
+  k13: 11.6000,
+  k14: 34.4000,
+  k15: 57.2000,
+  k16: 80.0000,
+  k17: 3.1000,
+  k18: 25.9000,
+  k19: 48.7000,
+  k20: 71.5000,
+  k21: 94.3000,
+  k22: 17.4000,
+  k23: 40.2000,
+  k24: 63.0000,
+  k25: 85.8000,
+  k26: 8.9000,
+  k27: 31.7000,
+  k28: 54.5000,
+  k29: 77.3000,
+  k30: 0.4000,
+  k31: 23.2000,
+  k32: 46.0000,
+  k33: 68.8000,
+  k34: 91.6000,
+  k35: 14.7000,
+  k36: 37.5000,
+  k37: 60.3000,
+  k38: 83.1000,
+  k39: 6.2000,
+  k40: 29.0000,
+  k41: 51.8000,
+  k42: 74.6000,
+  k43: 97.4000,
+  k44: 20.5000,
+  k45: 43.3000,
+  k46: 66.1000,
+  k47: 88.9000,
+  k48: 12.0000,
+  k49: 34.8000,
+  k50: 57.6000,
+  k51: 80.4000,
+  k52: 3.5000,
+  k53: 26.3000,
+  k54: 49.1000,
+  k55: 71.9000,
+  k56: 94.7000,
+  k57: 17.8000,
+  k58: 40.6000,
+  k59: 63.4000,
+  k60: 86.2000,
+  k61: 9.3000,
+  k62: 32.1000,
+  k63: 54.9000,
+  k64: 77.7000,
+  k65: 0.8000,
+  k66: 23.6000,
+  k67: 46.4000,
+  k68: 69.2000,
+  k69: 92.0000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_133_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_133_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_133_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_133_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_133_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_133_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_133_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_133_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_133_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_133_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_133_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 134 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_134_META = {
+  id: 'mig_134',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'logistics' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 132823,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_134_COEF = {
+  k0: 11.3000,
+  k1: 33.5000,
+  k2: 55.7000,
+  k3: 77.9000,
+  k4: 0.4000,
+  k5: 22.6000,
+  k6: 44.8000,
+  k7: 67.0000,
+  k8: 89.2000,
+  k9: 11.7000,
+  k10: 33.9000,
+  k11: 56.1000,
+  k12: 78.3000,
+  k13: 0.8000,
+  k14: 23.0000,
+  k15: 45.2000,
+  k16: 67.4000,
+  k17: 89.6000,
+  k18: 12.1000,
+  k19: 34.3000,
+  k20: 56.5000,
+  k21: 78.7000,
+  k22: 1.2000,
+  k23: 23.4000,
+  k24: 45.6000,
+  k25: 67.8000,
+  k26: 90.0000,
+  k27: 12.5000,
+  k28: 34.7000,
+  k29: 56.9000,
+  k30: 79.1000,
+  k31: 1.6000,
+  k32: 23.8000,
+  k33: 46.0000,
+  k34: 68.2000,
+  k35: 90.4000,
+  k36: 12.9000,
+  k37: 35.1000,
+  k38: 57.3000,
+  k39: 79.5000,
+  k40: 2.0000,
+  k41: 24.2000,
+  k42: 46.4000,
+  k43: 68.6000,
+  k44: 90.8000,
+  k45: 13.3000,
+  k46: 35.5000,
+  k47: 57.7000,
+  k48: 79.9000,
+  k49: 2.4000,
+  k50: 24.6000,
+  k51: 46.8000,
+  k52: 69.0000,
+  k53: 91.2000,
+  k54: 13.7000,
+  k55: 35.9000,
+  k56: 58.1000,
+  k57: 80.3000,
+  k58: 2.8000,
+  k59: 25.0000,
+  k60: 47.2000,
+  k61: 69.4000,
+  k62: 91.6000,
+  k63: 14.1000,
+  k64: 36.3000,
+  k65: 58.5000,
+  k66: 80.7000,
+  k67: 3.2000,
+  k68: 25.4000,
+  k69: 47.6000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_134_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_134_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_134_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_134_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_134_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_134_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_134_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_134_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_134_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_134_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_134_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 135 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_135_META = {
+  id: 'mig_135',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'education' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 133814,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_135_COEF = {
+  k0: 8.3000,
+  k1: 29.9000,
+  k2: 51.5000,
+  k3: 73.1000,
+  k4: 94.7000,
+  k5: 16.6000,
+  k6: 38.2000,
+  k7: 59.8000,
+  k8: 81.4000,
+  k9: 3.3000,
+  k10: 24.9000,
+  k11: 46.5000,
+  k12: 68.1000,
+  k13: 89.7000,
+  k14: 11.6000,
+  k15: 33.2000,
+  k16: 54.8000,
+  k17: 76.4000,
+  k18: 98.0000,
+  k19: 19.9000,
+  k20: 41.5000,
+  k21: 63.1000,
+  k22: 84.7000,
+  k23: 6.6000,
+  k24: 28.2000,
+  k25: 49.8000,
+  k26: 71.4000,
+  k27: 93.0000,
+  k28: 14.9000,
+  k29: 36.5000,
+  k30: 58.1000,
+  k31: 79.7000,
+  k32: 1.6000,
+  k33: 23.2000,
+  k34: 44.8000,
+  k35: 66.4000,
+  k36: 88.0000,
+  k37: 9.9000,
+  k38: 31.5000,
+  k39: 53.1000,
+  k40: 74.7000,
+  k41: 96.3000,
+  k42: 18.2000,
+  k43: 39.8000,
+  k44: 61.4000,
+  k45: 83.0000,
+  k46: 4.9000,
+  k47: 26.5000,
+  k48: 48.1000,
+  k49: 69.7000,
+  k50: 91.3000,
+  k51: 13.2000,
+  k52: 34.8000,
+  k53: 56.4000,
+  k54: 78.0000,
+  k55: 99.6000,
+  k56: 21.5000,
+  k57: 43.1000,
+  k58: 64.7000,
+  k59: 86.3000,
+  k60: 8.2000,
+  k61: 29.8000,
+  k62: 51.4000,
+  k63: 73.0000,
+  k64: 94.6000,
+  k65: 16.5000,
+  k66: 38.1000,
+  k67: 59.7000,
+  k68: 81.3000,
+  k69: 3.2000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_135_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_135_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_135_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_135_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_135_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_135_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_135_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_135_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_135_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_135_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_135_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 136 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_136_META = {
+  id: 'mig_136',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'mining' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 134805,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_136_COEF = {
+  k0: 5.3000,
+  k1: 26.3000,
+  k2: 47.3000,
+  k3: 68.3000,
+  k4: 89.3000,
+  k5: 10.6000,
+  k6: 31.6000,
+  k7: 52.6000,
+  k8: 73.6000,
+  k9: 94.6000,
+  k10: 15.9000,
+  k11: 36.9000,
+  k12: 57.9000,
+  k13: 78.9000,
+  k14: 0.2000,
+  k15: 21.2000,
+  k16: 42.2000,
+  k17: 63.2000,
+  k18: 84.2000,
+  k19: 5.5000,
+  k20: 26.5000,
+  k21: 47.5000,
+  k22: 68.5000,
+  k23: 89.5000,
+  k24: 10.8000,
+  k25: 31.8000,
+  k26: 52.8000,
+  k27: 73.8000,
+  k28: 94.8000,
+  k29: 16.1000,
+  k30: 37.1000,
+  k31: 58.1000,
+  k32: 79.1000,
+  k33: 0.4000,
+  k34: 21.4000,
+  k35: 42.4000,
+  k36: 63.4000,
+  k37: 84.4000,
+  k38: 5.7000,
+  k39: 26.7000,
+  k40: 47.7000,
+  k41: 68.7000,
+  k42: 89.7000,
+  k43: 11.0000,
+  k44: 32.0000,
+  k45: 53.0000,
+  k46: 74.0000,
+  k47: 95.0000,
+  k48: 16.3000,
+  k49: 37.3000,
+  k50: 58.3000,
+  k51: 79.3000,
+  k52: 0.6000,
+  k53: 21.6000,
+  k54: 42.6000,
+  k55: 63.6000,
+  k56: 84.6000,
+  k57: 5.9000,
+  k58: 26.9000,
+  k59: 47.9000,
+  k60: 68.9000,
+  k61: 89.9000,
+  k62: 11.2000,
+  k63: 32.2000,
+  k64: 53.2000,
+  k65: 74.2000,
+  k66: 95.2000,
+  k67: 16.5000,
+  k68: 37.5000,
+  k69: 58.5000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_136_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_136_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_136_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_136_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_136_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_136_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_136_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_136_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_136_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_136_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_136_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 137 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_137_META = {
+  id: 'mig_137',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'agriculture' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 135796,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_137_COEF = {
+  k0: 2.3000,
+  k1: 22.7000,
+  k2: 43.1000,
+  k3: 63.5000,
+  k4: 83.9000,
+  k5: 4.6000,
+  k6: 25.0000,
+  k7: 45.4000,
+  k8: 65.8000,
+  k9: 86.2000,
+  k10: 6.9000,
+  k11: 27.3000,
+  k12: 47.7000,
+  k13: 68.1000,
+  k14: 88.5000,
+  k15: 9.2000,
+  k16: 29.6000,
+  k17: 50.0000,
+  k18: 70.4000,
+  k19: 90.8000,
+  k20: 11.5000,
+  k21: 31.9000,
+  k22: 52.3000,
+  k23: 72.7000,
+  k24: 93.1000,
+  k25: 13.8000,
+  k26: 34.2000,
+  k27: 54.6000,
+  k28: 75.0000,
+  k29: 95.4000,
+  k30: 16.1000,
+  k31: 36.5000,
+  k32: 56.9000,
+  k33: 77.3000,
+  k34: 97.7000,
+  k35: 18.4000,
+  k36: 38.8000,
+  k37: 59.2000,
+  k38: 79.6000,
+  k39: 0.3000,
+  k40: 20.7000,
+  k41: 41.1000,
+  k42: 61.5000,
+  k43: 81.9000,
+  k44: 2.6000,
+  k45: 23.0000,
+  k46: 43.4000,
+  k47: 63.8000,
+  k48: 84.2000,
+  k49: 4.9000,
+  k50: 25.3000,
+  k51: 45.7000,
+  k52: 66.1000,
+  k53: 86.5000,
+  k54: 7.2000,
+  k55: 27.6000,
+  k56: 48.0000,
+  k57: 68.4000,
+  k58: 88.8000,
+  k59: 9.5000,
+  k60: 29.9000,
+  k61: 50.3000,
+  k62: 70.7000,
+  k63: 91.1000,
+  k64: 11.8000,
+  k65: 32.2000,
+  k66: 52.6000,
+  k67: 73.0000,
+  k68: 93.4000,
+  k69: 14.1000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_137_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_137_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_137_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_137_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_137_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_137_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_137_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_137_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_137_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_137_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_137_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 138 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_138_META = {
+  id: 'mig_138',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'hospitality' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 136787,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_138_COEF = {
+  k0: 99.0000,
+  k1: 19.1000,
+  k2: 38.9000,
+  k3: 58.7000,
+  k4: 78.5000,
+  k5: 98.3000,
+  k6: 18.4000,
+  k7: 38.2000,
+  k8: 58.0000,
+  k9: 77.8000,
+  k10: 97.6000,
+  k11: 17.7000,
+  k12: 37.5000,
+  k13: 57.3000,
+  k14: 77.1000,
+  k15: 96.9000,
+  k16: 17.0000,
+  k17: 36.8000,
+  k18: 56.6000,
+  k19: 76.4000,
+  k20: 96.2000,
+  k21: 16.3000,
+  k22: 36.1000,
+  k23: 55.9000,
+  k24: 75.7000,
+  k25: 95.5000,
+  k26: 15.6000,
+  k27: 35.4000,
+  k28: 55.2000,
+  k29: 75.0000,
+  k30: 94.8000,
+  k31: 14.9000,
+  k32: 34.7000,
+  k33: 54.5000,
+  k34: 74.3000,
+  k35: 94.1000,
+  k36: 14.2000,
+  k37: 34.0000,
+  k38: 53.8000,
+  k39: 73.6000,
+  k40: 93.4000,
+  k41: 13.5000,
+  k42: 33.3000,
+  k43: 53.1000,
+  k44: 72.9000,
+  k45: 92.7000,
+  k46: 12.8000,
+  k47: 32.6000,
+  k48: 52.4000,
+  k49: 72.2000,
+  k50: 92.0000,
+  k51: 12.1000,
+  k52: 31.9000,
+  k53: 51.7000,
+  k54: 71.5000,
+  k55: 91.3000,
+  k56: 11.4000,
+  k57: 31.2000,
+  k58: 51.0000,
+  k59: 70.8000,
+  k60: 90.6000,
+  k61: 10.7000,
+  k62: 30.5000,
+  k63: 50.3000,
+  k64: 70.1000,
+  k65: 89.9000,
+  k66: 10.0000,
+  k67: 29.8000,
+  k68: 49.6000,
+  k69: 69.4000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_138_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_138_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_138_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_138_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_138_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_138_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_138_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_138_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_138_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_138_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_138_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 139 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_139_META = {
+  id: 'mig_139',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'public_admin' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 137778,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_139_COEF = {
+  k0: 96.0000,
+  k1: 15.5000,
+  k2: 34.7000,
+  k3: 53.9000,
+  k4: 73.1000,
+  k5: 92.3000,
+  k6: 11.8000,
+  k7: 31.0000,
+  k8: 50.2000,
+  k9: 69.4000,
+  k10: 88.6000,
+  k11: 8.1000,
+  k12: 27.3000,
+  k13: 46.5000,
+  k14: 65.7000,
+  k15: 84.9000,
+  k16: 4.4000,
+  k17: 23.6000,
+  k18: 42.8000,
+  k19: 62.0000,
+  k20: 81.2000,
+  k21: 0.7000,
+  k22: 19.9000,
+  k23: 39.1000,
+  k24: 58.3000,
+  k25: 77.5000,
+  k26: 96.7000,
+  k27: 16.2000,
+  k28: 35.4000,
+  k29: 54.6000,
+  k30: 73.8000,
+  k31: 93.0000,
+  k32: 12.5000,
+  k33: 31.7000,
+  k34: 50.9000,
+  k35: 70.1000,
+  k36: 89.3000,
+  k37: 8.8000,
+  k38: 28.0000,
+  k39: 47.2000,
+  k40: 66.4000,
+  k41: 85.6000,
+  k42: 5.1000,
+  k43: 24.3000,
+  k44: 43.5000,
+  k45: 62.7000,
+  k46: 81.9000,
+  k47: 1.4000,
+  k48: 20.6000,
+  k49: 39.8000,
+  k50: 59.0000,
+  k51: 78.2000,
+  k52: 97.4000,
+  k53: 16.9000,
+  k54: 36.1000,
+  k55: 55.3000,
+  k56: 74.5000,
+  k57: 93.7000,
+  k58: 13.2000,
+  k59: 32.4000,
+  k60: 51.6000,
+  k61: 70.8000,
+  k62: 90.0000,
+  k63: 9.5000,
+  k64: 28.7000,
+  k65: 47.9000,
+  k66: 67.1000,
+  k67: 86.3000,
+  k68: 5.8000,
+  k69: 25.0000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_139_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_139_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_139_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_139_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_139_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_139_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_139_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_139_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_139_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_139_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_139_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 140 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_140_META = {
+  id: 'mig_140',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'engineering' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 138769,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_140_COEF = {
+  k0: 93.0000,
+  k1: 11.9000,
+  k2: 30.5000,
+  k3: 49.1000,
+  k4: 67.7000,
+  k5: 86.3000,
+  k6: 5.2000,
+  k7: 23.8000,
+  k8: 42.4000,
+  k9: 61.0000,
+  k10: 79.6000,
+  k11: 98.2000,
+  k12: 17.1000,
+  k13: 35.7000,
+  k14: 54.3000,
+  k15: 72.9000,
+  k16: 91.5000,
+  k17: 10.4000,
+  k18: 29.0000,
+  k19: 47.6000,
+  k20: 66.2000,
+  k21: 84.8000,
+  k22: 3.7000,
+  k23: 22.3000,
+  k24: 40.9000,
+  k25: 59.5000,
+  k26: 78.1000,
+  k27: 96.7000,
+  k28: 15.6000,
+  k29: 34.2000,
+  k30: 52.8000,
+  k31: 71.4000,
+  k32: 90.0000,
+  k33: 8.9000,
+  k34: 27.5000,
+  k35: 46.1000,
+  k36: 64.7000,
+  k37: 83.3000,
+  k38: 2.2000,
+  k39: 20.8000,
+  k40: 39.4000,
+  k41: 58.0000,
+  k42: 76.6000,
+  k43: 95.2000,
+  k44: 14.1000,
+  k45: 32.7000,
+  k46: 51.3000,
+  k47: 69.9000,
+  k48: 88.5000,
+  k49: 7.4000,
+  k50: 26.0000,
+  k51: 44.6000,
+  k52: 63.2000,
+  k53: 81.8000,
+  k54: 0.7000,
+  k55: 19.3000,
+  k56: 37.9000,
+  k57: 56.5000,
+  k58: 75.1000,
+  k59: 93.7000,
+  k60: 12.6000,
+  k61: 31.2000,
+  k62: 49.8000,
+  k63: 68.4000,
+  k64: 87.0000,
+  k65: 5.9000,
+  k66: 24.5000,
+  k67: 43.1000,
+  k68: 61.7000,
+  k69: 80.3000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_140_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_140_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_140_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_140_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_140_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_140_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_140_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_140_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_140_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_140_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_140_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 141 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_141_META = {
+  id: 'mig_141',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'healthcare' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 139760,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_141_COEF = {
+  k0: 90.0000,
+  k1: 8.3000,
+  k2: 26.3000,
+  k3: 44.3000,
+  k4: 62.3000,
+  k5: 80.3000,
+  k6: 98.3000,
+  k7: 16.6000,
+  k8: 34.6000,
+  k9: 52.6000,
+  k10: 70.6000,
+  k11: 88.6000,
+  k12: 6.9000,
+  k13: 24.9000,
+  k14: 42.9000,
+  k15: 60.9000,
+  k16: 78.9000,
+  k17: 96.9000,
+  k18: 15.2000,
+  k19: 33.2000,
+  k20: 51.2000,
+  k21: 69.2000,
+  k22: 87.2000,
+  k23: 5.5000,
+  k24: 23.5000,
+  k25: 41.5000,
+  k26: 59.5000,
+  k27: 77.5000,
+  k28: 95.5000,
+  k29: 13.8000,
+  k30: 31.8000,
+  k31: 49.8000,
+  k32: 67.8000,
+  k33: 85.8000,
+  k34: 4.1000,
+  k35: 22.1000,
+  k36: 40.1000,
+  k37: 58.1000,
+  k38: 76.1000,
+  k39: 94.1000,
+  k40: 12.4000,
+  k41: 30.4000,
+  k42: 48.4000,
+  k43: 66.4000,
+  k44: 84.4000,
+  k45: 2.7000,
+  k46: 20.7000,
+  k47: 38.7000,
+  k48: 56.7000,
+  k49: 74.7000,
+  k50: 92.7000,
+  k51: 11.0000,
+  k52: 29.0000,
+  k53: 47.0000,
+  k54: 65.0000,
+  k55: 83.0000,
+  k56: 1.3000,
+  k57: 19.3000,
+  k58: 37.3000,
+  k59: 55.3000,
+  k60: 73.3000,
+  k61: 91.3000,
+  k62: 9.6000,
+  k63: 27.6000,
+  k64: 45.6000,
+  k65: 63.6000,
+  k66: 81.6000,
+  k67: 99.6000,
+  k68: 17.9000,
+  k69: 35.9000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_141_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_141_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_141_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_141_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_141_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_141_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_141_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_141_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_141_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_141_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_141_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 142 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_142_META = {
+  id: 'mig_142',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'trades' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 140751,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_142_COEF = {
+  k0: 87.0000,
+  k1: 4.7000,
+  k2: 22.1000,
+  k3: 39.5000,
+  k4: 56.9000,
+  k5: 74.3000,
+  k6: 91.7000,
+  k7: 9.4000,
+  k8: 26.8000,
+  k9: 44.2000,
+  k10: 61.6000,
+  k11: 79.0000,
+  k12: 96.4000,
+  k13: 14.1000,
+  k14: 31.5000,
+  k15: 48.9000,
+  k16: 66.3000,
+  k17: 83.7000,
+  k18: 1.4000,
+  k19: 18.8000,
+  k20: 36.2000,
+  k21: 53.6000,
+  k22: 71.0000,
+  k23: 88.4000,
+  k24: 6.1000,
+  k25: 23.5000,
+  k26: 40.9000,
+  k27: 58.3000,
+  k28: 75.7000,
+  k29: 93.1000,
+  k30: 10.8000,
+  k31: 28.2000,
+  k32: 45.6000,
+  k33: 63.0000,
+  k34: 80.4000,
+  k35: 97.8000,
+  k36: 15.5000,
+  k37: 32.9000,
+  k38: 50.3000,
+  k39: 67.7000,
+  k40: 85.1000,
+  k41: 2.8000,
+  k42: 20.2000,
+  k43: 37.6000,
+  k44: 55.0000,
+  k45: 72.4000,
+  k46: 89.8000,
+  k47: 7.5000,
+  k48: 24.9000,
+  k49: 42.3000,
+  k50: 59.7000,
+  k51: 77.1000,
+  k52: 94.5000,
+  k53: 12.2000,
+  k54: 29.6000,
+  k55: 47.0000,
+  k56: 64.4000,
+  k57: 81.8000,
+  k58: 99.2000,
+  k59: 16.9000,
+  k60: 34.3000,
+  k61: 51.7000,
+  k62: 69.1000,
+  k63: 86.5000,
+  k64: 4.2000,
+  k65: 21.6000,
+  k66: 39.0000,
+  k67: 56.4000,
+  k68: 73.8000,
+  k69: 91.2000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_142_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_142_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_142_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_142_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_142_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_142_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_142_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_142_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_142_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_142_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_142_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 143 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_143_META = {
+  id: 'mig_143',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'digital' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 141742,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_143_COEF = {
+  k0: 84.0000,
+  k1: 1.1000,
+  k2: 17.9000,
+  k3: 34.7000,
+  k4: 51.5000,
+  k5: 68.3000,
+  k6: 85.1000,
+  k7: 2.2000,
+  k8: 19.0000,
+  k9: 35.8000,
+  k10: 52.6000,
+  k11: 69.4000,
+  k12: 86.2000,
+  k13: 3.3000,
+  k14: 20.1000,
+  k15: 36.9000,
+  k16: 53.7000,
+  k17: 70.5000,
+  k18: 87.3000,
+  k19: 4.4000,
+  k20: 21.2000,
+  k21: 38.0000,
+  k22: 54.8000,
+  k23: 71.6000,
+  k24: 88.4000,
+  k25: 5.5000,
+  k26: 22.3000,
+  k27: 39.1000,
+  k28: 55.9000,
+  k29: 72.7000,
+  k30: 89.5000,
+  k31: 6.6000,
+  k32: 23.4000,
+  k33: 40.2000,
+  k34: 57.0000,
+  k35: 73.8000,
+  k36: 90.6000,
+  k37: 7.7000,
+  k38: 24.5000,
+  k39: 41.3000,
+  k40: 58.1000,
+  k41: 74.9000,
+  k42: 91.7000,
+  k43: 8.8000,
+  k44: 25.6000,
+  k45: 42.4000,
+  k46: 59.2000,
+  k47: 76.0000,
+  k48: 92.8000,
+  k49: 9.9000,
+  k50: 26.7000,
+  k51: 43.5000,
+  k52: 60.3000,
+  k53: 77.1000,
+  k54: 93.9000,
+  k55: 11.0000,
+  k56: 27.8000,
+  k57: 44.6000,
+  k58: 61.4000,
+  k59: 78.2000,
+  k60: 95.0000,
+  k61: 12.1000,
+  k62: 28.9000,
+  k63: 45.7000,
+  k64: 62.5000,
+  k65: 79.3000,
+  k66: 96.1000,
+  k67: 13.2000,
+  k68: 30.0000,
+  k69: 46.8000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_143_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_143_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_143_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_143_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_143_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_143_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_143_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_143_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_143_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_143_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_143_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 144 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_144_META = {
+  id: 'mig_144',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'logistics' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 142733,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_144_COEF = {
+  k0: 81.0000,
+  k1: 97.2000,
+  k2: 13.7000,
+  k3: 29.9000,
+  k4: 46.1000,
+  k5: 62.3000,
+  k6: 78.5000,
+  k7: 94.7000,
+  k8: 11.2000,
+  k9: 27.4000,
+  k10: 43.6000,
+  k11: 59.8000,
+  k12: 76.0000,
+  k13: 92.2000,
+  k14: 8.7000,
+  k15: 24.9000,
+  k16: 41.1000,
+  k17: 57.3000,
+  k18: 73.5000,
+  k19: 89.7000,
+  k20: 6.2000,
+  k21: 22.4000,
+  k22: 38.6000,
+  k23: 54.8000,
+  k24: 71.0000,
+  k25: 87.2000,
+  k26: 3.7000,
+  k27: 19.9000,
+  k28: 36.1000,
+  k29: 52.3000,
+  k30: 68.5000,
+  k31: 84.7000,
+  k32: 1.2000,
+  k33: 17.4000,
+  k34: 33.6000,
+  k35: 49.8000,
+  k36: 66.0000,
+  k37: 82.2000,
+  k38: 98.4000,
+  k39: 14.9000,
+  k40: 31.1000,
+  k41: 47.3000,
+  k42: 63.5000,
+  k43: 79.7000,
+  k44: 95.9000,
+  k45: 12.4000,
+  k46: 28.6000,
+  k47: 44.8000,
+  k48: 61.0000,
+  k49: 77.2000,
+  k50: 93.4000,
+  k51: 9.9000,
+  k52: 26.1000,
+  k53: 42.3000,
+  k54: 58.5000,
+  k55: 74.7000,
+  k56: 90.9000,
+  k57: 7.4000,
+  k58: 23.6000,
+  k59: 39.8000,
+  k60: 56.0000,
+  k61: 72.2000,
+  k62: 88.4000,
+  k63: 4.9000,
+  k64: 21.1000,
+  k65: 37.3000,
+  k66: 53.5000,
+  k67: 69.7000,
+  k68: 85.9000,
+  k69: 2.4000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_144_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_144_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_144_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_144_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_144_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_144_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_144_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_144_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_144_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_144_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_144_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 145 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_145_META = {
+  id: 'mig_145',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'education' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 143724,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_145_COEF = {
+  k0: 78.0000,
+  k1: 93.6000,
+  k2: 9.5000,
+  k3: 25.1000,
+  k4: 40.7000,
+  k5: 56.3000,
+  k6: 71.9000,
+  k7: 87.5000,
+  k8: 3.4000,
+  k9: 19.0000,
+  k10: 34.6000,
+  k11: 50.2000,
+  k12: 65.8000,
+  k13: 81.4000,
+  k14: 97.0000,
+  k15: 12.9000,
+  k16: 28.5000,
+  k17: 44.1000,
+  k18: 59.7000,
+  k19: 75.3000,
+  k20: 90.9000,
+  k21: 6.8000,
+  k22: 22.4000,
+  k23: 38.0000,
+  k24: 53.6000,
+  k25: 69.2000,
+  k26: 84.8000,
+  k27: 0.7000,
+  k28: 16.3000,
+  k29: 31.9000,
+  k30: 47.5000,
+  k31: 63.1000,
+  k32: 78.7000,
+  k33: 94.3000,
+  k34: 10.2000,
+  k35: 25.8000,
+  k36: 41.4000,
+  k37: 57.0000,
+  k38: 72.6000,
+  k39: 88.2000,
+  k40: 4.1000,
+  k41: 19.7000,
+  k42: 35.3000,
+  k43: 50.9000,
+  k44: 66.5000,
+  k45: 82.1000,
+  k46: 97.7000,
+  k47: 13.6000,
+  k48: 29.2000,
+  k49: 44.8000,
+  k50: 60.4000,
+  k51: 76.0000,
+  k52: 91.6000,
+  k53: 7.5000,
+  k54: 23.1000,
+  k55: 38.7000,
+  k56: 54.3000,
+  k57: 69.9000,
+  k58: 85.5000,
+  k59: 1.4000,
+  k60: 17.0000,
+  k61: 32.6000,
+  k62: 48.2000,
+  k63: 63.8000,
+  k64: 79.4000,
+  k65: 95.0000,
+  k66: 10.9000,
+  k67: 26.5000,
+  k68: 42.1000,
+  k69: 57.7000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_145_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_145_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_145_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_145_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_145_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_145_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_145_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_145_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_145_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_145_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_145_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 146 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_146_META = {
+  id: 'mig_146',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'mining' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 144715,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_146_COEF = {
+  k0: 75.0000,
+  k1: 90.0000,
+  k2: 5.3000,
+  k3: 20.3000,
+  k4: 35.3000,
+  k5: 50.3000,
+  k6: 65.3000,
+  k7: 80.3000,
+  k8: 95.3000,
+  k9: 10.6000,
+  k10: 25.6000,
+  k11: 40.6000,
+  k12: 55.6000,
+  k13: 70.6000,
+  k14: 85.6000,
+  k15: 0.9000,
+  k16: 15.9000,
+  k17: 30.9000,
+  k18: 45.9000,
+  k19: 60.9000,
+  k20: 75.9000,
+  k21: 90.9000,
+  k22: 6.2000,
+  k23: 21.2000,
+  k24: 36.2000,
+  k25: 51.2000,
+  k26: 66.2000,
+  k27: 81.2000,
+  k28: 96.2000,
+  k29: 11.5000,
+  k30: 26.5000,
+  k31: 41.5000,
+  k32: 56.5000,
+  k33: 71.5000,
+  k34: 86.5000,
+  k35: 1.8000,
+  k36: 16.8000,
+  k37: 31.8000,
+  k38: 46.8000,
+  k39: 61.8000,
+  k40: 76.8000,
+  k41: 91.8000,
+  k42: 7.1000,
+  k43: 22.1000,
+  k44: 37.1000,
+  k45: 52.1000,
+  k46: 67.1000,
+  k47: 82.1000,
+  k48: 97.1000,
+  k49: 12.4000,
+  k50: 27.4000,
+  k51: 42.4000,
+  k52: 57.4000,
+  k53: 72.4000,
+  k54: 87.4000,
+  k55: 2.7000,
+  k56: 17.7000,
+  k57: 32.7000,
+  k58: 47.7000,
+  k59: 62.7000,
+  k60: 77.7000,
+  k61: 92.7000,
+  k62: 8.0000,
+  k63: 23.0000,
+  k64: 38.0000,
+  k65: 53.0000,
+  k66: 68.0000,
+  k67: 83.0000,
+  k68: 98.0000,
+  k69: 13.3000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_146_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_146_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_146_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_146_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_146_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_146_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_146_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_146_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_146_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_146_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_146_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 147 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_147_META = {
+  id: 'mig_147',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'agriculture' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 145706,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_147_COEF = {
+  k0: 72.0000,
+  k1: 86.4000,
+  k2: 1.1000,
+  k3: 15.5000,
+  k4: 29.9000,
+  k5: 44.3000,
+  k6: 58.7000,
+  k7: 73.1000,
+  k8: 87.5000,
+  k9: 2.2000,
+  k10: 16.6000,
+  k11: 31.0000,
+  k12: 45.4000,
+  k13: 59.8000,
+  k14: 74.2000,
+  k15: 88.6000,
+  k16: 3.3000,
+  k17: 17.7000,
+  k18: 32.1000,
+  k19: 46.5000,
+  k20: 60.9000,
+  k21: 75.3000,
+  k22: 89.7000,
+  k23: 4.4000,
+  k24: 18.8000,
+  k25: 33.2000,
+  k26: 47.6000,
+  k27: 62.0000,
+  k28: 76.4000,
+  k29: 90.8000,
+  k30: 5.5000,
+  k31: 19.9000,
+  k32: 34.3000,
+  k33: 48.7000,
+  k34: 63.1000,
+  k35: 77.5000,
+  k36: 91.9000,
+  k37: 6.6000,
+  k38: 21.0000,
+  k39: 35.4000,
+  k40: 49.8000,
+  k41: 64.2000,
+  k42: 78.6000,
+  k43: 93.0000,
+  k44: 7.7000,
+  k45: 22.1000,
+  k46: 36.5000,
+  k47: 50.9000,
+  k48: 65.3000,
+  k49: 79.7000,
+  k50: 94.1000,
+  k51: 8.8000,
+  k52: 23.2000,
+  k53: 37.6000,
+  k54: 52.0000,
+  k55: 66.4000,
+  k56: 80.8000,
+  k57: 95.2000,
+  k58: 9.9000,
+  k59: 24.3000,
+  k60: 38.7000,
+  k61: 53.1000,
+  k62: 67.5000,
+  k63: 81.9000,
+  k64: 96.3000,
+  k65: 11.0000,
+  k66: 25.4000,
+  k67: 39.8000,
+  k68: 54.2000,
+  k69: 68.6000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_147_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_147_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_147_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_147_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_147_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_147_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_147_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_147_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_147_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_147_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_147_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 148 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_148_META = {
+  id: 'mig_148',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'hospitality' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 146697,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_148_COEF = {
+  k0: 69.0000,
+  k1: 82.8000,
+  k2: 96.6000,
+  k3: 10.7000,
+  k4: 24.5000,
+  k5: 38.3000,
+  k6: 52.1000,
+  k7: 65.9000,
+  k8: 79.7000,
+  k9: 93.5000,
+  k10: 7.6000,
+  k11: 21.4000,
+  k12: 35.2000,
+  k13: 49.0000,
+  k14: 62.8000,
+  k15: 76.6000,
+  k16: 90.4000,
+  k17: 4.5000,
+  k18: 18.3000,
+  k19: 32.1000,
+  k20: 45.9000,
+  k21: 59.7000,
+  k22: 73.5000,
+  k23: 87.3000,
+  k24: 1.4000,
+  k25: 15.2000,
+  k26: 29.0000,
+  k27: 42.8000,
+  k28: 56.6000,
+  k29: 70.4000,
+  k30: 84.2000,
+  k31: 98.0000,
+  k32: 12.1000,
+  k33: 25.9000,
+  k34: 39.7000,
+  k35: 53.5000,
+  k36: 67.3000,
+  k37: 81.1000,
+  k38: 94.9000,
+  k39: 9.0000,
+  k40: 22.8000,
+  k41: 36.6000,
+  k42: 50.4000,
+  k43: 64.2000,
+  k44: 78.0000,
+  k45: 91.8000,
+  k46: 5.9000,
+  k47: 19.7000,
+  k48: 33.5000,
+  k49: 47.3000,
+  k50: 61.1000,
+  k51: 74.9000,
+  k52: 88.7000,
+  k53: 2.8000,
+  k54: 16.6000,
+  k55: 30.4000,
+  k56: 44.2000,
+  k57: 58.0000,
+  k58: 71.8000,
+  k59: 85.6000,
+  k60: 99.4000,
+  k61: 13.5000,
+  k62: 27.3000,
+  k63: 41.1000,
+  k64: 54.9000,
+  k65: 68.7000,
+  k66: 82.5000,
+  k67: 96.3000,
+  k68: 10.4000,
+  k69: 24.2000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_148_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_148_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_148_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_148_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_148_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_148_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_148_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_148_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_148_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_148_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_148_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 149 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_149_META = {
+  id: 'mig_149',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'public_admin' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 147688,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_149_COEF = {
+  k0: 66.0000,
+  k1: 79.2000,
+  k2: 92.4000,
+  k3: 5.9000,
+  k4: 19.1000,
+  k5: 32.3000,
+  k6: 45.5000,
+  k7: 58.7000,
+  k8: 71.9000,
+  k9: 85.1000,
+  k10: 98.3000,
+  k11: 11.8000,
+  k12: 25.0000,
+  k13: 38.2000,
+  k14: 51.4000,
+  k15: 64.6000,
+  k16: 77.8000,
+  k17: 91.0000,
+  k18: 4.5000,
+  k19: 17.7000,
+  k20: 30.9000,
+  k21: 44.1000,
+  k22: 57.3000,
+  k23: 70.5000,
+  k24: 83.7000,
+  k25: 96.9000,
+  k26: 10.4000,
+  k27: 23.6000,
+  k28: 36.8000,
+  k29: 50.0000,
+  k30: 63.2000,
+  k31: 76.4000,
+  k32: 89.6000,
+  k33: 3.1000,
+  k34: 16.3000,
+  k35: 29.5000,
+  k36: 42.7000,
+  k37: 55.9000,
+  k38: 69.1000,
+  k39: 82.3000,
+  k40: 95.5000,
+  k41: 9.0000,
+  k42: 22.2000,
+  k43: 35.4000,
+  k44: 48.6000,
+  k45: 61.8000,
+  k46: 75.0000,
+  k47: 88.2000,
+  k48: 1.7000,
+  k49: 14.9000,
+  k50: 28.1000,
+  k51: 41.3000,
+  k52: 54.5000,
+  k53: 67.7000,
+  k54: 80.9000,
+  k55: 94.1000,
+  k56: 7.6000,
+  k57: 20.8000,
+  k58: 34.0000,
+  k59: 47.2000,
+  k60: 60.4000,
+  k61: 73.6000,
+  k62: 86.8000,
+  k63: 0.3000,
+  k64: 13.5000,
+  k65: 26.7000,
+  k66: 39.9000,
+  k67: 53.1000,
+  k68: 66.3000,
+  k69: 79.5000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_149_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_149_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_149_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_149_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_149_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_149_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_149_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_149_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_149_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_149_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_149_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 150 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_150_META = {
+  id: 'mig_150',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'engineering' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 148679,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_150_COEF = {
+  k0: 63.0000,
+  k1: 75.6000,
+  k2: 88.2000,
+  k3: 1.1000,
+  k4: 13.7000,
+  k5: 26.3000,
+  k6: 38.9000,
+  k7: 51.5000,
+  k8: 64.1000,
+  k9: 76.7000,
+  k10: 89.3000,
+  k11: 2.2000,
+  k12: 14.8000,
+  k13: 27.4000,
+  k14: 40.0000,
+  k15: 52.6000,
+  k16: 65.2000,
+  k17: 77.8000,
+  k18: 90.4000,
+  k19: 3.3000,
+  k20: 15.9000,
+  k21: 28.5000,
+  k22: 41.1000,
+  k23: 53.7000,
+  k24: 66.3000,
+  k25: 78.9000,
+  k26: 91.5000,
+  k27: 4.4000,
+  k28: 17.0000,
+  k29: 29.6000,
+  k30: 42.2000,
+  k31: 54.8000,
+  k32: 67.4000,
+  k33: 80.0000,
+  k34: 92.6000,
+  k35: 5.5000,
+  k36: 18.1000,
+  k37: 30.7000,
+  k38: 43.3000,
+  k39: 55.9000,
+  k40: 68.5000,
+  k41: 81.1000,
+  k42: 93.7000,
+  k43: 6.6000,
+  k44: 19.2000,
+  k45: 31.8000,
+  k46: 44.4000,
+  k47: 57.0000,
+  k48: 69.6000,
+  k49: 82.2000,
+  k50: 94.8000,
+  k51: 7.7000,
+  k52: 20.3000,
+  k53: 32.9000,
+  k54: 45.5000,
+  k55: 58.1000,
+  k56: 70.7000,
+  k57: 83.3000,
+  k58: 95.9000,
+  k59: 8.8000,
+  k60: 21.4000,
+  k61: 34.0000,
+  k62: 46.6000,
+  k63: 59.2000,
+  k64: 71.8000,
+  k65: 84.4000,
+  k66: 97.0000,
+  k67: 9.9000,
+  k68: 22.5000,
+  k69: 35.1000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_150_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_150_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_150_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_150_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_150_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_150_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_150_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_150_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_150_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_150_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_150_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 151 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_151_META = {
+  id: 'mig_151',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'healthcare' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 149670,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_151_COEF = {
+  k0: 60.0000,
+  k1: 72.0000,
+  k2: 84.0000,
+  k3: 96.0000,
+  k4: 8.3000,
+  k5: 20.3000,
+  k6: 32.3000,
+  k7: 44.3000,
+  k8: 56.3000,
+  k9: 68.3000,
+  k10: 80.3000,
+  k11: 92.3000,
+  k12: 4.6000,
+  k13: 16.6000,
+  k14: 28.6000,
+  k15: 40.6000,
+  k16: 52.6000,
+  k17: 64.6000,
+  k18: 76.6000,
+  k19: 88.6000,
+  k20: 0.9000,
+  k21: 12.9000,
+  k22: 24.9000,
+  k23: 36.9000,
+  k24: 48.9000,
+  k25: 60.9000,
+  k26: 72.9000,
+  k27: 84.9000,
+  k28: 96.9000,
+  k29: 9.2000,
+  k30: 21.2000,
+  k31: 33.2000,
+  k32: 45.2000,
+  k33: 57.2000,
+  k34: 69.2000,
+  k35: 81.2000,
+  k36: 93.2000,
+  k37: 5.5000,
+  k38: 17.5000,
+  k39: 29.5000,
+  k40: 41.5000,
+  k41: 53.5000,
+  k42: 65.5000,
+  k43: 77.5000,
+  k44: 89.5000,
+  k45: 1.8000,
+  k46: 13.8000,
+  k47: 25.8000,
+  k48: 37.8000,
+  k49: 49.8000,
+  k50: 61.8000,
+  k51: 73.8000,
+  k52: 85.8000,
+  k53: 97.8000,
+  k54: 10.1000,
+  k55: 22.1000,
+  k56: 34.1000,
+  k57: 46.1000,
+  k58: 58.1000,
+  k59: 70.1000,
+  k60: 82.1000,
+  k61: 94.1000,
+  k62: 6.4000,
+  k63: 18.4000,
+  k64: 30.4000,
+  k65: 42.4000,
+  k66: 54.4000,
+  k67: 66.4000,
+  k68: 78.4000,
+  k69: 90.4000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_151_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_151_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_151_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_151_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_151_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_151_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_151_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_151_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_151_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_151_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_151_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 152 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_152_META = {
+  id: 'mig_152',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'trades' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 150661,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_152_COEF = {
+  k0: 57.0000,
+  k1: 68.4000,
+  k2: 79.8000,
+  k3: 91.2000,
+  k4: 2.9000,
+  k5: 14.3000,
+  k6: 25.7000,
+  k7: 37.1000,
+  k8: 48.5000,
+  k9: 59.9000,
+  k10: 71.3000,
+  k11: 82.7000,
+  k12: 94.1000,
+  k13: 5.8000,
+  k14: 17.2000,
+  k15: 28.6000,
+  k16: 40.0000,
+  k17: 51.4000,
+  k18: 62.8000,
+  k19: 74.2000,
+  k20: 85.6000,
+  k21: 97.0000,
+  k22: 8.7000,
+  k23: 20.1000,
+  k24: 31.5000,
+  k25: 42.9000,
+  k26: 54.3000,
+  k27: 65.7000,
+  k28: 77.1000,
+  k29: 88.5000,
+  k30: 0.2000,
+  k31: 11.6000,
+  k32: 23.0000,
+  k33: 34.4000,
+  k34: 45.8000,
+  k35: 57.2000,
+  k36: 68.6000,
+  k37: 80.0000,
+  k38: 91.4000,
+  k39: 3.1000,
+  k40: 14.5000,
+  k41: 25.9000,
+  k42: 37.3000,
+  k43: 48.7000,
+  k44: 60.1000,
+  k45: 71.5000,
+  k46: 82.9000,
+  k47: 94.3000,
+  k48: 6.0000,
+  k49: 17.4000,
+  k50: 28.8000,
+  k51: 40.2000,
+  k52: 51.6000,
+  k53: 63.0000,
+  k54: 74.4000,
+  k55: 85.8000,
+  k56: 97.2000,
+  k57: 8.9000,
+  k58: 20.3000,
+  k59: 31.7000,
+  k60: 43.1000,
+  k61: 54.5000,
+  k62: 65.9000,
+  k63: 77.3000,
+  k64: 88.7000,
+  k65: 0.4000,
+  k66: 11.8000,
+  k67: 23.2000,
+  k68: 34.6000,
+  k69: 46.0000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_152_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_152_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_152_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_152_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_152_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_152_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_152_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_152_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_152_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_152_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_152_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 153 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_153_META = {
+  id: 'mig_153',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'digital' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 151652,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_153_COEF = {
+  k0: 54.0000,
+  k1: 64.8000,
+  k2: 75.6000,
+  k3: 86.4000,
+  k4: 97.2000,
+  k5: 8.3000,
+  k6: 19.1000,
+  k7: 29.9000,
+  k8: 40.7000,
+  k9: 51.5000,
+  k10: 62.3000,
+  k11: 73.1000,
+  k12: 83.9000,
+  k13: 94.7000,
+  k14: 5.8000,
+  k15: 16.6000,
+  k16: 27.4000,
+  k17: 38.2000,
+  k18: 49.0000,
+  k19: 59.8000,
+  k20: 70.6000,
+  k21: 81.4000,
+  k22: 92.2000,
+  k23: 3.3000,
+  k24: 14.1000,
+  k25: 24.9000,
+  k26: 35.7000,
+  k27: 46.5000,
+  k28: 57.3000,
+  k29: 68.1000,
+  k30: 78.9000,
+  k31: 89.7000,
+  k32: 0.8000,
+  k33: 11.6000,
+  k34: 22.4000,
+  k35: 33.2000,
+  k36: 44.0000,
+  k37: 54.8000,
+  k38: 65.6000,
+  k39: 76.4000,
+  k40: 87.2000,
+  k41: 98.0000,
+  k42: 9.1000,
+  k43: 19.9000,
+  k44: 30.7000,
+  k45: 41.5000,
+  k46: 52.3000,
+  k47: 63.1000,
+  k48: 73.9000,
+  k49: 84.7000,
+  k50: 95.5000,
+  k51: 6.6000,
+  k52: 17.4000,
+  k53: 28.2000,
+  k54: 39.0000,
+  k55: 49.8000,
+  k56: 60.6000,
+  k57: 71.4000,
+  k58: 82.2000,
+  k59: 93.0000,
+  k60: 4.1000,
+  k61: 14.9000,
+  k62: 25.7000,
+  k63: 36.5000,
+  k64: 47.3000,
+  k65: 58.1000,
+  k66: 68.9000,
+  k67: 79.7000,
+  k68: 90.5000,
+  k69: 1.6000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_153_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_153_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_153_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_153_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_153_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_153_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_153_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_153_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_153_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_153_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_153_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 154 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_154_META = {
+  id: 'mig_154',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'logistics' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 152643,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_154_COEF = {
+  k0: 51.0000,
+  k1: 61.2000,
+  k2: 71.4000,
+  k3: 81.6000,
+  k4: 91.8000,
+  k5: 2.3000,
+  k6: 12.5000,
+  k7: 22.7000,
+  k8: 32.9000,
+  k9: 43.1000,
+  k10: 53.3000,
+  k11: 63.5000,
+  k12: 73.7000,
+  k13: 83.9000,
+  k14: 94.1000,
+  k15: 4.6000,
+  k16: 14.8000,
+  k17: 25.0000,
+  k18: 35.2000,
+  k19: 45.4000,
+  k20: 55.6000,
+  k21: 65.8000,
+  k22: 76.0000,
+  k23: 86.2000,
+  k24: 96.4000,
+  k25: 6.9000,
+  k26: 17.1000,
+  k27: 27.3000,
+  k28: 37.5000,
+  k29: 47.7000,
+  k30: 57.9000,
+  k31: 68.1000,
+  k32: 78.3000,
+  k33: 88.5000,
+  k34: 98.7000,
+  k35: 9.2000,
+  k36: 19.4000,
+  k37: 29.6000,
+  k38: 39.8000,
+  k39: 50.0000,
+  k40: 60.2000,
+  k41: 70.4000,
+  k42: 80.6000,
+  k43: 90.8000,
+  k44: 1.3000,
+  k45: 11.5000,
+  k46: 21.7000,
+  k47: 31.9000,
+  k48: 42.1000,
+  k49: 52.3000,
+  k50: 62.5000,
+  k51: 72.7000,
+  k52: 82.9000,
+  k53: 93.1000,
+  k54: 3.6000,
+  k55: 13.8000,
+  k56: 24.0000,
+  k57: 34.2000,
+  k58: 44.4000,
+  k59: 54.6000,
+  k60: 64.8000,
+  k61: 75.0000,
+  k62: 85.2000,
+  k63: 95.4000,
+  k64: 5.9000,
+  k65: 16.1000,
+  k66: 26.3000,
+  k67: 36.5000,
+  k68: 46.7000,
+  k69: 56.9000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_154_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_154_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_154_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_154_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_154_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_154_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_154_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_154_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_154_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_154_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_154_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 155 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_155_META = {
+  id: 'mig_155',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'education' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 153634,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_155_COEF = {
+  k0: 48.0000,
+  k1: 57.6000,
+  k2: 67.2000,
+  k3: 76.8000,
+  k4: 86.4000,
+  k5: 96.0000,
+  k6: 5.9000,
+  k7: 15.5000,
+  k8: 25.1000,
+  k9: 34.7000,
+  k10: 44.3000,
+  k11: 53.9000,
+  k12: 63.5000,
+  k13: 73.1000,
+  k14: 82.7000,
+  k15: 92.3000,
+  k16: 2.2000,
+  k17: 11.8000,
+  k18: 21.4000,
+  k19: 31.0000,
+  k20: 40.6000,
+  k21: 50.2000,
+  k22: 59.8000,
+  k23: 69.4000,
+  k24: 79.0000,
+  k25: 88.6000,
+  k26: 98.2000,
+  k27: 8.1000,
+  k28: 17.7000,
+  k29: 27.3000,
+  k30: 36.9000,
+  k31: 46.5000,
+  k32: 56.1000,
+  k33: 65.7000,
+  k34: 75.3000,
+  k35: 84.9000,
+  k36: 94.5000,
+  k37: 4.4000,
+  k38: 14.0000,
+  k39: 23.6000,
+  k40: 33.2000,
+  k41: 42.8000,
+  k42: 52.4000,
+  k43: 62.0000,
+  k44: 71.6000,
+  k45: 81.2000,
+  k46: 90.8000,
+  k47: 0.7000,
+  k48: 10.3000,
+  k49: 19.9000,
+  k50: 29.5000,
+  k51: 39.1000,
+  k52: 48.7000,
+  k53: 58.3000,
+  k54: 67.9000,
+  k55: 77.5000,
+  k56: 87.1000,
+  k57: 96.7000,
+  k58: 6.6000,
+  k59: 16.2000,
+  k60: 25.8000,
+  k61: 35.4000,
+  k62: 45.0000,
+  k63: 54.6000,
+  k64: 64.2000,
+  k65: 73.8000,
+  k66: 83.4000,
+  k67: 93.0000,
+  k68: 2.9000,
+  k69: 12.5000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_155_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_155_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_155_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_155_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_155_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_155_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_155_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_155_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_155_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_155_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_155_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 156 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_156_META = {
+  id: 'mig_156',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'mining' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 154625,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_156_COEF = {
+  k0: 45.0000,
+  k1: 54.0000,
+  k2: 63.0000,
+  k3: 72.0000,
+  k4: 81.0000,
+  k5: 90.0000,
+  k6: 99.0000,
+  k7: 8.3000,
+  k8: 17.3000,
+  k9: 26.3000,
+  k10: 35.3000,
+  k11: 44.3000,
+  k12: 53.3000,
+  k13: 62.3000,
+  k14: 71.3000,
+  k15: 80.3000,
+  k16: 89.3000,
+  k17: 98.3000,
+  k18: 7.6000,
+  k19: 16.6000,
+  k20: 25.6000,
+  k21: 34.6000,
+  k22: 43.6000,
+  k23: 52.6000,
+  k24: 61.6000,
+  k25: 70.6000,
+  k26: 79.6000,
+  k27: 88.6000,
+  k28: 97.6000,
+  k29: 6.9000,
+  k30: 15.9000,
+  k31: 24.9000,
+  k32: 33.9000,
+  k33: 42.9000,
+  k34: 51.9000,
+  k35: 60.9000,
+  k36: 69.9000,
+  k37: 78.9000,
+  k38: 87.9000,
+  k39: 96.9000,
+  k40: 6.2000,
+  k41: 15.2000,
+  k42: 24.2000,
+  k43: 33.2000,
+  k44: 42.2000,
+  k45: 51.2000,
+  k46: 60.2000,
+  k47: 69.2000,
+  k48: 78.2000,
+  k49: 87.2000,
+  k50: 96.2000,
+  k51: 5.5000,
+  k52: 14.5000,
+  k53: 23.5000,
+  k54: 32.5000,
+  k55: 41.5000,
+  k56: 50.5000,
+  k57: 59.5000,
+  k58: 68.5000,
+  k59: 77.5000,
+  k60: 86.5000,
+  k61: 95.5000,
+  k62: 4.8000,
+  k63: 13.8000,
+  k64: 22.8000,
+  k65: 31.8000,
+  k66: 40.8000,
+  k67: 49.8000,
+  k68: 58.8000,
+  k69: 67.8000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_156_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_156_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_156_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_156_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_156_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_156_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_156_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_156_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_156_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_156_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_156_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 157 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_157_META = {
+  id: 'mig_157',
+  regionId: 'TAS' as V1014WorkforceRegionId,
+  primaryDomain: 'agriculture' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 155616,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_157_COEF = {
+  k0: 42.0000,
+  k1: 50.4000,
+  k2: 58.8000,
+  k3: 67.2000,
+  k4: 75.6000,
+  k5: 84.0000,
+  k6: 92.4000,
+  k7: 1.1000,
+  k8: 9.5000,
+  k9: 17.9000,
+  k10: 26.3000,
+  k11: 34.7000,
+  k12: 43.1000,
+  k13: 51.5000,
+  k14: 59.9000,
+  k15: 68.3000,
+  k16: 76.7000,
+  k17: 85.1000,
+  k18: 93.5000,
+  k19: 2.2000,
+  k20: 10.6000,
+  k21: 19.0000,
+  k22: 27.4000,
+  k23: 35.8000,
+  k24: 44.2000,
+  k25: 52.6000,
+  k26: 61.0000,
+  k27: 69.4000,
+  k28: 77.8000,
+  k29: 86.2000,
+  k30: 94.6000,
+  k31: 3.3000,
+  k32: 11.7000,
+  k33: 20.1000,
+  k34: 28.5000,
+  k35: 36.9000,
+  k36: 45.3000,
+  k37: 53.7000,
+  k38: 62.1000,
+  k39: 70.5000,
+  k40: 78.9000,
+  k41: 87.3000,
+  k42: 95.7000,
+  k43: 4.4000,
+  k44: 12.8000,
+  k45: 21.2000,
+  k46: 29.6000,
+  k47: 38.0000,
+  k48: 46.4000,
+  k49: 54.8000,
+  k50: 63.2000,
+  k51: 71.6000,
+  k52: 80.0000,
+  k53: 88.4000,
+  k54: 96.8000,
+  k55: 5.5000,
+  k56: 13.9000,
+  k57: 22.3000,
+  k58: 30.7000,
+  k59: 39.1000,
+  k60: 47.5000,
+  k61: 55.9000,
+  k62: 64.3000,
+  k63: 72.7000,
+  k64: 81.1000,
+  k65: 89.5000,
+  k66: 97.9000,
+  k67: 6.6000,
+  k68: 15.0000,
+  k69: 23.4000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_157_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_157_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_157_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_157_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_157_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_157_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_157_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_157_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_157_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_157_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_157_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 158 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_158_META = {
+  id: 'mig_158',
+  regionId: 'NT' as V1014WorkforceRegionId,
+  primaryDomain: 'hospitality' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 156607,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_158_COEF = {
+  k0: 39.0000,
+  k1: 46.8000,
+  k2: 54.6000,
+  k3: 62.4000,
+  k4: 70.2000,
+  k5: 78.0000,
+  k6: 85.8000,
+  k7: 93.6000,
+  k8: 1.7000,
+  k9: 9.5000,
+  k10: 17.3000,
+  k11: 25.1000,
+  k12: 32.9000,
+  k13: 40.7000,
+  k14: 48.5000,
+  k15: 56.3000,
+  k16: 64.1000,
+  k17: 71.9000,
+  k18: 79.7000,
+  k19: 87.5000,
+  k20: 95.3000,
+  k21: 3.4000,
+  k22: 11.2000,
+  k23: 19.0000,
+  k24: 26.8000,
+  k25: 34.6000,
+  k26: 42.4000,
+  k27: 50.2000,
+  k28: 58.0000,
+  k29: 65.8000,
+  k30: 73.6000,
+  k31: 81.4000,
+  k32: 89.2000,
+  k33: 97.0000,
+  k34: 5.1000,
+  k35: 12.9000,
+  k36: 20.7000,
+  k37: 28.5000,
+  k38: 36.3000,
+  k39: 44.1000,
+  k40: 51.9000,
+  k41: 59.7000,
+  k42: 67.5000,
+  k43: 75.3000,
+  k44: 83.1000,
+  k45: 90.9000,
+  k46: 98.7000,
+  k47: 6.8000,
+  k48: 14.6000,
+  k49: 22.4000,
+  k50: 30.2000,
+  k51: 38.0000,
+  k52: 45.8000,
+  k53: 53.6000,
+  k54: 61.4000,
+  k55: 69.2000,
+  k56: 77.0000,
+  k57: 84.8000,
+  k58: 92.6000,
+  k59: 0.7000,
+  k60: 8.5000,
+  k61: 16.3000,
+  k62: 24.1000,
+  k63: 31.9000,
+  k64: 39.7000,
+  k65: 47.5000,
+  k66: 55.3000,
+  k67: 63.1000,
+  k68: 70.9000,
+  k69: 78.7000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_158_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_158_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_158_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_158_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_158_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_158_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_158_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_158_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_158_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_158_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_158_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 159 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_159_META = {
+  id: 'mig_159',
+  regionId: 'ACT' as V1014WorkforceRegionId,
+  primaryDomain: 'public_admin' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 157598,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_159_COEF = {
+  k0: 36.0000,
+  k1: 43.2000,
+  k2: 50.4000,
+  k3: 57.6000,
+  k4: 64.8000,
+  k5: 72.0000,
+  k6: 79.2000,
+  k7: 86.4000,
+  k8: 93.6000,
+  k9: 1.1000,
+  k10: 8.3000,
+  k11: 15.5000,
+  k12: 22.7000,
+  k13: 29.9000,
+  k14: 37.1000,
+  k15: 44.3000,
+  k16: 51.5000,
+  k17: 58.7000,
+  k18: 65.9000,
+  k19: 73.1000,
+  k20: 80.3000,
+  k21: 87.5000,
+  k22: 94.7000,
+  k23: 2.2000,
+  k24: 9.4000,
+  k25: 16.6000,
+  k26: 23.8000,
+  k27: 31.0000,
+  k28: 38.2000,
+  k29: 45.4000,
+  k30: 52.6000,
+  k31: 59.8000,
+  k32: 67.0000,
+  k33: 74.2000,
+  k34: 81.4000,
+  k35: 88.6000,
+  k36: 95.8000,
+  k37: 3.3000,
+  k38: 10.5000,
+  k39: 17.7000,
+  k40: 24.9000,
+  k41: 32.1000,
+  k42: 39.3000,
+  k43: 46.5000,
+  k44: 53.7000,
+  k45: 60.9000,
+  k46: 68.1000,
+  k47: 75.3000,
+  k48: 82.5000,
+  k49: 89.7000,
+  k50: 96.9000,
+  k51: 4.4000,
+  k52: 11.6000,
+  k53: 18.8000,
+  k54: 26.0000,
+  k55: 33.2000,
+  k56: 40.4000,
+  k57: 47.6000,
+  k58: 54.8000,
+  k59: 62.0000,
+  k60: 69.2000,
+  k61: 76.4000,
+  k62: 83.6000,
+  k63: 90.8000,
+  k64: 98.0000,
+  k65: 5.5000,
+  k66: 12.7000,
+  k67: 19.9000,
+  k68: 27.1000,
+  k69: 34.3000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_159_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_159_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_159_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_159_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_159_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_159_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_159_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_159_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_159_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_159_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_159_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 160 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_160_META = {
+  id: 'mig_160',
+  regionId: 'NSW' as V1014WorkforceRegionId,
+  primaryDomain: 'engineering' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 158589,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_160_COEF = {
+  k0: 33.0000,
+  k1: 39.6000,
+  k2: 46.2000,
+  k3: 52.8000,
+  k4: 59.4000,
+  k5: 66.0000,
+  k6: 72.6000,
+  k7: 79.2000,
+  k8: 85.8000,
+  k9: 92.4000,
+  k10: 99.0000,
+  k11: 5.9000,
+  k12: 12.5000,
+  k13: 19.1000,
+  k14: 25.7000,
+  k15: 32.3000,
+  k16: 38.9000,
+  k17: 45.5000,
+  k18: 52.1000,
+  k19: 58.7000,
+  k20: 65.3000,
+  k21: 71.9000,
+  k22: 78.5000,
+  k23: 85.1000,
+  k24: 91.7000,
+  k25: 98.3000,
+  k26: 5.2000,
+  k27: 11.8000,
+  k28: 18.4000,
+  k29: 25.0000,
+  k30: 31.6000,
+  k31: 38.2000,
+  k32: 44.8000,
+  k33: 51.4000,
+  k34: 58.0000,
+  k35: 64.6000,
+  k36: 71.2000,
+  k37: 77.8000,
+  k38: 84.4000,
+  k39: 91.0000,
+  k40: 97.6000,
+  k41: 4.5000,
+  k42: 11.1000,
+  k43: 17.7000,
+  k44: 24.3000,
+  k45: 30.9000,
+  k46: 37.5000,
+  k47: 44.1000,
+  k48: 50.7000,
+  k49: 57.3000,
+  k50: 63.9000,
+  k51: 70.5000,
+  k52: 77.1000,
+  k53: 83.7000,
+  k54: 90.3000,
+  k55: 96.9000,
+  k56: 3.8000,
+  k57: 10.4000,
+  k58: 17.0000,
+  k59: 23.6000,
+  k60: 30.2000,
+  k61: 36.8000,
+  k62: 43.4000,
+  k63: 50.0000,
+  k64: 56.6000,
+  k65: 63.2000,
+  k66: 69.8000,
+  k67: 76.4000,
+  k68: 83.0000,
+  k69: 89.6000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_160_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_160_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_160_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_160_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_160_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_160_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_160_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_160_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_160_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_160_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_160_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 161 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_161_META = {
+  id: 'mig_161',
+  regionId: 'VIC' as V1014WorkforceRegionId,
+  primaryDomain: 'healthcare' as V1014WorkforceSkillDomain,
+  flowBand: 'balanced' as V1014WorkforceMigrationFlowBand,
+  seed: 159580,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_161_COEF = {
+  k0: 30.0000,
+  k1: 36.0000,
+  k2: 42.0000,
+  k3: 48.0000,
+  k4: 54.0000,
+  k5: 60.0000,
+  k6: 66.0000,
+  k7: 72.0000,
+  k8: 78.0000,
+  k9: 84.0000,
+  k10: 90.0000,
+  k11: 96.0000,
+  k12: 2.3000,
+  k13: 8.3000,
+  k14: 14.3000,
+  k15: 20.3000,
+  k16: 26.3000,
+  k17: 32.3000,
+  k18: 38.3000,
+  k19: 44.3000,
+  k20: 50.3000,
+  k21: 56.3000,
+  k22: 62.3000,
+  k23: 68.3000,
+  k24: 74.3000,
+  k25: 80.3000,
+  k26: 86.3000,
+  k27: 92.3000,
+  k28: 98.3000,
+  k29: 4.6000,
+  k30: 10.6000,
+  k31: 16.6000,
+  k32: 22.6000,
+  k33: 28.6000,
+  k34: 34.6000,
+  k35: 40.6000,
+  k36: 46.6000,
+  k37: 52.6000,
+  k38: 58.6000,
+  k39: 64.6000,
+  k40: 70.6000,
+  k41: 76.6000,
+  k42: 82.6000,
+  k43: 88.6000,
+  k44: 94.6000,
+  k45: 0.9000,
+  k46: 6.9000,
+  k47: 12.9000,
+  k48: 18.9000,
+  k49: 24.9000,
+  k50: 30.9000,
+  k51: 36.9000,
+  k52: 42.9000,
+  k53: 48.9000,
+  k54: 54.9000,
+  k55: 60.9000,
+  k56: 66.9000,
+  k57: 72.9000,
+  k58: 78.9000,
+  k59: 84.9000,
+  k60: 90.9000,
+  k61: 96.9000,
+  k62: 3.2000,
+  k63: 9.2000,
+  k64: 15.2000,
+  k65: 21.2000,
+  k66: 27.2000,
+  k67: 33.2000,
+  k68: 39.2000,
+  k69: 45.2000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_161_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_161_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_161_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_161_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_161_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_161_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_161_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_161_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_161_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_161_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_161_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 162 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_162_META = {
+  id: 'mig_162',
+  regionId: 'QLD' as V1014WorkforceRegionId,
+  primaryDomain: 'trades' as V1014WorkforceSkillDomain,
+  flowBand: 'constrained' as V1014WorkforceMigrationFlowBand,
+  seed: 160571,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_162_COEF = {
+  k0: 27.0000,
+  k1: 32.4000,
+  k2: 37.8000,
+  k3: 43.2000,
+  k4: 48.6000,
+  k5: 54.0000,
+  k6: 59.4000,
+  k7: 64.8000,
+  k8: 70.2000,
+  k9: 75.6000,
+  k10: 81.0000,
+  k11: 86.4000,
+  k12: 91.8000,
+  k13: 97.2000,
+  k14: 2.9000,
+  k15: 8.3000,
+  k16: 13.7000,
+  k17: 19.1000,
+  k18: 24.5000,
+  k19: 29.9000,
+  k20: 35.3000,
+  k21: 40.7000,
+  k22: 46.1000,
+  k23: 51.5000,
+  k24: 56.9000,
+  k25: 62.3000,
+  k26: 67.7000,
+  k27: 73.1000,
+  k28: 78.5000,
+  k29: 83.9000,
+  k30: 89.3000,
+  k31: 94.7000,
+  k32: 0.4000,
+  k33: 5.8000,
+  k34: 11.2000,
+  k35: 16.6000,
+  k36: 22.0000,
+  k37: 27.4000,
+  k38: 32.8000,
+  k39: 38.2000,
+  k40: 43.6000,
+  k41: 49.0000,
+  k42: 54.4000,
+  k43: 59.8000,
+  k44: 65.2000,
+  k45: 70.6000,
+  k46: 76.0000,
+  k47: 81.4000,
+  k48: 86.8000,
+  k49: 92.2000,
+  k50: 97.6000,
+  k51: 3.3000,
+  k52: 8.7000,
+  k53: 14.1000,
+  k54: 19.5000,
+  k55: 24.9000,
+  k56: 30.3000,
+  k57: 35.7000,
+  k58: 41.1000,
+  k59: 46.5000,
+  k60: 51.9000,
+  k61: 57.3000,
+  k62: 62.7000,
+  k63: 68.1000,
+  k64: 73.5000,
+  k65: 78.9000,
+  k66: 84.3000,
+  k67: 89.7000,
+  k68: 95.1000,
+  k69: 0.8000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_162_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_162_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_162_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_162_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_162_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_162_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_162_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_162_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_162_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_162_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_162_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 163 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_163_META = {
+  id: 'mig_163',
+  regionId: 'WA' as V1014WorkforceRegionId,
+  primaryDomain: 'digital' as V1014WorkforceSkillDomain,
+  flowBand: 'outflow' as V1014WorkforceMigrationFlowBand,
+  seed: 161562,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_163_COEF = {
+  k0: 24.0000,
+  k1: 28.8000,
+  k2: 33.6000,
+  k3: 38.4000,
+  k4: 43.2000,
+  k5: 48.0000,
+  k6: 52.8000,
+  k7: 57.6000,
+  k8: 62.4000,
+  k9: 67.2000,
+  k10: 72.0000,
+  k11: 76.8000,
+  k12: 81.6000,
+  k13: 86.4000,
+  k14: 91.2000,
+  k15: 96.0000,
+  k16: 1.1000,
+  k17: 5.9000,
+  k18: 10.7000,
+  k19: 15.5000,
+  k20: 20.3000,
+  k21: 25.1000,
+  k22: 29.9000,
+  k23: 34.7000,
+  k24: 39.5000,
+  k25: 44.3000,
+  k26: 49.1000,
+  k27: 53.9000,
+  k28: 58.7000,
+  k29: 63.5000,
+  k30: 68.3000,
+  k31: 73.1000,
+  k32: 77.9000,
+  k33: 82.7000,
+  k34: 87.5000,
+  k35: 92.3000,
+  k36: 97.1000,
+  k37: 2.2000,
+  k38: 7.0000,
+  k39: 11.8000,
+  k40: 16.6000,
+  k41: 21.4000,
+  k42: 26.2000,
+  k43: 31.0000,
+  k44: 35.8000,
+  k45: 40.6000,
+  k46: 45.4000,
+  k47: 50.2000,
+  k48: 55.0000,
+  k49: 59.8000,
+  k50: 64.6000,
+  k51: 69.4000,
+  k52: 74.2000,
+  k53: 79.0000,
+  k54: 83.8000,
+  k55: 88.6000,
+  k56: 93.4000,
+  k57: 98.2000,
+  k58: 3.3000,
+  k59: 8.1000,
+  k60: 12.9000,
+  k61: 17.7000,
+  k62: 22.5000,
+  k63: 27.3000,
+  k64: 32.1000,
+  k65: 36.9000,
+  k66: 41.7000,
+  k67: 46.5000,
+  k68: 51.3000,
+  k69: 56.1000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_163_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_163_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_163_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_163_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_163_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_163_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_163_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_163_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_163_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_163_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_163_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Generated migration scenario 164 — mirrors 20AJ catalog row (20AC part 4). */
+export const V1014_WORKFORCE_MIG_SCENARIO_164_META = {
+  id: 'mig_164',
+  regionId: 'SA' as V1014WorkforceRegionId,
+  primaryDomain: 'logistics' as V1014WorkforceSkillDomain,
+  flowBand: 'surge' as V1014WorkforceMigrationFlowBand,
+  seed: 162553,
+} as const;
+
+const V1014_WORKFORCE_MIG_SCENARIO_164_COEF = {
+  k0: 21.0000,
+  k1: 25.2000,
+  k2: 29.4000,
+  k3: 33.6000,
+  k4: 37.8000,
+  k5: 42.0000,
+  k6: 46.2000,
+  k7: 50.4000,
+  k8: 54.6000,
+  k9: 58.8000,
+  k10: 63.0000,
+  k11: 67.2000,
+  k12: 71.4000,
+  k13: 75.6000,
+  k14: 79.8000,
+  k15: 84.0000,
+  k16: 88.2000,
+  k17: 92.4000,
+  k18: 96.6000,
+  k19: 1.1000,
+  k20: 5.3000,
+  k21: 9.5000,
+  k22: 13.7000,
+  k23: 17.9000,
+  k24: 22.1000,
+  k25: 26.3000,
+  k26: 30.5000,
+  k27: 34.7000,
+  k28: 38.9000,
+  k29: 43.1000,
+  k30: 47.3000,
+  k31: 51.5000,
+  k32: 55.7000,
+  k33: 59.9000,
+  k34: 64.1000,
+  k35: 68.3000,
+  k36: 72.5000,
+  k37: 76.7000,
+  k38: 80.9000,
+  k39: 85.1000,
+  k40: 89.3000,
+  k41: 93.5000,
+  k42: 97.7000,
+  k43: 2.2000,
+  k44: 6.4000,
+  k45: 10.6000,
+  k46: 14.8000,
+  k47: 19.0000,
+  k48: 23.2000,
+  k49: 27.4000,
+  k50: 31.6000,
+  k51: 35.8000,
+  k52: 40.0000,
+  k53: 44.2000,
+  k54: 48.4000,
+  k55: 52.6000,
+  k56: 56.8000,
+  k57: 61.0000,
+  k58: 65.2000,
+  k59: 69.4000,
+  k60: 73.6000,
+  k61: 77.8000,
+  k62: 82.0000,
+  k63: 86.2000,
+  k64: 90.4000,
+  k65: 94.6000,
+  k66: 98.8000,
+  k67: 3.3000,
+  k68: 7.5000,
+  k69: 11.7000,
+} as const;
+
+export function V1014_WORKFORCE_MIG_SCENARIO_164_evaluate(turn: number): {
+  netInflow: number;
+  skillMismatchIndex: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_WORKFORCE_MIG_SCENARIO_164_COEF) as Array<
+    keyof typeof V1014_WORKFORCE_MIG_SCENARIO_164_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1014_WORKFORCE_MIG_SCENARIO_164_COEF[keys[j]] * ((turn + j) % 11);
+  }
+  const netInflow = V1014_WORKFORCE_clamp(-12 + (acc % 48) + turn * 0.04, -40, 55);
+  const skillMismatchIndex = V1014_WORKFORCE_clamp(
+    28 + (acc % 52) + Math.abs(netInflow) * 0.35,
+  );
+  const stable = V1014_WORKFORCE_readinessFromScore(100 - skillMismatchIndex) !== 'blocking';
+  return { netInflow, skillMismatchIndex, stable };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_164_snapshot(turn: number): V1014WorkforceMigrationScenarioSnapshot {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_164_evaluate(turn);
+  return {
+    scenarioId: V1014_WORKFORCE_MIG_SCENARIO_164_META.id,
+    regionId: V1014_WORKFORCE_MIG_SCENARIO_164_META.regionId,
+    flowBand: V1014_WORKFORCE_MIG_SCENARIO_164_META.flowBand,
+    netInflow: r.netInflow,
+    skillMismatchIndex: r.skillMismatchIndex,
+    readinessBand: V1014_WORKFORCE_readinessFromScore(100 - r.skillMismatchIndex),
+  };
+}
+
+export function V1014_WORKFORCE_MIG_SCENARIO_164_regressionAssert(turn: number): boolean {
+  const r = V1014_WORKFORCE_MIG_SCENARIO_164_evaluate(turn);
+  return typeof r.netInflow === 'number' && r.skillMismatchIndex <= 100;
+}
+
+
+/** Skills graph extension shard 000 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_000: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.15, retrainTurns: 6, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.158, retrainTurns: 7, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.166, retrainTurns: 8, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.174, retrainTurns: 9, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.182, retrainTurns: 6, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.19, retrainTurns: 7, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.198, retrainTurns: 8, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.206, retrainTurns: 9, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.214, retrainTurns: 6, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.222, retrainTurns: 7, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.23, retrainTurns: 8, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.238, retrainTurns: 9, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.246, retrainTurns: 6, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.15, retrainTurns: 7, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.158, retrainTurns: 8, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.166, retrainTurns: 9, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.174, retrainTurns: 6, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.182, retrainTurns: 7, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.19, retrainTurns: 8, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.198, retrainTurns: 9, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.206, retrainTurns: 6, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.214, retrainTurns: 7, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.222, retrainTurns: 8, corridorId: 'corridor_00' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.23, retrainTurns: 9, corridorId: 'corridor_00' },
+];
+
+
+/** Skills graph extension shard 001 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_001: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.246, retrainTurns: 7, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.254, retrainTurns: 8, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.262, retrainTurns: 9, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.27, retrainTurns: 10, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.278, retrainTurns: 7, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.286, retrainTurns: 8, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.19, retrainTurns: 9, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.198, retrainTurns: 10, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.206, retrainTurns: 7, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.214, retrainTurns: 8, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.222, retrainTurns: 9, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.23, retrainTurns: 10, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.238, retrainTurns: 7, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.246, retrainTurns: 8, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.254, retrainTurns: 9, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.262, retrainTurns: 10, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.27, retrainTurns: 7, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.278, retrainTurns: 8, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.286, retrainTurns: 9, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.19, retrainTurns: 10, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.198, retrainTurns: 7, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.206, retrainTurns: 8, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.214, retrainTurns: 9, corridorId: 'corridor_01' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.222, retrainTurns: 10, corridorId: 'corridor_01' },
+];
+
+
+/** Skills graph extension shard 002 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_002: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.238, retrainTurns: 8, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.246, retrainTurns: 9, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.254, retrainTurns: 10, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.262, retrainTurns: 11, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.27, retrainTurns: 8, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.278, retrainTurns: 9, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.286, retrainTurns: 10, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.294, retrainTurns: 11, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.302, retrainTurns: 8, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.31, retrainTurns: 9, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.318, retrainTurns: 10, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.326, retrainTurns: 11, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.23, retrainTurns: 8, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.238, retrainTurns: 9, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.246, retrainTurns: 10, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.254, retrainTurns: 11, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.262, retrainTurns: 8, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.27, retrainTurns: 9, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.278, retrainTurns: 10, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.286, retrainTurns: 11, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.294, retrainTurns: 8, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.302, retrainTurns: 9, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.31, retrainTurns: 10, corridorId: 'corridor_02' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.318, retrainTurns: 11, corridorId: 'corridor_02' },
+];
+
+
+/** Skills graph extension shard 003 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_003: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.334, retrainTurns: 9, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.342, retrainTurns: 10, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.35, retrainTurns: 11, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.358, retrainTurns: 12, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.366, retrainTurns: 9, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.27, retrainTurns: 10, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.278, retrainTurns: 11, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.286, retrainTurns: 12, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.294, retrainTurns: 9, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.302, retrainTurns: 10, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.31, retrainTurns: 11, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.318, retrainTurns: 12, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.326, retrainTurns: 9, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.334, retrainTurns: 10, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.342, retrainTurns: 11, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.35, retrainTurns: 12, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.358, retrainTurns: 9, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.366, retrainTurns: 10, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.27, retrainTurns: 11, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.278, retrainTurns: 12, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.286, retrainTurns: 9, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.294, retrainTurns: 10, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.302, retrainTurns: 11, corridorId: 'corridor_03' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.31, retrainTurns: 12, corridorId: 'corridor_03' },
+];
+
+
+/** Skills graph extension shard 004 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_004: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.326, retrainTurns: 10, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.334, retrainTurns: 11, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.342, retrainTurns: 12, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.35, retrainTurns: 13, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.358, retrainTurns: 10, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.366, retrainTurns: 11, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.374, retrainTurns: 12, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.382, retrainTurns: 13, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.39, retrainTurns: 10, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.398, retrainTurns: 11, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.406, retrainTurns: 12, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.31, retrainTurns: 13, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.318, retrainTurns: 10, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.326, retrainTurns: 11, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.334, retrainTurns: 12, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.342, retrainTurns: 13, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.35, retrainTurns: 10, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.358, retrainTurns: 11, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.366, retrainTurns: 12, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.374, retrainTurns: 13, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.382, retrainTurns: 10, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.39, retrainTurns: 11, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.398, retrainTurns: 12, corridorId: 'corridor_04' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.406, retrainTurns: 13, corridorId: 'corridor_04' },
+];
+
+
+/** Skills graph extension shard 005 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_005: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.422, retrainTurns: 11, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.43, retrainTurns: 12, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.438, retrainTurns: 13, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.446, retrainTurns: 14, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.35, retrainTurns: 11, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.358, retrainTurns: 12, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.366, retrainTurns: 13, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.374, retrainTurns: 14, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.382, retrainTurns: 11, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.39, retrainTurns: 12, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.398, retrainTurns: 13, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.406, retrainTurns: 14, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.414, retrainTurns: 11, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.422, retrainTurns: 12, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.43, retrainTurns: 13, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.438, retrainTurns: 14, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.446, retrainTurns: 11, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.35, retrainTurns: 12, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.358, retrainTurns: 13, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.366, retrainTurns: 14, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.374, retrainTurns: 11, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.382, retrainTurns: 12, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.39, retrainTurns: 13, corridorId: 'corridor_05' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.398, retrainTurns: 14, corridorId: 'corridor_05' },
+];
+
+
+/** Skills graph extension shard 006 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_006: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.414, retrainTurns: 12, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.422, retrainTurns: 13, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.43, retrainTurns: 14, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.438, retrainTurns: 15, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.446, retrainTurns: 12, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.454, retrainTurns: 13, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.462, retrainTurns: 14, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.47, retrainTurns: 15, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.478, retrainTurns: 12, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.486, retrainTurns: 13, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.39, retrainTurns: 14, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.398, retrainTurns: 15, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.406, retrainTurns: 12, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.414, retrainTurns: 13, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.422, retrainTurns: 14, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.43, retrainTurns: 15, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.438, retrainTurns: 12, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.446, retrainTurns: 13, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.454, retrainTurns: 14, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.462, retrainTurns: 15, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.47, retrainTurns: 12, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.478, retrainTurns: 13, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.486, retrainTurns: 14, corridorId: 'corridor_06' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.39, retrainTurns: 15, corridorId: 'corridor_06' },
+];
+
+
+/** Skills graph extension shard 007 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_007: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.51, retrainTurns: 13, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.518, retrainTurns: 14, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.526, retrainTurns: 15, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.43, retrainTurns: 16, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.438, retrainTurns: 13, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.446, retrainTurns: 14, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.454, retrainTurns: 15, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.462, retrainTurns: 16, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.47, retrainTurns: 13, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.478, retrainTurns: 14, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.486, retrainTurns: 15, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.494, retrainTurns: 16, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.502, retrainTurns: 13, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.51, retrainTurns: 14, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.518, retrainTurns: 15, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.526, retrainTurns: 16, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.43, retrainTurns: 13, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.438, retrainTurns: 14, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.446, retrainTurns: 15, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.454, retrainTurns: 16, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.462, retrainTurns: 13, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.47, retrainTurns: 14, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.478, retrainTurns: 15, corridorId: 'corridor_07' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.486, retrainTurns: 16, corridorId: 'corridor_07' },
+];
+
+
+/** Skills graph extension shard 008 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_008: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.502, retrainTurns: 14, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.51, retrainTurns: 15, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.518, retrainTurns: 16, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.526, retrainTurns: 17, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.534, retrainTurns: 14, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.542, retrainTurns: 15, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.55, retrainTurns: 16, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.558, retrainTurns: 17, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.566, retrainTurns: 14, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.47, retrainTurns: 15, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.478, retrainTurns: 16, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.486, retrainTurns: 17, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.494, retrainTurns: 14, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.502, retrainTurns: 15, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.51, retrainTurns: 16, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.518, retrainTurns: 17, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.526, retrainTurns: 14, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.534, retrainTurns: 15, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.542, retrainTurns: 16, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.55, retrainTurns: 17, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.558, retrainTurns: 14, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.566, retrainTurns: 15, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.47, retrainTurns: 16, corridorId: 'corridor_08' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.478, retrainTurns: 17, corridorId: 'corridor_08' },
+];
+
+
+/** Skills graph extension shard 009 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_009: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.598, retrainTurns: 15, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.606, retrainTurns: 16, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.51, retrainTurns: 17, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.518, retrainTurns: 18, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.526, retrainTurns: 15, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.534, retrainTurns: 16, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.542, retrainTurns: 17, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.55, retrainTurns: 18, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.558, retrainTurns: 15, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.566, retrainTurns: 16, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.574, retrainTurns: 17, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.582, retrainTurns: 18, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.59, retrainTurns: 15, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.598, retrainTurns: 16, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.606, retrainTurns: 17, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.51, retrainTurns: 18, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.518, retrainTurns: 15, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.526, retrainTurns: 16, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.534, retrainTurns: 17, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.542, retrainTurns: 18, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.55, retrainTurns: 15, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.558, retrainTurns: 16, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.566, retrainTurns: 17, corridorId: 'corridor_09' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.574, retrainTurns: 18, corridorId: 'corridor_09' },
+];
+
+
+/** Skills graph extension shard 010 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_010: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.59, retrainTurns: 16, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.598, retrainTurns: 17, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.606, retrainTurns: 18, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.614, retrainTurns: 19, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.622, retrainTurns: 16, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.63, retrainTurns: 17, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.638, retrainTurns: 18, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.646, retrainTurns: 19, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.55, retrainTurns: 16, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.558, retrainTurns: 17, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.566, retrainTurns: 18, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.574, retrainTurns: 19, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.582, retrainTurns: 16, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.59, retrainTurns: 17, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.598, retrainTurns: 18, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.606, retrainTurns: 19, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.614, retrainTurns: 16, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.622, retrainTurns: 17, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.63, retrainTurns: 18, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.638, retrainTurns: 19, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.646, retrainTurns: 16, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.55, retrainTurns: 17, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.558, retrainTurns: 18, corridorId: 'corridor_10' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.566, retrainTurns: 19, corridorId: 'corridor_10' },
+];
+
+
+/** Skills graph extension shard 011 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_011: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.686, retrainTurns: 6, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.59, retrainTurns: 7, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.598, retrainTurns: 8, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.606, retrainTurns: 9, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.614, retrainTurns: 6, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.622, retrainTurns: 7, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.63, retrainTurns: 8, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.638, retrainTurns: 9, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.646, retrainTurns: 6, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.654, retrainTurns: 7, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.662, retrainTurns: 8, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.67, retrainTurns: 9, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.678, retrainTurns: 6, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.686, retrainTurns: 7, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.59, retrainTurns: 8, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.598, retrainTurns: 9, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.606, retrainTurns: 6, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.614, retrainTurns: 7, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.622, retrainTurns: 8, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.63, retrainTurns: 9, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.638, retrainTurns: 6, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.646, retrainTurns: 7, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.654, retrainTurns: 8, corridorId: 'corridor_11' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.662, retrainTurns: 9, corridorId: 'corridor_11' },
+];
+
+
+/** Skills graph extension shard 012 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_012: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.678, retrainTurns: 7, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.686, retrainTurns: 8, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.694, retrainTurns: 9, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.702, retrainTurns: 10, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.71, retrainTurns: 7, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.718, retrainTurns: 8, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.726, retrainTurns: 9, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.63, retrainTurns: 10, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.638, retrainTurns: 7, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.646, retrainTurns: 8, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.654, retrainTurns: 9, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.662, retrainTurns: 10, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.67, retrainTurns: 7, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.678, retrainTurns: 8, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.686, retrainTurns: 9, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.694, retrainTurns: 10, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.702, retrainTurns: 7, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.71, retrainTurns: 8, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.718, retrainTurns: 9, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.726, retrainTurns: 10, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.63, retrainTurns: 7, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.638, retrainTurns: 8, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.646, retrainTurns: 9, corridorId: 'corridor_12' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.654, retrainTurns: 10, corridorId: 'corridor_12' },
+];
+
+
+/** Skills graph extension shard 013 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_013: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.67, retrainTurns: 8, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.678, retrainTurns: 9, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.686, retrainTurns: 10, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.694, retrainTurns: 11, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.702, retrainTurns: 8, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.71, retrainTurns: 9, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.718, retrainTurns: 10, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.726, retrainTurns: 11, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.734, retrainTurns: 8, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.742, retrainTurns: 9, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.75, retrainTurns: 10, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.758, retrainTurns: 11, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.766, retrainTurns: 8, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.67, retrainTurns: 9, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.678, retrainTurns: 10, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.686, retrainTurns: 11, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.694, retrainTurns: 8, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.702, retrainTurns: 9, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.71, retrainTurns: 10, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.718, retrainTurns: 11, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.726, retrainTurns: 8, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.734, retrainTurns: 9, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.742, retrainTurns: 10, corridorId: 'corridor_13' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.75, retrainTurns: 11, corridorId: 'corridor_13' },
+];
+
+
+/** Skills graph extension shard 014 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_014: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.766, retrainTurns: 9, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.774, retrainTurns: 10, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.782, retrainTurns: 11, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.79, retrainTurns: 12, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.798, retrainTurns: 9, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.806, retrainTurns: 10, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.71, retrainTurns: 11, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.718, retrainTurns: 12, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.726, retrainTurns: 9, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.734, retrainTurns: 10, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.742, retrainTurns: 11, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.75, retrainTurns: 12, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.758, retrainTurns: 9, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.766, retrainTurns: 10, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.774, retrainTurns: 11, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.782, retrainTurns: 12, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.79, retrainTurns: 9, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.798, retrainTurns: 10, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.806, retrainTurns: 11, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.71, retrainTurns: 12, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.718, retrainTurns: 9, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.726, retrainTurns: 10, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.734, retrainTurns: 11, corridorId: 'corridor_14' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.742, retrainTurns: 12, corridorId: 'corridor_14' },
+];
+
+
+/** Skills graph extension shard 015 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_015: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.758, retrainTurns: 10, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.766, retrainTurns: 11, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.774, retrainTurns: 12, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.782, retrainTurns: 13, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.79, retrainTurns: 10, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.798, retrainTurns: 11, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.806, retrainTurns: 12, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.814, retrainTurns: 13, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.822, retrainTurns: 10, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.83, retrainTurns: 11, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.838, retrainTurns: 12, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.846, retrainTurns: 13, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.75, retrainTurns: 10, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.758, retrainTurns: 11, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.766, retrainTurns: 12, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.774, retrainTurns: 13, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.782, retrainTurns: 10, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.79, retrainTurns: 11, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.798, retrainTurns: 12, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.806, retrainTurns: 13, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.814, retrainTurns: 10, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.822, retrainTurns: 11, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.83, retrainTurns: 12, corridorId: 'corridor_15' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.838, retrainTurns: 13, corridorId: 'corridor_15' },
+];
+
+
+/** Skills graph extension shard 016 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_016: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.854, retrainTurns: 11, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.862, retrainTurns: 12, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.87, retrainTurns: 13, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.878, retrainTurns: 14, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.886, retrainTurns: 11, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.79, retrainTurns: 12, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.798, retrainTurns: 13, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.806, retrainTurns: 14, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.814, retrainTurns: 11, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.822, retrainTurns: 12, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.83, retrainTurns: 13, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.838, retrainTurns: 14, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.846, retrainTurns: 11, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.854, retrainTurns: 12, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.862, retrainTurns: 13, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.87, retrainTurns: 14, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.878, retrainTurns: 11, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.886, retrainTurns: 12, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.79, retrainTurns: 13, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.798, retrainTurns: 14, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.806, retrainTurns: 11, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.814, retrainTurns: 12, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.822, retrainTurns: 13, corridorId: 'corridor_16' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.83, retrainTurns: 14, corridorId: 'corridor_16' },
+];
+
+
+/** Skills graph extension shard 017 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_017: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.166, retrainTurns: 12, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.174, retrainTurns: 13, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.182, retrainTurns: 14, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.19, retrainTurns: 15, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.198, retrainTurns: 12, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.206, retrainTurns: 13, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.214, retrainTurns: 14, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.222, retrainTurns: 15, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.23, retrainTurns: 12, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.238, retrainTurns: 13, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.246, retrainTurns: 14, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.15, retrainTurns: 15, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.158, retrainTurns: 12, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.166, retrainTurns: 13, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.174, retrainTurns: 14, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.182, retrainTurns: 15, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.19, retrainTurns: 12, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.198, retrainTurns: 13, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.206, retrainTurns: 14, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.214, retrainTurns: 15, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.222, retrainTurns: 12, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.23, retrainTurns: 13, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.238, retrainTurns: 14, corridorId: 'corridor_17' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.246, retrainTurns: 15, corridorId: 'corridor_17' },
+];
+
+
+/** Skills graph extension shard 018 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_018: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.262, retrainTurns: 13, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.27, retrainTurns: 14, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.278, retrainTurns: 15, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.286, retrainTurns: 16, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.19, retrainTurns: 13, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.198, retrainTurns: 14, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.206, retrainTurns: 15, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.214, retrainTurns: 16, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.222, retrainTurns: 13, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.23, retrainTurns: 14, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.238, retrainTurns: 15, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.246, retrainTurns: 16, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.254, retrainTurns: 13, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.262, retrainTurns: 14, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.27, retrainTurns: 15, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.278, retrainTurns: 16, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.286, retrainTurns: 13, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.19, retrainTurns: 14, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.198, retrainTurns: 15, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.206, retrainTurns: 16, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.214, retrainTurns: 13, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.222, retrainTurns: 14, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.23, retrainTurns: 15, corridorId: 'corridor_18' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.238, retrainTurns: 16, corridorId: 'corridor_18' },
+];
+
+
+/** Skills graph extension shard 019 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_019: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.254, retrainTurns: 14, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.262, retrainTurns: 15, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.27, retrainTurns: 16, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.278, retrainTurns: 17, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.286, retrainTurns: 14, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.294, retrainTurns: 15, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.302, retrainTurns: 16, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.31, retrainTurns: 17, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.318, retrainTurns: 14, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.326, retrainTurns: 15, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.23, retrainTurns: 16, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.238, retrainTurns: 17, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.246, retrainTurns: 14, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.254, retrainTurns: 15, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.262, retrainTurns: 16, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.27, retrainTurns: 17, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.278, retrainTurns: 14, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.286, retrainTurns: 15, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.294, retrainTurns: 16, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.302, retrainTurns: 17, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.31, retrainTurns: 14, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.318, retrainTurns: 15, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.326, retrainTurns: 16, corridorId: 'corridor_19' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.23, retrainTurns: 17, corridorId: 'corridor_19' },
+];
+
+
+/** Skills graph extension shard 020 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_020: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.35, retrainTurns: 15, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.358, retrainTurns: 16, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.366, retrainTurns: 17, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.27, retrainTurns: 18, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.278, retrainTurns: 15, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.286, retrainTurns: 16, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.294, retrainTurns: 17, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.302, retrainTurns: 18, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.31, retrainTurns: 15, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.318, retrainTurns: 16, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.326, retrainTurns: 17, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.334, retrainTurns: 18, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.342, retrainTurns: 15, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.35, retrainTurns: 16, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.358, retrainTurns: 17, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.366, retrainTurns: 18, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.27, retrainTurns: 15, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.278, retrainTurns: 16, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.286, retrainTurns: 17, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.294, retrainTurns: 18, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.302, retrainTurns: 15, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.31, retrainTurns: 16, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.318, retrainTurns: 17, corridorId: 'corridor_20' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.326, retrainTurns: 18, corridorId: 'corridor_20' },
+];
+
+
+/** Skills graph extension shard 021 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_021: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.342, retrainTurns: 16, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.35, retrainTurns: 17, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.358, retrainTurns: 18, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.366, retrainTurns: 19, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.374, retrainTurns: 16, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.382, retrainTurns: 17, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.39, retrainTurns: 18, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.398, retrainTurns: 19, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.406, retrainTurns: 16, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.31, retrainTurns: 17, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.318, retrainTurns: 18, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.326, retrainTurns: 19, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.334, retrainTurns: 16, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.342, retrainTurns: 17, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.35, retrainTurns: 18, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.358, retrainTurns: 19, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.366, retrainTurns: 16, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.374, retrainTurns: 17, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.382, retrainTurns: 18, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.39, retrainTurns: 19, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.398, retrainTurns: 16, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.406, retrainTurns: 17, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.31, retrainTurns: 18, corridorId: 'corridor_21' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.318, retrainTurns: 19, corridorId: 'corridor_21' },
+];
+
+
+/** Skills graph extension shard 022 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_022: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.438, retrainTurns: 6, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.446, retrainTurns: 7, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.35, retrainTurns: 8, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.358, retrainTurns: 9, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.366, retrainTurns: 6, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.374, retrainTurns: 7, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.382, retrainTurns: 8, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.39, retrainTurns: 9, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.398, retrainTurns: 6, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.406, retrainTurns: 7, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.414, retrainTurns: 8, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.422, retrainTurns: 9, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.43, retrainTurns: 6, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.438, retrainTurns: 7, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.446, retrainTurns: 8, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.35, retrainTurns: 9, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.358, retrainTurns: 6, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.366, retrainTurns: 7, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.374, retrainTurns: 8, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.382, retrainTurns: 9, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.39, retrainTurns: 6, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.398, retrainTurns: 7, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.406, retrainTurns: 8, corridorId: 'corridor_22' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.414, retrainTurns: 9, corridorId: 'corridor_22' },
+];
+
+
+/** Skills graph extension shard 023 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_023: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.43, retrainTurns: 7, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.438, retrainTurns: 8, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.446, retrainTurns: 9, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.454, retrainTurns: 10, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.462, retrainTurns: 7, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.47, retrainTurns: 8, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.478, retrainTurns: 9, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.486, retrainTurns: 10, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.39, retrainTurns: 7, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.398, retrainTurns: 8, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.406, retrainTurns: 9, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.414, retrainTurns: 10, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.422, retrainTurns: 7, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.43, retrainTurns: 8, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.438, retrainTurns: 9, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.446, retrainTurns: 10, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.454, retrainTurns: 7, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.462, retrainTurns: 8, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.47, retrainTurns: 9, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.478, retrainTurns: 10, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.486, retrainTurns: 7, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.39, retrainTurns: 8, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.398, retrainTurns: 9, corridorId: 'corridor_23' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.406, retrainTurns: 10, corridorId: 'corridor_23' },
+];
+
+
+/** Skills graph extension shard 024 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_024: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.526, retrainTurns: 8, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.43, retrainTurns: 9, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.438, retrainTurns: 10, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.446, retrainTurns: 11, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.454, retrainTurns: 8, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.462, retrainTurns: 9, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.47, retrainTurns: 10, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.478, retrainTurns: 11, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.486, retrainTurns: 8, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.494, retrainTurns: 9, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.502, retrainTurns: 10, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.51, retrainTurns: 11, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.518, retrainTurns: 8, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.526, retrainTurns: 9, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.43, retrainTurns: 10, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.438, retrainTurns: 11, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.446, retrainTurns: 8, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.454, retrainTurns: 9, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.462, retrainTurns: 10, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.47, retrainTurns: 11, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.478, retrainTurns: 8, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.486, retrainTurns: 9, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.494, retrainTurns: 10, corridorId: 'corridor_24' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.502, retrainTurns: 11, corridorId: 'corridor_24' },
+];
+
+
+/** Skills graph extension shard 025 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_025: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.518, retrainTurns: 9, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.526, retrainTurns: 10, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.534, retrainTurns: 11, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.542, retrainTurns: 12, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.55, retrainTurns: 9, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.558, retrainTurns: 10, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.566, retrainTurns: 11, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.47, retrainTurns: 12, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.478, retrainTurns: 9, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.486, retrainTurns: 10, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.494, retrainTurns: 11, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.502, retrainTurns: 12, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.51, retrainTurns: 9, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.518, retrainTurns: 10, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.526, retrainTurns: 11, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.534, retrainTurns: 12, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.542, retrainTurns: 9, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.55, retrainTurns: 10, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.558, retrainTurns: 11, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.566, retrainTurns: 12, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.47, retrainTurns: 9, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.478, retrainTurns: 10, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.486, retrainTurns: 11, corridorId: 'corridor_25' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.494, retrainTurns: 12, corridorId: 'corridor_25' },
+];
+
+
+/** Skills graph extension shard 026 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_026: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.51, retrainTurns: 10, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.518, retrainTurns: 11, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.526, retrainTurns: 12, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.534, retrainTurns: 13, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.542, retrainTurns: 10, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.55, retrainTurns: 11, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.558, retrainTurns: 12, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.566, retrainTurns: 13, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.574, retrainTurns: 10, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.582, retrainTurns: 11, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.59, retrainTurns: 12, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.598, retrainTurns: 13, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.606, retrainTurns: 10, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.51, retrainTurns: 11, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.518, retrainTurns: 12, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.526, retrainTurns: 13, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.534, retrainTurns: 10, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.542, retrainTurns: 11, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.55, retrainTurns: 12, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.558, retrainTurns: 13, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.566, retrainTurns: 10, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.574, retrainTurns: 11, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.582, retrainTurns: 12, corridorId: 'corridor_26' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.59, retrainTurns: 13, corridorId: 'corridor_26' },
+];
+
+
+/** Skills graph extension shard 027 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_027: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.606, retrainTurns: 11, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.614, retrainTurns: 12, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.622, retrainTurns: 13, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.63, retrainTurns: 14, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.638, retrainTurns: 11, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.646, retrainTurns: 12, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.55, retrainTurns: 13, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.558, retrainTurns: 14, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.566, retrainTurns: 11, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.574, retrainTurns: 12, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.582, retrainTurns: 13, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.59, retrainTurns: 14, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.598, retrainTurns: 11, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.606, retrainTurns: 12, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.614, retrainTurns: 13, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.622, retrainTurns: 14, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.63, retrainTurns: 11, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.638, retrainTurns: 12, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.646, retrainTurns: 13, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.55, retrainTurns: 14, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.558, retrainTurns: 11, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.566, retrainTurns: 12, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.574, retrainTurns: 13, corridorId: 'corridor_27' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.582, retrainTurns: 14, corridorId: 'corridor_27' },
+];
+
+
+/** Skills graph extension shard 028 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_028: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.598, retrainTurns: 12, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.606, retrainTurns: 13, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.614, retrainTurns: 14, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.622, retrainTurns: 15, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.63, retrainTurns: 12, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.638, retrainTurns: 13, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.646, retrainTurns: 14, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.654, retrainTurns: 15, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.662, retrainTurns: 12, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.67, retrainTurns: 13, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.678, retrainTurns: 14, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.686, retrainTurns: 15, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.59, retrainTurns: 12, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.598, retrainTurns: 13, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.606, retrainTurns: 14, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.614, retrainTurns: 15, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.622, retrainTurns: 12, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.63, retrainTurns: 13, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.638, retrainTurns: 14, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.646, retrainTurns: 15, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.654, retrainTurns: 12, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.662, retrainTurns: 13, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.67, retrainTurns: 14, corridorId: 'corridor_00' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.678, retrainTurns: 15, corridorId: 'corridor_00' },
+];
+
+
+/** Skills graph extension shard 029 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_029: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.694, retrainTurns: 13, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.702, retrainTurns: 14, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.71, retrainTurns: 15, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.718, retrainTurns: 16, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.726, retrainTurns: 13, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.63, retrainTurns: 14, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.638, retrainTurns: 15, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.646, retrainTurns: 16, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.654, retrainTurns: 13, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.662, retrainTurns: 14, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.67, retrainTurns: 15, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.678, retrainTurns: 16, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.686, retrainTurns: 13, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.694, retrainTurns: 14, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.702, retrainTurns: 15, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.71, retrainTurns: 16, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.718, retrainTurns: 13, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.726, retrainTurns: 14, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.63, retrainTurns: 15, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.638, retrainTurns: 16, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.646, retrainTurns: 13, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.654, retrainTurns: 14, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.662, retrainTurns: 15, corridorId: 'corridor_01' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.67, retrainTurns: 16, corridorId: 'corridor_01' },
+];
+
+
+/** Skills graph extension shard 030 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_030: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.686, retrainTurns: 14, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.694, retrainTurns: 15, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.702, retrainTurns: 16, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.71, retrainTurns: 17, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.718, retrainTurns: 14, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.726, retrainTurns: 15, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.734, retrainTurns: 16, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.742, retrainTurns: 17, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.75, retrainTurns: 14, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.758, retrainTurns: 15, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.766, retrainTurns: 16, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.67, retrainTurns: 17, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.678, retrainTurns: 14, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.686, retrainTurns: 15, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.694, retrainTurns: 16, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.702, retrainTurns: 17, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.71, retrainTurns: 14, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.718, retrainTurns: 15, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.726, retrainTurns: 16, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.734, retrainTurns: 17, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.742, retrainTurns: 14, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.75, retrainTurns: 15, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.758, retrainTurns: 16, corridorId: 'corridor_02' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.766, retrainTurns: 17, corridorId: 'corridor_02' },
+];
+
+
+/** Skills graph extension shard 031 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_031: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.782, retrainTurns: 15, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.79, retrainTurns: 16, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.798, retrainTurns: 17, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.806, retrainTurns: 18, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.71, retrainTurns: 15, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.718, retrainTurns: 16, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.726, retrainTurns: 17, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.734, retrainTurns: 18, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.742, retrainTurns: 15, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.75, retrainTurns: 16, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.758, retrainTurns: 17, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.766, retrainTurns: 18, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.774, retrainTurns: 15, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.782, retrainTurns: 16, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.79, retrainTurns: 17, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.798, retrainTurns: 18, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.806, retrainTurns: 15, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.71, retrainTurns: 16, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.718, retrainTurns: 17, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.726, retrainTurns: 18, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.734, retrainTurns: 15, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.742, retrainTurns: 16, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.75, retrainTurns: 17, corridorId: 'corridor_03' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.758, retrainTurns: 18, corridorId: 'corridor_03' },
+];
+
+
+/** Skills graph extension shard 032 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_032: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.774, retrainTurns: 16, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.782, retrainTurns: 17, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.79, retrainTurns: 18, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.798, retrainTurns: 19, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.806, retrainTurns: 16, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.814, retrainTurns: 17, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.822, retrainTurns: 18, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.83, retrainTurns: 19, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.838, retrainTurns: 16, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.846, retrainTurns: 17, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.75, retrainTurns: 18, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.758, retrainTurns: 19, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.766, retrainTurns: 16, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.774, retrainTurns: 17, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.782, retrainTurns: 18, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.79, retrainTurns: 19, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.798, retrainTurns: 16, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.806, retrainTurns: 17, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.814, retrainTurns: 18, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.822, retrainTurns: 19, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.83, retrainTurns: 16, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.838, retrainTurns: 17, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.846, retrainTurns: 18, corridorId: 'corridor_04' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.75, retrainTurns: 19, corridorId: 'corridor_04' },
+];
+
+
+/** Skills graph extension shard 033 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_033: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.87, retrainTurns: 6, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.878, retrainTurns: 7, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.886, retrainTurns: 8, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.79, retrainTurns: 9, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.798, retrainTurns: 6, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.806, retrainTurns: 7, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.814, retrainTurns: 8, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.822, retrainTurns: 9, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.83, retrainTurns: 6, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.838, retrainTurns: 7, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.846, retrainTurns: 8, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.854, retrainTurns: 9, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.862, retrainTurns: 6, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.87, retrainTurns: 7, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.878, retrainTurns: 8, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.886, retrainTurns: 9, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.79, retrainTurns: 6, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.798, retrainTurns: 7, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.806, retrainTurns: 8, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.814, retrainTurns: 9, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.822, retrainTurns: 6, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.83, retrainTurns: 7, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.838, retrainTurns: 8, corridorId: 'corridor_05' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.846, retrainTurns: 9, corridorId: 'corridor_05' },
+];
+
+
+/** Skills graph extension shard 034 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_034: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.182, retrainTurns: 7, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.19, retrainTurns: 8, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.198, retrainTurns: 9, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.206, retrainTurns: 10, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.214, retrainTurns: 7, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.222, retrainTurns: 8, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.23, retrainTurns: 9, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.238, retrainTurns: 10, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.246, retrainTurns: 7, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.15, retrainTurns: 8, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.158, retrainTurns: 9, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.166, retrainTurns: 10, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.174, retrainTurns: 7, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.182, retrainTurns: 8, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.19, retrainTurns: 9, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.198, retrainTurns: 10, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.206, retrainTurns: 7, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.214, retrainTurns: 8, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.222, retrainTurns: 9, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.23, retrainTurns: 10, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.238, retrainTurns: 7, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.246, retrainTurns: 8, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.15, retrainTurns: 9, corridorId: 'corridor_06' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.158, retrainTurns: 10, corridorId: 'corridor_06' },
+];
+
+
+/** Skills graph extension shard 035 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_035: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.278, retrainTurns: 8, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.286, retrainTurns: 9, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.19, retrainTurns: 10, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.198, retrainTurns: 11, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.206, retrainTurns: 8, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.214, retrainTurns: 9, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.222, retrainTurns: 10, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.23, retrainTurns: 11, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.238, retrainTurns: 8, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.246, retrainTurns: 9, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.254, retrainTurns: 10, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.262, retrainTurns: 11, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.27, retrainTurns: 8, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.278, retrainTurns: 9, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.286, retrainTurns: 10, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.19, retrainTurns: 11, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.198, retrainTurns: 8, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.206, retrainTurns: 9, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.214, retrainTurns: 10, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.222, retrainTurns: 11, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.23, retrainTurns: 8, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.238, retrainTurns: 9, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.246, retrainTurns: 10, corridorId: 'corridor_07' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.254, retrainTurns: 11, corridorId: 'corridor_07' },
+];
+
+
+/** Skills graph extension shard 036 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_036: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.27, retrainTurns: 9, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.278, retrainTurns: 10, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.286, retrainTurns: 11, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.294, retrainTurns: 12, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.302, retrainTurns: 9, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.31, retrainTurns: 10, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.318, retrainTurns: 11, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.326, retrainTurns: 12, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.23, retrainTurns: 9, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.238, retrainTurns: 10, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.246, retrainTurns: 11, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.254, retrainTurns: 12, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.262, retrainTurns: 9, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.27, retrainTurns: 10, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.278, retrainTurns: 11, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.286, retrainTurns: 12, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.294, retrainTurns: 9, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.302, retrainTurns: 10, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.31, retrainTurns: 11, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.318, retrainTurns: 12, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.326, retrainTurns: 9, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.23, retrainTurns: 10, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.238, retrainTurns: 11, corridorId: 'corridor_08' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.246, retrainTurns: 12, corridorId: 'corridor_08' },
+];
+
+
+/** Skills graph extension shard 037 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_037: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.366, retrainTurns: 10, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.27, retrainTurns: 11, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.278, retrainTurns: 12, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.286, retrainTurns: 13, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.294, retrainTurns: 10, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.302, retrainTurns: 11, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.31, retrainTurns: 12, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.318, retrainTurns: 13, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.326, retrainTurns: 10, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.334, retrainTurns: 11, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.342, retrainTurns: 12, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.35, retrainTurns: 13, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.358, retrainTurns: 10, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.366, retrainTurns: 11, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.27, retrainTurns: 12, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.278, retrainTurns: 13, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.286, retrainTurns: 10, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.294, retrainTurns: 11, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.302, retrainTurns: 12, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.31, retrainTurns: 13, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.318, retrainTurns: 10, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.326, retrainTurns: 11, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.334, retrainTurns: 12, corridorId: 'corridor_09' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.342, retrainTurns: 13, corridorId: 'corridor_09' },
+];
+
+
+/** Skills graph extension shard 038 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_038: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.358, retrainTurns: 11, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.366, retrainTurns: 12, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.374, retrainTurns: 13, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.382, retrainTurns: 14, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.39, retrainTurns: 11, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.398, retrainTurns: 12, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.406, retrainTurns: 13, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.31, retrainTurns: 14, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.318, retrainTurns: 11, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.326, retrainTurns: 12, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.334, retrainTurns: 13, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.342, retrainTurns: 14, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.35, retrainTurns: 11, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.358, retrainTurns: 12, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.366, retrainTurns: 13, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.374, retrainTurns: 14, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.382, retrainTurns: 11, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.39, retrainTurns: 12, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.398, retrainTurns: 13, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.406, retrainTurns: 14, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.31, retrainTurns: 11, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.318, retrainTurns: 12, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.326, retrainTurns: 13, corridorId: 'corridor_10' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.334, retrainTurns: 14, corridorId: 'corridor_10' },
+];
+
+
+/** Skills graph extension shard 039 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_039: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.35, retrainTurns: 12, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.358, retrainTurns: 13, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.366, retrainTurns: 14, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.374, retrainTurns: 15, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.382, retrainTurns: 12, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.39, retrainTurns: 13, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.398, retrainTurns: 14, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.406, retrainTurns: 15, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.414, retrainTurns: 12, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.422, retrainTurns: 13, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.43, retrainTurns: 14, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.438, retrainTurns: 15, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.446, retrainTurns: 12, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.35, retrainTurns: 13, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.358, retrainTurns: 14, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.366, retrainTurns: 15, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.374, retrainTurns: 12, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.382, retrainTurns: 13, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.39, retrainTurns: 14, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.398, retrainTurns: 15, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.406, retrainTurns: 12, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.414, retrainTurns: 13, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.422, retrainTurns: 14, corridorId: 'corridor_11' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.43, retrainTurns: 15, corridorId: 'corridor_11' },
+];
+
+
+/** Skills graph extension shard 040 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_040: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.446, retrainTurns: 13, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.454, retrainTurns: 14, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.462, retrainTurns: 15, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.47, retrainTurns: 16, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.478, retrainTurns: 13, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.486, retrainTurns: 14, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.39, retrainTurns: 15, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.398, retrainTurns: 16, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.406, retrainTurns: 13, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.414, retrainTurns: 14, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.422, retrainTurns: 15, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.43, retrainTurns: 16, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.438, retrainTurns: 13, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.446, retrainTurns: 14, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.454, retrainTurns: 15, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.462, retrainTurns: 16, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.47, retrainTurns: 13, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.478, retrainTurns: 14, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.486, retrainTurns: 15, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.39, retrainTurns: 16, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.398, retrainTurns: 13, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.406, retrainTurns: 14, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.414, retrainTurns: 15, corridorId: 'corridor_12' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.422, retrainTurns: 16, corridorId: 'corridor_12' },
+];
+
+
+/** Skills graph extension shard 041 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_041: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.438, retrainTurns: 14, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.446, retrainTurns: 15, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.454, retrainTurns: 16, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.462, retrainTurns: 17, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.47, retrainTurns: 14, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.478, retrainTurns: 15, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.486, retrainTurns: 16, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.494, retrainTurns: 17, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.502, retrainTurns: 14, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.51, retrainTurns: 15, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.518, retrainTurns: 16, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.526, retrainTurns: 17, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.43, retrainTurns: 14, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.438, retrainTurns: 15, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.446, retrainTurns: 16, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.454, retrainTurns: 17, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.462, retrainTurns: 14, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.47, retrainTurns: 15, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.478, retrainTurns: 16, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.486, retrainTurns: 17, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.494, retrainTurns: 14, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.502, retrainTurns: 15, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.51, retrainTurns: 16, corridorId: 'corridor_13' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.518, retrainTurns: 17, corridorId: 'corridor_13' },
+];
+
+
+/** Skills graph extension shard 042 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_042: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.534, retrainTurns: 15, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.542, retrainTurns: 16, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.55, retrainTurns: 17, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.558, retrainTurns: 18, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.566, retrainTurns: 15, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.47, retrainTurns: 16, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.478, retrainTurns: 17, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.486, retrainTurns: 18, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.494, retrainTurns: 15, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.502, retrainTurns: 16, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.51, retrainTurns: 17, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.518, retrainTurns: 18, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.526, retrainTurns: 15, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.534, retrainTurns: 16, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.542, retrainTurns: 17, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.55, retrainTurns: 18, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.558, retrainTurns: 15, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.566, retrainTurns: 16, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.47, retrainTurns: 17, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.478, retrainTurns: 18, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.486, retrainTurns: 15, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.494, retrainTurns: 16, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.502, retrainTurns: 17, corridorId: 'corridor_14' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.51, retrainTurns: 18, corridorId: 'corridor_14' },
+];
+
+
+/** Skills graph extension shard 043 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_043: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.526, retrainTurns: 16, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.534, retrainTurns: 17, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.542, retrainTurns: 18, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.55, retrainTurns: 19, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.558, retrainTurns: 16, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.566, retrainTurns: 17, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.574, retrainTurns: 18, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.582, retrainTurns: 19, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.59, retrainTurns: 16, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.598, retrainTurns: 17, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.606, retrainTurns: 18, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.51, retrainTurns: 19, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.518, retrainTurns: 16, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.526, retrainTurns: 17, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.534, retrainTurns: 18, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.542, retrainTurns: 19, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.55, retrainTurns: 16, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.558, retrainTurns: 17, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.566, retrainTurns: 18, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.574, retrainTurns: 19, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.582, retrainTurns: 16, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.59, retrainTurns: 17, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.598, retrainTurns: 18, corridorId: 'corridor_15' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.606, retrainTurns: 19, corridorId: 'corridor_15' },
+];
+
+
+/** Skills graph extension shard 044 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_044: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.622, retrainTurns: 6, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.63, retrainTurns: 7, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.638, retrainTurns: 8, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.646, retrainTurns: 9, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.55, retrainTurns: 6, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.558, retrainTurns: 7, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.566, retrainTurns: 8, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.574, retrainTurns: 9, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.582, retrainTurns: 6, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.59, retrainTurns: 7, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.598, retrainTurns: 8, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.606, retrainTurns: 9, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.614, retrainTurns: 6, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.622, retrainTurns: 7, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.63, retrainTurns: 8, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.638, retrainTurns: 9, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.646, retrainTurns: 6, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.55, retrainTurns: 7, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.558, retrainTurns: 8, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.566, retrainTurns: 9, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.574, retrainTurns: 6, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.582, retrainTurns: 7, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.59, retrainTurns: 8, corridorId: 'corridor_16' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.598, retrainTurns: 9, corridorId: 'corridor_16' },
+];
+
+
+/** Skills graph extension shard 045 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_045: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.614, retrainTurns: 7, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.622, retrainTurns: 8, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.63, retrainTurns: 9, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.638, retrainTurns: 10, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.646, retrainTurns: 7, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.654, retrainTurns: 8, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.662, retrainTurns: 9, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.67, retrainTurns: 10, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.678, retrainTurns: 7, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.686, retrainTurns: 8, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.59, retrainTurns: 9, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.598, retrainTurns: 10, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.606, retrainTurns: 7, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.614, retrainTurns: 8, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.622, retrainTurns: 9, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.63, retrainTurns: 10, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.638, retrainTurns: 7, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.646, retrainTurns: 8, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.654, retrainTurns: 9, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.662, retrainTurns: 10, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.67, retrainTurns: 7, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.678, retrainTurns: 8, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.686, retrainTurns: 9, corridorId: 'corridor_17' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.59, retrainTurns: 10, corridorId: 'corridor_17' },
+];
+
+
+/** Skills graph extension shard 046 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_046: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.71, retrainTurns: 8, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.718, retrainTurns: 9, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.726, retrainTurns: 10, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.63, retrainTurns: 11, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.638, retrainTurns: 8, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.646, retrainTurns: 9, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.654, retrainTurns: 10, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.662, retrainTurns: 11, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.67, retrainTurns: 8, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.678, retrainTurns: 9, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.686, retrainTurns: 10, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.694, retrainTurns: 11, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.702, retrainTurns: 8, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.71, retrainTurns: 9, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.718, retrainTurns: 10, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.726, retrainTurns: 11, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.63, retrainTurns: 8, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.638, retrainTurns: 9, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.646, retrainTurns: 10, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.654, retrainTurns: 11, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.662, retrainTurns: 8, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.67, retrainTurns: 9, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.678, retrainTurns: 10, corridorId: 'corridor_18' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.686, retrainTurns: 11, corridorId: 'corridor_18' },
+];
+
+
+/** Skills graph extension shard 047 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_047: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.702, retrainTurns: 9, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.71, retrainTurns: 10, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.718, retrainTurns: 11, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.726, retrainTurns: 12, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.734, retrainTurns: 9, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.742, retrainTurns: 10, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.75, retrainTurns: 11, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.758, retrainTurns: 12, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.766, retrainTurns: 9, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.67, retrainTurns: 10, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.678, retrainTurns: 11, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.686, retrainTurns: 12, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.694, retrainTurns: 9, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.702, retrainTurns: 10, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.71, retrainTurns: 11, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.718, retrainTurns: 12, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.726, retrainTurns: 9, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.734, retrainTurns: 10, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.742, retrainTurns: 11, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.75, retrainTurns: 12, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.758, retrainTurns: 9, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.766, retrainTurns: 10, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.67, retrainTurns: 11, corridorId: 'corridor_19' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.678, retrainTurns: 12, corridorId: 'corridor_19' },
+];
+
+
+/** Skills graph extension shard 048 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_048: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.798, retrainTurns: 10, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.806, retrainTurns: 11, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.71, retrainTurns: 12, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.718, retrainTurns: 13, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.726, retrainTurns: 10, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.734, retrainTurns: 11, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.742, retrainTurns: 12, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.75, retrainTurns: 13, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.758, retrainTurns: 10, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.766, retrainTurns: 11, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.774, retrainTurns: 12, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.782, retrainTurns: 13, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.79, retrainTurns: 10, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.798, retrainTurns: 11, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.806, retrainTurns: 12, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.71, retrainTurns: 13, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.718, retrainTurns: 10, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.726, retrainTurns: 11, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.734, retrainTurns: 12, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.742, retrainTurns: 13, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.75, retrainTurns: 10, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.758, retrainTurns: 11, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.766, retrainTurns: 12, corridorId: 'corridor_20' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.774, retrainTurns: 13, corridorId: 'corridor_20' },
+];
+
+
+/** Skills graph extension shard 049 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_049: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.79, retrainTurns: 11, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.798, retrainTurns: 12, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.806, retrainTurns: 13, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.814, retrainTurns: 14, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.822, retrainTurns: 11, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.83, retrainTurns: 12, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.838, retrainTurns: 13, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.846, retrainTurns: 14, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.75, retrainTurns: 11, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.758, retrainTurns: 12, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.766, retrainTurns: 13, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.774, retrainTurns: 14, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.782, retrainTurns: 11, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.79, retrainTurns: 12, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.798, retrainTurns: 13, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.806, retrainTurns: 14, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.814, retrainTurns: 11, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.822, retrainTurns: 12, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.83, retrainTurns: 13, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.838, retrainTurns: 14, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.846, retrainTurns: 11, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.75, retrainTurns: 12, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.758, retrainTurns: 13, corridorId: 'corridor_21' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.766, retrainTurns: 14, corridorId: 'corridor_21' },
+];
+
+
+/** Skills graph extension shard 050 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_050: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.886, retrainTurns: 12, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.79, retrainTurns: 13, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.798, retrainTurns: 14, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.806, retrainTurns: 15, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.814, retrainTurns: 12, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.822, retrainTurns: 13, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.83, retrainTurns: 14, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.838, retrainTurns: 15, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.846, retrainTurns: 12, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.854, retrainTurns: 13, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.862, retrainTurns: 14, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.87, retrainTurns: 15, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.878, retrainTurns: 12, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.886, retrainTurns: 13, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.79, retrainTurns: 14, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.798, retrainTurns: 15, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.806, retrainTurns: 12, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.814, retrainTurns: 13, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.822, retrainTurns: 14, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.83, retrainTurns: 15, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.838, retrainTurns: 12, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.846, retrainTurns: 13, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.854, retrainTurns: 14, corridorId: 'corridor_22' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.862, retrainTurns: 15, corridorId: 'corridor_22' },
+];
+
+
+/** Skills graph extension shard 051 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_051: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.198, retrainTurns: 13, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.206, retrainTurns: 14, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.214, retrainTurns: 15, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.222, retrainTurns: 16, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.23, retrainTurns: 13, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.238, retrainTurns: 14, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.246, retrainTurns: 15, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.15, retrainTurns: 16, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.158, retrainTurns: 13, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.166, retrainTurns: 14, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.174, retrainTurns: 15, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.182, retrainTurns: 16, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.19, retrainTurns: 13, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.198, retrainTurns: 14, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.206, retrainTurns: 15, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.214, retrainTurns: 16, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.222, retrainTurns: 13, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.23, retrainTurns: 14, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.238, retrainTurns: 15, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.246, retrainTurns: 16, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.15, retrainTurns: 13, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.158, retrainTurns: 14, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.166, retrainTurns: 15, corridorId: 'corridor_23' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.174, retrainTurns: 16, corridorId: 'corridor_23' },
+];
+
+
+/** Skills graph extension shard 052 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_052: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.19, retrainTurns: 14, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.198, retrainTurns: 15, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.206, retrainTurns: 16, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.214, retrainTurns: 17, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.222, retrainTurns: 14, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.23, retrainTurns: 15, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.238, retrainTurns: 16, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.246, retrainTurns: 17, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.254, retrainTurns: 14, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.262, retrainTurns: 15, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.27, retrainTurns: 16, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.278, retrainTurns: 17, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.286, retrainTurns: 14, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.19, retrainTurns: 15, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.198, retrainTurns: 16, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.206, retrainTurns: 17, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.214, retrainTurns: 14, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.222, retrainTurns: 15, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.23, retrainTurns: 16, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.238, retrainTurns: 17, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.246, retrainTurns: 14, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.254, retrainTurns: 15, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.262, retrainTurns: 16, corridorId: 'corridor_24' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.27, retrainTurns: 17, corridorId: 'corridor_24' },
+];
+
+
+/** Skills graph extension shard 053 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_053: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.286, retrainTurns: 15, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.294, retrainTurns: 16, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.302, retrainTurns: 17, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.31, retrainTurns: 18, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.318, retrainTurns: 15, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.326, retrainTurns: 16, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.23, retrainTurns: 17, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.238, retrainTurns: 18, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.246, retrainTurns: 15, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.254, retrainTurns: 16, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.262, retrainTurns: 17, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.27, retrainTurns: 18, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.278, retrainTurns: 15, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.286, retrainTurns: 16, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.294, retrainTurns: 17, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.302, retrainTurns: 18, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.31, retrainTurns: 15, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.318, retrainTurns: 16, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.326, retrainTurns: 17, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.23, retrainTurns: 18, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.238, retrainTurns: 15, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.246, retrainTurns: 16, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.254, retrainTurns: 17, corridorId: 'corridor_25' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.262, retrainTurns: 18, corridorId: 'corridor_25' },
+];
+
+
+/** Skills graph extension shard 054 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_054: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.278, retrainTurns: 16, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.286, retrainTurns: 17, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.294, retrainTurns: 18, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.302, retrainTurns: 19, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.31, retrainTurns: 16, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.318, retrainTurns: 17, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.326, retrainTurns: 18, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.334, retrainTurns: 19, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.342, retrainTurns: 16, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.35, retrainTurns: 17, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.358, retrainTurns: 18, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.366, retrainTurns: 19, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.27, retrainTurns: 16, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.278, retrainTurns: 17, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.286, retrainTurns: 18, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.294, retrainTurns: 19, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.302, retrainTurns: 16, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.31, retrainTurns: 17, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.318, retrainTurns: 18, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.326, retrainTurns: 19, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.334, retrainTurns: 16, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.342, retrainTurns: 17, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.35, retrainTurns: 18, corridorId: 'corridor_26' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.358, retrainTurns: 19, corridorId: 'corridor_26' },
+];
+
+
+/** Skills graph extension shard 055 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_055: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.374, retrainTurns: 6, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.382, retrainTurns: 7, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.39, retrainTurns: 8, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.398, retrainTurns: 9, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.406, retrainTurns: 6, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.31, retrainTurns: 7, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.318, retrainTurns: 8, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.326, retrainTurns: 9, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.334, retrainTurns: 6, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.342, retrainTurns: 7, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.35, retrainTurns: 8, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.358, retrainTurns: 9, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.366, retrainTurns: 6, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.374, retrainTurns: 7, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.382, retrainTurns: 8, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.39, retrainTurns: 9, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.398, retrainTurns: 6, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.406, retrainTurns: 7, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.31, retrainTurns: 8, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.318, retrainTurns: 9, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.326, retrainTurns: 6, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.334, retrainTurns: 7, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.342, retrainTurns: 8, corridorId: 'corridor_27' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.35, retrainTurns: 9, corridorId: 'corridor_27' },
+];
+
+
+/** Skills graph extension shard 056 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_056: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.366, retrainTurns: 7, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.374, retrainTurns: 8, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.382, retrainTurns: 9, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.39, retrainTurns: 10, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.398, retrainTurns: 7, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.406, retrainTurns: 8, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.414, retrainTurns: 9, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.422, retrainTurns: 10, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.43, retrainTurns: 7, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.438, retrainTurns: 8, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.446, retrainTurns: 9, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.35, retrainTurns: 10, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.358, retrainTurns: 7, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.366, retrainTurns: 8, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.374, retrainTurns: 9, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.382, retrainTurns: 10, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.39, retrainTurns: 7, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.398, retrainTurns: 8, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.406, retrainTurns: 9, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.414, retrainTurns: 10, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.422, retrainTurns: 7, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.43, retrainTurns: 8, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.438, retrainTurns: 9, corridorId: 'corridor_00' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.446, retrainTurns: 10, corridorId: 'corridor_00' },
+];
+
+
+/** Skills graph extension shard 057 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_057: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.462, retrainTurns: 8, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.47, retrainTurns: 9, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.478, retrainTurns: 10, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.486, retrainTurns: 11, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.39, retrainTurns: 8, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.398, retrainTurns: 9, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.406, retrainTurns: 10, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.414, retrainTurns: 11, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.422, retrainTurns: 8, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.43, retrainTurns: 9, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.438, retrainTurns: 10, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.446, retrainTurns: 11, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.454, retrainTurns: 8, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.462, retrainTurns: 9, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.47, retrainTurns: 10, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.478, retrainTurns: 11, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.486, retrainTurns: 8, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.39, retrainTurns: 9, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.398, retrainTurns: 10, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.406, retrainTurns: 11, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.414, retrainTurns: 8, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.422, retrainTurns: 9, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.43, retrainTurns: 10, corridorId: 'corridor_01' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.438, retrainTurns: 11, corridorId: 'corridor_01' },
+];
+
+
+/** Skills graph extension shard 058 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_058: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.454, retrainTurns: 9, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.462, retrainTurns: 10, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.47, retrainTurns: 11, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.478, retrainTurns: 12, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.486, retrainTurns: 9, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.494, retrainTurns: 10, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.502, retrainTurns: 11, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.51, retrainTurns: 12, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.518, retrainTurns: 9, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.526, retrainTurns: 10, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.43, retrainTurns: 11, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.438, retrainTurns: 12, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.446, retrainTurns: 9, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.454, retrainTurns: 10, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.462, retrainTurns: 11, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.47, retrainTurns: 12, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.478, retrainTurns: 9, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.486, retrainTurns: 10, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.494, retrainTurns: 11, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.502, retrainTurns: 12, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.51, retrainTurns: 9, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.518, retrainTurns: 10, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.526, retrainTurns: 11, corridorId: 'corridor_02' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.43, retrainTurns: 12, corridorId: 'corridor_02' },
+];
+
+
+/** Skills graph extension shard 059 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_059: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.55, retrainTurns: 10, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.558, retrainTurns: 11, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.566, retrainTurns: 12, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.47, retrainTurns: 13, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.478, retrainTurns: 10, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.486, retrainTurns: 11, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.494, retrainTurns: 12, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.502, retrainTurns: 13, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.51, retrainTurns: 10, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.518, retrainTurns: 11, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.526, retrainTurns: 12, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.534, retrainTurns: 13, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.542, retrainTurns: 10, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.55, retrainTurns: 11, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.558, retrainTurns: 12, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.566, retrainTurns: 13, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.47, retrainTurns: 10, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.478, retrainTurns: 11, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.486, retrainTurns: 12, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.494, retrainTurns: 13, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.502, retrainTurns: 10, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.51, retrainTurns: 11, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.518, retrainTurns: 12, corridorId: 'corridor_03' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.526, retrainTurns: 13, corridorId: 'corridor_03' },
+];
+
+
+/** Skills graph extension shard 060 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_060: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.542, retrainTurns: 11, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.55, retrainTurns: 12, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.558, retrainTurns: 13, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.566, retrainTurns: 14, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.574, retrainTurns: 11, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.582, retrainTurns: 12, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.59, retrainTurns: 13, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.598, retrainTurns: 14, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.606, retrainTurns: 11, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.51, retrainTurns: 12, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.518, retrainTurns: 13, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.526, retrainTurns: 14, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.534, retrainTurns: 11, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.542, retrainTurns: 12, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.55, retrainTurns: 13, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.558, retrainTurns: 14, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.566, retrainTurns: 11, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.574, retrainTurns: 12, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.582, retrainTurns: 13, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.59, retrainTurns: 14, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.598, retrainTurns: 11, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.606, retrainTurns: 12, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.51, retrainTurns: 13, corridorId: 'corridor_04' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.518, retrainTurns: 14, corridorId: 'corridor_04' },
+];
+
+
+/** Skills graph extension shard 061 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_061: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.638, retrainTurns: 12, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.646, retrainTurns: 13, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.55, retrainTurns: 14, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.558, retrainTurns: 15, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.566, retrainTurns: 12, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.574, retrainTurns: 13, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.582, retrainTurns: 14, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.59, retrainTurns: 15, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.598, retrainTurns: 12, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.606, retrainTurns: 13, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.614, retrainTurns: 14, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.622, retrainTurns: 15, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.63, retrainTurns: 12, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.638, retrainTurns: 13, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.646, retrainTurns: 14, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.55, retrainTurns: 15, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.558, retrainTurns: 12, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.566, retrainTurns: 13, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.574, retrainTurns: 14, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.582, retrainTurns: 15, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.59, retrainTurns: 12, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.598, retrainTurns: 13, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.606, retrainTurns: 14, corridorId: 'corridor_05' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.614, retrainTurns: 15, corridorId: 'corridor_05' },
+];
+
+
+/** Skills graph extension shard 062 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_062: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.63, retrainTurns: 13, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.638, retrainTurns: 14, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.646, retrainTurns: 15, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.654, retrainTurns: 16, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.662, retrainTurns: 13, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.67, retrainTurns: 14, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.678, retrainTurns: 15, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.686, retrainTurns: 16, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.59, retrainTurns: 13, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.598, retrainTurns: 14, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.606, retrainTurns: 15, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.614, retrainTurns: 16, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.622, retrainTurns: 13, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.63, retrainTurns: 14, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.638, retrainTurns: 15, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.646, retrainTurns: 16, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.654, retrainTurns: 13, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.662, retrainTurns: 14, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.67, retrainTurns: 15, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.678, retrainTurns: 16, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.686, retrainTurns: 13, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.59, retrainTurns: 14, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.598, retrainTurns: 15, corridorId: 'corridor_06' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.606, retrainTurns: 16, corridorId: 'corridor_06' },
+];
+
+
+/** Skills graph extension shard 063 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_063: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.726, retrainTurns: 14, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.63, retrainTurns: 15, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.638, retrainTurns: 16, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.646, retrainTurns: 17, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.654, retrainTurns: 14, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.662, retrainTurns: 15, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.67, retrainTurns: 16, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.678, retrainTurns: 17, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.686, retrainTurns: 14, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.694, retrainTurns: 15, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.702, retrainTurns: 16, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.71, retrainTurns: 17, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.718, retrainTurns: 14, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.726, retrainTurns: 15, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.63, retrainTurns: 16, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.638, retrainTurns: 17, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.646, retrainTurns: 14, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.654, retrainTurns: 15, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.662, retrainTurns: 16, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.67, retrainTurns: 17, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.678, retrainTurns: 14, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.686, retrainTurns: 15, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.694, retrainTurns: 16, corridorId: 'corridor_07' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.702, retrainTurns: 17, corridorId: 'corridor_07' },
+];
+
+
+/** Skills graph extension shard 064 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_064: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.718, retrainTurns: 15, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.726, retrainTurns: 16, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.734, retrainTurns: 17, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.742, retrainTurns: 18, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.75, retrainTurns: 15, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.758, retrainTurns: 16, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.766, retrainTurns: 17, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.67, retrainTurns: 18, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.678, retrainTurns: 15, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.686, retrainTurns: 16, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.694, retrainTurns: 17, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.702, retrainTurns: 18, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.71, retrainTurns: 15, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.718, retrainTurns: 16, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.726, retrainTurns: 17, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.734, retrainTurns: 18, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.742, retrainTurns: 15, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.75, retrainTurns: 16, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.758, retrainTurns: 17, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.766, retrainTurns: 18, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.67, retrainTurns: 15, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.678, retrainTurns: 16, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.686, retrainTurns: 17, corridorId: 'corridor_08' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.694, retrainTurns: 18, corridorId: 'corridor_08' },
+];
+
+
+/** Skills graph extension shard 065 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_065: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.71, retrainTurns: 16, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.718, retrainTurns: 17, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.726, retrainTurns: 18, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.734, retrainTurns: 19, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.742, retrainTurns: 16, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.75, retrainTurns: 17, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.758, retrainTurns: 18, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.766, retrainTurns: 19, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.774, retrainTurns: 16, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.782, retrainTurns: 17, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.79, retrainTurns: 18, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.798, retrainTurns: 19, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.806, retrainTurns: 16, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.71, retrainTurns: 17, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.718, retrainTurns: 18, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.726, retrainTurns: 19, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.734, retrainTurns: 16, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.742, retrainTurns: 17, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.75, retrainTurns: 18, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.758, retrainTurns: 19, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.766, retrainTurns: 16, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.774, retrainTurns: 17, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.782, retrainTurns: 18, corridorId: 'corridor_09' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.79, retrainTurns: 19, corridorId: 'corridor_09' },
+];
+
+
+/** Skills graph extension shard 066 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_066: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.806, retrainTurns: 6, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.814, retrainTurns: 7, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.822, retrainTurns: 8, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.83, retrainTurns: 9, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.838, retrainTurns: 6, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.846, retrainTurns: 7, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.75, retrainTurns: 8, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.758, retrainTurns: 9, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.766, retrainTurns: 6, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.774, retrainTurns: 7, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.782, retrainTurns: 8, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.79, retrainTurns: 9, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.798, retrainTurns: 6, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.806, retrainTurns: 7, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.814, retrainTurns: 8, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.822, retrainTurns: 9, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.83, retrainTurns: 6, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.838, retrainTurns: 7, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.846, retrainTurns: 8, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.75, retrainTurns: 9, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.758, retrainTurns: 6, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.766, retrainTurns: 7, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.774, retrainTurns: 8, corridorId: 'corridor_10' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.782, retrainTurns: 9, corridorId: 'corridor_10' },
+];
+
+
+/** Skills graph extension shard 067 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_067: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.798, retrainTurns: 7, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.806, retrainTurns: 8, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.814, retrainTurns: 9, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.822, retrainTurns: 10, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.83, retrainTurns: 7, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.838, retrainTurns: 8, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.846, retrainTurns: 9, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.854, retrainTurns: 10, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.862, retrainTurns: 7, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.87, retrainTurns: 8, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.878, retrainTurns: 9, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.886, retrainTurns: 10, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.79, retrainTurns: 7, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.798, retrainTurns: 8, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.806, retrainTurns: 9, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.814, retrainTurns: 10, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.822, retrainTurns: 7, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.83, retrainTurns: 8, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.838, retrainTurns: 9, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.846, retrainTurns: 10, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.854, retrainTurns: 7, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.862, retrainTurns: 8, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.87, retrainTurns: 9, corridorId: 'corridor_11' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.878, retrainTurns: 10, corridorId: 'corridor_11' },
+];
+
+
+/** Skills graph extension shard 068 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_068: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.214, retrainTurns: 8, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.222, retrainTurns: 9, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.23, retrainTurns: 10, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.238, retrainTurns: 11, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.246, retrainTurns: 8, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.15, retrainTurns: 9, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.158, retrainTurns: 10, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.166, retrainTurns: 11, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.174, retrainTurns: 8, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.182, retrainTurns: 9, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.19, retrainTurns: 10, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.198, retrainTurns: 11, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.206, retrainTurns: 8, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.214, retrainTurns: 9, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.222, retrainTurns: 10, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.23, retrainTurns: 11, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.238, retrainTurns: 8, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.246, retrainTurns: 9, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.15, retrainTurns: 10, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.158, retrainTurns: 11, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.166, retrainTurns: 8, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.174, retrainTurns: 9, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.182, retrainTurns: 10, corridorId: 'corridor_12' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.19, retrainTurns: 11, corridorId: 'corridor_12' },
+];
+
+
+/** Skills graph extension shard 069 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_069: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.206, retrainTurns: 9, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.214, retrainTurns: 10, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.222, retrainTurns: 11, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.23, retrainTurns: 12, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.238, retrainTurns: 9, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.246, retrainTurns: 10, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.254, retrainTurns: 11, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.262, retrainTurns: 12, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.27, retrainTurns: 9, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.278, retrainTurns: 10, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.286, retrainTurns: 11, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.19, retrainTurns: 12, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.198, retrainTurns: 9, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.206, retrainTurns: 10, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.214, retrainTurns: 11, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.222, retrainTurns: 12, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.23, retrainTurns: 9, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.238, retrainTurns: 10, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.246, retrainTurns: 11, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.254, retrainTurns: 12, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.262, retrainTurns: 9, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.27, retrainTurns: 10, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.278, retrainTurns: 11, corridorId: 'corridor_13' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.286, retrainTurns: 12, corridorId: 'corridor_13' },
+];
+
+
+/** Skills graph extension shard 070 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_070: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.302, retrainTurns: 10, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.31, retrainTurns: 11, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.318, retrainTurns: 12, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.326, retrainTurns: 13, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.23, retrainTurns: 10, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.238, retrainTurns: 11, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.246, retrainTurns: 12, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.254, retrainTurns: 13, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.262, retrainTurns: 10, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.27, retrainTurns: 11, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.278, retrainTurns: 12, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.286, retrainTurns: 13, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.294, retrainTurns: 10, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.302, retrainTurns: 11, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.31, retrainTurns: 12, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.318, retrainTurns: 13, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.326, retrainTurns: 10, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.23, retrainTurns: 11, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.238, retrainTurns: 12, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.246, retrainTurns: 13, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.254, retrainTurns: 10, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.262, retrainTurns: 11, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.27, retrainTurns: 12, corridorId: 'corridor_14' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.278, retrainTurns: 13, corridorId: 'corridor_14' },
+];
+
+
+/** Skills graph extension shard 071 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_071: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.294, retrainTurns: 11, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.302, retrainTurns: 12, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.31, retrainTurns: 13, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.318, retrainTurns: 14, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.326, retrainTurns: 11, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.334, retrainTurns: 12, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.342, retrainTurns: 13, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.35, retrainTurns: 14, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.358, retrainTurns: 11, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.366, retrainTurns: 12, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.27, retrainTurns: 13, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.278, retrainTurns: 14, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.286, retrainTurns: 11, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.294, retrainTurns: 12, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.302, retrainTurns: 13, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.31, retrainTurns: 14, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.318, retrainTurns: 11, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.326, retrainTurns: 12, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.334, retrainTurns: 13, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.342, retrainTurns: 14, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.35, retrainTurns: 11, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.358, retrainTurns: 12, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.366, retrainTurns: 13, corridorId: 'corridor_15' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.27, retrainTurns: 14, corridorId: 'corridor_15' },
+];
+
+
+/** Skills graph extension shard 072 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_072: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.39, retrainTurns: 12, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.398, retrainTurns: 13, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.406, retrainTurns: 14, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.31, retrainTurns: 15, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.318, retrainTurns: 12, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.326, retrainTurns: 13, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.334, retrainTurns: 14, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.342, retrainTurns: 15, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.35, retrainTurns: 12, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.358, retrainTurns: 13, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.366, retrainTurns: 14, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.374, retrainTurns: 15, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.382, retrainTurns: 12, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.39, retrainTurns: 13, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.398, retrainTurns: 14, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.406, retrainTurns: 15, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.31, retrainTurns: 12, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.318, retrainTurns: 13, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.326, retrainTurns: 14, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.334, retrainTurns: 15, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.342, retrainTurns: 12, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.35, retrainTurns: 13, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.358, retrainTurns: 14, corridorId: 'corridor_16' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.366, retrainTurns: 15, corridorId: 'corridor_16' },
+];
+
+
+/** Skills graph extension shard 073 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_073: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.382, retrainTurns: 13, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.39, retrainTurns: 14, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.398, retrainTurns: 15, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.406, retrainTurns: 16, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.414, retrainTurns: 13, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.422, retrainTurns: 14, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.43, retrainTurns: 15, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.438, retrainTurns: 16, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.446, retrainTurns: 13, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.35, retrainTurns: 14, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.358, retrainTurns: 15, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.366, retrainTurns: 16, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.374, retrainTurns: 13, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.382, retrainTurns: 14, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.39, retrainTurns: 15, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.398, retrainTurns: 16, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.406, retrainTurns: 13, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.414, retrainTurns: 14, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.422, retrainTurns: 15, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.43, retrainTurns: 16, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.438, retrainTurns: 13, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.446, retrainTurns: 14, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.35, retrainTurns: 15, corridorId: 'corridor_17' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.358, retrainTurns: 16, corridorId: 'corridor_17' },
+];
+
+
+/** Skills graph extension shard 074 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_074: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.478, retrainTurns: 14, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.486, retrainTurns: 15, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.39, retrainTurns: 16, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.398, retrainTurns: 17, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.406, retrainTurns: 14, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.414, retrainTurns: 15, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.422, retrainTurns: 16, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.43, retrainTurns: 17, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.438, retrainTurns: 14, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.446, retrainTurns: 15, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.454, retrainTurns: 16, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.462, retrainTurns: 17, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.47, retrainTurns: 14, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.478, retrainTurns: 15, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.486, retrainTurns: 16, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.39, retrainTurns: 17, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.398, retrainTurns: 14, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.406, retrainTurns: 15, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.414, retrainTurns: 16, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.422, retrainTurns: 17, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.43, retrainTurns: 14, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.438, retrainTurns: 15, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.446, retrainTurns: 16, corridorId: 'corridor_18' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.454, retrainTurns: 17, corridorId: 'corridor_18' },
+];
+
+
+/** Skills graph extension shard 075 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_075: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.47, retrainTurns: 15, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.478, retrainTurns: 16, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.486, retrainTurns: 17, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.494, retrainTurns: 18, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.502, retrainTurns: 15, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.51, retrainTurns: 16, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.518, retrainTurns: 17, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.526, retrainTurns: 18, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.43, retrainTurns: 15, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.438, retrainTurns: 16, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.446, retrainTurns: 17, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.454, retrainTurns: 18, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.462, retrainTurns: 15, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.47, retrainTurns: 16, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.478, retrainTurns: 17, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.486, retrainTurns: 18, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.494, retrainTurns: 15, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.502, retrainTurns: 16, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.51, retrainTurns: 17, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.518, retrainTurns: 18, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.526, retrainTurns: 15, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.43, retrainTurns: 16, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.438, retrainTurns: 17, corridorId: 'corridor_19' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.446, retrainTurns: 18, corridorId: 'corridor_19' },
+];
+
+
+/** Skills graph extension shard 076 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_076: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.566, retrainTurns: 16, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.47, retrainTurns: 17, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.478, retrainTurns: 18, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.486, retrainTurns: 19, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.494, retrainTurns: 16, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.502, retrainTurns: 17, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.51, retrainTurns: 18, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.518, retrainTurns: 19, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.526, retrainTurns: 16, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.534, retrainTurns: 17, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.542, retrainTurns: 18, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.55, retrainTurns: 19, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.558, retrainTurns: 16, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.566, retrainTurns: 17, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.47, retrainTurns: 18, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.478, retrainTurns: 19, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.486, retrainTurns: 16, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.494, retrainTurns: 17, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.502, retrainTurns: 18, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.51, retrainTurns: 19, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.518, retrainTurns: 16, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.526, retrainTurns: 17, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.534, retrainTurns: 18, corridorId: 'corridor_20' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.542, retrainTurns: 19, corridorId: 'corridor_20' },
+];
+
+
+/** Skills graph extension shard 077 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_077: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.558, retrainTurns: 6, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.566, retrainTurns: 7, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.574, retrainTurns: 8, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.582, retrainTurns: 9, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.59, retrainTurns: 6, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.598, retrainTurns: 7, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.606, retrainTurns: 8, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.51, retrainTurns: 9, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.518, retrainTurns: 6, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.526, retrainTurns: 7, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.534, retrainTurns: 8, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.542, retrainTurns: 9, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.55, retrainTurns: 6, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.558, retrainTurns: 7, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.566, retrainTurns: 8, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.574, retrainTurns: 9, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.582, retrainTurns: 6, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.59, retrainTurns: 7, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.598, retrainTurns: 8, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.606, retrainTurns: 9, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.51, retrainTurns: 6, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.518, retrainTurns: 7, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.526, retrainTurns: 8, corridorId: 'corridor_21' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.534, retrainTurns: 9, corridorId: 'corridor_21' },
+];
+
+
+/** Skills graph extension shard 078 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_078: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.55, retrainTurns: 7, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.558, retrainTurns: 8, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.566, retrainTurns: 9, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.574, retrainTurns: 10, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.582, retrainTurns: 7, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.59, retrainTurns: 8, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.598, retrainTurns: 9, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.606, retrainTurns: 10, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.614, retrainTurns: 7, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.622, retrainTurns: 8, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.63, retrainTurns: 9, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.638, retrainTurns: 10, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.646, retrainTurns: 7, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.55, retrainTurns: 8, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.558, retrainTurns: 9, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.566, retrainTurns: 10, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.574, retrainTurns: 7, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.582, retrainTurns: 8, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.59, retrainTurns: 9, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.598, retrainTurns: 10, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.606, retrainTurns: 7, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.614, retrainTurns: 8, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.622, retrainTurns: 9, corridorId: 'corridor_22' },
+  { fromDomain: 'hospitality', toDomain: 'healthcare', weight: 0.63, retrainTurns: 10, corridorId: 'corridor_22' },
+];
+
+
+/** Skills graph extension shard 079 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_079: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.646, retrainTurns: 8, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.654, retrainTurns: 9, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.662, retrainTurns: 10, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.67, retrainTurns: 11, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.678, retrainTurns: 8, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.686, retrainTurns: 9, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.59, retrainTurns: 10, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.598, retrainTurns: 11, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.606, retrainTurns: 8, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.614, retrainTurns: 9, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.622, retrainTurns: 10, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.63, retrainTurns: 11, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.638, retrainTurns: 8, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.646, retrainTurns: 9, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.654, retrainTurns: 10, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.662, retrainTurns: 11, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.67, retrainTurns: 8, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.678, retrainTurns: 9, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.686, retrainTurns: 10, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.59, retrainTurns: 11, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.598, retrainTurns: 8, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.606, retrainTurns: 9, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.614, retrainTurns: 10, corridorId: 'corridor_23' },
+  { fromDomain: 'public_admin', toDomain: 'trades', weight: 0.622, retrainTurns: 11, corridorId: 'corridor_23' },
+];
+
+
+/** Skills graph extension shard 080 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_080: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.638, retrainTurns: 9, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.646, retrainTurns: 10, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.654, retrainTurns: 11, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.662, retrainTurns: 12, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.67, retrainTurns: 9, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.678, retrainTurns: 10, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.686, retrainTurns: 11, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.694, retrainTurns: 12, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.702, retrainTurns: 9, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.71, retrainTurns: 10, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.718, retrainTurns: 11, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.726, retrainTurns: 12, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.63, retrainTurns: 9, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.638, retrainTurns: 10, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.646, retrainTurns: 11, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.654, retrainTurns: 12, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.662, retrainTurns: 9, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.67, retrainTurns: 10, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.678, retrainTurns: 11, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.686, retrainTurns: 12, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.694, retrainTurns: 9, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.702, retrainTurns: 10, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.71, retrainTurns: 11, corridorId: 'corridor_24' },
+  { fromDomain: 'engineering', toDomain: 'digital', weight: 0.718, retrainTurns: 12, corridorId: 'corridor_24' },
+];
+
+
+/** Skills graph extension shard 081 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_081: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.734, retrainTurns: 10, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.742, retrainTurns: 11, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.75, retrainTurns: 12, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.758, retrainTurns: 13, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.766, retrainTurns: 10, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.67, retrainTurns: 11, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.678, retrainTurns: 12, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.686, retrainTurns: 13, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.694, retrainTurns: 10, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.702, retrainTurns: 11, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.71, retrainTurns: 12, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.718, retrainTurns: 13, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.726, retrainTurns: 10, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.734, retrainTurns: 11, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.742, retrainTurns: 12, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.75, retrainTurns: 13, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.758, retrainTurns: 10, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.766, retrainTurns: 11, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.67, retrainTurns: 12, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.678, retrainTurns: 13, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.686, retrainTurns: 10, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.694, retrainTurns: 11, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.702, retrainTurns: 12, corridorId: 'corridor_25' },
+  { fromDomain: 'healthcare', toDomain: 'logistics', weight: 0.71, retrainTurns: 13, corridorId: 'corridor_25' },
+];
+
+
+/** Skills graph extension shard 082 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_082: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.726, retrainTurns: 11, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.734, retrainTurns: 12, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.742, retrainTurns: 13, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.75, retrainTurns: 14, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.758, retrainTurns: 11, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.766, retrainTurns: 12, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.774, retrainTurns: 13, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.782, retrainTurns: 14, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.79, retrainTurns: 11, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.798, retrainTurns: 12, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.806, retrainTurns: 13, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.71, retrainTurns: 14, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.718, retrainTurns: 11, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.726, retrainTurns: 12, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.734, retrainTurns: 13, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.742, retrainTurns: 14, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.75, retrainTurns: 11, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.758, retrainTurns: 12, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.766, retrainTurns: 13, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.774, retrainTurns: 14, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.782, retrainTurns: 11, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.79, retrainTurns: 12, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.798, retrainTurns: 13, corridorId: 'corridor_26' },
+  { fromDomain: 'trades', toDomain: 'education', weight: 0.806, retrainTurns: 14, corridorId: 'corridor_26' },
+];
+
+
+/** Skills graph extension shard 083 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_083: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.822, retrainTurns: 12, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.83, retrainTurns: 13, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.838, retrainTurns: 14, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.846, retrainTurns: 15, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.75, retrainTurns: 12, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.758, retrainTurns: 13, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.766, retrainTurns: 14, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.774, retrainTurns: 15, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.782, retrainTurns: 12, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.79, retrainTurns: 13, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.798, retrainTurns: 14, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.806, retrainTurns: 15, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.814, retrainTurns: 12, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.822, retrainTurns: 13, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.83, retrainTurns: 14, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.838, retrainTurns: 15, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.846, retrainTurns: 12, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.75, retrainTurns: 13, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.758, retrainTurns: 14, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.766, retrainTurns: 15, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.774, retrainTurns: 12, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.782, retrainTurns: 13, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.79, retrainTurns: 14, corridorId: 'corridor_27' },
+  { fromDomain: 'digital', toDomain: 'mining', weight: 0.798, retrainTurns: 15, corridorId: 'corridor_27' },
+];
+
+
+/** Skills graph extension shard 084 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_084: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.814, retrainTurns: 13, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.822, retrainTurns: 14, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.83, retrainTurns: 15, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.838, retrainTurns: 16, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.846, retrainTurns: 13, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.854, retrainTurns: 14, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.862, retrainTurns: 15, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.87, retrainTurns: 16, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.878, retrainTurns: 13, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.886, retrainTurns: 14, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.79, retrainTurns: 15, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.798, retrainTurns: 16, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.806, retrainTurns: 13, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.814, retrainTurns: 14, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.822, retrainTurns: 15, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.83, retrainTurns: 16, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.838, retrainTurns: 13, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.846, retrainTurns: 14, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.854, retrainTurns: 15, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.862, retrainTurns: 16, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.87, retrainTurns: 13, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.878, retrainTurns: 14, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.886, retrainTurns: 15, corridorId: 'corridor_00' },
+  { fromDomain: 'logistics', toDomain: 'agriculture', weight: 0.79, retrainTurns: 16, corridorId: 'corridor_00' },
+];
+
+
+/** Skills graph extension shard 085 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_085: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.23, retrainTurns: 14, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.238, retrainTurns: 15, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.246, retrainTurns: 16, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.15, retrainTurns: 17, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.158, retrainTurns: 14, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.166, retrainTurns: 15, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.174, retrainTurns: 16, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.182, retrainTurns: 17, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.19, retrainTurns: 14, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.198, retrainTurns: 15, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.206, retrainTurns: 16, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.214, retrainTurns: 17, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.222, retrainTurns: 14, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.23, retrainTurns: 15, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.238, retrainTurns: 16, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.246, retrainTurns: 17, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.15, retrainTurns: 14, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.158, retrainTurns: 15, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.166, retrainTurns: 16, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.174, retrainTurns: 17, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.182, retrainTurns: 14, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.19, retrainTurns: 15, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.198, retrainTurns: 16, corridorId: 'corridor_01' },
+  { fromDomain: 'education', toDomain: 'hospitality', weight: 0.206, retrainTurns: 17, corridorId: 'corridor_01' },
+];
+
+
+/** Skills graph extension shard 086 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_086: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.222, retrainTurns: 15, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.23, retrainTurns: 16, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.238, retrainTurns: 17, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.246, retrainTurns: 18, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.254, retrainTurns: 15, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.262, retrainTurns: 16, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.27, retrainTurns: 17, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.278, retrainTurns: 18, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.286, retrainTurns: 15, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.19, retrainTurns: 16, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.198, retrainTurns: 17, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.206, retrainTurns: 18, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.214, retrainTurns: 15, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.222, retrainTurns: 16, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.23, retrainTurns: 17, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.238, retrainTurns: 18, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.246, retrainTurns: 15, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.254, retrainTurns: 16, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.262, retrainTurns: 17, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.27, retrainTurns: 18, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.278, retrainTurns: 15, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.286, retrainTurns: 16, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.19, retrainTurns: 17, corridorId: 'corridor_02' },
+  { fromDomain: 'mining', toDomain: 'public_admin', weight: 0.198, retrainTurns: 18, corridorId: 'corridor_02' },
+];
+
+
+/** Skills graph extension shard 087 (20AC ↔ 20AJ crosswalk). */
+export const V1014_WORKFORCE_SKILLS_EDGE_SHARD_087: readonly V1014WorkforceSkillsGraphEdge[] = [
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.318, retrainTurns: 16, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.326, retrainTurns: 17, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.23, retrainTurns: 18, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.238, retrainTurns: 19, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.246, retrainTurns: 16, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.254, retrainTurns: 17, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.262, retrainTurns: 18, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.27, retrainTurns: 19, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.278, retrainTurns: 16, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.286, retrainTurns: 17, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.294, retrainTurns: 18, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.302, retrainTurns: 19, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.31, retrainTurns: 16, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.318, retrainTurns: 17, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.326, retrainTurns: 18, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.23, retrainTurns: 19, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.238, retrainTurns: 16, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.246, retrainTurns: 17, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.254, retrainTurns: 18, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.262, retrainTurns: 19, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.27, retrainTurns: 16, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.278, retrainTurns: 17, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.286, retrainTurns: 18, corridorId: 'corridor_03' },
+  { fromDomain: 'agriculture', toDomain: 'engineering', weight: 0.294, retrainTurns: 19, corridorId: 'corridor_03' },
+];
+
+/** Generated registry — regenerate via scripts/generate.py */
+
+export const V1014_WORKFORCE_ALL_SCENARIO_IDS: readonly string[] = [
+  V1014_WORKFORCE_MIG_SCENARIO_000_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_001_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_002_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_003_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_004_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_005_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_006_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_007_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_008_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_009_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_010_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_011_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_012_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_013_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_014_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_015_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_016_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_017_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_018_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_019_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_020_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_021_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_022_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_023_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_024_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_025_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_026_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_027_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_028_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_029_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_030_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_031_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_032_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_033_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_034_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_035_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_036_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_037_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_038_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_039_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_040_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_041_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_042_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_043_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_044_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_045_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_046_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_047_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_048_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_049_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_050_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_051_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_052_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_053_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_054_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_055_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_056_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_057_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_058_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_059_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_060_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_061_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_062_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_063_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_064_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_065_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_066_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_067_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_068_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_069_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_070_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_071_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_072_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_073_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_074_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_075_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_076_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_077_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_078_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_079_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_080_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_081_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_082_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_083_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_084_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_085_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_086_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_087_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_088_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_089_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_090_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_091_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_092_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_093_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_094_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_095_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_096_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_097_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_098_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_099_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_100_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_101_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_102_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_103_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_104_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_105_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_106_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_107_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_108_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_109_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_110_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_111_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_112_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_113_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_114_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_115_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_116_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_117_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_118_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_119_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_120_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_121_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_122_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_123_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_124_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_125_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_126_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_127_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_128_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_129_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_130_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_131_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_132_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_133_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_134_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_135_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_136_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_137_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_138_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_139_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_140_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_141_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_142_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_143_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_144_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_145_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_146_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_147_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_148_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_149_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_150_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_151_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_152_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_153_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_154_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_155_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_156_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_157_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_158_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_159_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_160_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_161_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_162_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_163_META.id,
+  V1014_WORKFORCE_MIG_SCENARIO_164_META.id,
+];
+
+const V1014_WORKFORCE_SNAPSHOT_BY_ID: Record<
+  string,
+  (turn: number) => V1014WorkforceMigrationScenarioSnapshot
+> = {
+  [V1014_WORKFORCE_MIG_SCENARIO_000_META.id]: V1014_WORKFORCE_MIG_SCENARIO_000_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_001_META.id]: V1014_WORKFORCE_MIG_SCENARIO_001_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_002_META.id]: V1014_WORKFORCE_MIG_SCENARIO_002_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_003_META.id]: V1014_WORKFORCE_MIG_SCENARIO_003_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_004_META.id]: V1014_WORKFORCE_MIG_SCENARIO_004_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_005_META.id]: V1014_WORKFORCE_MIG_SCENARIO_005_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_006_META.id]: V1014_WORKFORCE_MIG_SCENARIO_006_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_007_META.id]: V1014_WORKFORCE_MIG_SCENARIO_007_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_008_META.id]: V1014_WORKFORCE_MIG_SCENARIO_008_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_009_META.id]: V1014_WORKFORCE_MIG_SCENARIO_009_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_010_META.id]: V1014_WORKFORCE_MIG_SCENARIO_010_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_011_META.id]: V1014_WORKFORCE_MIG_SCENARIO_011_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_012_META.id]: V1014_WORKFORCE_MIG_SCENARIO_012_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_013_META.id]: V1014_WORKFORCE_MIG_SCENARIO_013_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_014_META.id]: V1014_WORKFORCE_MIG_SCENARIO_014_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_015_META.id]: V1014_WORKFORCE_MIG_SCENARIO_015_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_016_META.id]: V1014_WORKFORCE_MIG_SCENARIO_016_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_017_META.id]: V1014_WORKFORCE_MIG_SCENARIO_017_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_018_META.id]: V1014_WORKFORCE_MIG_SCENARIO_018_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_019_META.id]: V1014_WORKFORCE_MIG_SCENARIO_019_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_020_META.id]: V1014_WORKFORCE_MIG_SCENARIO_020_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_021_META.id]: V1014_WORKFORCE_MIG_SCENARIO_021_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_022_META.id]: V1014_WORKFORCE_MIG_SCENARIO_022_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_023_META.id]: V1014_WORKFORCE_MIG_SCENARIO_023_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_024_META.id]: V1014_WORKFORCE_MIG_SCENARIO_024_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_025_META.id]: V1014_WORKFORCE_MIG_SCENARIO_025_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_026_META.id]: V1014_WORKFORCE_MIG_SCENARIO_026_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_027_META.id]: V1014_WORKFORCE_MIG_SCENARIO_027_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_028_META.id]: V1014_WORKFORCE_MIG_SCENARIO_028_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_029_META.id]: V1014_WORKFORCE_MIG_SCENARIO_029_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_030_META.id]: V1014_WORKFORCE_MIG_SCENARIO_030_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_031_META.id]: V1014_WORKFORCE_MIG_SCENARIO_031_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_032_META.id]: V1014_WORKFORCE_MIG_SCENARIO_032_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_033_META.id]: V1014_WORKFORCE_MIG_SCENARIO_033_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_034_META.id]: V1014_WORKFORCE_MIG_SCENARIO_034_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_035_META.id]: V1014_WORKFORCE_MIG_SCENARIO_035_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_036_META.id]: V1014_WORKFORCE_MIG_SCENARIO_036_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_037_META.id]: V1014_WORKFORCE_MIG_SCENARIO_037_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_038_META.id]: V1014_WORKFORCE_MIG_SCENARIO_038_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_039_META.id]: V1014_WORKFORCE_MIG_SCENARIO_039_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_040_META.id]: V1014_WORKFORCE_MIG_SCENARIO_040_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_041_META.id]: V1014_WORKFORCE_MIG_SCENARIO_041_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_042_META.id]: V1014_WORKFORCE_MIG_SCENARIO_042_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_043_META.id]: V1014_WORKFORCE_MIG_SCENARIO_043_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_044_META.id]: V1014_WORKFORCE_MIG_SCENARIO_044_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_045_META.id]: V1014_WORKFORCE_MIG_SCENARIO_045_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_046_META.id]: V1014_WORKFORCE_MIG_SCENARIO_046_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_047_META.id]: V1014_WORKFORCE_MIG_SCENARIO_047_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_048_META.id]: V1014_WORKFORCE_MIG_SCENARIO_048_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_049_META.id]: V1014_WORKFORCE_MIG_SCENARIO_049_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_050_META.id]: V1014_WORKFORCE_MIG_SCENARIO_050_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_051_META.id]: V1014_WORKFORCE_MIG_SCENARIO_051_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_052_META.id]: V1014_WORKFORCE_MIG_SCENARIO_052_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_053_META.id]: V1014_WORKFORCE_MIG_SCENARIO_053_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_054_META.id]: V1014_WORKFORCE_MIG_SCENARIO_054_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_055_META.id]: V1014_WORKFORCE_MIG_SCENARIO_055_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_056_META.id]: V1014_WORKFORCE_MIG_SCENARIO_056_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_057_META.id]: V1014_WORKFORCE_MIG_SCENARIO_057_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_058_META.id]: V1014_WORKFORCE_MIG_SCENARIO_058_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_059_META.id]: V1014_WORKFORCE_MIG_SCENARIO_059_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_060_META.id]: V1014_WORKFORCE_MIG_SCENARIO_060_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_061_META.id]: V1014_WORKFORCE_MIG_SCENARIO_061_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_062_META.id]: V1014_WORKFORCE_MIG_SCENARIO_062_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_063_META.id]: V1014_WORKFORCE_MIG_SCENARIO_063_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_064_META.id]: V1014_WORKFORCE_MIG_SCENARIO_064_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_065_META.id]: V1014_WORKFORCE_MIG_SCENARIO_065_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_066_META.id]: V1014_WORKFORCE_MIG_SCENARIO_066_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_067_META.id]: V1014_WORKFORCE_MIG_SCENARIO_067_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_068_META.id]: V1014_WORKFORCE_MIG_SCENARIO_068_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_069_META.id]: V1014_WORKFORCE_MIG_SCENARIO_069_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_070_META.id]: V1014_WORKFORCE_MIG_SCENARIO_070_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_071_META.id]: V1014_WORKFORCE_MIG_SCENARIO_071_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_072_META.id]: V1014_WORKFORCE_MIG_SCENARIO_072_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_073_META.id]: V1014_WORKFORCE_MIG_SCENARIO_073_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_074_META.id]: V1014_WORKFORCE_MIG_SCENARIO_074_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_075_META.id]: V1014_WORKFORCE_MIG_SCENARIO_075_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_076_META.id]: V1014_WORKFORCE_MIG_SCENARIO_076_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_077_META.id]: V1014_WORKFORCE_MIG_SCENARIO_077_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_078_META.id]: V1014_WORKFORCE_MIG_SCENARIO_078_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_079_META.id]: V1014_WORKFORCE_MIG_SCENARIO_079_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_080_META.id]: V1014_WORKFORCE_MIG_SCENARIO_080_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_081_META.id]: V1014_WORKFORCE_MIG_SCENARIO_081_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_082_META.id]: V1014_WORKFORCE_MIG_SCENARIO_082_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_083_META.id]: V1014_WORKFORCE_MIG_SCENARIO_083_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_084_META.id]: V1014_WORKFORCE_MIG_SCENARIO_084_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_085_META.id]: V1014_WORKFORCE_MIG_SCENARIO_085_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_086_META.id]: V1014_WORKFORCE_MIG_SCENARIO_086_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_087_META.id]: V1014_WORKFORCE_MIG_SCENARIO_087_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_088_META.id]: V1014_WORKFORCE_MIG_SCENARIO_088_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_089_META.id]: V1014_WORKFORCE_MIG_SCENARIO_089_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_090_META.id]: V1014_WORKFORCE_MIG_SCENARIO_090_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_091_META.id]: V1014_WORKFORCE_MIG_SCENARIO_091_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_092_META.id]: V1014_WORKFORCE_MIG_SCENARIO_092_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_093_META.id]: V1014_WORKFORCE_MIG_SCENARIO_093_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_094_META.id]: V1014_WORKFORCE_MIG_SCENARIO_094_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_095_META.id]: V1014_WORKFORCE_MIG_SCENARIO_095_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_096_META.id]: V1014_WORKFORCE_MIG_SCENARIO_096_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_097_META.id]: V1014_WORKFORCE_MIG_SCENARIO_097_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_098_META.id]: V1014_WORKFORCE_MIG_SCENARIO_098_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_099_META.id]: V1014_WORKFORCE_MIG_SCENARIO_099_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_100_META.id]: V1014_WORKFORCE_MIG_SCENARIO_100_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_101_META.id]: V1014_WORKFORCE_MIG_SCENARIO_101_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_102_META.id]: V1014_WORKFORCE_MIG_SCENARIO_102_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_103_META.id]: V1014_WORKFORCE_MIG_SCENARIO_103_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_104_META.id]: V1014_WORKFORCE_MIG_SCENARIO_104_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_105_META.id]: V1014_WORKFORCE_MIG_SCENARIO_105_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_106_META.id]: V1014_WORKFORCE_MIG_SCENARIO_106_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_107_META.id]: V1014_WORKFORCE_MIG_SCENARIO_107_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_108_META.id]: V1014_WORKFORCE_MIG_SCENARIO_108_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_109_META.id]: V1014_WORKFORCE_MIG_SCENARIO_109_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_110_META.id]: V1014_WORKFORCE_MIG_SCENARIO_110_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_111_META.id]: V1014_WORKFORCE_MIG_SCENARIO_111_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_112_META.id]: V1014_WORKFORCE_MIG_SCENARIO_112_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_113_META.id]: V1014_WORKFORCE_MIG_SCENARIO_113_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_114_META.id]: V1014_WORKFORCE_MIG_SCENARIO_114_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_115_META.id]: V1014_WORKFORCE_MIG_SCENARIO_115_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_116_META.id]: V1014_WORKFORCE_MIG_SCENARIO_116_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_117_META.id]: V1014_WORKFORCE_MIG_SCENARIO_117_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_118_META.id]: V1014_WORKFORCE_MIG_SCENARIO_118_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_119_META.id]: V1014_WORKFORCE_MIG_SCENARIO_119_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_120_META.id]: V1014_WORKFORCE_MIG_SCENARIO_120_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_121_META.id]: V1014_WORKFORCE_MIG_SCENARIO_121_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_122_META.id]: V1014_WORKFORCE_MIG_SCENARIO_122_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_123_META.id]: V1014_WORKFORCE_MIG_SCENARIO_123_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_124_META.id]: V1014_WORKFORCE_MIG_SCENARIO_124_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_125_META.id]: V1014_WORKFORCE_MIG_SCENARIO_125_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_126_META.id]: V1014_WORKFORCE_MIG_SCENARIO_126_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_127_META.id]: V1014_WORKFORCE_MIG_SCENARIO_127_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_128_META.id]: V1014_WORKFORCE_MIG_SCENARIO_128_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_129_META.id]: V1014_WORKFORCE_MIG_SCENARIO_129_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_130_META.id]: V1014_WORKFORCE_MIG_SCENARIO_130_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_131_META.id]: V1014_WORKFORCE_MIG_SCENARIO_131_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_132_META.id]: V1014_WORKFORCE_MIG_SCENARIO_132_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_133_META.id]: V1014_WORKFORCE_MIG_SCENARIO_133_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_134_META.id]: V1014_WORKFORCE_MIG_SCENARIO_134_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_135_META.id]: V1014_WORKFORCE_MIG_SCENARIO_135_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_136_META.id]: V1014_WORKFORCE_MIG_SCENARIO_136_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_137_META.id]: V1014_WORKFORCE_MIG_SCENARIO_137_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_138_META.id]: V1014_WORKFORCE_MIG_SCENARIO_138_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_139_META.id]: V1014_WORKFORCE_MIG_SCENARIO_139_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_140_META.id]: V1014_WORKFORCE_MIG_SCENARIO_140_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_141_META.id]: V1014_WORKFORCE_MIG_SCENARIO_141_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_142_META.id]: V1014_WORKFORCE_MIG_SCENARIO_142_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_143_META.id]: V1014_WORKFORCE_MIG_SCENARIO_143_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_144_META.id]: V1014_WORKFORCE_MIG_SCENARIO_144_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_145_META.id]: V1014_WORKFORCE_MIG_SCENARIO_145_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_146_META.id]: V1014_WORKFORCE_MIG_SCENARIO_146_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_147_META.id]: V1014_WORKFORCE_MIG_SCENARIO_147_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_148_META.id]: V1014_WORKFORCE_MIG_SCENARIO_148_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_149_META.id]: V1014_WORKFORCE_MIG_SCENARIO_149_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_150_META.id]: V1014_WORKFORCE_MIG_SCENARIO_150_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_151_META.id]: V1014_WORKFORCE_MIG_SCENARIO_151_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_152_META.id]: V1014_WORKFORCE_MIG_SCENARIO_152_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_153_META.id]: V1014_WORKFORCE_MIG_SCENARIO_153_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_154_META.id]: V1014_WORKFORCE_MIG_SCENARIO_154_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_155_META.id]: V1014_WORKFORCE_MIG_SCENARIO_155_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_156_META.id]: V1014_WORKFORCE_MIG_SCENARIO_156_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_157_META.id]: V1014_WORKFORCE_MIG_SCENARIO_157_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_158_META.id]: V1014_WORKFORCE_MIG_SCENARIO_158_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_159_META.id]: V1014_WORKFORCE_MIG_SCENARIO_159_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_160_META.id]: V1014_WORKFORCE_MIG_SCENARIO_160_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_161_META.id]: V1014_WORKFORCE_MIG_SCENARIO_161_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_162_META.id]: V1014_WORKFORCE_MIG_SCENARIO_162_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_163_META.id]: V1014_WORKFORCE_MIG_SCENARIO_163_snapshot,
+  [V1014_WORKFORCE_MIG_SCENARIO_164_META.id]: V1014_WORKFORCE_MIG_SCENARIO_164_snapshot,
+};
+
+export function V1014_WORKFORCE_listActiveScenarioIds(_turn: number): string[] {
+  const stride = 24;
+  const start = (_turn * 3) % Math.max(1, V1014_WORKFORCE_ALL_SCENARIO_IDS.length - stride);
+  return V1014_WORKFORCE_ALL_SCENARIO_IDS.slice(start, start + stride);
+}
+
+export function V1014_WORKFORCE_evaluateMigrationScenarioBatch(
+  turn: number,
+  scenarioIds: string[],
+): {
+  snapshots: V1014WorkforceMigrationScenarioSnapshot[];
+  meanMismatch: number;
+  meanNetInflow: number;
+  byRegion: Partial<Record<V1014WorkforceRegionId, V1014WorkforceMigrationScenarioSnapshot>>;
+} {
+  const ids = scenarioIds.length ? scenarioIds : V1014_WORKFORCE_listActiveScenarioIds(turn);
+  const snaps: V1014WorkforceMigrationScenarioSnapshot[] = [];
+  for (const id of ids) {
+    const fn = V1014_WORKFORCE_SNAPSHOT_BY_ID[id];
+    if (fn) snaps.push(fn(turn));
+  }
+  const meanMismatch = snaps.reduce((a, s) => a + s.skillMismatchIndex, 0) / Math.max(1, snaps.length);
+  const meanNetInflow = snaps.reduce((a, s) => a + s.netInflow, 0) / Math.max(1, snaps.length);
+  const byRegion: Partial<Record<V1014WorkforceRegionId, V1014WorkforceMigrationScenarioSnapshot>> = {
+    NSW: snaps.find((s) => s.regionId === 'NSW'),
+    VIC: snaps.find((s) => s.regionId === 'VIC'),
+    QLD: snaps.find((s) => s.regionId === 'QLD'),
+    WA: snaps.find((s) => s.regionId === 'WA'),
+    SA: snaps.find((s) => s.regionId === 'SA'),
+    TAS: snaps.find((s) => s.regionId === 'TAS'),
+    NT: snaps.find((s) => s.regionId === 'NT'),
+    ACT: snaps.find((s) => s.regionId === 'ACT'),
+  };
+  return { snapshots: snaps, meanMismatch, meanNetInflow, byRegion };
+}
+
+/** Flattened skills graph extension (20AC part 4). */
+
+export const V1014_WORKFORCE_GENERATED_SKILLS_EDGES: readonly V1014WorkforceSkillsGraphEdge[] = [
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_000,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_001,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_002,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_003,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_004,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_005,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_006,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_007,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_008,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_009,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_010,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_011,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_012,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_013,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_014,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_015,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_016,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_017,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_018,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_019,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_020,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_021,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_022,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_023,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_024,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_025,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_026,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_027,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_028,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_029,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_030,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_031,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_032,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_033,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_034,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_035,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_036,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_037,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_038,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_039,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_040,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_041,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_042,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_043,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_044,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_045,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_046,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_047,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_048,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_049,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_050,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_051,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_052,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_053,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_054,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_055,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_056,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_057,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_058,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_059,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_060,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_061,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_062,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_063,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_064,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_065,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_066,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_067,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_068,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_069,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_070,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_071,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_072,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_073,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_074,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_075,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_076,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_077,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_078,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_079,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_080,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_081,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_082,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_083,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_084,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_085,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_086,
+  ...V1014_WORKFORCE_SKILLS_EDGE_SHARD_087,
+];
+
+
+export function V1014_WORKFORCE_clamp(value: number, lo: number, hi: number): number {
+  if (!Number.isFinite(value)) return lo;
+  return Math.min(hi, Math.max(lo, value));
+}
+
+export function V1014_WORKFORCE_mixSeed(seed: number, turn: number, tag: string): number {
+  let h = (seed ^ turn * 2654435761) >>> 0;
+  for (let i = 0; i < tag.length; i++) {
+    h = Math.imul(h ^ tag.charCodeAt(i), 1597334677) >>> 0;
+  }
+  return (h % 10_000) / 10_000;
+}
+
+export function V1014_WORKFORCE_hash(payload: Record<string, unknown>): string {
+  const s = JSON.stringify(payload);
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return `wf_${(h >>> 0).toString(16)}`;
+}
+
+export function V1014_WORKFORCE_flowBandRank(band: V1014WorkforceMigrationFlowBand): number {
+  switch (band) {
+    case 'surge':
+      return 4;
+    case 'balanced':
+      return 3;
+    case 'constrained':
+      return 2;
+    case 'outflow':
+      return 1;
+    default:
+      return 2;
+  }
+}
+
+export function V1014_WORKFORCE_readinessFromScore(score: number): V1014WorkforceReadinessBand {
+  const s = V1014_WORKFORCE_clamp(score, 0, 100);
+  if (s >= 72) return 'strong';
+  if (s >= 58) return 'adequate';
+  if (s >= 44) return 'strained';
+  if (s >= 30) return 'weak';
+  return 'blocking';
+}
+
+export function V1014_WORKFORCE_weightedMean(items: Array<{ weight: number; value: number }>): number {
+  let wSum = 0;
+  let vSum = 0;
+  for (const it of items) {
+    const w = Math.max(0, it.weight);
+    wSum += w;
+    vSum += w * it.value;
+  }
+  return wSum > 0 ? vSum / wSum : 0;
+}
+
+
+export function readV1014WorkforceAc20Bridge(slice: V1014WorkforceAc20Slice, mismatchIndex: number) {
+  const gap = V1014_WORKFORCE_clamp(slice.specialistGap + mismatchIndex * 0.22, 0, 100);
+  const readinessDelta = V1014_WORKFORCE_clamp((slice.nationalReadiness - 55) * 0.08 - gap * 0.05, -8, 8);
+  return {
+    readinessDelta,
+    specialistGapDelta: gap - slice.specialistGap,
+    domainPressure: slice.domainDepth ?? {},
+  };
+}
+
+export function readV1014WorkforceAj20Bridge(slice: V1014WorkforceAj20Slice, migrationPressure: number) {
+  const rank = V1014_WORKFORCE_flowBandRank(slice.migrationFlowBand);
+  const wagePressureContribution = V1014_WORKFORCE_clamp(
+    slice.wagePressureIndex * 0.01 + migrationPressure * 0.15 + (rank - 2) * 0.04,
+  );
+  return {
+    flowBandHint: slice.migrationFlowBand,
+    attractivenessDelta: slice.regionalAttractiveness,
+    wagePressureContribution,
+  };
+}
+
+export function readV1014WorkforceAf20Bridge(slice: V1014WorkforceAf20Slice, mismatchIndex: number) {
+  const affordabilityDrag = V1014_WORKFORCE_clamp(slice.affordabilityStress * 0.008 + mismatchIndex * 0.12, 0, 0.45);
+  const domesticDemandMultiplier = V1014_WORKFORCE_clamp(
+    1 - affordabilityDrag * 0.35 + slice.domesticDemandPull * 0.004,
+    0.62,
+    1.08,
+  );
+  return {
+    livingStandardDelta: slice.regionalLivingStandard,
+  };
+}
+
+export function buildV1014WorkforceMigrationBriefing(
+  input: V1014WorkforceTurnInput,
+  mismatch: number,
+  readiness: number,
+): string {
+  return (
+    `Turn ${input.turn}: readiness ${readiness.toFixed(1)}, mismatch ${mismatch.toFixed(1)}, ` +
+    `flow ${input.aj20.migrationFlowBand}, affordability ${input.af20.affordabilityStress.toFixed(0)}.`
+  );
+}
+
+
+export function computeV1014WorkforceAf20HouseholdBridge(
+  input: V1014WorkforceTurnInput,
+  mismatchIndex: number,
+): V1014WorkforceAf20Bridge {
+  return readV1014WorkforceAf20Bridge(input.af20, mismatchIndex);
+}
+
+export function applyV1014WorkforceAf20DemandOverrides<T extends { consumptionElasticity?: number }>(
+  inputs: T,
+  bridge: V1014WorkforceAf20Bridge,
+): T {
+  return {
+    ...inputs,
+    consumptionElasticity: V1014_WORKFORCE_clamp(
+      (inputs.consumptionElasticity ?? 1) * bridge.domesticDemandMultiplier,
+      0.5,
+      1.25,
+    ),
+  };
+}
+
+
+export function computeV1014WorkforceAj20MigrationDelta(
+  input: V1014WorkforceTurnInput,
+  migrationPressure: number,
+): V1014WorkforceAj20Bridge {
+  return readV1014WorkforceAj20Bridge(input.aj20, migrationPressure);
+}
+
+export function applyV1014WorkforceAj20AttractivenessOverrides<T extends { regionalWeights?: Record<string, number> }>(
+  base: T,
+  bridge: V1014WorkforceAj20Bridge,
+): T {
+  const merged = { ...(base.regionalWeights ?? {}) };
+  Object.entries(bridge.attractivenessDelta ?? {}).forEach(([region, score]) => {
+    merged[region] = V1014_WORKFORCE_clamp((merged[region] ?? 50) + Number(score) * 0.02, 0, 100);
+  });
+  return { ...base, regionalWeights: merged };
+}
+
+/**
+ * Turn orchestrator — workforce migration v2 (20AC part 4), post–§11A.
+ */
+
+const V1014_WORKFORCE_ORCH_REGIONS: V1014WorkforceRegionId[] = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'];
+
+export function v1014WorkforceMigrationInputHash(input: V1014WorkforceTurnInput): string {
+  return V1014_WORKFORCE_hash({
+    turn: input.turn,
+    seed: input.seed,
+    flow: input.aj20.migrationFlowBand,
+    readiness: input.ac20.nationalReadiness,
+    scenarios: input.activeScenarioIds.slice(0, 12),
+    corridors: input.activeCorridorIds.slice(0, 12),
+  });
+}
+
+export function runV1014WorkforceMigrationTurn(input: V1014WorkforceTurnInput): V1014WorkforceTurnResult {
+  const persisted = sanitizeV1014WorkforceMigrationPersisted(
+    input.persisted ?? createEmptyV1014WorkforceMigrationPersisted(),
+    input.turn,
+  );
+
+  const mix = V1014_WORKFORCE_mixSeed(input.seed, input.turn, 'workforce_migration_v2');
+  const scenarioIds =
+    input.activeScenarioIds.length > 0 ? input.activeScenarioIds : V1014_WORKFORCE_listActiveScenarioIds(input.turn);
+  const scenarioBatch = V1014_WORKFORCE_evaluateMigrationScenarioBatch(input.turn, scenarioIds);
+
+  let aggregateMismatch = V1014_WORKFORCE_clamp(
+    scenarioBatch.meanMismatch * 0.55 +
+      (100 - input.ac20.nationalReadiness) * 0.22 +
+      input.aj20.wagePressureIndex * 0.08 +
+      mix * 6,
+  );
+
+  const migrationPressure = V1014_WORKFORCE_clamp(
+    scenarioBatch.meanNetInflow * 0.04 + (input.aj20.visaBacklogTurns ?? 0) * 0.02,
+  );
+
+  const acBridge = readV1014WorkforceAc20Bridge(input.ac20, aggregateMismatch);
+  const ajBridge = readV1014WorkforceAj20Bridge(input.aj20, migrationPressure);
+  const afBridge = readV1014WorkforceAf20Bridge(input.af20, aggregateMismatch);
+  const householdBridge = computeV1014WorkforceAf20HouseholdBridge(input, aggregateMismatch);
+
+  const nationalReadiness = V1014_WORKFORCE_clamp(
+    input.ac20.nationalReadiness + acBridge.readinessDelta - aggregateMismatch * 0.08 + input.policyRetrainFocus * 0.04,
+  );
+
+  const skillsGraphHash = V1014_WORKFORCE_skillsGraphHash(V1014_WORKFORCE_GENERATED_SKILLS_EDGES);
+  const inputHash = v1014WorkforceMigrationInputHash(input);
+  const briefing = buildV1014WorkforceMigrationBriefing(input, aggregateMismatch, nationalReadiness);
+
+  const regionalAggregates = { ...persisted.regionalAggregates };
+  V1014_WORKFORCE_ORCH_REGIONS.forEach((region, idx) => {
+    const prior = regionalAggregates[region] ?? {
+      queuePressure: 40,
+      mismatchIndex: 40,
+      migrationLoopGain: 0.5,
+      compositeReadiness: 50,
+    };
+    const regionalScenario = scenarioBatch.byRegion[region];
+    const mismatchIndex = V1014_WORKFORCE_clamp(
+      prior.mismatchIndex * 0.65 +
+        (regionalScenario?.skillMismatchIndex ?? aggregateMismatch) * 0.35 +
+        ajBridge.wagePressureContribution * 12,
+    );
+    const compositeReadiness = V1014_WORKFORCE_clamp(
+      V1014_WORKFORCE_weightedMean([
+        { weight: 1.2, value: nationalReadiness - idx * 0.2 },
+        { weight: 0.8, value: 100 - mismatchIndex },
+        { weight: 0.5, value: input.af20.regionalLivingStandard?.[region] ?? 52 },
+      ]),
+    );
+    regionalAggregates[region] = {
+      queuePressure: V1014_WORKFORCE_clamp(prior.queuePressure + scenarioBatch.meanNetInflow * 0.02, 0, 100),
+      mismatchIndex,
+      migrationLoopGain: V1014_WORKFORCE_clamp(
+        prior.migrationLoopGain + (regionalScenario?.netInflow ?? 0) * 0.001,
+      ),
+      compositeReadiness,
+    };
+  });
+
+  const migrationSnapshots = { ...persisted.migrationSnapshots };
+  scenarioBatch.snapshots.forEach((snap) => {
+    migrationSnapshots[snap.scenarioId] = snap;
+  });
+
+  const nextPersisted: V1014WorkforcePersisted = {
+    ...persisted,
+    revision: persisted.revision + 1,
+    lastProcessedTurn: input.turn,
+    skillsGraphRevision: persisted.skillsGraphRevision + 1,
+    historyTail: [
+      ...persisted.historyTail.slice(-11),
+      { turn: input.turn, inputHash, aggregateMismatch },
+    ],
+    aiReadCache: {
+      ...persisted.aiReadCache,
+      [`turn_${input.turn}`]: briefing.slice(0, 280),
+    },
+  };
+
+  const worldEvents =
+    aggregateMismatch > 62
+      ? [
+          {
+            id: `wf_mis_${input.turn}`,
+            turn: input.turn,
+            kind: 'workforce',
+            title: 'Skills mismatch elevated',
+            summary: `Mismatch ${aggregateMismatch.toFixed(1)}; readiness ${nationalReadiness.toFixed(1)}.`,
+          },
+        ]
+      : [];
+
+  if (migrationPressure > 0.42) {
+    worldEvents.push({
+      id: `wf_mig_${input.turn}`,
+      turn: input.turn,
+      kind: 'migration',
+      title: 'Migration corridor pressure',
+      summary: `Flow band ${ajBridge.flowBandHint}; wage pressure ${ajBridge.wagePressureContribution.toFixed(2)}.`,
+    });
+  }
+
+  void householdBridge;
+  void afBridge;
+  void V1014_WORKFORCE_readinessFromScore(nationalReadiness);
+
+  return {
+    state: {
+      turn: input.turn,
+      aggregateMismatchIndex: aggregateMismatch,
+      aggregateMigrationPressure: migrationPressure,
+      nationalReadinessScore: nationalReadiness,
+      householdLaborIncomeEffect: householdBridge.affordabilityDrag,
+    },
+    persisted: nextPersisted,
+    worldEvents,
+  };
+}
+
+
+/**
+ * LAB suite: v1014_workforce_v2 — deterministic workforce–migration fixtures (20AC part 4).
+ */
+
+function v1014WorkforceBaseInput(overrides: Partial<V1014WorkforceTurnInput> = {}): V1014WorkforceTurnInput {
+  return {
+    turn: 1,
+    seed: 5150,
+    ac20: {
+      turn: 1,
+      nationalReadiness: 58,
+      specialistGap: 32,
+      regionalSkillSupply: { NSW: 54, VIC: 52 },
+    },
+    aj20: {
+      turn: 1,
+      migrationFlowBand: 'balanced',
+      regionalAttractiveness: { NSW: 55, QLD: 48 },
+      wagePressureIndex: 46,
+      visaBacklogTurns: 3,
+    },
+    af20: {
+      turn: 1,
+      affordabilityStress: 41,
+      regionalLivingStandard: { NSW: 53, WA: 49 },
+      domesticDemandPull: 50,
+    },
+    fiscalHeadroom: 58,
+    policyRetrainFocus: 44,
+    activeScenarioIds: V1014_WORKFORCE_listActiveScenarioIds(1).slice(0, 8),
+    activeCorridorIds: ['corr_00', 'corr_01'],
+    persisted: null,
+    ...overrides,
+  };
+}
+
+function v1014WorkforceSelfTestCheck(
+  results: V1014WorkforceSelfTestResult[],
+  id: string,
+  name: string,
+  ok: boolean,
+  detail = 'ok',
+): void {
+  results.push({ id, name, passed: ok, detail: ok ? 'ok' : detail });
+}
+
+export function runV1014WorkforceMigrationSelfTests(): {
+  passed: number;
+  failed: number;
+  total: number;
+  allPassed: boolean;
+  results: V1014WorkforceSelfTestResult[];
+} {
+  const results: V1014WorkforceSelfTestResult[] = [];
+
+  for (let t = 1; t <= 20; t++) {
+    const inp = v1014WorkforceBaseInput({ turn: t, seed: 5000 + t });
+    const out = runV1014WorkforceMigrationTurn(inp);
+    const id = `v1014_wf_${String(t).padStart(2, '0')}`;
+    v1014WorkforceSelfTestCheck(results, id, `turn ${t} hash`, out.state.inputHash.length > 8);
+    v1014WorkforceSelfTestCheck(results, `${id}b`, `turn ${t} schema`, out.persisted.schemaVersion === V1014_WORKFORCE_SCHEMA_VERSION);
+    v1014WorkforceSelfTestCheck(
+      results,
+      `${id}c`,
+      `turn ${t} mismatch bounded`,
+      out.state.aggregateMismatchIndex >= 0 && out.state.aggregateMismatchIndex <= 100,
+    );
+  }
+
+  v1014WorkforceSelfTestCheck(
+    results,
+    'v1014_wf_hash_stable',
+    'input hash deterministic',
+    v1014WorkforceMigrationInputHash(v1014WorkforceBaseInput({ turn: 3, seed: 77 })) ===
+      v1014WorkforceMigrationInputHash(v1014WorkforceBaseInput({ turn: 3, seed: 77 })),
+  );
+
+  {
+    const p = createEmptyV1014WorkforceMigrationPersisted();
+    v1014WorkforceSelfTestCheck(
+      results,
+      'v1014_wf_persist_empty',
+      'empty persisted factory',
+      p.revision === 0 && p.schemaVersion === V1014_WORKFORCE_SCHEMA_VERSION,
+    );
+  }
+
+  {
+    const p = sanitizeV1014WorkforceMigrationPersisted({ revision: -5 }, 2);
+    v1014WorkforceSelfTestCheck(results, 'v1014_wf_sanitize', 'sanitize clamps revision', p.revision >= 0);
+  }
+
+  v1014WorkforceSelfTestCheck(results, 'v1014_wf_scenario_catalog', 'scenario catalog populated', V1014_WORKFORCE_ALL_SCENARIO_IDS.length >= 100);
+  {
+    const batch = V1014_WORKFORCE_evaluateMigrationScenarioBatch(4, ['mig_000', 'mig_001', 'mig_002']);
+    v1014WorkforceSelfTestCheck(
+      results,
+      'v1014_wf_scenario_batch',
+      'scenario batch mean',
+      batch.snapshots.length === 3 && batch.meanMismatch > 0,
+    );
+  }
+
+  {
+    const r = V1014_WORKFORCE_MIG_SCENARIO_000_evaluate(2);
+    v1014WorkforceSelfTestCheck(
+      results,
+      'v1014_wf_scenario_000',
+      'scenario 000 evaluate',
+      r.skillMismatchIndex <= 100 && V1014_WORKFORCE_MIG_SCENARIO_000_META.id === 'mig_000',
+    );
+  }
+
+  v1014WorkforceSelfTestCheck(results, 'v1014_wf_skills_graph', 'skills graph hash', V1014_WORKFORCE_skillsGraphHash(V1014_WORKFORCE_GENERATED_SKILLS_EDGES).startsWith('wf_'));
+  {
+    const merged = V1014_WORKFORCE_mergeSkillsEdges(
+      [V1014_WORKFORCE_GENERATED_SKILLS_EDGES[0], V1014_WORKFORCE_GENERATED_SKILLS_EDGES[500]],
+      [V1014_WORKFORCE_GENERATED_SKILLS_EDGES[1000]],
+    );
+    v1014WorkforceSelfTestCheck(results, 'v1014_wf_skills_merge', 'skills merge dedupe', merged.length === 3);
+  }
+
+  {
+    const p = V1014_WORKFORCE_CORRIDOR_00_pressure(5);
+    v1014WorkforceSelfTestCheck(results, 'v1014_wf_corridor', 'corridor pressure bounded', p >= 0 && p <= 1);
+  }
+
+  {
+    const b = computeV1014WorkforceAj20MigrationDelta(v1014WorkforceBaseInput(), 0.3);
+    v1014WorkforceSelfTestCheck(
+      results,
+      'v1014_wf_aj_bridge',
+      '20AJ adapter',
+      b.wagePressureContribution >= 0 && b.wagePressureContribution <= 1,
+    );
+  }
+
+  {
+    const b = computeV1014WorkforceAf20HouseholdBridge(v1014WorkforceBaseInput(), 55);
+    v1014WorkforceSelfTestCheck(
+      results,
+      'v1014_wf_af_bridge',
+      '20AF adapter',
+      b.domesticDemandMultiplier >= 0.5 && b.domesticDemandMultiplier <= 1.25,
+    );
+  }
+
+  {
+    const b = computeV1014WorkforceAf20HouseholdBridge(v1014WorkforceBaseInput(), 40);
+    const next = applyV1014WorkforceAf20DemandOverrides({ consumptionElasticity: 1 }, b);
+    v1014WorkforceSelfTestCheck(results, 'v1014_wf_af_override', '20AF override elasticity', typeof next.consumptionElasticity === 'number');
+  }
+
+  v1014WorkforceSelfTestCheck(results, 'v1014_wf_readiness_band', 'readiness bands', V1014_WORKFORCE_readinessFromScore(75) === 'strong');
+  v1014WorkforceSelfTestCheck(results, 'v1014_wf_clamp', 'clamp finite', V1014_WORKFORCE_clamp(Number.NaN, 0, 10) === 0);
+
+  {
+    let persisted = createEmptyV1014WorkforceMigrationPersisted();
+    for (let turn = 1; turn <= 4; turn++) {
+      const out = runV1014WorkforceMigrationTurn(v1014WorkforceBaseInput({ turn, persisted }));
+      persisted = out.persisted;
+    }
+    v1014WorkforceSelfTestCheck(
+      results,
+      'v1014_wf_multi_turn',
+      'multi-turn persistence revision',
+      persisted.revision === 4 && persisted.lastProcessedTurn === 4,
+    );
+  }
+
+  {
+    let persisted = createEmptyV1014WorkforceMigrationPersisted();
+    for (let turn = 1; turn <= 20; turn++) {
+      persisted = runV1014WorkforceMigrationTurn(v1014WorkforceBaseInput({ turn, persisted })).persisted;
+    }
+    v1014WorkforceSelfTestCheck(results, 'v1014_wf_history_tail', 'history tail depth', persisted.historyTail.length <= 12);
+  }
+
+  const passed = results.filter((r) => r.passed).length;
+  const failed = results.length - passed;
+  return { passed, failed, total: results.length, allPassed: failed === 0, results };
+}
+
+export function runV1014WorkforceMigrationSelfTestsForLab(): V1014WorkforceSelfTestResult[] {
+  return runV1014WorkforceMigrationSelfTests().results;
+}
+function V1014_WORKFORCE_readPersistedFromGameState(gs: any): V1014WorkforcePersisted | null {
+  const raw = (gs?.save?.meta?.v1014 as any)?.workforce_v2;
+  return raw ? sanitizeV1014WorkforceMigrationPersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1014_WORKFORCE_applyToGameState(gs: any, out: V1014WorkforceTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1014 = { ...(meta.v1014 || {}) };
+  v1014.workforce_v2 = out.persisted;
+  meta.v1014 = v1014;
+  save.meta = meta;
+  return { ...gs, save, v1014WorkforceV2: out.state };
+}
+
+export function buildV1014WorkforceMigrationTurnInputFromGameState(gs: any, turn: number): V1014WorkforceTurnInput {
+  const seed = typeof gs?.seed === 'number' ? gs.seed : 9001;
+  const hc = gs?.workforceHumanCapital ?? gs?.workforce ?? null;
+  const labor = gs?.laborDemographics ?? null;
+  const household = gs?.householdEconomy ?? null;
+  return {
+    turn,
+    seed,
+    ac20: {
+      turn,
+      nationalReadiness: Number(hc?.nationalReadiness ?? hc?.readiness ?? 58),
+      specialistGap: Number(hc?.specialistGap ?? 32),
+      regionalSkillSupply: (hc?.regionalSkillSupply as any) ?? { NSW: 54, VIC: 52 },
+    },
+    aj20: {
+      turn,
+      migrationFlowBand: (labor?.migrationFlowBand as any) ?? 'balanced',
+      regionalAttractiveness: (labor?.regionalAttractiveness as any) ?? { NSW: 55, QLD: 48 },
+      wagePressureIndex: Number(labor?.wagePressureIndex ?? 46),
+      visaBacklogTurns: Number(labor?.visaBacklogTurns ?? 3),
+    },
+    af20: {
+      turn,
+      affordabilityStress: Number(household?.affordabilityStress ?? 41),
+      regionalLivingStandard: (household?.regionalLivingStandard as any) ?? { NSW: 53, WA: 49 },
+      domesticDemandPull: Number(household?.domesticDemandPull ?? 50),
+    },
+    fiscalHeadroom: Number(gs?.publicFinance?.headroom ?? 58),
+    policyRetrainFocus: Number(hc?.policyRetrainFocus ?? 44),
+    activeScenarioIds: [],
+    activeCorridorIds: [],
+    persisted: null,
+  };
 }
 
 // SECTION 21B: RELIABILITY UPGRADE — FOCUSED REGRESSION SELF-TESTS

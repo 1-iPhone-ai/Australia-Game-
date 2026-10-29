@@ -17,6 +17,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     energy_environment_paths,
     scenario_packs_paths,
     ai_fidelity_paths,
+    workforce_migration_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -29,6 +30,7 @@ PUBSVC_MARKER = "export function V1014_PUBSVC_computePublicServicesCrosswalk"
 ENERGY_MARKER = "export function V1014_ENERGY_DEPTH_turnHook"
 SCENARIO_MARKER = "export function runV1014ScenarioV2SelfTests"
 AI_FIDELITY_MARKER = "export function runV1014AiFidelityTurn"
+WORKFORCE_MARKER = "export function runV1014WorkforceMigrationTurn"
 
 TRADE_SECTION = (
     "// ============================================================================\n"
@@ -64,6 +66,13 @@ AI_FIDELITY_SECTION = (
     "// ============================================================================\n"
     "// SECTION 20BE: V10.14 AI FIDELITY — PLAN→ACT→VERIFY LOOPS (T6-8)\n"
     "// Nested sub-blocks: ACC17 verify (20BC refs), UI unlock adapter (20BD UI gates), orchestrator + adapters\n"
+    "// ============================================================================\n"
+)
+
+WORKFORCE_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20BF: V10.14 WORKFORCE MIGRATION v2 — SKILLS GRAPH & 20AJ SCENARIOS (O6K-25)\n"
+    "// Renumbered from shard 20BD (canonical 20BD = scenario packs, 20BE = AI fidelity)\n"
     "// ============================================================================\n"
 )
 
@@ -640,6 +649,124 @@ def push_ai_fidelity(text: str) -> str:
     return text
 
 
+WORKFORCE_HELPERS = """
+function V1014_WORKFORCE_readPersistedFromGameState(gs: any): V1014WorkforcePersisted | null {
+  const raw = (gs?.save?.meta?.v1014 as any)?.workforce_v2;
+  return raw ? sanitizeV1014WorkforceMigrationPersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1014_WORKFORCE_applyToGameState(gs: any, out: V1014WorkforceTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1014 = { ...(meta.v1014 || {}) };
+  v1014.workforce_v2 = out.persisted;
+  meta.v1014 = v1014;
+  save.meta = meta;
+  return { ...gs, save, v1014WorkforceV2: out.state };
+}
+
+export function buildV1014WorkforceMigrationTurnInputFromGameState(gs: any, turn: number): V1014WorkforceTurnInput {
+  const seed = typeof gs?.seed === 'number' ? gs.seed : 9001;
+  const hc = gs?.workforceHumanCapital ?? gs?.workforce ?? null;
+  const labor = gs?.laborDemographics ?? null;
+  const household = gs?.householdEconomy ?? null;
+  return {
+    turn,
+    seed,
+    ac20: {
+      turn,
+      nationalReadiness: Number(hc?.nationalReadiness ?? hc?.readiness ?? 58),
+      specialistGap: Number(hc?.specialistGap ?? 32),
+      regionalSkillSupply: (hc?.regionalSkillSupply as any) ?? { NSW: 54, VIC: 52 },
+    },
+    aj20: {
+      turn,
+      migrationFlowBand: (labor?.migrationFlowBand as any) ?? 'balanced',
+      regionalAttractiveness: (labor?.regionalAttractiveness as any) ?? { NSW: 55, QLD: 48 },
+      wagePressureIndex: Number(labor?.wagePressureIndex ?? 46),
+      visaBacklogTurns: Number(labor?.visaBacklogTurns ?? 3),
+    },
+    af20: {
+      turn,
+      affordabilityStress: Number(household?.affordabilityStress ?? 41),
+      regionalLivingStandard: (household?.regionalLivingStandard as any) ?? { NSW: 53, WA: 49 },
+      domesticDemandPull: Number(household?.domesticDemandPull ?? 50),
+    },
+    fiscalHeadroom: Number(gs?.publicFinance?.headroom ?? 58),
+    policyRetrainFocus: Number(hc?.policyRetrainFocus ?? 44),
+    activeScenarioIds: [],
+    activeCorridorIds: [],
+    persisted: null,
+  };
+}
+"""
+
+WORKFORCE_DAY_HOOK = """
+      if (typeof runV1014WorkforceMigrationTurn === 'function') {
+        try {
+          const wfIn = buildV1014WorkforceMigrationTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          wfIn.persisted = V1014_WORKFORCE_readPersistedFromGameState(mergedGameState);
+          const wfOut = runV1014WorkforceMigrationTurn(wfIn);
+          mergedGameState = V1014_WORKFORCE_applyToGameState(mergedGameState, wfOut);
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_workforce_day_hook(text: str) -> str:
+    marker = "runV1014WorkforceMigrationTurn(wfIn)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:24000]
+    if marker in day_slice:
+        print("skip workforce day hook (present)")
+        return text
+    ai_tail = """      if (typeof runV1014AiFidelityTurn === 'function') {
+        try {
+          const aiIn = buildV1014AiFidelityTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          aiIn.persisted = V1014_AI_FIDELITY_readPersistedFromGameState(mergedGameState);
+          const aiOut = runV1014AiFidelityTurn(aiIn);
+          mergedGameState = V1014_AI_FIDELITY_applyToGameState(mergedGameState, aiOut);
+        } catch (_) { /* isolated */ }
+      }"""
+    if ai_tail not in text:
+        raise SystemExit("ai fidelity day hook anchor missing for workforce hook")
+    return text.replace(ai_tail, ai_tail + WORKFORCE_DAY_HOOK, 1)
+
+
+def wire_workforce_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState) {\n    const aiRaw = (migrated.gameState as any)?.save?.meta?.v1014?.ai_fidelity;"
+    patch = (
+        "  if (migrated.gameState) {\n"
+        "    const wfRaw = (migrated.gameState as any)?.save?.meta?.v1014?.workforce_v2;\n"
+        "    if (wfRaw && typeof sanitizeV1014WorkforceMigrationPersisted === 'function') {\n"
+        "      const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "      const meta = { ...(save.meta || {}) };\n"
+        "      const v1014 = { ...(meta.v1014 || {}) };\n"
+        "      v1014.workforce_v2 = sanitizeV1014WorkforceMigrationPersisted(wfRaw, Number((migrated.gameState as any).turnCounter || 0));\n"
+        "      meta.v1014 = v1014;\n"
+        "      save.meta = meta;\n"
+        "      migrated.gameState = { ...(migrated.gameState as any), save };\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1014.workforce_v2 = sanitizeV1014WorkforceMigrationPersisted" in text:
+        print("skip workforce §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("ai fidelity §6 anchor missing for workforce migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
+def push_workforce(text: str) -> str:
+    block = WORKFORCE_SECTION + bundle_local_files(workforce_migration_paths()) + WORKFORCE_HELPERS
+    text = insert_before(text, block, WORKFORCE_MARKER, "T6 push #8 workforce-migration (PR #338)")
+    text = wire_workforce_day_hook(text)
+    text = wire_workforce_migration(text)
+    lab = """  { id: 'v1014_workforce_v2', label: 'V10.14 Workforce migration v2 (20BF / 20AC part 4)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014WorkforceMigrationSelfTestsForLab() },
+"""
+    text = wire_lab(text, lab, "v1014_workforce_v2")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -654,7 +781,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -671,6 +798,8 @@ def main() -> None:
         text = push_scenario(text)
     elif args.push == 7:
         text = push_ai_fidelity(text)
+    elif args.push == 8:
+        text = push_workforce(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")

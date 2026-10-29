@@ -73,6 +73,31 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
         src = re.sub(r"(?<![\w.])check\(", "v1014AiFidelitySelfTestCheck(", src)
         src = re.sub(r"function baseInput\(", "function v1014AiFidelityBaseInput(", src)
         src = re.sub(r"(?<![\w.])baseInput\(", "v1014AiFidelityBaseInput(", src)
+    if "workforce-migration-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1014WorkforceMigrationPersisted, sanitizeV1014WorkforceMigrationPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1014_WORKFORCE_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1014_WORKFORCE_ORCH_REGIONS.forEach", src)
+    if "workforce-migration/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"const REGIONS:", "const V1014_WORKFORCE_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1014_WORKFORCE_MIG_REGIONS", src)
+    if "run-v1014-workforce-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1014WorkforceSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1014WorkforceSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1014WorkforceBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1014WorkforceBaseInput(", src)
+        src = src.replace(
+            "  sanitizeV1014WorkforceMigrationPersisted,\n} from '../engine/workforce-migration-orchestrator';",
+            "} from '../engine/workforce-migration-orchestrator';\nimport {\n  createEmptyV1014WorkforceMigrationPersisted,\n  sanitizeV1014WorkforceMigrationPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1014WorkforceMigrationPersisted,\n  v1014WorkforceMigrationInputHash,\n  sanitizeV1014WorkforceMigrationPersisted,",
+            "  createEmptyV1014WorkforceMigrationPersisted,\n  v1014WorkforceMigrationInputHash,",
+        )
     return src
 
 
@@ -242,6 +267,54 @@ def ai_fidelity_paths() -> list[str]:
 
     files = sorted(
         (p for p in root.rglob("*.ts") if p.name != "index.ts"),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def workforce_migration_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/workforce-migration"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/constants/" in s:
+            return (1, s)
+        if "/persistence/" in s:
+            return (2, s)
+        if "/migration-corridors/" in s:
+            return (3, s)
+        if "skills-graph/graph-utils" in s:
+            return (4, s)
+        if "/migration-scenarios/" in s:
+            return (5, s)
+        if "/skills-graph/edge-" in s:
+            return (6, s)
+        if "migration-scenario-registry" in s:
+            return (7, s)
+        if "skills-graph-bundle" in s:
+            return (8, s)
+        if "workforce-migration-utils" in s:
+            return (9, s)
+        if "/adapters/" in s:
+            return (10, s)
+        if "workforce-migration-orchestrator" in s:
+            return (11, s)
+        if "/self-tests/" in s:
+            return (12, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name != "index.ts"
+            and "/scripts/" not in str(p)
+            and p.name != "run-self-tests.ts"
+        ),
         key=sort_key,
     )
     return [str(p.relative_to(ROOT)) for p in files]
