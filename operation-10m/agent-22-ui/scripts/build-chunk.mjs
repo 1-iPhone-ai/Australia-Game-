@@ -211,6 +211,11 @@ const FILES = [
   'engine/oct-deferred-queue-day-coach.ts',
   'engine/coverage-ratio-breadth-day-coach.ts',
   'engine/pacing-deferred-quint-day-coach.ts',
+  'engine/eleventh-unlock-headline-day-coach.ts',
+  'engine/novem-deferred-queue-day-coach.ts',
+  'engine/visible-fraction-breadth-day-coach.ts',
+  'engine/pacing-deferred-sext-day-coach.ts',
+  'engine/round50-self-tests.ts',
   'engine/round49-self-tests.ts',
   'engine/round48-self-tests.ts',
   'engine/round47-self-tests.ts',
@@ -573,6 +578,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
     check(\`agent22_round22_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
+  const round50 = runAgent22Round50SelfTests();
+  for (const r of round50.results) {
+    check(\`agent22_round50_\${r.id}\`, r.name, r.passed, r.detail);
+  }
+
   const round49 = runAgent22Round49SelfTests();
   for (const r of round49.results) {
     check(\`agent22_round49_\${r.id}\`, r.name, r.passed, r.detail);
@@ -734,7 +744,7 @@ const manifest = {
   contentSha256,
   chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
   selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
-  moduleVersion: '1.49.0',
+  moduleVersion: '1.50.0',
 };
 fs.writeFileSync(
   path.join(outDir, 'module.manifest.json'),
