@@ -200,6 +200,10 @@ const SOURCE_FILES = [
   'src/batch-national-tick-session-wave53-integration-export.ts',
   'src/batch-national-tick-session-wave53-integration-export-compare.ts',
   'src/batch-national-tick-session-wave53-integration-replay-parity.ts',
+  'src/batch-national-tick-session-wave54-integration-seal.ts',
+  'src/batch-national-tick-session-wave54-integration-export.ts',
+  'src/batch-national-tick-session-wave54-integration-export-compare.ts',
+  'src/batch-national-tick-session-wave54-integration-replay-parity.ts',
   'src/batch-national-tick-session-wave52-integration-seal.ts',
   'src/batch-national-tick-session-wave52-integration-export.ts',
   'src/batch-national-tick-session-wave52-integration-export-compare.ts',
@@ -253,7 +257,7 @@ function bundleSources(): string {
 
   parts.push(
     `export const AGENT_02_MODULE_ID = 'operation-10m/${moduleId}';`,
-    `export const AGENT_02_MODULE_VERSION = '5.12.0';`,
+    `export const AGENT_02_MODULE_VERSION = '5.14.0';`,
     '',
     `export function runOp10mAgent02TurnsTimeSelfTests(): {`,
     `  passed: number;`,
