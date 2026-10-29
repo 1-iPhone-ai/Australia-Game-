@@ -38,6 +38,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   includeConfidenceCapexStress?: boolean;
   includeMonetaryRentalStress?: boolean;
   includeClimateForecastStress?: boolean;
+  includeAccessibilityTimelineStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
@@ -58,6 +59,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   const includeConfidenceCapexStress = Boolean(options?.includeConfidenceCapexStress);
   const includeMonetaryRentalStress = Boolean(options?.includeMonetaryRentalStress);
   const includeClimateForecastStress = Boolean(options?.includeClimateForecastStress);
+  const includeAccessibilityTimelineStress = Boolean(options?.includeAccessibilityTimelineStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -294,6 +296,20 @@ export function runMacroEconomyRegressionHarness(options?: {
             confidenceBand: t % 7 === 0 ? 'low' : 'high',
             disagreementBand: t % 5 === 0 ? 'polarized' : 'aligned'
           }
+        : undefined,
+      uiAccessibility: includeAccessibilityTimelineStress
+        ? {
+            contrastBand: t % 6 === 0 ? 'failing' : 'strong',
+            inputLagBand: t % 5 === 0 ? 'severe' : 'snappy',
+            coverageBand: t % 7 === 0 ? 'gaps' : 'full'
+          }
+        : undefined,
+      historyTimeline: includeAccessibilityTimelineStress
+        ? {
+            gapBand: t % 6 === 0 ? 'broken' : 'coherent',
+            narrativeDriftBand: t % 5 === 0 ? 'runaway' : 'stable',
+            shockMemoryBand: t % 7 === 0 ? 'scarring' : 'fading'
+          }
         : undefined
     });
     const { state, persisted: nextP } = computeNationalMacroEconomy(inputs, persisted, prev);
@@ -355,7 +371,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'twenty_six_transmission_layers',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 40,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -367,7 +383,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'twenty_six_transmission_layers_events',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 40,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -379,7 +395,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'twenty_six_transmission_layers_turns',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 40,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -391,7 +407,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'twenty_six_transmission_layers_research',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 40,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -403,7 +419,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'twenty_six_transmission_layers_modes',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 40,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -415,7 +431,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'twenty_six_transmission_layers_cities',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 40,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -427,7 +443,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'twenty_six_transmission_layers_command',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 40,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -439,7 +455,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'twenty_six_transmission_layers_team',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 40,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -451,7 +467,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'thirty_transmission_layers_memory',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 40,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -463,7 +479,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'thirty_transmission_layers_ui',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 40,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -475,7 +491,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'thirty_two_transmission_layers_logistics',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 40,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -487,7 +503,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'thirty_four_transmission_layers_confidence',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 40,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -499,7 +515,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'thirty_six_transmission_layers_monetary',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 40,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -511,7 +527,19 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'thirty_eight_transmission_layers_climate',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 40,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeAccessibilityTimelineStress && prev) {
+    checks.push({
+      id: 'transmission_coupling_finite',
+      passed: Number.isFinite(prev.transmissionCoupling.couplingIndex),
+      detail: String(prev.transmissionCoupling.couplingIndex)
+    });
+    checks.push({
+      id: 'forty_transmission_layers_accessibility',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 40,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }

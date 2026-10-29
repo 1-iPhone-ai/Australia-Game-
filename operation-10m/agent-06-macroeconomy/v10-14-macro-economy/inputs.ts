@@ -95,6 +95,16 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
       params?.energyEnvironment?.climatePolicy ??
       params?.industrialEnergy?.climate ??
       params?.nationalSystems?.climatePolicy,
+    uiAccessibility:
+      params?.uiAccessibility ??
+      params?.gameUi?.accessibility ??
+      params?.uiShell?.accessibility ??
+      params?.nationalUi?.accessibility,
+    historyTimeline:
+      params?.historyTimeline ??
+      params?.historyReplay?.timeline ??
+      params?.replayArchive?.timeline ??
+      params?.nationalHistory?.timeline,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };

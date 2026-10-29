@@ -138,6 +138,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Climate & forecast stress',
     shockIds: ['drought_ag_cycle', 'global_slowdown'],
     description: 'Disruptive climate transition with wide forecast dispersion (harness overlay).'
+  },
+  {
+    id: 'accessibility_timeline_stress',
+    label: 'Accessibility & timeline stress',
+    shockIds: ['global_slowdown', 'credit_contraction'],
+    description: 'Failing UI accessibility with broken history timeline continuity (harness overlay).'
   }
 ];
 

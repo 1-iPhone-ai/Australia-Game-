@@ -673,5 +673,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Elevated transmission polarization — restrictive layer mass dominates supportive mass.'
     });
   }
+  const acc: any = inputs.uiAccessibility ?? inputs.gameUi?.accessibility;
+  const contrast = String(acc?.contrastBand ?? acc?.contrast?.band ?? '');
+  if (
+    (contrast === 'failing' || contrast === 'critical') &&
+    (state.productivityBand === 'weak' || state.productivityBand === 'critical')
+  ) {
+    gates.push({
+      id: 'ui_accessibility_failing',
+      triggered: true,
+      severity: 'info',
+      summary: 'Failing UI accessibility aligns with weak macro productivity band.'
+    });
+  }
+  const tl: any = inputs.historyTimeline ?? inputs.historyReplay?.timeline;
+  const gap = String(tl?.gapBand ?? tl?.continuityBand ?? '');
+  if (
+    (gap === 'broken' || gap === 'discontinuous') &&
+    (state.replaySpilloverSummary != null || state.cyclePhase === 'contraction')
+  ) {
+    gates.push({
+      id: 'history_timeline_broken',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Broken history timeline continuity reinforces contractionary macro read.'
+    });
+  }
+  if (state.transmissionCoupling?.band === 'tight' || state.transmissionCoupling?.band === 'firm') {
+    gates.push({
+      id: 'transmission_coupling_firm',
+      triggered: true,
+      severity: 'info',
+      summary: 'Firm cycle/investment transmission coupling — shocks may propagate quickly across layers.'
+    });
+  }
   return gates;
 }
