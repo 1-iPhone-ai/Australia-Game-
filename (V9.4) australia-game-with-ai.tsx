@@ -136399,6 +136399,127 @@ export function runV95ResourceConservationFuzz(seed = 95): V95FuzzResult {
   return out;
 }
 
+
+/** Operation 111 / Agent 99 — extended headless long-match simulation checks (determinism, bounds, perf). */
+export function runO111LongRunSimulationSelfTests(opts: { stressTurns?: number; seeds?: number[]; maxTurnMsBudget?: number } = {}): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (err) {
+      results.push({ id, name, passed: false, detail: err instanceof Error ? err.message : String(err) });
+    }
+  };
+  const turns = Math.max(12, Math.floor(opts.stressTurns ?? 60));
+  const seeds = (opts.seeds?.length ? opts.seeds : [9501, 4242, 1337]).map(s => Math.floor(s));
+  const sampleEvery = Math.max(5, Math.floor(turns / 6));
+  const maxTurnMsBudget = opts.maxTurnMsBudget ?? 30_000;
+
+  const runStress = (seed: number) =>
+    v95WithIsolatedGlobals(() => runV95LongMatchStress({ seed, turns, sampleEvery }));
+
+  check('lr_turn_count', `Long match completes ${turns} turns`, () => {
+    const s = runStress(seeds[0]);
+    return s.turns === turns || `got ${s.turns}/${turns} errors=${s.errors.join('|')}`;
+  });
+
+  check('lr_hash_nonempty', 'Long match produces a canonical state hash', () => {
+    const s = runStress(seeds[0]);
+    return s.finalHash.length >= 8 || `hash="${s.finalHash}"`;
+  });
+
+  check('lr_invariants_clean', 'Long match has no errors or invariant violations', () => {
+    const s = runStress(seeds[0]);
+    return (s.errors.length === 0 && s.violations.length === 0) || `${s.errors.join('|')} ${s.violations.slice(0, 3).map(v => v.message).join('|')}`;
+  });
+
+  check('lr_money_conservation', 'Failed bot actions never change cash (long match)', () => {
+    const s = runStress(seeds[0]);
+    return s.moneyConservationBreaks === 0 || `${s.moneyConservationBreaks} conservation breaks`;
+  });
+
+  check('lr_determinism_primary', `AI vs AI ${turns}-turn match is deterministic (seed ${seeds[0]})`, () => {
+    const a = runStress(seeds[0]);
+    const b = runStress(seeds[0]);
+    return a.finalHash !== '' && a.finalHash === b.finalHash || `${a.finalHash} vs ${b.finalHash}`;
+  });
+
+  check('lr_determinism_multi_seed', 'Deterministic replay holds for multiple seeds', () => {
+    for (const seed of seeds) {
+      const a = runStress(seed);
+      const b = runStress(seed);
+      if (a.finalHash === '' || a.finalHash !== b.finalHash) return `seed ${seed}: ${a.finalHash} vs ${b.finalHash}`;
+      if (a.errors.length || a.violations.length) return `seed ${seed}: ${a.errors[0] || a.violations[0]?.message}`;
+    }
+    return true;
+  });
+
+  check('lr_growth_bounded', 'Canonical state size growth does not accelerate over the match', () => {
+    const s = runStress(seeds[0]);
+    const z = s.sizes;
+    if (z.length < 3) return `only ${z.length} size samples`;
+    const mid = Math.floor(z.length / 2);
+    const early = (z[mid].bytes - z[0].bytes) / Math.max(1, z[mid].turn - z[0].turn);
+    const late = (z[z.length - 1].bytes - z[mid].bytes) / Math.max(1, z[z.length - 1].turn - z[mid].turn);
+    return late <= Math.max(early * 1.5, 400) || `early ${early.toFixed(0)} B/turn, late ${late.toFixed(0)} B/turn`;
+  });
+
+  check('lr_serialization_roundtrip', 'Mid-match state survives JSON round-trip with clean invariants', () => {
+    const s = runStress(seeds[0]);
+    if (!s.sizes.length) return 'no samples';
+    const midTurn = s.sizes[Math.floor(s.sizes.length / 2)]?.turn ?? turns;
+    let state: any;
+    v95WithIsolatedGlobals(() => {
+      setRngMasterSeed(seeds[0], true);
+      const rng = createSeededRng(seeds[0]);
+      const genome = createSeedGenome();
+      state = createTuningMatchState(seeds[0], false);
+      for (let turn = 1; turn <= midTurn; turn++) {
+        const actorId = turn % 2 === 1 ? 'player' : 'ai';
+        state.turnCounter = turn;
+        (state as any).turn = turn;
+        state.day = Math.floor((turn - 1) / 2) + 1;
+        if (state.gameState) {
+          (state.gameState as any).turnCounter = turn;
+          (state.gameState as any).currentActorId = actorId;
+          (state.gameState as any).day = state.day;
+        }
+        for (let step = 0; step < 3; step++) {
+          const action = chooseReferenceBotAction('classic', state, actorId, genome.weights, rng, turn);
+          if (!action || action.type === 'end_turn' || action.type === 'think') break;
+          const reduced = reduceGameAction(state, mapAiActionToGameAction(actorId, action, rng));
+          if (reduced?.nextState) state = reduced.nextState;
+        }
+      }
+    });
+    let parsed: any;
+    try { parsed = JSON.parse(JSON.stringify(state)); } catch (err) { return `serialize failed: ${err instanceof Error ? err.message : err}`; }
+    const v = validateCriticalGameInvariants({
+      player: parsed.player || parsed.actorsById?.player,
+      aiPlayer: parsed.aiPlayer || parsed.actorsById?.ai,
+      gameState: parsed.gameState,
+      gameSettings: parsed.gameSettings,
+      actorsById: parsed.actorsById
+    });
+    const blockers = v.filter(x => x.severity === 'BLOCKER' || x.severity === 'CRITICAL');
+    return blockers.length === 0 || blockers.slice(0, 3).map(x => x.message).join('; ');
+  });
+
+  check('lr_perf_turn_ceiling', `No single simulated turn exceeds ${maxTurnMsBudget}ms`, () => {
+    const s = runStress(seeds[0]);
+    return s.maxTurnMs <= maxTurnMsBudget || `max turn ${s.maxTurnMs}ms`;
+  });
+
+  check('lr_isolation_globals', 'Long-run harness does not mutate live RNG streams or id counters', () => {
+    const before = JSON.stringify([globalRngRegistry.exportStreamStates(), globalDeterministicCounters]);
+    runStress(seeds[0]);
+    return JSON.stringify([globalRngRegistry.exportStreamStates(), globalDeterministicCounters]) === before || 'globals changed';
+  });
+
+  return results;
+}
+
 // ---- AI turn watchdog decision (pure; the live effect uses exactly this) ------------------------------------
 export const V95_AI_TURN_WATCHDOG_MS = 15000;
 export function decideAiTurnWatchdog(input: { isThinking: boolean; hasPendingApprovals: boolean; msSinceLastAction: number; thresholdMs?: number }): 'idle' | 'healthy' | 'waiting_for_approval' | 'recover' {
@@ -136537,7 +136658,8 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
     ...runAiMemoryPhase1SelfTests().results, ...runAiMemoryPhase2SelfTests().results, ...runAiMemoryPhase3SelfTests().results,
     ...runAiMemoryPhase4SelfTests().results, ...runAiMemoryPhase5SelfTests().results, ...runAiMemoryPhase6SelfTests().results, ...runAiMemoryPhase61SelfTests().results
-  ] }
+  ] },
+  { id: 'longrun', label: 'Long-Run Simulation (O111 Agent 99)', tier: 'full', section: 'Determinism', severity: 'CRITICAL', run: () => runO111LongRunSimulationSelfTests() }
 ];
 
 /** Developer harnesses that stay out of the release gate. Quick mode also skips tier "full" by design. */
