@@ -897,6 +897,54 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
             "  createEmptyV1033ScresPersisted,\n  v1033ScresInputHash,\n  sanitizeV1033ScresPersisted,\n} from '../engine/supply-chain-resilience-orchestrator';",
             "  v1033ScresInputHash,\n} from '../engine/supply-chain-resilience-orchestrator';\nimport {\n  createEmptyV1033ScresPersisted,\n  sanitizeV1033ScresPersisted,\n} from '../persistence/migrations';",
         )
+    if "v1034-critical-infrastructure-resilience" in name.replace("\\", "/"):
+        for sec in ("20CA", "20CB", "20CD", "20BZ", "20BY", "20BX", "20BW", "20BV", "20BU", "20BT", "20BR", "20CC"):
+            src = src.replace(f"SECTION {sec}", "SECTION 20CE")
+    if "critical-infrastructure-resilience/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"function clampNum\(", "function v1034CiresClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1034CiresClampNum(", src)
+        src = re.sub(r"const REGIONS:", "const V1034_CIRES_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1034_CIRES_MIG_REGIONS", src)
+    if "critical-infrastructure-resilience-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1034CiresPersisted, sanitizeV1034CiresPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1034_CIRES_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1034_CIRES_ORCH_REGIONS.forEach", src)
+    if "critical-infrastructure-resilience-utils.ts" in name:
+        src = re.sub(
+            r"export function V1034_CIRES_segmentBufferGraphHash",
+            "export function V1034_CIRES_utilSegmentBufferGraphHash",
+            src,
+        )
+    if "v1034-critical-infrastructure-resilience/segment-buffer-stacks/graph-utils.ts" in name.replace("\\", "/"):
+        src = re.sub(
+            r"V1034_CIRES_segmentBufferGraphHash as dgovGraphHashCore",
+            "V1034_CIRES_utilSegmentBufferGraphHash as dgovGraphHashCore",
+            src,
+        )
+    if "compromise-scenarios/scenario-" in name.replace("\\", "/"):
+        src = re.sub(
+            r"\n    criticalInfrastructureResilienceBand: V1034_CIRES_COMPROMISE_SCENARIO_\d+_META\.criticalInfrastructureResilienceBand,",
+            "",
+            src,
+        )
+    if "run-v1034-cires-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1034CiresSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1034CiresSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1034CiresBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1034CiresBaseInput(", src)
+        src = src.replace(
+            "  runV1034CiresTurn,\n  createEmptyV1034CiresPersisted,\n  v1034CiresInputHash,\n  sanitizeV1034CiresPersisted,\n} from '../engine/critical-infrastructure-resilience-orchestrator';",
+            "  runV1034CiresTurn,\n  v1034CiresInputHash,\n} from '../engine/critical-infrastructure-resilience-orchestrator';\nimport {\n  createEmptyV1034CiresPersisted,\n  sanitizeV1034CiresPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1034CiresPersisted,\n  v1034CiresInputHash,\n  sanitizeV1034CiresPersisted,\n} from '../engine/critical-infrastructure-resilience-orchestrator';",
+            "  v1034CiresInputHash,\n} from '../engine/critical-infrastructure-resilience-orchestrator';\nimport {\n  createEmptyV1034CiresPersisted,\n  sanitizeV1034CiresPersisted,\n} from '../persistence/migrations';",
+        )
     return src
 
 
@@ -2176,6 +2224,115 @@ def supply_chain_resilience_paths() -> list[str]:
             and (
                 "/hub-zone-nodes/" not in str(p)
                 or re.match(r"hub-zone-\d+\.ts$", p.name)
+            )
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def critical_infrastructure_resilience_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1034-critical-infrastructure-resilience"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/segment-buffer-stacks/" in s and "graph-utils" in s:
+            return (2, s)
+        if "/generated/compromise-scenarios/" in s:
+            return (3, s)
+        if "/generated/segment-buffer-stacks/" in s:
+            return (4, s)
+        if "compromise-registry" in s or "segment-buffer-bundle" in s:
+            return (5, s)
+        if "/facility-zone-nodes/" in s:
+            return (6, s)
+        if "critical-infrastructure-resilience-utils" in s:
+            return (7, s)
+        if "/adapters/" in s:
+            return (8, s)
+        if "critical-infrastructure-resilience-orchestrator" in s:
+            return (9, s)
+        if "/self-tests/" in s:
+            return (10, s)
+        if "distribution-network" in s or "emergency-response" in s or "inland-zone" in s:
+            return (98, s)
+        if "littoral-zone" in s or "substation-zone" in s:
+            return (98, s)
+        if "outage-scenarios" in s or "grid-buffer" in s:
+            return (98, s)
+        if "failover-scenarios" in s or "backbone-buffer" in s:
+            return (98, s)
+        if "exchange-zone" in s or "hub-zone" in s:
+            return (98, s)
+        if "disruption-scenarios" in s or "corridor-buffer" in s:
+            return (98, s)
+        if "aquifer-reserve" in s or "basin-registry" in s:
+            return (98, s)
+        if "evacuation-capacity" in s or "hazard-registry" in s:
+            return (98, s)
+        if "surge-registry" in s or "adaptation-buffer" in s or "heatwave" in s:
+            return (98, s)
+        if "arid-buffer" in s:
+            return (98, s)
+        if "biodiversity-stewardship-20bu" in s:
+            return (98, s)
+        if "conservation-offset" in s or "recovery-registry" in s or "primary-care" in s:
+            return (98, s)
+        if "stress-registry" in s or "supply-pipeline" in s:
+            return (98, s)
+        if "drought-buffer-bundle" in s:
+            return (98, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
+            and not (p.parent.name == "generated" and p.name == "index.ts")
+            and "outage-scenarios" not in str(p)
+            and "grid-buffer-stacks" not in str(p)
+            and "outage-registry.ts" not in str(p)
+            and "grid-buffer-bundle.ts" not in str(p)
+            and "backbone-buffer-bundle.ts" not in str(p)
+            and "failover-scenarios" not in str(p)
+            and "backbone-buffer-stacks" not in str(p)
+            and "disruption-scenarios" not in str(p)
+            and "corridor-buffer-stacks" not in str(p)
+            and "corridor-buffer-bundle.ts" not in str(p)
+            and "substation-zone-nodes" not in str(p)
+            and "exchange-zone-nodes" not in str(p)
+            and "hub-zone-nodes" not in str(p)
+            and "aquifer-reserve" not in str(p)
+            and "basin-registry" not in str(p)
+            and "evacuation-capacity" not in str(p)
+            and "hazard-registry" not in str(p)
+            and "surge-registry" not in str(p)
+            and "adaptation-buffer" not in str(p)
+            and "heatwave-scenarios" not in str(p)
+            and "arid-buffer-stacks" not in str(p)
+            and "conservation-offset" not in str(p)
+            and "recovery-registry" not in str(p)
+            and "primary-care" not in str(p)
+            and "stress-registry" not in str(p)
+            and "supply-pipeline" not in str(p)
+            and "drought-buffer-bundle" not in str(p)
+            and "distribution-network" not in str(p)
+            and "emergency-response" not in str(p)
+            and "littoral-zone" not in str(p)
+            and "inland-zone" not in str(p)
+            and "substation-zone" not in str(p)
+            and "biodiversity-stewardship-20bu" not in str(p)
+            and (
+                "/facility-zone-nodes/" not in str(p)
+                or re.match(r"facility-zone-\d+\.ts$", p.name)
             )
         ),
         key=sort_key,

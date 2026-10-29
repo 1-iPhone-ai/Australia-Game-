@@ -36,6 +36,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     grid_resilience_paths,
     telecom_resilience_paths,
     supply_chain_resilience_paths,
+    critical_infrastructure_resilience_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -246,6 +247,15 @@ SCRES_SECTION = (
 )
 
 SCRES_MARKER = "export function runV1033ScresTurn"
+
+CIRES_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20CE: V10.34 CRITICAL INFRASTRUCTURE / CYBER-PHYSICAL NETWORK RESILIENCE — CYBER-PHYSICAL STRESS EXPOSURE, FACILITY ZONE NODES & SEGMENT BUFFERS (O6K-80)\n"
+    "// Renumbered from shard 20CD (canonical 20CD = supply chain resilience, push #32)\n"
+    "// ============================================================================\n"
+)
+
+CIRES_MARKER = "export function runV1034CiresTurn"
 
 TRADE_HELPERS = """
 export function buildV1014TradeDepthTurnInputFromGameState(gs: any, turn: number): V1014TradeDepthTurnInput {
@@ -3769,6 +3779,205 @@ def push_scres(text: str) -> str:
     return text
 
 
+CIRES_HELPERS = """
+function V1034_CIRES_readPersistedFromGameState(gs: any): V1034CiresPersisted | null {
+  const raw = (gs?.save?.meta?.v1034 as any)?.critical_infrastructure_resilience;
+  return raw ? sanitizeV1034CiresPersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1034_CIRES_applyToGameState(gs: any, out: V1034CiresTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1034 = { ...(meta.v1034 || {}) };
+  v1034.critical_infrastructure_resilience = out.persisted;
+  meta.v1034 = v1034;
+  save.meta = meta;
+  return { ...gs, save, v1034CriticalInfrastructureResilience: out.state };
+}
+
+export function buildV1034CiresTurnInputFromGameState(gs: any, turn: number): V1034CiresTurnInput {
+  const seed = typeof gs?.seed === 'number' ? gs.seed : 10340;
+  const inp = buildV1034CiresTurnInputFromGameStateStub(turn, seed);
+  const trade = gs?.v1014TradeDepth ?? null;
+  const energy = gs?.energyDepth ?? null;
+  const supply = gs?.v1014SupplyChain ?? null;
+  const workforce = gs?.v1014WorkforceMigration ?? gs?.workforceHumanCapital ?? null;
+  const pubsvc = gs?.v1014PublicServicesCrosswalk ?? null;
+  const clad = gs?.v1023ClimateAdaptation ?? null;
+  const dgov = gs?.v1024DigitalGovernance ?? null;
+  const rhs = gs?.v1026RegionalHealthSystems ?? null;
+  const scres = gs?.v1033SupplyChainResilience ?? null;
+  return {
+    ...inp,
+    supply20bb: {
+      ...inp.supply20bb,
+      turn,
+      bottleneckPressure: Number(supply?.bottleneckPressure ?? inp.supply20bb.bottleneckPressure),
+      segmentBufferIndex: Number(
+        supply?.segmentBufferIndex ?? supply?.corridorBufferIndex ?? supply?.backboneBufferIndex ?? inp.supply20bb.segmentBufferIndex,
+      ),
+      regionalStockDays: {
+        ...inp.supply20bb.regionalStockDays,
+        ...(supply?.regionalStockDays || {}),
+      },
+    },
+    trade20ba: {
+      ...inp.trade20ba,
+      turn,
+      sanctionsPressure: Number(trade?.sanctionsPressure ?? inp.trade20ba.sanctionsPressure),
+      exportLaneStability: Number(trade?.exportLaneStability ?? inp.trade20ba.exportLaneStability),
+      importDependencyRatio: Number(trade?.importDependencyRatio ?? inp.trade20ba.importDependencyRatio),
+    },
+    energy20bc: {
+      ...inp.energy20bc,
+      turn,
+      gridStability: Number(energy?.gridStability ?? inp.energy20bc.gridStability),
+      reserveMarginPct: Number(energy?.reserveMarginPct ?? inp.energy20bc.reserveMarginPct),
+      routingCascadeRisk: Number(
+        energy?.routingCascadeRisk ?? energy?.outageCascadeRisk ?? energy?.cascadeRiskStress ?? inp.energy20bc.routingCascadeRisk,
+      ),
+    },
+    workforce20bf: {
+      ...inp.workforce20bf,
+      turn,
+      specialistGap: Number(workforce?.specialistGap ?? inp.workforce20bf.specialistGap),
+      nationalReadiness: Number(workforce?.nationalReadiness ?? inp.workforce20bf.nationalReadiness),
+      mismatchIndex: Number(workforce?.mismatchIndex ?? inp.workforce20bf.mismatchIndex),
+    },
+    publicServices20az: {
+      ...inp.publicServices20az,
+      turn,
+      clinicCapacityScore: Number(pubsvc?.clinicCapacityScore ?? inp.publicServices20az.clinicCapacityScore),
+      digitalServiceCoverage: Number(
+        pubsvc?.digitalServiceCoverage ?? inp.publicServices20az.digitalServiceCoverage,
+      ),
+      serviceDeliveryReadiness: Number(
+        pubsvc?.serviceDeliveryReadiness ?? inp.publicServices20az.serviceDeliveryReadiness,
+      ),
+    },
+    climateAdaptation20br: {
+      ...inp.climateAdaptation20br,
+      turn,
+      heatStressPressure: Number(clad?.heatStressPressure ?? inp.climateAdaptation20br.heatStressPressure),
+      grantStackLoad: Number(clad?.grantStackLoad ?? inp.climateAdaptation20br.grantStackLoad),
+      resilienceDriftTurns: Number(clad?.resilienceDriftTurns ?? inp.climateAdaptation20br.resilienceDriftTurns),
+    },
+    digitalGovernance20bt: {
+      ...inp.digitalGovernance20bt,
+      turn,
+      modelGovernancePressure: Number(dgov?.modelGovernancePressure ?? inp.digitalGovernance20bt.modelGovernancePressure),
+      grantStackLoad: Number(dgov?.grantStackLoad ?? inp.digitalGovernance20bt.grantStackLoad),
+      alignmentDriftTurns: Number(dgov?.alignmentDriftTurns ?? inp.digitalGovernance20bt.alignmentDriftTurns),
+    },
+    regionalHealthSystems20bv: {
+      ...inp.regionalHealthSystems20bv,
+      turn,
+      hospitalSurgePressure: Number(
+        rhs?.hospitalSurgePressure ?? inp.regionalHealthSystems20bv.hospitalSurgePressure,
+      ),
+      grantStackLoad: Number(rhs?.grantStackLoad ?? inp.regionalHealthSystems20bv.grantStackLoad),
+      bedCapacityDriftTurns: Number(
+        rhs?.bedCapacityDriftTurns ?? inp.regionalHealthSystems20bv.bedCapacityDriftTurns,
+      ),
+    },
+    criticalInfrastructureResiliencePolicyFocus: Number(
+      scres?.aggregateSupplyChainResilienceScore ?? inp.criticalInfrastructureResiliencePolicyFocus,
+    ),
+    persisted: null,
+  };
+}
+"""
+
+CIRES_DAY_HOOK = """
+      if (typeof runV1034CiresTurn === 'function') {
+        try {
+          const ciresIn = buildV1034CiresTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          ciresIn.persisted = V1034_CIRES_readPersistedFromGameState(mergedGameState);
+          const ciresOut = runV1034CiresTurn(ciresIn);
+          mergedGameState = V1034_CIRES_applyToGameState(mergedGameState, ciresOut);
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_cires_day_hook(text: str) -> str:
+    marker = "runV1034CiresTurn(ciresIn)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:78000] if "executeAgent02SingleDayBoundary" in text else ""
+    if marker in day_slice:
+        print("skip cires day hook (present)")
+        return text
+    scres_tail = """      if (typeof runV1033ScresTurn === 'function') {
+        try {
+          const scresIn = buildV1033ScresTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          scresIn.persisted = V1033_SCRES_readPersistedFromGameState(mergedGameState);
+          const scresOut = runV1033ScresTurn(scresIn);
+          mergedGameState = V1033_SCRES_applyToGameState(mergedGameState, scresOut);
+        } catch (_) { /* isolated */ }
+      }"""
+    if scres_tail not in text:
+        raise SystemExit("scres day hook anchor missing for cires hook")
+    return text.replace(scres_tail, scres_tail + CIRES_DAY_HOOK, 1)
+
+
+def wire_cires_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState && typeof sanitizeV1033ScresPersisted === 'function') {"
+    patch = (
+        "  if (migrated.gameState && typeof sanitizeV1034CiresPersisted === 'function') {\n"
+        "    const ciresRaw = (migrated.gameState as any)?.save?.meta?.v1034?.critical_infrastructure_resilience;\n"
+        "    if (ciresRaw) {\n"
+        "      const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "      const meta = { ...(save.meta || {}) };\n"
+        "      const v1034 = { ...(meta.v1034 || {}) };\n"
+        "      v1034.critical_infrastructure_resilience = sanitizeV1034CiresPersisted(ciresRaw, Number((migrated.gameState as any).turnCounter || 0));\n"
+        "      meta.v1034 = v1034;\n"
+        "      save.meta = meta;\n"
+        "      migrated.gameState = { ...(migrated.gameState as any), save };\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1034.critical_infrastructure_resilience = sanitizeV1034CiresPersisted" in text:
+        print("skip cires §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("scres §6 anchor missing for cires migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
+def push_cires(text: str) -> str:
+    block = CIRES_SECTION + bundle_local_files(critical_infrastructure_resilience_paths()) + CIRES_HELPERS
+    text = insert_before(text, block, CIRES_MARKER, "T6 push #33 v1034-critical-infrastructure-resilience (O6K-80)")
+    text = wire_cires_day_hook(text)
+    text = wire_cires_migration(text)
+    lab = """  { id: 'v1034_critical_infrastructure_resilience', label: 'V10.34 Critical infrastructure resilience (20CE compromise & segment buffers)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1034CiresSelfTestsForLab() },
+"""
+    scres_lab = (
+        "  { id: 'v1033_supply_chain_resilience', label: 'V10.33 Supply chain resilience (20CD disruption & corridor buffers)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1033ScresSelfTestsForLab() },"
+    )
+    if "{ id: 'v1034_critical_infrastructure_resilience'" not in text:
+        if scres_lab in text:
+            text = text.replace(scres_lab, scres_lab + "\n" + lab.strip(), 1)
+            print("registered LAB v1034_critical_infrastructure_resilience")
+        else:
+            text = wire_lab(text, lab, "v1034_critical_infrastructure_resilience")
+            print("registered LAB v1034_critical_infrastructure_resilience (fallback)")
+    if "v1034CiresEnabled" not in text:
+        if "v1033ScresEnabled: true," in text:
+            text = text.replace(
+                "v1033ScresEnabled: true,",
+                "v1033ScresEnabled: true,\n  v1034CiresEnabled: true,",
+                1,
+            )
+            print("registered settings v1034CiresEnabled")
+        elif "t6Mega6DepthEnabled: true," in text:
+            text = text.replace(
+                "t6Mega6DepthEnabled: true,",
+                "t6Mega6DepthEnabled: true,\n  v1034CiresEnabled: true,",
+                1,
+            )
+            print("registered settings v1034CiresEnabled (fallback)")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -3783,7 +3992,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18, 19, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 32])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18, 19, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 32, 33])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -3838,6 +4047,8 @@ def main() -> None:
         text = push_tres(text)
     elif args.push == 32:
         text = push_scres(text)
+    elif args.push == 33:
+        text = push_cires(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")
