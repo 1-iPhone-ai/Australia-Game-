@@ -18,12 +18,12 @@ describe('Tranche 10 closure-lattice catalog', () => {
   it('adds 320 closure-lattice chains', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE10_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche10Chains, 320);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 20340);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 20560);
   });
 
   it('uses op10m_t10 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 20340);
+    assert.equal(ids.size, 20560);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE10) {
       assert.match(c.chainId, /^op10m_t10_/);
     }
