@@ -1,0 +1,31 @@
+import type { V1017IclogCorridorEdge } from '../../types/core.ts';
+
+/** Corridor graph shard 063 (freight route cross-system coupling). */
+export const V1017_ICLOG_CORRIDOR_SHARD_063: readonly V1017IclogCorridorEdge[] = [
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.351, lagTurns: 10, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.358, lagTurns: 11, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.365, lagTurns: 12, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.372, lagTurns: 10, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.379, lagTurns: 11, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.386, lagTurns: 12, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.393, lagTurns: 10, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.4, lagTurns: 11, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.407, lagTurns: 12, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.414, lagTurns: 10, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.421, lagTurns: 11, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.428, lagTurns: 12, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.33, lagTurns: 10, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.337, lagTurns: 11, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.344, lagTurns: 12, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.351, lagTurns: 10, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.358, lagTurns: 11, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.365, lagTurns: 12, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.372, lagTurns: 10, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.379, lagTurns: 11, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.386, lagTurns: 12, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.393, lagTurns: 10, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.4, lagTurns: 11, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.407, lagTurns: 12, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.414, lagTurns: 10, nodeId: 'hub_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.421, lagTurns: 11, nodeId: 'hub_15' },
+];

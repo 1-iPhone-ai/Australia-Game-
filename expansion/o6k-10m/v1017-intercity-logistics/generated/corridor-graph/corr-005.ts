@@ -1,0 +1,31 @@
+import type { V1017IclogCorridorEdge } from '../../types/core.ts';
+
+/** Corridor graph shard 005 (freight route cross-system coupling). */
+export const V1017_ICLOG_CORRIDOR_SHARD_005: readonly V1017IclogCorridorEdge[] = [
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.365, lagTurns: 8, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.372, lagTurns: 9, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.379, lagTurns: 10, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.386, lagTurns: 8, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.393, lagTurns: 9, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.295, lagTurns: 10, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.302, lagTurns: 8, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.309, lagTurns: 9, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.316, lagTurns: 10, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.323, lagTurns: 8, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.33, lagTurns: 9, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.337, lagTurns: 10, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.344, lagTurns: 8, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.351, lagTurns: 9, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.358, lagTurns: 10, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.365, lagTurns: 8, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.372, lagTurns: 9, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.379, lagTurns: 10, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.386, lagTurns: 8, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.393, lagTurns: 9, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.295, lagTurns: 10, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.302, lagTurns: 8, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.309, lagTurns: 9, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.316, lagTurns: 10, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.323, lagTurns: 8, nodeId: 'hub_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.33, lagTurns: 9, nodeId: 'hub_05' },
+];

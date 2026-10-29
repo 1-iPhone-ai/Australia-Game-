@@ -1,0 +1,31 @@
+import type { V1017IclogCorridorEdge } from '../../types/core.ts';
+
+/** Corridor graph shard 062 (freight route cross-system coupling). */
+export const V1017_ICLOG_CORRIDOR_SHARD_062: readonly V1017IclogCorridorEdge[] = [
+  { fromSystem: 'water', toSystem: 'food', weight: 0.344, lagTurns: 9, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.351, lagTurns: 10, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.358, lagTurns: 11, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.365, lagTurns: 9, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.372, lagTurns: 10, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.379, lagTurns: 11, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.386, lagTurns: 9, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.393, lagTurns: 10, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.295, lagTurns: 11, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.302, lagTurns: 9, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.309, lagTurns: 10, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.316, lagTurns: 11, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.323, lagTurns: 9, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.33, lagTurns: 10, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.337, lagTurns: 11, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.344, lagTurns: 9, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.351, lagTurns: 10, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.358, lagTurns: 11, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.365, lagTurns: 9, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.372, lagTurns: 10, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.379, lagTurns: 11, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.386, lagTurns: 9, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.393, lagTurns: 10, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.295, lagTurns: 11, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.302, lagTurns: 9, nodeId: 'hub_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.309, lagTurns: 10, nodeId: 'hub_14' },
+];
