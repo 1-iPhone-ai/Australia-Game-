@@ -702,6 +702,67 @@ tests.push(
 );
 
 tests.push(
+  test('save_v11_migrates_to_v12_with_portfolio_balance_fields', () => {
+    const v11 = {
+      schemaVersion: 'op10m-agent03-v11',
+      turn: 20,
+      revision: 2,
+      unlockedNodes: [],
+      institutionUpgrades: [],
+      unlockSeq: 0,
+      branchEmphasis: [],
+      emphasisRevision: 1,
+      migrationLog: [{ fromVersion: 'op10m-agent03-v10', toVersion: 'op10m-agent03-v11', turn: 19 }],
+      saveKind: 'manual',
+      updatedAtTurn: 20,
+      sessionId: 'v11',
+      persistRevision: 9,
+      unlockEventLog: [],
+      lastReconciledAtTurn: 20,
+      emphasisChangeLog: [],
+      institutionTierSnapshot: { capturedAtTurn: 20, tiers: {}, digest: 'abc', nationalIntegrationCount: 0, strategicOrAboveCount: 0 },
+      readinessMilestoneLog: [],
+      readinessBranchSnapshot: null,
+      integrationRiskLog: [],
+      integrationRiskSnapshot: null,
+      scaleWaveSnapshot: null,
+      synergyThresholdLog: [],
+      synergySnapshot: null,
+      commercializationMilestoneLog: [],
+      commercializationSnapshot: null,
+      diffusionIntegrationLog: [],
+      diffusionIntegrationSnapshot: null,
+      coreFingerprint: 'legacy',
+    };
+    const core = migrateResearchProgressSave(v11);
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v11'));
+    assert(Array.isArray(core?.portfolioBalanceLog));
+    assert(core?.portfolioBalanceSnapshot === null);
+  })
+);
+
+tests.push(
+  test('portfolio_balance_log_and_snapshot_on_compute', () => {
+    const inputs = baseInputs({ turn: 28 });
+    const state = computeResearchProgress(inputs, null);
+    assert(typeof state.portfolioBalanceSnapshot?.digest === 'string');
+    assert(Array.isArray(state.portfolioBalanceLog));
+  })
+);
+
+tests.push(
+  test('strategic_alignment_outlook_derived', () => {
+    const inputs = baseInputs({ turn: 24 });
+    const state = computeResearchProgress(inputs, null);
+    const outlook = state.strategicAlignmentOutlook;
+    assert(outlook != null);
+    assert(typeof outlook?.nationalAlignmentScore === 'number');
+    assert(detectForeignSaveFields({ strategicAlignmentOutlook: outlook }).includes('strategicAlignmentOutlook'));
+  })
+);
+
+tests.push(
   test('save_v10_migrates_to_v11_with_diffusion_integration_fields', () => {
     const v10 = {
       schemaVersion: 'op10m-agent03-v10',

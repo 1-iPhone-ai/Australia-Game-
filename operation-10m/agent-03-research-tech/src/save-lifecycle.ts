@@ -15,6 +15,7 @@ import type {
   ResearchSynergyThresholdEvent,
   ResearchCommercializationMilestoneEvent,
   ResearchDiffusionIntegrationMilestoneEvent,
+  ResearchPortfolioBalanceBandEvent,
 } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { RESEARCH_UNLOCK_EVENT_LOG_CAP } from './unlock-event-log.ts';
@@ -26,11 +27,13 @@ import { RESEARCH_INTEGRATION_RISK_LOG_CAP } from './integration-risk-log.ts';
 import { RESEARCH_SYNERGY_THRESHOLD_LOG_CAP } from './synergy-threshold-log.ts';
 import { RESEARCH_COMMERCIALIZATION_MILESTONE_LOG_CAP } from './commercialization-milestone-log.ts';
 import { RESEARCH_DIFFUSION_INTEGRATION_LOG_CAP } from './diffusion-integration-log.ts';
+import { RESEARCH_PORTFOLIO_BALANCE_LOG_CAP } from './portfolio-balance-log.ts';
 import { mergeIntegrationRiskSnapshots } from './integration-risk-snapshot.ts';
 import { mergeScaleWaveSnapshots } from './scale-wave-snapshot.ts';
 import { mergeSynergySnapshots } from './synergy-snapshot.ts';
 import { mergeCommercializationSnapshots } from './commercialization-snapshot.ts';
 import { mergeDiffusionIntegrationSnapshots } from './diffusion-integration-snapshot.ts';
+import { mergePortfolioBalanceSnapshots } from './portfolio-balance-snapshot.ts';
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
@@ -128,6 +131,18 @@ function mergeDiffusionIntegrationLogs(
     byKey.set(key, ev);
   }
   return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_DIFFUSION_INTEGRATION_LOG_CAP);
+}
+
+function mergePortfolioBalanceLogs(
+  local: ResearchPortfolioBalanceBandEvent[] | undefined,
+  remote: ResearchPortfolioBalanceBandEvent[] | undefined
+): ResearchPortfolioBalanceBandEvent[] {
+  const byKey = new Map<string, ResearchPortfolioBalanceBandEvent>();
+  for (const ev of [...(local ?? []), ...(remote ?? [])]) {
+    const key = `${ev.seq}:${ev.band}:${ev.phase}`;
+    byKey.set(key, ev);
+  }
+  return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_PORTFOLIO_BALANCE_LOG_CAP);
 }
 
 function stableCoreSnapshot(core: ResearchProgressPersistedCore): Record<string, unknown> {
@@ -250,6 +265,12 @@ export function mergeResearchPersistedCores(
         local.diffusionIntegrationSnapshot ?? undefined,
         remote.diffusionIntegrationSnapshot ?? undefined
       ) ?? null,
+    portfolioBalanceLog: mergePortfolioBalanceLogs(local.portfolioBalanceLog, remote.portfolioBalanceLog),
+    portfolioBalanceSnapshot:
+      mergePortfolioBalanceSnapshots(
+        local.portfolioBalanceSnapshot ?? undefined,
+        remote.portfolioBalanceSnapshot ?? undefined
+      ) ?? null,
     lastReconciledAtTurn: Math.max(local.lastReconciledAtTurn ?? 0, remote.lastReconciledAtTurn ?? 0),
   });
 }
@@ -288,6 +309,8 @@ export function reconcileResearchProgressOnLoad(
         commercializationSnapshot: persist.commercializationSnapshot,
         diffusionIntegrationLog: persist.diffusionIntegrationLog,
         diffusionIntegrationSnapshot: persist.diffusionIntegrationSnapshot,
+        portfolioBalanceLog: persist.portfolioBalanceLog,
+        portfolioBalanceSnapshot: persist.portfolioBalanceSnapshot,
       },
       persist,
     };
@@ -318,6 +341,8 @@ export function reconcileResearchProgressOnLoad(
     commercializationSnapshot: mergedCore.commercializationSnapshot,
     diffusionIntegrationLog: mergedCore.diffusionIntegrationLog,
     diffusionIntegrationSnapshot: mergedCore.diffusionIntegrationSnapshot,
+    portfolioBalanceLog: mergedCore.portfolioBalanceLog,
+    portfolioBalanceSnapshot: mergedCore.portfolioBalanceSnapshot,
     lastReconciledAtTurn: ctx.turn,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
   };
@@ -349,6 +374,8 @@ export function reconcileResearchProgressOnLoad(
       commercializationSnapshot: persist.commercializationSnapshot,
       diffusionIntegrationLog: persist.diffusionIntegrationLog,
       diffusionIntegrationSnapshot: persist.diffusionIntegrationSnapshot,
+      portfolioBalanceLog: persist.portfolioBalanceLog,
+      portfolioBalanceSnapshot: persist.portfolioBalanceSnapshot,
     },
     persist,
   };

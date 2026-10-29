@@ -1,7 +1,7 @@
 # Agent 03 — Integration Contract (Research / Technology / Progression)
 
 **Module root:** `operation-10m/agent-03-research-tech/`  
-**Schema version:** `op10m-agent03-v11` (diffusion integration log + snapshot persisted; national coherence outlook derived, v10 migration)  
+**Schema version:** `op10m-agent03-v12` (portfolio balance log + snapshot persisted; strategic alignment outlook derived, v11 migration)  
 **Owner:** Agent 03 (content + pure engine). **Assembly:** Agent 25 only.
 
 ## Purpose
@@ -35,9 +35,9 @@ gameState.researchProgress: ResearchProgressPersistedCore | null;
 
 Use `prepareResearchProgressForSave(state)` before write; on load `applyResearchProgressSavePipeline(inputs, raw)` or `computeResearchProgressFromSave`.
 
-**v11 persisted core** adds bounded `diffusionIntegrationLog` and `diffusionIntegrationSnapshot` on top of v10 (`commercializationMilestoneLog`, `commercializationSnapshot`, v9 synergy digest, prior waves). Derived analytics including `nationalCoherenceOutlook` recomputed each turn.
+**v12 persisted core** adds bounded `portfolioBalanceLog` and `portfolioBalanceSnapshot` on top of v11 (`diffusionIntegrationLog`, `diffusionIntegrationSnapshot`, prior waves). Derived analytics including `strategicAlignmentOutlook` recomputed each turn.
 
-Legacy `op10m-agent03-v10`, `op10m-agent03-v9`, `op10m-agent03-v8`, `op10m-agent03-v7`, `op10m-agent03-v6`, `op10m-agent03-v5`, `op10m-agent03-v4`, `op10m-agent03-v3`, `op10m-agent03-v2`, and `op10m-agent03-v1` migrate via `migrateResearchProgressSave()`.
+Legacy `op10m-agent03-v11`, `op10m-agent03-v10`, `op10m-agent03-v9`, `op10m-agent03-v8`, `op10m-agent03-v7`, `op10m-agent03-v6`, `op10m-agent03-v5`, `op10m-agent03-v4`, `op10m-agent03-v3`, `op10m-agent03-v2`, and `op10m-agent03-v1` migrate via `migrateResearchProgressSave()`.
 
 ### Input wiring
 

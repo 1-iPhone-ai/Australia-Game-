@@ -22,6 +22,7 @@ import { computeResearchAdoptionHorizonOutlook } from './adoption-horizon-outloo
 import { computeResearchPortfolioStabilizationOutlook } from './portfolio-stabilization-outlook.ts';
 import { computeResearchExportContinuityOutlook } from './export-continuity-outlook.ts';
 import { computeResearchNationalCoherenceOutlook } from './national-coherence-outlook.ts';
+import { computeResearchStrategicAlignmentOutlook } from './strategic-alignment-outlook.ts';
 import { branchNodeTopologicalOrder, evaluateNodePrerequisites } from './prerequisites.ts';
 import { resolveActiveStrategyHooks, STRATEGY_HOOK_BY_ID } from './strategy-hooks.ts';
 import {
@@ -295,6 +296,14 @@ export function computeResearchProgress(
     diffusionIntegrationSnapshot: coreBase.diffusionIntegrationSnapshot ?? null,
   });
 
+  const strategicAlignmentOutlook = computeResearchStrategicAlignmentOutlook(inputs, {
+    portfolioBalance,
+    nationalCoherenceOutlook,
+    synergyOutlook,
+    portfolioBalanceSnapshot: coreBase.portfolioBalanceSnapshot ?? null,
+    branchEmphasis: coreBase.branchEmphasis,
+  });
+
   const computed: ResearchProgressState = {
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: coreBase.revision,
@@ -317,6 +326,7 @@ export function computeResearchProgress(
     portfolioStabilizationOutlook,
     exportContinuityOutlook,
     nationalCoherenceOutlook,
+    strategicAlignmentOutlook,
     unlockSeq: coreBase.unlockSeq,
     branchEmphasis: coreBase.branchEmphasis,
   };

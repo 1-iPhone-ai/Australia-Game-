@@ -34,4 +34,7 @@ export * from './export-continuity-outlook.ts';
 export * from './diffusion-integration-log.ts';
 export * from './diffusion-integration-snapshot.ts';
 export * from './national-coherence-outlook.ts';
+export * from './portfolio-balance-log.ts';
+export * from './portfolio-balance-snapshot.ts';
+export * from './strategic-alignment-outlook.ts';
 export * from './compute.ts';

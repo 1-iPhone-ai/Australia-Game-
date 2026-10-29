@@ -162,12 +162,13 @@ export interface ResearchBranchEmphasisState {
   setTurn: number;
 }
 
-export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v11' as const;
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v12' as const;
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
 export type ResearchProgressSchemaVersion =
   | typeof RESEARCH_PROGRESS_SCHEMA_VERSION
+  | 'op10m-agent03-v11'
   | 'op10m-agent03-v10'
   | 'op10m-agent03-v9'
   | 'op10m-agent03-v8'
@@ -455,6 +456,43 @@ export interface ResearchNationalCoherenceOutlook {
   links: ResearchNationalCoherenceLink[];
 }
 
+export type ResearchPortfolioBalanceBand = 40 | 55 | 70 | 85;
+
+export interface ResearchPortfolioBalanceBandEvent {
+  seq: number;
+  turn: number;
+  band: ResearchPortfolioBalanceBand;
+  nationalBalanceScore: number;
+  criticalBranchCount: number;
+  phase: 'escalation' | 'de-escalation';
+}
+
+export interface ResearchPortfolioBalanceSnapshot {
+  capturedAtTurn: number;
+  nationalBalanceScore: number;
+  criticalBranchCount: number;
+  watchBranchCount: number;
+  peakBand: ResearchPortfolioBalanceBand | 0;
+  digest: string;
+}
+
+export interface ResearchStrategicAlignmentLink {
+  branchId: ResearchBranchId;
+  emphasis: ResearchProgramEmphasis;
+  driver: 'critical_gap' | 'emphasis_drift';
+}
+
+export interface ResearchStrategicAlignmentOutlook {
+  active: boolean;
+  baseTurn: number;
+  horizonTurns: number;
+  nationalAlignmentScore: number;
+  projectedAlignmentScore: number;
+  misalignedBranchCount: number;
+  balanceMomentum: number;
+  links: ResearchStrategicAlignmentLink[];
+}
+
 export interface ResearchProgressState {
   schemaVersion: ResearchProgressSchemaVersion;
   revision: number;
@@ -477,6 +515,7 @@ export interface ResearchProgressState {
   portfolioStabilizationOutlook?: ResearchPortfolioStabilizationOutlook | null;
   exportContinuityOutlook?: ResearchExportContinuityOutlook | null;
   nationalCoherenceOutlook?: ResearchNationalCoherenceOutlook | null;
+  strategicAlignmentOutlook?: ResearchStrategicAlignmentOutlook | null;
   unlockSeq: number;
   branchEmphasis?: ResearchBranchEmphasisState[];
   emphasisRevision?: number;
@@ -500,6 +539,8 @@ export interface ResearchProgressState {
   commercializationSnapshot?: ResearchCommercializationSnapshot | null;
   diffusionIntegrationLog?: ResearchDiffusionIntegrationMilestoneEvent[];
   diffusionIntegrationSnapshot?: ResearchDiffusionIntegrationSnapshot | null;
+  portfolioBalanceLog?: ResearchPortfolioBalanceBandEvent[];
+  portfolioBalanceSnapshot?: ResearchPortfolioBalanceSnapshot | null;
 }
 
 export interface StrategyHookDefinition {
