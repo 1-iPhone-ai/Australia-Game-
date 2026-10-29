@@ -84,11 +84,13 @@ import type { CommandCenterInflationAlertPressureLatchBand } from '../inflation/
 import type { TransportFreightInflationGridlockSurgeBand } from '../inflation/transport-freight-inflation-gridlock-surge.js';
 import type { EventsNarrativeInflationShockLatchBand } from '../inflation/events-narrative-inflation-shock-latch.js';
 import type { ModesSandboxInflationPressureSurgeBand } from '../inflation/modes-sandbox-inflation-pressure-surge.js';
+import type { FiscalConsolidatedInflationPressureLatchBand } from '../inflation/fiscal-consolidated-inflation-pressure-latch.js';
+import type { HouseholdWageInflationStressSurgeBand } from '../inflation/household-wage-inflation-stress-surge.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r45';
+  schemaVersion: '10.14.agent10.r46';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -174,6 +176,8 @@ export interface Agent21InflationForecastBundle {
   terminalTransportFreightInflationGridlockSurge: TransportFreightInflationGridlockSurgeBand;
   terminalEventsNarrativeInflationShockLatch: EventsNarrativeInflationShockLatchBand;
   terminalModesSandboxInflationPressureSurge: ModesSandboxInflationPressureSurgeBand;
+  terminalFiscalConsolidatedInflationPressureLatch: FiscalConsolidatedInflationPressureLatchBand;
+  terminalHouseholdWageInflationStressSurge: HouseholdWageInflationStressSurgeBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -202,7 +206,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r45',
+    schemaVersion: '10.14.agent10.r46',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -290,6 +294,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalTransportFreightInflationGridlockSurge: lastPoint?.transportFreightInflationGridlockSurgeBand ?? 'clear',
     terminalEventsNarrativeInflationShockLatch: lastPoint?.eventsNarrativeInflationShockLatchBand ?? 'muted',
     terminalModesSandboxInflationPressureSurge: lastPoint?.modesSandboxInflationPressureSurgeBand ?? 'routine',
+    terminalFiscalConsolidatedInflationPressureLatch: lastPoint?.fiscalConsolidatedInflationPressureLatchBand ?? 'subdued',
+    terminalHouseholdWageInflationStressSurge: lastPoint?.householdWageInflationStressSurgeBand ?? 'contained',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

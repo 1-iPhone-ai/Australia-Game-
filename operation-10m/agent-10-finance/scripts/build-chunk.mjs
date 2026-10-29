@@ -117,6 +117,8 @@ const FILES = [
   'inflation/transport-freight-inflation-gridlock-surge.ts',
   'inflation/events-narrative-inflation-shock-latch.ts',
   'inflation/modes-sandbox-inflation-pressure-surge.ts',
+  'inflation/fiscal-consolidated-inflation-pressure-latch.ts',
+  'inflation/household-wage-inflation-stress-surge.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
@@ -196,6 +198,7 @@ const FILES = [
   'react/UiDashboardWaveInflationPanel.tsx',
   'react/CommandTransportWaveInflationPanel.tsx',
   'react/EventsModesWaveInflationPanel.tsx',
+  'react/FiscalHouseholdWaveInflationPanel.tsx',
 ];
 
 function stripModulePreamble(source) {

@@ -328,6 +328,14 @@ import {
   assessModesSandboxInflationPressureSurge,
   type ModesSandboxInflationPressureSurgeBand,
 } from '../inflation/modes-sandbox-inflation-pressure-surge.js';
+import {
+  assessFiscalConsolidatedInflationPressureLatch,
+  type FiscalConsolidatedInflationPressureLatchBand,
+} from '../inflation/fiscal-consolidated-inflation-pressure-latch.js';
+import {
+  assessHouseholdWageInflationStressSurge,
+  type HouseholdWageInflationStressSurgeBand,
+} from '../inflation/household-wage-inflation-stress-surge.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -418,6 +426,8 @@ export interface InflationForecastPoint {
   transportFreightInflationGridlockSurgeBand: TransportFreightInflationGridlockSurgeBand;
   eventsNarrativeInflationShockLatchBand: EventsNarrativeInflationShockLatchBand;
   modesSandboxInflationPressureSurgeBand: ModesSandboxInflationPressureSurgeBand;
+  fiscalConsolidatedInflationPressureLatchBand: FiscalConsolidatedInflationPressureLatchBand;
+  householdWageInflationStressSurgeBand: HouseholdWageInflationStressSurgeBand;
 }
 
 export interface InflationForecastPath {
@@ -1228,6 +1238,26 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const fiscalConsolidatedPressure = assessFiscalConsolidatedInflationPressureLatch({
+      consolidatedDeficitBand:
+        inputs.fiscalPressure === 'critical' ? 'large_deficit' : inputs.creditShockActive ? 'moderate_deficit' : 'balanced',
+      debtServicePressure:
+        inputs.fiscalPressure === 'critical' ? 'critical' : inputs.systemicLiquidityBand === 'critical' ? 'elevated' : 'moderate',
+      wave46FiscalPressureLatch: inputs.householdInflationScenarioActive,
+      consolidatedDeficitEscalationBand:
+        inputs.systemicLiquidityBand === 'critical' ? 'critical' : inputs.highInflationScenario ? 'elevated' : 'stable',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const householdWageStress = assessHouseholdWageInflationStressSurge({
+      wageGrowthBand: inputs.householdInflationScenarioActive ? 'surge' : inputs.highInflationScenario ? 'elevated' : 'moderate',
+      costOfLivingStress: inputs.publicStability < 42 ? 'extreme' : inputs.publicStability < 50 ? 'high' : 'moderate',
+      wave46HouseholdStressLatch: inputs.creditShockActive,
+      wageStressSurgeBand:
+        inputs.fiscalPressure === 'critical' ? 'ruptured' : inputs.systemicLiquidityBand === 'critical' ? 'building' : 'contained',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -1318,6 +1348,8 @@ export function projectInflationForecastPath(
       transportFreightInflationGridlockSurgeBand: freightGridlockSurge.surgeBand,
       eventsNarrativeInflationShockLatchBand: eventsNarrativeShock.latchBand,
       modesSandboxInflationPressureSurgeBand: modesSandboxPressure.surgeBand,
+      fiscalConsolidatedInflationPressureLatchBand: fiscalConsolidatedPressure.latchBand,
+      householdWageInflationStressSurgeBand: householdWageStress.surgeBand,
     });
   }
 

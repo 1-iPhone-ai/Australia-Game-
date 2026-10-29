@@ -1662,6 +1662,49 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'events', 'modes', 'round45'],
   },
+  {
+    id: 'fiscal_consolidated_pressure_latch_stack',
+    label: 'Fiscal consolidated pressure latch stack',
+    description: 'Consolidated deficit escalation under fiscal pressure latch.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      creditShockActive: true,
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.5,
+      publicStability: 28,
+    },
+    tags: ['inflation', 'fiscal', 'round46'],
+  },
+  {
+    id: 'household_wage_stress_surge_stress',
+    label: 'Household wage stress surge stress',
+    description: 'Wage stress surge under household inflation latch.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.47,
+      publicStability: 24,
+    },
+    tags: ['inflation', 'household', 'round46'],
+  },
+  {
+    id: 'fiscal_household_wave46_fusion_stress',
+    label: 'Fiscal & household wave 46 fusion stress',
+    description: 'Fiscal crisis latch colliding with wage stress surge.',
+    patch: {
+      inflationSettingMultiplier: 1.57,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 15,
+    },
+    tags: ['inflation', 'fiscal', 'household', 'round46'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
