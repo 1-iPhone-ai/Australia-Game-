@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 5173"
+    "preview": "vite preview --host 0.0.0.0 --port 5173",
+    "test:agent17": "node --import tsx operation-10m/agent-17-command-center/tests/run-agent17-tests.ts"
   },
   "dependencies": {
     "react": "19.3.1",
@@ -16,6 +17,7 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "5.2.0",
     "typescript": "5.9.3",
+    "tsx": "4.20.6",
     "vite": "7.3.7"
   }
 }
