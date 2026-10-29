@@ -50,6 +50,11 @@ import {
   V1014_BLUE_SHORE_TURN_SCENARIOS,
 } from '../modules/coastal-blue-carbon-shore-energy-ledger.ts';
 import {
+  runAgent13LandfillDistrictScaleSelfTests,
+  runAgent13LandfillDistrictTurnScenario,
+  V1014_LANDFILL_DISTRICT_TURN_SCENARIOS,
+} from '../modules/landfill-waste-district-heat-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -217,6 +222,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const blueTurn = runAgent13BlueShoreTurnScenario(V1014_BLUE_SHORE_TURN_SCENARIOS[0]);
   ok(blueTurn.passed);
+
+  const landfillDistrict = runAgent13LandfillDistrictScaleSelfTests();
+  ok(landfillDistrict.failed === 0 && landfillDistrict.passed >= 7);
+
+  const lfTurn = runAgent13LandfillDistrictTurnScenario(V1014_LANDFILL_DISTRICT_TURN_SCENARIOS[0]);
+  ok(lfTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

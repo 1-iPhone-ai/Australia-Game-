@@ -100,6 +100,13 @@ import {
   type V1014RegionalShoreMarineEnergyLedger,
 } from './coastal-blue-carbon-shore-energy-ledger';
 import {
+  advanceRegionalDistrictRenewableHeat,
+  computeRegionalLandfillWasteEnergyLedger,
+  scoreAgent13LandfillDistrictGIAlignment,
+  type V1014RegionalDistrictRenewableHeatLedger,
+  type V1014RegionalLandfillWasteEnergyLedger,
+} from './landfill-waste-district-heat-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25604,6 +25611,10 @@ export interface V1014RegionalEnergyProfile {
   blueCarbonCoastalRelief: number;
   shoreMarineEnergyBand: string;
   shoreMarineEnergyRelief: number;
+  landfillWasteEnergyBand: string;
+  landfillMethaneRelief: number;
+  districtRenewableHeatBand: string;
+  districtHeatRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25664,6 +25675,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalIndustrialHeatDecarbLedgers: Record<string, V1014RegionalIndustrialHeatDecarbLedger>;
   regionalBlueCarbonCoastalLedgers: Record<string, V1014RegionalBlueCarbonCoastalLedger>;
   regionalShoreMarineEnergyLedgers: Record<string, V1014RegionalShoreMarineEnergyLedger>;
+  regionalLandfillWasteEnergyLedgers: Record<string, V1014RegionalLandfillWasteEnergyLedger>;
+  regionalDistrictRenewableHeatLedgers: Record<string, V1014RegionalDistrictRenewableHeatLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25695,6 +25708,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalIndustrialHeatMemory: Record<string, { decarbIndex: number }>;
   regionalBlueCarbonMemory: Record<string, { wetlandBalance: number; sinkIndex: number }>;
   regionalShoreMarineMemory: Record<string, { shoreIndex: number }>;
+  regionalLandfillWasteMemory: Record<string, { captureBalance: number; methaneIndex: number }>;
+  regionalDistrictHeatMemory: Record<string, { thermalIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -25738,6 +25753,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalIndustrialHeatMemory: {},
     regionalBlueCarbonMemory: {},
     regionalShoreMarineMemory: {},
+    regionalLandfillWasteMemory: {},
+    regionalDistrictHeatMemory: {},
     history: [],
   };
 }
@@ -25790,6 +25807,10 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalBlueCarbonMemory === 'object' && raw.regionalBlueCarbonMemory ? raw.regionalBlueCarbonMemory : {},
     regionalShoreMarineMemory:
       typeof raw.regionalShoreMarineMemory === 'object' && raw.regionalShoreMarineMemory ? raw.regionalShoreMarineMemory : {},
+    regionalLandfillWasteMemory:
+      typeof raw.regionalLandfillWasteMemory === 'object' && raw.regionalLandfillWasteMemory ? raw.regionalLandfillWasteMemory : {},
+    regionalDistrictHeatMemory:
+      typeof raw.regionalDistrictHeatMemory === 'object' && raw.regionalDistrictHeatMemory ? raw.regionalDistrictHeatMemory : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -25920,6 +25941,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalIndustrialHeatDecarbLedgers: {},
       regionalBlueCarbonCoastalLedgers: {},
       regionalShoreMarineEnergyLedgers: {},
+      regionalLandfillWasteEnergyLedgers: {},
+      regionalDistrictRenewableHeatLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -25954,6 +25977,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const industrialHeatDecarbLedgers: Record<string, V1014RegionalIndustrialHeatDecarbLedger> = {};
   const blueCarbonCoastalLedgers: Record<string, V1014RegionalBlueCarbonCoastalLedger> = {};
   const shoreMarineEnergyLedgers: Record<string, V1014RegionalShoreMarineEnergyLedger> = {};
+  const landfillWasteEnergyLedgers: Record<string, V1014RegionalLandfillWasteEnergyLedger> = {};
+  const districtRenewableHeatLedgers: Record<string, V1014RegionalDistrictRenewableHeatLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -25995,6 +26020,10 @@ export function computeIndustrialEnergyEnvironmentalState(
     ...persisted.regionalBlueCarbonMemory,
   };
   const nextShoreMarineMemory: Record<string, { shoreIndex: number }> = { ...persisted.regionalShoreMarineMemory };
+  const nextLandfillWasteMemory: Record<string, { captureBalance: number; methaneIndex: number }> = {
+    ...persisted.regionalLandfillWasteMemory,
+  };
+  const nextDistrictHeatMemory: Record<string, { thermalIndex: number }> = { ...persisted.regionalDistrictHeatMemory };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
 
@@ -26291,6 +26320,28 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextShoreMarineMemory[regionId] = shoreMarineStep.next;
     shoreMarineEnergyLedgers[regionId] = shoreMarineStep.ledger;
 
+    const landfillStep = computeRegionalLandfillWasteEnergyLedger({
+      regionId,
+      circularRecoveryRelief: circularStep.ledger.circularRelief,
+      ccsEmissionsRelief: ccsStep.ledger.ccsEmissionsRelief,
+      netEmissionsIndex: emissionsStep.ledger.netEmissionsIndex,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextLandfillWasteMemory[regionId] || null,
+    });
+    nextLandfillWasteMemory[regionId] = landfillStep.next;
+    landfillWasteEnergyLedgers[regionId] = landfillStep.ledger;
+
+    const districtHeatStep = advanceRegionalDistrictRenewableHeat({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      landfillBand: landfillStep.ledger.band,
+      geothermalHeatRelief: geoStep.ledger.geothermalHeatRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextDistrictHeatMemory[regionId] || null,
+    });
+    nextDistrictHeatMemory[regionId] = districtHeatStep.next;
+    districtRenewableHeatLedgers[regionId] = districtHeatStep.ledger;
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -26320,6 +26371,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure -= heatDecarbStep.ledger.industrialHeatRelief;
     pressure -= blueCarbonStep.ledger.blueCarbonCoastalRelief;
     pressure -= shoreMarineStep.ledger.shoreMarineEnergyRelief;
+    pressure -= landfillStep.ledger.landfillMethaneRelief;
+    pressure -= districtHeatStep.ledger.districtHeatRelief;
     if (biodiversityStep.ledger.band === 'critical_loss') pressure += 5;
     pressure -= gridRecovery.pressureRelief;
     pressure -= storageFlex.gridStressRelief;
@@ -26374,6 +26427,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       heatDecarbStep.ledger.summary,
       blueCarbonStep.ledger.summary,
       shoreMarineStep.ledger.summary,
+      landfillStep.ledger.summary,
+      districtHeatStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -26498,6 +26553,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       blueCarbonCoastalRelief: blueCarbonStep.ledger.blueCarbonCoastalRelief,
       shoreMarineEnergyBand: shoreMarineStep.ledger.band,
       shoreMarineEnergyRelief: shoreMarineStep.ledger.shoreMarineEnergyRelief,
+      landfillWasteEnergyBand: landfillStep.ledger.band,
+      landfillMethaneRelief: landfillStep.ledger.landfillMethaneRelief,
+      districtRenewableHeatBand: districtHeatStep.ledger.band,
+      districtHeatRelief: districtHeatStep.ledger.districtHeatRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -26587,6 +26646,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalIndustrialHeatDecarbLedgers: industrialHeatDecarbLedgers,
     regionalBlueCarbonCoastalLedgers: blueCarbonCoastalLedgers,
     regionalShoreMarineEnergyLedgers: shoreMarineEnergyLedgers,
+    regionalLandfillWasteEnergyLedgers: landfillWasteEnergyLedgers,
+    regionalDistrictRenewableHeatLedgers: districtRenewableHeatLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -26618,6 +26679,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalIndustrialHeatMemory: nextIndustrialHeatMemory,
     regionalBlueCarbonMemory: nextBlueCarbonMemory,
     regionalShoreMarineMemory: nextShoreMarineMemory,
+    regionalLandfillWasteMemory: nextLandfillWasteMemory,
+    regionalDistrictHeatMemory: nextDistrictHeatMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -27045,6 +27108,38 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     shoreBand: rr13.state.regions.QLD?.shoreMarineEnergyBand,
   });
   check('BLUE SHORE GI alignment', giBlue.relevanceDelta > 0.5, giBlue.reason || '');
+
+  const lfInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'landfill_gas_capture',
+      'waste_to_energy_plant',
+      'organics_anaerobic_digestion',
+      'methane_flare_elimination',
+      'renewable_district_heating',
+      'industrial_steam_recovery_loop',
+      'biomass_thermal_residuals_hub',
+      'district_heat_pump_cascade',
+    ],
+  };
+  const rr14 = computeIndustrialEnergyEnvironmentalState(lfInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check('LANDFILL ledger tracked', !!rr14.state.regionalLandfillWasteEnergyLedgers.VIC?.band, rr14.state.regionalLandfillWasteEnergyLedgers.VIC?.band || '');
+  check(
+    'DISTRICT heat relief',
+    (rr14.state.regions.VIC?.districtHeatRelief || 0) > 0,
+    String(rr14.state.regions.VIC?.districtHeatRelief),
+  );
+  check(
+    'LANDFILL memory persisted',
+    !!rr14.persisted.regionalLandfillWasteMemory.VIC,
+    String(rr14.persisted.regionalLandfillWasteMemory.VIC?.methaneIndex),
+  );
+  const giLf = scoreAgent13LandfillDistrictGIAlignment({
+    actionText: 'Landfill gas capture with renewable district heating network',
+    landfillBand: rr14.state.regions.VIC?.landfillWasteEnergyBand,
+    districtBand: rr14.state.regions.VIC?.districtRenewableHeatBand,
+  });
+  check('LANDFILL DISTRICT GI alignment', giLf.relevanceDelta > 0.5, giLf.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');
