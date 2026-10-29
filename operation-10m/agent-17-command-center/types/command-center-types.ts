@@ -236,6 +236,7 @@ export interface Agent17ActorSlice {
   currentLocation?: string;
   actionsUsedThisTurn?: number;
   inventory?: unknown[];
+  currentSupplies?: number;
 }
 
 export interface Agent17SettingsSlice {

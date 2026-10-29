@@ -15,6 +15,7 @@ import {
   defaultObjectiveResolver,
   sanitizeAcc17CommandCenterOpsState,
 } from '../planning/ops-state.ts';
+import { maybeApplyAgent17RecoveryPath } from '../planning/recovery-paths.ts';
 
 export function buildAcc17V94DeepContextBundle(
   state: Agent17GameStateSlice,
@@ -150,6 +151,18 @@ export function evaluateAcc17CommandCenterOperations(
           acc17DelegateProject(ops, plan, 'copilot', 'copilot_session', 'assisted'),
         ],
       };
+    }
+    const recovery = maybeApplyAgent17RecoveryPath(ops, state, actorId);
+    if (recovery.applied && recovery.ops.activePlan) {
+      ops = recovery.ops;
+      if (ops.delegatedProjects.length === 0 && ops.activePlan.completionPercent < 100) {
+        ops = {
+          ...ops,
+          delegatedProjects: [
+            acc17DelegateProject(ops, ops.activePlan, 'copilot', 'copilot_session', 'assisted'),
+          ],
+        };
+      }
     }
   } else {
     ops = { ...ops, lastContextFingerprint: deepContext.fingerprint, lastContextBundle: deepContext };

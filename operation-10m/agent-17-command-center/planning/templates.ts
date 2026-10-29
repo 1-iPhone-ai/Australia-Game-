@@ -4,9 +4,16 @@ import type {
   Acc17ProjectTemplate,
 } from '../types/command-center-types.ts';
 import type { Agent17GameStateSlice } from '../types/command-center-types.ts';
+import { AGENT17_DEEP_TEMPLATE_CATALOG } from './deep-templates.ts';
+
+type StepBlueprint = Acc17ProjectTemplate['stepBlueprints'][number] & {
+  requirements?: Acc17ProjectTemplate['stepBlueprints'][number]['requirements'] & {
+    prerequisiteStepIndices?: number[];
+  };
+};
 
 /** Curated template catalog (modular slice; full catalog remains in canonical TSX until assembly). */
-export const AGENT17_PROJECT_TEMPLATE_CATALOG: Acc17ProjectTemplate[] = [
+export const AGENT17_BASE_TEMPLATE_CATALOG: Acc17ProjectTemplate[] = [
   {
     id: 'agent17_tpl_economy_liquidity',
     title: 'Liquidity stabilization program',
@@ -126,6 +133,35 @@ export const AGENT17_PROJECT_TEMPLATE_CATALOG: Acc17ProjectTemplate[] = [
   },
 ];
 
+export const AGENT17_PROJECT_TEMPLATE_CATALOG: Acc17ProjectTemplate[] = [
+  ...AGENT17_BASE_TEMPLATE_CATALOG,
+  ...AGENT17_DEEP_TEMPLATE_CATALOG,
+];
+
+function wirePrerequisiteStepIds(
+  steps: Acc17MultiStepPlanStep[],
+  blueprints: StepBlueprint[]
+): Acc17MultiStepPlanStep[] {
+  return steps.map((step, idx) => {
+    const indices = blueprints[idx]?.requirements?.prerequisiteStepIndices;
+    if (!indices?.length) return step;
+    const prerequisiteStepIds = indices
+      .filter(i => i >= 0 && i < steps.length)
+      .map(i => steps[i].id);
+    return {
+      ...step,
+      requirements: {
+        ...step.requirements,
+        prerequisiteStepIds,
+      },
+    };
+  }).map(step => {
+    const req = { ...step.requirements };
+    delete (req as { prerequisiteStepIndices?: number[] }).prerequisiteStepIndices;
+    return { ...step, requirements: req };
+  });
+}
+
 export function acc17InstantiatePlanFromTemplate(
   templateId: string,
   state: Agent17GameStateSlice,
@@ -136,7 +172,8 @@ export function acc17InstantiatePlanFromTemplate(
   const turn = state.turnCounter || state.day || 1;
   const day = state.day || 1;
   const planId = `acc17_plan_${templateId}_${turn}`;
-  const steps: Acc17MultiStepPlanStep[] = tpl.stepBlueprints.map((bp, idx) => ({
+  const blueprints = tpl.stepBlueprints as StepBlueprint[];
+  let steps: Acc17MultiStepPlanStep[] = blueprints.map((bp, idx) => ({
     id: `${planId}_step_${idx}`,
     index: idx,
     title: bp.title,
@@ -145,6 +182,7 @@ export function acc17InstantiatePlanFromTemplate(
     requirements: { ...(bp.requirements || {}) },
     status: idx === 0 ? 'in_progress' : 'pending',
   }));
+  steps = wirePrerequisiteStepIds(steps, blueprints);
   return {
     id: planId,
     title: tpl.title,

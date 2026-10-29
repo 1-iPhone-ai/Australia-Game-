@@ -15,6 +15,11 @@ import {
 } from '../planning/ops-state.ts';
 import { AGENT17_PROJECT_TEMPLATE_CATALOG, acc17InstantiatePlanFromTemplate } from '../planning/templates.ts';
 import {
+  detectAgent17RecoverySignals,
+  maybeApplyAgent17RecoveryPath,
+  pickAgent17RecoveryTemplateId,
+} from '../planning/recovery-paths.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -191,6 +196,52 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const crisisState: Agent17GameStateSlice = {
+    turnCounter: 2,
+    day: 2,
+    player: { id: 'player', money: 200, netWorth: 5000, currentRegion: 'QLD', currentSupplies: 10 },
+    actorsById: {
+      player: { id: 'player', money: 200, netWorth: 5000, currentRegion: 'QLD', currentSupplies: 10 },
+    },
+  };
+  const deepPlan = acc17InstantiatePlanFromTemplate(
+    'agent17_tpl_deep_capital_program',
+    crisisState,
+    'player'
+  );
+  goalResults.push(
+    result(
+      'G17-013',
+      (deepPlan?.steps[5]?.requirements.prerequisiteStepIds?.length ?? 0) >= 1,
+      deepPlan?.steps[5]?.requirements.prerequisiteStepIds?.join(',') || 'none'
+    )
+  );
+
+  const sig = detectAgent17RecoverySignals(crisisState, 'player');
+  const rec = pickAgent17RecoveryTemplateId(sig, true);
+  goalResults.push(
+    result(
+      'G17-014',
+      rec?.templateId === 'agent17_tpl_supply_deep_recovery' && rec?.lane === 'supply_collapse',
+      `${rec?.lane}/${rec?.templateId}`
+    )
+  );
+
+  let blockedOps = createDefaultAcc17CommandCenterOpsState();
+  const tradePlan = acc17InstantiatePlanFromTemplate('agent17_tpl_trade_arbitrage', crisisState, 'player');
+  if (tradePlan) {
+    tradePlan.steps[2] = { ...tradePlan.steps[2], status: 'blocked', blockerReason: 'test' };
+    blockedOps = { ...blockedOps, activePlan: tradePlan };
+  }
+  const recoveryEval = maybeApplyAgent17RecoveryPath(blockedOps, crisisState, 'player');
+  goalResults.push(
+    result(
+      'G17-015',
+      recoveryEval.applied && recoveryEval.ops.activePlan?.objectiveSource?.startsWith('recovery:') === true,
+      recoveryEval.ops.activePlan?.objectiveSource || 'not applied'
+    )
+  );
+
   const passedCount = goalResults.filter(r => r.passed).length;
   const failedCount = goalResults.length - passedCount;
   return {
@@ -225,6 +276,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-010',
     'G17-011',
     'G17-012',
+    'G17-013',
+    'G17-014',
+    'G17-015',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

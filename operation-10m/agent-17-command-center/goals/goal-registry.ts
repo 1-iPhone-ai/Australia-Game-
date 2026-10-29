@@ -86,6 +86,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Dev test report exposes totalTests and success boolean.',
     severity: 'critical',
   },
+  {
+    id: 'G17-013',
+    title: 'Deep templates expose prerequisite chains',
+    category: 'planning',
+    acceptance: 'Six-step capital program wires prerequisiteStepIds on late phases.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-014',
+    title: 'Recovery signals drive template selection',
+    category: 'planning',
+    acceptance: 'Blocked plan uses highest-severity lane template (severity-sorted signals).',
+    severity: 'major',
+  },
+  {
+    id: 'G17-015',
+    title: 'Blocked plan recovery replan in evaluator',
+    category: 'validation',
+    acceptance: 'evaluateAcc17CommandCenterOperations sets recovery objectiveSource.',
+    severity: 'critical',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
