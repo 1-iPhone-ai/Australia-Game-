@@ -162,12 +162,13 @@ export interface ResearchBranchEmphasisState {
   setTurn: number;
 }
 
-export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v5' as const;
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v6' as const;
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
 export type ResearchProgressSchemaVersion =
   | typeof RESEARCH_PROGRESS_SCHEMA_VERSION
+  | 'op10m-agent03-v5'
   | 'op10m-agent03-v4'
   | 'op10m-agent03-v3'
   | 'op10m-agent03-v2'
@@ -232,6 +233,40 @@ export interface ResearchDiffusionForecast {
   projections: ResearchDiffusionForecastProjection[];
 }
 
+export interface ResearchEmphasisChangeEvent {
+  seq: number;
+  turn: number;
+  branchId: ResearchBranchId;
+  fromEmphasis: ResearchProgramEmphasis;
+  toEmphasis: ResearchProgramEmphasis;
+  emphasisRevision: number;
+}
+
+export interface ResearchInstitutionTierSnapshot {
+  capturedAtTurn: number;
+  tiers: Record<string, InstitutionUpgradeTier>;
+  digest: string;
+  nationalIntegrationCount: number;
+  strategicOrAboveCount: number;
+}
+
+export interface ResearchSynergyTransferOutlook {
+  fromBranch: ResearchBranchId;
+  toBranch: ResearchBranchId;
+  projectedStrength: number;
+}
+
+export interface ResearchSynergyOutlook {
+  active: boolean;
+  baseTurn: number;
+  horizonTurns: number;
+  currentSynergyScore: number;
+  projectedSynergyScore: number;
+  activeMultiBranchCount: number;
+  transferLinks: ResearchSynergyTransferOutlook[];
+  dominantCapabilityCluster: V94EmergingCapabilityId | null;
+}
+
 export interface ResearchProgressState {
   schemaVersion: ResearchProgressSchemaVersion;
   revision: number;
@@ -248,6 +283,7 @@ export interface ResearchProgressState {
   commercialization?: ResearchCommercializationReport | null;
   portfolioBalance?: ResearchPortfolioBalanceReport | null;
   diffusionForecast?: ResearchDiffusionForecast | null;
+  synergyOutlook?: ResearchSynergyOutlook | null;
   unlockSeq: number;
   branchEmphasis?: ResearchBranchEmphasisState[];
   emphasisRevision?: number;
@@ -258,6 +294,8 @@ export interface ResearchProgressState {
   persistRevision?: number;
   unlockEventLog?: ResearchUnlockEvent[];
   lastReconciledAtTurn?: number;
+  emphasisChangeLog?: ResearchEmphasisChangeEvent[];
+  institutionTierSnapshot?: ResearchInstitutionTierSnapshot | null;
 }
 
 export interface StrategyHookDefinition {

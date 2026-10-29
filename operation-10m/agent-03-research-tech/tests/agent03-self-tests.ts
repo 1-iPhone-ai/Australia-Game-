@@ -37,6 +37,7 @@ import {
   computeResearchCommercializationReport,
   runResearchProgressRegressionHarness,
   projectResearchDiffusionHorizon,
+  computeResearchSynergyOutlook,
   type Agent03SelfTestResult,
   type ResearchProgressInputs,
 } from '../src/index.ts';
@@ -432,7 +433,7 @@ tests.push(
 );
 
 tests.push(
-  test('save_v3_migrates_to_v5_with_lifecycle_fields', () => {
+  test('save_v3_migrates_to_v6_with_lifecycle_fields', () => {
     const v3 = {
       schemaVersion: 'op10m-agent03-v3',
       turn: 12,
@@ -451,11 +452,13 @@ tests.push(
     assert(typeof core?.sessionId === 'string');
     assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v3'));
     assert(Array.isArray(core?.unlockEventLog));
+    assert(Array.isArray(core?.emphasisChangeLog));
+    assert(core?.institutionTierSnapshot?.digest);
   })
 );
 
 tests.push(
-  test('save_v4_migrates_to_v5_with_unlock_event_log', () => {
+  test('save_v4_migrates_to_v6_with_unlock_event_log', () => {
     const v4 = {
       schemaVersion: 'op10m-agent03-v4',
       turn: 8,
@@ -478,6 +481,63 @@ tests.push(
     assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
     assert(core?.unlockEventLog.length === 1);
     assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v4'));
+  })
+);
+
+tests.push(
+  test('save_v5_migrates_to_v6_with_emphasis_log_and_snapshot', () => {
+    const v5 = {
+      schemaVersion: 'op10m-agent03-v5',
+      turn: 9,
+      revision: 1,
+      unlockedNodes: [],
+      institutionUpgrades: [],
+      unlockSeq: 0,
+      branchEmphasis: [],
+      emphasisRevision: 2,
+      migrationLog: [{ fromVersion: 'op10m-agent03-v4', toVersion: 'op10m-agent03-v5', turn: 8 }],
+      saveKind: 'manual',
+      updatedAtTurn: 9,
+      sessionId: 'v5',
+      persistRevision: 3,
+      unlockEventLog: [],
+      lastReconciledAtTurn: 9,
+      coreFingerprint: 'legacy',
+    };
+    const core = migrateResearchProgressSave(v5);
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v5'));
+    assert(Array.isArray(core?.emphasisChangeLog));
+    assert(typeof core?.institutionTierSnapshot?.digest === 'string');
+  })
+);
+
+tests.push(
+  test('emphasis_change_log_on_branch_update', () => {
+    let core = emptyResearchProgressCore(5);
+    core = setResearchBranchEmphasisOnCore(core, 'resource_innovation', 'commercial', 6);
+    assert((core.emphasisChangeLog?.length ?? 0) === 1);
+    assert(core.emphasisChangeLog?.[0]?.toEmphasis === 'commercial');
+    assert(core.emphasisRevision === 1);
+  })
+);
+
+tests.push(
+  test('synergy_outlook_projects_multi_branch', () => {
+    const inputs = baseInputs({ turn: 50 });
+    const state = computeResearchProgress(inputs, null);
+    const outlook = state.synergyOutlook ?? computeResearchSynergyOutlook(inputs, state);
+    assert(typeof outlook.projectedSynergyScore === 'number');
+    assert(outlook.horizonTurns >= 1);
+  })
+);
+
+tests.push(
+  test('seal_refreshes_institution_tier_snapshot', () => {
+    const core = emptyResearchProgressCore(3);
+    const sealed = sealResearchProgressForSave(core, { turn: 3 });
+    assert(sealed.institutionTierSnapshot?.capturedAtTurn === 3);
+    assert(typeof sealed.institutionTierSnapshot?.digest === 'string');
   })
 );
 

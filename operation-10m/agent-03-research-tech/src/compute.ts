@@ -16,6 +16,7 @@ import {
   computeResearchPortfolioBalanceReport,
 } from './portfolio-advisor.ts';
 import { projectResearchDiffusionHorizon } from './diffusion-forecast.ts';
+import { computeResearchSynergyOutlook } from './synergy-outlook.ts';
 import { branchNodeTopologicalOrder, evaluateNodePrerequisites } from './prerequisites.ts';
 import { resolveActiveStrategyHooks, STRATEGY_HOOK_BY_ID } from './strategy-hooks.ts';
 import {
@@ -160,6 +161,8 @@ export function createEmptyResearchProgressState(turn = 0): ResearchProgressStat
     persistRevision: 0,
     unlockEventLog: [],
     lastReconciledAtTurn: turn,
+    emphasisChangeLog: [],
+    institutionTierSnapshot: null,
   };
 }
 
@@ -242,6 +245,13 @@ export function computeResearchProgress(
     institutionUpgrades,
   });
 
+  const synergyOutlook = computeResearchSynergyOutlook(inputs, {
+    unlockedNodes,
+    readinessByBranch,
+    scaleWave,
+    portfolioBalance,
+  });
+
   const computed: ResearchProgressState = {
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: coreBase.revision,
@@ -258,6 +268,7 @@ export function computeResearchProgress(
     commercialization,
     portfolioBalance,
     diffusionForecast,
+    synergyOutlook,
     unlockSeq: coreBase.unlockSeq,
     branchEmphasis: coreBase.branchEmphasis,
   };

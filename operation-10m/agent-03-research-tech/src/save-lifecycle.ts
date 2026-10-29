@@ -6,9 +6,11 @@ import {
   migrateResearchProgressSave,
   prepareResearchProgressForSave,
 } from './save-migration.ts';
-import type { ResearchProgressState, ResearchUnlockEvent } from './types.ts';
+import type { ResearchProgressState, ResearchUnlockEvent, ResearchEmphasisChangeEvent } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { RESEARCH_UNLOCK_EVENT_LOG_CAP } from './unlock-event-log.ts';
+import { RESEARCH_EMPHASIS_CHANGE_LOG_CAP } from './emphasis-change-log.ts';
+import { computeInstitutionTierSnapshot, mergeInstitutionTierSnapshots } from './institution-tier-snapshot.ts';
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
@@ -34,6 +36,18 @@ function mergeUnlockEventLogs(
     byKey.set(key, ev);
   }
   return [...byKey.values()].sort((a, b) => a.seq - b.seq || a.nodeId.localeCompare(b.nodeId)).slice(-RESEARCH_UNLOCK_EVENT_LOG_CAP);
+}
+
+function mergeEmphasisChangeLogs(
+  local: ResearchEmphasisChangeEvent[] | undefined,
+  remote: ResearchEmphasisChangeEvent[] | undefined
+): ResearchEmphasisChangeEvent[] {
+  const byKey = new Map<string, ResearchEmphasisChangeEvent>();
+  for (const ev of [...(local ?? []), ...(remote ?? [])]) {
+    const key = `${ev.seq}:${ev.branchId}:${ev.emphasisRevision}`;
+    byKey.set(key, ev);
+  }
+  return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_EMPHASIS_CHANGE_LOG_CAP);
 }
 
 function stableCoreSnapshot(core: ResearchProgressPersistedCore): Record<string, unknown> {
@@ -75,6 +89,7 @@ export function sealResearchProgressForSave(
     sessionId,
     persistRevision: (core.persistRevision ?? 0) + 1,
     turn: Math.max(core.turn, turn),
+    institutionTierSnapshot: computeInstitutionTierSnapshot(core.institutionUpgrades, Math.max(core.turn, turn)),
   });
 }
 
@@ -114,6 +129,11 @@ export function mergeResearchPersistedCores(
     emphasisRevision: Math.max(local.emphasisRevision, remote.emphasisRevision),
     migrationLog: [...(local.migrationLog ?? []), ...(remote.migrationLog ?? [])].slice(-32),
     unlockEventLog: mergeUnlockEventLogs(local.unlockEventLog, remote.unlockEventLog),
+    emphasisChangeLog: mergeEmphasisChangeLogs(local.emphasisChangeLog, remote.emphasisChangeLog),
+    institutionTierSnapshot: mergeInstitutionTierSnapshots(
+      local.institutionTierSnapshot ?? undefined,
+      remote.institutionTierSnapshot ?? undefined
+    ) ?? computeInstitutionTierSnapshot([...instById.values()], pick.turn),
     lastReconciledAtTurn: Math.max(local.lastReconciledAtTurn ?? 0, remote.lastReconciledAtTurn ?? 0),
   });
 }
@@ -139,6 +159,8 @@ export function reconcileResearchProgressOnLoad(
         migrationLog: persist.migrationLog,
         lastReconciledAtTurn: persist.lastReconciledAtTurn,
         unlockEventLog: persist.unlockEventLog,
+        emphasisChangeLog: persist.emphasisChangeLog,
+        institutionTierSnapshot: persist.institutionTierSnapshot,
       },
       persist,
     };
@@ -156,6 +178,8 @@ export function reconcileResearchProgressOnLoad(
     emphasisRevision: mergedCore.emphasisRevision,
     migrationLog: mergedCore.migrationLog,
     unlockEventLog: mergedCore.unlockEventLog,
+    emphasisChangeLog: mergedCore.emphasisChangeLog,
+    institutionTierSnapshot: mergedCore.institutionTierSnapshot,
     lastReconciledAtTurn: ctx.turn,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
   };
@@ -174,6 +198,8 @@ export function reconcileResearchProgressOnLoad(
       persistRevision: persist.persistRevision,
       lastReconciledAtTurn: persist.lastReconciledAtTurn,
       unlockEventLog: persist.unlockEventLog,
+      emphasisChangeLog: persist.emphasisChangeLog,
+      institutionTierSnapshot: persist.institutionTierSnapshot,
     },
     persist,
   };

@@ -15,4 +15,7 @@ export * from './regression-harness.ts';
 export * from './unlock-event-log.ts';
 export * from './portfolio-advisor.ts';
 export * from './diffusion-forecast.ts';
+export * from './emphasis-change-log.ts';
+export * from './institution-tier-snapshot.ts';
+export * from './synergy-outlook.ts';
 export * from './compute.ts';

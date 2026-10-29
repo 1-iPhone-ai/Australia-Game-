@@ -27,6 +27,9 @@ const SOURCE_FILES = [
   "operation-10m/agent-03-research-tech/src/unlock-event-log.ts",
   "operation-10m/agent-03-research-tech/src/portfolio-advisor.ts",
   "operation-10m/agent-03-research-tech/src/diffusion-forecast.ts",
+  "operation-10m/agent-03-research-tech/src/emphasis-change-log.ts",
+  "operation-10m/agent-03-research-tech/src/institution-tier-snapshot.ts",
+  "operation-10m/agent-03-research-tech/src/synergy-outlook.ts",
   "operation-10m/agent-03-research-tech/src/save-migration.ts",
   "operation-10m/agent-03-research-tech/src/save-lifecycle.ts",
   "operation-10m/agent-03-research-tech/src/regression-harness.ts",
@@ -79,7 +82,7 @@ export function runAgent03ResearchTechSelfTests(): {
   const state = computeResearchProgress(inputs, createEmptyResearchProgressState());
   push('agent03_chunk_04', state.unlockedNodes.some(u => u.nodeId === 'df_t1_campus_foundation'));
   push('agent03_chunk_05', (state.institutionUpgrades?.length ?? 0) >= 6, String(state.institutionUpgrades?.length));
-  push('agent03_chunk_06', OP10M_AGENT03_MODULE_META.schemaVersion === 'op10m-agent03-v5');
+  push('agent03_chunk_06', OP10M_AGENT03_MODULE_META.schemaVersion === 'op10m-agent03-v6');
   const saved = prepareResearchProgressForSave(state);
   push('agent03_chunk_07', validatePersistedCoreForWrite(saved).length === 0);
 
@@ -95,11 +98,13 @@ export function runAgent03ResearchSaveFormatSelfTests(): {
   const results: Array<{ id: string; passed: boolean; detail?: string }> = [];
   const push = (id: string, passed: boolean, detail?: string) => results.push({ id, passed, detail });
   const v2 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v2', turn: 1, revision: 0, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [] });
-  push('savefmt_v2_to_v5', v2?.schemaVersion === 'op10m-agent03-v5');
+  push('savefmt_v2_to_v6', v2?.schemaVersion === 'op10m-agent03-v6');
   const v3 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v3', turn: 2, revision: 1, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [], emphasisRevision: 0, migrationLog: [], coreFingerprint: 'x' });
-  push('savefmt_v3_to_v5', v3?.schemaVersion === 'op10m-agent03-v5' && (v3?.persistRevision ?? 0) === 0);
+  push('savefmt_v3_to_v6', v3?.schemaVersion === 'op10m-agent03-v6' && (v3?.persistRevision ?? 0) === 0);
   const v4 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v4', turn: 3, revision: 1, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [], emphasisRevision: 0, migrationLog: [], persistRevision: 2, saveKind: 'manual', updatedAtTurn: 3, sessionId: 'x' });
-  push('savefmt_v4_to_v5', v4?.schemaVersion === 'op10m-agent03-v5' && Array.isArray(v4?.unlockEventLog));
+  push('savefmt_v4_to_v6', v4?.schemaVersion === 'op10m-agent03-v6' && Array.isArray(v4?.unlockEventLog));
+  const v5 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v5', turn: 4, revision: 1, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [], emphasisRevision: 1, migrationLog: [], persistRevision: 1, saveKind: 'manual', updatedAtTurn: 4, sessionId: 'x', unlockEventLog: [], lastReconciledAtTurn: 4 });
+  push('savefmt_v5_to_v6', v5?.schemaVersion === 'op10m-agent03-v6' && Array.isArray(v5?.emphasisChangeLog));
   push('savefmt_foreign', detectForeignSaveFields({ diffusion: [] }).includes('diffusion'));
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
@@ -107,8 +112,8 @@ export function runAgent03ResearchSaveFormatSelfTests(): {
 
 export const OP10M_AGENT03_MODULE_META = {
   moduleId: '${MODULE_ID}',
-  schemaVersion: 'op10m-agent03-v5',
-  saveFormatVersion: 5,
+  schemaVersion: 'op10m-agent03-v6',
+  saveFormatVersion: 6,
   touchesSaveFormat: true,
   proposedGameStateField: 'researchProgress',
   integrationDoc: 'operation-10m/agent-03-research-tech/INTEGRATION.md',
@@ -150,8 +155,8 @@ const manifest = {
   touchesSaveFormat: true,
   proposedGameStateField: "researchProgress",
   contentSha256: hash,
-  saveFormatVersion: 5,
-  schemaVersion: "op10m-agent03-v5",
+  saveFormatVersion: 6,
+  schemaVersion: "op10m-agent03-v6",
   chunkPath: "operation-10m/modules/agent-03-research-tech/chunk.tsx",
 };
 
