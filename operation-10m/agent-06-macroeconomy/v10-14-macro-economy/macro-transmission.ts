@@ -10,6 +10,8 @@ import type { MacroStrategicSpillover } from './bridge-v109-strategic.ts';
 import type { MacroHousingSpillover } from './bridge-v1014-housing.ts';
 import type { MacroInflationSpillover } from './bridge-v1010-inflation.ts';
 import type { MacroEnergySpillover } from './bridge-v1018-energy.ts';
+import type { MacroEventsSpillover } from './bridge-v105-events.ts';
+import type { MacroCompaniesSpillover } from './bridge-v108-companies.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -28,9 +30,13 @@ export function buildMacroTransmissionReport(params: {
   housing: MacroHousingSpillover;
   inflation?: MacroInflationSpillover;
   energy?: MacroEnergySpillover;
+  events?: MacroEventsSpillover;
+  companies?: MacroCompaniesSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
+  const events = params.events ?? ZERO_SPILLOVER;
+  const companies = params.companies ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -99,6 +105,22 @@ export function buildMacroTransmissionReport(params: {
       energy.investmentNudge,
       energy.productivityNudge,
       energy.summary
+    ),
+    layer(
+      'v10.5_events',
+      'Dynamic events & narrative',
+      events.cycleNudge,
+      events.investmentNudge,
+      events.productivityNudge,
+      events.summary
+    ),
+    layer(
+      'v10.8_companies',
+      'Companies & production',
+      companies.cycleNudge,
+      companies.investmentNudge,
+      companies.productivityNudge,
+      companies.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

@@ -24,6 +24,12 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
     nationalFinance: params?.nationalFinance,
     industrialEnergy: params?.industrialEnergy ?? params?.energyEnvironment ?? params?.nationalSystems?.industrialEnergy,
     energyEnvironment: params?.energyEnvironment,
+    dynamicEvents: params?.dynamicEvents ?? params?.gameState?.dynamicEventsState ?? params?.nationalSystems?.dynamicEvents,
+    narrativeEvents: params?.narrativeEvents ?? params?.gameState?.narrativeEventsState,
+    op10mEvents: params?.op10mEvents ?? params?.gameState?.op10mEventsState,
+    companies: params?.companies ?? params?.privateSector,
+    privateSector: params?.privateSector ?? params?.nationalPrivateSector,
+    nationalPrivateSector: params?.nationalPrivateSector ?? params?.gameState?.privateSectorState,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };

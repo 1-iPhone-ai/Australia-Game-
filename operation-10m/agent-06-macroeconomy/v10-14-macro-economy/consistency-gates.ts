@@ -217,5 +217,55 @@ export function evaluateMacroConsistencyGates(
       summary: 'Transmission layer nudges partially contradict the headline cycle phase.'
     });
   }
+  const ev: any = inputs.dynamicEvents ?? inputs.narrativeEvents ?? inputs.op10mEvents;
+  const stability = String(ev?.nationalStabilityBand ?? ev?.stabilityBand ?? '');
+  if (
+    (stability === 'critical' || stability === 'fragile' || stability === 'stressed') &&
+    (state.cyclePhase === 'contraction' || state.cyclePhase === 'trough' || state.cyclePhase === 'slowdown')
+  ) {
+    gates.push({
+      id: 'events_cycle_drag',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Fragile national narrative stability coincides with macro downturn — event-layer downside risk elevated.'
+    });
+  }
+  const co: any = inputs.companies ?? inputs.privateSector ?? inputs.nationalPrivateSector;
+  const utilization = String(co?.nationalUtilizationBand ?? co?.utilization?.band ?? co?.productionUtilization?.band ?? '');
+  const overloaded = Math.max(0, Math.floor(Number(co?.overloadedFirmCount ?? co?.overloadedCount ?? 0)));
+  if (
+    (utilization === 'overextended' || utilization === 'saturated' || overloaded >= 3) &&
+    (state.utilizationBand === 'tight' || state.utilizationBand === 'overextended')
+  ) {
+    gates.push({
+      id: 'companies_capacity_bind',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Private-sector production strain coincides with tight macro utilization — capacity bind likely.'
+    });
+  }
+  const backlog = String(ev?.pendingBacklogBand ?? ev?.backlogBand ?? '');
+  if (
+    (backlog === 'surging' || backlog === 'critical') &&
+    (utilization === 'slack' || utilization === 'depressed' || utilization === 'critical')
+  ) {
+    gates.push({
+      id: 'events_production_disruption',
+      triggered: true,
+      severity: 'info',
+      summary: 'Event backlog pressure aligns with slack production utilization — narrative-production macro tension.'
+    });
+  }
+  if (
+    state.transmissionConcentration?.band === 'dominant_single' ||
+    state.transmissionConcentration?.band === 'concentrated'
+  ) {
+    gates.push({
+      id: 'transmission_concentration_risk',
+      triggered: true,
+      severity: 'info',
+      summary: 'Macro transmission is concentrated in a narrow layer set — headline scores may be brittle.'
+    });
+  }
   return gates;
 }

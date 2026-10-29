@@ -101,9 +101,12 @@ export interface NationalMacroEconomyState {
   housingSpilloverSummary: string | null;
   inflationSpilloverSummary: string | null;
   energySpilloverSummary: string | null;
+  eventsSpilloverSummary: string | null;
+  companiesSpilloverSummary: string | null;
   capacitySnapshot: MacroCapacitySnapshot;
   transmissionBalance: MacroTransmissionBalanceSnapshot;
   transmissionCoherence: MacroTransmissionCoherenceSnapshot;
+  transmissionConcentration: MacroTransmissionConcentrationSnapshot;
   transmissionReport: MacroTransmissionReport;
   stressIndex: MacroStressIndexSnapshot;
   policyStance: MacroPolicyStanceSnapshot;
@@ -193,6 +196,15 @@ export interface MacroTransmissionCoherenceSnapshot {
   summary: string;
 }
 
+export type MacroTransmissionConcentrationBand = 'diffuse' | 'moderate' | 'concentrated' | 'dominant_single';
+
+export interface MacroTransmissionConcentrationSnapshot {
+  concentrationIndex: number;
+  band: MacroTransmissionConcentrationBand;
+  dominantShare: number;
+  summary: string;
+}
+
 export type MacroStressBand = 'calm' | 'elevated' | 'acute';
 
 export interface MacroStressIndexSnapshot {
@@ -248,6 +260,12 @@ export interface MacroEconomyInputs {
   nationalFinance?: any;
   industrialEnergy?: any;
   energyEnvironment?: any;
+  dynamicEvents?: any;
+  narrativeEvents?: any;
+  op10mEvents?: any;
+  companies?: any;
+  privateSector?: any;
+  nationalPrivateSector?: any;
   highInflationScenarioActive?: boolean;
   creditShockActive?: boolean;
   /** Additional catalog shock ids (see catalog/cyclical-shocks.ts). Legacy flags merge in. */
@@ -877,6 +895,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Inflation & energy stress',
     shockIds: ['high_inflation', 'commodity_bust'],
     description: 'Price-pressure and energy cost shock combination (harness overlay).'
+  },
+  {
+    id: 'events_companies_stress',
+    label: 'Events & companies stress',
+    shockIds: ['global_slowdown', 'credit_contraction'],
+    description: 'Narrative backlog with private-sector utilization stress (harness overlay).'
   }
 ];
 
@@ -1359,6 +1383,12 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
     nationalFinance: params?.nationalFinance,
     industrialEnergy: params?.industrialEnergy ?? params?.energyEnvironment ?? params?.nationalSystems?.industrialEnergy,
     energyEnvironment: params?.energyEnvironment,
+    dynamicEvents: params?.dynamicEvents ?? params?.gameState?.dynamicEventsState ?? params?.nationalSystems?.dynamicEvents,
+    narrativeEvents: params?.narrativeEvents ?? params?.gameState?.narrativeEventsState,
+    op10mEvents: params?.op10mEvents ?? params?.gameState?.op10mEventsState,
+    companies: params?.companies ?? params?.privateSector,
+    privateSector: params?.privateSector ?? params?.nationalPrivateSector,
+    nationalPrivateSector: params?.nationalPrivateSector ?? params?.gameState?.privateSectorState,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };
@@ -2178,6 +2208,208 @@ export function applyMacroEnergySpillover(
 }
 
 
+// --- source: bridge-v105-events.ts ---
+
+export interface MacroEventsSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.5 dynamic events / narrative spillover (never mutates event state). */
+export function readMacroEventsSpilloverFromV105(inputs: MacroEconomyInputs): MacroEventsSpillover {
+  const ev: any =
+    inputs.dynamicEvents ??
+    inputs.narrativeEvents ??
+    inputs.op10mEvents ??
+    inputs.nationalSystems?.dynamicEvents ??
+    inputs.nationalSystems?.narrative;
+  if (!ev) return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const stability = String(
+    ev.nationalStabilityBand ??
+      ev.stabilityBand ??
+      ev.nationalStability?.band ??
+      (typeof ev.nationalStability === 'number' && ev.nationalStability < 35
+        ? 'critical'
+        : typeof ev.nationalStability === 'number' && ev.nationalStability < 50
+          ? 'fragile'
+          : '')
+  );
+  const backlog = String(ev.pendingBacklogBand ?? ev.backlogBand ?? ev.queuePressure?.band ?? '');
+  const crisisCount = Math.max(
+    0,
+    Math.floor(Number(ev.activeCrisisCount ?? ev.crisisCount ?? ev.activeCrises ?? 0))
+  );
+  const pendingCount = Math.max(
+    0,
+    Math.floor(Number(ev.pendingResponseCount ?? ev.pendingResponses?.length ?? ev.pendingCount ?? 0))
+  );
+
+  if (stability === 'critical' || stability === 'collapsing') {
+    cycleNudge -= 3;
+    investmentNudge -= 2;
+    productivityNudge -= 1;
+    summary = `National stability band (${stability}) drags macro cycle read via event layer.`;
+  } else if (stability === 'fragile' || stability === 'stressed') {
+    cycleNudge -= 2;
+    investmentNudge -= 1;
+    summary = `Fragile national stability (${stability}) weighs on macro cycle interpretation.`;
+  } else if (stability === 'robust' || stability === 'stable' || stability === 'strong') {
+    cycleNudge += 0.5;
+    summary = 'Stable national narrative backdrop supports macro cycle read.';
+  }
+
+  if (backlog === 'surging' || backlog === 'critical' || backlog === 'elevated') {
+    cycleNudge -= backlog === 'critical' ? 2 : 1;
+    investmentNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Elevated pending event backlog caps investment upside.';
+  } else if (backlog === 'clear' || backlog === 'calm') {
+    investmentNudge += 0.5;
+  }
+
+  if (crisisCount >= 3) {
+    cycleNudge -= 2;
+    productivityNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + `${crisisCount} concurrent crises amplify macro downside risk.`;
+  } else if (crisisCount === 2) {
+    cycleNudge -= 1;
+  }
+
+  if (pendingCount >= 6) {
+    cycleNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Heavy pending player-response queue signals policy paralysis read.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroEventsSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroEventsSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: bridge-v108-companies.ts ---
+
+export interface MacroCompaniesSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.8 companies / production spillover (never mutates firm state). */
+export function readMacroCompaniesSpilloverFromV108(inputs: MacroEconomyInputs): MacroCompaniesSpillover {
+  const co: any =
+    inputs.companies ??
+    inputs.privateSector ??
+    inputs.nationalPrivateSector ??
+    inputs.nationalSystems?.privateSector ??
+    inputs.nationalSystems?.companies;
+  if (!co) return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const utilization = String(
+    co.nationalUtilizationBand ??
+      co.utilization?.band ??
+      co.productionUtilization?.band ??
+      co.capacityUtilization?.band ??
+      ''
+  );
+  const capacityGap = Number(co.capacityGap ?? co.nationalCapacityGap ?? co.aggregateCapacityGap ?? NaN);
+  const overloaded = Math.max(
+    0,
+    Math.floor(Number(co.overloadedFirmCount ?? co.overloadedCount ?? co.overloadCount ?? 0))
+  );
+  const alignment = Number(co.nationalAlignmentScore ?? co.alignmentScore ?? co.sectorAlignment ?? NaN);
+  const productionMomentum = String(co.productionMomentum?.band ?? co.outputMomentum?.band ?? co.momentumBand ?? '');
+
+  if (utilization === 'overextended' || utilization === 'saturated') {
+    cycleNudge += 1;
+    productivityNudge += 1;
+    summary = `High private-sector utilization (${utilization}) supports macro cycle read.`;
+  } else if (utilization === 'slack' || utilization === 'depressed' || utilization === 'critical') {
+    cycleNudge -= utilization === 'critical' ? 3 : 2;
+    investmentNudge -= 1;
+    summary = `Slack production utilization (${utilization}) drags macro cycle and investment read.`;
+  }
+
+  if (Number.isFinite(capacityGap) && capacityGap > 0.25) {
+    investmentNudge += 2;
+    cycleNudge += 0.5;
+    summary = (summary ? summary + ' ' : '') + 'Positive national capacity gap lifts capex-heavy investment interpretation.';
+  } else if (Number.isFinite(capacityGap) && capacityGap < -0.15) {
+    productivityNudge -= 2;
+    cycleNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Negative capacity gap signals binding production constraints.';
+  }
+
+  if (overloaded >= 4) {
+    productivityNudge -= 2;
+    cycleNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + `${overloaded} overloaded firms weigh on productivity read.`;
+  } else if (overloaded >= 2) {
+    productivityNudge -= 1;
+  }
+
+  if (Number.isFinite(alignment) && alignment < 45) {
+    productivityNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Weak sector alignment reduces macro productivity confidence.';
+  } else if (Number.isFinite(alignment) && alignment > 72) {
+    productivityNudge += 1;
+  }
+
+  if (productionMomentum === 'surging' || productionMomentum === 'strong') {
+    cycleNudge += 1;
+    investmentNudge += 1;
+  } else if (productionMomentum === 'contracting' || productionMomentum === 'stalled') {
+    cycleNudge -= 2;
+    productivityNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Contracting production momentum drags macro cycle read.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -6, 6),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroCompaniesSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroCompaniesSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
 // --- source: macro-transmission.ts ---
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -2196,9 +2428,13 @@ export function buildMacroTransmissionReport(params: {
   housing: MacroHousingSpillover;
   inflation?: MacroInflationSpillover;
   energy?: MacroEnergySpillover;
+  events?: MacroEventsSpillover;
+  companies?: MacroCompaniesSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
+  const events = params.events ?? ZERO_SPILLOVER;
+  const companies = params.companies ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -2267,6 +2503,22 @@ export function buildMacroTransmissionReport(params: {
       energy.investmentNudge,
       energy.productivityNudge,
       energy.summary
+    ),
+    layer(
+      'v10.5_events',
+      'Dynamic events & narrative',
+      events.cycleNudge,
+      events.investmentNudge,
+      events.productivityNudge,
+      events.summary
+    ),
+    layer(
+      'v10.8_companies',
+      'Companies & production',
+      companies.cycleNudge,
+      companies.investmentNudge,
+      companies.productivityNudge,
+      companies.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);
@@ -2559,6 +2811,57 @@ export function buildMacroTransmissionCoherenceSnapshot(
 }
 
 
+// --- source: macro-transmission-concentration.ts ---
+  MacroTransmissionConcentrationBand,
+  MacroTransmissionConcentrationSnapshot,
+  MacroTransmissionReport
+} from './types.ts';
+
+export type { MacroTransmissionConcentrationBand, MacroTransmissionConcentrationSnapshot };
+
+/** Herfindahl-style concentration of transmission magnitude across layers. */
+export function buildMacroTransmissionConcentrationSnapshot(
+  report: MacroTransmissionReport
+): MacroTransmissionConcentrationSnapshot {
+  const weights = report.layers.map(l => layerMagnitude(l));
+  const total = weights.reduce((a, b) => a + b, 0);
+  if (total <= 0.01 || weights.length === 0) {
+    return {
+      concentrationIndex: 0,
+      band: 'diffuse',
+      dominantShare: 0,
+      summary: 'No material transmission magnitude — concentration read is diffuse.'
+    };
+  }
+
+  const shares = weights.map(w => w / total);
+  const hhi = shares.reduce((a, s) => a + s * s, 0);
+  const normalized = v1014macroClamp((hhi - 1 / Math.max(1, shares.length)) / (1 - 1 / Math.max(1, shares.length)), 0, 1);
+  const concentrationIndex = Math.round(normalized * 1000) / 10;
+  const dominantShare = Math.round(Math.max(...shares) * 1000) / 10;
+
+  let band: MacroTransmissionConcentrationBand = 'diffuse';
+  if (concentrationIndex >= 68 || dominantShare >= 42) band = 'dominant_single';
+  else if (concentrationIndex >= 48) band = 'concentrated';
+  else if (concentrationIndex >= 28) band = 'moderate';
+
+  let summary = `Transmission concentration ${concentrationIndex.toFixed(1)} (${band}); top layer share ${dominantShare.toFixed(1)}%.`;
+  if (band === 'dominant_single' || band === 'concentrated') {
+    summary += ' Macro read is sensitive to a narrow set of cross-system layers.';
+  }
+
+  return { concentrationIndex, band, dominantShare, summary };
+}
+
+function layerMagnitude(l: {
+  cycleContribution: number;
+  investmentContribution: number;
+  productivityContribution: number;
+}): number {
+  return Math.abs(l.cycleContribution) + Math.abs(l.investmentContribution) + Math.abs(l.productivityContribution);
+}
+
+
 // --- source: scenario-compare.ts ---
 
 export interface MacroScenarioCompareRow {
@@ -2627,6 +2930,38 @@ export function rankMacroScenarioElasticity(rows: MacroScenarioCompareRow[]): Ma
 }
 
 
+// --- source: scenario-convergence.ts ---
+
+export interface MacroScenarioConvergenceRow {
+  scenarioId: string;
+  netScore: number;
+  distanceFromBaseline: number;
+  convergenceIndex: number;
+}
+
+/** Rank scenario overlays by closeness to baseline net outcome (lab reconciliation). */
+export function rankMacroScenarioConvergence(
+  rows: MacroScenarioCompareRow[],
+  baselineNetScore?: number
+): MacroScenarioConvergenceRow[] {
+  const baseline =
+    baselineNetScore ??
+    rows.reduce((best, row) => {
+      const score = scenarioNetScore(row);
+      return Math.abs(score) < Math.abs(best) ? score : best;
+    }, scenarioNetScore(rows[0] ?? { scenarioId: 'baseline', delta: { cycleDelta: 0, investmentDelta: 0, productivityDelta: 0, outputDelta: 0 }, stressScore: 0, capacityIndex: 0 }));
+
+  return rows
+    .map(row => {
+      const netScore = scenarioNetScore(row);
+      const distanceFromBaseline = Math.round(Math.abs(netScore - baseline) * 100) / 100;
+      const convergenceIndex = Math.round(Math.max(0, 100 - distanceFromBaseline * 8) * 10) / 10;
+      return { scenarioId: row.scenarioId, netScore, distanceFromBaseline, convergenceIndex };
+    })
+    .sort((a, b) => b.convergenceIndex - a.convergenceIndex);
+}
+
+
 // --- source: regression-harness.ts ---
 
 export interface MacroRegressionCheck {
@@ -2650,6 +2985,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   includeLaborInnovationStress?: boolean;
   includeHousingStrategicStress?: boolean;
   includeInflationEnergyStress?: boolean;
+  includeEventsCompaniesStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
@@ -2657,6 +2993,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   const includeLaborInnovationStress = Boolean(options?.includeLaborInnovationStress);
   const includeHousingStrategicStress = Boolean(options?.includeHousingStrategicStress);
   const includeInflationEnergyStress = Boolean(options?.includeInflationEnergyStress);
+  const includeEventsCompaniesStress = Boolean(options?.includeEventsCompaniesStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -2707,6 +3044,20 @@ export function runMacroEconomyRegressionHarness(options?: {
             supplyReliability: { band: t % 5 === 0 ? 'stressed' : 'robust' },
             energyCost: { band: t % 7 === 0 ? 'elevated' : 'favorable' },
             transition: { band: t % 9 === 0 ? 'accelerating' : 'steady' }
+          }
+        : undefined,
+      dynamicEvents: includeEventsCompaniesStress
+        ? {
+            nationalStabilityBand: t % 6 === 0 ? 'fragile' : 'stable',
+            pendingBacklogBand: t % 5 === 0 ? 'elevated' : 'calm',
+            activeCrisisCount: t % 8 === 0 ? 2 : 0
+          }
+        : undefined,
+      privateSector: includeEventsCompaniesStress
+        ? {
+            nationalUtilizationBand: t % 7 === 0 ? 'slack' : 'balanced',
+            overloadedFirmCount: t % 6 === 0 ? 3 : 0,
+            productionMomentum: { band: t % 9 === 0 ? 'contracting' : 'steady' }
           }
         : undefined
     });
@@ -2768,8 +3119,20 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionCoherence.coherenceIndex)
     });
     checks.push({
-      id: 'twelve_transmission_layers',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 12,
+      id: 'fourteen_transmission_layers',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 14,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeEventsCompaniesStress && prev) {
+    checks.push({
+      id: 'transmission_concentration_finite',
+      passed: Number.isFinite(prev.transmissionConcentration.concentrationIndex),
+      detail: String(prev.transmissionConcentration.concentrationIndex)
+    });
+    checks.push({
+      id: 'fourteen_transmission_layers_events',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 14,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -3197,6 +3560,56 @@ export function evaluateMacroConsistencyGates(
       summary: 'Transmission layer nudges partially contradict the headline cycle phase.'
     });
   }
+  const ev: any = inputs.dynamicEvents ?? inputs.narrativeEvents ?? inputs.op10mEvents;
+  const stability = String(ev?.nationalStabilityBand ?? ev?.stabilityBand ?? '');
+  if (
+    (stability === 'critical' || stability === 'fragile' || stability === 'stressed') &&
+    (state.cyclePhase === 'contraction' || state.cyclePhase === 'trough' || state.cyclePhase === 'slowdown')
+  ) {
+    gates.push({
+      id: 'events_cycle_drag',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Fragile national narrative stability coincides with macro downturn — event-layer downside risk elevated.'
+    });
+  }
+  const co: any = inputs.companies ?? inputs.privateSector ?? inputs.nationalPrivateSector;
+  const utilization = String(co?.nationalUtilizationBand ?? co?.utilization?.band ?? co?.productionUtilization?.band ?? '');
+  const overloaded = Math.max(0, Math.floor(Number(co?.overloadedFirmCount ?? co?.overloadedCount ?? 0)));
+  if (
+    (utilization === 'overextended' || utilization === 'saturated' || overloaded >= 3) &&
+    (state.utilizationBand === 'tight' || state.utilizationBand === 'overextended')
+  ) {
+    gates.push({
+      id: 'companies_capacity_bind',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Private-sector production strain coincides with tight macro utilization — capacity bind likely.'
+    });
+  }
+  const backlog = String(ev?.pendingBacklogBand ?? ev?.backlogBand ?? '');
+  if (
+    (backlog === 'surging' || backlog === 'critical') &&
+    (utilization === 'slack' || utilization === 'depressed' || utilization === 'critical')
+  ) {
+    gates.push({
+      id: 'events_production_disruption',
+      triggered: true,
+      severity: 'info',
+      summary: 'Event backlog pressure aligns with slack production utilization — narrative-production macro tension.'
+    });
+  }
+  if (
+    state.transmissionConcentration?.band === 'dominant_single' ||
+    state.transmissionConcentration?.band === 'concentrated'
+  ) {
+    gates.push({
+      id: 'transmission_concentration_risk',
+      triggered: true,
+      severity: 'info',
+      summary: 'Macro transmission is concentrated in a narrow layer set — headline scores may be brittle.'
+    });
+  }
   return gates;
 }
 
@@ -3390,6 +3803,8 @@ export function computeNationalMacroEconomy(
   const housingSpillover = readMacroHousingSpilloverFromV1014Housing(inputs);
   const inflationSpillover = readMacroInflationSpilloverFromV1010(inputs);
   const energySpillover = readMacroEnergySpilloverFromV1018(inputs);
+  const eventsSpillover = readMacroEventsSpilloverFromV105(inputs);
+  const companiesSpillover = readMacroCompaniesSpilloverFromV108(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -3402,7 +3817,9 @@ export function computeNationalMacroEconomy(
   const withHousing = applyMacroHousingSpillover(withStrategic, housingSpillover);
   const withInflation = applyMacroInflationSpillover(withHousing, inflationSpillover);
   const withEnergy = applyMacroEnergySpillover(withInflation, energySpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withEnergy, pushEv);
+  const withEvents = applyMacroEventsSpillover(withEnergy, eventsSpillover);
+  const withCompanies = applyMacroCompaniesSpillover(withEvents, companiesSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withCompanies, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -3442,11 +3859,14 @@ export function computeNationalMacroEconomy(
     strategic: strategicSpillover,
     housing: housingSpillover,
     inflation: inflationSpillover,
-    energy: energySpillover
+    energy: energySpillover,
+    events: eventsSpillover,
+    companies: companiesSpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
   const transmissionCoherence = buildMacroTransmissionCoherenceSnapshot(transmissionReport, cyclePhase);
+  const transmissionConcentration = buildMacroTransmissionConcentrationSnapshot(transmissionReport);
 
   const capacitySnapshot = buildMacroCapacitySnapshot({
     state: {
@@ -3509,9 +3929,12 @@ export function computeNationalMacroEconomy(
     housingSpilloverSummary: housingSpillover.summary,
     inflationSpilloverSummary: inflationSpillover.summary,
     energySpilloverSummary: energySpillover.summary,
+    eventsSpilloverSummary: eventsSpillover.summary,
+    companiesSpilloverSummary: companiesSpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,
+    transmissionConcentration,
     transmissionReport,
     stressIndex: {
       score: 0,
@@ -4172,7 +4595,7 @@ export function runAgent06Round4SelfTests(): {
     strategic: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null },
     housing: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null }
   });
-  record('R4-03', 'Transmission report has twelve layers', report.layers.length === 12, String(report.layers.length));
+  record('R4-03', 'Transmission report has fourteen layers', report.layers.length === 14, String(report.layers.length));
   record('R4-04', 'Net cycle nudge finite', Number.isFinite(report.netCycleNudge), String(report.netCycleNudge));
 
   const integrated = computeNationalMacroEconomy(
@@ -4183,7 +4606,7 @@ export function runAgent06Round4SelfTests(): {
     null,
     null
   );
-  record('R4-05', 'State carries transmission report', integrated.state.transmissionReport.layers.length === 12, 'ok');
+  record('R4-05', 'State carries transmission report', integrated.state.transmissionReport.layers.length === 14, 'ok');
   record('R4-06', 'Trade summary on state', integrated.state.tradeSpilloverSummary != null, String(integrated.state.tradeSpilloverSummary));
 
   const stress = computeNationalMacroEconomy(
@@ -4326,7 +4749,7 @@ export function runAgent06Round6SelfTests(): {
   );
   record('R6-03', 'State exposes innovation summary', integrated.state.innovationSpilloverSummary != null, 'ok');
   record('R6-04', 'State exposes workforce summary', integrated.state.workforceSpilloverSummary != null, 'ok');
-  record('R6-05', 'Twelve transmission layers', integrated.state.transmissionReport.layers.length === 12, String(integrated.state.transmissionReport.layers.length));
+  record('R6-05', 'Fourteen transmission layers', integrated.state.transmissionReport.layers.length === 14, String(integrated.state.transmissionReport.layers.length));
 
   const capacity = buildMacroCapacitySnapshot({
     state: integrated.state,
@@ -4410,8 +4833,8 @@ export function runAgent06Round7SelfTests(): {
   record('R7-04', 'State exposes housing summary', integrated.state.housingSpilloverSummary != null, 'ok');
   record(
     'R7-05',
-    'Twelve transmission layers',
-    integrated.state.transmissionReport.layers.length === 12,
+    'Fourteen transmission layers',
+    integrated.state.transmissionReport.layers.length === 14,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -4498,8 +4921,8 @@ export function runAgent06Round8SelfTests(): {
   record('R8-04', 'State exposes energy summary', integrated.state.energySpilloverSummary != null, 'ok');
   record(
     'R8-05',
-    'Twelve transmission layers',
-    integrated.state.transmissionReport.layers.length === 12,
+    'Fourteen transmission layers',
+    integrated.state.transmissionReport.layers.length === 14,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -4539,6 +4962,104 @@ export function runAgent06Round8SelfTests(): {
   record(
     'R8-10',
     'Inflation/energy regression harness',
+    harness.allPassed,
+    harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: round9-self-tests.ts ---
+
+export function runAgent06Round9SelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: MacroSelfTestResult[];
+} {
+  const results: MacroSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const events = readMacroEventsSpilloverFromV105(
+    makeDefaultV1014_MACRO_TestInputs({
+      dynamicEvents: {
+        nationalStabilityBand: 'critical',
+        pendingBacklogBand: 'surging',
+        activeCrisisCount: 3
+      }
+    })
+  );
+  record('R9-01', 'Critical event backlog drags cycle read', events.cycleNudge < -3, String(events.cycleNudge));
+
+  const companies = readMacroCompaniesSpilloverFromV108(
+    makeDefaultV1014_MACRO_TestInputs({
+      privateSector: {
+        nationalUtilizationBand: 'critical',
+        overloadedFirmCount: 5,
+        productionMomentum: { band: 'contracting' }
+      }
+    })
+  );
+  record('R9-02', 'Production strain drags productivity', companies.productivityNudge < -2, String(companies.productivityNudge));
+
+  const integrated = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({
+      dynamicEvents: { nationalStabilityBand: 'stable', pendingBacklogBand: 'calm' },
+      privateSector: { nationalUtilizationBand: 'overextended', productionMomentum: { band: 'strong' } }
+    }),
+    null,
+    null
+  );
+  record('R9-03', 'State exposes events summary', integrated.state.eventsSpilloverSummary != null, 'ok');
+  record('R9-04', 'State exposes companies summary', integrated.state.companiesSpilloverSummary != null, 'ok');
+  record(
+    'R9-05',
+    'Fourteen transmission layers',
+    integrated.state.transmissionReport.layers.length === 14,
+    String(integrated.state.transmissionReport.layers.length)
+  );
+
+  const concentration = buildMacroTransmissionConcentrationSnapshot(integrated.state.transmissionReport);
+  record('R9-06', 'Transmission concentration finite', Number.isFinite(concentration.concentrationIndex), String(concentration.concentrationIndex));
+  record(
+    'R9-07',
+    'Transmission includes events layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.5_events'),
+    integrated.state.transmissionReport.layers.map(l => l.systemId).join(',')
+  );
+
+  const compare = compareMacroEconomyScenarios(
+    makeDefaultV1014_MACRO_TestInputs({ turn: 16 }),
+    [
+      { id: 'event_backlog', overlay: { dynamicEvents: { pendingBacklogBand: 'critical', nationalStabilityBand: 'fragile' } } },
+      { id: 'production_slack', overlay: { privateSector: { nationalUtilizationBand: 'slack', productionMomentum: { band: 'contracting' } } } }
+    ],
+    null,
+    null
+  );
+  const convergence = rankMacroScenarioConvergence(compare);
+  const ranked = rankMacroEconomyScenariosByNetOutcome(compare);
+  const elasticity = rankMacroScenarioElasticity(compare);
+  record('R9-08', 'Scenario convergence preserves row count', convergence.length === 2, String(convergence.length));
+  record(
+    'R9-09',
+    'Elasticity and ranking both order scenarios',
+    ranked.length === 2 && elasticity.length === 2,
+    ranked.map(r => r.scenarioId).join('>')
+  );
+
+  const harness = runMacroEconomyRegressionHarness({
+    turns: 10,
+    scenarioId: 'events_companies_stress',
+    includeEventsCompaniesStress: true
+  });
+  record(
+    'R9-10',
+    'Events/companies regression harness',
     harness.allPassed,
     harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
   );
@@ -4676,6 +5197,11 @@ export function runV1014_MACRO_MacroEconomySelfTests(): {
 
   const round8 = runAgent06Round8SelfTests();
   for (const r of round8.results) {
+    check(r.id, r.name, r.passed, r.detail);
+  }
+
+  const round9 = runAgent06Round9SelfTests();
+  for (const r of round9.results) {
     check(r.id, r.name, r.passed, r.detail);
   }
 

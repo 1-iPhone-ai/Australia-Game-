@@ -11,6 +11,8 @@ import { applyMacroStrategicSpillover, readMacroStrategicSpilloverFromV109 } fro
 import { applyMacroHousingSpillover, readMacroHousingSpilloverFromV1014Housing } from './bridge-v1014-housing.ts';
 import { applyMacroInflationSpillover, readMacroInflationSpilloverFromV1010 } from './bridge-v1010-inflation.ts';
 import { applyMacroEnergySpillover, readMacroEnergySpilloverFromV1018 } from './bridge-v1018-energy.ts';
+import { applyMacroEventsSpillover, readMacroEventsSpilloverFromV105 } from './bridge-v105-events.ts';
+import { applyMacroCompaniesSpillover, readMacroCompaniesSpilloverFromV108 } from './bridge-v108-companies.ts';
 import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
 import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { buildMacroTransmissionReport } from './macro-transmission.ts';
@@ -19,6 +21,7 @@ import { buildMacroPolicyStanceSnapshot } from './policy-stance-snapshot.ts';
 import { buildMacroCapacitySnapshot } from './macro-capacity-snapshot.ts';
 import { buildMacroTransmissionBalanceSnapshot } from './macro-transmission-balance.ts';
 import { buildMacroTransmissionCoherenceSnapshot } from './macro-transmission-coherence.ts';
+import { buildMacroTransmissionConcentrationSnapshot } from './macro-transmission-concentration.ts';
 import { appendMacroCycleTransitionMemory } from './cycle-memory.ts';
 import { V1014_MACRO_LIMITS } from './constants.ts';
 import { resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
@@ -94,6 +97,8 @@ export function computeNationalMacroEconomy(
   const housingSpillover = readMacroHousingSpilloverFromV1014Housing(inputs);
   const inflationSpillover = readMacroInflationSpilloverFromV1010(inputs);
   const energySpillover = readMacroEnergySpilloverFromV1018(inputs);
+  const eventsSpillover = readMacroEventsSpilloverFromV105(inputs);
+  const companiesSpillover = readMacroCompaniesSpilloverFromV108(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -106,7 +111,9 @@ export function computeNationalMacroEconomy(
   const withHousing = applyMacroHousingSpillover(withStrategic, housingSpillover);
   const withInflation = applyMacroInflationSpillover(withHousing, inflationSpillover);
   const withEnergy = applyMacroEnergySpillover(withInflation, energySpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withEnergy, pushEv);
+  const withEvents = applyMacroEventsSpillover(withEnergy, eventsSpillover);
+  const withCompanies = applyMacroCompaniesSpillover(withEvents, companiesSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withCompanies, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -146,11 +153,14 @@ export function computeNationalMacroEconomy(
     strategic: strategicSpillover,
     housing: housingSpillover,
     inflation: inflationSpillover,
-    energy: energySpillover
+    energy: energySpillover,
+    events: eventsSpillover,
+    companies: companiesSpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
   const transmissionCoherence = buildMacroTransmissionCoherenceSnapshot(transmissionReport, cyclePhase);
+  const transmissionConcentration = buildMacroTransmissionConcentrationSnapshot(transmissionReport);
 
   const capacitySnapshot = buildMacroCapacitySnapshot({
     state: {
@@ -213,9 +223,12 @@ export function computeNationalMacroEconomy(
     housingSpilloverSummary: housingSpillover.summary,
     inflationSpilloverSummary: inflationSpillover.summary,
     energySpilloverSummary: energySpillover.summary,
+    eventsSpilloverSummary: eventsSpillover.summary,
+    companiesSpilloverSummary: companiesSpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,
+    transmissionConcentration,
     transmissionReport,
     stressIndex: {
       score: 0,

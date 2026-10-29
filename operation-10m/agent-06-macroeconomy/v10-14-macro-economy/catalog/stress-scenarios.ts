@@ -60,6 +60,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Inflation & energy stress',
     shockIds: ['high_inflation', 'commodity_bust'],
     description: 'Price-pressure and energy cost shock combination (harness overlay).'
+  },
+  {
+    id: 'events_companies_stress',
+    label: 'Events & companies stress',
+    shockIds: ['global_slowdown', 'credit_contraction'],
+    description: 'Narrative backlog with private-sector utilization stress (harness overlay).'
   }
 ];
 

@@ -25,6 +25,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   includeLaborInnovationStress?: boolean;
   includeHousingStrategicStress?: boolean;
   includeInflationEnergyStress?: boolean;
+  includeEventsCompaniesStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
@@ -32,6 +33,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   const includeLaborInnovationStress = Boolean(options?.includeLaborInnovationStress);
   const includeHousingStrategicStress = Boolean(options?.includeHousingStrategicStress);
   const includeInflationEnergyStress = Boolean(options?.includeInflationEnergyStress);
+  const includeEventsCompaniesStress = Boolean(options?.includeEventsCompaniesStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -82,6 +84,20 @@ export function runMacroEconomyRegressionHarness(options?: {
             supplyReliability: { band: t % 5 === 0 ? 'stressed' : 'robust' },
             energyCost: { band: t % 7 === 0 ? 'elevated' : 'favorable' },
             transition: { band: t % 9 === 0 ? 'accelerating' : 'steady' }
+          }
+        : undefined,
+      dynamicEvents: includeEventsCompaniesStress
+        ? {
+            nationalStabilityBand: t % 6 === 0 ? 'fragile' : 'stable',
+            pendingBacklogBand: t % 5 === 0 ? 'elevated' : 'calm',
+            activeCrisisCount: t % 8 === 0 ? 2 : 0
+          }
+        : undefined,
+      privateSector: includeEventsCompaniesStress
+        ? {
+            nationalUtilizationBand: t % 7 === 0 ? 'slack' : 'balanced',
+            overloadedFirmCount: t % 6 === 0 ? 3 : 0,
+            productionMomentum: { band: t % 9 === 0 ? 'contracting' : 'steady' }
           }
         : undefined
     });
@@ -143,8 +159,20 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionCoherence.coherenceIndex)
     });
     checks.push({
-      id: 'twelve_transmission_layers',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 12,
+      id: 'fourteen_transmission_layers',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 14,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeEventsCompaniesStress && prev) {
+    checks.push({
+      id: 'transmission_concentration_finite',
+      passed: Number.isFinite(prev.transmissionConcentration.concentrationIndex),
+      detail: String(prev.transmissionConcentration.concentrationIndex)
+    });
+    checks.push({
+      id: 'fourteen_transmission_layers_events',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 14,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
