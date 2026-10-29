@@ -372,6 +372,18 @@ export function SimulationUiEvolutionBridge({
       {result.nearestMilestoneEtaDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-nearest-milestone-eta-day">{result.nearestMilestoneEtaDayCoachCopy}</div>
       ) : null}
+      {result.thirdUnlockHeadlineDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-third-unlock-headline-day">{result.thirdUnlockHeadlineDayCoachCopy}</div>
+      ) : null}
+      {result.turnPaceMomentumDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-turn-pace-day">{result.turnPaceMomentumDayCoachCopy}</div>
+      ) : null}
+      {result.liveRegionAssertiveBatchDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-live-region-assertive-day">{result.liveRegionAssertiveBatchDayCoachCopy}</div>
+      ) : null}
+      {result.legacyNavPatchCoverageDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-legacy-patch-coverage-day">{result.legacyNavPatchCoverageDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets

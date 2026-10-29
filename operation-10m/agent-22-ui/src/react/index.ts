@@ -141,3 +141,7 @@ export { SecondUnlockHeadlineDayCoachStrip } from './SecondUnlockHeadlineDayCoac
 export { ActiveNotificationLaneCountDayCoachStrip } from './ActiveNotificationLaneCountDayCoachStrip.js';
 export { VisiblePanelSnapshotDayCoachStrip } from './VisiblePanelSnapshotDayCoachStrip.js';
 export { NearestMilestoneEtaDayCoachStrip } from './NearestMilestoneEtaDayCoachStrip.js';
+export { ThirdUnlockHeadlineDayCoachStrip } from './ThirdUnlockHeadlineDayCoachStrip.js';
+export { TurnPaceMomentumDayCoachStrip } from './TurnPaceMomentumDayCoachStrip.js';
+export { LiveRegionAssertiveBatchDayCoachStrip } from './LiveRegionAssertiveBatchDayCoachStrip.js';
+export { LegacyNavPatchCoverageDayCoachStrip } from './LegacyNavPatchCoverageDayCoachStrip.js';

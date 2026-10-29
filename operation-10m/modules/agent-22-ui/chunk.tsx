@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: b0c3ea6dc7d804b5
+// content-sha256-prefix: 7cfc55f314b20bfe
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -983,6 +983,10 @@ export interface DayAdvanceUiEvolutionResult {
   activeNotificationLaneCountDayCoachCopy: string | null;
   visiblePanelSnapshotDayCoachCopy: string | null;
   nearestMilestoneEtaDayCoachCopy: string | null;
+  thirdUnlockHeadlineDayCoachCopy: string | null;
+  turnPaceMomentumDayCoachCopy: string | null;
+  liveRegionAssertiveBatchDayCoachCopy: string | null;
+  legacyNavPatchCoverageDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1816,6 +1820,28 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const thirdUnlockHeadlineDayCoach = buildThirdUnlockHeadlineDayCoach({
+    newlyUnlockedPanelIds,
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const turnPaceMomentumDayCoach = buildTurnPaceMomentumDayCoach({
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const liveRegionAssertiveBatchDayCoach = buildLiveRegionAssertiveBatchDayCoach({
+    assertiveCount: liveRegionPlan.assertiveCount,
+    messageCount: liveRegionPlan.messages.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const legacyNavPatchCoverageDayCoach = buildLegacyNavPatchCoverageDayCoach({
+    patchCoverageCount: legacyCoverage,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1970,6 +1996,10 @@ export function tickEvolvingUiOnDayAdvance(
     activeNotificationLaneCountDayCoachCopy: activeNotificationLaneCountDayCoach.coachCopy,
     visiblePanelSnapshotDayCoachCopy: visiblePanelSnapshotDayCoach.coachCopy,
     nearestMilestoneEtaDayCoachCopy: nearestMilestoneEtaDayCoach.coachCopy,
+    thirdUnlockHeadlineDayCoachCopy: thirdUnlockHeadlineDayCoach.coachCopy,
+    turnPaceMomentumDayCoachCopy: turnPaceMomentumDayCoach.coachCopy,
+    liveRegionAssertiveBatchDayCoachCopy: liveRegionAssertiveBatchDayCoach.coachCopy,
+    legacyNavPatchCoverageDayCoachCopy: legacyNavPatchCoverageDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -7690,6 +7720,277 @@ export function buildNearestMilestoneEtaDayCoach(input: {
     daysAway: days,
     coachCopy: `Day ${input.nextGameDay}: "${nearest.title}" may arrive in about ${days} ${dayWord}.`,
   };
+}
+
+// --- source: engine/third-unlock-headline-day-coach.ts ---
+export interface ThirdUnlockHeadlineDayCoach {
+  panelId: string | null;
+  coachCopy: string | null;
+}
+
+export function buildThirdUnlockHeadlineDayCoach(input: {
+  newlyUnlockedPanelIds: string[];
+  signals: ProgressionSignalSnapshot;
+  nextGameDay: number;
+}): ThirdUnlockHeadlineDayCoach {
+  const panelId = input.newlyUnlockedPanelIds[2];
+  if (!panelId) {
+    return { panelId: null, coachCopy: null };
+  }
+  const panel = EVOLVING_UI_PANEL_BY_ID[panelId];
+  if (!panel) {
+    return { panelId, coachCopy: null };
+  }
+  return {
+    panelId,
+    coachCopy: `Day ${input.nextGameDay}: Third unlock today — ${buildCoachHeadline(panel, input.signals)}`,
+  };
+}
+
+// --- source: engine/turn-pace-momentum-day-coach.ts ---
+export interface TurnPaceMomentumDayCoach {
+  turnCount: number;
+  gameDay: number;
+  coachCopy: string | null;
+}
+
+export function buildTurnPaceMomentumDayCoach(input: {
+  signals: ProgressionSignalSnapshot;
+  nextGameDay: number;
+}): TurnPaceMomentumDayCoach {
+  const { turnCount, gameDay } = input.signals;
+  if (input.nextGameDay > 10 || gameDay < 2) {
+    return { turnCount, gameDay, coachCopy: null };
+  }
+  if (turnCount < gameDay * 2) {
+    return { turnCount, gameDay, coachCopy: null };
+  }
+  return {
+    turnCount,
+    gameDay,
+    coachCopy: `Day ${input.nextGameDay}: Turn pace is high (${turnCount} turns by day ${gameDay}) — coach copy may defer to reduce overload.`,
+  };
+}
+
+// --- source: engine/live-region-assertive-batch-day-coach.ts ---
+export interface LiveRegionAssertiveBatchDayCoach {
+  assertiveCount: number;
+  messageCount: number;
+  coachCopy: string | null;
+}
+
+export function buildLiveRegionAssertiveBatchDayCoach(input: {
+  assertiveCount: number;
+  messageCount: number;
+  nextGameDay: number;
+}): LiveRegionAssertiveBatchDayCoach {
+  if (input.assertiveCount <= 0 || input.messageCount <= 0) {
+    return {
+      assertiveCount: input.assertiveCount,
+      messageCount: input.messageCount,
+      coachCopy: null,
+    };
+  }
+  return {
+    assertiveCount: input.assertiveCount,
+    messageCount: input.messageCount,
+    coachCopy: `Day ${input.nextGameDay}: ${input.assertiveCount} assertive live-region coach ${input.assertiveCount === 1 ? 'message' : 'messages'} queued for immediate delivery.`,
+  };
+}
+
+// --- source: engine/legacy-nav-patch-coverage-day-coach.ts ---
+export interface LegacyNavPatchCoverageDayCoach {
+  patchCoverageCount: number;
+  coachCopy: string | null;
+}
+
+export function buildLegacyNavPatchCoverageDayCoach(input: {
+  patchCoverageCount: number;
+  nextGameDay: number;
+}): LegacyNavPatchCoverageDayCoach {
+  if (input.patchCoverageCount <= 0 || input.nextGameDay > 14) {
+    return { patchCoverageCount: input.patchCoverageCount, coachCopy: null };
+  }
+  const noun = input.patchCoverageCount === 1 ? 'target' : 'targets';
+  return {
+    patchCoverageCount: input.patchCoverageCount,
+    coachCopy: `Day ${input.nextGameDay}: Legacy navigation audit covers ${input.patchCoverageCount} patch ${noun} still hidden by progression.`,
+  };
+}
+
+// --- source: engine/round42-self-tests.ts ---
+export function runAgent22Round42SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r42_third_unlock',
+    'third unlock headline day coach',
+    (() => {
+      const coach = buildThirdUnlockHeadlineDayCoach({
+        newlyUnlockedPanelIds: ['nav_map', 'nav_market', 'nav_workshop'],
+        signals: { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' },
+        nextGameDay: 5,
+      });
+      return coach.panelId === 'nav_workshop' && Boolean(coach.coachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r42_turn_pace',
+    'turn pace momentum day coach',
+    (() => {
+      const coach = buildTurnPaceMomentumDayCoach({
+        signals: { gameDay: 4, turnCount: 10, interfaceLevel: 'simple' },
+        nextGameDay: 4,
+      });
+      return Boolean(coach.coachCopy?.includes('Day 4')) && Boolean(coach.coachCopy?.includes('10 turns'));
+    })()
+  );
+
+  check(
+    'r42_assertive_batch',
+    'live region assertive batch day coach',
+    (() => {
+      const coach = buildLiveRegionAssertiveBatchDayCoach({
+        assertiveCount: 2,
+        messageCount: 3,
+        nextGameDay: 3,
+      });
+      return coach.assertiveCount === 2 && Boolean(coach.coachCopy?.includes('Day 3'));
+    })()
+  );
+
+  check(
+    'r42_legacy_patch',
+    'legacy nav patch coverage day coach',
+    (() => {
+      const coach = buildLegacyNavPatchCoverageDayCoach({
+        patchCoverageCount: 4,
+        nextGameDay: 6,
+      });
+      return coach.patchCoverageCount === 4 && Boolean(coach.coachCopy?.includes('Day 6'));
+    })()
+  );
+
+  check(
+    'r42_tick_third_unlock',
+    'tick exposes third unlock headline day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.thirdUnlockHeadlineDayCoachCopy === 'string' || r.thirdUnlockHeadlineDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r42_tick_turn_pace',
+    'tick exposes turn pace momentum day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 3, turnCount: 6, interfaceLevel: 'simple' },
+        { gameDay: 4, turnCount: 8, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.turnPaceMomentumDayCoachCopy?.includes('Day 4'));
+    })()
+  );
+
+  check(
+    'r42_tick_assertive',
+    'tick exposes live region assertive batch day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.liveRegionAssertiveBatchDayCoachCopy === 'string' || r.liveRegionAssertiveBatchDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r42_tick_legacy_patch',
+    'tick exposes legacy nav patch coverage day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.legacyNavPatchCoverageDayCoachCopy === 'string' || r.legacyNavPatchCoverageDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r42_third_unlock_short',
+    'third unlock null with fewer than three unlocks',
+    (() => {
+      const coach = buildThirdUnlockHeadlineDayCoach({
+        newlyUnlockedPanelIds: ['nav_map', 'nav_market'],
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        nextGameDay: 2,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r42_turn_pace_slow',
+    'turn pace null when turns low',
+    (() => {
+      const coach = buildTurnPaceMomentumDayCoach({
+        signals: { gameDay: 5, turnCount: 5, interfaceLevel: 'simple' },
+        nextGameDay: 5,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r42_assertive_zero',
+    'assertive batch null when no assertive messages',
+    (() => {
+      const coach = buildLiveRegionAssertiveBatchDayCoach({
+        assertiveCount: 0,
+        messageCount: 2,
+        nextGameDay: 2,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r42_legacy_late',
+    'legacy patch null after day 14',
+    (() => {
+      const coach = buildLegacyNavPatchCoverageDayCoach({
+        patchCoverageCount: 3,
+        nextGameDay: 20,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round41-self-tests.ts ---
@@ -15515,6 +15816,18 @@ export function SimulationUiEvolutionBridge({
       {result.nearestMilestoneEtaDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-nearest-milestone-eta-day">{result.nearestMilestoneEtaDayCoachCopy}</div>
       ) : null}
+      {result.thirdUnlockHeadlineDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-third-unlock-headline-day">{result.thirdUnlockHeadlineDayCoachCopy}</div>
+      ) : null}
+      {result.turnPaceMomentumDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-turn-pace-day">{result.turnPaceMomentumDayCoachCopy}</div>
+      ) : null}
+      {result.liveRegionAssertiveBatchDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-live-region-assertive-day">{result.liveRegionAssertiveBatchDayCoachCopy}</div>
+      ) : null}
+      {result.legacyNavPatchCoverageDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-legacy-patch-coverage-day">{result.legacyNavPatchCoverageDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -17740,8 +18053,96 @@ export function NearestMilestoneEtaDayCoachStrip({
   );
 }
 
+// --- source: react/ThirdUnlockHeadlineDayCoachStrip.tsx ---
+export function ThirdUnlockHeadlineDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: ThirdUnlockHeadlineDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="third-unlock-headline-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-emerald-800/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/TurnPaceMomentumDayCoachStrip.tsx ---
+export function TurnPaceMomentumDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: TurnPaceMomentumDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="turn-pace-momentum-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-orange-600/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/LiveRegionAssertiveBatchDayCoachStrip.tsx ---
+export function LiveRegionAssertiveBatchDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: LiveRegionAssertiveBatchDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="live-region-assertive-batch-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-rose-600/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/LegacyNavPatchCoverageDayCoachStrip.tsx ---
+export function LegacyNavPatchCoverageDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: LegacyNavPatchCoverageDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="legacy-nav-patch-coverage-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-stone-600/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.41.0';
+export const AGENT_22_MODULE_VERSION = '1.42.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -17892,6 +18293,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round42 = runAgent22Round42SelfTests();
+  for (const r of round42.results) {
+    check(`agent22_round42_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round41 = runAgent22Round41SelfTests();

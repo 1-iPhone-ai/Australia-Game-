@@ -145,6 +145,10 @@ import { buildSecondUnlockHeadlineDayCoach } from '../engine/second-unlock-headl
 import { buildActiveNotificationLaneCountDayCoach } from '../engine/active-notification-lane-count-day-coach.js';
 import { buildVisiblePanelSnapshotDayCoach } from '../engine/visible-panel-snapshot-day-coach.js';
 import { buildNearestMilestoneEtaDayCoach } from '../engine/nearest-milestone-eta-day-coach.js';
+import { buildThirdUnlockHeadlineDayCoach } from '../engine/third-unlock-headline-day-coach.js';
+import { buildTurnPaceMomentumDayCoach } from '../engine/turn-pace-momentum-day-coach.js';
+import { buildLiveRegionAssertiveBatchDayCoach } from '../engine/live-region-assertive-batch-day-coach.js';
+import { buildLegacyNavPatchCoverageDayCoach } from '../engine/legacy-nav-patch-coverage-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -298,6 +302,10 @@ export interface DayAdvanceUiEvolutionResult {
   activeNotificationLaneCountDayCoachCopy: string | null;
   visiblePanelSnapshotDayCoachCopy: string | null;
   nearestMilestoneEtaDayCoachCopy: string | null;
+  thirdUnlockHeadlineDayCoachCopy: string | null;
+  turnPaceMomentumDayCoachCopy: string | null;
+  liveRegionAssertiveBatchDayCoachCopy: string | null;
+  legacyNavPatchCoverageDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1131,6 +1139,28 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const thirdUnlockHeadlineDayCoach = buildThirdUnlockHeadlineDayCoach({
+    newlyUnlockedPanelIds,
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const turnPaceMomentumDayCoach = buildTurnPaceMomentumDayCoach({
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const liveRegionAssertiveBatchDayCoach = buildLiveRegionAssertiveBatchDayCoach({
+    assertiveCount: liveRegionPlan.assertiveCount,
+    messageCount: liveRegionPlan.messages.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const legacyNavPatchCoverageDayCoach = buildLegacyNavPatchCoverageDayCoach({
+    patchCoverageCount: legacyCoverage,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1285,6 +1315,10 @@ export function tickEvolvingUiOnDayAdvance(
     activeNotificationLaneCountDayCoachCopy: activeNotificationLaneCountDayCoach.coachCopy,
     visiblePanelSnapshotDayCoachCopy: visiblePanelSnapshotDayCoach.coachCopy,
     nearestMilestoneEtaDayCoachCopy: nearestMilestoneEtaDayCoach.coachCopy,
+    thirdUnlockHeadlineDayCoachCopy: thirdUnlockHeadlineDayCoach.coachCopy,
+    turnPaceMomentumDayCoachCopy: turnPaceMomentumDayCoach.coachCopy,
+    liveRegionAssertiveBatchDayCoachCopy: liveRegionAssertiveBatchDayCoach.coachCopy,
+    legacyNavPatchCoverageDayCoachCopy: legacyNavPatchCoverageDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
