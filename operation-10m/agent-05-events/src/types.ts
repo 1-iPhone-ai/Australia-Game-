@@ -1,7 +1,7 @@
 /** Operation 10M · Agent 05 — dynamic events & narrative (standalone contract). */
 
 export const OP10M_AGENT05_MODULE_ID = 'op10m_agent05_dynamic_events';
-export const OP10M_AGENT05_MODULE_VERSION = '1.2.0';
+export const OP10M_AGENT05_MODULE_VERSION = '1.3.0';
 
 export type Op10mChainPhase = 'signal' | 'pressure' | 'rupture' | 'recovery';
 
@@ -172,6 +172,22 @@ export interface Op10mTriggerRequirePeerChainPhase {
   minPhase: Op10mChainPhase;
 }
 
+export interface Op10mTriggerRequireMinNationalEscalation {
+  k: 'min_national_escalation';
+  min: number;
+}
+
+export interface Op10mTriggerRequireMinResolvedChains {
+  k: 'min_resolved_chains';
+  min: number;
+}
+
+export interface Op10mTriggerRequireMultiRegionContagion {
+  k: 'multi_region_contagion';
+  minPerRegion: number;
+  minRegions: number;
+}
+
 export type Op10mTriggerRequirement =
   | Op10mTriggerRequireSeason
   | Op10mTriggerRequireSector
@@ -186,7 +202,10 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequireMinActiveCrises
   | Op10mTriggerRequireCombinedSector
   | Op10mTriggerRequireCrossSystemCoupling
-  | Op10mTriggerRequirePeerChainPhase;
+  | Op10mTriggerRequirePeerChainPhase
+  | Op10mTriggerRequireMinNationalEscalation
+  | Op10mTriggerRequireMinResolvedChains
+  | Op10mTriggerRequireMultiRegionContagion;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
@@ -271,6 +290,7 @@ export interface Op10mNarrativeEngineState {
     regionalHooksFired: number;
     deepFollowUpsArmed: number;
     crossSystemCouplings: number;
+    nationalEscalationSteps: number;
   };
   regional?: Op10mRegionalContagionLedger;
 }

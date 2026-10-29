@@ -8,6 +8,7 @@ import type {
   Op10mTriggerRequirement,
 } from './types.ts';
 import { getCrossSystemCouplingLevel, hasPeerChainAtPhase } from './cross-system-orchestrator.ts';
+import { getNationalEscalationTier, countRegionsWithContagionAtLeast } from './national-escalation-orchestrator.ts';
 import { hasArmedBypass } from './deep-chain-orchestrator.ts';
 import { getContagionLevel } from './regional-graph.ts';
 
@@ -111,6 +112,26 @@ export function evaluateRequirements(
         if (!narrative || !catalog) return { ok: false, reason: 'missing peer context' };
         if (!hasPeerChainAtPhase(narrative, catalog, req.region, req.theme, req.minPhase)) {
           return { ok: false, reason: 'peer chain phase' };
+        }
+        break;
+      }
+      case 'min_national_escalation': {
+        const tier = getNationalEscalationTier(sim);
+        if (tier < req.min) return { ok: false, reason: `national tier ${tier}<${req.min}` };
+        break;
+      }
+      case 'min_resolved_chains': {
+        const narrative = context?.narrative;
+        if (!narrative) return { ok: false, reason: 'missing narrative' };
+        if (narrative.resolvedChainIds.length < req.min) {
+          return { ok: false, reason: `resolved ${narrative.resolvedChainIds.length}<${req.min}` };
+        }
+        break;
+      }
+      case 'multi_region_contagion': {
+        const regions = countRegionsWithContagionAtLeast(sim, req.minPerRegion);
+        if (regions < req.minRegions) {
+          return { ok: false, reason: `regions ${regions}<${req.minRegions}` };
         }
         break;
       }

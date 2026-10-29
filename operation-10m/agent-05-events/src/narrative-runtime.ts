@@ -1,5 +1,6 @@
 import { applyConsequenceMutation, applyPersistentModifiers } from './consequence-applier.ts';
 import { evaluateCrossSystemCouplings } from './cross-system-orchestrator.ts';
+import { evaluateNationalEscalationLattice } from './national-escalation-orchestrator.ts';
 import { hasArmedBypass } from './deep-chain-orchestrator.ts';
 import { createDefaultRegionalContagionLedger, evaluateRegionalNarrativeHooks, sanitizeRegionalContagionLedger } from './regional-hook-engine.ts';
 import {
@@ -70,6 +71,7 @@ export function createDefaultOp10mNarrativeEngineState(): Op10mNarrativeEngineSt
       regionalHooksFired: 0,
       deepFollowUpsArmed: 0,
       crossSystemCouplings: 0,
+      nationalEscalationSteps: 0,
     },
     regional: createDefaultRegionalContagionLedger(),
   };
@@ -128,6 +130,7 @@ export function sanitizeOp10mNarrativeEngineState(raw: unknown): Op10mNarrativeE
     base.telemetry.regionalHooksFired = Math.max(0, Number(t.regionalHooksFired) || 0);
     base.telemetry.deepFollowUpsArmed = Math.max(0, Number(t.deepFollowUpsArmed) || 0);
     base.telemetry.crossSystemCouplings = Math.max(0, Number(t.crossSystemCouplings) || 0);
+    base.telemetry.nationalEscalationSteps = Math.max(0, Number(t.nationalEscalationSteps) || 0);
   }
 
   base.regional = sanitizeRegionalContagionLedger(r.regional);
@@ -140,6 +143,7 @@ export interface Op10mTickOptions {
   maxNewResponsesPerTick?: number;
   regionalHooks?: Op10mRegionalNarrativeHook[];
   crossSystemCouplings?: boolean;
+  nationalEscalation?: boolean;
 }
 
 export function evaluateOp10mNarrativeTick(
@@ -268,6 +272,13 @@ export function evaluateOp10mNarrativeTick(
     simulation = xsys.simulation;
     narrative = xsys.narrative;
     log.push(...xsys.log);
+  }
+
+  if (options?.nationalEscalation !== false) {
+    const national = evaluateNationalEscalationLattice(simulation, narrative);
+    simulation = national.simulation;
+    narrative = national.narrative;
+    log.push(...national.log);
   }
 
   const regionalHooks = options?.regionalHooks ?? [];
