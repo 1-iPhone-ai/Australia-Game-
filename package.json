@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 5173"
+    "preview": "vite preview --host 0.0.0.0 --port 5173",
+    "test:agent19": "npx --yes tsx@4.19.4 operation-10m/agent-19-ai-memory/tests/run.ts",
+    "build:agent19-chunk": "node operation-10m/agent-19-ai-memory/scripts/build-chunk.mjs"
   },
   "dependencies": {
     "react": "19.3.1",
