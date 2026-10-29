@@ -110,7 +110,7 @@ export function runAgent24ReplayScaleWaveDryrunVerificationSelfTests(): Array<{ 
   const postProjectionGate = {
     reportId: 'ppg',
     matchId: 'self',
-    waveRound: 45,
+    waveRound: 46,
     gateOpen: true,
     blockerCount: 0,
     blockers: [],
@@ -120,7 +120,7 @@ export function runAgent24ReplayScaleWaveDryrunVerificationSelfTests(): Array<{ 
   const projectionVerification = {
     reportId: 'pv',
     matchId: 'self',
-    waveRound: 45,
+    waveRound: 46,
     projectionBaselineSha: '634656bb',
     verified: true,
     issueCount: 0,
@@ -132,7 +132,7 @@ export function runAgent24ReplayScaleWaveDryrunVerificationSelfTests(): Array<{ 
   const dryrunHandoff = {
     reportId: 'dh',
     matchId: 'self',
-    waveRound: 45,
+    waveRound: 46,
     dryrunBaselineSha: '634656bb',
     handoffComplete: true,
     checkpointCount: 3,
@@ -151,7 +151,7 @@ export function runAgent24ReplayScaleWaveDryrunVerificationSelfTests(): Array<{ 
 
   return [
     { name: 'verified_when_dryrun_stack_ready', passed: report.verified && report.issueCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 45 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 46 },
     {
       name: 'deterministic_fingerprint',
       passed:

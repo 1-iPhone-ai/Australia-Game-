@@ -215,6 +215,7 @@ import {
   O6K_AGENT24_WAVE43_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE44_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE45_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE46_INTEGRATION_BASELINE_SHA,
 } from '../src/replay-scale-wave-integration-closeout.ts';
 import {
   buildAgent24ReplayScaleWaveIntegrationVerificationReport,
@@ -530,6 +531,18 @@ import {
   buildAgent24ReplayScaleWaveWave45IntegrationHandoffReport,
   runAgent24ReplayScaleWaveWave45IntegrationHandoffSelfTests,
 } from '../src/replay-scale-wave-wave45-integration-handoff.ts';
+import {
+  buildAgent24ReplayScaleWaveWave45IntegrationVerificationReport,
+  runAgent24ReplayScaleWaveWave45IntegrationVerificationSelfTests,
+} from '../src/replay-scale-wave-wave45-integration-verification.ts';
+import {
+  buildAgent24ArchiveScaleWaveWave46ExportGateReport,
+  runAgent24ArchiveScaleWaveWave46ExportGateSelfTests,
+} from '../src/archive-scale-wave-wave46-export-gate.ts';
+import {
+  buildAgent24ReplayScaleWaveWave46IntegrationHandoffReport,
+  runAgent24ReplayScaleWaveWave46IntegrationHandoffSelfTests,
+} from '../src/replay-scale-wave-wave46-integration-handoff.ts';
 import { buildO6kHistoricalAnalyticsSnapshot } from '../src/history-replay-analytics.ts';
 import { o6kAgent24StableStringify, runO6kAgent24SelfTests } from '../src/history-replay-analytics.ts';
 
@@ -1567,13 +1580,13 @@ describe('Agent 24 archive continuity verification', () => {
 });
 
 describe('Agent 24 replay scale wave acceptance', () => {
-  it('accepts wave 45 when continuity, export, and depth align', () => {
+  it('accepts wave 46 when continuity, export, and depth align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveAcceptance.accepted, true);
-    assert.equal(bundle.replayScaleWaveAcceptance.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveAcceptance.waveRound, 46);
     const direct = buildAgent24ReplayScaleWaveAcceptanceReport({
       matchId: 'm',
-      waveRound: 45,
+      waveRound: 46,
       archiveContinuityVerification: bundle.archiveContinuityVerification,
       exportReadiness: bundle.exportReadiness,
       analyticsDepth: bundle.analyticsDepth,
@@ -1617,7 +1630,7 @@ describe('Agent 24 replay scale wave handoff seal', () => {
   it('seals handoff when wave acceptance and release verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveHandoffSeal.handoffReady, true);
-    assert.equal(bundle.replayScaleWaveHandoffSeal.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveHandoffSeal.waveRound, 46);
     const direct = buildAgent24ReplayScaleWaveHandoffSeal({
       matchId: 'm',
       replayScaleWaveAcceptance: bundle.replayScaleWaveAcceptance,
@@ -1633,7 +1646,7 @@ describe('Agent 24 replay scale wave closeout', () => {
   it('completes closeout when wave handoff and release verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveCloseout.closeoutComplete, true);
-    assert.equal(bundle.replayScaleWaveCloseout.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveCloseout.waveRound, 46);
     const direct = buildAgent24ReplayScaleWaveCloseoutReport({
       matchId: 'm',
       replayScaleWaveAcceptance: bundle.replayScaleWaveAcceptance,
@@ -1649,7 +1662,7 @@ describe('Agent 24 replay scale wave verification', () => {
   it('verifies scale wave when closeout, handoff seal, and acceptance align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveVerification.waveRound, 46);
     const direct = buildAgent24ReplayScaleWaveVerificationReport({
       matchId: 'm',
       replayScaleWaveCloseout: bundle.replayScaleWaveCloseout,
@@ -1665,7 +1678,7 @@ describe('Agent 24 archive scale wave finalization', () => {
   it('finalizes when verification, closeout, and release verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveFinalization.finalized, true);
-    assert.equal(bundle.archiveScaleWaveFinalization.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveFinalization.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveFinalizationReport({
       matchId: 'm',
       replayScaleWaveVerification: bundle.replayScaleWaveVerification,
@@ -1681,7 +1694,7 @@ describe('Agent 24 replay scale wave attestation', () => {
   it('attests verified scale wave when finalization stack is ready', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveAttestation.status, 'verified');
-    assert.equal(bundle.replayScaleWaveAttestation.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveAttestation.waveRound, 46);
     const direct = buildAgent24ReplayScaleWaveAttestation({
       matchId: 'm',
       replayScaleWaveVerification: bundle.replayScaleWaveVerification,
@@ -1697,7 +1710,7 @@ describe('Agent 24 replay scale wave attestation verification', () => {
   it('verifies attestation when wave stack and finalization align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveAttestationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveAttestationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveAttestationVerification.waveRound, 46);
     const direct = buildAgent24ReplayScaleWaveAttestationVerificationReport({
       matchId: 'm',
       replayScaleWaveAttestation: bundle.replayScaleWaveAttestation,
@@ -1716,7 +1729,7 @@ describe('Agent 24 archive scale wave release handoff gate', () => {
   it('allows handoff when attestation verification and release verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveReleaseHandoffGate.handoffAllowed, true);
-    assert.equal(bundle.archiveScaleWaveReleaseHandoffGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveReleaseHandoffGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveReleaseHandoffGateReport({
       matchId: 'm',
       replayScaleWaveAttestationVerification: bundle.replayScaleWaveAttestationVerification,
@@ -1735,8 +1748,8 @@ describe('Agent 24 replay scale wave integration closeout', () => {
   it('completes integration closeout at O10-199 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveIntegrationCloseout.closeoutComplete, true);
-    assert.equal(bundle.replayScaleWaveIntegrationCloseout.waveRound, 45);
-    assert.equal(bundle.replayScaleWaveIntegrationCloseout.integrationBaselineSha, O6K_AGENT24_WAVE45_INTEGRATION_BASELINE_SHA);
+    assert.equal(bundle.replayScaleWaveIntegrationCloseout.waveRound, 46);
+    assert.equal(bundle.replayScaleWaveIntegrationCloseout.integrationBaselineSha, O6K_AGENT24_WAVE46_INTEGRATION_BASELINE_SHA);
     const direct = buildAgent24ReplayScaleWaveIntegrationCloseoutReport({
       matchId: 'm',
       archiveScaleWaveReleaseHandoffGate: bundle.archiveScaleWaveReleaseHandoffGate,
@@ -1755,8 +1768,8 @@ describe('Agent 24 replay scale wave integration verification', () => {
   it('verifies integration when closeout, attestation verification, and handoff align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveIntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveIntegrationVerification.waveRound, 45);
-    assert.equal(bundle.replayScaleWaveIntegrationVerification.integrationBaselineSha, O6K_AGENT24_WAVE45_INTEGRATION_BASELINE_SHA);
+    assert.equal(bundle.replayScaleWaveIntegrationVerification.waveRound, 46);
+    assert.equal(bundle.replayScaleWaveIntegrationVerification.integrationBaselineSha, O6K_AGENT24_WAVE46_INTEGRATION_BASELINE_SHA);
     const direct = buildAgent24ReplayScaleWaveIntegrationVerificationReport({
       matchId: 'm',
       replayScaleWaveIntegrationCloseout: bundle.replayScaleWaveIntegrationCloseout,
@@ -1775,7 +1788,7 @@ describe('Agent 24 archive scale wave export gate', () => {
   it('allows export when integration verified and export readiness align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveExportGateReport({
       matchId: 'm',
       replayScaleWaveIntegrationVerification: bundle.replayScaleWaveIntegrationVerification,
@@ -1791,8 +1804,8 @@ describe('Agent 24 replay scale wave projection handoff', () => {
   it('seals projection handoff at O10-199 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveProjectionHandoffSeal.handoffReady, true);
-    assert.equal(bundle.replayScaleWaveProjectionHandoffSeal.waveRound, 45);
-    assert.equal(bundle.replayScaleWaveProjectionHandoffSeal.projectionBaselineSha, O6K_AGENT24_WAVE45_INTEGRATION_BASELINE_SHA);
+    assert.equal(bundle.replayScaleWaveProjectionHandoffSeal.waveRound, 46);
+    assert.equal(bundle.replayScaleWaveProjectionHandoffSeal.projectionBaselineSha, O6K_AGENT24_WAVE46_INTEGRATION_BASELINE_SHA);
     const direct = buildAgent24ReplayScaleWaveProjectionHandoffSeal({
       matchId: 'm',
       archiveScaleWaveExportGate: bundle.archiveScaleWaveExportGate,
@@ -1810,8 +1823,8 @@ describe('Agent 24 replay scale wave projection verification', () => {
   it('verifies projection when handoff, integration, and export gate align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveProjectionVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveProjectionVerification.waveRound, 45);
-    assert.equal(bundle.replayScaleWaveProjectionVerification.projectionBaselineSha, O6K_AGENT24_WAVE45_INTEGRATION_BASELINE_SHA);
+    assert.equal(bundle.replayScaleWaveProjectionVerification.waveRound, 46);
+    assert.equal(bundle.replayScaleWaveProjectionVerification.projectionBaselineSha, O6K_AGENT24_WAVE46_INTEGRATION_BASELINE_SHA);
     const direct = buildAgent24ReplayScaleWaveProjectionVerificationReport({
       matchId: 'm',
       replayScaleWaveProjectionHandoffSeal: bundle.replayScaleWaveProjectionHandoffSeal,
@@ -1830,7 +1843,7 @@ describe('Agent 24 archive scale wave post projection gate', () => {
   it('opens gate when projection verified and transfer or export paths align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWavePostProjectionGate.gateOpen, true);
-    assert.equal(bundle.archiveScaleWavePostProjectionGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWavePostProjectionGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWavePostProjectionGateReport({
       matchId: 'm',
       replayScaleWaveProjectionVerification: bundle.replayScaleWaveProjectionVerification,
@@ -1849,8 +1862,8 @@ describe('Agent 24 replay scale wave dryrun handoff', () => {
   it('completes dryrun handoff at O10-199 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveDryrunHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveDryrunHandoff.waveRound, 45);
-    assert.equal(bundle.replayScaleWaveDryrunHandoff.dryrunBaselineSha, O6K_AGENT24_WAVE45_INTEGRATION_BASELINE_SHA);
+    assert.equal(bundle.replayScaleWaveDryrunHandoff.waveRound, 46);
+    assert.equal(bundle.replayScaleWaveDryrunHandoff.dryrunBaselineSha, O6K_AGENT24_WAVE46_INTEGRATION_BASELINE_SHA);
     const direct = buildAgent24ReplayScaleWaveDryrunHandoffReport({
       matchId: 'm',
       archiveScaleWavePostProjectionGate: bundle.archiveScaleWavePostProjectionGate,
@@ -1865,8 +1878,8 @@ describe('Agent 24 replay scale wave dryrun verification', () => {
   it('verifies dryrun when handoff, projection, and post-projection gate align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveDryrunVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveDryrunVerification.waveRound, 45);
-    assert.equal(bundle.replayScaleWaveDryrunVerification.dryrunBaselineSha, O6K_AGENT24_WAVE45_INTEGRATION_BASELINE_SHA);
+    assert.equal(bundle.replayScaleWaveDryrunVerification.waveRound, 46);
+    assert.equal(bundle.replayScaleWaveDryrunVerification.dryrunBaselineSha, O6K_AGENT24_WAVE46_INTEGRATION_BASELINE_SHA);
     const direct = buildAgent24ReplayScaleWaveDryrunVerificationReport({
       matchId: 'm',
       replayScaleWaveDryrunHandoff: bundle.replayScaleWaveDryrunHandoff,
@@ -1882,7 +1895,7 @@ describe('Agent 24 archive scale wave full chunks gate', () => {
   it('opens full-chunks gate when dryrun verified and manifest/import align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveFullChunksGate.chunksGateOpen, true);
-    assert.equal(bundle.archiveScaleWaveFullChunksGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveFullChunksGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveFullChunksGateReport({
       matchId: 'm',
       replayScaleWaveDryrunVerification: bundle.replayScaleWaveDryrunVerification,
@@ -1898,8 +1911,8 @@ describe('Agent 24 replay scale wave full chunks handoff', () => {
   it('seals full-chunks handoff at wave 34 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveFullChunksHandoffSeal.handoffReady, true);
-    assert.equal(bundle.replayScaleWaveFullChunksHandoffSeal.waveRound, 45);
-    assert.equal(bundle.replayScaleWaveFullChunksHandoffSeal.fullChunksBaselineSha, O6K_AGENT24_WAVE45_INTEGRATION_BASELINE_SHA);
+    assert.equal(bundle.replayScaleWaveFullChunksHandoffSeal.waveRound, 46);
+    assert.equal(bundle.replayScaleWaveFullChunksHandoffSeal.fullChunksBaselineSha, O6K_AGENT24_WAVE46_INTEGRATION_BASELINE_SHA);
     const direct = buildAgent24ReplayScaleWaveFullChunksHandoffSeal({
       matchId: 'm',
       archiveScaleWaveFullChunksGate: bundle.archiveScaleWaveFullChunksGate,
@@ -1917,8 +1930,8 @@ describe('Agent 24 replay scale wave full chunks verification', () => {
   it('verifies full-chunks when handoff, gate, and dryrun align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveFullChunksVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveFullChunksVerification.waveRound, 45);
-    assert.equal(bundle.replayScaleWaveFullChunksVerification.fullChunksBaselineSha, O6K_AGENT24_WAVE45_INTEGRATION_BASELINE_SHA);
+    assert.equal(bundle.replayScaleWaveFullChunksVerification.waveRound, 46);
+    assert.equal(bundle.replayScaleWaveFullChunksVerification.fullChunksBaselineSha, O6K_AGENT24_WAVE46_INTEGRATION_BASELINE_SHA);
     const direct = buildAgent24ReplayScaleWaveFullChunksVerificationReport({
       matchId: 'm',
       replayScaleWaveFullChunksHandoffSeal: bundle.replayScaleWaveFullChunksHandoffSeal,
@@ -1934,7 +1947,7 @@ describe('Agent 24 archive scale wave wave23 export gate', () => {
   it('allows export when full-chunks verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave23ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave23ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave23ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave23ExportGateReport({
       matchId: 'm',
       replayScaleWaveFullChunksVerification: bundle.replayScaleWaveFullChunksVerification,
@@ -1950,7 +1963,7 @@ describe('Agent 24 replay scale wave wave23 integration handoff', () => {
   it('completes integration handoff at wave 23 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave23IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave23IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave23IntegrationHandoff.waveRound, 46);
     assert.equal(bundle.replayScaleWaveWave23IntegrationHandoff.integrationBaselineSha, O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA);
     const direct = buildAgent24ReplayScaleWaveWave23IntegrationHandoffReport({
       matchId: 'm',
@@ -1969,7 +1982,7 @@ describe('Agent 24 replay scale wave wave23 integration verification', () => {
   it('verifies wave23 integration when handoff, export, and full-chunks align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave23IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave23IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave23IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave23IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
@@ -1992,7 +2005,7 @@ describe('Agent 24 archive scale wave wave24 export gate', () => {
   it('allows export when wave23 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave24ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave24ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave24ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave24ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave23IntegrationVerification: bundle.replayScaleWaveWave23IntegrationVerification,
@@ -2008,7 +2021,7 @@ describe('Agent 24 replay scale wave wave24 integration handoff', () => {
   it('completes integration handoff at wave 24 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave24IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave24IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave24IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave24IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE24_INTEGRATION_BASELINE_SHA,
@@ -2030,7 +2043,7 @@ describe('Agent 24 replay scale wave wave24 integration verification', () => {
   it('verifies wave24 integration when handoff, export, and wave23 verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave24IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave24IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave24IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave24IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE24_INTEGRATION_BASELINE_SHA,
@@ -2053,7 +2066,7 @@ describe('Agent 24 archive scale wave wave25 export gate', () => {
   it('allows export when wave24 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave25ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave25ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave25ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave25ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave24IntegrationVerification: bundle.replayScaleWaveWave24IntegrationVerification,
@@ -2069,7 +2082,7 @@ describe('Agent 24 replay scale wave wave25 integration handoff', () => {
   it('completes integration handoff at wave 25 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave25IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave25IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave25IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave25IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE25_INTEGRATION_BASELINE_SHA,
@@ -2091,7 +2104,7 @@ describe('Agent 24 replay scale wave wave25 integration verification', () => {
   it('verifies wave25 integration when handoff, export, and wave24 verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave25IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave25IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave25IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave25IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE25_INTEGRATION_BASELINE_SHA,
@@ -2114,7 +2127,7 @@ describe('Agent 24 archive scale wave wave26 export gate', () => {
   it('allows export when wave25 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave26ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave26ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave26ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave26ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave25IntegrationVerification: bundle.replayScaleWaveWave25IntegrationVerification,
@@ -2130,7 +2143,7 @@ describe('Agent 24 replay scale wave wave26 integration handoff', () => {
   it('completes integration handoff at wave 26 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave26IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave26IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave26IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave26IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE26_INTEGRATION_BASELINE_SHA,
@@ -2152,7 +2165,7 @@ describe('Agent 24 replay scale wave wave26 integration verification', () => {
   it('verifies wave26 integration when handoff, export, and wave25 verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave26IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave26IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave26IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave26IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE26_INTEGRATION_BASELINE_SHA,
@@ -2175,7 +2188,7 @@ describe('Agent 24 archive scale wave wave27 export gate', () => {
   it('allows export when wave26 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave27ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave27ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave27ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave27ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave26IntegrationVerification: bundle.replayScaleWaveWave26IntegrationVerification,
@@ -2191,7 +2204,7 @@ describe('Agent 24 replay scale wave wave27 integration handoff', () => {
   it('completes integration handoff at wave 27 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave27IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave27IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave27IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave27IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE27_INTEGRATION_BASELINE_SHA,
@@ -2213,7 +2226,7 @@ describe('Agent 24 replay scale wave wave27 integration verification', () => {
   it('verifies wave27 integration when handoff, export, and wave26 verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave27IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave27IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave27IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave27IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE27_INTEGRATION_BASELINE_SHA,
@@ -2236,7 +2249,7 @@ describe('Agent 24 archive scale wave wave28 export gate', () => {
   it('allows export when wave27 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave28ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave28ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave28ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave28ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave27IntegrationVerification: bundle.replayScaleWaveWave27IntegrationVerification,
@@ -2252,7 +2265,7 @@ describe('Agent 24 replay scale wave wave28 integration handoff', () => {
   it('completes integration handoff at wave 28 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave28IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave28IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave28IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave28IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE28_INTEGRATION_BASELINE_SHA,
@@ -2275,7 +2288,7 @@ describe('Agent 24 replay scale wave wave28 integration verification', () => {
   it('verifies wave28 integration when handoff, export, and wave27 verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave28IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave28IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave28IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave28IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE28_INTEGRATION_BASELINE_SHA,
@@ -2298,7 +2311,7 @@ describe('Agent 24 archive scale wave wave29 export gate', () => {
   it('allows export when wave28 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave29ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave29ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave29ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave29ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave28IntegrationVerification: bundle.replayScaleWaveWave28IntegrationVerification,
@@ -2314,7 +2327,7 @@ describe('Agent 24 replay scale wave wave29 integration handoff', () => {
   it('completes integration handoff at wave 29 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave29IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave29IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave29IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave29IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE29_INTEGRATION_BASELINE_SHA,
@@ -2336,7 +2349,7 @@ describe('Agent 24 replay scale wave wave31 integration verification', () => {
   it('verifies wave31 integration when handoff, export, and wave30 verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave31IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave31IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave31IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave31IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE31_INTEGRATION_BASELINE_SHA,
@@ -2359,7 +2372,7 @@ describe('Agent 24 archive scale wave wave32 export gate', () => {
   it('allows export when wave31 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave32ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave32ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave32ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave32ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave31IntegrationVerification: bundle.replayScaleWaveWave31IntegrationVerification,
@@ -2375,7 +2388,7 @@ describe('Agent 24 replay scale wave wave32 integration handoff', () => {
   it('completes integration handoff at wave 32 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave32IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave32IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave32IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave32IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE32_INTEGRATION_BASELINE_SHA,
@@ -2398,7 +2411,7 @@ describe('Agent 24 replay scale wave wave32 integration verification', () => {
   it('verifies wave32 integration when handoff, export, and wave31 verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave32IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave32IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave32IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave32IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE32_INTEGRATION_BASELINE_SHA,
@@ -2421,7 +2434,7 @@ describe('Agent 24 archive scale wave wave33 export gate', () => {
   it('allows export when wave32 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave33ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave33ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave33ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave33ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave32IntegrationVerification: bundle.replayScaleWaveWave32IntegrationVerification,
@@ -2437,7 +2450,7 @@ describe('Agent 24 replay scale wave wave33 integration handoff', () => {
   it('completes integration handoff at wave 33 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave33IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave33IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave33IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave33IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE33_INTEGRATION_BASELINE_SHA,
@@ -2460,7 +2473,7 @@ describe('Agent 24 replay scale wave wave33 integration verification', () => {
   it('verifies wave33 integration when handoff, export, and wave32 verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave33IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave33IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave33IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave33IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE33_INTEGRATION_BASELINE_SHA,
@@ -2483,7 +2496,7 @@ describe('Agent 24 archive scale wave wave34 export gate', () => {
   it('allows export when wave33 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave34ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave34ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave34ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave34ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave33IntegrationVerification: bundle.replayScaleWaveWave33IntegrationVerification,
@@ -2499,7 +2512,7 @@ describe('Agent 24 replay scale wave wave34 integration handoff', () => {
   it('completes integration handoff at wave 34 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave34IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave34IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave34IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave34IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE34_INTEGRATION_BASELINE_SHA,
@@ -2521,7 +2534,7 @@ describe('Agent 24 replay scale wave wave34 integration verification', () => {
   it('verifies wave34 integration when handoff, export, and wave33 verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave34IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave34IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave34IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave34IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE34_INTEGRATION_BASELINE_SHA,
@@ -2544,7 +2557,7 @@ describe('Agent 24 archive scale wave wave35 export gate', () => {
   it('allows export when wave34 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave35ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave35ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave35ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave35ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave34IntegrationVerification: bundle.replayScaleWaveWave34IntegrationVerification,
@@ -2560,7 +2573,7 @@ describe('Agent 24 replay scale wave wave35 integration handoff', () => {
   it('completes integration handoff at wave 35 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave35IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave35IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave35IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave35IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE35_INTEGRATION_BASELINE_SHA,
@@ -2587,7 +2600,7 @@ describe('Agent 24 replay scale wave wave40 integration verification', () => {
   it('verifies wave40 integration when handoff, export, and wave39 verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave40IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave40IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave40IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave40IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE40_INTEGRATION_BASELINE_SHA,
@@ -2610,7 +2623,7 @@ describe('Agent 24 archive scale wave wave41 export gate', () => {
   it('allows export when wave40 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave41ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave41ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave41ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave41ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave40IntegrationVerification: bundle.replayScaleWaveWave40IntegrationVerification,
@@ -2626,7 +2639,7 @@ describe('Agent 24 replay scale wave wave41 integration handoff', () => {
   it('completes integration handoff at wave 41 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave41IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave41IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave41IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave41IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE41_INTEGRATION_BASELINE_SHA,
@@ -2648,7 +2661,7 @@ describe('Agent 24 replay scale wave wave41 integration verification', () => {
   it('verifies wave41 integration when handoff, export, and wave40 verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave41IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave41IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave41IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave41IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE41_INTEGRATION_BASELINE_SHA,
@@ -2671,7 +2684,7 @@ describe('Agent 24 archive scale wave wave42 export gate', () => {
   it('allows export when wave41 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave42ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave42ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave42ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave42ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave41IntegrationVerification: bundle.replayScaleWaveWave41IntegrationVerification,
@@ -2687,7 +2700,7 @@ describe('Agent 24 replay scale wave wave42 integration handoff', () => {
   it('completes integration handoff at wave 42 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave42IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave42IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave42IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave42IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE42_INTEGRATION_BASELINE_SHA,
@@ -2709,7 +2722,7 @@ describe('Agent 24 replay scale wave wave42 integration verification', () => {
   it('verifies wave42 integration when handoff, export, and wave41 verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave42IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave42IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave42IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave42IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE42_INTEGRATION_BASELINE_SHA,
@@ -2732,7 +2745,7 @@ describe('Agent 24 archive scale wave wave43 export gate', () => {
   it('allows export when wave42 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave43ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave43ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave43ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave43ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave42IntegrationVerification: bundle.replayScaleWaveWave42IntegrationVerification,
@@ -2748,7 +2761,7 @@ describe('Agent 24 replay scale wave wave43 integration handoff', () => {
   it('completes integration handoff at wave 43 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave43IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave43IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave43IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave43IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE43_INTEGRATION_BASELINE_SHA,
@@ -2770,7 +2783,7 @@ describe('Agent 24 replay scale wave wave43 integration verification', () => {
   it('verifies wave43 integration when handoff, export, and wave42 verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave43IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave43IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave43IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave43IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE43_INTEGRATION_BASELINE_SHA,
@@ -2793,7 +2806,7 @@ describe('Agent 24 archive scale wave wave44 export gate', () => {
   it('allows export when wave43 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave44ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave44ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave44ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave44ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave43IntegrationVerification: bundle.replayScaleWaveWave43IntegrationVerification,
@@ -2809,7 +2822,7 @@ describe('Agent 24 replay scale wave wave44 integration handoff', () => {
   it('completes integration handoff at wave 44 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave44IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave44IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave44IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave44IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE44_INTEGRATION_BASELINE_SHA,
@@ -2831,7 +2844,7 @@ describe('Agent 24 replay scale wave wave44 integration verification', () => {
   it('verifies wave44 integration when handoff, export, and wave43 verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave44IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave44IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave44IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave44IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE44_INTEGRATION_BASELINE_SHA,
@@ -2854,7 +2867,7 @@ describe('Agent 24 archive scale wave wave45 export gate', () => {
   it('allows export when wave44 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave45ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave45ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave45ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave45ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave44IntegrationVerification: bundle.replayScaleWaveWave44IntegrationVerification,
@@ -2870,7 +2883,7 @@ describe('Agent 24 replay scale wave wave45 integration handoff', () => {
   it('completes integration handoff at wave 45 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave45IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave45IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave45IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave45IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE45_INTEGRATION_BASELINE_SHA,
@@ -2888,11 +2901,72 @@ describe('Agent 24 replay scale wave wave45 integration handoff', () => {
   });
 });
 
+describe('Agent 24 replay scale wave wave45 integration verification', () => {
+  it('verifies wave45 integration when handoff, export, and wave44 verification align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.replayScaleWaveWave45IntegrationVerification.verified, true);
+    assert.equal(bundle.replayScaleWaveWave45IntegrationVerification.waveRound, 46);
+    assert.equal(
+      bundle.replayScaleWaveWave45IntegrationVerification.integrationBaselineSha,
+      O6K_AGENT24_WAVE45_INTEGRATION_BASELINE_SHA,
+    );
+    const direct = buildAgent24ReplayScaleWaveWave45IntegrationVerificationReport({
+      matchId: 'm',
+      replayScaleWaveWave45IntegrationHandoff: bundle.replayScaleWaveWave45IntegrationHandoff,
+      archiveScaleWaveWave45ExportGate: bundle.archiveScaleWaveWave45ExportGate,
+      replayScaleWaveWave44IntegrationVerification: bundle.replayScaleWaveWave44IntegrationVerification,
+    });
+    assert.equal(
+      direct.deterministicFingerprint,
+      bundle.replayScaleWaveWave45IntegrationVerification.deterministicFingerprint,
+    );
+    assert.ok(runAgent24ReplayScaleWaveWave45IntegrationVerificationSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 archive scale wave wave46 export gate', () => {
+  it('allows export when wave45 integration verified and seals align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.archiveScaleWaveWave46ExportGate.exportAllowed, true);
+    assert.equal(bundle.archiveScaleWaveWave46ExportGate.waveRound, 46);
+    const direct = buildAgent24ArchiveScaleWaveWave46ExportGateReport({
+      matchId: 'm',
+      replayScaleWaveWave45IntegrationVerification: bundle.replayScaleWaveWave45IntegrationVerification,
+      snapshotSeal: bundle.snapshotSeal,
+      sealVerification: bundle.sealVerification,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.archiveScaleWaveWave46ExportGate.deterministicFingerprint);
+    assert.ok(runAgent24ArchiveScaleWaveWave46ExportGateSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 replay scale wave wave46 integration handoff', () => {
+  it('completes integration handoff at wave 46 baseline', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.replayScaleWaveWave46IntegrationHandoff.handoffComplete, true);
+    assert.equal(bundle.replayScaleWaveWave46IntegrationHandoff.waveRound, 46);
+    assert.equal(
+      bundle.replayScaleWaveWave46IntegrationHandoff.integrationBaselineSha,
+      O6K_AGENT24_WAVE46_INTEGRATION_BASELINE_SHA,
+    );
+    const direct = buildAgent24ReplayScaleWaveWave46IntegrationHandoffReport({
+      matchId: 'm',
+      archiveScaleWaveWave46ExportGate: bundle.archiveScaleWaveWave46ExportGate,
+      replayScaleWaveWave45IntegrationVerification: bundle.replayScaleWaveWave45IntegrationVerification,
+    });
+    assert.equal(
+      direct.deterministicFingerprint,
+      bundle.replayScaleWaveWave46IntegrationHandoff.deterministicFingerprint,
+    );
+    assert.ok(runAgent24ReplayScaleWaveWave46IntegrationHandoffSelfTests().every(t => t.passed));
+  });
+});
+
 describe('Agent 24 replay scale wave wave39 integration verification', () => {
   it('verifies wave39 integration when handoff, export, and wave38 verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave39IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave39IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave39IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave39IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE39_INTEGRATION_BASELINE_SHA,
@@ -2915,7 +2989,7 @@ describe('Agent 24 archive scale wave wave40 export gate', () => {
   it('allows export when wave39 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave40ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave40ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave40ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave40ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave39IntegrationVerification: bundle.replayScaleWaveWave39IntegrationVerification,
@@ -2931,7 +3005,7 @@ describe('Agent 24 replay scale wave wave40 integration handoff', () => {
   it('completes integration handoff at wave 40 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave40IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave40IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave40IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave40IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE40_INTEGRATION_BASELINE_SHA,
@@ -2953,7 +3027,7 @@ describe('Agent 24 replay scale wave wave38 integration verification', () => {
   it('verifies wave38 integration when handoff, export, and wave37 verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave38IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave38IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave38IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave38IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE38_INTEGRATION_BASELINE_SHA,
@@ -2976,7 +3050,7 @@ describe('Agent 24 archive scale wave wave39 export gate', () => {
   it('allows export when wave38 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave39ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave39ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave39ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave39ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave38IntegrationVerification: bundle.replayScaleWaveWave38IntegrationVerification,
@@ -2992,7 +3066,7 @@ describe('Agent 24 replay scale wave wave39 integration handoff', () => {
   it('completes integration handoff at wave 39 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave39IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave39IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave39IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave39IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE39_INTEGRATION_BASELINE_SHA,
@@ -3014,7 +3088,7 @@ describe('Agent 24 replay scale wave wave37 integration verification', () => {
   it('verifies wave37 integration when handoff, export, and wave36 verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave37IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave37IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave37IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave37IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE37_INTEGRATION_BASELINE_SHA,
@@ -3037,7 +3111,7 @@ describe('Agent 24 archive scale wave wave38 export gate', () => {
   it('allows export when wave37 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave38ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave38ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave38ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave38ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave37IntegrationVerification: bundle.replayScaleWaveWave37IntegrationVerification,
@@ -3053,7 +3127,7 @@ describe('Agent 24 replay scale wave wave38 integration handoff', () => {
   it('completes integration handoff at wave 38 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave38IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave38IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave38IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave38IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE38_INTEGRATION_BASELINE_SHA,
@@ -3075,7 +3149,7 @@ describe('Agent 24 replay scale wave wave36 integration verification', () => {
   it('verifies wave36 integration when handoff, export, and wave35 verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave36IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave36IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave36IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave36IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
@@ -3098,7 +3172,7 @@ describe('Agent 24 archive scale wave wave37 export gate', () => {
   it('allows export when wave36 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave37ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave37ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave37ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave37ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave36IntegrationVerification: bundle.replayScaleWaveWave36IntegrationVerification,
@@ -3114,7 +3188,7 @@ describe('Agent 24 replay scale wave wave37 integration handoff', () => {
   it('completes integration handoff at wave 37 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave37IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave37IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave37IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave37IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE37_INTEGRATION_BASELINE_SHA,
@@ -3136,7 +3210,7 @@ describe('Agent 24 replay scale wave wave35 integration verification', () => {
   it('verifies wave35 integration when handoff, export, and wave34 verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave35IntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveWave35IntegrationVerification.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave35IntegrationVerification.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave35IntegrationVerification.integrationBaselineSha,
       O6K_AGENT24_WAVE35_INTEGRATION_BASELINE_SHA,
@@ -3159,7 +3233,7 @@ describe('Agent 24 archive scale wave wave36 export gate', () => {
   it('allows export when wave35 integration verified and seals align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveWave36ExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveWave36ExportGate.waveRound, 45);
+    assert.equal(bundle.archiveScaleWaveWave36ExportGate.waveRound, 46);
     const direct = buildAgent24ArchiveScaleWaveWave36ExportGateReport({
       matchId: 'm',
       replayScaleWaveWave35IntegrationVerification: bundle.replayScaleWaveWave35IntegrationVerification,
@@ -3175,7 +3249,7 @@ describe('Agent 24 replay scale wave wave36 integration handoff', () => {
   it('completes integration handoff at wave 36 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveWave36IntegrationHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveWave36IntegrationHandoff.waveRound, 45);
+    assert.equal(bundle.replayScaleWaveWave36IntegrationHandoff.waveRound, 46);
     assert.equal(
       bundle.replayScaleWaveWave36IntegrationHandoff.integrationBaselineSha,
       O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
