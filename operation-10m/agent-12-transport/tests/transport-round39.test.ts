@@ -37,13 +37,13 @@ describe('Agent 12 round 39 catalog', () => {
 });
 
 describe('Agent 12 round 39 systems', () => {
-  it('returns agent12/54 with wave energy, school supply, lithium hydroxide', () => {
+  it('returns agent12/55 with wave energy, school supply, lithium hydroxide', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(360), {
       offshoreWaveEnergyExportPolicy: 'accelerate',
       remoteSchoolSupplyStagingPolicy: 'surge',
       portLithiumHydroxideLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/54');
+    assert.equal(state.schemaVersion, 'agent12/55');
     assert.ok(state.nationalOffshoreWaveEnergyExportIndex >= 5);
     assert.ok(state.nationalRemoteSchoolSupplyStagingIndex >= 6);
     assert.ok(state.portLithiumHydroxideLogisticsShare >= 0.03);

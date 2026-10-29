@@ -37,13 +37,13 @@ describe('Agent 12 round 22 catalog', () => {
 });
 
 describe('Agent 12 round 22 systems', () => {
-  it('returns agent12/54 with grid BESS, Pacific sealift, port tractors', () => {
+  it('returns agent12/55 with grid BESS, Pacific sealift, port tractors', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(190), {
       gridBatteryLogisticsPolicy: 'accelerate',
       pacificHumanitarianSealiftPolicy: 'surge',
       autonomousPortTractorPolicy: 'deploy',
     });
-    assert.equal(state.schemaVersion, 'agent12/54');
+    assert.equal(state.schemaVersion, 'agent12/55');
     assert.ok(state.nationalGridBatteryLogisticsIndex >= 5);
     assert.ok(state.nationalPacificHumanitarianSealiftIndex >= 8);
     assert.ok(state.autonomousPortTractorShare >= 0.033);

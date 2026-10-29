@@ -36,13 +36,13 @@ describe('Agent 12 round 17 catalog', () => {
 });
 
 describe('Agent 12 round 17 systems', () => {
-  it('returns agent12/54 with subsea cable, green ammonia, airport express rail', () => {
+  it('returns agent12/55 with subsea cable, green ammonia, airport express rail', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(140), {
       subseaCableLandingPolicy: 'expand',
       greenAmmoniaExportPolicy: 'accelerate',
       airportExpressRailPolicy: 'deploy',
     });
-    assert.equal(state.schemaVersion, 'agent12/54');
+    assert.equal(state.schemaVersion, 'agent12/55');
     assert.ok(state.nationalSubseaCableLandingIndex >= 5);
     assert.ok(state.nationalGreenAmmoniaExportIndex >= 12);
     assert.ok(state.airportExpressRailShare >= 0.04);

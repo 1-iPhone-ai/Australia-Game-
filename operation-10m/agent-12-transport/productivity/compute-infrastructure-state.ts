@@ -839,6 +839,23 @@ import {
   nationalPortBioLngBunkeringLogisticsThroughputIndex,
   portBioLngBunkeringLogisticsProductivityMultiplier,
 } from './port-bio-lng-bunkering-logistics-index.ts';
+import {
+  computeStellaratorHelium3ExportByRegion,
+  nationalStellaratorHelium3ExportIndex,
+  stellaratorHelium3ExportProductivityMultiplier,
+} from '../network/stellarator-helium3-export-index.ts';
+import {
+  computeRemoteBurnCenterSupplyStagingByRegion,
+  computeRemoteBurnCenterSupplyStagingShare,
+  nationalRemoteBurnCenterSupplyStagingIndex,
+  remoteBurnCenterSupplyStagingProductivityMultiplier,
+} from '../operations/remote-burn-center-supply-staging-index.ts';
+import {
+  computePortGreenAmmoniaEfuelBunkeringLogisticsShare,
+  computePortGreenAmmoniaEfuelBunkeringLogisticsThroughputByRegion,
+  nationalPortGreenAmmoniaEfuelBunkeringLogisticsThroughputIndex,
+  portGreenAmmoniaEfuelBunkeringLogisticsProductivityMultiplier,
+} from './port-green-ammonia-efuel-bunkering-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -2540,6 +2557,40 @@ export function computeTransportInfrastructureState(
     portBioLngBunkeringLogisticsShare,
     options?.portBioLngBunkeringLogisticsPolicy ?? 'baseline',
   );
+  const stellaratorHelium3ExportByRegion = computeStellaratorHelium3ExportByRegion(ops);
+  const nationalStellaratorHelium3 = nationalStellaratorHelium3ExportIndex(stellaratorHelium3ExportByRegion);
+  const stellaratorHelium3Mult = stellaratorHelium3ExportProductivityMultiplier(
+    nationalStellaratorHelium3,
+    options?.stellaratorHelium3ExportPolicy ?? 'baseline',
+  );
+  const remoteBurnCenterSupplyStagingByRegion = computeRemoteBurnCenterSupplyStagingByRegion(
+    ops,
+    networkStress,
+  );
+  const nationalBurnCenter = nationalRemoteBurnCenterSupplyStagingIndex(
+    remoteBurnCenterSupplyStagingByRegion,
+  );
+  const remoteBurnCenterSupplyStagingShare = computeRemoteBurnCenterSupplyStagingShare(
+    ops,
+    options?.remoteBurnCenterSupplyStagingPolicy ?? 'baseline',
+  );
+  const burnCenterMult = remoteBurnCenterSupplyStagingProductivityMultiplier(
+    remoteBurnCenterSupplyStagingShare,
+    options?.remoteBurnCenterSupplyStagingPolicy ?? 'baseline',
+  );
+  const portGreenAmmoniaEfuelBunkeringLogisticsThroughputByRegion =
+    computePortGreenAmmoniaEfuelBunkeringLogisticsThroughputByRegion(ops);
+  const nationalGreenAmmoniaEfuelBunkering = nationalPortGreenAmmoniaEfuelBunkeringLogisticsThroughputIndex(
+    portGreenAmmoniaEfuelBunkeringLogisticsThroughputByRegion,
+  );
+  const portGreenAmmoniaEfuelBunkeringLogisticsShare = computePortGreenAmmoniaEfuelBunkeringLogisticsShare(
+    ops,
+    options?.portGreenAmmoniaEfuelBunkeringLogisticsPolicy ?? 'baseline',
+  );
+  const greenAmmoniaEfuelBunkeringMult = portGreenAmmoniaEfuelBunkeringLogisticsProductivityMultiplier(
+    portGreenAmmoniaEfuelBunkeringLogisticsShare,
+    options?.portGreenAmmoniaEfuelBunkeringLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -2653,6 +2704,9 @@ export function computeTransportInfrastructureState(
     const fusionTritiumBreedingBoost = (fusionTritiumBreedingExportByRegion[code] - 5) * 0.0017;
     const pediatricOncologyBoost = (remotePediatricOncologySupplyStagingByRegion[code] - 6) * 0.0013;
     const bioLngBunkeringBoost = (portBioLngBunkeringLogisticsThroughputByRegion[code] - 2) * 0.0009;
+    const stellaratorHelium3Boost = (stellaratorHelium3ExportByRegion[code] - 5) * 0.0017;
+    const burnCenterBoost = (remoteBurnCenterSupplyStagingByRegion[code] - 6) * 0.0013;
+    const greenAmmoniaEfuelBunkeringBoost = (portGreenAmmoniaEfuelBunkeringLogisticsThroughputByRegion[code] - 2) * 0.0009;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -2765,7 +2819,10 @@ export function computeTransportInfrastructureState(
         methanolBunkeringBoost +
         fusionTritiumBreedingBoost +
         pediatricOncologyBoost +
-        bioLngBunkeringBoost) *
+        bioLngBunkeringBoost +
+        stellaratorHelium3Boost +
+        burnCenterBoost +
+        greenAmmoniaEfuelBunkeringBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -2876,7 +2933,10 @@ export function computeTransportInfrastructureState(
       methanolBunkeringMult *
       fusionTritiumBreedingMult *
       pediatricOncologyMult *
-      bioLngBunkeringMult;
+      bioLngBunkeringMult *
+      stellaratorHelium3Mult *
+      burnCenterMult *
+      greenAmmoniaEfuelBunkeringMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -3016,7 +3076,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/53',
+    schemaVersion: 'agent12/55',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -3405,7 +3465,15 @@ export function computeTransportInfrastructureState(
     remotePediatricOncologySupplyStagingByRegion,
     portBioLngBunkeringLogisticsShare,
     nationalPortBioLngBunkeringLogisticsThroughputIndex: nationalBioLngBunkering,
-    portBioLngBunkeringLogisticsThroughputByRegion,
+    portMethanolDualFuelBunkeringLogisticsThroughputByRegion,
+    nationalStellaratorHelium3ExportIndex: nationalStellaratorHelium3,
+    stellaratorHelium3ExportByRegion,
+    remoteBurnCenterSupplyStagingShare,
+    nationalRemoteBurnCenterSupplyStagingIndex: nationalBurnCenter,
+    remoteBurnCenterSupplyStagingByRegion,
+    portGreenAmmoniaEfuelBunkeringLogisticsShare,
+    nationalPortGreenAmmoniaEfuelBunkeringLogisticsThroughputIndex: nationalGreenAmmoniaEfuelBunkering,
+    portGreenAmmoniaEfuelBunkeringLogisticsThroughputByRegion,
     computeMs,
   };
 }

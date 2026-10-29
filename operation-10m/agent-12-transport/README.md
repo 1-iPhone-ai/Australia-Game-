@@ -29,9 +29,9 @@ Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chun
 
 ## Scale wave round 52
 
-- Schema **`agent12/54`**: fusion tritium breeding export throughput, remote pediatric oncology supply staging readiness, port bio-LNG bunkering logistics share (`fusionTritiumBreedingExportPolicy`, `remotePediatricOncologySupplyStagingPolicy`, `portBioLngBunkeringLogisticsPolicy`)
-- Catalog: **718** assets, **170** corridors, **278** scenarios
-- Systems: `network/fusion-tritium-breeding-export-index.ts`, `operations/remote-pediatric-oncology-supply-staging-index.ts`, `productivity/port-bio-lng-bunkering-logistics-index.ts`
+- Schema **`agent12/55`**: stellarator helium-3 export throughput, remote burn center supply staging readiness, port green ammonia e-fuel bunkering logistics share (`stellaratorHelium3ExportPolicy`, `remoteBurnCenterSupplyStagingPolicy`, `portGreenAmmoniaEfuelBunkeringLogisticsPolicy`)
+- Catalog: **733** assets, **173** corridors, **283** scenarios
+- Systems: `network/stellarator-helium3-export-index.ts`, `operations/remote-burn-center-supply-staging-index.ts`, `productivity/port-green-ammonia-efuel-bunkering-logistics-index.ts`
 - Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
 
 ## Scale wave round 50
@@ -218,7 +218,7 @@ Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chun
 
 ## Scale wave round 24
 
-- Schema **`agent12/25`**: bio-LNG bunkering export throughput, Antarctic resupply logistics readiness, smart border preclearance share (`methanolBunkeringExportPolicy`, `antarcticResupplyLogisticsPolicy`, `smartBorderPreclearancePolicy`)
+- Schema **`agent12/25`**: green ammonia e-fuel bunkering export throughput, Antarctic resupply logistics readiness, smart border preclearance share (`methanolBunkeringExportPolicy`, `antarcticResupplyLogisticsPolicy`, `smartBorderPreclearancePolicy`)
 - Catalog: **341** assets, **86** corridors, **138** scenarios
 - Systems: `network/methanol-bunkering-export-index.ts`, `operations/antarctic-resupply-logistics-index.ts`, `productivity/smart-border-preclearance-index.ts`
 - Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
@@ -254,7 +254,7 @@ Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chun
 ## Scale wave round 19
 
 - Schema **`agent12/20`**: rare-earth magnet export throughput, trans-Tasman reefer express readiness, zero-emission truck corridor share (`rareEarthMagnetExportPolicy`, `transTasmanReeferExpressPolicy`, `zeroEmissionTruckCorridorPolicy`)
-- Catalog: **278** assets, **71** corridors, **113** scenarios
+- Catalog: **283** assets, **71** corridors, **113** scenarios
 - Systems: `network/rare-earth-magnet-export-index.ts`, `operations/trans-tasman-reefer-express-index.ts`, `productivity/zero-emission-truck-corridor-index.ts`
 - Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
 

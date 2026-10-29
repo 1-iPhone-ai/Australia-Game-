@@ -69,6 +69,7 @@ const FILES = [
   'catalog/corridors-round50.ts',
   'catalog/corridors-round51.ts',
   'catalog/corridors-round52.ts',
+  'catalog/corridors-round53.ts',
   'catalog/corridors-catalog.ts',
   'catalog/scenarios-round2.ts',
   'catalog/scenarios-round3.ts',

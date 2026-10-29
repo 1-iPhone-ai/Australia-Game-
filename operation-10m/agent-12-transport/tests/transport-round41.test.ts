@@ -37,13 +37,13 @@ describe('Agent 12 round 41 catalog', () => {
 });
 
 describe('Agent 12 round 41 systems', () => {
-  it('returns agent12/54 with molten salt, alpine ski, rail shunting', () => {
+  it('returns agent12/55 with molten salt, alpine ski, rail shunting', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(380), {
       moltenSaltSolarExportPolicy: 'accelerate',
       alpineSkiResortSupplyStagingPolicy: 'surge',
       railAutonomousShuntingLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/54');
+    assert.equal(state.schemaVersion, 'agent12/55');
     assert.ok(state.nationalMoltenSaltSolarExportIndex >= 5);
     assert.ok(state.nationalAlpineSkiResortSupplyStagingIndex >= 6);
     assert.ok(state.railAutonomousShuntingLogisticsShare >= 0.03);

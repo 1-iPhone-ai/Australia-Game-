@@ -455,12 +455,15 @@ export type PortAmmoniaBunkeringLogisticsPolicy = 'baseline' | 'expand';
 
 export type SuperconductingHvdcExportPolicy = 'baseline' | 'accelerate';
 export type FusionTritiumBreedingExportPolicy = 'baseline' | 'accelerate';
+export type StellaratorHelium3ExportPolicy = 'baseline' | 'accelerate';
 
 export type RemoteNeonatalIcuSupplyStagingPolicy = 'baseline' | 'surge';
 export type RemotePediatricOncologySupplyStagingPolicy = 'baseline' | 'surge';
+export type RemoteBurnCenterSupplyStagingPolicy = 'baseline' | 'surge';
 
 export type PortMethanolDualFuelBunkeringLogisticsPolicy = 'baseline' | 'expand';
 export type PortBioLngBunkeringLogisticsPolicy = 'baseline' | 'expand';
+export type PortGreenAmmoniaEfuelBunkeringLogisticsPolicy = 'baseline' | 'expand';
 
 export interface TransportInfrastructureState {
   schemaVersion: 'agent12/50';
@@ -852,7 +855,15 @@ export interface TransportInfrastructureState {
   remotePediatricOncologySupplyStagingByRegion: Record<AuRegionCode, number>;
   portBioLngBunkeringLogisticsShare: number;
   nationalPortBioLngBunkeringLogisticsThroughputIndex: number;
-  portBioLngBunkeringLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  portMethanolDualFuelBunkeringLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalStellaratorHelium3ExportIndex: number;
+  stellaratorHelium3ExportByRegion: Record<AuRegionCode, number>;
+  remoteBurnCenterSupplyStagingShare: number;
+  nationalRemoteBurnCenterSupplyStagingIndex: number;
+  remoteBurnCenterSupplyStagingByRegion: Record<AuRegionCode, number>;
+  portGreenAmmoniaEfuelBunkeringLogisticsShare: number;
+  nationalPortGreenAmmoniaEfuelBunkeringLogisticsThroughputIndex: number;
+  portGreenAmmoniaEfuelBunkeringLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -1002,6 +1013,9 @@ export interface TransportInfrastructureOptions {
   fusionTritiumBreedingExportPolicy?: FusionTritiumBreedingExportPolicy;
   remotePediatricOncologySupplyStagingPolicy?: RemotePediatricOncologySupplyStagingPolicy;
   portBioLngBunkeringLogisticsPolicy?: PortBioLngBunkeringLogisticsPolicy;
+  stellaratorHelium3ExportPolicy?: StellaratorHelium3ExportPolicy;
+  remoteBurnCenterSupplyStagingPolicy?: RemoteBurnCenterSupplyStagingPolicy;
+  portGreenAmmoniaEfuelBunkeringLogisticsPolicy?: PortGreenAmmoniaEfuelBunkeringLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {

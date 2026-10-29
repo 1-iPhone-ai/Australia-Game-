@@ -459,12 +459,15 @@ export type PortAmmoniaBunkeringLogisticsPolicy = 'baseline' | 'expand';
 
 export type SuperconductingHvdcExportPolicy = 'baseline' | 'accelerate';
 export type FusionTritiumBreedingExportPolicy = 'baseline' | 'accelerate';
+export type StellaratorHelium3ExportPolicy = 'baseline' | 'accelerate';
 
 export type RemoteNeonatalIcuSupplyStagingPolicy = 'baseline' | 'surge';
 export type RemotePediatricOncologySupplyStagingPolicy = 'baseline' | 'surge';
+export type RemoteBurnCenterSupplyStagingPolicy = 'baseline' | 'surge';
 
 export type PortMethanolDualFuelBunkeringLogisticsPolicy = 'baseline' | 'expand';
 export type PortBioLngBunkeringLogisticsPolicy = 'baseline' | 'expand';
+export type PortGreenAmmoniaEfuelBunkeringLogisticsPolicy = 'baseline' | 'expand';
 
 export interface TransportInfrastructureState {
   schemaVersion: 'agent12/50';
@@ -856,7 +859,15 @@ export interface TransportInfrastructureState {
   remotePediatricOncologySupplyStagingByRegion: Record<AuRegionCode, number>;
   portBioLngBunkeringLogisticsShare: number;
   nationalPortBioLngBunkeringLogisticsThroughputIndex: number;
-  portBioLngBunkeringLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  portMethanolDualFuelBunkeringLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalStellaratorHelium3ExportIndex: number;
+  stellaratorHelium3ExportByRegion: Record<AuRegionCode, number>;
+  remoteBurnCenterSupplyStagingShare: number;
+  nationalRemoteBurnCenterSupplyStagingIndex: number;
+  remoteBurnCenterSupplyStagingByRegion: Record<AuRegionCode, number>;
+  portGreenAmmoniaEfuelBunkeringLogisticsShare: number;
+  nationalPortGreenAmmoniaEfuelBunkeringLogisticsThroughputIndex: number;
+  portGreenAmmoniaEfuelBunkeringLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -1006,6 +1017,9 @@ export interface TransportInfrastructureOptions {
   fusionTritiumBreedingExportPolicy?: FusionTritiumBreedingExportPolicy;
   remotePediatricOncologySupplyStagingPolicy?: RemotePediatricOncologySupplyStagingPolicy;
   portBioLngBunkeringLogisticsPolicy?: PortBioLngBunkeringLogisticsPolicy;
+  stellaratorHelium3ExportPolicy?: StellaratorHelium3ExportPolicy;
+  remoteBurnCenterSupplyStagingPolicy?: RemoteBurnCenterSupplyStagingPolicy;
+  portGreenAmmoniaEfuelBunkeringLogisticsPolicy?: PortGreenAmmoniaEfuelBunkeringLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -3249,6 +3263,48 @@ export const TRANSPORT_CORRIDORS_ROUND52: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round53.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND53: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_nsw_vic_stellarator_helium3',
+    name: 'NSW–VIC Stellarator Helium-3',
+    networkKind: 'trade',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['stellarator_helium3_export', 'helium3_export_logistics', 'stellarator_freight_corridor'],
+      VIC: ['stellarator_helium3_export', 'helium3_export_logistics', 'stellarator_freight_corridor'],
+    },
+    productivitySynergyPoints: 7.3,
+    logisticsRelief: 0.044,
+  },
+  {
+    id: 'corr_nt_sa_nicu_remote',
+    name: 'NT–SA Remote Burn Center',
+    networkKind: 'mobility',
+    regionSequence: ['NT', 'SA'],
+    requiredTagsByRegion: {
+      NT: ['remote_burn_center_supply', 'burn_center_staging', 'burn_center_critical_care_logistics'],
+      SA: ['remote_burn_center_supply', 'burn_center_staging', 'burn_center_critical_care_logistics'],
+    },
+    productivitySynergyPoints: 7.1,
+    logisticsRelief: 0.038,
+  },
+  {
+    id: 'corr_wa_qld_methanol_green_ammonia_efuel_bunkering',
+    name: 'WA–QLD Green Ammonia E-Fuel Bunkering',
+    networkKind: 'freight',
+    regionSequence: ['WA', 'QLD'],
+    requiredTagsByRegion: {
+      WA: ['port_green_ammonia_efuel_bunkering', 'green_ammonia_efuel_mooring', 'green_ammonia_efuel_bunkering'],
+      QLD: ['port_green_ammonia_efuel_bunkering', 'green_ammonia_efuel_mooring', 'green_ammonia_efuel_bunkering'],
+    },
+    productivitySynergyPoints: 7.0,
+    logisticsRelief: 0.041,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -3448,6 +3504,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND50,
   ...TRANSPORT_CORRIDORS_ROUND51,
   ...TRANSPORT_CORRIDORS_ROUND52,
+  ...TRANSPORT_CORRIDORS_ROUND53,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -6549,6 +6606,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND50,
   ...TRANSPORT_SCENARIOS_ROUND51,
   ...TRANSPORT_SCENARIOS_ROUND52,
+  ...TRANSPORT_SCENARIOS_ROUND53,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -19124,6 +19182,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND50_ASSETS,
     ...SCALE_WAVE_ROUND51_ASSETS,
     ...SCALE_WAVE_ROUND52_ASSETS,
+    ...SCALE_WAVE_ROUND53_ASSETS,
   ];
 }
 
@@ -31109,6 +31168,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalPortBioLngBunkeringLogisticsThroughputIndex,
   portBioLngBunkeringLogisticsProductivityMultiplier,
 } from './port-bio-lng-bunkering-logistics-index.ts';
+  computeStellaratorHelium3ExportByRegion,
+  nationalStellaratorHelium3ExportIndex,
+  stellaratorHelium3ExportProductivityMultiplier,
+} from '../network/stellarator-helium3-export-index.ts';
+  computeRemoteBurnCenterSupplyStagingByRegion,
+  computeRemoteBurnCenterSupplyStagingShare,
+  nationalRemoteBurnCenterSupplyStagingIndex,
+  remoteBurnCenterSupplyStagingProductivityMultiplier,
+} from '../operations/remote-burn-center-supply-staging-index.ts';
+  computePortGreenAmmoniaEfuelBunkeringLogisticsShare,
+  computePortGreenAmmoniaEfuelBunkeringLogisticsThroughputByRegion,
+  nationalPortGreenAmmoniaEfuelBunkeringLogisticsThroughputIndex,
+  portGreenAmmoniaEfuelBunkeringLogisticsProductivityMultiplier,
+} from './port-green-ammonia-efuel-bunkering-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -32809,6 +32882,40 @@ export function computeTransportInfrastructureState(
     portBioLngBunkeringLogisticsShare,
     options?.portBioLngBunkeringLogisticsPolicy ?? 'baseline',
   );
+  const stellaratorHelium3ExportByRegion = computeStellaratorHelium3ExportByRegion(ops);
+  const nationalStellaratorHelium3 = nationalStellaratorHelium3ExportIndex(stellaratorHelium3ExportByRegion);
+  const stellaratorHelium3Mult = stellaratorHelium3ExportProductivityMultiplier(
+    nationalStellaratorHelium3,
+    options?.stellaratorHelium3ExportPolicy ?? 'baseline',
+  );
+  const remoteBurnCenterSupplyStagingByRegion = computeRemoteBurnCenterSupplyStagingByRegion(
+    ops,
+    networkStress,
+  );
+  const nationalBurnCenter = nationalRemoteBurnCenterSupplyStagingIndex(
+    remoteBurnCenterSupplyStagingByRegion,
+  );
+  const remoteBurnCenterSupplyStagingShare = computeRemoteBurnCenterSupplyStagingShare(
+    ops,
+    options?.remoteBurnCenterSupplyStagingPolicy ?? 'baseline',
+  );
+  const burnCenterMult = remoteBurnCenterSupplyStagingProductivityMultiplier(
+    remoteBurnCenterSupplyStagingShare,
+    options?.remoteBurnCenterSupplyStagingPolicy ?? 'baseline',
+  );
+  const portGreenAmmoniaEfuelBunkeringLogisticsThroughputByRegion =
+    computePortGreenAmmoniaEfuelBunkeringLogisticsThroughputByRegion(ops);
+  const nationalGreenAmmoniaEfuelBunkering = nationalPortGreenAmmoniaEfuelBunkeringLogisticsThroughputIndex(
+    portGreenAmmoniaEfuelBunkeringLogisticsThroughputByRegion,
+  );
+  const portGreenAmmoniaEfuelBunkeringLogisticsShare = computePortGreenAmmoniaEfuelBunkeringLogisticsShare(
+    ops,
+    options?.portGreenAmmoniaEfuelBunkeringLogisticsPolicy ?? 'baseline',
+  );
+  const greenAmmoniaEfuelBunkeringMult = portGreenAmmoniaEfuelBunkeringLogisticsProductivityMultiplier(
+    portGreenAmmoniaEfuelBunkeringLogisticsShare,
+    options?.portGreenAmmoniaEfuelBunkeringLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -32922,6 +33029,9 @@ export function computeTransportInfrastructureState(
     const fusionTritiumBreedingBoost = (fusionTritiumBreedingExportByRegion[code] - 5) * 0.0017;
     const pediatricOncologyBoost = (remotePediatricOncologySupplyStagingByRegion[code] - 6) * 0.0013;
     const bioLngBunkeringBoost = (portBioLngBunkeringLogisticsThroughputByRegion[code] - 2) * 0.0009;
+    const stellaratorHelium3Boost = (stellaratorHelium3ExportByRegion[code] - 5) * 0.0017;
+    const burnCenterBoost = (remoteBurnCenterSupplyStagingByRegion[code] - 6) * 0.0013;
+    const greenAmmoniaEfuelBunkeringBoost = (portGreenAmmoniaEfuelBunkeringLogisticsThroughputByRegion[code] - 2) * 0.0009;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -33034,7 +33144,10 @@ export function computeTransportInfrastructureState(
         methanolBunkeringBoost +
         fusionTritiumBreedingBoost +
         pediatricOncologyBoost +
-        bioLngBunkeringBoost) *
+        bioLngBunkeringBoost +
+        stellaratorHelium3Boost +
+        burnCenterBoost +
+        greenAmmoniaEfuelBunkeringBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -33145,7 +33258,10 @@ export function computeTransportInfrastructureState(
       methanolBunkeringMult *
       fusionTritiumBreedingMult *
       pediatricOncologyMult *
-      bioLngBunkeringMult;
+      bioLngBunkeringMult *
+      stellaratorHelium3Mult *
+      burnCenterMult *
+      greenAmmoniaEfuelBunkeringMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -33285,7 +33401,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/53',
+    schemaVersion: 'agent12/55',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -33674,7 +33790,15 @@ export function computeTransportInfrastructureState(
     remotePediatricOncologySupplyStagingByRegion,
     portBioLngBunkeringLogisticsShare,
     nationalPortBioLngBunkeringLogisticsThroughputIndex: nationalBioLngBunkering,
-    portBioLngBunkeringLogisticsThroughputByRegion,
+    portMethanolDualFuelBunkeringLogisticsThroughputByRegion,
+    nationalStellaratorHelium3ExportIndex: nationalStellaratorHelium3,
+    stellaratorHelium3ExportByRegion,
+    remoteBurnCenterSupplyStagingShare,
+    nationalRemoteBurnCenterSupplyStagingIndex: nationalBurnCenter,
+    remoteBurnCenterSupplyStagingByRegion,
+    portGreenAmmoniaEfuelBunkeringLogisticsShare,
+    nationalPortGreenAmmoniaEfuelBunkeringLogisticsThroughputIndex: nationalGreenAmmoniaEfuelBunkering,
+    portGreenAmmoniaEfuelBunkeringLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -33757,7 +33881,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/54' &&
+      infra.schemaVersion === 'agent12/55' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
