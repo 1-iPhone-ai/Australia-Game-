@@ -4802,7 +4802,12 @@ export const PRESET_CAMPAIGN_CHAPTERS: CampaignChapter[] = [
             id: 'c_wallst',
             label: 'Wall Street Backing',
             description: 'Secure Wall Street capital infusion (+$6,000, -Standing)',
-            consequences: { moneyDelta: 6000, standingDelta: { NT: -10, SA: -10 }, setVariables: { pioneer_choice: 'wall_street' } }
+            consequences: {
+              moneyDelta: 6000,
+              standingDelta: { NT: -10, SA: -10 },
+              setVariables: { pioneer_choice: 'wall_street' },
+              scheduled: [{ afterTurns: 3, label: 'Investor audit', moneyDelta: -1500, narrativeMessage: 'Wall Street backers send auditors — a compliance fee hits your treasury.' }]
+            }
           }
         ],
         resolved: false
@@ -4910,7 +4915,12 @@ export const PRESET_CAMPAIGN_CHAPTERS: CampaignChapter[] = [
             id: 'c_override',
             label: 'Executive Override',
             description: 'Enforce federal tariffs by decree (+$8,000, -Stability)',
-            consequences: { moneyDelta: 8000, stabilityDelta: -15, setVariables: { lobby_choice: 'override' } }
+            consequences: {
+              moneyDelta: 8000,
+              stabilityDelta: -15,
+              setVariables: { lobby_choice: 'override' },
+              scheduled: [{ afterTurns: 2, label: 'State backlash', stabilityOverTurns: { deltaPerTurn: -2, turns: 3, global: true }, narrativeMessage: 'States push back against your executive override — unrest lingers.' }]
+            }
           }
         ],
         resolved: false
@@ -9769,6 +9779,40 @@ export interface ChapterObjective {
   completed: boolean;
 }
 
+/** Payload for a consequence fired on a future day (campaign / narrative delayed effects). */
+export interface DelayedConsequencePayload {
+  moneyDelta?: number;
+  standingDelta?: Record<string, number>;
+  stabilityDelta?: number;
+  stabilityOverTurns?: { deltaPerTurn: number; turns: number; global?: boolean; regionId?: string };
+  setVariables?: Record<string, number | boolean | string>;
+  triggerCrisisId?: string;
+  narrativeMessage?: string;
+}
+
+export interface ScheduledDelayedConsequence {
+  id: string;
+  source: string;
+  label: string;
+  createdDay: number;
+  fireDay: number;
+  regionId: string | null;
+  payload: DelayedConsequencePayload;
+}
+
+export interface DelayedConsequenceState {
+  version: 1;
+  pending: ScheduledDelayedConsequence[];
+  fired: Array<{ id: string; day: number; source: string; label: string }>;
+  /** Populated when consequences fire; UI may consume and clear on read. */
+  pendingNotifications: string[];
+}
+
+export interface DelayedStoryConsequence extends DelayedConsequencePayload {
+  afterTurns: number;
+  label?: string;
+}
+
 export interface StoryChoiceConsequences {
   moneyDelta?: number;
   standingDelta?: Record<string, number>;
@@ -9777,6 +9821,10 @@ export interface StoryChoiceConsequences {
   unlocksNextChapterId?: string;
   triggerCrisisId?: string;
   narrativeFeedback?: string;
+  /** Multi-turn follow-ups scheduled from the decision day (afterTurns is in match days). */
+  scheduled?: DelayedStoryConsequence[];
+  /** When set, immediate money/standing/stability/triggerCrisis apply on this future day; setVariables still apply now. */
+  deferImmediateTurns?: number;
 }
 
 export interface StoryChoiceRequirement {
@@ -36263,6 +36311,7 @@ export const initialGameState = {
   narrativePopup: createDefaultNarrativePopupState(),
   crisisChainState: createDefaultCrisisChainState(),
   publicStabilityState: createDefaultPublicStabilityState(),
+  delayedConsequences: createEmptyDelayedConsequenceState(),
   expeditionRun: createDefaultExpeditionRunState(),
   activeExpeditions: {} as Record<string, ExpeditionLog>,
   equippedRelicsByActor: {} as Record<string, Record<RelicSlot, RelicRewardItem | null>>,
@@ -79098,6 +79147,249 @@ export function saveCustomScenario(
   };
 }
 
+
+const DELAYED_CONSEQUENCE_LIMITS = { pending: 40, fired: 60, notifications: 8 };
+
+export function createEmptyDelayedConsequenceState(): DelayedConsequenceState {
+  return { version: 1, pending: [], fired: [], pendingNotifications: [] };
+}
+
+export function sanitizeDelayedConsequenceState(raw: unknown): DelayedConsequenceState {
+  const base = createEmptyDelayedConsequenceState();
+  if (!raw || typeof raw !== 'object') return base;
+  const r = raw as any;
+  const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const str = (v: unknown, d: string | null = null) => (typeof v === 'string' && v.length ? v : d);
+  const payload = (p: any): DelayedConsequencePayload | null => {
+    if (!p || typeof p !== 'object') return null;
+    const out: DelayedConsequencePayload = {};
+    if (typeof p.moneyDelta === 'number') out.moneyDelta = p.moneyDelta;
+    if (p.standingDelta && typeof p.standingDelta === 'object') out.standingDelta = p.standingDelta;
+    if (typeof p.stabilityDelta === 'number') out.stabilityDelta = p.stabilityDelta;
+    if (p.stabilityOverTurns && typeof p.stabilityOverTurns === 'object') {
+      out.stabilityOverTurns = {
+        deltaPerTurn: num(p.stabilityOverTurns.deltaPerTurn),
+        turns: Math.max(1, num(p.stabilityOverTurns.turns, 1)),
+        global: Boolean(p.stabilityOverTurns.global),
+        regionId: str(p.stabilityOverTurns.regionId) || undefined
+      };
+    }
+    if (p.setVariables && typeof p.setVariables === 'object') out.setVariables = p.setVariables;
+    if (typeof p.triggerCrisisId === 'string') out.triggerCrisisId = p.triggerCrisisId;
+    if (typeof p.narrativeMessage === 'string') out.narrativeMessage = p.narrativeMessage.slice(0, 240);
+    return out;
+  };
+  base.pending = (Array.isArray(r.pending) ? r.pending : []).map((x: any, i: number) => {
+    const pl = payload(x?.payload);
+    if (!pl || typeof x?.id !== 'string') return null;
+    return {
+      id: String(x.id).slice(0, 80),
+      source: str(x.source, 'unknown')!,
+      label: str(x.label, 'Delayed consequence')!,
+      createdDay: num(x.createdDay, 1),
+      fireDay: num(x.fireDay, 1),
+      regionId: str(x.regionId),
+      payload: pl
+    } as ScheduledDelayedConsequence;
+  }).filter(Boolean).slice(-DELAYED_CONSEQUENCE_LIMITS.pending) as ScheduledDelayedConsequence[];
+  base.fired = (Array.isArray(r.fired) ? r.fired : []).filter((x: any) => x && typeof x.id === 'string').map((x: any) => ({
+    id: String(x.id).slice(0, 80),
+    day: num(x.day, 1),
+    source: str(x.source, '')!,
+    label: str(x.label, '')!
+  })).slice(-DELAYED_CONSEQUENCE_LIMITS.fired);
+  base.pendingNotifications = (Array.isArray(r.pendingNotifications) ? r.pendingNotifications : []).filter((x: any) => typeof x === 'string').slice(-DELAYED_CONSEQUENCE_LIMITS.notifications);
+  return base;
+}
+
+function delayedPayloadFromStoryConsequences(cons: StoryChoiceConsequences): DelayedConsequencePayload {
+  const out: DelayedConsequencePayload = {};
+  if (typeof cons.moneyDelta === 'number') out.moneyDelta = cons.moneyDelta;
+  if (cons.standingDelta) out.standingDelta = cons.standingDelta;
+  if (typeof cons.stabilityDelta === 'number') out.stabilityDelta = cons.stabilityDelta;
+  if (cons.triggerCrisisId) out.triggerCrisisId = cons.triggerCrisisId;
+  if (cons.narrativeFeedback) out.narrativeMessage = cons.narrativeFeedback;
+  return out;
+}
+
+export function enqueueDelayedConsequences(
+  stateIn: DelayedConsequenceState,
+  entries: Omit<ScheduledDelayedConsequence, 'id'>[],
+  idPrefix: string
+): DelayedConsequenceState {
+  const pending = [...stateIn.pending];
+  entries.forEach((e, i) => {
+    pending.push({ ...e, id: `${idPrefix}_${i}_${e.fireDay}`.slice(0, 80) });
+  });
+  return { ...stateIn, pending: pending.slice(-DELAYED_CONSEQUENCE_LIMITS.pending) };
+}
+
+export function scheduleDelayedFromStoryChoice(
+  delayedState: DelayedConsequenceState,
+  source: string,
+  day: number,
+  regionId: string | null,
+  cons: StoryChoiceConsequences
+): DelayedConsequenceState {
+  const entries: Omit<ScheduledDelayedConsequence, 'id'>[] = [];
+  const defer = Math.max(0, cons.deferImmediateTurns || 0);
+  if (defer > 0) {
+    const payload = delayedPayloadFromStoryConsequences(cons);
+    if (Object.keys(payload).length) {
+      entries.push({ source, label: 'Deferred decision impact', createdDay: day, fireDay: day + defer, regionId, payload });
+    }
+  }
+  (cons.scheduled || []).forEach((s, idx) => {
+    const after = Math.max(1, s.afterTurns || 1);
+    const { afterTurns: _a, label: _l, ...rest } = s;
+    entries.push({
+      source: `${source}:sched:${idx}`,
+      label: s.label || 'Scheduled consequence',
+      createdDay: day,
+      fireDay: day + after,
+      regionId: s.stabilityOverTurns?.regionId || regionId,
+      payload: rest
+    });
+  });
+  if (!entries.length) return delayedState;
+  return enqueueDelayedConsequences(delayedState, entries, source.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 24) || 'story');
+}
+
+function activatePresetCrisisChain(crisisState: CrisisChainState, crisisId: string): CrisisChainState {
+  const template = PRESET_CRISIS_CHAINS.find(c => c.id === crisisId);
+  if (!template) return crisisState;
+  if (crisisState.activeCrisisChains.some(c => c.id === crisisId && (c.status === 'active' || c.status === 'triggered'))) return crisisState;
+  const clone = JSON.parse(JSON.stringify(template)) as CrisisChain;
+  clone.status = 'active';
+  clone.currentStageIndex = 0;
+  clone.activeStageId = clone.stages[0]?.id || null;
+  return { ...crisisState, activeCrisisChains: [...crisisState.activeCrisisChains, clone] };
+}
+
+export function applyDelayedConsequencePayload(
+  gameState: GameStateSnapshot & { player?: any },
+  regionId: string | null,
+  payload: DelayedConsequencePayload,
+  actorId = 'player'
+): GameStateSnapshot & { player?: any } {
+  let next: GameStateSnapshot & { player?: any } = { ...gameState };
+  const pl = { ...(next.player || (gameState as any).player || {}) };
+  const region = regionId || pl.currentRegion || 'NSW';
+
+  if (typeof payload.moneyDelta === 'number') {
+    pl.money = Math.max(0, (pl.money || 0) + payload.moneyDelta);
+    next.player = pl;
+  }
+
+  if (payload.standingDelta) {
+    let standing = { ...(pl.regionalStanding || {}) };
+    for (const [reg, delta] of Object.entries(payload.standingDelta)) {
+      standing[reg] = Math.min(100, Math.max(0, (standing[reg] || 50) + (delta as number)));
+    }
+    pl.regionalStanding = standing;
+    next.player = pl;
+    if (typeof modifyActorRegionalStanding === 'function') {
+      let spa = next.standingPerActor || {};
+      for (const [reg, delta] of Object.entries(payload.standingDelta)) {
+        spa = modifyActorRegionalStanding(spa, actorId, reg, delta as number);
+      }
+      next.standingPerActor = spa;
+    }
+  }
+
+  if (typeof payload.stabilityDelta === 'number' || payload.stabilityOverTurns) {
+    const ps = { ...(next.publicStabilityState || createDefaultPublicStabilityState()) };
+    if (typeof payload.stabilityDelta === 'number') {
+      ps.nationalStability = Math.min(100, Math.max(0, ps.nationalStability + payload.stabilityDelta));
+    }
+    if (payload.stabilityOverTurns) {
+      const st = payload.stabilityOverTurns;
+      const global = st.global !== false && !st.regionId;
+      ps.modifiers = [...(ps.modifiers || []), {
+        id: `dc_${Date.now() % 100000}`,
+        source: 'delayed_consequence',
+        description: 'Delayed political consequence',
+        deltaPerTurn: st.deltaPerTurn,
+        remainingTurns: Math.max(1, st.turns),
+        isGlobal: global,
+        ...(global ? {} : { targetRegionId: st.regionId || region })
+      }].slice(-20);
+    }
+    next.publicStabilityState = ps;
+  }
+
+  if (payload.setVariables && next.campaignState) {
+    next.campaignState = {
+      ...next.campaignState,
+      campaignVariables: { ...next.campaignState.campaignVariables, ...payload.setVariables }
+    };
+  }
+
+  if (payload.triggerCrisisId) {
+    const cs = next.crisisChainState || createDefaultCrisisChainState();
+    next.crisisChainState = activatePresetCrisisChain(cs, payload.triggerCrisisId);
+  }
+
+  return next;
+}
+
+export function processDelayedConsequencesForDay(
+  gameState: GameStateSnapshot & { player?: any },
+  day: number
+): GameStateSnapshot & { player?: any } {
+  const raw = (gameState as any).delayedConsequences;
+  const dc = sanitizeDelayedConsequenceState(raw);
+  if (!dc.pending.length) {
+    if (raw !== dc) return { ...gameState, delayedConsequences: dc };
+    return gameState;
+  }
+
+  const due = dc.pending.filter(p => p.fireDay <= day);
+  const remaining = dc.pending.filter(p => p.fireDay > day);
+  if (!due.length) return gameState;
+
+  let next: GameStateSnapshot & { player?: any } = { ...gameState, delayedConsequences: { ...dc, pending: remaining } };
+  const notes: string[] = [];
+  const fired = [...dc.fired];
+
+  for (const item of due) {
+    next = applyDelayedConsequencePayload(next, item.regionId, item.payload);
+    if (item.payload.narrativeMessage) notes.push(item.payload.narrativeMessage);
+    else notes.push(item.label);
+    fired.push({ id: item.id, day, source: item.source, label: item.label });
+  }
+
+  next.delayedConsequences = {
+    ...sanitizeDelayedConsequenceState(next.delayedConsequences),
+    pending: remaining,
+    fired: fired.slice(-DELAYED_CONSEQUENCE_LIMITS.fired),
+    pendingNotifications: [...dc.pendingNotifications, ...notes].slice(-DELAYED_CONSEQUENCE_LIMITS.notifications)
+  };
+  return next;
+}
+
+export function applyImmediateStoryChoiceConsequences(
+  gameState: GameStateSnapshot & { player?: any },
+  cons: StoryChoiceConsequences,
+  regionId: string | null,
+  skipDeferredImmediate = false
+): GameStateSnapshot & { player?: any } {
+  if (skipDeferredImmediate && (cons.deferImmediateTurns || 0) > 0) {
+    let next = { ...gameState };
+    if (cons.setVariables && next.campaignState) {
+      next.campaignState = {
+        ...next.campaignState,
+        campaignVariables: { ...next.campaignState.campaignVariables, ...cons.setVariables }
+      };
+    }
+    return next;
+  }
+  return applyDelayedConsequencePayload(gameState, regionId, {
+    ...delayedPayloadFromStoryConsequences(cons),
+    setVariables: cons.setVariables
+  });
+}
+
 // PHASE 2: CAMPAIGN PROGRESSION & NARRATIVE DECISION ENGINE LOGIC
 
 export function advanceCampaignChapter(
@@ -79162,35 +79454,21 @@ export function resolveStoryDecision(
   const selectedChoice = decision.choices.find((c: StoryChoice) => c.id === choiceId);
   if (!selectedChoice) return gameState;
 
-  const targetPlayer = player || (gameState as { player?: any }).player || {};
-  let updatedPlayer = { ...targetPlayer };
-  let updatedPublicStability = { ...gameState.publicStabilityState };
-  let updatedCampaignVariables = { ...(gameState.campaignState?.campaignVariables || {}) };
-
+  const day = Number(gameState.day || 1);
+  const regionId = String(player?.currentRegion || (gameState as any).player?.currentRegion || 'NSW');
   const cons = selectedChoice.consequences;
+  const deferImmediate = (cons.deferImmediateTurns || 0) > 0;
 
-  if (cons.moneyDelta) {
-    updatedPlayer.money = Math.max(0, (updatedPlayer.money || 0) + cons.moneyDelta);
-  }
+  let next = applyImmediateStoryChoiceConsequences(
+    { ...gameState, ...(player ? { player } : {}) },
+    cons,
+    regionId,
+    deferImmediate
+  );
 
-  if (cons.standingDelta && updatedPlayer.regionalStanding) {
-    const updatedStanding = { ...updatedPlayer.regionalStanding };
-    for (const [reg, delta] of Object.entries(cons.standingDelta)) {
-      updatedStanding[reg] = Math.min(100, Math.max(0, (updatedStanding[reg] || 50) + (delta as number)));
-    }
-    updatedPlayer.regionalStanding = updatedStanding;
-  }
-
-  if (cons.stabilityDelta) {
-    updatedPublicStability.nationalStability = Math.min(
-      100,
-      Math.max(0, updatedPublicStability.nationalStability + cons.stabilityDelta)
-    );
-  }
-
-  if (cons.setVariables) {
-    updatedCampaignVariables = { ...updatedCampaignVariables, ...cons.setVariables };
-  }
+  const dc0 = sanitizeDelayedConsequenceState((next as any).delayedConsequences);
+  const dc1 = scheduleDelayedFromStoryChoice(dc0, `story:${decisionId}:${choiceId}`, day, regionId, cons);
+  next = { ...next, delayedConsequences: dc1 };
 
   const updatedStoryHistory = {
     ...(gameState.campaignState?.storyDecisionHistory || {}),
@@ -79198,13 +79476,10 @@ export function resolveStoryDecision(
   };
 
   return {
-    ...gameState,
-    player: updatedPlayer,
-    publicStabilityState: updatedPublicStability,
+    ...next,
     campaignState: {
-      ...gameState.campaignState,
-      storyDecisionHistory: updatedStoryHistory,
-      campaignVariables: updatedCampaignVariables
+      ...next.campaignState,
+      storyDecisionHistory: updatedStoryHistory
     },
     narrativePopup: {
       ...narrativePopup,
@@ -79234,6 +79509,7 @@ export function evaluateCampaignChapterProgression(gameState: GameStateSnapshot)
 export function evaluateTurnMasterSwitches(gameState: GameStateSnapshot, settings?: GameSettingsState): GameStateSnapshot {
   let nextState: GameStateSnapshot = gameState;
   const currentSettings = settings || (gameState as ExtendedGameState).gameSettings;
+  nextState = processDelayedConsequencesForDay(nextState as GameStateSnapshot & { player?: any }, Number(nextState.day || 1));
   if (currentSettings?.dynamicCrisisChainsEnabled) {
     nextState = evaluateTurnCrisisChains(nextState, currentSettings);
   }
@@ -80335,6 +80611,8 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (migrated.gameState) migrated.gameState.regionalFactions = sanitizeRegionalFactionsState(migrated.gameState.regionalFactions || migrated.regionalFactions);
   // V9.3 content: old saves carry none — the match gets a fresh profile on load; active contracts/scenario/campaign are untouched.
   if (migrated.gameState) migrated.gameState.contentState = sanitizeMatchContentState(migrated.gameState.contentState || migrated.contentState);
+  if (migrated.gameState) migrated.gameState.delayedConsequences = sanitizeDelayedConsequenceState(migrated.gameState.delayedConsequences || migrated.delayedConsequences);
+  if (!migrated.delayedConsequences && migrated.gameState?.delayedConsequences) migrated.delayedConsequences = migrated.gameState.delayedConsequences;
   // V10 National Systems: pre-V10 saves carry none — networks are derived on load; history starts there (no fake past).
   if (migrated.gameState) migrated.gameState.nationalSystems = sanitizeNationalSystemsPersisted(migrated.gameState.nationalSystems);
   // V10.1: pre-V10.1 saves carry no industry memory — derived on load; no fake supply-chain history.
@@ -133160,6 +133438,83 @@ export function createFeelSnapshotFixture(o: Partial<FeelSnapshot> = {}): FeelSn
   };
 }
 
+
+export function runDelayedConsequenceSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const J = (v: unknown) => JSON.stringify(v);
+  const baseGs: any = {
+    day: 5,
+    player: { id: 'player', money: 10000, currentRegion: 'NSW', regionalStanding: { NSW: 50 } },
+    publicStabilityState: createDefaultPublicStabilityState(),
+    campaignState: createDefaultCampaignState(),
+    crisisChainState: createDefaultCrisisChainState(),
+    delayedConsequences: createEmptyDelayedConsequenceState()
+  };
+
+  check('dc19_schedule', 'Story choice schedules multi-turn consequences on the canonical queue', () => {
+    const cons: StoryChoiceConsequences = {
+      moneyDelta: 500,
+      setVariables: { flag: 'x' },
+      scheduled: [{ afterTurns: 2, moneyDelta: -200, narrativeMessage: 'Fee due.' }]
+    };
+    let dc = scheduleDelayedFromStoryChoice(createEmptyDelayedConsequenceState(), 'story:t:c', 5, 'NSW', cons);
+    return (dc.pending.length === 1 && dc.pending[0].fireDay === 7 && dc.pending[0].payload.moneyDelta === -200) || J(dc.pending);
+  });
+
+  check('dc19_fire', 'Due consequences apply on the correct day and emit notifications', () => {
+    let gs = { ...baseGs, delayedConsequences: enqueueDelayedConsequences(createEmptyDelayedConsequenceState(), [{
+      source: 'test', label: 'Fee', createdDay: 5, fireDay: 6, regionId: 'NSW', payload: { moneyDelta: -500, narrativeMessage: 'Paid fee.' }
+    }], 't') };
+    const before = gs.player.money;
+    gs = processDelayedConsequencesForDay(gs, 5);
+    const noFire = gs.player.money === before && (gs.delayedConsequences?.pending?.length || 0) === 1;
+    gs = processDelayedConsequencesForDay({ ...gs, day: 6 }, 6);
+    return (noFire && gs.player.money === before - 500 && gs.delayedConsequences.pending.length === 0 && (gs.delayedConsequences.pendingNotifications || []).includes('Paid fee.')) || J({ noFire, money: gs.player.money, n: gs.delayedConsequences.pendingNotifications });
+  });
+
+  check('dc19_stability_modifier', 'Delayed stability applies via modifiers over multiple turns', () => {
+    let gs: any = processDelayedConsequencesForDay({
+      ...baseGs,
+      day: 10,
+      delayedConsequences: enqueueDelayedConsequences(createEmptyDelayedConsequenceState(), [{
+        source: 'test', label: 'Unrest', createdDay: 10, fireDay: 10, regionId: 'NSW',
+        payload: { stabilityOverTurns: { deltaPerTurn: 2, turns: 2, global: true } }
+      }], 'u')
+    }, 10);
+    const mods = gs.publicStabilityState.modifiers.filter((m: any) => m.source === 'delayed_consequence');
+    return (mods.length === 1 && mods[0].remainingTurns === 2 && mods[0].deltaPerTurn === 2) || J(mods);
+  });
+
+  check('dc19_resolve_story', 'resolveStoryDecision enqueues scheduled campaign follow-ups', () => {
+    const decision: StoryDecision = {
+      id: 'd1', chapterId: 'ch', title: 'T', prompt: 'P', resolved: false,
+      choices: [{ id: 'c1', label: 'L', description: 'D', consequences: { setVariables: { a: 1 }, scheduled: [{ afterTurns: 1, moneyDelta: 100 }] } }]
+    };
+    const gs: any = {
+      day: 3,
+      player: { money: 1000, currentRegion: 'QLD', regionalStanding: { QLD: 50 } },
+      campaignState: createDefaultCampaignState(),
+      publicStabilityState: createDefaultPublicStabilityState(),
+      crisisChainState: createDefaultCrisisChainState(),
+      delayedConsequences: createEmptyDelayedConsequenceState(),
+      narrativePopup: { isOpen: true, currentDecision: decision, dialogueQueue: [] }
+    };
+    const out = resolveStoryDecision(gs, 'd1', 'c1', gs.player);
+    return (out.campaignState.campaignVariables.a === 1 && out.delayedConsequences.pending.length === 1 && out.delayedConsequences.pending[0].fireDay === 4) || J(out.delayedConsequences);
+  });
+
+  check('dc19_sanitize', 'sanitizeDelayedConsequenceState bounds junk saves', () => {
+    const clean = sanitizeDelayedConsequenceState({ pending: [null, { id: 'x', payload: { moneyDelta: 1 }, source: 's', label: 'l', createdDay: 1, fireDay: 2, regionId: 'NSW' }], fired: [], pendingNotifications: ['a', 3] });
+    return (clean.pending.length === 1 && clean.pendingNotifications.length === 1) || J(clean);
+  });
+
+  return results;
+}
+
 export function runV94GameFeelPolishSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
   const check = (id: string, name: string, fn: () => boolean | string) => {
@@ -135790,6 +136145,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
+  { id: 'dc19', label: 'Delayed Consequences (V9.4)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runDelayedConsequenceSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
@@ -198272,6 +198628,7 @@ function dispatchGameSettingsChange(
     const seasonChanged = newSeason !== gameState.season;
 
     let nextState: GameStateSnapshot = gameState;
+    nextState = processDelayedConsequencesForDay(nextState as GameStateSnapshot & { player?: any }, newDay);
 
     if (gameSettings?.dynamicCrisisChainsEnabled) {
       nextState = evaluateTurnCrisisChains(nextState, gameSettings, mergeRegionalCrisisContext(worldCrisisContext(swrStateRef.current), lrStateRef.current));
@@ -198326,6 +198683,14 @@ function dispatchGameSettingsChange(
     }
     if (nextState.campaignState !== gameState.campaignState) {
       dispatchGameState({ type: 'SET_CAMPAIGN_STATE', payload: nextState.campaignState });
+    }
+    const delayedNotes = sanitizeDelayedConsequenceState((nextState as any).delayedConsequences).pendingNotifications;
+    if (delayedNotes.length) {
+      delayedNotes.forEach(msg => addNotification(`⏳ ${msg}`, 'event', true, 'system'));
+      dispatchGameState({ type: 'APPLY_CONTENT_STEP', payload: (state: any) => {
+        const dc = sanitizeDelayedConsequenceState(state.delayedConsequences);
+        return { delayedConsequences: { ...dc, pendingNotifications: [] } };
+      } });
     }
 
     if (gameSettings.automationDailyDigestEnabled) {
@@ -229761,7 +230126,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runDelayedConsequenceSelfTests(), ...runV94GameFeelPolishSelfTests(), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
