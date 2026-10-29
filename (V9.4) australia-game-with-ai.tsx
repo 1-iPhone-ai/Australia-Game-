@@ -133963,6 +133963,160 @@ export function runV94GameFeelPolishSelfTests(): V9SelfTestResult[] {
 }
 
 
+
+// ============================================================================
+// SECTION 20P-A66: O111 AGENT 66 — DATA VISUALIZATION (presentation-only chart primitives)
+// ============================================================================
+// Pure layout helpers + small SVG/bar views. No gameplay rules, no persistence, no external chart libs.
+
+export type O111SparklineBar = { key: string; value: number; heightPct: number; label?: string; title?: string };
+export type O111SvgLinePoint = { x: number; y: number; value: number; label?: string; title?: string };
+
+export function o111Clamp(n: number, lo: number, hi: number): number {
+  if (!Number.isFinite(n)) return lo;
+  return Math.min(hi, Math.max(lo, n));
+}
+
+/** Normalizes numeric samples into bar heights (0–100%). */
+export function buildO111BarSparkline(
+  samples: Array<{ key: string; value: number; label?: string; title?: string }>,
+  opts: { min?: number; max?: number; minBarPct?: number } = {}
+): O111SparklineBar[] {
+  const minBarPct = opts.minBarPct ?? 8;
+  if (!samples.length) return [];
+  const vals = samples.map(s => s.value).filter(Number.isFinite);
+  const lo = opts.min ?? Math.min(...vals, 0);
+  const hi = opts.max ?? Math.max(...vals, lo + 1);
+  const span = Math.max(1e-6, hi - lo);
+  return samples.map(s => {
+    const t = o111Clamp((s.value - lo) / span, 0, 1);
+    return { ...s, heightPct: o111Clamp(minBarPct + t * (100 - minBarPct), minBarPct, 100) };
+  });
+}
+
+export function buildO111SvgLineSeries(
+  values: number[],
+  opts: { width?: number; height?: number; padX?: number; padY?: number; maxPoints?: number; labels?: Array<string | number> } = {}
+): O111SvgLinePoint[] {
+  const width = opts.width ?? 100;
+  const height = opts.height ?? 40;
+  const padX = opts.padX ?? 0;
+  const padY = opts.padY ?? 4;
+  const maxPoints = opts.maxPoints ?? values.length;
+  const slice = values.slice(-Math.max(1, maxPoints));
+  const labels = opts.labels?.slice(-slice.length) ?? slice.map((_, i) => i);
+  const maxVal = Math.max(1, ...slice.filter(Number.isFinite));
+  if (slice.length === 1) {
+    const v = slice[0] || 0;
+    const y = height - padY - (v / maxVal) * (height - padY * 2);
+    return [{ x: width / 2, y: o111Clamp(y, padY, height - padY), value: v, label: String(labels[0] ?? 0) }];
+  }
+  return slice.map((v, index) => {
+    const x = padX + (index / Math.max(1, slice.length - 1)) * (width - padX * 2);
+    const y = height - padY - ((v || 0) / maxVal) * (height - padY * 2);
+    return { x, y: o111Clamp(y, padY, height - padY), value: v || 0, label: String(labels[index] ?? index) };
+  });
+}
+
+export function buildO111DualSvgLineSeries(
+  primary: number[],
+  secondary: number[] | null | undefined,
+  opts: Parameters<typeof buildO111SvgLineSeries>[1] & { secondaryLabels?: Array<string | number> } = {}
+): { primary: O111SvgLinePoint[]; secondary: O111SvgLinePoint[]; maxValue: number } {
+  const maxPoints = opts.maxPoints ?? Math.max(primary.length, secondary?.length || 0);
+  const p = primary.slice(-maxPoints);
+  const s = (secondary || []).slice(-maxPoints);
+  const maxValue = Math.max(1, ...p, ...s.filter(Number.isFinite));
+  const base = { ...opts, maxPoints };
+  return {
+    primary: buildO111SvgLineSeries(p, { ...base, labels: opts.labels?.slice(-p.length) }),
+    secondary: s.length ? buildO111SvgLineSeries(s, { ...base, labels: opts.secondaryLabels?.slice(-s.length) ?? opts.labels?.slice(-s.length) }) : [],
+    maxValue
+  };
+}
+
+export function buildO111NetWorthChartModel(
+  history: Array<{ day?: number; playerWorth?: number; aiWorth?: number }>,
+  competitive: boolean,
+  opts: { maxPoints?: number } = {}
+): {
+  primary: O111SvgLinePoint[];
+  secondary: O111SvgLinePoint[];
+  meta: Array<{ day: number; playerWorth: number; aiWorth: number; x: number }>;
+} {
+  const recent = history.slice(-(opts.maxPoints ?? 15));
+  const playerVals = recent.map(e => e.playerWorth || 0);
+  const aiVals = recent.map(e => e.aiWorth || 0);
+  const { primary, secondary } = buildO111DualSvgLineSeries(playerVals, competitive ? aiVals : null, { width: 100, height: 40, padY: 4, maxPoints: recent.length });
+  const meta = recent.map((entry, index) => ({
+    day: entry.day ?? index,
+    playerWorth: entry.playerWorth || 0,
+    aiWorth: entry.aiWorth || 0,
+    x: primary[index]?.x ?? 50
+  }));
+  primary.forEach((pt, i) => {
+    pt.title = `Day ${meta[i]?.day ?? i}: $${(meta[i]?.playerWorth ?? 0).toLocaleString()}`;
+  });
+  secondary.forEach((pt, i) => {
+    pt.title = `Day ${meta[i]?.day ?? i}: $${(meta[i]?.aiWorth ?? 0).toLocaleString()}`;
+  });
+  return { primary, secondary, meta };
+}
+
+export const O111BarSparkline: React.FC<{ points: O111SparklineBar[]; emphasizeKeys?: Set<string>; emptyLabel?: string; className?: string }> = ({ points, emphasizeKeys, emptyLabel = 'No data yet.', className = '' }) => {
+  if (!points.length) return <div className="text-xs opacity-60">{emptyLabel}</div>;
+  return (
+    <div className={`flex items-end gap-1 h-12 ${className}`} data-testid="o111-bar-sparkline">
+      {points.map(pt => (
+        <div
+          key={pt.key}
+          className={`flex-1 rounded-t ${emphasizeKeys?.has(pt.key) ? 'bg-rose-400' : 'bg-sky-500'}`}
+          style={{ height: `${pt.heightPct}%` }}
+          title={pt.title || pt.label || String(pt.value)}
+        />
+      ))}
+    </div>
+  );
+};
+
+export const O111SvgDualLineChart: React.FC<{
+  primary: O111SvgLinePoint[];
+  secondary?: O111SvgLinePoint[];
+  primaryStroke?: string;
+  secondaryStroke?: string;
+  viewHeight?: number;
+  className?: string;
+}> = ({ primary, secondary = [], primaryStroke = '#22c55e', secondaryStroke = '#ec4899', viewHeight = 40, className = '' }) => {
+  if (!primary.length) return null;
+  const baseline = viewHeight - 4;
+  return (
+    <svg viewBox={`0 0 100 ${viewHeight}`} className={`w-full h-full overflow-visible ${className}`} data-testid="o111-dual-line-chart" aria-hidden={false} role="img">
+      <line x1="0" y1={baseline} x2="100" y2={baseline} stroke="rgba(255,255,255,0.18)" strokeWidth="0.6" />
+      {primary.length === 1 && (
+        <>
+          <circle cx={primary[0].x} cy={primary[0].y} r="1.8" fill={primaryStroke}><title>{primary[0].title}</title></circle>
+          {secondary[0] && <circle cx={secondary[0].x} cy={secondary[0].y} r="1.8" fill={secondaryStroke}><title>{secondary[0].title}</title></circle>}
+        </>
+      )}
+      {primary.length > 1 && (
+        <>
+          <polyline fill="none" stroke={primaryStroke} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" points={primary.map(p => `${p.x},${p.y}`).join(' ')} />
+          {secondary.length > 1 && (
+            <polyline fill="none" stroke={secondaryStroke} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" points={secondary.map(p => `${p.x},${p.y}`).join(' ')} />
+          )}
+          {primary.map((p, i) => (
+            <g key={`o111-pt-${p.label ?? i}`}>
+              <circle cx={p.x} cy={p.y} r="1.2" fill={primaryStroke}><title>{p.title}</title></circle>
+              {secondary[i] && <circle cx={secondary[i].x} cy={secondary[i].y} r="1.2" fill={secondaryStroke}><title>{secondary[i].title}</title></circle>}
+            </g>
+          ))}
+        </>
+      )}
+    </svg>
+  );
+};
+
+
 // ============================================================================
 // SECTION 20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
 // ============================================================================
@@ -136513,6 +136667,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
+  { id: 'o111a66', label: 'O111 Agent 66 Data Viz', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111Agent66DataVizSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
   { id: 'v91', label: 'V9.1 Strategic Balance', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicDepthBalanceSelfTests() },
@@ -139322,6 +139477,94 @@ export function nationalPlayStrip(s: NationalSystemsState | null, focusRegions: 
   return out.slice(0, 3);
 }
 
+export type O111NationalUtilBar = { network: NationalNetworkKind; utilPct: number; condition: NationalNetworkCondition; tone: 'ok' | 'warn' | 'critical' };
+
+/** Five-network utilization model for PLAY micro charts (read-only). */
+export function buildO111NationalUtilizationBars(state: NationalSystemsState): O111NationalUtilBar[] {
+  return NATIONAL_NETWORKS.map(network => {
+    const snap = state.national[network];
+    const utilPct = Math.round(o111Clamp(snap.utilization, 0, 1) * 100);
+    const tone: O111NationalUtilBar['tone'] = snap.condition === 'critical' || snap.bottlenecks > 0 && snap.condition === 'bottlenecked'
+      ? 'critical'
+      : snap.condition === 'stressed' || snap.condition === 'bottlenecked' || utilPct >= 85
+        ? 'warn'
+        : 'ok';
+    return { network, utilPct, condition: snap.condition, tone };
+  });
+}
+
+export function pickO111TopNationalBottleneck(state: NationalSystemsState, focusRegions: string[] = []): NationalBottleneck | null {
+  if (!state.bottlenecks.length) return null;
+  const focus = new Set(focusRegions.filter(Boolean));
+  const rank: Record<NationalBottleneckSeverity, number> = { minor: 1, meaningful: 2, major: 3, critical: 4 };
+  return [...state.bottlenecks].sort((a, b) =>
+    (rank[b.severity] - rank[a.severity]) ||
+    (focus.has(b.regionId || '') ? 1 : 0) - (focus.has(a.regionId || '') ? 1 : 0) ||
+    b.openedTurn - a.openedTurn
+  )[0] || null;
+}
+
+export const O111NationalUtilizationStrip: React.FC<{ bars: O111NationalUtilBar[]; onSelect?: (network: NationalNetworkKind) => void }> = ({ bars, onSelect }) => (
+  <div className="flex flex-wrap items-end gap-2" data-testid="o111-ns-util-strip" aria-label="National network utilization">
+    {bars.map(bar => (
+      <button
+        key={bar.network}
+        type="button"
+        className="flex flex-col items-center gap-0.5 min-w-[2.5rem]"
+        onClick={() => onSelect?.(bar.network)}
+        title={`${NATIONAL_NETWORK_LABEL[bar.network]} · ${NATIONAL_CONDITION_LABEL[bar.condition]} · ${bar.utilPct}% utilized`}
+        data-testid={`o111-ns-util-${bar.network}`}
+      >
+        <div className="w-8 h-8 rounded bg-black/20 flex items-end overflow-hidden border border-white/10">
+          <div
+            className={`w-full ${bar.tone === 'critical' ? 'bg-red-500' : bar.tone === 'warn' ? 'bg-amber-400' : 'bg-emerald-500'}`}
+            style={{ height: `${Math.max(8, bar.utilPct)}%` }}
+          />
+        </div>
+        <span className="text-[10px] opacity-80">{NATIONAL_NETWORK_ICON[bar.network]}</span>
+      </button>
+    ))}
+  </div>
+);
+
+export function runO111Agent66DataVizSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try {
+      const r = fn();
+      results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) });
+    } catch (err) {
+      results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  };
+  check('o111a66_sparkline', 'Bar sparkline heights stay within bounds and preserve order', () => {
+    const bars = buildO111BarSparkline([
+      { key: 'a', value: 10 },
+      { key: 'b', value: 50 },
+      { key: 'c', value: 90 }
+    ]);
+    return (bars.length === 3 && bars[0].heightPct < bars[1].heightPct && bars[1].heightPct < bars[2].heightPct && bars.every(b => b.heightPct >= 8 && b.heightPct <= 100)) || JSON.stringify(bars);
+  });
+  check('o111a66_line', 'SVG line series is monotonic in x and finite', () => {
+    const pts = buildO111SvgLineSeries([1, 4, 2, 9], { width: 100, height: 40 });
+    const xs = pts.map(p => p.x);
+    return (pts.every(p => Number.isFinite(p.x) && Number.isFinite(p.y)) && xs.every((x, i) => i === 0 || x >= xs[i - 1])) || JSON.stringify(pts);
+  });
+  check('o111a66_networth', 'Net worth chart model keeps player/AI series aligned', () => {
+    const model = buildO111NetWorthChartModel([
+      { day: 1, playerWorth: 1000, aiWorth: 900 },
+      { day: 2, playerWorth: 1200, aiWorth: 950 }
+    ], true);
+    return (model.primary.length === 2 && model.secondary.length === 2 && model.meta.length === 2) || JSON.stringify({ p: model.primary.length, s: model.secondary.length });
+  });
+  check('o111a66_national', 'National utilization strip exposes all five networks', () => {
+    const s = computeNationalSystems(createNationalSystemsFixtureInputs()).state;
+    const bars = buildO111NationalUtilizationBars(s);
+    return (bars.length === NATIONAL_NETWORKS.length && bars.every(b => b.utilPct >= 0 && b.utilPct <= 100)) || JSON.stringify(bars);
+  });
+  return results;
+}
+
 
 /** National band transition → World Reaction root event (public structural information; root/depth/dedupe apply). */
 export function nsToWorldEvent(d: NationalDerivedEvent, observers: string[], day = 0): StrategicWorldEvent {
@@ -139581,13 +139824,21 @@ export const NationalRegionNetworkPanel: React.FC<{ state: NationalSystemsState;
   );
 };
 
-/** PLAY: 1–3 relevant national conditions (nothing when all is healthy). */
+/** PLAY: network utilization strip + up to 3 alert chips (V10-P1 / O111-A66). */
 export const NationalConditionsStrip: React.FC<{ state: NationalSystemsState | null; focusRegions: string[]; theme: any; onAsk: (q: string) => void; onMap: (n: NationalNetworkKind) => void }> = ({ state, focusRegions, theme, onAsk, onMap }) => {
+  if (!state) return null;
   const items = nationalPlayStrip(state, focusRegions);
-  if (!items.length) return null;
+  const utilBars = buildO111NationalUtilizationBars(state);
+  const topBn = pickO111TopNationalBottleneck(state, focusRegions);
   return (
     <section aria-label="National conditions" className={`${theme.card} ${theme.border} border rounded-lg px-3 py-2 text-xs flex flex-wrap items-center gap-2`} data-testid="ns-play-strip">
       <span className="font-bold uppercase tracking-wide opacity-70">National</span>
+      <O111NationalUtilizationStrip bars={utilBars} onSelect={onMap} />
+      {topBn && (
+        <span className="opacity-90" data-testid="ns-play-top-bottleneck" title={topBn.reason}>
+          Top bottleneck: {topBn.regionId ? `${topBn.regionId} · ` : ''}{NATIONAL_NETWORK_LABEL[topBn.network]} ({topBn.severity})
+        </span>
+      )}
       {items.map(it => (
         <button key={it.text} type="button" onClick={() => onMap(it.network)} className={`px-2 py-0.5 rounded border ${it.tone === 'critical' ? 'border-red-500' : it.tone === 'warning' ? 'border-amber-500' : 'border-emerald-500'}`} data-testid="ns-play-item" title="Show on the map">{NATIONAL_NETWORK_ICON[it.network]} {it.text}</button>
       ))}
@@ -210357,22 +210608,15 @@ function dispatchGameSettingsChange(
     if (points.length === 0) {
       return <div className="text-xs opacity-60">No timeline data yet.</div>;
     }
+    const bars = buildO111BarSparkline(points.map(point => ({
+      key: `${actorId}-${point.sequence}`,
+      value: point.adaptiveIntensity || point.decisionMetrics.economyFocus || 20,
+      title: `${point.chosenAction} • ${point.decisionMetrics.adaptiveIntensity}% adaptive • ${point.decisionMetrics.economyFocus}% economy • ${point.decisionMetrics.aggression}% aggression`
+    })), { min: 0, max: 100, minBarPct: 16 });
+    const emphasize = new Set(points.filter(p => p.adaptiveIntensity >= 40 || p.prioritizedDomains.includes('adaptive_ai')).map(p => `${actorId}-${p.sequence}`));
     return (
       <div className="space-y-1">
-        <div className="flex items-end gap-1 h-12">
-          {points.map(point => {
-            const height = Math.max(16, Math.min(100, point.adaptiveIntensity || point.decisionMetrics.economyFocus || 20));
-            const emphasized = point.adaptiveIntensity >= 40 || point.prioritizedDomains.includes('adaptive_ai');
-            return (
-              <div
-                key={`${actorId}-${point.sequence}`}
-                className={`flex-1 rounded-t ${emphasized ? 'bg-rose-400' : 'bg-sky-500'}`}
-                style={{ height: `${height}%` }}
-                title={`${point.chosenAction} • ${point.decisionMetrics.adaptiveIntensity}% adaptive • ${point.decisionMetrics.economyFocus}% economy • ${point.decisionMetrics.aggression}% aggression`}
-              />
-            );
-          })}
-        </div>
+        <O111BarSparkline points={bars} emphasizeKeys={emphasize} />
         <div className="flex justify-between text-[10px] opacity-60">
           <span>{points[0]?.turnOrDayIndex ?? 0}</span>
           <span>{points[points.length - 1]?.turnOrDayIndex ?? 0}</span>
@@ -228762,20 +229006,7 @@ function dispatchGameSettingsChange(
       sideLabel: isTeamMode ? (teamsById[TEAM_OPPONENT_ID]?.name || 'AI Team') : (aiPlayer?.name || "AI Opponent")
     });
     const recentNetWorthHistory = (gameState.netWorthHistory || []).slice(-15);
-    const historyMaxWorth = Math.max(1, ...recentNetWorthHistory.map((entry: any) => Math.max(entry.playerWorth || 0, isCompetitiveMode ? (entry.aiWorth || 0) : 0)));
-    const netWorthChartPoints = recentNetWorthHistory.map((entry: any,index: any) => {
-      const x = recentNetWorthHistory.length <= 1 ? 50 : (index / Math.max(1, recentNetWorthHistory.length - 1)) * 100;
-      const playerY = 36 - (((entry.playerWorth || 0) / historyMaxWorth) * 30);
-      const aiY = 36 - ((((entry.aiWorth || 0)) / historyMaxWorth) * 30);
-      return {
-        day: entry.day,
-        x,
-        playerY: Number.isFinite(playerY) ? playerY : 36,
-        aiY: Number.isFinite(aiY) ? aiY : 36,
-        playerWorth: entry.playerWorth || 0,
-        aiWorth: entry.aiWorth || 0
-      };
-    });
+    const netWorthChartModel = buildO111NetWorthChartModel(recentNetWorthHistory, isCompetitiveMode, { maxPoints: 15 });
     
     const daysRemaining = gameSettings.totalDays - gameState.day;
     const timeProgress = (gameState.day / gameSettings.totalDays) * 100;
@@ -228921,49 +229152,7 @@ function dispatchGameSettingsChange(
                   Tracks both sides cleanly in solo and team modes, including early sparse turns.
                 </div>
                 <div className="h-40 w-full rounded-lg bg-black bg-opacity-20 p-2">
-                  <svg viewBox="0 0 100 40" className="w-full h-full overflow-visible">
-                    <line x1="0" y1="36" x2="100" y2="36" stroke="rgba(255,255,255,0.18)" strokeWidth="0.6" />
-                    {netWorthChartPoints.length === 1 && (
-                      <>
-                        <circle cx={netWorthChartPoints[0].x} cy={netWorthChartPoints[0].playerY} r="1.8" fill="#22c55e" />
-                        {isCompetitiveMode && <circle cx={netWorthChartPoints[0].x} cy={netWorthChartPoints[0].aiY} r="1.8" fill="#ec4899" />}
-                      </>
-                    )}
-                    {netWorthChartPoints.length > 1 && (
-                      <>
-                        <polyline
-                          fill="none"
-                          stroke="#22c55e"
-                          strokeWidth="1.8"
-                          strokeLinejoin="round"
-                          strokeLinecap="round"
-                          points={netWorthChartPoints.map((point: any) => `${point.x},${point.playerY}`).join(' ')}
-                        />
-                        {isCompetitiveMode && (
-                          <polyline
-                            fill="none"
-                            stroke="#ec4899"
-                            strokeWidth="1.8"
-                            strokeLinejoin="round"
-                            strokeLinecap="round"
-                            points={netWorthChartPoints.map((point: any) => `${point.x},${point.aiY}`).join(' ')}
-                          />
-                        )}
-                        {netWorthChartPoints.map((point: any) => (
-                          <g key={`net-worth-point-${point.day}-${point.x}`}>
-                            <circle cx={point.x} cy={point.playerY} r="1.2" fill="#22c55e">
-                              <title>{`Day ${point.day}: ${isTeamMode ? (teamsById[TEAM_PLAYER_ID]?.name || 'Your Team') : 'You'} $${point.playerWorth.toLocaleString()}`}</title>
-                            </circle>
-                            {isCompetitiveMode && (
-                              <circle cx={point.x} cy={point.aiY} r="1.2" fill="#ec4899">
-                                <title>{`Day ${point.day}: ${isTeamMode ? (teamsById[TEAM_OPPONENT_ID]?.name || 'AI Team') : (aiPlayer?.name || "AI Opponent")} $${point.aiWorth.toLocaleString()}`}</title>
-                              </circle>
-                            )}
-                          </g>
-                        ))}
-                      </>
-                    )}
-                  </svg>
+                  <O111SvgDualLineChart primary={netWorthChartModel.primary} secondary={isCompetitiveMode ? netWorthChartModel.secondary : []} />
                 </div>
                 <div className="flex justify-center space-x-4 mt-2 text-xs">
                   <div className="flex items-center space-x-1">
