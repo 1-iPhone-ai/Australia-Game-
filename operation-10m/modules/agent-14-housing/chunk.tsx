@@ -5,7 +5,7 @@
 // --- source: types.ts ---
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.9-scale-wave-9' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.10-scale-wave-10' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -115,6 +115,9 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   coordinationTrajectory?: CoordinationTrajectorySnapshot;
   reliefExecutionMonitor?: ReliefExecutionMonitor;
   portfolioStabilizationBrief?: PortfolioStabilizationBrief;
+  stabilizationTrajectory?: StabilizationTrajectorySnapshot;
+  reliefFulfillment?: ReliefFulfillmentSnapshot;
+  wellbeingRecoveryReadinessBrief?: WellbeingRecoveryReadinessBrief;
 }
 
 export type CouplingTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
@@ -346,6 +349,60 @@ export interface PortfolioStabilizationBrief {
   turn: number;
   stabilizationPath: PortfolioStabilizationPath;
   shouldPausePortfolioGrowth: boolean;
+  headlines: string[];
+  summary: string;
+}
+
+export type StabilizationStressBand = 'recovering' | 'constrained' | 'stressed';
+
+export interface StabilizationTrajectorySnapshot {
+  turn: number;
+  stabilizationStressEma: number;
+  instantaneousStress: number;
+  band: StabilizationStressBand;
+  trajectory: CouplingTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface StabilizationTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  stabilizationStressEma: number;
+  priorEma?: number;
+}
+
+export interface ReliefFulfillmentOpenAction {
+  actionKey: string;
+  programId: string;
+  regionId: string;
+  pillar: PublicServicePillar;
+  priority: ReliefDispatchPriority;
+  targetTurn: number;
+}
+
+export interface ReliefFulfillmentPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  openActions: ReliefFulfillmentOpenAction[];
+  cumulativeFulfilled: number;
+}
+
+export interface ReliefFulfillmentSnapshot {
+  turn: number;
+  openCount: number;
+  fulfilledThisTurn: number;
+  fulfillmentRatio: number;
+  shouldClearBacklog: boolean;
+  summary: string;
+}
+
+export type WellbeingRecoveryReadinessBand = 'ready' | 'partial' | 'not_ready';
+
+export interface WellbeingRecoveryReadinessBrief {
+  turn: number;
+  readinessBand: WellbeingRecoveryReadinessBand;
+  shouldResumePortfolioGrowth: boolean;
   headlines: string[];
   summary: string;
 }
@@ -601,6 +658,8 @@ export const AGENT14_HEALTH_ED_PROGRAM_STUBS: readonly {
   { id: 'ps_xp_VIC_relief_coordination', pillar: 'education', regionId: 'VIC', fiscalLoadPoints: 18, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
   { id: 'ps_xp_QLD_stakeholder_alignment', pillar: 'healthcare', regionId: 'QLD', fiscalLoadPoints: 16, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
   { id: 'ps_xp_SA_portfolio_stabilization', pillar: 'education', regionId: 'SA', fiscalLoadPoints: 20, durationTurns: 6, baseImpact: 9, effectLagTurns: 2 },
+  { id: 'ps_xp_NT_recovery_readiness', pillar: 'healthcare', regionId: 'NT', fiscalLoadPoints: 17, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
+  { id: 'ps_xp_VIC_fulfillment_coordination', pillar: 'education', regionId: 'VIC', fiscalLoadPoints: 19, durationTurns: 5, baseImpact: 9, effectLagTurns: 2 },
 ];
 
 export const AGENT14_ALL_PROGRAM_STUBS = [
@@ -944,7 +1003,7 @@ export function canAcceptSpendingCommitment(
 // --- source: delayed-spending-effects.ts ---
 export function createInitialDelayedSpendingPersisted(): DelayedSpendingPersisted {
   return {
-    schemaVersion: '10.14.9-scale-wave-9' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.10-scale-wave-10' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     active: [],
     history: [],
   };
@@ -966,7 +1025,7 @@ export function sanitizeDelayedSpendingPersisted(
         .slice(0, AGENT14_LIMITS.maxActiveCommitments)
     : [];
   return {
-    schemaVersion: '10.14.9-scale-wave-9' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.10-scale-wave-10' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     active,
     history: Array.isArray(raw.history) ? raw.history.slice(-AGENT14_LIMITS.maxHistory) : [],
   };
@@ -1526,7 +1585,7 @@ const DEFAULT_EMA_ALPHA = 0.35;
 
 export function createInitialRegionalWellbeingMemory(): RegionalWellbeingMemoryPersisted {
   return {
-    schemaVersion: '10.14.9-scale-wave-9' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.10-scale-wave-10' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     affordabilityEma: {},
@@ -1543,7 +1602,7 @@ export function sanitizeRegionalWellbeingMemory(
       ? raw.emaAlpha
       : DEFAULT_EMA_ALPHA;
   return {
-    schemaVersion: '10.14.9-scale-wave-9' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.10-scale-wave-10' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     affordabilityEma:
@@ -1611,7 +1670,7 @@ const DEFAULT_EMA_ALPHA = 0.4;
 
 export function createInitialCouplingTrajectory(): CouplingTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.9-scale-wave-9' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.10-scale-wave-10' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     nationalCouplingEma: 58,
@@ -1632,7 +1691,7 @@ export function sanitizeCouplingTrajectory(
       ? Math.max(0, Math.min(100, raw.nationalCouplingEma))
       : 58;
   return {
-    schemaVersion: '10.14.9-scale-wave-9' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.10-scale-wave-10' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     nationalCouplingEma,
@@ -1882,7 +1941,7 @@ const DEFAULT_EMA_ALPHA = 0.35;
 
 export function createInitialAccountabilityTrajectory(): AccountabilityTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.9-scale-wave-9' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.10-scale-wave-10' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     overallScoreEma: 62,
@@ -1903,7 +1962,7 @@ export function sanitizeAccountabilityTrajectory(
       ? Math.max(0, Math.min(100, raw.overallScoreEma))
       : 62;
   return {
-    schemaVersion: '10.14.9-scale-wave-9' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.10-scale-wave-10' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     overallScoreEma,
@@ -2046,7 +2105,7 @@ const DEFAULT_EMA_ALPHA = 0.32;
 
 export function createInitialResilienceTrajectory(): ResilienceTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.9-scale-wave-9' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.10-scale-wave-10' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     resilienceIndexEma: 58,
@@ -2067,7 +2126,7 @@ export function sanitizeResilienceTrajectory(
       ? Math.max(0, Math.min(100, raw.resilienceIndexEma))
       : 58;
   return {
-    schemaVersion: '10.14.9-scale-wave-9' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.10-scale-wave-10' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     resilienceIndexEma,
@@ -2376,7 +2435,7 @@ const DEFAULT_EMA_ALPHA = 0.3;
 
 export function createInitialGovernanceTrajectory(): GovernanceTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.9-scale-wave-9' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.10-scale-wave-10' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     governanceScoreEma: 60,
@@ -2397,7 +2456,7 @@ export function sanitizeGovernanceTrajectory(
       ? Math.max(0, Math.min(100, raw.governanceScoreEma))
       : 60;
   return {
-    schemaVersion: '10.14.9-scale-wave-9' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.10-scale-wave-10' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     governanceScoreEma,
@@ -2592,7 +2651,7 @@ function engagementSample(brief: StakeholderCoordinationBrief): number {
 
 export function createInitialCoordinationTrajectory(): CoordinationTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.9-scale-wave-9' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.10-scale-wave-10' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     engagementPressureEma: 45,
@@ -2613,7 +2672,7 @@ export function sanitizeCoordinationTrajectory(
       ? Math.max(0, Math.min(100, raw.engagementPressureEma))
       : 45;
   return {
-    schemaVersion: '10.14.9-scale-wave-9' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.10-scale-wave-10' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     engagementPressureEma,
@@ -2790,6 +2849,294 @@ export function composePortfolioStabilizationBrief(args: {
 }
 
 
+// --- source: stabilization-trajectory.ts ---
+const DEFAULT_EMA_ALPHA = 0.3;
+
+function stressSample(brief: PortfolioStabilizationBrief): number {
+  const base =
+    brief.stabilizationPath === 'blocked' ? 84 : brief.stabilizationPath === 'watch' ? 58 : 34;
+  let sample = base + (brief.shouldPausePortfolioGrowth ? 8 : 0);
+  return Math.max(0, Math.min(100, sample));
+}
+
+export function createInitialStabilizationTrajectory(): StabilizationTrajectoryPersisted {
+  return {
+    schemaVersion: '10.14.10-scale-wave-10' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    lastTurn: 0,
+    emaAlpha: DEFAULT_EMA_ALPHA,
+    stabilizationStressEma: 50,
+    priorEma: undefined,
+  };
+}
+
+export function sanitizeStabilizationTrajectory(
+  raw?: StabilizationTrajectoryPersisted | null
+): StabilizationTrajectoryPersisted {
+  if (!raw || typeof raw !== 'object') return createInitialStabilizationTrajectory();
+  const alpha =
+    typeof raw.emaAlpha === 'number' && raw.emaAlpha > 0 && raw.emaAlpha <= 1
+      ? raw.emaAlpha
+      : DEFAULT_EMA_ALPHA;
+  const stabilizationStressEma =
+    typeof raw.stabilizationStressEma === 'number' && Number.isFinite(raw.stabilizationStressEma)
+      ? Math.max(0, Math.min(100, raw.stabilizationStressEma))
+      : 50;
+  return {
+    schemaVersion: '10.14.10-scale-wave-10' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
+    emaAlpha: alpha,
+    stabilizationStressEma,
+    priorEma:
+      typeof raw.priorEma === 'number' && Number.isFinite(raw.priorEma)
+        ? Math.max(0, Math.min(100, raw.priorEma))
+        : undefined,
+  };
+}
+
+function trajectoryFromDelta(
+  current: number,
+  previous: number | undefined,
+  epsilon = 0.85
+): CouplingTrajectoryTrend {
+  if (previous === undefined) return 'flat';
+  if (previous - current > epsilon) return 'improving';
+  if (current - previous > epsilon) return 'deteriorating';
+  return 'flat';
+}
+
+function bandFromStress(score: number): StabilizationStressBand {
+  if (score >= 72) return 'stressed';
+  if (score >= 52) return 'constrained';
+  return 'recovering';
+}
+
+export function advanceStabilizationTrajectory(
+  turn: number,
+  brief: PortfolioStabilizationBrief,
+  persisted?: StabilizationTrajectoryPersisted | null
+): { snapshot: StabilizationTrajectorySnapshot; persisted: StabilizationTrajectoryPersisted } {
+  const base = sanitizeStabilizationTrajectory(persisted);
+  const alpha = base.emaAlpha;
+  const sample = stressSample(brief);
+  const priorEma = base.stabilizationStressEma;
+  const stabilizationStressEma = Math.round((alpha * sample + (1 - alpha) * priorEma) * 10) / 10;
+  const trajectory = trajectoryFromDelta(stabilizationStressEma, base.priorEma ?? priorEma);
+  const evidence: string[] = [];
+  if (trajectory === 'improving') {
+    evidence.push(`Stabilization stress EMA easing (${priorEma} → ${stabilizationStressEma})`);
+  } else if (trajectory === 'deteriorating') {
+    evidence.push(`Stabilization stress EMA rising (${priorEma} → ${stabilizationStressEma})`);
+  }
+  if (brief.stabilizationPath === 'blocked') {
+    evidence.push(`Portfolio path blocked at turn ${turn}`);
+  }
+
+  return {
+    snapshot: {
+      turn,
+      stabilizationStressEma,
+      instantaneousStress: sample,
+      band: bandFromStress(stabilizationStressEma),
+      trajectory,
+      evidence,
+    },
+    persisted: {
+      ...base,
+      lastTurn: turn,
+      priorEma: priorEma,
+      stabilizationStressEma,
+    },
+  };
+}
+
+
+// --- source: relief-fulfillment-tracker.ts ---
+function actionKey(action: ReliefDispatchAction): string {
+  return `${action.programId}:${action.regionId}:${action.targetTurn}:${action.priority}`;
+}
+
+export function createInitialReliefFulfillment(): ReliefFulfillmentPersisted {
+  return {
+    schemaVersion: '10.14.10-scale-wave-10' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    lastTurn: 0,
+    openActions: [],
+    cumulativeFulfilled: 0,
+  };
+}
+
+export function sanitizeReliefFulfillment(
+  raw?: ReliefFulfillmentPersisted | null
+): ReliefFulfillmentPersisted {
+  if (!raw || typeof raw !== 'object') return createInitialReliefFulfillment();
+  const openActions = Array.isArray(raw.openActions)
+    ? raw.openActions.filter(
+        (a) => a && typeof a.actionKey === 'string' && typeof a.programId === 'string'
+      )
+    : [];
+  return {
+    schemaVersion: '10.14.10-scale-wave-10' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
+    openActions,
+    cumulativeFulfilled:
+      typeof raw.cumulativeFulfilled === 'number' && Number.isFinite(raw.cumulativeFulfilled)
+        ? Math.max(0, Math.floor(raw.cumulativeFulfilled))
+        : 0,
+  };
+}
+
+function mergeOpenActions(
+  existing: ReliefFulfillmentOpenAction[],
+  plan: ReliefDispatchPlan
+): ReliefFulfillmentOpenAction[] {
+  const keys = new Set(existing.map((a) => a.actionKey));
+  const merged = [...existing];
+  for (const action of plan.actions) {
+    const key = actionKey(action);
+    if (keys.has(key)) continue;
+    keys.add(key);
+    merged.push({
+      actionKey: key,
+      programId: action.programId,
+      regionId: action.regionId,
+      pillar: action.pillar,
+      priority: action.priority,
+      targetTurn: action.targetTurn,
+    });
+  }
+  return merged;
+}
+
+export function advanceReliefFulfillment(args: {
+  turn: number;
+  reliefDispatchPlan: ReliefDispatchPlan;
+  executionMonitor: ReliefExecutionMonitor;
+  capacity: PublicServiceCapacitySnapshot;
+  persisted?: ReliefFulfillmentPersisted | null;
+}): { snapshot: ReliefFulfillmentSnapshot; persisted: ReliefFulfillmentPersisted } {
+  const base = sanitizeReliefFulfillment(args.persisted);
+  let openActions = mergeOpenActions(base.openActions, args.reliefDispatchPlan);
+  let fulfilledThisTurn = 0;
+
+  const canFulfill =
+    args.capacity.bindingConstraint === 'none' &&
+    !args.executionMonitor.shouldEscalateExecution &&
+    args.capacity.slotsFree > 0;
+
+  if (canFulfill) {
+    const remaining: ReliefFulfillmentOpenAction[] = [];
+    let slots = args.capacity.slotsFree;
+    for (const item of openActions) {
+      const due = item.targetTurn <= args.turn && item.priority !== 'hold';
+      if (due && slots > 0) {
+        fulfilledThisTurn += 1;
+        slots -= 1;
+        continue;
+      }
+      remaining.push(item);
+    }
+    openActions = remaining;
+  }
+
+  const openCount = openActions.length;
+  const denominator = Math.max(1, openCount + fulfilledThisTurn);
+  const fulfillmentRatio = Math.round((fulfilledThisTurn / denominator) * 100) / 100;
+  const shouldClearBacklog = openCount === 0 && fulfilledThisTurn === 0 && !args.reliefDispatchPlan.shouldHoldCommits;
+
+  const summary =
+    fulfilledThisTurn > 0
+      ? `Relief fulfillment: ${fulfilledThisTurn} closed, ${openCount} open`
+      : openCount > 0
+        ? `Relief fulfillment backlog: ${openCount} open actions`
+        : 'Relief fulfillment queue clear';
+
+  return {
+    snapshot: {
+      turn: args.turn,
+      openCount,
+      fulfilledThisTurn,
+      fulfillmentRatio,
+      shouldClearBacklog,
+      summary,
+    },
+    persisted: {
+      ...base,
+      lastTurn: args.turn,
+      openActions,
+      cumulativeFulfilled: base.cumulativeFulfilled + fulfilledThisTurn,
+    },
+  };
+}
+
+
+// --- source: wellbeing-recovery-readiness-brief.ts ---
+function resolveReadiness(
+  portfolio: PortfolioStabilizationBrief,
+  fulfillment: ReliefFulfillmentSnapshot,
+  stabilization?: StabilizationTrajectorySnapshot
+): WellbeingRecoveryReadinessBand {
+  if (
+    portfolio.stabilizationPath === 'blocked' ||
+    portfolio.shouldPausePortfolioGrowth ||
+    fulfillment.openCount >= 4
+  ) {
+    return 'not_ready';
+  }
+  if (
+    portfolio.stabilizationPath === 'clear' &&
+    fulfillment.openCount === 0 &&
+    (stabilization?.band === 'recovering' || stabilization?.trajectory === 'improving')
+  ) {
+    return 'ready';
+  }
+  if (fulfillment.fulfilledThisTurn > 0 || portfolio.stabilizationPath === 'watch') {
+    return 'partial';
+  }
+  return portfolio.stabilizationPath === 'clear' ? 'ready' : 'partial';
+}
+
+export function composeWellbeingRecoveryReadinessBrief(args: {
+  turn: number;
+  portfolioBrief: PortfolioStabilizationBrief;
+  reliefFulfillment: ReliefFulfillmentSnapshot;
+  stabilizationTrajectory?: StabilizationTrajectorySnapshot;
+}): WellbeingRecoveryReadinessBrief {
+  const readinessBand = resolveReadiness(
+    args.portfolioBrief,
+    args.reliefFulfillment,
+    args.stabilizationTrajectory
+  );
+  const shouldResumePortfolioGrowth =
+    readinessBand === 'ready' &&
+    !args.portfolioBrief.shouldPausePortfolioGrowth &&
+    args.reliefFulfillment.shouldClearBacklog;
+
+  const headlines: string[] = [];
+  if (readinessBand === 'ready') {
+    headlines.push('Recovery readiness: resume sequenced portfolio growth');
+  } else if (readinessBand === 'partial') {
+    headlines.push('Recovery readiness partial — finish relief fulfillment first');
+  } else {
+    headlines.push('Recovery readiness blocked — hold portfolio expansion');
+  }
+  if (args.reliefFulfillment.fulfilledThisTurn > 0) {
+    headlines.push(`${args.reliefFulfillment.fulfilledThisTurn} relief actions fulfilled this turn`);
+  }
+  if (args.stabilizationTrajectory?.trajectory === 'improving') {
+    headlines.push('Stabilization stress trajectory improving');
+  }
+
+  const summary = `${readinessBand} readiness / open=${args.reliefFulfillment.openCount} resume=${shouldResumePortfolioGrowth}`;
+
+  return {
+    turn: args.turn,
+    readinessBand,
+    shouldResumePortfolioGrowth,
+    headlines: headlines.slice(0, 3),
+    summary,
+  };
+}
+
+
 // --- source: wellbeing-executive-brief.ts ---
 export function composeAgent14WellbeingExecutiveBrief(args: {
   turn: number;
@@ -2811,6 +3158,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   coordinationTrajectory?: CoordinationTrajectorySnapshot;
   reliefExecutionMonitor?: ReliefExecutionMonitor;
   portfolioStabilizationBrief?: PortfolioStabilizationBrief;
+  stabilizationTrajectory?: StabilizationTrajectorySnapshot;
+  reliefFulfillment?: ReliefFulfillmentSnapshot;
+  wellbeingRecoveryReadinessBrief?: WellbeingRecoveryReadinessBrief;
 }): Agent14WellbeingExecutiveBrief {
   const giNotes: string[] = [];
   const topWarning = args.warnings.warnings.sort((a, b) => {
@@ -2891,6 +3241,17 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   if (args.portfolioStabilizationBrief?.shouldPausePortfolioGrowth) {
     giNotes.push(args.portfolioStabilizationBrief.summary);
   }
+  if (args.stabilizationTrajectory?.trajectory === 'deteriorating') {
+    giNotes.push(
+      `Stabilization stress ${args.stabilizationTrajectory.trajectory} (EMA ${args.stabilizationTrajectory.stabilizationStressEma})`
+    );
+  }
+  if (args.reliefFulfillment && args.reliefFulfillment.fulfilledThisTurn > 0) {
+    giNotes.push(args.reliefFulfillment.summary);
+  }
+  if (args.wellbeingRecoveryReadinessBrief?.shouldResumePortfolioGrowth) {
+    giNotes.push(args.wellbeingRecoveryReadinessBrief.summary);
+  }
 
   const headlineParts: string[] = [];
   if (args.coupling.band === 'critical' || args.coupling.band === 'strained') {
@@ -2910,6 +3271,8 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
     headlineParts.push('wellbeing resilience critical');
   } else if (args.portfolioStabilizationBrief?.stabilizationPath === 'blocked') {
     headlineParts.push('portfolio stabilization blocked');
+  } else if (args.wellbeingRecoveryReadinessBrief?.readinessBand === 'ready') {
+    headlineParts.push('recovery readiness clear');
   }
 
   return {
@@ -2934,6 +3297,8 @@ export interface AdvancePublicServicesTurnArgs {
   resilienceTrajectoryPersisted?: ResilienceTrajectoryPersisted | null;
   governanceTrajectoryPersisted?: GovernanceTrajectoryPersisted | null;
   coordinationTrajectoryPersisted?: CoordinationTrajectoryPersisted | null;
+  stabilizationTrajectoryPersisted?: StabilizationTrajectoryPersisted | null;
+  reliefFulfillmentPersisted?: ReliefFulfillmentPersisted | null;
   /** New commitments queued this turn (already validated or not). */
   newCommitments?: SpendingCommitment[];
   /** When true, reject commitments that fail capacity gate. */
@@ -2949,6 +3314,8 @@ export interface AdvancePublicServicesTurnResult {
   resilienceTrajectoryPersisted: ResilienceTrajectoryPersisted;
   governanceTrajectoryPersisted: GovernanceTrajectoryPersisted;
   coordinationTrajectoryPersisted: CoordinationTrajectoryPersisted;
+  stabilizationTrajectoryPersisted: StabilizationTrajectoryPersisted;
+  reliefFulfillmentPersisted: ReliefFulfillmentPersisted;
   rejectedCommitments: Array<{ commitment: SpendingCommitment; reason: string }>;
 }
 
@@ -3130,6 +3497,27 @@ export function advancePublicServicesTurn(
     governanceTrajectory: governanceTrajectoryAdvance.snapshot,
   });
 
+  const stabilizationTrajectoryAdvance = advanceStabilizationTrajectory(
+    turn,
+    portfolioStabilizationBrief,
+    args.stabilizationTrajectoryPersisted
+  );
+
+  const reliefFulfillmentAdvance = advanceReliefFulfillment({
+    turn,
+    reliefDispatchPlan,
+    executionMonitor: reliefExecutionMonitor,
+    capacity,
+    persisted: args.reliefFulfillmentPersisted,
+  });
+
+  const wellbeingRecoveryReadinessBrief = composeWellbeingRecoveryReadinessBrief({
+    turn,
+    portfolioBrief: portfolioStabilizationBrief,
+    reliefFulfillment: reliefFulfillmentAdvance.snapshot,
+    stabilizationTrajectory: stabilizationTrajectoryAdvance.snapshot,
+  });
+
   const executiveBrief = composeAgent14WellbeingExecutiveBrief({
     turn,
     warnings: wellbeingWarnings,
@@ -3149,6 +3537,9 @@ export function advancePublicServicesTurn(
     coordinationTrajectory: coordinationTrajectoryAdvance.snapshot,
     reliefExecutionMonitor,
     portfolioStabilizationBrief,
+    stabilizationTrajectory: stabilizationTrajectoryAdvance.snapshot,
+    reliefFulfillment: reliefFulfillmentAdvance.snapshot,
+    wellbeingRecoveryReadinessBrief,
   });
 
   const enriched: EnrichedPublicServiceTurnInputs = {
@@ -3185,6 +3576,9 @@ export function advancePublicServicesTurn(
     coordinationTrajectory: coordinationTrajectoryAdvance.snapshot,
     reliefExecutionMonitor,
     portfolioStabilizationBrief,
+    stabilizationTrajectory: stabilizationTrajectoryAdvance.snapshot,
+    reliefFulfillment: reliefFulfillmentAdvance.snapshot,
+    wellbeingRecoveryReadinessBrief,
   };
 
   return {
@@ -3196,6 +3590,8 @@ export function advancePublicServicesTurn(
     resilienceTrajectoryPersisted: resilienceTrajectoryAdvance.persisted,
     governanceTrajectoryPersisted: governanceTrajectoryAdvance.persisted,
     coordinationTrajectoryPersisted: coordinationTrajectoryAdvance.persisted,
+    stabilizationTrajectoryPersisted: stabilizationTrajectoryAdvance.persisted,
+    reliefFulfillmentPersisted: reliefFulfillmentAdvance.persisted,
     rejectedCommitments,
   };
 }
@@ -3222,7 +3618,9 @@ export type Agent14HousingScenarioId =
   | 'governance_trajectory_arc'
   | 'relief_dispatch_coordination_stress'
   | 'coordination_trajectory_arc'
-  | 'relief_execution_stress';
+  | 'relief_execution_stress'
+  | 'stabilization_recovery_arc'
+  | 'relief_fulfillment_backlog_stress';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -3404,6 +3802,28 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
       'ps_ed_NSW_skills',
     ],
   },
+  {
+    id: 'stabilization_recovery_arc',
+    label: 'Stabilization recovery arc',
+    baseInputs: { fiscalHeadroom: 44, stateCapacityLoad: 55, workforceReadiness: 'balanced' },
+    launchProgramIds: [
+      'ps_xp_NT_recovery_readiness',
+      'ps_h_NT_remote_housing',
+      'ps_he_NT_remote_clinic',
+    ],
+  },
+  {
+    id: 'relief_fulfillment_backlog_stress',
+    label: 'Relief fulfillment backlog stress',
+    baseInputs: { fiscalHeadroom: 17, stateCapacityLoad: 93, workforceReadiness: 'blocking', workforceSpecialistGap: 78 },
+    launchProgramIds: [
+      'ps_xp_VIC_fulfillment_coordination',
+      'ps_h_VIC_planning_reform',
+      'ps_he_VIC_hospital_backlog',
+      'ps_ed_VIC_tafe',
+      'ps_h_NSW_social_accel',
+    ],
+  },
 ];
 
 export function simulateAgent14HousingScenario(
@@ -3423,6 +3843,8 @@ export function simulateAgent14HousingScenario(
   let resilienceTrajectoryPersisted = null;
   let governanceTrajectoryPersisted = null;
   let coordinationTrajectoryPersisted = null;
+  let stabilizationTrajectoryPersisted = null;
+  let reliefFulfillmentPersisted = null;
   const turns: EnrichedPublicServiceTurnInputs[] = [];
 
   for (let t = 1; t <= maxTurns; t += 1) {
@@ -3442,6 +3864,8 @@ export function simulateAgent14HousingScenario(
       resilienceTrajectoryPersisted,
       governanceTrajectoryPersisted,
       coordinationTrajectoryPersisted,
+      stabilizationTrajectoryPersisted,
+      reliefFulfillmentPersisted,
       newCommitments,
       enforceCapacity: true,
     });
@@ -3452,6 +3876,8 @@ export function simulateAgent14HousingScenario(
     resilienceTrajectoryPersisted = result.resilienceTrajectoryPersisted;
     governanceTrajectoryPersisted = result.governanceTrajectoryPersisted;
     coordinationTrajectoryPersisted = result.coordinationTrajectoryPersisted;
+    stabilizationTrajectoryPersisted = result.stabilizationTrajectoryPersisted;
+    reliefFulfillmentPersisted = result.reliefFulfillmentPersisted;
     turns.push(result.inputs);
   }
 
@@ -3985,8 +4411,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Twenty housing scenarios registered',
-    listAgent14ScenarioIds().length === 20,
+    'Twenty-two housing scenarios registered',
+    listAgent14ScenarioIds().length === 22,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -4214,8 +4640,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave5_schema_version',
-    'Wellbeing schema version is wave 9',
-    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.9-scale-wave-9',
+    'Wellbeing schema version is wave 10',
+    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.10-scale-wave-10',
     AGENT14_WELLBEING_SCHEMA_VERSION
   );
 
@@ -4935,6 +5361,179 @@ export function runAgent14WellbeingSelfTests(): {
       'Coordination trajectory advance updates persisted turn',
       snap.persisted.lastTurn === 4 && snap.snapshot.engagementPressureEma > 0,
       `ema=${snap.snapshot.engagementPressureEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 5, fiscalHeadroom: 40, stateCapacityLoad: 70, workforceReadiness: 'strained' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      stabilizationTrajectoryPersisted: createInitialStabilizationTrajectory(),
+    });
+    check(
+      results,
+      'wave10_stabilization_trajectory',
+      'Turn advance attaches stabilization trajectory',
+      adv.inputs.stabilizationTrajectory !== undefined &&
+        adv.stabilizationTrajectoryPersisted.lastTurn === 5 &&
+        adv.inputs.stabilizationTrajectory!.stabilizationStressEma > 0,
+      `band=${adv.inputs.stabilizationTrajectory?.band} ema=${adv.inputs.stabilizationTrajectory?.stabilizationStressEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 6, fiscalHeadroom: 22, stateCapacityLoad: 88, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      reliefFulfillmentPersisted: createInitialReliefFulfillment(),
+    });
+    check(
+      results,
+      'wave10_relief_fulfillment',
+      'Relief fulfillment snapshot attached',
+      adv.inputs.reliefFulfillment !== undefined &&
+        adv.reliefFulfillmentPersisted.lastTurn === 6,
+      adv.inputs.reliefFulfillment?.summary.slice(0, 72)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 46, stateCapacityLoad: 58, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave10_recovery_readiness_brief',
+      'Recovery readiness brief includes band',
+      adv.inputs.wellbeingRecoveryReadinessBrief !== undefined &&
+        adv.inputs.wellbeingRecoveryReadinessBrief!.summary.length > 10,
+      `band=${adv.inputs.wellbeingRecoveryReadinessBrief?.readinessBand}`
+    );
+  }
+
+  {
+    const raw = sanitizeStabilizationTrajectory({
+      schemaVersion: '10.14.9-scale-wave-9' as any,
+      lastTurn: 2,
+      emaAlpha: 0.3,
+      stabilizationStressEma: 61,
+    });
+    check(
+      results,
+      'wave10_stabilization_sanitize',
+      'Stabilization trajectory sanitize upgrades schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.stabilizationStressEma === 61,
+      `schema=${raw.schemaVersion}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('stabilization_recovery_arc', 10);
+    const last = sim.turns[9];
+    check(
+      results,
+      'wave10_stabilization_recovery_scenario',
+      'Stabilization recovery arc wires trajectory, fulfillment, and readiness',
+      last.stabilizationTrajectory !== undefined &&
+        last.reliefFulfillment !== undefined &&
+        last.wellbeingRecoveryReadinessBrief !== undefined,
+      `stress=${last.stabilizationTrajectory?.band} ready=${last.wellbeingRecoveryReadinessBrief?.readinessBand}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('relief_fulfillment_backlog_stress', 8);
+    const last = sim.turns[7];
+    check(
+      results,
+      'wave10_fulfillment_backlog_scenario',
+      'Fulfillment backlog stress surfaces open actions or not-ready readiness',
+      last.reliefFulfillment !== undefined &&
+        (last.reliefFulfillment!.openCount > 0 ||
+          last.wellbeingRecoveryReadinessBrief!.readinessBand === 'not_ready' ||
+          last.reliefFulfillment!.fulfilledThisTurn > 0),
+      `open=${last.reliefFulfillment?.openCount} ready=${last.wellbeingRecoveryReadinessBrief?.readinessBand}`
+    );
+  }
+
+  check(
+    results,
+    'wave10_recovery_stub_catalog',
+    'Wave 10 recovery stubs present',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_NT_recovery_readiness') &&
+      AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_VIC_fulfillment_coordination'),
+    `n=${AGENT14_HEALTH_ED_PROGRAM_STUBS.length}`
+  );
+
+  check(
+    results,
+    'wave10_scenario_catalog',
+    'Scenario catalog includes wave 10 scenarios',
+    listAgent14ScenarioIds().includes('stabilization_recovery_arc') &&
+      listAgent14ScenarioIds().includes('relief_fulfillment_backlog_stress'),
+    `count=${listAgent14ScenarioIds().length}`
+  );
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 7, fiscalHeadroom: 28, stateCapacityLoad: 84, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const fulfillment = advanceReliefFulfillment({
+      turn: 7,
+      reliefDispatchPlan: adv.inputs.reliefDispatchPlan!,
+      executionMonitor: adv.inputs.reliefExecutionMonitor!,
+      capacity: adv.inputs.capacity,
+      persisted: createInitialReliefFulfillment(),
+    });
+    const brief = composeWellbeingRecoveryReadinessBrief({
+      turn: 7,
+      portfolioBrief: adv.inputs.portfolioStabilizationBrief!,
+      reliefFulfillment: fulfillment.snapshot,
+      stabilizationTrajectory: adv.inputs.stabilizationTrajectory,
+    });
+    check(
+      results,
+      'wave10_recovery_composer',
+      'Standalone recovery composer returns headlines',
+      brief.headlines.length > 0 && brief.summary.length > 10,
+      brief.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const raw = sanitizeReliefFulfillment({
+      schemaVersion: '10.14.9-scale-wave-9' as any,
+      lastTurn: 1,
+      openActions: [],
+      cumulativeFulfilled: 3,
+    });
+    check(
+      results,
+      'wave10_fulfillment_sanitize',
+      'Relief fulfillment sanitize upgrades schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.cumulativeFulfilled === 3,
+      `schema=${raw.schemaVersion}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 3, fiscalHeadroom: 38, stateCapacityLoad: 72, workforceReadiness: 'weak' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const snap = advanceStabilizationTrajectory(
+      3,
+      adv.inputs.portfolioStabilizationBrief!,
+      createInitialStabilizationTrajectory()
+    );
+    check(
+      results,
+      'wave10_stabilization_advance_unit',
+      'Stabilization trajectory advance updates persisted turn',
+      snap.persisted.lastTurn === 3 && snap.snapshot.stabilizationStressEma > 0,
+      `ema=${snap.snapshot.stabilizationStressEma}`
     );
   }
 

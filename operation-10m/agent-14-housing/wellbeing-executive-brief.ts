@@ -17,6 +17,9 @@ import type {
   CoordinationTrajectorySnapshot,
   ReliefExecutionMonitor,
   PortfolioStabilizationBrief,
+  StabilizationTrajectorySnapshot,
+  ReliefFulfillmentSnapshot,
+  WellbeingRecoveryReadinessBrief,
   WellbeingTurnForecastPoint,
 } from './types.ts';
 
@@ -40,6 +43,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   coordinationTrajectory?: CoordinationTrajectorySnapshot;
   reliefExecutionMonitor?: ReliefExecutionMonitor;
   portfolioStabilizationBrief?: PortfolioStabilizationBrief;
+  stabilizationTrajectory?: StabilizationTrajectorySnapshot;
+  reliefFulfillment?: ReliefFulfillmentSnapshot;
+  wellbeingRecoveryReadinessBrief?: WellbeingRecoveryReadinessBrief;
 }): Agent14WellbeingExecutiveBrief {
   const giNotes: string[] = [];
   const topWarning = args.warnings.warnings.sort((a, b) => {
@@ -120,6 +126,17 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   if (args.portfolioStabilizationBrief?.shouldPausePortfolioGrowth) {
     giNotes.push(args.portfolioStabilizationBrief.summary);
   }
+  if (args.stabilizationTrajectory?.trajectory === 'deteriorating') {
+    giNotes.push(
+      `Stabilization stress ${args.stabilizationTrajectory.trajectory} (EMA ${args.stabilizationTrajectory.stabilizationStressEma})`
+    );
+  }
+  if (args.reliefFulfillment && args.reliefFulfillment.fulfilledThisTurn > 0) {
+    giNotes.push(args.reliefFulfillment.summary);
+  }
+  if (args.wellbeingRecoveryReadinessBrief?.shouldResumePortfolioGrowth) {
+    giNotes.push(args.wellbeingRecoveryReadinessBrief.summary);
+  }
 
   const headlineParts: string[] = [];
   if (args.coupling.band === 'critical' || args.coupling.band === 'strained') {
@@ -139,6 +156,8 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
     headlineParts.push('wellbeing resilience critical');
   } else if (args.portfolioStabilizationBrief?.stabilizationPath === 'blocked') {
     headlineParts.push('portfolio stabilization blocked');
+  } else if (args.wellbeingRecoveryReadinessBrief?.readinessBand === 'ready') {
+    headlineParts.push('recovery readiness clear');
   }
 
   return {

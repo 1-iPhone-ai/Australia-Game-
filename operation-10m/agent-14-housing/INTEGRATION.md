@@ -15,6 +15,18 @@ Agent 25 inlines the chunk (or runs the assembly pipeline) — **do not** hand-e
 
 Integration branch: **`op10m/agent-14-housing`** (canonical worker branch for this module). Scale wave round 4 workers may push **`op10m/agent-14-housing-wellbeing`** for PR #331 head sync.
 
+## Scale wave 10 (stabilization trajectory & relief fulfillment)
+
+| Module | Purpose |
+|--------|---------|
+| `stabilization-trajectory.ts` | Cross-turn EMA of portfolio stabilization stress with trajectory band |
+| `relief-fulfillment-tracker.ts` | Persisted open relief actions and per-turn fulfillment against capacity |
+| `wellbeing-recovery-readiness-brief.ts` | GI brief for resuming portfolio growth when fulfillment clears |
+
+Turn advance attaches `stabilizationTrajectory`, `reliefFulfillment`, `wellbeingRecoveryReadinessBrief`, and returns `stabilizationTrajectoryPersisted` + `reliefFulfillmentPersisted`.
+
+Recovery stubs (`ps_xp_NT_recovery_readiness`, `ps_xp_VIC_fulfillment_coordination`); scenarios `stabilization_recovery_arc`, `relief_fulfillment_backlog_stress`.
+
 ## Scale wave 9 (coordination trajectory & relief execution)
 
 | Module | Purpose |
@@ -119,7 +131,7 @@ Suggested marker:
 - `advanceDelayedSpendingEffects` / `commitSpendingProgram` / `makeSpendingCommitment`
 - `runAgent14WellbeingSelfTests`
 - `runAgent14HousingScenarioSweep` / `simulateAgent14HousingScenario`
-- `AGENT14_WELLBEING_SCHEMA_VERSION` (`10.14.9-scale-wave-9`)
+- `AGENT14_WELLBEING_SCHEMA_VERSION` (`10.14.10-scale-wave-10`)
 
 ## Upstream inputs (read-only)
 

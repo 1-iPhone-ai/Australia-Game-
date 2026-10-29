@@ -28,7 +28,9 @@ export type Agent14HousingScenarioId =
   | 'governance_trajectory_arc'
   | 'relief_dispatch_coordination_stress'
   | 'coordination_trajectory_arc'
-  | 'relief_execution_stress';
+  | 'relief_execution_stress'
+  | 'stabilization_recovery_arc'
+  | 'relief_fulfillment_backlog_stress';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -210,6 +212,28 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
       'ps_ed_NSW_skills',
     ],
   },
+  {
+    id: 'stabilization_recovery_arc',
+    label: 'Stabilization recovery arc',
+    baseInputs: { fiscalHeadroom: 44, stateCapacityLoad: 55, workforceReadiness: 'balanced' },
+    launchProgramIds: [
+      'ps_xp_NT_recovery_readiness',
+      'ps_h_NT_remote_housing',
+      'ps_he_NT_remote_clinic',
+    ],
+  },
+  {
+    id: 'relief_fulfillment_backlog_stress',
+    label: 'Relief fulfillment backlog stress',
+    baseInputs: { fiscalHeadroom: 17, stateCapacityLoad: 93, workforceReadiness: 'blocking', workforceSpecialistGap: 78 },
+    launchProgramIds: [
+      'ps_xp_VIC_fulfillment_coordination',
+      'ps_h_VIC_planning_reform',
+      'ps_he_VIC_hospital_backlog',
+      'ps_ed_VIC_tafe',
+      'ps_h_NSW_social_accel',
+    ],
+  },
 ];
 
 export { commitmentFromProgramStub } from './program-stub-commitments.ts';
@@ -231,6 +255,8 @@ export function simulateAgent14HousingScenario(
   let resilienceTrajectoryPersisted = null;
   let governanceTrajectoryPersisted = null;
   let coordinationTrajectoryPersisted = null;
+  let stabilizationTrajectoryPersisted = null;
+  let reliefFulfillmentPersisted = null;
   const turns: EnrichedPublicServiceTurnInputs[] = [];
 
   for (let t = 1; t <= maxTurns; t += 1) {
@@ -250,6 +276,8 @@ export function simulateAgent14HousingScenario(
       resilienceTrajectoryPersisted,
       governanceTrajectoryPersisted,
       coordinationTrajectoryPersisted,
+      stabilizationTrajectoryPersisted,
+      reliefFulfillmentPersisted,
       newCommitments,
       enforceCapacity: true,
     });
@@ -260,6 +288,8 @@ export function simulateAgent14HousingScenario(
     resilienceTrajectoryPersisted = result.resilienceTrajectoryPersisted;
     governanceTrajectoryPersisted = result.governanceTrajectoryPersisted;
     coordinationTrajectoryPersisted = result.coordinationTrajectoryPersisted;
+    stabilizationTrajectoryPersisted = result.stabilizationTrajectoryPersisted;
+    reliefFulfillmentPersisted = result.reliefFulfillmentPersisted;
     turns.push(result.inputs);
   }
 

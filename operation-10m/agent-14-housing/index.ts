@@ -29,4 +29,7 @@ export * from './stakeholder-coordination-brief.ts';
 export * from './coordination-trajectory.ts';
 export * from './relief-execution-monitor.ts';
 export * from './portfolio-stabilization-brief.ts';
+export * from './stabilization-trajectory.ts';
+export * from './relief-fulfillment-tracker.ts';
+export * from './wellbeing-recovery-readiness-brief.ts';
 export { runAgent14WellbeingSelfTests } from './self-tests.ts';

@@ -1,6 +1,6 @@
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.9-scale-wave-9' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.10-scale-wave-10' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -110,6 +110,9 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   coordinationTrajectory?: CoordinationTrajectorySnapshot;
   reliefExecutionMonitor?: ReliefExecutionMonitor;
   portfolioStabilizationBrief?: PortfolioStabilizationBrief;
+  stabilizationTrajectory?: StabilizationTrajectorySnapshot;
+  reliefFulfillment?: ReliefFulfillmentSnapshot;
+  wellbeingRecoveryReadinessBrief?: WellbeingRecoveryReadinessBrief;
 }
 
 export type CouplingTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
@@ -341,6 +344,60 @@ export interface PortfolioStabilizationBrief {
   turn: number;
   stabilizationPath: PortfolioStabilizationPath;
   shouldPausePortfolioGrowth: boolean;
+  headlines: string[];
+  summary: string;
+}
+
+export type StabilizationStressBand = 'recovering' | 'constrained' | 'stressed';
+
+export interface StabilizationTrajectorySnapshot {
+  turn: number;
+  stabilizationStressEma: number;
+  instantaneousStress: number;
+  band: StabilizationStressBand;
+  trajectory: CouplingTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface StabilizationTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  stabilizationStressEma: number;
+  priorEma?: number;
+}
+
+export interface ReliefFulfillmentOpenAction {
+  actionKey: string;
+  programId: string;
+  regionId: string;
+  pillar: PublicServicePillar;
+  priority: ReliefDispatchPriority;
+  targetTurn: number;
+}
+
+export interface ReliefFulfillmentPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  openActions: ReliefFulfillmentOpenAction[];
+  cumulativeFulfilled: number;
+}
+
+export interface ReliefFulfillmentSnapshot {
+  turn: number;
+  openCount: number;
+  fulfilledThisTurn: number;
+  fulfillmentRatio: number;
+  shouldClearBacklog: boolean;
+  summary: string;
+}
+
+export type WellbeingRecoveryReadinessBand = 'ready' | 'partial' | 'not_ready';
+
+export interface WellbeingRecoveryReadinessBrief {
+  turn: number;
+  readinessBand: WellbeingRecoveryReadinessBand;
+  shouldResumePortfolioGrowth: boolean;
   headlines: string[];
   summary: string;
 }

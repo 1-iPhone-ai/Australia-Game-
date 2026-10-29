@@ -22,6 +22,9 @@ import { composeStakeholderCoordinationBrief } from './stakeholder-coordination-
 import { advanceCoordinationTrajectory } from './coordination-trajectory.ts';
 import { buildReliefExecutionMonitor } from './relief-execution-monitor.ts';
 import { composePortfolioStabilizationBrief } from './portfolio-stabilization-brief.ts';
+import { advanceStabilizationTrajectory } from './stabilization-trajectory.ts';
+import { advanceReliefFulfillment } from './relief-fulfillment-tracker.ts';
+import { composeWellbeingRecoveryReadinessBrief } from './wellbeing-recovery-readiness-brief.ts';
 import { composeAgent14WellbeingExecutiveBrief } from './wellbeing-executive-brief.ts';
 import {
   canAcceptSpendingCommitment,
@@ -37,6 +40,8 @@ import type {
   ResilienceTrajectoryPersisted,
   GovernanceTrajectoryPersisted,
   CoordinationTrajectoryPersisted,
+  StabilizationTrajectoryPersisted,
+  ReliefFulfillmentPersisted,
   SpendingCommitment,
 } from './types.ts';
 
@@ -49,6 +54,8 @@ export interface AdvancePublicServicesTurnArgs {
   resilienceTrajectoryPersisted?: ResilienceTrajectoryPersisted | null;
   governanceTrajectoryPersisted?: GovernanceTrajectoryPersisted | null;
   coordinationTrajectoryPersisted?: CoordinationTrajectoryPersisted | null;
+  stabilizationTrajectoryPersisted?: StabilizationTrajectoryPersisted | null;
+  reliefFulfillmentPersisted?: ReliefFulfillmentPersisted | null;
   /** New commitments queued this turn (already validated or not). */
   newCommitments?: SpendingCommitment[];
   /** When true, reject commitments that fail capacity gate. */
@@ -64,6 +71,8 @@ export interface AdvancePublicServicesTurnResult {
   resilienceTrajectoryPersisted: ResilienceTrajectoryPersisted;
   governanceTrajectoryPersisted: GovernanceTrajectoryPersisted;
   coordinationTrajectoryPersisted: CoordinationTrajectoryPersisted;
+  stabilizationTrajectoryPersisted: StabilizationTrajectoryPersisted;
+  reliefFulfillmentPersisted: ReliefFulfillmentPersisted;
   rejectedCommitments: Array<{ commitment: SpendingCommitment; reason: string }>;
 }
 
@@ -245,6 +254,27 @@ export function advancePublicServicesTurn(
     governanceTrajectory: governanceTrajectoryAdvance.snapshot,
   });
 
+  const stabilizationTrajectoryAdvance = advanceStabilizationTrajectory(
+    turn,
+    portfolioStabilizationBrief,
+    args.stabilizationTrajectoryPersisted
+  );
+
+  const reliefFulfillmentAdvance = advanceReliefFulfillment({
+    turn,
+    reliefDispatchPlan,
+    executionMonitor: reliefExecutionMonitor,
+    capacity,
+    persisted: args.reliefFulfillmentPersisted,
+  });
+
+  const wellbeingRecoveryReadinessBrief = composeWellbeingRecoveryReadinessBrief({
+    turn,
+    portfolioBrief: portfolioStabilizationBrief,
+    reliefFulfillment: reliefFulfillmentAdvance.snapshot,
+    stabilizationTrajectory: stabilizationTrajectoryAdvance.snapshot,
+  });
+
   const executiveBrief = composeAgent14WellbeingExecutiveBrief({
     turn,
     warnings: wellbeingWarnings,
@@ -264,6 +294,9 @@ export function advancePublicServicesTurn(
     coordinationTrajectory: coordinationTrajectoryAdvance.snapshot,
     reliefExecutionMonitor,
     portfolioStabilizationBrief,
+    stabilizationTrajectory: stabilizationTrajectoryAdvance.snapshot,
+    reliefFulfillment: reliefFulfillmentAdvance.snapshot,
+    wellbeingRecoveryReadinessBrief,
   });
 
   const enriched: EnrichedPublicServiceTurnInputs = {
@@ -300,6 +333,9 @@ export function advancePublicServicesTurn(
     coordinationTrajectory: coordinationTrajectoryAdvance.snapshot,
     reliefExecutionMonitor,
     portfolioStabilizationBrief,
+    stabilizationTrajectory: stabilizationTrajectoryAdvance.snapshot,
+    reliefFulfillment: reliefFulfillmentAdvance.snapshot,
+    wellbeingRecoveryReadinessBrief,
   };
 
   return {
@@ -311,6 +347,8 @@ export function advancePublicServicesTurn(
     resilienceTrajectoryPersisted: resilienceTrajectoryAdvance.persisted,
     governanceTrajectoryPersisted: governanceTrajectoryAdvance.persisted,
     coordinationTrajectoryPersisted: coordinationTrajectoryAdvance.persisted,
+    stabilizationTrajectoryPersisted: stabilizationTrajectoryAdvance.persisted,
+    reliefFulfillmentPersisted: reliefFulfillmentAdvance.persisted,
     rejectedCommitments,
   };
 }

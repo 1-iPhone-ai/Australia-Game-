@@ -63,6 +63,17 @@ import {
 } from './coordination-trajectory.ts';
 import { buildReliefExecutionMonitor } from './relief-execution-monitor.ts';
 import { composePortfolioStabilizationBrief } from './portfolio-stabilization-brief.ts';
+import {
+  advanceStabilizationTrajectory,
+  createInitialStabilizationTrajectory,
+  sanitizeStabilizationTrajectory,
+} from './stabilization-trajectory.ts';
+import {
+  advanceReliefFulfillment,
+  createInitialReliefFulfillment,
+  sanitizeReliefFulfillment,
+} from './relief-fulfillment-tracker.ts';
+import { composeWellbeingRecoveryReadinessBrief } from './wellbeing-recovery-readiness-brief.ts';
 import { AGENT14_WELLBEING_SCHEMA_VERSION } from './types.ts';
 
 export interface Agent14SelfTestResult {
@@ -564,8 +575,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Twenty housing scenarios registered',
-    listAgent14ScenarioIds().length === 20,
+    'Twenty-two housing scenarios registered',
+    listAgent14ScenarioIds().length === 22,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -793,8 +804,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave5_schema_version',
-    'Wellbeing schema version is wave 9',
-    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.9-scale-wave-9',
+    'Wellbeing schema version is wave 10',
+    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.10-scale-wave-10',
     AGENT14_WELLBEING_SCHEMA_VERSION
   );
 
@@ -1514,6 +1525,179 @@ export function runAgent14WellbeingSelfTests(): {
       'Coordination trajectory advance updates persisted turn',
       snap.persisted.lastTurn === 4 && snap.snapshot.engagementPressureEma > 0,
       `ema=${snap.snapshot.engagementPressureEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 5, fiscalHeadroom: 40, stateCapacityLoad: 70, workforceReadiness: 'strained' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      stabilizationTrajectoryPersisted: createInitialStabilizationTrajectory(),
+    });
+    check(
+      results,
+      'wave10_stabilization_trajectory',
+      'Turn advance attaches stabilization trajectory',
+      adv.inputs.stabilizationTrajectory !== undefined &&
+        adv.stabilizationTrajectoryPersisted.lastTurn === 5 &&
+        adv.inputs.stabilizationTrajectory!.stabilizationStressEma > 0,
+      `band=${adv.inputs.stabilizationTrajectory?.band} ema=${adv.inputs.stabilizationTrajectory?.stabilizationStressEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 6, fiscalHeadroom: 22, stateCapacityLoad: 88, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      reliefFulfillmentPersisted: createInitialReliefFulfillment(),
+    });
+    check(
+      results,
+      'wave10_relief_fulfillment',
+      'Relief fulfillment snapshot attached',
+      adv.inputs.reliefFulfillment !== undefined &&
+        adv.reliefFulfillmentPersisted.lastTurn === 6,
+      adv.inputs.reliefFulfillment?.summary.slice(0, 72)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 46, stateCapacityLoad: 58, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave10_recovery_readiness_brief',
+      'Recovery readiness brief includes band',
+      adv.inputs.wellbeingRecoveryReadinessBrief !== undefined &&
+        adv.inputs.wellbeingRecoveryReadinessBrief!.summary.length > 10,
+      `band=${adv.inputs.wellbeingRecoveryReadinessBrief?.readinessBand}`
+    );
+  }
+
+  {
+    const raw = sanitizeStabilizationTrajectory({
+      schemaVersion: '10.14.9-scale-wave-9' as any,
+      lastTurn: 2,
+      emaAlpha: 0.3,
+      stabilizationStressEma: 61,
+    });
+    check(
+      results,
+      'wave10_stabilization_sanitize',
+      'Stabilization trajectory sanitize upgrades schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.stabilizationStressEma === 61,
+      `schema=${raw.schemaVersion}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('stabilization_recovery_arc', 10);
+    const last = sim.turns[9];
+    check(
+      results,
+      'wave10_stabilization_recovery_scenario',
+      'Stabilization recovery arc wires trajectory, fulfillment, and readiness',
+      last.stabilizationTrajectory !== undefined &&
+        last.reliefFulfillment !== undefined &&
+        last.wellbeingRecoveryReadinessBrief !== undefined,
+      `stress=${last.stabilizationTrajectory?.band} ready=${last.wellbeingRecoveryReadinessBrief?.readinessBand}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('relief_fulfillment_backlog_stress', 8);
+    const last = sim.turns[7];
+    check(
+      results,
+      'wave10_fulfillment_backlog_scenario',
+      'Fulfillment backlog stress surfaces open actions or not-ready readiness',
+      last.reliefFulfillment !== undefined &&
+        (last.reliefFulfillment!.openCount > 0 ||
+          last.wellbeingRecoveryReadinessBrief!.readinessBand === 'not_ready' ||
+          last.reliefFulfillment!.fulfilledThisTurn > 0),
+      `open=${last.reliefFulfillment?.openCount} ready=${last.wellbeingRecoveryReadinessBrief?.readinessBand}`
+    );
+  }
+
+  check(
+    results,
+    'wave10_recovery_stub_catalog',
+    'Wave 10 recovery stubs present',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_NT_recovery_readiness') &&
+      AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_VIC_fulfillment_coordination'),
+    `n=${AGENT14_HEALTH_ED_PROGRAM_STUBS.length}`
+  );
+
+  check(
+    results,
+    'wave10_scenario_catalog',
+    'Scenario catalog includes wave 10 scenarios',
+    listAgent14ScenarioIds().includes('stabilization_recovery_arc') &&
+      listAgent14ScenarioIds().includes('relief_fulfillment_backlog_stress'),
+    `count=${listAgent14ScenarioIds().length}`
+  );
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 7, fiscalHeadroom: 28, stateCapacityLoad: 84, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const fulfillment = advanceReliefFulfillment({
+      turn: 7,
+      reliefDispatchPlan: adv.inputs.reliefDispatchPlan!,
+      executionMonitor: adv.inputs.reliefExecutionMonitor!,
+      capacity: adv.inputs.capacity,
+      persisted: createInitialReliefFulfillment(),
+    });
+    const brief = composeWellbeingRecoveryReadinessBrief({
+      turn: 7,
+      portfolioBrief: adv.inputs.portfolioStabilizationBrief!,
+      reliefFulfillment: fulfillment.snapshot,
+      stabilizationTrajectory: adv.inputs.stabilizationTrajectory,
+    });
+    check(
+      results,
+      'wave10_recovery_composer',
+      'Standalone recovery composer returns headlines',
+      brief.headlines.length > 0 && brief.summary.length > 10,
+      brief.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const raw = sanitizeReliefFulfillment({
+      schemaVersion: '10.14.9-scale-wave-9' as any,
+      lastTurn: 1,
+      openActions: [],
+      cumulativeFulfilled: 3,
+    });
+    check(
+      results,
+      'wave10_fulfillment_sanitize',
+      'Relief fulfillment sanitize upgrades schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.cumulativeFulfilled === 3,
+      `schema=${raw.schemaVersion}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 3, fiscalHeadroom: 38, stateCapacityLoad: 72, workforceReadiness: 'weak' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const snap = advanceStabilizationTrajectory(
+      3,
+      adv.inputs.portfolioStabilizationBrief!,
+      createInitialStabilizationTrajectory()
+    );
+    check(
+      results,
+      'wave10_stabilization_advance_unit',
+      'Stabilization trajectory advance updates persisted turn',
+      snap.persisted.lastTurn === 3 && snap.snapshot.stabilizationStressEma > 0,
+      `ema=${snap.snapshot.stabilizationStressEma}`
     );
   }
 
