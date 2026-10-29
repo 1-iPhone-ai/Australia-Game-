@@ -37,7 +37,7 @@ export interface Agent24ReplayScaleWaveAcceptanceInput {
 export function buildAgent24ReplayScaleWaveAcceptanceReport(
   input: Agent24ReplayScaleWaveAcceptanceInput,
 ): Agent24ReplayScaleWaveAcceptanceReport {
-  const waveRound = input.waveRound ?? 16;
+  const waveRound = input.waveRound ?? 17;
   const minDepth = input.minDepthScore ?? 55;
   const blockers: Agent24ScaleWaveAcceptanceBlocker[] = [];
 
@@ -126,7 +126,7 @@ export function runAgent24ReplayScaleWaveAcceptanceSelfTests(): Array<{ name: st
 
   const report = buildAgent24ReplayScaleWaveAcceptanceReport({
     matchId: 'self',
-    waveRound: 16,
+    waveRound: 17,
     archiveContinuityVerification: continuityVerification,
     exportReadiness,
     analyticsDepth,
@@ -134,14 +134,14 @@ export function runAgent24ReplayScaleWaveAcceptanceSelfTests(): Array<{ name: st
 
   return [
     { name: 'accepted_when_wave_gates_pass', passed: report.accepted && report.blockerCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 16 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 17 },
     {
       name: 'deterministic_fingerprint',
       passed:
         report.deterministicFingerprint ===
         buildAgent24ReplayScaleWaveAcceptanceReport({
           matchId: 'self',
-          waveRound: 16,
+          waveRound: 17,
           archiveContinuityVerification: continuityVerification,
           exportReadiness,
           analyticsDepth,

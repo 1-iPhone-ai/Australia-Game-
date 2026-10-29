@@ -157,6 +157,18 @@ import {
   buildAgent24ArchiveReleaseGateReport,
   runAgent24ArchiveReleaseGateSelfTests,
 } from '../src/archive-release-gate.ts';
+import {
+  buildAgent24ArchiveReleaseVerificationReport,
+  runAgent24ArchiveReleaseVerificationSelfTests,
+} from '../src/archive-release-verification.ts';
+import {
+  buildAgent24ReplayScaleWaveHandoffSeal,
+  runAgent24ReplayScaleWaveHandoffSealSelfTests,
+} from '../src/replay-scale-wave-handoff-seal.ts';
+import {
+  buildAgent24ReplayScaleWaveCloseoutReport,
+  runAgent24ReplayScaleWaveCloseoutSelfTests,
+} from '../src/replay-scale-wave-closeout.ts';
 import { buildO6kHistoricalAnalyticsSnapshot } from '../src/history-replay-analytics.ts';
 import { o6kAgent24StableStringify, runO6kAgent24SelfTests } from '../src/history-replay-analytics.ts';
 
@@ -1194,13 +1206,13 @@ describe('Agent 24 archive continuity verification', () => {
 });
 
 describe('Agent 24 replay scale wave acceptance', () => {
-  it('accepts wave 16 when continuity, export, and depth align', () => {
+  it('accepts wave 17 when continuity, export, and depth align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveAcceptance.accepted, true);
-    assert.equal(bundle.replayScaleWaveAcceptance.waveRound, 16);
+    assert.equal(bundle.replayScaleWaveAcceptance.waveRound, 17);
     const direct = buildAgent24ReplayScaleWaveAcceptanceReport({
       matchId: 'm',
-      waveRound: 16,
+      waveRound: 17,
       archiveContinuityVerification: bundle.archiveContinuityVerification,
       exportReadiness: bundle.exportReadiness,
       analyticsDepth: bundle.analyticsDepth,
@@ -1222,6 +1234,53 @@ describe('Agent 24 archive release gate', () => {
     });
     assert.equal(direct.deterministicFingerprint, bundle.archiveReleaseGate.deterministicFingerprint);
     assert.ok(runAgent24ArchiveReleaseGateSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 archive release verification', () => {
+  it('verifies release when gate, receipt ledger, and fulfillment align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.archiveReleaseVerification.verified, true);
+    const direct = buildAgent24ArchiveReleaseVerificationReport({
+      matchId: 'm',
+      archiveReleaseGate: bundle.archiveReleaseGate,
+      publishReceiptLedger: bundle.publishReceiptLedger,
+      archiveFulfillmentAudit: bundle.archiveFulfillmentAudit,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.archiveReleaseVerification.deterministicFingerprint);
+    assert.ok(runAgent24ArchiveReleaseVerificationSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 replay scale wave handoff seal', () => {
+  it('seals handoff when wave acceptance and release verification align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.replayScaleWaveHandoffSeal.handoffReady, true);
+    assert.equal(bundle.replayScaleWaveHandoffSeal.waveRound, 17);
+    const direct = buildAgent24ReplayScaleWaveHandoffSeal({
+      matchId: 'm',
+      replayScaleWaveAcceptance: bundle.replayScaleWaveAcceptance,
+      archiveReleaseGate: bundle.archiveReleaseGate,
+      archiveReleaseVerification: bundle.archiveReleaseVerification,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.replayScaleWaveHandoffSeal.deterministicFingerprint);
+    assert.ok(runAgent24ReplayScaleWaveHandoffSealSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 replay scale wave closeout', () => {
+  it('completes closeout when wave handoff and release verification align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.replayScaleWaveCloseout.closeoutComplete, true);
+    assert.equal(bundle.replayScaleWaveCloseout.waveRound, 17);
+    const direct = buildAgent24ReplayScaleWaveCloseoutReport({
+      matchId: 'm',
+      replayScaleWaveAcceptance: bundle.replayScaleWaveAcceptance,
+      replayScaleWaveHandoffSeal: bundle.replayScaleWaveHandoffSeal,
+      archiveReleaseVerification: bundle.archiveReleaseVerification,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.replayScaleWaveCloseout.deterministicFingerprint);
+    assert.ok(runAgent24ReplayScaleWaveCloseoutSelfTests().every(t => t.passed));
   });
 });
 
