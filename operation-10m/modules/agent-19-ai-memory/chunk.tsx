@@ -11991,6 +11991,289 @@ export function pinnacleRecoveryOrchestratorWithinCap(report: PinnacleRecoveryOr
 }
 
 
+// --- source: match-explainability-apex-bundle.ts ---
+  auditMatchExplainabilityApexGate,
+  matchExplainabilityApexAllowed,
+} from './match-explainability-apex-gate.ts';
+  buildMatchExplainabilityPinnacleBundle,
+  matchExplainabilityPinnacleReady,
+} from './match-explainability-pinnacle-bundle.ts';
+  buildSessionPinnacleExportBundle,
+  sessionPinnacleExportShipped,
+} from './session-pinnacle-export-bundle.ts';
+
+export const AGENT19_APEX_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityApexBundle {
+  apexReady: boolean;
+  apexAllowed: boolean;
+  pinnacleReady: boolean;
+  pinnacleExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type ApexParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Apex bundle: apex gate and pinnacle export must both be green. */
+export function buildMatchExplainabilityApexBundle(
+  packs: TurnExplainabilityPack[],
+  params: ApexParams,
+): MatchExplainabilityApexBundle {
+  const apex = auditMatchExplainabilityApexGate(packs, params);
+  const pinnacle = buildMatchExplainabilityPinnacleBundle(packs, params);
+  const pinnacleExport = buildSessionPinnacleExportBundle(packs, params);
+  const apexAllowed = matchExplainabilityApexAllowed(apex);
+  const pinnacleReady = matchExplainabilityPinnacleReady(pinnacle);
+  const pinnacleExportShipped = sessionPinnacleExportShipped(pinnacleExport);
+  const apexReady = apexAllowed && pinnacleReady && pinnacleExportShipped;
+  const narrativeLines = [
+    `Match explainability apex bundle: ${apexReady ? 'READY' : 'PENDING'} (gate ${apexAllowed ? 'ok' : 'fail'}, pinnacle ${pinnacleReady ? 'ok' : 'fail'}).`,
+    ...apex.narrativeLines.slice(0, 2),
+    ...pinnacle.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_APEX_NARRATIVE_CAP);
+  return {
+    apexReady,
+    apexAllowed,
+    pinnacleReady,
+    pinnacleExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityApexReady(bundle: MatchExplainabilityApexBundle): boolean {
+  return bundle.apexReady;
+}
+
+
+// --- source: session-apex-export-bundle.ts ---
+  buildSessionPinnacleExportBundle,
+  type SessionPinnacleExportBundle,
+} from './session-pinnacle-export-bundle.ts';
+  buildMatchExplainabilityApexBundle,
+  matchExplainabilityApexReady,
+} from './match-explainability-apex-bundle.ts';
+
+export interface SessionApexExportBundle extends SessionPinnacleExportBundle {
+  apexReady: boolean;
+  apexSchema: string;
+}
+
+/** Apex export wraps pinnacle export when apex bundle is ready. */
+export function buildSessionApexExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionApexExportBundle {
+  const base = buildSessionPinnacleExportBundle(packs, params);
+  const apex = buildMatchExplainabilityApexBundle(packs, params);
+  const apexReady = matchExplainabilityApexReady(apex);
+  const exports = apexReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    apexReady,
+    apexSchema: 'agent19.apex.v1',
+    releaseReady: apexReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Apex export: ${apexReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionApexExportShipped(bundle: SessionApexExportBundle): boolean {
+  return bundle.apexReady && bundle.exports.length > 0 && bundle.apexSchema === 'agent19.apex.v1';
+}
+
+
+// --- source: pinnacle-apex-bridge.ts ---
+  buildMatchExplainabilityApexBundle,
+  matchExplainabilityApexReady,
+} from './match-explainability-apex-bundle.ts';
+  buildMatchExplainabilityPinnacleBundle,
+  matchExplainabilityPinnacleReady,
+} from './match-explainability-pinnacle-bundle.ts';
+
+export interface PinnacleApexBridgeReport {
+  aligned: boolean;
+  apexReady: boolean;
+  pinnacleReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Apex-ready should match pinnacle-ready when pinnacle export stack passes. */
+export function auditPinnacleApexBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): PinnacleApexBridgeReport {
+  const apex = buildMatchExplainabilityApexBundle(packs, params);
+  const pinnacle = buildMatchExplainabilityPinnacleBundle(packs, params);
+  const apexReady = matchExplainabilityApexReady(apex);
+  const pinnacleReady = matchExplainabilityPinnacleReady(pinnacle);
+  const aligned = apexReady === pinnacleReady;
+  const narrativeLines = [
+    `Pinnacle/apex bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (apex ${apexReady ? 'ok' : 'fail'}, pinnacle ${pinnacleReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, apexReady, pinnacleReady, narrativeLines };
+}
+
+export function pinnacleApexBridgeHealthy(report: PinnacleApexBridgeReport): boolean {
+  return report.apexReady && report.pinnacleReady && report.aligned;
+}
+
+
+// --- source: match-explainability-zenith-gate.ts ---
+  buildMatchExplainabilityApexBundle,
+  matchExplainabilityApexReady,
+} from './match-explainability-apex-bundle.ts';
+  buildSessionApexExportBundle,
+  sessionApexExportShipped,
+} from './session-apex-export-bundle.ts';
+
+export interface MatchExplainabilityZenithGateReport {
+  zenithAllowed: boolean;
+  apexReady: boolean;
+  apexExportShipped: boolean;
+  pinnacleApexHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Zenith gate: apex bundle + apex export + pinnacle/apex bridge. */
+export function auditMatchExplainabilityZenithGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityZenithGateReport {
+  const apex = buildMatchExplainabilityApexBundle(packs, params);
+  const apexExport = buildSessionApexExportBundle(packs, params);
+  const bridge = auditPinnacleApexBridge(packs, params);
+  const apexReady = matchExplainabilityApexReady(apex);
+  const apexExportShipped = sessionApexExportShipped(apexExport);
+  const pinnacleApexHealthy = pinnacleApexBridgeHealthy(bridge);
+  const zenithAllowed = apexReady && apexExportShipped && pinnacleApexHealthy;
+  const narrativeLines = [
+    `Match explainability zenith: ${zenithAllowed ? 'ALLOWED' : 'DENIED'} (apex ${apexReady ? 'ok' : 'fail'}, export ${apexExportShipped ? 'ok' : 'fail'}).`,
+    ...apex.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    zenithAllowed,
+    apexReady,
+    apexExportShipped,
+    pinnacleApexHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityZenithAllowed(report: MatchExplainabilityZenithGateReport): boolean {
+  return report.zenithAllowed;
+}
+
+
+// --- source: apex-recovery-orchestrator.ts ---
+  auditMatchExplainabilityApexGate,
+  matchExplainabilityApexAllowed,
+} from './match-explainability-apex-gate.ts';
+
+export const AGENT19_APEX_RECOVERY_CAP = 10;
+
+export interface ApexRecoveryOrchestratorReport {
+  apexBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when apex gate blocks zenith rollout. */
+export function buildApexRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): ApexRecoveryOrchestratorReport {
+  const apex = auditMatchExplainabilityApexGate(packs, params);
+  const apexBlocked = !matchExplainabilityApexAllowed(apex);
+  const steps: string[] = [];
+  if (apexBlocked) {
+    if (!apex.pinnacleReady) {
+      steps.push('Restore pinnacle bundle: paramount and pinnacle export must pass.');
+    }
+    if (!apex.pinnacleExportShipped) {
+      steps.push('Emit session pinnacle export before apex clearance.');
+    }
+    if (!apex.paramountPinnacleHealthy) {
+      steps.push('Reconcile paramount/pinnacle bridge before apex.');
+    }
+    steps.push(...buildPinnacleRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const pinnacle = buildMatchExplainabilityPinnacleBundle(packs, params);
+    if (!pinnacle.pinnacleReady) {
+      steps.push('Re-run pinnacle readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Apex gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_APEX_RECOVERY_CAP);
+  return {
+    apexBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Apex recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function apexRecoveryOrchestratorWithinCap(report: ApexRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_APEX_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -12595,6 +12878,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilityApexGate,
   matchExplainabilityApexAllowed,
 } from '../match-explainability-apex-gate.ts';
+  buildMatchExplainabilityApexBundle,
+  matchExplainabilityApexReady,
+} from '../match-explainability-apex-bundle.ts';
+  buildSessionApexExportBundle,
+  sessionApexExportShipped,
+} from '../session-apex-export-bundle.ts';
+  buildApexRecoveryOrchestrator,
+  apexRecoveryOrchestratorWithinCap,
+} from '../apex-recovery-orchestrator.ts';
+  auditMatchExplainabilityZenithGate,
+  matchExplainabilityZenithAllowed,
+} from '../match-explainability-zenith-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -18648,6 +18943,270 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilityPinnacleAllowed(report) && !report.paramountReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r44_pinnacle_ready',
+        'Pinnacle bundle ready when pinnacle gate and paramount export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilityPinnacleBundle([pack], params);
+          return matchExplainabilityPinnacleReady(bundle) && bundle.pinnacleAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r44_pinnacle_held',
+        'Pinnacle bundle pending when pinnacle gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 63, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityPinnacleBundle([pack], {
+            memory: null,
+            currentTurn: 63,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityPinnacleReady(bundle) && !bundle.pinnacleAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r44_pinnacle_recovery',
+        'Pinnacle recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 25, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 25, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildPinnacleRecoveryOrchestrator([pack], params);
+          return report.pinnacleBlocked && pinnacleRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r44_paramount_pinnacle_bridge',
+        'Paramount pinnacle bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditParamountPinnacleBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return paramountPinnacleBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r44_pinnacle_export',
+        'Pinnacle export shipped when pinnacle ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionPinnacleExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionPinnacleExportShipped(bundle) && bundle.pinnacleSchema === 'agent19.pinnacle.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r44_apex_gate_ok',
+        'Apex gate allowed on healthy pinnacle stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityApexGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityApexAllowed(report) && report.pinnacleExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r44_apex_gate_block',
+        'Apex gate denied when pinnacle pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 64, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityApexGate([pack], {
+            memory: null,
+            currentTurn: 64,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityApexAllowed(report) && !report.pinnacleReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r45_apex_ready',
+        'Apex bundle ready when apex gate and pinnacle export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilityApexBundle([pack], params);
+          return matchExplainabilityApexReady(bundle) && bundle.apexAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r45_apex_held',
+        'Apex bundle pending when apex gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 65, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityApexBundle([pack], {
+            memory: null,
+            currentTurn: 65,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityApexReady(bundle) && !bundle.apexAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r45_apex_recovery',
+        'Apex recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 25, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 25, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildApexRecoveryOrchestrator([pack], params);
+          return report.apexBlocked && apexRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r45_pinnacle_apex_bridge',
+        'Pinnacle apex bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditPinnacleApexBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return pinnacleApexBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r45_apex_export',
+        'Apex export shipped when apex ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionApexExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionApexExportShipped(bundle) && bundle.apexSchema === 'agent19.apex.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r45_zenith_gate_ok',
+        'Zenith gate allowed on healthy apex stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityZenithGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityZenithAllowed(report) && report.apexExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r45_zenith_gate_block',
+        'Zenith gate denied when apex pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 66, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityZenithGate([pack], {
+            memory: null,
+            currentTurn: 66,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityZenithAllowed(report) && !report.apexReady || JSON.stringify(report);
         },
       ],
     ]),
