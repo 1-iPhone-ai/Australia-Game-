@@ -78,4 +78,7 @@ export * from './forecast-round19-console';
 export * from './forecast-wave20-projection-sync';
 export * from './forecast-integration-wave20-origin-handoff';
 export * from './forecast-round20-console';
+export * from './forecast-wave21-projection-sync';
+export * from './forecast-integration-wave21-origin-handoff';
+export * from './forecast-round21-console';
 export * from './strategic-forecast-policy-lab';
