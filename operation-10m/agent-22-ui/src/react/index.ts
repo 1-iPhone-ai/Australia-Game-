@@ -49,3 +49,7 @@ export { CoachDismissalQuietDayHintStrip } from './CoachDismissalQuietDayHintStr
 export { SessionResumeDayAdvanceCoachStrip } from './SessionResumeDayAdvanceCoachStrip.js';
 export { ShowAllOverrideDayHintStrip } from './ShowAllOverrideDayHintStrip.js';
 export { HighContrastChromeDayCoachStrip } from './HighContrastChromeDayCoachStrip.js';
+export { CognitiveLoadDayCoachStrip } from './CognitiveLoadDayCoachStrip.js';
+export { FocusSessionSnoozeDayHintStrip } from './FocusSessionSnoozeDayHintStrip.js';
+export { TouchTargetDayCoachStrip } from './TouchTargetDayCoachStrip.js';
+export { KeyboardHintsDayCoachStrip } from './KeyboardHintsDayCoachStrip.js';

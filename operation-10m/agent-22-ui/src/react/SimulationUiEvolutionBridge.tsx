@@ -96,6 +96,18 @@ export function SimulationUiEvolutionBridge({
       {result.highContrastChromeDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-hc-day">{result.highContrastChromeDayCoachCopy}</div>
       ) : null}
+      {result.cognitiveLoadDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-cognitive-load-day">{result.cognitiveLoadDayCoachCopy}</div>
+      ) : null}
+      {result.focusSessionSnoozeDayHintCopy ? (
+        <div data-testid="sim-ui-evolution-focus-snooze-day">{result.focusSessionSnoozeDayHintCopy}</div>
+      ) : null}
+      {result.touchTargetDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-touch-target-day">{result.touchTargetDayCoachCopy}</div>
+      ) : null}
+      {result.keyboardHintsDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-keyboard-hints-day">{result.keyboardHintsDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets

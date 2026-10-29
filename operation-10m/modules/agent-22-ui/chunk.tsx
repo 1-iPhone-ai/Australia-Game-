@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 5e73580d8bc27e80
+// content-sha256-prefix: ee2aecc5f5b7fc31
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -891,6 +891,10 @@ export interface DayAdvanceUiEvolutionResult {
   sessionResumeDayCoachCopy: string | null;
   showAllOverrideDayHintCopy: string | null;
   highContrastChromeDayCoachCopy: string | null;
+  cognitiveLoadDayCoachCopy: string | null;
+  focusSessionSnoozeDayHintCopy: string | null;
+  touchTargetDayCoachCopy: string | null;
+  keyboardHintsDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1107,6 +1111,37 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const densityForTouch = resolveUiDensityProfile({
+    interfaceLevel: nextSignals.interfaceLevel,
+    preferredTier: persistedAfterCalm.preferredDensity ?? null,
+    textScaleMultiplier: accessibility.textScaleMultiplier,
+  });
+
+  const cognitiveLoadDayCoach = buildCognitiveLoadDayCoach({
+    signals: nextSignals,
+    policy,
+    pendingCoachAnnouncements: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+    cognitiveLoadCoachSnoozedUntilDay: persistedAfterCalm.cognitiveLoadCoachSnoozedUntilDay,
+  });
+
+  const focusSnoozeDayHint = buildFocusSessionSnoozeDayHint(persistedAfterCalm, nextSignals.gameDay);
+
+  const touchTargetDayCoach = buildTouchTargetDayCoach({
+    densityTier: densityForTouch.tier,
+    accessibility,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const keyboardHintsDayCoach =
+    context.phase != null
+      ? buildKeyboardHintsDayCoach({
+          interfaceLevel: nextSignals.interfaceLevel,
+          phase: context.phase,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { shortcutCount: 0, conflictCount: 0, coachCopy: null };
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   if (context.phase) {
@@ -1159,6 +1194,10 @@ export function tickEvolvingUiOnDayAdvance(
     sessionResumeDayCoachCopy: sessionResumeCoach.coachCopy,
     showAllOverrideDayHintCopy: showAllDayHint.coachCopy,
     highContrastChromeDayCoachCopy: highContrastDayCoach.coachCopy,
+    cognitiveLoadDayCoachCopy: cognitiveLoadDayCoach.coachCopy,
+    focusSessionSnoozeDayHintCopy: focusSnoozeDayHint.coachCopy,
+    touchTargetDayCoachCopy: touchTargetDayCoach.coachCopy,
+    keyboardHintsDayCoachCopy: keyboardHintsDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -4668,6 +4707,311 @@ export function buildHighContrastChromeDayCoach(input: {
   };
 }
 
+// --- source: engine/cognitive-load-day-coach.ts ---
+export interface CognitiveLoadDayCoach {
+  band: 'light' | 'moderate' | 'heavy';
+  shouldSurfaceCoach: boolean;
+  coachCopy: string | null;
+}
+
+export function buildCognitiveLoadDayCoach(input: {
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  pendingCoachAnnouncements: number;
+  nextGameDay: number;
+  cognitiveLoadCoachSnoozedUntilDay?: number;
+}): CognitiveLoadDayCoach {
+  const assessment = assessCognitiveLoad({
+    signals: input.signals,
+    policy: input.policy,
+    pendingCoachAnnouncements: input.pendingCoachAnnouncements,
+  });
+  const shouldSurfaceCoach = shouldShowCognitiveLoadCoach(
+    assessment,
+    input.nextGameDay,
+    input.cognitiveLoadCoachSnoozedUntilDay
+  );
+
+  let coachCopy: string | null = null;
+  if (shouldSurfaceCoach && assessment.coachCopy) {
+    coachCopy = `Day ${input.nextGameDay}: ${assessment.coachCopy}`;
+  }
+
+  return {
+    band: assessment.band,
+    shouldSurfaceCoach,
+    coachCopy,
+  };
+}
+
+// --- source: engine/focus-session-snooze-day-hint.ts ---
+export interface FocusSessionSnoozeDayHint {
+  snoozeActive: boolean;
+  snoozeEndsToday: boolean;
+  coachCopy: string | null;
+}
+
+export function buildFocusSessionSnoozeDayHint(
+  persisted: EvolvingUiPersistedState,
+  gameDay: number
+): FocusSessionSnoozeDayHint {
+  const untilDay = persisted.focusSessionSnoozedUntilDay;
+  const snoozeActive = untilDay != null && gameDay < untilDay;
+  const snoozeEndsToday = untilDay != null && gameDay + 1 === untilDay && snoozeActive;
+
+  let coachCopy: string | null = null;
+  if (snoozeEndsToday) {
+    coachCopy = 'Focus session snooze ends tomorrow — launcher suppression may return on busy days.';
+  } else if (snoozeActive && untilDay != null) {
+    const remaining = Math.max(0, untilDay - gameDay);
+    coachCopy =
+      remaining === 1
+        ? 'Focus session snooze active for the rest of today.'
+        : `Focus session snooze active for ${remaining} more days.`;
+  } else if (!snoozeActive && untilDay != null && gameDay === untilDay) {
+    coachCopy = 'Focus session snooze ended today — focus mode may activate when coverage is low.';
+  }
+
+  return {
+    snoozeActive,
+    snoozeEndsToday,
+    coachCopy,
+  };
+}
+
+// --- source: engine/touch-target-day-coach.ts ---
+export interface TouchTargetDayCoach {
+  minTouchPx: number;
+  coachCopy: string | null;
+}
+
+export function buildTouchTargetDayCoach(input: {
+  densityTier: UiDensityTier;
+  accessibility: AccessibilitySettingsSnapshot;
+  nextGameDay: number;
+}): TouchTargetDayCoach {
+  const profile = resolveTouchTargetProfile(input.densityTier, input.accessibility);
+
+  let coachCopy: string | null = null;
+  if (input.accessibility.textScaleMultiplier >= 1.15) {
+    coachCopy = `Day ${input.nextGameDay}: touch targets stay at ${profile.minHeightPx}px minimum for ${input.densityTier} density with text scale.`;
+  }
+
+  return {
+    minTouchPx: profile.minHeightPx,
+    coachCopy,
+  };
+}
+
+// --- source: engine/keyboard-hints-day-coach.ts ---
+export interface KeyboardHintsDayCoach {
+  shortcutCount: number;
+  conflictCount: number;
+  coachCopy: string | null;
+}
+
+export function buildKeyboardHintsDayCoach(input: {
+  interfaceLevel: InterfaceExperienceLevel;
+  phase: V94StandardizedGamePhase;
+  nextGameDay: number;
+}): KeyboardHintsDayCoach {
+  const plan = planKeyboardHintsDisplay(input.interfaceLevel, input.phase);
+
+  let coachCopy = plan.coachCopy;
+  if (coachCopy) {
+    coachCopy = `Day ${input.nextGameDay}: ${coachCopy}`;
+  }
+
+  return {
+    shortcutCount: plan.shortcuts.length,
+    conflictCount: plan.conflictCount,
+    coachCopy,
+  };
+}
+
+// --- source: engine/round19-self-tests.ts ---
+export function runAgent22Round19SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r19_cognitive_load_heavy',
+    'cognitive load day coach on heavy band',
+    (() => {
+      const coach = buildCognitiveLoadDayCoach({
+        signals: { gameDay: 6, turnCount: 6, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        pendingCoachAnnouncements: 14,
+        nextGameDay: 6,
+      });
+      return coach.band === 'heavy' && Boolean(coach.coachCopy?.includes('Day 6'));
+    })()
+  );
+
+  check(
+    'r19_cognitive_load_snoozed',
+    'cognitive load day coach hidden when snoozed',
+    (() => {
+      const coach = buildCognitiveLoadDayCoach({
+        signals: { gameDay: 6, turnCount: 6, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        pendingCoachAnnouncements: 14,
+        nextGameDay: 6,
+        cognitiveLoadCoachSnoozedUntilDay: 10,
+      });
+      return !coach.shouldSurfaceCoach && coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r19_focus_snooze_active',
+    'focus session snooze active copy',
+    (() => {
+      const hint = buildFocusSessionSnoozeDayHint(
+        { ...createDefaultEvolvingUiPersistedState(), focusSessionSnoozedUntilDay: 8 },
+        5
+      );
+      return hint.snoozeActive && Boolean(hint.coachCopy?.toLowerCase().includes('snooze'));
+    })()
+  );
+
+  check(
+    'r19_focus_snooze_ended',
+    'focus session snooze ended today copy',
+    (() => {
+      const hint = buildFocusSessionSnoozeDayHint(
+        { ...createDefaultEvolvingUiPersistedState(), focusSessionSnoozedUntilDay: 4 },
+        4
+      );
+      return !hint.snoozeActive && Boolean(hint.coachCopy?.includes('ended'));
+    })()
+  );
+
+  check(
+    'r19_touch_target_scaled',
+    'touch target day coach with text scale',
+    (() => {
+      const coach = buildTouchTargetDayCoach({
+        densityTier: 'comfortable',
+        accessibility: { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, textScaleMultiplier: 1.2 },
+        nextGameDay: 3,
+      });
+      return coach.minTouchPx >= 48 && Boolean(coach.coachCopy?.includes('touch targets'));
+    })()
+  );
+
+  check(
+    'r19_touch_target_standard',
+    'touch target day coach off at base scale',
+    (() => {
+      const coach = buildTouchTargetDayCoach({
+        densityTier: 'compact',
+        accessibility: { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, textScaleMultiplier: 1.0 },
+        nextGameDay: 2,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r19_keyboard_hints_day',
+    'keyboard hints day coach mentions day',
+    (() => {
+      const coach = buildKeyboardHintsDayCoach({
+        interfaceLevel: 'guided',
+        phase: 'human_turn',
+        nextGameDay: 5,
+      });
+      return coach.shortcutCount > 0;
+    })()
+  );
+
+  check(
+    'r19_keyboard_hints_copy',
+    'keyboard hints day coach copy when truncated',
+    (() => {
+      const coach = buildKeyboardHintsDayCoach({
+        interfaceLevel: 'expert',
+        phase: 'human_turn',
+        nextGameDay: 7,
+      });
+      return coach.coachCopy === null || coach.coachCopy.includes('Day 7');
+    })()
+  );
+
+  check(
+    'r19_tick_cognitive_field',
+    'day advance exposes cognitive load day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'simple' },
+        { gameDay: 6, turnCount: 6, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.cognitiveLoadDayCoachCopy === 'string' || r.cognitiveLoadDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r19_tick_focus_snooze_field',
+    'day advance exposes focus snooze day hint copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        { ...createDefaultEvolvingUiPersistedState(), focusSessionSnoozedUntilDay: 6 },
+        { phase: 'human_turn' }
+      );
+      return typeof r.focusSessionSnoozeDayHintCopy === 'string' || r.focusSessionSnoozeDayHintCopy === null;
+    })()
+  );
+
+  check(
+    'r19_tick_touch_field',
+    'day advance exposes touch target day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        {
+          accessibility: { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, textScaleMultiplier: 1.25 },
+          phase: 'human_turn',
+        }
+      );
+      return typeof r.touchTargetDayCoachCopy === 'string' || r.touchTargetDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r19_tick_keyboard_field',
+    'day advance exposes keyboard hints day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'guided' },
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.keyboardHintsDayCoachCopy === 'string' || r.keyboardHintsDayCoachCopy === null;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
+}
+
 // --- source: engine/round18-self-tests.ts ---
 export function runAgent22Round18SelfTests(): {
   passed: number;
@@ -8098,6 +8442,18 @@ export function SimulationUiEvolutionBridge({
       {result.highContrastChromeDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-hc-day">{result.highContrastChromeDayCoachCopy}</div>
       ) : null}
+      {result.cognitiveLoadDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-cognitive-load-day">{result.cognitiveLoadDayCoachCopy}</div>
+      ) : null}
+      {result.focusSessionSnoozeDayHintCopy ? (
+        <div data-testid="sim-ui-evolution-focus-snooze-day">{result.focusSessionSnoozeDayHintCopy}</div>
+      ) : null}
+      {result.touchTargetDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-touch-target-day">{result.touchTargetDayCoachCopy}</div>
+      ) : null}
+      {result.keyboardHintsDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-keyboard-hints-day">{result.keyboardHintsDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -9685,8 +10041,112 @@ export function HighContrastChromeDayCoachStrip({
   );
 }
 
+// --- source: react/CognitiveLoadDayCoachStrip.tsx ---
+export interface CognitiveLoadDayCoachStripProps {
+  coach: CognitiveLoadDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function CognitiveLoadDayCoachStrip({
+  coach,
+  accessibility,
+}: CognitiveLoadDayCoachStripProps): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+
+  return (
+    <div
+      data-testid="cognitive-load-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-rose-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-load-band={coach.band}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/FocusSessionSnoozeDayHintStrip.tsx ---
+export interface FocusSessionSnoozeDayHintStripProps {
+  hint: FocusSessionSnoozeDayHint;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function FocusSessionSnoozeDayHintStrip({
+  hint,
+  accessibility,
+}: FocusSessionSnoozeDayHintStripProps): React.ReactElement | null {
+  if (!hint.coachCopy) return null;
+
+  return (
+    <div
+      data-testid="focus-session-snooze-day-hint"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-indigo-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-snooze-active={hint.snoozeActive ? 'true' : 'false'}
+    >
+      {hint.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/TouchTargetDayCoachStrip.tsx ---
+export interface TouchTargetDayCoachStripProps {
+  coach: TouchTargetDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function TouchTargetDayCoachStrip({
+  coach,
+  accessibility,
+}: TouchTargetDayCoachStripProps): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+
+  return (
+    <div
+      data-testid="touch-target-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-lime-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-touch-min-px={coach.minTouchPx}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/KeyboardHintsDayCoachStrip.tsx ---
+export interface KeyboardHintsDayCoachStripProps {
+  coach: KeyboardHintsDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function KeyboardHintsDayCoachStrip({
+  coach,
+  accessibility,
+}: KeyboardHintsDayCoachStripProps): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+
+  return (
+    <div
+      data-testid="keyboard-hints-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-cyan-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-shortcut-count={coach.shortcutCount}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.18.0';
+export const AGENT_22_MODULE_VERSION = '1.19.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -9817,6 +10277,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round18 = runAgent22Round18SelfTests();
   for (const r of round18.results) {
     check(`agent22_round18_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round19 = runAgent22Round19SelfTests();
+  for (const r of round19.results) {
+    check(`agent22_round19_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;

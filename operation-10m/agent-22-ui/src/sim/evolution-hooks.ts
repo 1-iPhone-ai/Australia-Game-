@@ -53,6 +53,10 @@ import { buildCoachDismissalQuietDayHint } from '../engine/coach-dismissal-quiet
 import { buildSessionResumeDayAdvanceCoach } from '../engine/session-resume-day-advance-coach.js';
 import { buildShowAllOverrideDayHint } from '../engine/show-all-override-day-hint.js';
 import { buildHighContrastChromeDayCoach } from '../engine/high-contrast-chrome-day-coach.js';
+import { buildCognitiveLoadDayCoach } from '../engine/cognitive-load-day-coach.js';
+import { buildFocusSessionSnoozeDayHint } from '../engine/focus-session-snooze-day-hint.js';
+import { buildTouchTargetDayCoach } from '../engine/touch-target-day-coach.js';
+import { buildKeyboardHintsDayCoach } from '../engine/keyboard-hints-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
 import type { V94StandardizedGamePhase } from '../adapters/v94-phase-bridge.js';
@@ -113,6 +117,10 @@ export interface DayAdvanceUiEvolutionResult {
   sessionResumeDayCoachCopy: string | null;
   showAllOverrideDayHintCopy: string | null;
   highContrastChromeDayCoachCopy: string | null;
+  cognitiveLoadDayCoachCopy: string | null;
+  focusSessionSnoozeDayHintCopy: string | null;
+  touchTargetDayCoachCopy: string | null;
+  keyboardHintsDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -329,6 +337,37 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const densityForTouch = resolveUiDensityProfile({
+    interfaceLevel: nextSignals.interfaceLevel,
+    preferredTier: persistedAfterCalm.preferredDensity ?? null,
+    textScaleMultiplier: accessibility.textScaleMultiplier,
+  });
+
+  const cognitiveLoadDayCoach = buildCognitiveLoadDayCoach({
+    signals: nextSignals,
+    policy,
+    pendingCoachAnnouncements: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+    cognitiveLoadCoachSnoozedUntilDay: persistedAfterCalm.cognitiveLoadCoachSnoozedUntilDay,
+  });
+
+  const focusSnoozeDayHint = buildFocusSessionSnoozeDayHint(persistedAfterCalm, nextSignals.gameDay);
+
+  const touchTargetDayCoach = buildTouchTargetDayCoach({
+    densityTier: densityForTouch.tier,
+    accessibility,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const keyboardHintsDayCoach =
+    context.phase != null
+      ? buildKeyboardHintsDayCoach({
+          interfaceLevel: nextSignals.interfaceLevel,
+          phase: context.phase,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { shortcutCount: 0, conflictCount: 0, coachCopy: null };
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   if (context.phase) {
@@ -381,6 +420,10 @@ export function tickEvolvingUiOnDayAdvance(
     sessionResumeDayCoachCopy: sessionResumeCoach.coachCopy,
     showAllOverrideDayHintCopy: showAllDayHint.coachCopy,
     highContrastChromeDayCoachCopy: highContrastDayCoach.coachCopy,
+    cognitiveLoadDayCoachCopy: cognitiveLoadDayCoach.coachCopy,
+    focusSessionSnoozeDayHintCopy: focusSnoozeDayHint.coachCopy,
+    touchTargetDayCoachCopy: touchTargetDayCoach.coachCopy,
+    keyboardHintsDayCoachCopy: keyboardHintsDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

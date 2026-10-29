@@ -87,6 +87,11 @@ const FILES = [
   'engine/session-resume-day-advance-coach.ts',
   'engine/show-all-override-day-hint.ts',
   'engine/high-contrast-chrome-day-coach.ts',
+  'engine/cognitive-load-day-coach.ts',
+  'engine/focus-session-snooze-day-hint.ts',
+  'engine/touch-target-day-coach.ts',
+  'engine/keyboard-hints-day-coach.ts',
+  'engine/round19-self-tests.ts',
   'engine/round18-self-tests.ts',
   'engine/round17-self-tests.ts',
   'engine/round16-self-tests.ts',
@@ -164,6 +169,10 @@ const FILES = [
   'react/SessionResumeDayAdvanceCoachStrip.tsx',
   'react/ShowAllOverrideDayHintStrip.tsx',
   'react/HighContrastChromeDayCoachStrip.tsx',
+  'react/CognitiveLoadDayCoachStrip.tsx',
+  'react/FocusSessionSnoozeDayHintStrip.tsx',
+  'react/TouchTargetDayCoachStrip.tsx',
+  'react/KeyboardHintsDayCoachStrip.tsx',
 ];
 
 function stripModulePreamble(source) {
@@ -205,7 +214,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.18.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.19.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -338,6 +347,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
     check(\`agent22_round18_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
+  const round19 = runAgent22Round19SelfTests();
+  for (const r of round19.results) {
+    check(\`agent22_round19_\${r.id}\`, r.name, r.passed, r.detail);
+  }
+
   const failed = results.filter(r => !r.passed).length;
   return {
     passed: results.length - failed,
@@ -364,7 +378,7 @@ const manifest = {
   contentSha256,
   chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
   selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
-  moduleVersion: '1.18.0',
+  moduleVersion: '1.19.0',
 };
 fs.writeFileSync(
   path.join(outDir, 'module.manifest.json'),
