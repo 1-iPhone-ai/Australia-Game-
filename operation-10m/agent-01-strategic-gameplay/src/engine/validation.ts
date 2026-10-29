@@ -67,6 +67,7 @@ import { coalitionExarchAscendancyStreakIssues } from './coalition-exarch-ascend
 import { coalitionPrimarchPerpetuityStreakIssues } from './coalition-primarch-perpetuity-gates.ts';
 import { coalitionPatriarchEternityStreakIssues } from './coalition-patriarch-eternity-gates.ts';
 import { coalitionMatriarchAscendancyStreakIssues } from './coalition-matriarch-ascendancy-gates.ts';
+import { coalitionMatriarchPerpetuityStreakIssues } from './coalition-matriarch-perpetuity-gates.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -357,6 +358,7 @@ export function validateAction(
     issues.push(...coalitionPrimarchPerpetuityStreakIssues(action, state));
     issues.push(...coalitionPatriarchEternityStreakIssues(action, state));
     issues.push(...coalitionMatriarchAscendancyStreakIssues(action, state));
+    issues.push(...coalitionMatriarchPerpetuityStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({

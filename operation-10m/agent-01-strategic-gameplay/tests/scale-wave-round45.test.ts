@@ -170,7 +170,7 @@ describe('scale wave round 45 — primarch coalition perpetuity', () => {
       coalitionPrimarchPerpetuityStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(45);
+    expect(save.version).toBe(46);
     expect(save.coalitionPrimarchPerpetuityStreakDays).toBe(5);
   });
 });

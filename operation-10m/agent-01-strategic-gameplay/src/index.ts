@@ -135,6 +135,7 @@ export {
   primarchPerpetuityRankingBonus,
   patriarchEternityRankingBonus,
   matriarchAscendancyRankingBonus,
+  matriarchPerpetuityRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -600,6 +601,16 @@ export {
   applyMatriarchAscendancyMandateBonus,
 } from './engine/coalition-matriarch-ascendancy.ts';
 
+export { coalitionMatriarchPerpetuityStreakIssues } from './engine/coalition-matriarch-perpetuity-gates.ts';
+
+export {
+  MATRIARCH_COALITION_PERPETUITY_THRESHOLD,
+  advanceCoalitionMatriarchPerpetuityStreak,
+  resetCoalitionMatriarchPerpetuityStreak,
+  isMatriarchCoalitionPerpetuity,
+  applyMatriarchPerpetuityMandateBonus,
+} from './engine/coalition-matriarch-perpetuity.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '5.7.0';
+export const AGENT_01_MODULE_VERSION = '5.8.0';

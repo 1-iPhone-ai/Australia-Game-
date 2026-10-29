@@ -151,7 +151,10 @@ export interface StrategicActionDefinition {
   minCoalitionPrimarchPerpetuityStreakDays?: number;
   /** Action requires patriarch eternity streak after primarch perpetuity. */
   minCoalitionPatriarchEternityStreakDays?: number;
+  /** Action requires matriarch ascendancy streak after patriarch eternity. */
   minCoalitionMatriarchAscendancyStreakDays?: number;
+  /** Action requires matriarch perpetuity streak after matriarch ascendancy. */
+  minCoalitionMatriarchPerpetuityStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -234,7 +237,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_coalition_exarch_ascendancy_streak'; minDays: number }
   | { kind: 'min_coalition_primarch_perpetuity_streak'; minDays: number }
   | { kind: 'min_coalition_patriarch_eternity_streak'; minDays: number }
-  | { kind: 'min_coalition_matriarch_ascendancy_streak'; minDays: number };
+  | { kind: 'min_coalition_matriarch_ascendancy_streak'; minDays: number }
+  | { kind: 'min_coalition_matriarch_perpetuity_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -362,6 +366,8 @@ export interface StrategicGameplayState {
   coalitionPatriarchEternityStreakDays?: number;
   /** Days patriarch eternity held matriarch ascendancy eligibility. */
   coalitionMatriarchAscendancyStreakDays?: number;
+  /** Days matriarch ascendancy held matriarch perpetuity eligibility. */
+  coalitionMatriarchPerpetuityStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;
