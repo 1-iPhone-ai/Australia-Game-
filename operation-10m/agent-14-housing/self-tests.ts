@@ -389,6 +389,13 @@ import {
 } from './wave55-gate-trajectory.ts';
 import { buildWave55IntegrationMonitor } from './wave55-integration-monitor.ts';
 import { composeAgent25Wave55ProjectionHandoffBrief } from './agent25-wave55-projection-handoff-brief.ts';
+import {
+  advanceWave56GateTrajectory,
+  createInitialWave56GateTrajectory,
+  sanitizeWave56GateTrajectory,
+} from './wave56-gate-trajectory.ts';
+import { buildWave56IntegrationMonitor } from './wave56-integration-monitor.ts';
+import { composeAgent25Wave56ProjectionHandoffBrief } from './agent25-wave56-projection-handoff-brief.ts';
 import { AGENT14_WELLBEING_SCHEMA_VERSION } from './types.ts';
 
 export interface Agent14SelfTestResult {
@@ -6606,6 +6613,38 @@ export function runAgent14WellbeingSelfTests(): {
   }
   check(results, 'wave55_scenario_registry', 'Round 55 scenarios registered', listAgent14ScenarioIds().includes('wave55_gate_trajectory_arc') && listAgent14ScenarioIds().includes('wave55_integration_stress'), '112 scenarios');
   check(results, 'wave55_projection_stub_catalog', 'Round 55 projection stubs registered', AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_QLD_wave55_projection') && AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_WA_o10m241_gate'), 'wave55_projection+o10m241_gate');
+
+  {
+    const raw56 = sanitizeWave56GateTrajectory(createInitialWave56GateTrajectory());
+    check(results, 'wave56_gate_sanitize', 'Wave 56 gate trajectory sanitize preserves schema', raw56.wave56GateEma === 9, `ema=${raw56.wave56GateEma}`);
+    const wave55Brief = {
+      turn: 55,
+      shouldProjectWave55: true,
+      shouldRunO10m247DryRun: true,
+      headlines: ['Agent 25 wave 55'],
+      summary: 'wave55=ready',
+    };
+    const snap56 = advanceWave56GateTrajectory(10, wave55Brief, createInitialWave56GateTrajectory());
+    check(results, 'wave56_gate_advance_unit', 'Wave 56 gate advance updates persisted EMA', snap56.persisted.lastTurn === 10 && snap56.snapshot.wave56GateEma > 0, `ema=${snap56.snapshot.wave56GateEma}`);
+    const monitor56 = buildWave56IntegrationMonitor({
+      turn: 9,
+      wave55ProjectionBrief: wave55Brief,
+      wave55IntegrationMonitor: {
+        turn: 9,
+        shouldRunO10m247DryRun: true,
+        wave55GateBand: 'ready',
+        blockingReasons: [],
+        summary: 'Wave 55 O10-247 dry-run gate ready',
+      },
+      wave56GateTrajectory: snap56.snapshot,
+    });
+    const wave56 = composeAgent25Wave56ProjectionHandoffBrief({
+      turn: 14,
+      wave56IntegrationMonitor: monitor56,
+      wave56GateTrajectory: snap56.snapshot,
+    });
+    check(results, 'wave56_projection_composer', 'Standalone wave 56 projection composer returns headlines', wave56.headlines.length > 0 && wave56.summary.length > 10, wave56.summary.slice(0, 64));
+  }
 
   const passed = results.filter((r) => r.passed).length;
   return { passed, failed: results.length - passed, total: results.length, results };
