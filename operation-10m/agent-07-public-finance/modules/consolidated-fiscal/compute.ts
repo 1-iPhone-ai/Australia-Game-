@@ -39,6 +39,8 @@ import { buildPortfolioReprioritisationLedgerReport } from '../portfolio-reprior
 import { buildFiscalBufferCoherenceReport } from '../fiscal-buffer-coherence/compute';
 import { buildMediumTermRevenueAnchorReport } from '../medium-term-revenue-anchor/compute';
 import { buildAppropriationTimingCoherenceReport } from '../appropriation-timing-coherence/compute';
+import { buildDebtFiscalCouplingRegisterReport } from '../debt-fiscal-coupling-register/compute';
+import { buildGrantForwardAlignmentReport } from '../grant-forward-alignment/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -223,6 +225,21 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     warrantLedger,
     supplementary,
     appropriationCarryForward
+  );
+  const debtFiscalCouplingRegister = buildDebtFiscalCouplingRegisterReport(
+    turn,
+    v1012,
+    debtServiceCoverage,
+    sovereignCreditOutlook,
+    fiscalBufferCoherence
+  );
+  const grantForwardAlignment = buildGrantForwardAlignmentReport(
+    turn,
+    v1012,
+    igGrants,
+    myefo,
+    forwardEstimatesIntegrity,
+    expenditureGrowthBenchmark
   );
 
   checks.push({
@@ -745,12 +762,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `carry=${appropriationCarryForward.aggregateCarryForwardPoints}, timingGap=${appropriationTimingCoherence.aggregateTimingGapPoints}`
   });
 
+  checks.push({
+    id: 'CF73',
+    label: 'Debt–fiscal coupling within band',
+    passed: debtFiscalCouplingRegister.withinCouplingBand || v1012.pressure === 'critical',
+    detail: `stress=${debtFiscalCouplingRegister.couplingStressPoints}, checks=${debtFiscalCouplingRegister.checks.filter(c => c.passed).length}/${debtFiscalCouplingRegister.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF74',
+    label: 'Grant forward alignment within band',
+    passed: grantForwardAlignment.withinGrantForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${grantForwardAlignment.aggregateAlignmentGapPoints}, checks=${grantForwardAlignment.checks.filter(c => c.passed).length}/${grantForwardAlignment.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF75',
+    label: 'Debt coupling aligned with fiscal buffer',
+    passed: debtFiscalCouplingRegister.alignedWithFiscalBuffer,
+    detail: `buffer=${fiscalBufferCoherence.aggregateBufferPoints}, stress=${debtFiscalCouplingRegister.couplingStressPoints}`
+  });
+
+  checks.push({
+    id: 'CF76',
+    label: 'Grant forward aligned with expenditure framework',
+    passed: grantForwardAlignment.alignedWithExpenditureFramework,
+    detail: `growth=${expenditureGrowthBenchmark.aggregateGrowthRate}, gap=${grantForwardAlignment.aggregateAlignmentGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 64
+    layerCount: 66
   };
 }

@@ -47,6 +47,8 @@ import { runPortfolioReprioritisationLedgerSelfTests } from './modules/portfolio
 import { runFiscalBufferCoherenceSelfTests } from './modules/fiscal-buffer-coherence/self-tests';
 import { runMediumTermRevenueAnchorSelfTests } from './modules/medium-term-revenue-anchor/self-tests';
 import { runAppropriationTimingCoherenceSelfTests } from './modules/appropriation-timing-coherence/self-tests';
+import { runDebtFiscalCouplingRegisterSelfTests } from './modules/debt-fiscal-coupling-register/self-tests';
+import { runGrantForwardAlignmentSelfTests } from './modules/grant-forward-alignment/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -103,6 +105,8 @@ ok = runSuite('Portfolio reprioritisation ledger', runPortfolioReprioritisationL
 ok = runSuite('Fiscal buffer coherence', runFiscalBufferCoherenceSelfTests) && ok;
 ok = runSuite('Medium-term revenue anchor', runMediumTermRevenueAnchorSelfTests) && ok;
 ok = runSuite('Appropriation timing coherence', runAppropriationTimingCoherenceSelfTests) && ok;
+ok = runSuite('Debt–fiscal coupling register', runDebtFiscalCouplingRegisterSelfTests) && ok;
+ok = runSuite('Grant forward alignment', runGrantForwardAlignmentSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);

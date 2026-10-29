@@ -6302,6 +6302,231 @@ export function buildAppropriationTimingCoherenceReport(
 }
 
 
+// --- source: debt-fiscal-coupling-register/types.ts ---
+export const DEBT_FISCAL_COUPLING_REGISTER_SCHEMA = 'op10m-agent07-debt-fiscal-coupling-register-v1';
+
+export interface DebtFiscalCouplingCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface DebtFiscalCouplingRegisterReport {
+  schemaVersion: string;
+  turn: number;
+  checks: DebtFiscalCouplingCheck[];
+  couplingStressPoints: number;
+  withinCouplingBand: boolean;
+  alignedWithFiscalBuffer: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: debt-fiscal-coupling-register/compute.ts ---
+
+const COUPLING_TOLERANCE = 6.4;
+
+export function buildDebtFiscalCouplingRegisterReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  debtServiceCoverage: DebtServiceCoverageReport,
+  sovereignCreditOutlook: SovereignCreditOutlookReport,
+  fiscalBuffer: FiscalBufferCoherenceReport
+): DebtFiscalCouplingRegisterReport {
+  const coverageStress =
+    debtServiceCoverage.coverageBand === 'breach' || debtServiceCoverage.coverageBand === 'thin'
+      ? 1.35
+      : 1;
+  const creditStress =
+    sovereignCreditOutlook.ratingBand === 'distress' || sovereignCreditOutlook.ratingBand === 'pressure'
+      ? 1.28
+      : 1;
+  const serviceGap = Math.max(0, 1.15 - debtServiceCoverage.coverageRatio) * 10 * coverageStress;
+  const spreadGap = Math.max(0, sovereignCreditOutlook.impliedSpreadBps - 120) / 18;
+  const bufferGap = Math.max(0, fiscalBuffer.aggregateBufferPoints * 0.08 - v1012.fiscalHeadroom);
+
+  const checks: DebtFiscalCouplingCheck[] = [
+    {
+      id: 'DFC01',
+      label: 'Debt service coverage vs credit outlook',
+      passed:
+        debtServiceCoverage.withinCoverageFloor ||
+        sovereignCreditOutlook.withinOutlookBand ||
+        !v1012.debtEnabled ||
+        v1012.pressure === 'critical',
+      observed: serviceGap + spreadGap,
+      tolerance: COUPLING_TOLERANCE + 2
+    },
+    {
+      id: 'DFC02',
+      label: 'Credit headroom supports buffer coherence',
+      passed:
+        sovereignCreditOutlook.headroomToDistress >= 2 ||
+        fiscalBuffer.allPassed ||
+        v1012.pressure === 'critical',
+      observed: sovereignCreditOutlook.headroomToDistress,
+      tolerance: 2
+    },
+    {
+      id: 'DFC03',
+      label: 'Combined coupling stress within band',
+      passed:
+        serviceGap + spreadGap + bufferGap <= COUPLING_TOLERANCE * creditStress ||
+        v1012.pressure === 'critical',
+      observed: serviceGap + spreadGap + bufferGap,
+      tolerance: COUPLING_TOLERANCE * creditStress
+    }
+  ];
+
+  const couplingStressPoints =
+    Math.round((serviceGap + spreadGap + bufferGap) * 10) / 30;
+
+  const withinCouplingBand =
+    checks.every(c => c.passed) ||
+    (debtServiceCoverage.withinCoverageFloor && sovereignCreditOutlook.coherentWithDebtGovernance) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithFiscalBuffer =
+    fiscalBuffer.alignedWithRevenueForward &&
+    (couplingStressPoints <= fiscalBuffer.aggregateBufferPoints * 0.22 + 2.5 ||
+      fiscalBuffer.allPassed ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinCouplingBand) {
+    warnings.push(`Debt–fiscal coupling stress ${couplingStressPoints} outside band.`);
+  }
+  if (!alignedWithFiscalBuffer) {
+    warnings.push('Debt–fiscal coupling diverges from fiscal buffer coherence.');
+  }
+
+  const narrative = withinCouplingBand
+    ? `Debt–fiscal coupling stress ${couplingStressPoints} within tolerance.`
+    : `Debt–fiscal coupling alert: stress ${couplingStressPoints}.`;
+
+  return {
+    schemaVersion: DEBT_FISCAL_COUPLING_REGISTER_SCHEMA,
+    turn,
+    checks,
+    couplingStressPoints,
+    withinCouplingBand,
+    alignedWithFiscalBuffer,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: grant-forward-alignment/types.ts ---
+export const GRANT_FORWARD_ALIGNMENT_SCHEMA = 'op10m-agent07-grant-forward-alignment-v1';
+
+export interface GrantForwardCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface GrantForwardAlignmentReport {
+  schemaVersion: string;
+  turn: number;
+  checks: GrantForwardCheck[];
+  aggregateAlignmentGapPoints: number;
+  withinGrantForwardBand: boolean;
+  alignedWithExpenditureFramework: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: grant-forward-alignment/compute.ts ---
+
+const GRANT_GAP_TOLERANCE = 5.2;
+
+export function buildGrantForwardAlignmentReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  grants: IntergovernmentalGrantsReport,
+  myefo: MultiYearExpenditureFramework,
+  forwardIntegrity: ForwardEstimatesIntegrityReport,
+  growthBenchmark: ExpenditureGrowthBenchmarkReport
+): GrantForwardAlignmentReport {
+  const forwardCapacity = myefo.forwardBands[0]?.envelopeCapacity ?? v1012.revenueCapacity * 0.9;
+  const grantShare = grants.netFederalOutlay / Math.max(1, forwardCapacity);
+  const bandDriftGap = Math.abs(forwardIntegrity.bandDriftPoints - grants.totalClawback * 0.35);
+  const growthGap = Math.abs(
+    growthBenchmark.aggregateGrowthRate - grantShare * growthBenchmark.revenueCapacityGrowthBand
+  );
+
+  const aggregateAlignmentGapPoints =
+    Math.round((bandDriftGap + growthGap + Math.abs(grantShare - 0.18) * 10) * 10) / 30;
+
+  const checks: GrantForwardCheck[] = [
+    {
+      id: 'GFA01',
+      label: 'Grants reconciled to IGR pool',
+      passed: grants.reconciledToIgrPool || v1012.pressure === 'critical',
+      detail: `net=${grants.netFederalOutlay}, federal=${grants.totalFederal}`
+    },
+    {
+      id: 'GFA02',
+      label: 'Grant outlay vs MYEFO forward capacity',
+      passed:
+        grantShare <= 0.42 ||
+        grants.performancePassRate >= 0.55 ||
+        v1012.pressure === 'critical',
+      detail: `share=${Math.round(grantShare * 1000) / 10}%, capacity=${forwardCapacity}`
+    },
+    {
+      id: 'GFA03',
+      label: 'Forward integrity vs grant clawback drift',
+      passed:
+        bandDriftGap <= GRANT_GAP_TOLERANCE + 2 ||
+        forwardIntegrity.allPassed ||
+        v1012.pressure === 'critical',
+      detail: `drift=${forwardIntegrity.bandDriftPoints}, clawback=${grants.totalClawback}`
+    }
+  ];
+
+  const withinGrantForwardBand =
+    checks.every(c => c.passed) ||
+    (grants.reconciledToIgrPool && aggregateAlignmentGapPoints <= GRANT_GAP_TOLERANCE + 1.5) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithExpenditureFramework =
+    growthBenchmark.coherentWithForwardIntegrity &&
+    (aggregateAlignmentGapPoints <= growthBenchmark.revenueCapacityGrowthBand + 2.8 ||
+      growthBenchmark.withinAggregateBenchmark ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinGrantForwardBand) {
+    warnings.push(`Grant forward alignment gap ${aggregateAlignmentGapPoints} outside band.`);
+  }
+  if (!alignedWithExpenditureFramework) {
+    warnings.push('Grant forward alignment diverges from expenditure growth framework.');
+  }
+
+  const narrative = withinGrantForwardBand
+    ? `Grant forward alignment gap ${aggregateAlignmentGapPoints} within tolerance.`
+    : `Grant forward alert: gap ${aggregateAlignmentGapPoints}.`;
+
+  return {
+    schemaVersion: GRANT_FORWARD_ALIGNMENT_SCHEMA,
+    turn,
+    checks,
+    aggregateAlignmentGapPoints,
+    withinGrantForwardBand,
+    alignedWithExpenditureFramework,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -8175,6 +8400,21 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     supplementary,
     appropriationCarryForward
   );
+  const debtFiscalCouplingRegister = buildDebtFiscalCouplingRegisterReport(
+    turn,
+    v1012,
+    debtServiceCoverage,
+    sovereignCreditOutlook,
+    fiscalBufferCoherence
+  );
+  const grantForwardAlignment = buildGrantForwardAlignmentReport(
+    turn,
+    v1012,
+    igGrants,
+    myefo,
+    forwardEstimatesIntegrity,
+    expenditureGrowthBenchmark
+  );
 
   checks.push({
     id: 'CF01',
@@ -8696,13 +8936,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `carry=${appropriationCarryForward.aggregateCarryForwardPoints}, timingGap=${appropriationTimingCoherence.aggregateTimingGapPoints}`
   });
 
+  checks.push({
+    id: 'CF73',
+    label: 'Debt–fiscal coupling within band',
+    passed: debtFiscalCouplingRegister.withinCouplingBand || v1012.pressure === 'critical',
+    detail: `stress=${debtFiscalCouplingRegister.couplingStressPoints}, checks=${debtFiscalCouplingRegister.checks.filter(c => c.passed).length}/${debtFiscalCouplingRegister.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF74',
+    label: 'Grant forward alignment within band',
+    passed: grantForwardAlignment.withinGrantForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${grantForwardAlignment.aggregateAlignmentGapPoints}, checks=${grantForwardAlignment.checks.filter(c => c.passed).length}/${grantForwardAlignment.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF75',
+    label: 'Debt coupling aligned with fiscal buffer',
+    passed: debtFiscalCouplingRegister.alignedWithFiscalBuffer,
+    detail: `buffer=${fiscalBufferCoherence.aggregateBufferPoints}, stress=${debtFiscalCouplingRegister.couplingStressPoints}`
+  });
+
+  checks.push({
+    id: 'CF76',
+    label: 'Grant forward aligned with expenditure framework',
+    passed: grantForwardAlignment.alignedWithExpenditureFramework,
+    detail: `growth=${expenditureGrowthBenchmark.aggregateGrowthRate}, gap=${grantForwardAlignment.aggregateAlignmentGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 64
+    layerCount: 66
   };
 }
 
@@ -10582,12 +10850,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Sixty-four fiscal layers integrated', healthy.layerCount === 64, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Sixty-six fiscal layers integrated', healthy.layerCount === 66, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 72,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 76,
     'ok'
   );
 
@@ -10599,10 +10867,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF72 ids present',
-    healthy.checks.length === 72 &&
+    'CF01–CF76 ids present',
+    healthy.checks.length === 76 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[71]?.id === 'CF72',
+      healthy.checks[75]?.id === 'CF76',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -12922,6 +13190,141 @@ export function runAppropriationTimingCoherenceSelfTests(): {
     'ATC-T03',
     'Coherent with carry-forward',
     healthy.coherentWithCarryForward,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: debt-fiscal-coupling-register/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runDebtFiscalCouplingRegisterSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const statutory = buildStatutoryBalancesReport(9, v);
+  const cash = buildCashManagementReport(9, v);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const fiscalRules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const contingency = buildContingencyDrawdownRegisterReport(9, v, contingencyFlex, fiscalRules);
+  const fiscalBuffer = buildFiscalBufferCoherenceReport(9, v, statutory, cash, contingency, revenueForward);
+  const debtGov = buildDebtPortfolioGovernanceReport(9, v);
+  const stress = buildFiscalStressScenariosReport(9, v);
+  const sovereignCredit = buildSovereignCreditOutlookReport(9, v, debtGov, {
+    stressWorstDelta: stress.worstHeadroomDelta
+  });
+  const debtService = buildDebtServiceCoverageReport(9, v, ledger, cash);
+  const healthy = buildDebtFiscalCouplingRegisterReport(9, v, debtService, sovereignCredit, fiscalBuffer);
+
+  record('DFC-T01', 'Three coupling checks', healthy.checks.length === 3, 'ok');
+  record('DFC-T02', 'Within coupling band', healthy.withinCouplingBand, `stress=${healthy.couplingStressPoints}`);
+  record(
+    'DFC-T03',
+    'Aligned with fiscal buffer',
+    healthy.alignedWithFiscalBuffer,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: grant-forward-alignment/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runGrantForwardAlignmentSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const grants = allocateIntergovernmentalGrants(9, v);
+  const healthy = buildGrantForwardAlignmentReport(9, v, grants, myefo, forwardIntegrity, growth);
+
+  record('GFA-T01', 'Three grant forward checks', healthy.checks.length === 3, 'ok');
+  record(
+    'GFA-T02',
+    'Within grant forward band',
+    healthy.withinGrantForwardBand,
+    `gap=${healthy.aggregateAlignmentGapPoints}`
+  );
+  record(
+    'GFA-T03',
+    'Aligned with expenditure framework',
+    healthy.alignedWithExpenditureFramework,
     healthy.narrative
   );
 
