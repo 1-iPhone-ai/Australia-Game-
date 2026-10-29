@@ -86,7 +86,7 @@ describe('scale wave round 5 — strategic gameplay', () => {
   it('serializes save v3 with lastAlignedActionDay', () => {
     const state = createInitialStrategicState(2);
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(25);
+    expect(save.version).toBe(26);
     expect(save.lastAlignedActionDay).toBe(2);
   });
 });

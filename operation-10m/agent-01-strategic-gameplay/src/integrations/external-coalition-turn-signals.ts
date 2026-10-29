@@ -22,6 +22,7 @@ import { isCosmicCoalitionPerpetuity } from '../engine/coalition-cosmic-perpetui
 import { isGalacticCoalitionInfinity } from '../engine/coalition-galactic-infinity.ts';
 import { isStellarCoalitionTranscendence } from '../engine/coalition-stellar-transcendence.ts';
 import { isQuantumCoalitionOmnipresence } from '../engine/coalition-quantum-omnipresence.ts';
+import { isMultiversalCoalitionPersistence } from '../engine/coalition-multiversal-persistence.ts';
 
 /** Outbound coalition telemetry for Agent 02 / Agent 05 assembly hooks (round 10+). */
 export interface ExternalCoalitionTurnSignals {
@@ -66,6 +67,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionStellarTranscendenceStreakDays: number;
   quantumCoalitionOmnipresence: boolean;
   coalitionQuantumOmnipresenceStreakDays: number;
+  multiversalCoalitionPersistence: boolean;
+  coalitionMultiversalPersistenceStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -114,6 +117,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionStellarTranscendenceStreakDays: state.coalitionStellarTranscendenceStreakDays ?? 0,
     quantumCoalitionOmnipresence: isQuantumCoalitionOmnipresence(state),
     coalitionQuantumOmnipresenceStreakDays: state.coalitionQuantumOmnipresenceStreakDays ?? 0,
+    multiversalCoalitionPersistence: isMultiversalCoalitionPersistence(state),
+    coalitionMultiversalPersistenceStreakDays: state.coalitionMultiversalPersistenceStreakDays ?? 0,
   };
 }
 
@@ -162,5 +167,7 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionStellarTranscendenceStreakDays: raw?.coalitionStellarTranscendenceStreakDays ?? 0,
     quantumCoalitionOmnipresence: raw?.quantumCoalitionOmnipresence ?? false,
     coalitionQuantumOmnipresenceStreakDays: raw?.coalitionQuantumOmnipresenceStreakDays ?? 0,
+    multiversalCoalitionPersistence: raw?.multiversalCoalitionPersistence ?? false,
+    coalitionMultiversalPersistenceStreakDays: raw?.coalitionMultiversalPersistenceStreakDays ?? 0,
   };
 }

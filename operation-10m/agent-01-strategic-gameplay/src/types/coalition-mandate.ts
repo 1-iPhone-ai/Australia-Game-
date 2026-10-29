@@ -77,6 +77,8 @@ export interface TurnStrategicBriefing {
   coalitionStellarTranscendenceStreakDays: number;
   quantumCoalitionOmnipresence: boolean;
   coalitionQuantumOmnipresenceStreakDays: number;
+  multiversalCoalitionPersistence: boolean;
+  coalitionMultiversalPersistenceStreakDays: number;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;
