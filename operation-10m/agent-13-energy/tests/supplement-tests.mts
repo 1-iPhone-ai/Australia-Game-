@@ -125,6 +125,11 @@ import {
   V1014_H2_EXPORT_ELECTROLYSER_TURN_SCENARIOS,
 } from '../modules/green-hydrogen-export-electrolyser-hub-ledger.ts';
 import {
+  runAgent13MineralsBatterySupplyScaleSelfTests,
+  runAgent13MineralsBatterySupplyTurnScenario,
+  V1014_MINERALS_BATTERY_SUPPLY_TURN_SCENARIOS,
+} from '../modules/critical-minerals-circular-battery-supply-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -382,6 +387,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const heTurn = runAgent13H2ExportElectrolyserTurnScenario(V1014_H2_EXPORT_ELECTROLYSER_TURN_SCENARIOS[0]);
   ok(heTurn.passed);
+
+  const mineralsBatterySupply = runAgent13MineralsBatterySupplyScaleSelfTests();
+  ok(mineralsBatterySupply.failed === 0 && mineralsBatterySupply.passed >= 7);
+
+  const mbTurn = runAgent13MineralsBatterySupplyTurnScenario(V1014_MINERALS_BATTERY_SUPPLY_TURN_SCENARIOS[0]);
+  ok(mbTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }
