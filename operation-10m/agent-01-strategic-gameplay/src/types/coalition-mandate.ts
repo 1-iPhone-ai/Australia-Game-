@@ -43,6 +43,8 @@ export interface TurnStrategicBriefing {
   postStabilizationLockIn: boolean;
   coalitionLockInStreakDays: number;
   crossModuleSyncStreakDays: number;
+  integratedCoalitionMaturity: boolean;
+  integratedCoalitionMaturityStreakDays: number;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;

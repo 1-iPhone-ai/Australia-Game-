@@ -98,6 +98,7 @@ export {
   stabilizationRankingBonus,
   lockInRankingBonus,
   crossModuleSyncRankingBonus,
+  integratedMaturityRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -192,6 +193,17 @@ export {
 } from './integrations/strategic-cross-module-hooks.ts';
 export type { StrategicCrossModuleInbound } from './integrations/strategic-cross-module-hooks.ts';
 
+export { integratedCoalitionMaturityStreakIssues } from './engine/coalition-integrated-maturity-gates.ts';
+
+export {
+  INTEGRATED_COALITION_MATURITY_THRESHOLD,
+  INTEGRATED_CROSS_MODULE_SYNC_MIN,
+  advanceIntegratedCoalitionMaturityStreak,
+  resetIntegratedCoalitionMaturityStreak,
+  isIntegratedCoalitionMaturity,
+  applyIntegratedCoalitionMandateBonus,
+} from './engine/coalition-integrated-maturity.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '2.0.0';
+export const AGENT_01_MODULE_VERSION = '2.1.0';

@@ -5,6 +5,7 @@ import { classifyCoalitionCrisisLevel } from '../engine/coalition-crisis.ts';
 import { isCoalitionStabilizationReady } from '../engine/coalition-stabilization.ts';
 import { isElevatedCoalitionVolatility } from '../engine/coalition-volatility-pressure.ts';
 import { isPostStabilizationLockIn } from '../engine/coalition-lock-in.ts';
+import { isIntegratedCoalitionMaturity } from '../engine/coalition-integrated-maturity.ts';
 
 /** Outbound coalition telemetry for Agent 02 / Agent 05 assembly hooks (round 10+). */
 export interface ExternalCoalitionTurnSignals {
@@ -15,6 +16,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionStabilizationReady: boolean;
   postStabilizationLockIn: boolean;
   crossModuleSyncStreakDays: number;
+  integratedCoalitionMaturity: boolean;
+  integratedCoalitionMaturityStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -29,6 +32,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionStabilizationReady: isCoalitionStabilizationReady(state),
     postStabilizationLockIn: isPostStabilizationLockIn(state),
     crossModuleSyncStreakDays: state.crossModuleSyncStreakDays ?? 0,
+    integratedCoalitionMaturity: isIntegratedCoalitionMaturity(state),
+    integratedCoalitionMaturityStreakDays: state.integratedCoalitionMaturityStreakDays ?? 0,
   };
 }
 
@@ -43,5 +48,7 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionStabilizationReady: raw?.coalitionStabilizationReady ?? false,
     postStabilizationLockIn: raw?.postStabilizationLockIn ?? false,
     crossModuleSyncStreakDays: raw?.crossModuleSyncStreakDays ?? 0,
+    integratedCoalitionMaturity: raw?.integratedCoalitionMaturity ?? false,
+    integratedCoalitionMaturityStreakDays: raw?.integratedCoalitionMaturityStreakDays ?? 0,
   };
 }

@@ -78,3 +78,13 @@ export function crossModuleSyncRankingBonus(
   if (streak >= action.minCrossModuleSyncStreakDays) return 5;
   return 2;
 }
+
+export function integratedMaturityRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minIntegratedCoalitionMaturityStreakDays === undefined) return 0;
+  const streak = state.integratedCoalitionMaturityStreakDays ?? 0;
+  if (streak >= action.minIntegratedCoalitionMaturityStreakDays) return 6;
+  return 2;
+}

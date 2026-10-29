@@ -79,6 +79,8 @@ export interface StrategicActionDefinition {
   maxCoalitionVolatilityEvents?: number;
   /** Action requires aligned Agent 02/05 stabilization inbound streak. */
   minCrossModuleSyncStreakDays?: number;
+  /** Action requires integrated lock-in + cross-module maturity streak. */
+  minIntegratedCoalitionMaturityStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -124,7 +126,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_coalition_stabilization_streak'; minDays: number }
   | { kind: 'min_coalition_lock_in_streak'; minDays: number }
   | { kind: 'max_coalition_volatility_events'; maxEvents: number }
-  | { kind: 'min_cross_module_sync_streak'; minDays: number };
+  | { kind: 'min_cross_module_sync_streak'; minDays: number }
+  | { kind: 'min_integrated_coalition_maturity_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -178,6 +181,8 @@ export interface StrategicGameplayState {
   coalitionLockInStreakDays?: number;
   /** Calendar days inbound Agent 02/05 stabilization flags stayed aligned. */
   crossModuleSyncStreakDays?: number;
+  /** Days lock-in and cross-module sync both held with volatility cleared. */
+  integratedCoalitionMaturityStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;
