@@ -1,18 +1,8 @@
-import type { AdvisoryOpsKind, AdvisorySeverity, GuardianCoPilotMonitorSnapshot } from './types.js';
+import type { AdvisoryMonitorRule, AdvisoryOpsKind, AdvisorySeverity, GuardianCoPilotMonitorSnapshot } from './types.js';
 import { COPILOT_MAX_BLOCKED_CONTINUES } from './policy.js';
+import { ADVISORY_MONITOR_RULES_EXPANSION } from './monitor-rules-expansion.js';
 
-export type AdvisoryMonitorRule = {
-  id: string;
-  category: string;
-  kind: AdvisoryOpsKind;
-  defaultSeverity: AdvisorySeverity;
-  title: string;
-  detailTemplate: string;
-  evidenceFields: (keyof GuardianCoPilotMonitorSnapshot)[];
-  evaluate: (s: GuardianCoPilotMonitorSnapshot) => boolean;
-  followUp?: string;
-  deepLink?: { tab?: string; section?: string };
-};
+export type { AdvisoryMonitorRule };
 
 export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   {
@@ -238,6 +228,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
     evidenceFields: ['cash', 'maxSpendPerAction'],
     evaluate: s => s.cash < s.maxSpendPerAction * 2,
   },
+  ...ADVISORY_MONITOR_RULES_EXPANSION,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {

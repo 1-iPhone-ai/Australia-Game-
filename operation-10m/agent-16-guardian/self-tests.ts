@@ -15,6 +15,11 @@ import {
   stripExecutionFromCoPilotCandidate,
 } from './suggestion-gate.js';
 import { ADVISORY_SCENARIO_CATALOG } from './scenarios.js';
+import {
+  buildObjectiveAwareAdviceHints,
+  parseObjectiveContextFromGame,
+} from './objective-context.js';
+import { buildGuardianCoPilotMonitorSnapshot } from './snapshot.js';
 import type { AdvisoryRecommendation, Agent16SelfTestResult, AiSuggestedAction } from './types.js';
 
 function check(
@@ -146,6 +151,49 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       recs[0].mayExecute === false &&
       (/approval required/i.test(recs[0].title) || /without your confirmation/i.test(recs[0].detail))
     );
+  });
+
+  check(results, 'a16_objective_parse', 'Mission objectives parse into snapshot fields', () => {
+    const gs = {
+      turnCounter: 9,
+      activeMission: {
+        objectives: [
+          {
+            description: 'Deliver wheat to NSW',
+            targetRegion: 'NSW',
+            targetValue: 100,
+            currentProgress: 20,
+            isMandatory: true,
+          },
+        ],
+      },
+      player: { id: 'p1', money: 500, currentRegion: 'VIC' },
+    };
+    const snap = buildGuardianCoPilotMonitorSnapshot({ gameState: gs });
+    return (
+      snap.objectiveActive &&
+      snap.objectiveProgressPct === 20 &&
+      snap.objectiveTargetRegion === 'NSW' &&
+      !snap.playerInObjectiveRegion
+    );
+  });
+
+  check(results, 'a16_objective_hints', 'Objective-aware hints cite live snapshot fields only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      objectiveActive: true,
+      objectivePrimaryLabel: 'Hold VIC',
+      objectiveTargetRegion: 'VIC',
+      region: 'NSW',
+      playerInObjectiveRegion: false,
+      apRemaining: 2,
+      objectiveProgressPct: 15,
+    });
+    const hints = buildObjectiveAwareAdviceHints(snap);
+    return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
+  });
+
+  check(results, 'a16_expansion_count', 'Expansion adds guardian and objective monitor rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 33;
   });
 
   for (const rule of ADVISORY_MONITOR_RULES) {

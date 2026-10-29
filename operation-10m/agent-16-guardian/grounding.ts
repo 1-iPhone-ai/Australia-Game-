@@ -1,5 +1,5 @@
 import type { AdvisoryRecommendation, GuardianCoPilotMonitorSnapshot } from './types.js';
-import type { AdvisoryMonitorRule } from './monitor-rules.js';
+import type { AdvisoryMonitorRule } from './types.js';
 import { ADVISORY_OPS_POLICY } from './policy.js';
 
 const FIELD_LABELS: Partial<Record<keyof GuardianCoPilotMonitorSnapshot, string>> = {
@@ -17,6 +17,17 @@ const FIELD_LABELS: Partial<Record<keyof GuardianCoPilotMonitorSnapshot, string>
   teamPlanPending: 'Team plan pending approval',
   objectiveRegion: 'Objective region',
   region: 'Current region',
+  objectiveActive: 'Primary objective active',
+  objectivePrimaryLabel: 'Primary objective label',
+  objectiveTargetRegion: 'Objective target region',
+  objectiveProgressPct: 'Objective progress %',
+  objectiveTurnsRemaining: 'Objective turns remaining',
+  playerInObjectiveRegion: 'Player in objective region',
+  rivalVictoryProgressPct: 'Rival victory progress %',
+  victoryThresholdPct: 'Victory threshold %',
+  guardianRequiresConfirmation: 'Guardian requires confirmation',
+  guardianProtectionMaximum: 'Guardian maximum protection',
+  guardianProtectionLevel: 'Guardian protection level',
 };
 
 export function formatSnapshotValue(value: unknown): string | number | boolean | null {

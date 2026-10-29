@@ -56,6 +56,16 @@ export interface GuardianCoPilotMonitorSnapshot {
   expiringContractCount: number;
   teamPlanPending: boolean;
   objectiveRegion: string | null;
+  objectiveActive: boolean;
+  objectivePrimaryLabel: string | null;
+  objectiveTargetRegion: string | null;
+  objectiveProgressPct: number | null;
+  objectiveTurnsRemaining: number | null;
+  playerInObjectiveRegion: boolean;
+  rivalVictoryProgressPct: number | null;
+  victoryThresholdPct: number;
+  guardianRequiresConfirmation: boolean;
+  guardianProtectionMaximum: boolean;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -107,3 +117,16 @@ export interface Agent16SelfTestResult {
   passed: boolean;
   detail: string;
 }
+
+export type AdvisoryMonitorRule = {
+  id: string;
+  category: string;
+  kind: AdvisoryOpsKind;
+  defaultSeverity: AdvisorySeverity;
+  title: string;
+  detailTemplate: string;
+  evidenceFields: (keyof GuardianCoPilotMonitorSnapshot)[];
+  evaluate: (s: GuardianCoPilotMonitorSnapshot) => boolean;
+  followUp?: string;
+  deepLink?: { tab?: string; section?: string };
+};

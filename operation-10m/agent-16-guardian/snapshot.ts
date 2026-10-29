@@ -1,4 +1,5 @@
 import type { BuildMonitorSnapshotInput, GuardianCoPilotMonitorSnapshot } from './types.js';
+import { mergeObjectiveContextIntoSnapshot, parseObjectiveContextFromGame } from './objective-context.js';
 
 function num(v: unknown, fallback = 0): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
@@ -104,8 +105,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
   const teamPlanPending = Object.values(teamPlans).some(p => p && p.status === 'pending_approval');
   const focus = (gs.currentFocus || gs.objectiveFocus) as { regionId?: string; region?: string } | null;
   const objectiveRegion = focus?.regionId || focus?.region || null;
+  const objectiveCtx = parseObjectiveContextFromGame(gs, region);
 
-  return {
+  const base: GuardianCoPilotMonitorSnapshot = {
     turn,
     day,
     actorId,
@@ -132,5 +134,17 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     expiringContractCount,
     teamPlanPending,
     objectiveRegion: objectiveRegion ? String(objectiveRegion) : null,
+    objectiveActive: false,
+    objectivePrimaryLabel: null,
+    objectiveTargetRegion: null,
+    objectiveProgressPct: null,
+    objectiveTurnsRemaining: null,
+    playerInObjectiveRegion: true,
+    rivalVictoryProgressPct: null,
+    victoryThresholdPct: 80,
+    guardianRequiresConfirmation: guardian.responseMode === 'require_confirmation',
+    guardianProtectionMaximum: guardian.protectionLevel === 'maximum_protection',
   };
+
+  return mergeObjectiveContextIntoSnapshot(base, objectiveCtx);
 }

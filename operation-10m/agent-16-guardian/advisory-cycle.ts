@@ -54,8 +54,22 @@ export function createAdvisoryOpsFixtureSnapshot(
     expiringContractCount: 0,
     teamPlanPending: false,
     objectiveRegion: null,
+    objectiveActive: false,
+    objectivePrimaryLabel: null,
+    objectiveTargetRegion: null,
+    objectiveProgressPct: null,
+    objectiveTurnsRemaining: null,
+    playerInObjectiveRegion: true,
+    rivalVictoryProgressPct: null,
+    victoryThresholdPct: 80,
+    guardianRequiresConfirmation: false,
+    guardianProtectionMaximum: false,
     ...overrides,
   };
+  if (snap.objectiveTargetRegion && !snap.objectiveRegion) {
+    snap.objectiveRegion = snap.objectiveTargetRegion;
+  }
+  return snap;
 }
 
 function materializeAdvisoryFromRule(

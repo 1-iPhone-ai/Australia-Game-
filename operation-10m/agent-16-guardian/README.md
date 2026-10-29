@@ -16,7 +16,9 @@ Modular **recommendations-only** layer for Operation 10M. Observes Guardian + Co
 - `policy.ts` — non-negotiable advisory mandate
 - `grounding.ts` — evidence attachment + verification
 - `suggestion-gate.ts` — Co-Pilot suggested-action gate (approval path)
-- `monitor-rules.ts` — 22 monitor/advise/alert rules
+- `monitor-rules.ts` — 22 core monitor/advise/alert rules
+- `monitor-rules-expansion.ts` — 11 objective-aware + extended Guardian rules
+- `objective-context.ts` — mission/objective parsing and advice hints
 - `advisory-cycle.ts` — cycle, dedupe, Co-Pilot candidate → advisory mapping
 - `snapshot.ts` — monitor snapshot builder from game slice
 - `scenarios.ts` — deterministic scenario catalog for regression
