@@ -5394,6 +5394,293 @@ export function uplinkRecoveryOrchestratorWithinCap(report: UplinkRecoveryOrches
 }
 
 
+// --- source: match-explainability-handshake-bundle.ts ---
+  auditMatchExplainabilityHandshakeGate,
+  matchExplainabilityHandshakeAllowed,
+} from './match-explainability-handshake-gate.ts';
+  buildMatchExplainabilityUplinkBundle,
+  matchExplainabilityUplinkReady,
+} from './match-explainability-uplink-bundle.ts';
+  buildSessionUplinkExportBundle,
+  sessionUplinkExportShipped,
+} from './session-uplink-export-bundle.ts';
+
+export const AGENT19_HANDSHAKE_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityHandshakeBundle {
+  handshakeReady: boolean;
+  handshakeAllowed: boolean;
+  uplinkReady: boolean;
+  uplinkExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type HandshakeParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Handshake bundle: handshake gate and uplink export must both be green. */
+export function buildMatchExplainabilityHandshakeBundle(
+  packs: TurnExplainabilityPack[],
+  params: HandshakeParams,
+): MatchExplainabilityHandshakeBundle {
+  const handshake = auditMatchExplainabilityHandshakeGate(packs, params);
+  const uplink = buildMatchExplainabilityUplinkBundle(packs, params);
+  const uplinkExport = buildSessionUplinkExportBundle(packs, params);
+  const handshakeAllowed = matchExplainabilityHandshakeAllowed(handshake);
+  const uplinkReady = matchExplainabilityUplinkReady(uplink);
+  const uplinkExportShipped = sessionUplinkExportShipped(uplinkExport);
+  const handshakeReady = handshakeAllowed && uplinkReady && uplinkExportShipped;
+  const narrativeLines = [
+    `Match explainability handshake bundle: ${handshakeReady ? 'READY' : 'PENDING'} (gate ${handshakeAllowed ? 'ok' : 'fail'}, uplink ${uplinkReady ? 'ok' : 'fail'}).`,
+    ...handshake.narrativeLines.slice(0, 2),
+    ...uplink.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_HANDSHAKE_NARRATIVE_CAP);
+  return {
+    handshakeReady,
+    handshakeAllowed,
+    uplinkReady,
+    uplinkExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityHandshakeReady(bundle: MatchExplainabilityHandshakeBundle): boolean {
+  return bundle.handshakeReady;
+}
+
+
+// --- source: session-handshake-export-bundle.ts ---
+  buildSessionUplinkExportBundle,
+  type SessionUplinkExportBundle,
+} from './session-uplink-export-bundle.ts';
+  buildMatchExplainabilityHandshakeBundle,
+  matchExplainabilityHandshakeReady,
+} from './match-explainability-handshake-bundle.ts';
+
+export interface SessionHandshakeExportBundle extends SessionUplinkExportBundle {
+  handshakeReady: boolean;
+  handshakeSchema: string;
+}
+
+/** Handshake export wraps uplink export when handshake bundle is ready. */
+export function buildSessionHandshakeExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionHandshakeExportBundle {
+  const base = buildSessionUplinkExportBundle(packs, params);
+  const handshake = buildMatchExplainabilityHandshakeBundle(packs, params);
+  const handshakeReady = matchExplainabilityHandshakeReady(handshake);
+  const exports = handshakeReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    handshakeReady,
+    handshakeSchema: 'agent19.handshake.v1',
+    releaseReady: handshakeReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Handshake export: ${handshakeReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionHandshakeExportShipped(bundle: SessionHandshakeExportBundle): boolean {
+  return (
+    bundle.handshakeReady &&
+    bundle.exports.length > 0 &&
+    bundle.handshakeSchema === 'agent19.handshake.v1'
+  );
+}
+
+
+// --- source: uplink-handshake-bridge.ts ---
+  buildMatchExplainabilityHandshakeBundle,
+  matchExplainabilityHandshakeReady,
+} from './match-explainability-handshake-bundle.ts';
+  buildMatchExplainabilityUplinkBundle,
+  matchExplainabilityUplinkReady,
+} from './match-explainability-uplink-bundle.ts';
+
+export interface UplinkHandshakeBridgeReport {
+  aligned: boolean;
+  handshakeReady: boolean;
+  uplinkReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Handshake-ready should match uplink-ready when uplink export stack passes. */
+export function auditUplinkHandshakeBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): UplinkHandshakeBridgeReport {
+  const handshake = buildMatchExplainabilityHandshakeBundle(packs, params);
+  const uplink = buildMatchExplainabilityUplinkBundle(packs, params);
+  const handshakeReady = matchExplainabilityHandshakeReady(handshake);
+  const uplinkReady = matchExplainabilityUplinkReady(uplink);
+  const aligned = handshakeReady === uplinkReady;
+  const narrativeLines = [
+    `Uplink/handshake bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (handshake ${handshakeReady ? 'ok' : 'fail'}, uplink ${uplinkReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, handshakeReady, uplinkReady, narrativeLines };
+}
+
+export function uplinkHandshakeBridgeHealthy(report: UplinkHandshakeBridgeReport): boolean {
+  return report.handshakeReady && report.uplinkReady && report.aligned;
+}
+
+
+// --- source: match-explainability-ack-gate.ts ---
+  buildMatchExplainabilityHandshakeBundle,
+  matchExplainabilityHandshakeReady,
+} from './match-explainability-handshake-bundle.ts';
+  buildSessionHandshakeExportBundle,
+  sessionHandshakeExportShipped,
+} from './session-handshake-export-bundle.ts';
+
+export interface MatchExplainabilityAckGateReport {
+  ackAllowed: boolean;
+  handshakeReady: boolean;
+  handshakeExportShipped: boolean;
+  uplinkHandshakeHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Ack gate: handshake bundle + handshake export + uplink/handshake bridge. */
+export function auditMatchExplainabilityAckGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityAckGateReport {
+  const handshake = buildMatchExplainabilityHandshakeBundle(packs, params);
+  const handshakeExport = buildSessionHandshakeExportBundle(packs, params);
+  const bridge = auditUplinkHandshakeBridge(packs, params);
+  const handshakeReady = matchExplainabilityHandshakeReady(handshake);
+  const handshakeExportShipped = sessionHandshakeExportShipped(handshakeExport);
+  const uplinkHandshakeHealthy = uplinkHandshakeBridgeHealthy(bridge);
+  const ackAllowed = handshakeReady && handshakeExportShipped && uplinkHandshakeHealthy;
+  const narrativeLines = [
+    `Match explainability ack: ${ackAllowed ? 'ALLOWED' : 'DENIED'} (handshake ${handshakeReady ? 'ok' : 'fail'}, export ${handshakeExportShipped ? 'ok' : 'fail'}).`,
+    ...handshake.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    ackAllowed,
+    handshakeReady,
+    handshakeExportShipped,
+    uplinkHandshakeHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityAckAllowed(report: MatchExplainabilityAckGateReport): boolean {
+  return report.ackAllowed;
+}
+
+
+// --- source: handshake-recovery-orchestrator.ts ---
+  auditMatchExplainabilityHandshakeGate,
+  matchExplainabilityHandshakeAllowed,
+} from './match-explainability-handshake-gate.ts';
+
+export const AGENT19_HANDSHAKE_RECOVERY_CAP = 10;
+
+export interface HandshakeRecoveryOrchestratorReport {
+  handshakeBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when handshake gate blocks ack rollout. */
+export function buildHandshakeRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): HandshakeRecoveryOrchestratorReport {
+  const handshake = auditMatchExplainabilityHandshakeGate(packs, params);
+  const handshakeBlocked = !matchExplainabilityHandshakeAllowed(handshake);
+  const steps: string[] = [];
+  if (handshakeBlocked) {
+    if (!handshake.uplinkReady) {
+      steps.push('Restore uplink bundle: signal and uplink export must pass.');
+    }
+    if (!handshake.uplinkExportShipped) {
+      steps.push('Emit session uplink export before handshake clearance.');
+    }
+    if (!handshake.signalUplinkHealthy) {
+      steps.push('Reconcile signal/uplink bridge before handshake.');
+    }
+    steps.push(...buildUplinkRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const uplink = buildMatchExplainabilityUplinkBundle(packs, params);
+    if (!uplink.uplinkReady) {
+      steps.push('Re-run uplink readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Handshake gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_HANDSHAKE_RECOVERY_CAP);
+  return {
+    handshakeBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Handshake recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function handshakeRecoveryOrchestratorWithinCap(report: HandshakeRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_HANDSHAKE_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -5722,6 +6009,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilityHandshakeGate,
   matchExplainabilityHandshakeAllowed,
 } from '../match-explainability-handshake-gate.ts';
+  buildMatchExplainabilityHandshakeBundle,
+  matchExplainabilityHandshakeReady,
+} from '../match-explainability-handshake-bundle.ts';
+  buildSessionHandshakeExportBundle,
+  sessionHandshakeExportShipped,
+} from '../session-handshake-export-bundle.ts';
+  buildHandshakeRecoveryOrchestrator,
+  handshakeRecoveryOrchestratorWithinCap,
+} from '../handshake-recovery-orchestrator.ts';
+  auditMatchExplainabilityAckGate,
+  matchExplainabilityAckAllowed,
+} from '../match-explainability-ack-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
