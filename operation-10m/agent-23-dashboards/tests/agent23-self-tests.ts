@@ -13,6 +13,14 @@ import { nrDashBuildNetworkCoupling } from '../core/network-coupling.ts';
 import { nrDashBuildDependencyChokepoints } from '../core/dependency-chokepoint.ts';
 import { nrDashBuildNeedsImbalance } from '../core/needs-imbalance.ts';
 import { nrDashApplyMapPulse, nrDashBuildMapPulseRows, nrDashHottestPulseRegion } from '../core/map-pulse.ts';
+import { nrDashBuildRiskExposure, nrDashTopRiskExposureRows } from '../core/risk-exposure.ts';
+import { nrDashBuildUtilizationSkew } from '../core/utilization-skew.ts';
+import {
+  nrDashBuildMomentumResilienceTension,
+  nrDashTopTensionOutliers,
+} from '../core/momentum-resilience-tension.ts';
+import { nrDashBuildMapHubIndex, nrDashPrimaryMapHub, nrDashTopMapHubs } from '../core/map-hub-index.ts';
+import { nrDashEnrichMapLinkStress, nrDashHottestMapLinkStress } from '../core/link-stress.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -284,6 +292,44 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   check('a23_corridor_count', 'Corridor stress covers adjacency pair count', () => {
     const pairs = agent23ListAdjacencyPairs();
     return nrDashBuildCorridorStressRows(createAgent23NsFixture()).length === pairs.length;
+  });
+
+  check('a23_risk_exposure', 'Risk exposure hotspot marks NSW fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const ex = nrDashBuildRiskExposure(snap)!;
+    return ex.totalExposure >= 8 && ex.hotspotRegionId === 'NSW' && nrDashTopRiskExposureRows(snap, 2).length === 2;
+  });
+
+  check('a23_util_skew', 'Utilization skew spans five national bars', () => {
+    const snap = nrDashBuildAuthSnapshot(5, null, createAgent23NsFixture(), null)!;
+    const skew = nrDashBuildUtilizationSkew(snap)!;
+    return skew.sampleSize === 5 && skew.spread >= 0 && skew.stdDev >= 0;
+  });
+
+  check('a23_tension', 'Momentum-resilience tension lists merged rows', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const t = nrDashBuildMomentumResilienceTension(snap)!;
+    return t.rows.length === 8 && t.meanAbsTension >= 0 && nrDashTopTensionOutliers(snap, 2).length <= 2;
+  });
+
+  check('a23_map_hubs', 'Map hub index ranks NSW highly', () => {
+    const ns = createAgent23NsFixture();
+    const hubs = nrDashTopMapHubs(ns, 3);
+    return hubs.length === 3 && nrDashBuildMapHubIndex(ns).length >= 8 && nrDashPrimaryMapHub(ns) != null;
+  });
+
+  check('a23_link_stress', 'Link stress enriches adjacency and dependency links', () => {
+    const ns = createAgent23NsFixture();
+    const merged = nrDashMergeMapLinks(
+      nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
+      nrDashBuildDependencyLinks(ns, AGENT23_REGION_MAP_LAYOUT)
+    );
+    const stressed = nrDashEnrichMapLinkStress(merged, ns);
+    const hot = nrDashHottestMapLinkStress(stressed);
+    return (
+      stressed.every(l => l.stressLevel != null && l.stressLevel >= 0 && l.stressLevel <= 1) &&
+      Boolean(hot && (hot.stressLevel ?? 0) > 0)
+    );
   });
 
   return results;

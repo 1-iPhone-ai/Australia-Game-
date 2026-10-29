@@ -234,4 +234,6 @@ export interface NrDashMapLink {
   stroke: string;
   dash?: string;
   title: string;
+  /** 0..1 corridor or dependency stress overlay (state-derived). */
+  stressLevel?: number;
 }

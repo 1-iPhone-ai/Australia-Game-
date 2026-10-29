@@ -6,5 +6,6 @@ export const NrDashMapLegend: React.FC = () => (
     <span>—— NS dependency (color = provider network condition)</span>
     <span>Ring: you / rival / neutral</span>
     <span>Dim: outside focus neighborhood</span>
+    <span>Link weight/opacity: corridor or dependency stress</span>
   </div>
 );

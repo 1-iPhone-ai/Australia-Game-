@@ -24,6 +24,11 @@ import { nrDashBuildNetworkCoupling } from '../core/network-coupling.ts';
 import { nrDashTopDependencyChokepoints } from '../core/dependency-chokepoint.ts';
 import { nrDashBuildNeedsImbalance } from '../core/needs-imbalance.ts';
 import { nrDashApplyMapPulse, nrDashHottestPulseRegion } from '../core/map-pulse.ts';
+import { nrDashBuildRiskExposure } from '../core/risk-exposure.ts';
+import { nrDashBuildUtilizationSkew } from '../core/utilization-skew.ts';
+import { nrDashTopTensionOutliers } from '../core/momentum-resilience-tension.ts';
+import { nrDashEnrichMapLinkStress, nrDashHottestMapLinkStress } from '../core/link-stress.ts';
+import { nrDashPrimaryMapHub, nrDashTopMapHubs } from '../core/map-hub-index.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -49,6 +54,9 @@ import { NrDashNetworkDepthPanel } from './network-depth-panel.tsx';
 import { NrDashRegionsDepthStrip } from './regions-depth-strip.tsx';
 import { NrDashCorridorStressStrip } from './corridor-stress-strip.tsx';
 import { NrDashNeedsImbalanceCard } from './needs-imbalance-card.tsx';
+import { NrDashRiskExposureCard } from './risk-exposure-card.tsx';
+import { NrDashUtilizationSkewStrip } from './utilization-skew-strip.tsx';
+import { NrDashMapHubStrip } from './map-hub-strip.tsx';
 import { RegionPositionMap } from './region-position-map.tsx';
 
 const NrDashProvenanceStrip: React.FC<{ items: NrDashProvenance[] }> = ({ items }) => (
@@ -74,6 +82,7 @@ export const NrDashOverviewTab: React.FC<{
       conditionBuckets={nrDashBuildConditionCatalog(nsState)}
     />
     <NrDashNeedsImbalanceCard imbalance={nrDashBuildNeedsImbalance(snap)} />
+    <NrDashRiskExposureCard exposure={nrDashBuildRiskExposure(snap)} />
     <div className="grid md:grid-cols-3 gap-3 text-sm">
       <div className="rounded-lg border border-slate-600/50 p-3">
         <div className="text-xs opacity-70">National resilience</div>
@@ -124,6 +133,18 @@ export const NrDashRegionsTab: React.FC<{
       spread={nrDashBuildResilienceSpread(snap)}
       outliers={nrDashTopParityOutliers(snap, 3)}
     />
+    {nrDashTopTensionOutliers(snap, 3).length > 0 && (
+      <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-tension-outliers">
+        <div className="font-semibold mb-1">Momentum ↔ resilience tension</div>
+        <ul className="list-disc list-inside opacity-90">
+          {nrDashTopTensionOutliers(snap, 3).map(t => (
+            <li key={t.regionId}>
+              {t.regionId}: tension {t.tensionScore} (mom rank {t.momentumRank}, resilience {t.resilience})
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
         <thead>
@@ -184,8 +205,12 @@ export const NrDashNetworksTab: React.FC<{
   const bottlenecks = nrDashBuildBottleneckRollup(ns);
   const coupling = nrDashBuildNetworkCoupling(ns);
   const chokepoints = nrDashTopDependencyChokepoints(ns, 3);
+  const snapSkew = nrDashBuildUtilizationSkew(
+    nrDashBuildAuthSnapshot(ns.turn ?? 0, null, ns, null)
+  );
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-networks">
+      <NrDashUtilizationSkewStrip skew={snapSkew} />
       {coupling && (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-network-coupling">
           Network coupling μ {coupling.meanCoupling} · hottest {coupling.maxCouplingRegionId ?? '—'}
@@ -286,15 +311,25 @@ export const NrDashMapTab: React.FC<{
       ),
     [nsState]
   );
+  const stressedLinks = useMemo(() => nrDashEnrichMapLinkStress(allLinks, nsState), [allLinks, nsState]);
   const links = useMemo(
-    () => (focusRegionId ? nrDashLinksTouchingRegion(allLinks, focusRegionId) : allLinks),
-    [allLinks, focusRegionId]
+    () => (focusRegionId ? nrDashLinksTouchingRegion(stressedLinks, focusRegionId) : stressedLinks),
+    [stressedLinks, focusRegionId]
   );
+  const hottestLink = useMemo(() => nrDashHottestMapLinkStress(stressedLinks), [stressedLinks]);
+  const hubRows = useMemo(() => nrDashTopMapHubs(nsState, 3), [nsState]);
+  const primaryHub = useMemo(() => nrDashPrimaryMapHub(nsState), [nsState]);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-map">
       <NrDashProvenanceStrip items={snap.provenance} />
       <RegionPositionMap nodes={nodes} links={links} focusRegionId={focusRegionId} onSelect={onFocusRegion} />
       <NrDashCorridorStressStrip corridors={nrDashTopCorridorStress(nsState, 4)} />
+      <NrDashMapHubStrip hubs={hubRows} primaryHubId={primaryHub} />
+      {hottestLink && (
+        <p className="text-[10px] opacity-75" data-testid="nr-dash-map-link-stress-hot">
+          Hottest link stress: {hottestLink.label} ({Math.round((hottestLink.stressLevel ?? 0) * 100)}%)
+        </p>
+      )}
       {pulseHot && (
         <p className="text-[10px] opacity-75" data-testid="nr-dash-map-pulse-hot">
           Pulse hotspot: {pulseHot} (momentum activity + needs + risks)

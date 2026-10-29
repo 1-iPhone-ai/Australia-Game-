@@ -49,9 +49,9 @@ export const RegionPositionMap: React.FC<RegionPositionMapProps> = ({
           x2={seg.x2}
           y2={seg.y2}
           stroke={link.stroke}
-          strokeWidth={link.kind === 'dependency' ? 0.9 : 0.5}
+          strokeWidth={(link.kind === 'dependency' ? 0.9 : 0.5) + (link.stressLevel ?? 0) * 0.8}
           strokeDasharray={link.dash}
-          opacity={0.85}
+          opacity={0.55 + (link.stressLevel ?? 0) * 0.45}
           data-testid={`agent23-map-link-${link.id}`}
         >
           <title>{link.title}</title>

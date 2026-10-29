@@ -238,6 +238,8 @@ export interface NrDashMapLink {
   stroke: string;
   dash?: string;
   title: string;
+  /** 0..1 corridor or dependency stress overlay (state-derived). */
+  stressLevel?: number;
 }
 
 // --- bundled from core/constants.ts ---
@@ -1221,6 +1223,223 @@ export function nrDashHottestPulseRegion(nodes: RegionMapNode[]): string | null 
   return top.intensity > 0 ? top.regionId : null;
 }
 
+// --- bundled from core/risk-exposure.ts ---
+export interface NrDashRiskExposureRow {
+  regionId: string;
+  name: string;
+  openNeeds: number;
+  highRisks: number;
+  /** Weighted LR exposure index (needs + 2× high risks). */
+  exposureScore: number;
+}
+
+export interface NrDashRiskExposureSummary {
+  rows: NrDashRiskExposureRow[];
+  totalExposure: number;
+  stdDev: number;
+  hotspotRegionId: string | null;
+}
+
+/** Aggregate open needs and high-severity risks per region (snapshot rows only). */
+export function nrDashBuildRiskExposure(snap: NrDashAuthSnapshot | null): NrDashRiskExposureSummary | null {
+  if (!snap?.regions.length) return null;
+  const rows: NrDashRiskExposureRow[] = snap.regions.map(r => ({
+    regionId: r.regionId,
+    name: r.name,
+    openNeeds: r.openNeeds,
+    highRisks: r.highRisks,
+    exposureScore: r.openNeeds + r.highRisks * 2,
+  }));
+  rows.sort((a, b) => b.exposureScore - a.exposureScore || a.regionId.localeCompare(b.regionId));
+  const scores = rows.map(r => r.exposureScore);
+  const totalExposure = scores.reduce((s, n) => s + n, 0);
+  const mean = totalExposure / scores.length;
+  const variance = scores.reduce((s, n) => s + (n - mean) ** 2, 0) / Math.max(scores.length, 1);
+  const stdDev = Math.round(Math.sqrt(variance) * 100) / 100;
+  const hotspot = rows[0]?.exposureScore ? rows[0].regionId : null;
+  return { rows, totalExposure, stdDev, hotspotRegionId: hotspot };
+}
+
+export function nrDashTopRiskExposureRows(snap: NrDashAuthSnapshot | null, limit = 3): NrDashRiskExposureRow[] {
+  const summary = nrDashBuildRiskExposure(snap);
+  return summary ? summary.rows.slice(0, limit) : [];
+}
+
+// --- bundled from core/utilization-skew.ts ---
+export interface NrDashUtilizationSkew {
+  sampleSize: number;
+  meanUtilization: number;
+  stdDev: number;
+  hottestNetwork: NrDashNetworkBar['network'] | null;
+  coolestNetwork: NrDashNetworkBar['network'] | null;
+  spread: number;
+}
+
+/** Dispersion of authoritative national network utilization bars. */
+export function nrDashBuildUtilizationSkew(snap: NrDashAuthSnapshot | null): NrDashUtilizationSkew | null {
+  if (!snap?.networks.length) return null;
+  const values = snap.networks.map(n => n.utilization);
+  const meanUtilization = values.reduce((s, v) => s + v, 0) / values.length;
+  const variance =
+    values.reduce((s, v) => s + (v - meanUtilization) ** 2, 0) / Math.max(values.length, 1);
+  const stdDev = Math.round(Math.sqrt(variance) * 1000) / 1000;
+  const sorted = [...snap.networks].sort(
+    (a, b) => b.utilization - a.utilization || a.network.localeCompare(b.network)
+  );
+  const hottest = sorted[0];
+  const coolest = sorted[sorted.length - 1];
+  const spread = Math.round((hottest.utilization - coolest.utilization) * 1000) / 1000;
+  return {
+    sampleSize: snap.networks.length,
+    meanUtilization: Math.round(meanUtilization * 1000) / 1000,
+    stdDev,
+    hottestNetwork: hottest.utilization > 0 ? hottest.network : null,
+    coolestNetwork: coolest ? coolest.network : null,
+    spread,
+  };
+}
+
+// --- bundled from core/momentum-resilience-tension.ts ---
+export interface NrDashMomentumResilienceTensionRow {
+  regionId: string;
+  name: string;
+  momentumRank: number;
+  resilience: number;
+  /** Positive = resilience ahead of momentum; negative = momentum ahead of resilience. */
+  tensionScore: number;
+}
+
+export interface NrDashMomentumResilienceTensionSummary {
+  rows: NrDashMomentumResilienceTensionRow[];
+  meanAbsTension: number;
+  /** Region with largest absolute mismatch. */
+  outlierRegionId: string | null;
+}
+
+function momRank(band: string): number {
+  return NR_DASH_MOM_RANK[band as LRMomentumBand] ?? 2;
+}
+
+/** Flag LR momentum vs NS resilience mismatches on merged snapshot rows. */
+export function nrDashBuildMomentumResilienceTension(
+  snap: NrDashAuthSnapshot | null
+): NrDashMomentumResilienceTensionSummary | null {
+  if (!snap?.regions.length) return null;
+  const rows: NrDashMomentumResilienceTensionRow[] = [];
+  snap.regions.forEach(r => {
+    if (r.resilience == null) return;
+    const momentumRank = momRank(r.momentumBand);
+    const normalizedMom = (momentumRank / 5) * 100;
+    const tensionScore = Math.round((r.resilience - normalizedMom) * 10) / 10;
+    rows.push({
+      regionId: r.regionId,
+      name: r.name,
+      momentumRank,
+      resilience: r.resilience,
+      tensionScore,
+    });
+  });
+  if (!rows.length) return null;
+  rows.sort((a, b) => Math.abs(b.tensionScore) - Math.abs(a.tensionScore) || a.regionId.localeCompare(b.regionId));
+  const meanAbsTension =
+    Math.round((rows.reduce((s, r) => s + Math.abs(r.tensionScore), 0) / rows.length) * 100) / 100;
+  const outlierRegionId = rows[0] ? rows[0].regionId : null;
+  return { rows, meanAbsTension, outlierRegionId };
+}
+
+export function nrDashTopTensionOutliers(snap: NrDashAuthSnapshot | null, limit = 3): NrDashMomentumResilienceTensionRow[] {
+  const summary = nrDashBuildMomentumResilienceTension(snap);
+  return summary ? summary.rows.slice(0, limit) : [];
+}
+
+// --- bundled from core/map-hub-index.ts ---
+export interface NrDashMapHubRow {
+  regionId: string;
+  adjacencyCount: number;
+  dependencyIn: number;
+  dependencyOut: number;
+  hubScore: number;
+}
+
+/** Connectivity hub score from land adjacency + NS dependency in/out degree. */
+export function nrDashBuildMapHubIndex(ns: NationalSystemsState | null): NrDashMapHubRow[] {
+  const adjCount = new Map<string, number>();
+  agent23ListAdjacencyPairs().forEach(({ a, b }) => {
+    adjCount.set(a, (adjCount.get(a) ?? 0) + 1);
+    adjCount.set(b, (adjCount.get(b) ?? 0) + 1);
+  });
+  const depIn = new Map<string, number>();
+  const depOut = new Map<string, number>();
+  ns?.dependencies.forEach(d => {
+    depIn.set(d.consumerRegionId, (depIn.get(d.consumerRegionId) ?? 0) + 1);
+    depOut.set(d.providerRegionId, (depOut.get(d.providerRegionId) ?? 0) + 1);
+  });
+  const regionIds = new Set<string>([...adjCount.keys(), ...depIn.keys(), ...depOut.keys()]);
+  if (ns) Object.keys(ns.regions).forEach(id => regionIds.add(id));
+  return [...regionIds]
+    .map(regionId => {
+      const adjacencyCount = adjCount.get(regionId) ?? 0;
+      const dependencyIn = depIn.get(regionId) ?? 0;
+      const dependencyOut = depOut.get(regionId) ?? 0;
+      const hubScore = adjacencyCount + dependencyIn + dependencyOut;
+      return { regionId, adjacencyCount, dependencyIn, dependencyOut, hubScore };
+    })
+    .sort((a, b) => b.hubScore - a.hubScore || a.regionId.localeCompare(b.regionId));
+}
+
+export function nrDashTopMapHubs(ns: NationalSystemsState | null, limit = 3): NrDashMapHubRow[] {
+  return nrDashBuildMapHubIndex(ns).slice(0, limit);
+}
+
+export function nrDashPrimaryMapHub(ns: NationalSystemsState | null): string | null {
+  const top = nrDashBuildMapHubIndex(ns)[0];
+  return top?.hubScore ? top.regionId : null;
+}
+
+// --- bundled from core/link-stress.ts ---
+function corridorKeyForLink(link: NrDashMapLink): string | null {
+  if (link.kind !== 'adjacency') return null;
+  const [a, b] = [link.fromId, link.toId].sort();
+  return `${a}-${b}`;
+}
+
+/** Attach 0..1 stress levels to map links from corridor means or dependency choke scores. */
+export function nrDashEnrichMapLinkStress(links: NrDashMapLink[], ns: NationalSystemsState | null): NrDashMapLink[] {
+  if (!links.length) return links;
+  const corridorByKey = new Map(
+    nrDashBuildCorridorStressRows(ns).map(r => [r.corridorKey, r.meanPeakUtilization])
+  );
+  const chokes = nrDashBuildDependencyChokepoints(ns);
+  const maxChoke = chokes.reduce((m, c) => Math.max(m, c.chokeScore), 0.001);
+  const chokeByDepId = new Map(chokes.map(c => [c.dependencyId, c.chokeScore]));
+
+  return links.map(link => {
+    if (link.kind === 'adjacency') {
+      const key = corridorKeyForLink(link);
+      const mean = key ? corridorByKey.get(key) ?? 0 : 0;
+      const stressLevel = nrDashClamp01(mean);
+      return {
+        ...link,
+        stressLevel,
+        title: `${link.title} · corridor stress ${Math.round(stressLevel * 100)}%`,
+      };
+    }
+    const depId = link.id.replace(/^dep_/, '');
+    const choke = chokeByDepId.get(depId) ?? 0;
+    const stressLevel = nrDashClamp01(choke / maxChoke);
+    return {
+      ...link,
+      stressLevel,
+      title: `${link.title} · dependency stress ${Math.round(stressLevel * 100)}%`,
+    };
+  });
+}
+
+export function nrDashHottestMapLinkStress(links: NrDashMapLink[]): NrDashMapLink | null {
+  const ranked = [...links].filter(l => (l.stressLevel ?? 0) > 0).sort((a, b) => (b.stressLevel ?? 0) - (a.stressLevel ?? 0));
+  return ranked[0] ?? null;
+}
+
 // --- bundled from tests/fixtures.ts ---
 function emptyNetworks(): Record<NationalNetworkKind, NationalRegionSystemsState['networks']['freight']> {
   const base = { utilization: 0.4, condition: 'healthy' as const };
@@ -1491,6 +1710,7 @@ export const NrDashMapLegend: React.FC = () => (
     <span>—— NS dependency (color = provider network condition)</span>
     <span>Ring: you / rival / neutral</span>
     <span>Dim: outside focus neighborhood</span>
+    <span>Link weight/opacity: corridor or dependency stress</span>
   </div>
 );
 
@@ -1600,6 +1820,61 @@ export const NrDashNeedsImbalanceCard: React.FC<{ imbalance: NrDashNeedsImbalanc
   );
 };
 
+// --- bundled from ui/risk-exposure-card.tsx ---
+export const NrDashRiskExposureCard: React.FC<{ exposure: NrDashRiskExposureSummary | null }> = ({ exposure }) => {
+  if (!exposure) return null;
+  const top = exposure.rows.slice(0, 3);
+  return (
+    <div className="rounded-lg border border-slate-600/50 p-3 text-xs" data-testid="nr-dash-risk-exposure">
+      <div className="font-semibold mb-1">Risk exposure (LR needs + high risks)</div>
+      <div className="opacity-80 mb-2">
+        Total index {exposure.totalExposure} · σ {exposure.stdDev}
+        {exposure.hotspotRegionId ? ` · hotspot ${exposure.hotspotRegionId}` : ''}
+      </div>
+      <ul className="list-disc list-inside opacity-90">
+        {top.map(r => (
+          <li key={r.regionId}>
+            {r.regionId}: score {r.exposureScore} ({r.openNeeds} needs, {r.highRisks} high risks)
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
+// --- bundled from ui/utilization-skew-strip.tsx ---
+export const NrDashUtilizationSkewStrip: React.FC<{ skew: NrDashUtilizationSkew | null }> = ({ skew }) => {
+  if (!skew) return null;
+  return (
+    <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-utilization-skew">
+      National utilization spread {skew.spread} (σ {skew.stdDev}) · hottest{' '}
+      {skew.hottestNetwork ? `${NATIONAL_NETWORK_ICON[skew.hottestNetwork]} ${NATIONAL_NETWORK_LABEL[skew.hottestNetwork]}` : '—'}
+    </div>
+  );
+};
+
+// --- bundled from ui/map-hub-strip.tsx ---
+export const NrDashMapHubStrip: React.FC<{ hubs: NrDashMapHubRow[]; primaryHubId: string | null }> = ({
+  hubs,
+  primaryHubId,
+}) => {
+  if (!hubs.length) return null;
+  return (
+    <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-map-hubs">
+      <div className="font-semibold mb-1">Connectivity hubs (adjacency + dependencies)</div>
+      <ul className="list-disc list-inside opacity-90">
+        {hubs.map(h => (
+          <li key={h.regionId}>
+            {h.regionId}: score {h.hubScore}
+            {primaryHubId === h.regionId ? ' · primary' : ''} (adj {h.adjacencyCount}, in {h.dependencyIn}, out{' '}
+            {h.dependencyOut})
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
 // --- bundled from ui/region-position-map.tsx ---
 export interface RegionPositionMapProps {
   nodes: RegionMapNode[];
@@ -1647,9 +1922,9 @@ export const RegionPositionMap: React.FC<RegionPositionMapProps> = ({
           x2={seg.x2}
           y2={seg.y2}
           stroke={link.stroke}
-          strokeWidth={link.kind === 'dependency' ? 0.9 : 0.5}
+          strokeWidth={(link.kind === 'dependency' ? 0.9 : 0.5) + (link.stressLevel ?? 0) * 0.8}
           strokeDasharray={link.dash}
-          opacity={0.85}
+          opacity={0.55 + (link.stressLevel ?? 0) * 0.45}
           data-testid={`agent23-map-link-${link.id}`}
         >
           <title>{link.title}</title>
@@ -1724,6 +1999,7 @@ export const NrDashOverviewTab: React.FC<{
       conditionBuckets={nrDashBuildConditionCatalog(nsState)}
     />
     <NrDashNeedsImbalanceCard imbalance={nrDashBuildNeedsImbalance(snap)} />
+    <NrDashRiskExposureCard exposure={nrDashBuildRiskExposure(snap)} />
     <div className="grid md:grid-cols-3 gap-3 text-sm">
       <div className="rounded-lg border border-slate-600/50 p-3">
         <div className="text-xs opacity-70">National resilience</div>
@@ -1774,6 +2050,18 @@ export const NrDashRegionsTab: React.FC<{
       spread={nrDashBuildResilienceSpread(snap)}
       outliers={nrDashTopParityOutliers(snap, 3)}
     />
+    {nrDashTopTensionOutliers(snap, 3).length > 0 && (
+      <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-tension-outliers">
+        <div className="font-semibold mb-1">Momentum ↔ resilience tension</div>
+        <ul className="list-disc list-inside opacity-90">
+          {nrDashTopTensionOutliers(snap, 3).map(t => (
+            <li key={t.regionId}>
+              {t.regionId}: tension {t.tensionScore} (mom rank {t.momentumRank}, resilience {t.resilience})
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
         <thead>
@@ -1834,8 +2122,12 @@ export const NrDashNetworksTab: React.FC<{
   const bottlenecks = nrDashBuildBottleneckRollup(ns);
   const coupling = nrDashBuildNetworkCoupling(ns);
   const chokepoints = nrDashTopDependencyChokepoints(ns, 3);
+  const snapSkew = nrDashBuildUtilizationSkew(
+    nrDashBuildAuthSnapshot(ns.turn ?? 0, null, ns, null)
+  );
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-networks">
+      <NrDashUtilizationSkewStrip skew={snapSkew} />
       {coupling && (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-network-coupling">
           Network coupling μ {coupling.meanCoupling} · hottest {coupling.maxCouplingRegionId ?? '—'}
@@ -1936,15 +2228,25 @@ export const NrDashMapTab: React.FC<{
       ),
     [nsState]
   );
+  const stressedLinks = useMemo(() => nrDashEnrichMapLinkStress(allLinks, nsState), [allLinks, nsState]);
   const links = useMemo(
-    () => (focusRegionId ? nrDashLinksTouchingRegion(allLinks, focusRegionId) : allLinks),
-    [allLinks, focusRegionId]
+    () => (focusRegionId ? nrDashLinksTouchingRegion(stressedLinks, focusRegionId) : stressedLinks),
+    [stressedLinks, focusRegionId]
   );
+  const hottestLink = useMemo(() => nrDashHottestMapLinkStress(stressedLinks), [stressedLinks]);
+  const hubRows = useMemo(() => nrDashTopMapHubs(nsState, 3), [nsState]);
+  const primaryHub = useMemo(() => nrDashPrimaryMapHub(nsState), [nsState]);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-map">
       <NrDashProvenanceStrip items={snap.provenance} />
       <RegionPositionMap nodes={nodes} links={links} focusRegionId={focusRegionId} onSelect={onFocusRegion} />
       <NrDashCorridorStressStrip corridors={nrDashTopCorridorStress(nsState, 4)} />
+      <NrDashMapHubStrip hubs={hubRows} primaryHubId={primaryHub} />
+      {hottestLink && (
+        <p className="text-[10px] opacity-75" data-testid="nr-dash-map-link-stress-hot">
+          Hottest link stress: {hottestLink.label} ({Math.round((hottestLink.stressLevel ?? 0) * 100)}%)
+        </p>
+      )}
       {pulseHot && (
         <p className="text-[10px] opacity-75" data-testid="nr-dash-map-pulse-hot">
           Pulse hotspot: {pulseHot} (momentum activity + needs + risks)
@@ -2320,6 +2622,44 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   check('a23_corridor_count', 'Corridor stress covers adjacency pair count', () => {
     const pairs = agent23ListAdjacencyPairs();
     return nrDashBuildCorridorStressRows(createAgent23NsFixture()).length === pairs.length;
+  });
+
+  check('a23_risk_exposure', 'Risk exposure hotspot marks NSW fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const ex = nrDashBuildRiskExposure(snap)!;
+    return ex.totalExposure >= 8 && ex.hotspotRegionId === 'NSW' && nrDashTopRiskExposureRows(snap, 2).length === 2;
+  });
+
+  check('a23_util_skew', 'Utilization skew spans five national bars', () => {
+    const snap = nrDashBuildAuthSnapshot(5, null, createAgent23NsFixture(), null)!;
+    const skew = nrDashBuildUtilizationSkew(snap)!;
+    return skew.sampleSize === 5 && skew.spread >= 0 && skew.stdDev >= 0;
+  });
+
+  check('a23_tension', 'Momentum-resilience tension lists merged rows', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const t = nrDashBuildMomentumResilienceTension(snap)!;
+    return t.rows.length === 8 && t.meanAbsTension >= 0 && nrDashTopTensionOutliers(snap, 2).length <= 2;
+  });
+
+  check('a23_map_hubs', 'Map hub index ranks NSW highly', () => {
+    const ns = createAgent23NsFixture();
+    const hubs = nrDashTopMapHubs(ns, 3);
+    return hubs.length === 3 && nrDashBuildMapHubIndex(ns).length >= 8 && nrDashPrimaryMapHub(ns) != null;
+  });
+
+  check('a23_link_stress', 'Link stress enriches adjacency and dependency links', () => {
+    const ns = createAgent23NsFixture();
+    const merged = nrDashMergeMapLinks(
+      nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
+      nrDashBuildDependencyLinks(ns, AGENT23_REGION_MAP_LAYOUT)
+    );
+    const stressed = nrDashEnrichMapLinkStress(merged, ns);
+    const hot = nrDashHottestMapLinkStress(stressed);
+    return (
+      stressed.every(l => l.stressLevel != null && l.stressLevel >= 0 && l.stressLevel <= 1) &&
+      Boolean(hot && (hot.stressLevel ?? 0) > 0)
+    );
   });
 
   return results;
