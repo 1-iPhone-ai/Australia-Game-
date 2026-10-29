@@ -121,6 +121,8 @@ import { buildAgent17OversightIndex } from './oversight-index.ts';
 import { buildAgent17OverseerAccord } from './overseer-accord.ts';
 import { buildAgent17WardenshipIndex } from './wardenship-index.ts';
 import { buildAgent17WardenAccord } from './warden-accord.ts';
+import { buildAgent17SentinelshipIndex } from './sentinelship-index.ts';
+import { buildAgent17SentinelAccord } from './sentinel-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -715,6 +717,8 @@ export function buildAgent17PlanningDepthSnapshot(
     overseerAccord,
     oversightIndex,
   });
+  const sentinelshipIndex = buildAgent17SentinelshipIndex({ wardenAccord, wardenshipIndex });
+  const sentinelAccord = buildAgent17SentinelAccord({ sentinelshipIndex, wardenAccord, wardenshipIndex });
   return {
     ...core,
     intentQueue,
@@ -818,6 +822,8 @@ export function buildAgent17PlanningDepthSnapshot(
     overseerAccord,
     wardenshipIndex,
     wardenAccord,
+    sentinelshipIndex,
+    sentinelAccord,
   };
 }
 
