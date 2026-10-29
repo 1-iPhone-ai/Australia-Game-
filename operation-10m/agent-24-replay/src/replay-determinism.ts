@@ -197,6 +197,18 @@ import {
   buildAgent24ReplayScaleWaveDryrunHandoffReport,
   type Agent24ReplayScaleWaveDryrunHandoffReport,
 } from './replay-scale-wave-dryrun-handoff.ts';
+import {
+  buildAgent24ReplayScaleWaveDryrunVerificationReport,
+  type Agent24ReplayScaleWaveDryrunVerificationReport,
+} from './replay-scale-wave-dryrun-verification.ts';
+import {
+  buildAgent24ArchiveScaleWaveFullChunksGateReport,
+  type Agent24ArchiveScaleWaveFullChunksGateReport,
+} from './archive-scale-wave-full-chunks-gate.ts';
+import {
+  buildAgent24ReplayScaleWaveFullChunksHandoffSeal,
+  type Agent24ReplayScaleWaveFullChunksHandoffSeal,
+} from './replay-scale-wave-full-chunks-handoff.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -265,6 +277,9 @@ export interface Agent24ReplayDeterminismBundle {
   replayScaleWaveProjectionVerification: Agent24ReplayScaleWaveProjectionVerificationReport;
   archiveScaleWavePostProjectionGate: Agent24ArchiveScaleWavePostProjectionGateReport;
   replayScaleWaveDryrunHandoff: Agent24ReplayScaleWaveDryrunHandoffReport;
+  replayScaleWaveDryrunVerification: Agent24ReplayScaleWaveDryrunVerificationReport;
+  archiveScaleWaveFullChunksGate: Agent24ArchiveScaleWaveFullChunksGateReport;
+  replayScaleWaveFullChunksHandoffSeal: Agent24ReplayScaleWaveFullChunksHandoffSeal;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -679,7 +694,7 @@ export function buildAgent24ReplayDeterminismBundle(
   });
   const replayScaleWaveAcceptance = buildAgent24ReplayScaleWaveAcceptanceReport({
     matchId: input.matchId,
-    waveRound: 21,
+    waveRound: 22,
     archiveContinuityVerification,
     exportReadiness: exportReadinessFinal,
     analyticsDepth,
@@ -778,6 +793,23 @@ export function buildAgent24ReplayDeterminismBundle(
     archiveScaleWavePostProjectionGate,
     replayScaleWaveProjectionVerification,
   });
+  const replayScaleWaveDryrunVerification = buildAgent24ReplayScaleWaveDryrunVerificationReport({
+    matchId: input.matchId,
+    replayScaleWaveDryrunHandoff,
+    replayScaleWaveProjectionVerification,
+    archiveScaleWavePostProjectionGate,
+  });
+  const archiveScaleWaveFullChunksGate = buildAgent24ArchiveScaleWaveFullChunksGateReport({
+    matchId: input.matchId,
+    replayScaleWaveDryrunVerification,
+    exportManifest,
+    importValidation,
+  });
+  const replayScaleWaveFullChunksHandoffSeal = buildAgent24ReplayScaleWaveFullChunksHandoffSeal({
+    matchId: input.matchId,
+    archiveScaleWaveFullChunksGate,
+    replayScaleWaveDryrunVerification,
+  });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
@@ -844,6 +876,9 @@ export function buildAgent24ReplayDeterminismBundle(
     replayScaleWaveProjectionVerification: replayScaleWaveProjectionVerification.deterministicFingerprint,
     archiveScaleWavePostProjectionGate: archiveScaleWavePostProjectionGate.deterministicFingerprint,
     replayScaleWaveDryrunHandoff: replayScaleWaveDryrunHandoff.deterministicFingerprint,
+    replayScaleWaveDryrunVerification: replayScaleWaveDryrunVerification.deterministicFingerprint,
+    archiveScaleWaveFullChunksGate: archiveScaleWaveFullChunksGate.deterministicFingerprint,
+    replayScaleWaveFullChunksHandoffSeal: replayScaleWaveFullChunksHandoffSeal.deterministicFingerprint,
   });
 
   return {
@@ -905,6 +940,9 @@ export function buildAgent24ReplayDeterminismBundle(
     replayScaleWaveProjectionVerification,
     archiveScaleWavePostProjectionGate,
     replayScaleWaveDryrunHandoff,
+    replayScaleWaveDryrunVerification,
+    archiveScaleWaveFullChunksGate,
+    replayScaleWaveFullChunksHandoffSeal,
     attestation: attestationFinal,
     compositeFingerprint,
   };
@@ -1270,6 +1308,27 @@ export function verifyAgent24ReplayDeterminism(
         a.replayScaleWaveDryrunHandoff.deterministicFingerprint ===
         b.replayScaleWaveDryrunHandoff.deterministicFingerprint,
       detail: 'Twin replay scale wave dryrun handoff fingerprints',
+    },
+    {
+      name: 'replay_scale_wave_dryrun_verification_twin',
+      passed:
+        a.replayScaleWaveDryrunVerification.deterministicFingerprint ===
+        b.replayScaleWaveDryrunVerification.deterministicFingerprint,
+      detail: 'Twin replay scale wave dryrun verification fingerprints',
+    },
+    {
+      name: 'archive_scale_wave_full_chunks_gate_twin',
+      passed:
+        a.archiveScaleWaveFullChunksGate.deterministicFingerprint ===
+        b.archiveScaleWaveFullChunksGate.deterministicFingerprint,
+      detail: 'Twin archive scale wave full chunks gate fingerprints',
+    },
+    {
+      name: 'replay_scale_wave_full_chunks_handoff_twin',
+      passed:
+        a.replayScaleWaveFullChunksHandoffSeal.deterministicFingerprint ===
+        b.replayScaleWaveFullChunksHandoffSeal.deterministicFingerprint,
+      detail: 'Twin replay scale wave full chunks handoff fingerprints',
     },
     {
       name: 'composite_twin',

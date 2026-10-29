@@ -192,7 +192,7 @@ import {
 import {
   buildAgent24ReplayScaleWaveIntegrationCloseoutReport,
   runAgent24ReplayScaleWaveIntegrationCloseoutSelfTests,
-  O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA,
 } from '../src/replay-scale-wave-integration-closeout.ts';
 import {
   buildAgent24ReplayScaleWaveIntegrationVerificationReport,
@@ -217,8 +217,19 @@ import {
 import {
   buildAgent24ReplayScaleWaveDryrunHandoffReport,
   runAgent24ReplayScaleWaveDryrunHandoffSelfTests,
-  O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA as O6K_AGENT24_WAVE21_DRYRUN_SHA,
 } from '../src/replay-scale-wave-dryrun-handoff.ts';
+import {
+  buildAgent24ReplayScaleWaveDryrunVerificationReport,
+  runAgent24ReplayScaleWaveDryrunVerificationSelfTests,
+} from '../src/replay-scale-wave-dryrun-verification.ts';
+import {
+  buildAgent24ArchiveScaleWaveFullChunksGateReport,
+  runAgent24ArchiveScaleWaveFullChunksGateSelfTests,
+} from '../src/archive-scale-wave-full-chunks-gate.ts';
+import {
+  buildAgent24ReplayScaleWaveFullChunksHandoffSeal,
+  runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests,
+} from '../src/replay-scale-wave-full-chunks-handoff.ts';
 import { buildO6kHistoricalAnalyticsSnapshot } from '../src/history-replay-analytics.ts';
 import { o6kAgent24StableStringify, runO6kAgent24SelfTests } from '../src/history-replay-analytics.ts';
 
@@ -1256,13 +1267,13 @@ describe('Agent 24 archive continuity verification', () => {
 });
 
 describe('Agent 24 replay scale wave acceptance', () => {
-  it('accepts wave 21 when continuity, export, and depth align', () => {
+  it('accepts wave 22 when continuity, export, and depth align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveAcceptance.accepted, true);
-    assert.equal(bundle.replayScaleWaveAcceptance.waveRound, 21);
+    assert.equal(bundle.replayScaleWaveAcceptance.waveRound, 22);
     const direct = buildAgent24ReplayScaleWaveAcceptanceReport({
       matchId: 'm',
-      waveRound: 21,
+      waveRound: 22,
       archiveContinuityVerification: bundle.archiveContinuityVerification,
       exportReadiness: bundle.exportReadiness,
       analyticsDepth: bundle.analyticsDepth,
@@ -1306,7 +1317,7 @@ describe('Agent 24 replay scale wave handoff seal', () => {
   it('seals handoff when wave acceptance and release verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveHandoffSeal.handoffReady, true);
-    assert.equal(bundle.replayScaleWaveHandoffSeal.waveRound, 21);
+    assert.equal(bundle.replayScaleWaveHandoffSeal.waveRound, 22);
     const direct = buildAgent24ReplayScaleWaveHandoffSeal({
       matchId: 'm',
       replayScaleWaveAcceptance: bundle.replayScaleWaveAcceptance,
@@ -1322,7 +1333,7 @@ describe('Agent 24 replay scale wave closeout', () => {
   it('completes closeout when wave handoff and release verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveCloseout.closeoutComplete, true);
-    assert.equal(bundle.replayScaleWaveCloseout.waveRound, 21);
+    assert.equal(bundle.replayScaleWaveCloseout.waveRound, 22);
     const direct = buildAgent24ReplayScaleWaveCloseoutReport({
       matchId: 'm',
       replayScaleWaveAcceptance: bundle.replayScaleWaveAcceptance,
@@ -1338,7 +1349,7 @@ describe('Agent 24 replay scale wave verification', () => {
   it('verifies scale wave when closeout, handoff seal, and acceptance align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveVerification.waveRound, 21);
+    assert.equal(bundle.replayScaleWaveVerification.waveRound, 22);
     const direct = buildAgent24ReplayScaleWaveVerificationReport({
       matchId: 'm',
       replayScaleWaveCloseout: bundle.replayScaleWaveCloseout,
@@ -1354,7 +1365,7 @@ describe('Agent 24 archive scale wave finalization', () => {
   it('finalizes when verification, closeout, and release verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveFinalization.finalized, true);
-    assert.equal(bundle.archiveScaleWaveFinalization.waveRound, 21);
+    assert.equal(bundle.archiveScaleWaveFinalization.waveRound, 22);
     const direct = buildAgent24ArchiveScaleWaveFinalizationReport({
       matchId: 'm',
       replayScaleWaveVerification: bundle.replayScaleWaveVerification,
@@ -1370,7 +1381,7 @@ describe('Agent 24 replay scale wave attestation', () => {
   it('attests verified scale wave when finalization stack is ready', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveAttestation.status, 'verified');
-    assert.equal(bundle.replayScaleWaveAttestation.waveRound, 21);
+    assert.equal(bundle.replayScaleWaveAttestation.waveRound, 22);
     const direct = buildAgent24ReplayScaleWaveAttestation({
       matchId: 'm',
       replayScaleWaveVerification: bundle.replayScaleWaveVerification,
@@ -1386,7 +1397,7 @@ describe('Agent 24 replay scale wave attestation verification', () => {
   it('verifies attestation when wave stack and finalization align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveAttestationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveAttestationVerification.waveRound, 21);
+    assert.equal(bundle.replayScaleWaveAttestationVerification.waveRound, 22);
     const direct = buildAgent24ReplayScaleWaveAttestationVerificationReport({
       matchId: 'm',
       replayScaleWaveAttestation: bundle.replayScaleWaveAttestation,
@@ -1405,7 +1416,7 @@ describe('Agent 24 archive scale wave release handoff gate', () => {
   it('allows handoff when attestation verification and release verification align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveReleaseHandoffGate.handoffAllowed, true);
-    assert.equal(bundle.archiveScaleWaveReleaseHandoffGate.waveRound, 21);
+    assert.equal(bundle.archiveScaleWaveReleaseHandoffGate.waveRound, 22);
     const direct = buildAgent24ArchiveScaleWaveReleaseHandoffGateReport({
       matchId: 'm',
       replayScaleWaveAttestationVerification: bundle.replayScaleWaveAttestationVerification,
@@ -1421,11 +1432,11 @@ describe('Agent 24 archive scale wave release handoff gate', () => {
 });
 
 describe('Agent 24 replay scale wave integration closeout', () => {
-  it('completes integration closeout at O10-171 baseline', () => {
+  it('completes integration closeout at O10-174 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveIntegrationCloseout.closeoutComplete, true);
-    assert.equal(bundle.replayScaleWaveIntegrationCloseout.waveRound, 21);
-    assert.equal(bundle.replayScaleWaveIntegrationCloseout.integrationBaselineSha, O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA);
+    assert.equal(bundle.replayScaleWaveIntegrationCloseout.waveRound, 22);
+    assert.equal(bundle.replayScaleWaveIntegrationCloseout.integrationBaselineSha, O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA);
     const direct = buildAgent24ReplayScaleWaveIntegrationCloseoutReport({
       matchId: 'm',
       archiveScaleWaveReleaseHandoffGate: bundle.archiveScaleWaveReleaseHandoffGate,
@@ -1444,8 +1455,8 @@ describe('Agent 24 replay scale wave integration verification', () => {
   it('verifies integration when closeout, attestation verification, and handoff align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveIntegrationVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveIntegrationVerification.waveRound, 21);
-    assert.equal(bundle.replayScaleWaveIntegrationVerification.integrationBaselineSha, O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA);
+    assert.equal(bundle.replayScaleWaveIntegrationVerification.waveRound, 22);
+    assert.equal(bundle.replayScaleWaveIntegrationVerification.integrationBaselineSha, O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA);
     const direct = buildAgent24ReplayScaleWaveIntegrationVerificationReport({
       matchId: 'm',
       replayScaleWaveIntegrationCloseout: bundle.replayScaleWaveIntegrationCloseout,
@@ -1464,7 +1475,7 @@ describe('Agent 24 archive scale wave export gate', () => {
   it('allows export when integration verified and export readiness align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWaveExportGate.exportAllowed, true);
-    assert.equal(bundle.archiveScaleWaveExportGate.waveRound, 21);
+    assert.equal(bundle.archiveScaleWaveExportGate.waveRound, 22);
     const direct = buildAgent24ArchiveScaleWaveExportGateReport({
       matchId: 'm',
       replayScaleWaveIntegrationVerification: bundle.replayScaleWaveIntegrationVerification,
@@ -1477,11 +1488,11 @@ describe('Agent 24 archive scale wave export gate', () => {
 });
 
 describe('Agent 24 replay scale wave projection handoff', () => {
-  it('seals projection handoff at O10-171 baseline', () => {
+  it('seals projection handoff at O10-174 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveProjectionHandoffSeal.handoffReady, true);
-    assert.equal(bundle.replayScaleWaveProjectionHandoffSeal.waveRound, 21);
-    assert.equal(bundle.replayScaleWaveProjectionHandoffSeal.projectionBaselineSha, O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA);
+    assert.equal(bundle.replayScaleWaveProjectionHandoffSeal.waveRound, 22);
+    assert.equal(bundle.replayScaleWaveProjectionHandoffSeal.projectionBaselineSha, O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA);
     const direct = buildAgent24ReplayScaleWaveProjectionHandoffSeal({
       matchId: 'm',
       archiveScaleWaveExportGate: bundle.archiveScaleWaveExportGate,
@@ -1499,8 +1510,8 @@ describe('Agent 24 replay scale wave projection verification', () => {
   it('verifies projection when handoff, integration, and export gate align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveProjectionVerification.verified, true);
-    assert.equal(bundle.replayScaleWaveProjectionVerification.waveRound, 21);
-    assert.equal(bundle.replayScaleWaveProjectionVerification.projectionBaselineSha, O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA);
+    assert.equal(bundle.replayScaleWaveProjectionVerification.waveRound, 22);
+    assert.equal(bundle.replayScaleWaveProjectionVerification.projectionBaselineSha, O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA);
     const direct = buildAgent24ReplayScaleWaveProjectionVerificationReport({
       matchId: 'm',
       replayScaleWaveProjectionHandoffSeal: bundle.replayScaleWaveProjectionHandoffSeal,
@@ -1519,7 +1530,7 @@ describe('Agent 24 archive scale wave post projection gate', () => {
   it('opens gate when projection verified and transfer or export paths align', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.archiveScaleWavePostProjectionGate.gateOpen, true);
-    assert.equal(bundle.archiveScaleWavePostProjectionGate.waveRound, 21);
+    assert.equal(bundle.archiveScaleWavePostProjectionGate.waveRound, 22);
     const direct = buildAgent24ArchiveScaleWavePostProjectionGateReport({
       matchId: 'm',
       replayScaleWaveProjectionVerification: bundle.replayScaleWaveProjectionVerification,
@@ -1535,11 +1546,11 @@ describe('Agent 24 archive scale wave post projection gate', () => {
 });
 
 describe('Agent 24 replay scale wave dryrun handoff', () => {
-  it('completes dryrun handoff at O10-171 baseline', () => {
+  it('completes dryrun handoff at O10-174 baseline', () => {
     const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
     assert.equal(bundle.replayScaleWaveDryrunHandoff.handoffComplete, true);
-    assert.equal(bundle.replayScaleWaveDryrunHandoff.waveRound, 21);
-    assert.equal(bundle.replayScaleWaveDryrunHandoff.dryrunBaselineSha, O6K_AGENT24_WAVE21_DRYRUN_SHA);
+    assert.equal(bundle.replayScaleWaveDryrunHandoff.waveRound, 22);
+    assert.equal(bundle.replayScaleWaveDryrunHandoff.dryrunBaselineSha, O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA);
     const direct = buildAgent24ReplayScaleWaveDryrunHandoffReport({
       matchId: 'm',
       archiveScaleWavePostProjectionGate: bundle.archiveScaleWavePostProjectionGate,
@@ -1547,6 +1558,58 @@ describe('Agent 24 replay scale wave dryrun handoff', () => {
     });
     assert.equal(direct.deterministicFingerprint, bundle.replayScaleWaveDryrunHandoff.deterministicFingerprint);
     assert.ok(runAgent24ReplayScaleWaveDryrunHandoffSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 replay scale wave dryrun verification', () => {
+  it('verifies dryrun when handoff, projection, and post-projection gate align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.replayScaleWaveDryrunVerification.verified, true);
+    assert.equal(bundle.replayScaleWaveDryrunVerification.waveRound, 22);
+    assert.equal(bundle.replayScaleWaveDryrunVerification.dryrunBaselineSha, O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA);
+    const direct = buildAgent24ReplayScaleWaveDryrunVerificationReport({
+      matchId: 'm',
+      replayScaleWaveDryrunHandoff: bundle.replayScaleWaveDryrunHandoff,
+      replayScaleWaveProjectionVerification: bundle.replayScaleWaveProjectionVerification,
+      archiveScaleWavePostProjectionGate: bundle.archiveScaleWavePostProjectionGate,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.replayScaleWaveDryrunVerification.deterministicFingerprint);
+    assert.ok(runAgent24ReplayScaleWaveDryrunVerificationSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 archive scale wave full chunks gate', () => {
+  it('opens full-chunks gate when dryrun verified and manifest/import align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.archiveScaleWaveFullChunksGate.chunksGateOpen, true);
+    assert.equal(bundle.archiveScaleWaveFullChunksGate.waveRound, 22);
+    const direct = buildAgent24ArchiveScaleWaveFullChunksGateReport({
+      matchId: 'm',
+      replayScaleWaveDryrunVerification: bundle.replayScaleWaveDryrunVerification,
+      exportManifest: bundle.exportManifest,
+      importValidation: bundle.importValidation,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.archiveScaleWaveFullChunksGate.deterministicFingerprint);
+    assert.ok(runAgent24ArchiveScaleWaveFullChunksGateSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 replay scale wave full chunks handoff', () => {
+  it('seals full-chunks handoff at wave 22 baseline', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.replayScaleWaveFullChunksHandoffSeal.handoffReady, true);
+    assert.equal(bundle.replayScaleWaveFullChunksHandoffSeal.waveRound, 22);
+    assert.equal(bundle.replayScaleWaveFullChunksHandoffSeal.fullChunksBaselineSha, O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA);
+    const direct = buildAgent24ReplayScaleWaveFullChunksHandoffSeal({
+      matchId: 'm',
+      archiveScaleWaveFullChunksGate: bundle.archiveScaleWaveFullChunksGate,
+      replayScaleWaveDryrunVerification: bundle.replayScaleWaveDryrunVerification,
+    });
+    assert.equal(
+      direct.deterministicFingerprint,
+      bundle.replayScaleWaveFullChunksHandoffSeal.deterministicFingerprint,
+    );
+    assert.ok(runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests().every(t => t.passed));
   });
 });
 

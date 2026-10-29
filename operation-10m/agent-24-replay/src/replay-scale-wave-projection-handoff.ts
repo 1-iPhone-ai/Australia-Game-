@@ -5,6 +5,7 @@ import {
   O6K_AGENT24_WAVE19_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA,
 } from './replay-scale-wave-integration-closeout.ts';
 
 export { O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA } from './replay-scale-wave-integration-closeout.ts';
@@ -42,11 +43,13 @@ export function buildAgent24ReplayScaleWaveProjectionHandoffSeal(
   const waveRound = input.replayScaleWaveIntegrationVerification.waveRound;
   const projectionBaselineSha =
     input.projectionBaselineSha ??
-    (waveRound >= 21
-      ? O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA
-      : waveRound >= 20
-        ? O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA
-        : O6K_AGENT24_WAVE19_INTEGRATION_BASELINE_SHA);
+    (waveRound >= 22
+      ? O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA
+      : waveRound >= 21
+        ? O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA
+        : waveRound >= 20
+          ? O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA
+          : O6K_AGENT24_WAVE19_INTEGRATION_BASELINE_SHA);
   const baselineMatches =
     input.replayScaleWaveIntegrationVerification.integrationBaselineSha === projectionBaselineSha;
 
@@ -117,8 +120,8 @@ export function runAgent24ReplayScaleWaveProjectionHandoffSealSelfTests(): Array
   const integrationVerification = {
     reportId: 'iv',
     matchId: 'self',
-    waveRound: 21,
-    integrationBaselineSha: O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA,
+    waveRound: 22,
+    integrationBaselineSha: O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -129,7 +132,7 @@ export function runAgent24ReplayScaleWaveProjectionHandoffSealSelfTests(): Array
   const exportGate = {
     reportId: 'eg',
     matchId: 'self',
-    waveRound: 21,
+    waveRound: 22,
     exportAllowed: true,
     blockerCount: 0,
     blockers: [],
@@ -148,9 +151,9 @@ export function runAgent24ReplayScaleWaveProjectionHandoffSealSelfTests(): Array
       name: 'handoff_ready_at_projection_baseline',
       passed:
         seal.handoffReady &&
-        seal.projectionBaselineSha === O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA,
+        seal.projectionBaselineSha === O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: seal.waveRound === 21 },
+    { name: 'wave_round_pinned', passed: seal.waveRound === 22 },
     {
       name: 'deterministic_fingerprint',
       passed:
