@@ -2759,6 +2759,62 @@ export function buildGuardianDepthEntrustmentReport(snapshot: GuardianCoPilotMon
   return lines.slice(0, 3);
 }
 
+export function computeAssignmentStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceVimScore < 50) load += Math.min(25, 50 - snapshot.governanceVimScore);
+  if (snapshot.governanceVimScore < 35) load += 10;
+  if (snapshot.entrustmentIntegrityScore < 45) load += 20;
+  if (snapshot.entrustmentIntegrityScore < 35) load += 10;
+  if (snapshot.entrustmentStrainIndex >= 55) load += 20;
+  if (snapshot.entrustmentStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeAssignmentIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.assignmentStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.assignmentStrainIndex * 0.35));
+  if (snapshot.entrustmentIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.entrustmentIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceVimScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceVivacityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.assignmentStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.assignmentStrainIndex * 0.32));
+  if (snapshot.assignmentIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.assignmentIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceVimScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthAssignmentReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.assignmentStrainIndex >= 55) {
+    lines.push(
+      `Assignment strain ${snapshot.assignmentStrainIndex} — stacked assignment review may exceed operator assignment capacity`
+    );
+  }
+  if (snapshot.assignmentIntegrityScore < 45) {
+    lines.push(
+      `Assignment integrity ${snapshot.assignmentIntegrityScore} — align Co-Pilot assignments with Guardian assignment posture`
+    );
+  }
+  if (snapshot.governanceVivacityScore < 40) {
+    lines.push(
+      `Governance vivacity ${snapshot.governanceVivacityScore} — little vivacity to sustain assignment oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -3283,9 +3339,23 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withEntrustmentStrain: GuardianCoPilotMonitorSnapshot = { ...withGusto, entrustmentStrainIndex };
   const entrustmentIntegrityScore = computeEntrustmentIntegrityScore(withEntrustmentStrain);
   const withEntrustment: GuardianCoPilotMonitorSnapshot = { ...withEntrustmentStrain, entrustmentIntegrityScore };
-  return {
+  const withVim: GuardianCoPilotMonitorSnapshot = {
     ...withEntrustment,
     governanceVimScore: computeGovernanceVimScore(withEntrustment),
+  };
+  const withAssignmentSeed: GuardianCoPilotMonitorSnapshot = {
+    ...withVim,
+    assignmentStrainIndex: 0,
+    assignmentIntegrityScore: 100,
+    governanceVivacityScore: 100,
+  };
+  const assignmentStrainIndex = computeAssignmentStrainIndex(withAssignmentSeed);
+  const withAssignmentStrain: GuardianCoPilotMonitorSnapshot = { ...withAssignmentSeed, assignmentStrainIndex };
+  const assignmentIntegrityScore = computeAssignmentIntegrityScore(withAssignmentStrain);
+  const withAssignment: GuardianCoPilotMonitorSnapshot = { ...withAssignmentStrain, assignmentIntegrityScore };
+  return {
+    ...withAssignment,
+    governanceVivacityScore: computeGovernanceVivacityScore(withAssignment),
   };
 }
 
@@ -4934,6 +5004,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceVimScore(snap) < 35;
+  });
+  ok('gd_assignment_strain', () => {
+    const snap = {
+      governanceVimScore: 30,
+      entrustmentIntegrityScore: 32,
+      entrustmentStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAssignmentStrainIndex(snap) >= 70;
+  });
+  ok('gd_assignment_integrity', () => {
+    const snap = {
+      assignmentStrainIndex: 72,
+      entrustmentIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governanceVimScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAssignmentIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_vivacity', () => {
+    const snap = {
+      assignmentStrainIndex: 78,
+      assignmentIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceVimScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceVivacityScore(snap) < 35;
   });
   return out;
 }
