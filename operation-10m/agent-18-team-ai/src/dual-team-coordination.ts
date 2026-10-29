@@ -47,6 +47,9 @@ import { combineDualTeamPersistenceGradientFriction } from './persistence-gradie
 import { combineDualTeamStackMismatchCoupling } from './stack-mismatch-coupling-index.ts';
 import { combineDualTeamAuditStackAmplification } from './audit-stack-amplification-index.ts';
 import { combineDualTeamFrictionAlignmentGap } from './friction-alignment-gap-index.ts';
+import { combineDualTeamCouplingAmplificationFusion } from './coupling-amplification-fusion-index.ts';
+import { combineDualTeamGapChurnResonance } from './gap-churn-resonance-index.ts';
+import { combineDualTeamStackFrictionConvergence } from './stack-friction-convergence-index.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -111,6 +114,9 @@ export interface DualTeamMultiAgentResult {
   stackMismatchCouplingCombined: number;
   auditStackAmplificationCombined: number;
   frictionAlignmentGapCombined: number;
+  couplingAmplificationFusionCombined: number;
+  gapChurnResonanceCombined: number;
+  stackFrictionConvergenceCombined: number;
 }
 
 /**
@@ -191,6 +197,9 @@ export function evaluateDualTeamMultiAgentLayers(
       stackMismatchCouplingCombined: friendly.state.meta.stackMismatchCouplingIndex ?? 0,
       auditStackAmplificationCombined: friendly.state.meta.auditStackAmplificationIndex ?? 0,
       frictionAlignmentGapCombined: friendly.state.meta.frictionAlignmentGapIndex ?? 0,
+      couplingAmplificationFusionCombined: friendly.state.meta.couplingAmplificationFusionIndex ?? 0,
+      gapChurnResonanceCombined: friendly.state.meta.gapChurnResonanceIndex ?? 0,
+      stackFrictionConvergenceCombined: friendly.state.meta.stackFrictionConvergenceIndex ?? 0,
     };
   }
 
@@ -462,6 +471,18 @@ export function evaluateDualTeamMultiAgentLayers(
     frictionAlignmentGapCombined: combineDualTeamFrictionAlignmentGap(
       friendly.state.meta.frictionAlignmentGapIndex ?? 0,
       enemy.state.meta.frictionAlignmentGapIndex ?? 0,
+    ),
+    couplingAmplificationFusionCombined: combineDualTeamCouplingAmplificationFusion(
+      friendly.state.meta.couplingAmplificationFusionIndex ?? 0,
+      enemy.state.meta.couplingAmplificationFusionIndex ?? 0,
+    ),
+    gapChurnResonanceCombined: combineDualTeamGapChurnResonance(
+      friendly.state.meta.gapChurnResonanceIndex ?? 0,
+      enemy.state.meta.gapChurnResonanceIndex ?? 0,
+    ),
+    stackFrictionConvergenceCombined: combineDualTeamStackFrictionConvergence(
+      friendly.state.meta.stackFrictionConvergenceIndex ?? 0,
+      enemy.state.meta.stackFrictionConvergenceIndex ?? 0,
     ),
   };
 }

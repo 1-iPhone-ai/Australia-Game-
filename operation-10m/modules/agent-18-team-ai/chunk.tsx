@@ -313,6 +313,9 @@ export interface TeamMultiAgentCoordinationMeta {
   stackMismatchCouplingIndex?: number;
   auditStackAmplificationIndex?: number;
   frictionAlignmentGapIndex?: number;
+  couplingAmplificationFusionIndex?: number;
+  gapChurnResonanceIndex?: number;
+  stackFrictionConvergenceIndex?: number;
 }
 
 export const AGENT18_LIMITS = {
@@ -4212,6 +4215,137 @@ export function combineDualTeamFrictionAlignmentGap(friendly: number, enemy: num
 }
 
 
+// --- source: coupling-amplification-fusion-index.ts ---
+export interface CouplingAmplificationFusionReport {
+  fusionIndex: number;
+  notes: string[];
+}
+
+/**
+ * Stack–mismatch coupling fused with audit–stack amplification pressure.
+ */
+export function computeCouplingAmplificationFusionIndex(
+  stackMismatchCouplingIndex: number,
+  auditStackAmplificationIndex: number,
+  auditPressureIndex: number,
+): CouplingAmplificationFusionReport {
+  const notes: string[] = [];
+  if (stackMismatchCouplingIndex >= 44 && auditStackAmplificationIndex >= 42) {
+    notes.push('Stack coupling and audit amplification both elevated');
+  }
+  if (auditPressureIndex >= 40 && stackMismatchCouplingIndex >= 46) {
+    notes.push('Audit pressure reinforcing coupling–amplification fusion');
+  }
+
+  const fusionIndex = Math.round(
+    Math.min(
+      100,
+      stackMismatchCouplingIndex * 0.36 +
+        auditStackAmplificationIndex * 0.38 +
+        auditPressureIndex * 0.18 +
+        (stackMismatchCouplingIndex >= 48 && auditStackAmplificationIndex >= 44 ? 14 : 0),
+    ),
+  );
+
+  return { fusionIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamCouplingAmplificationFusion(
+  friendly: number,
+  enemy: number | null,
+): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: gap-churn-resonance-index.ts ---
+export interface GapChurnResonanceReport {
+  resonanceIndex: number;
+  notes: string[];
+}
+
+/**
+ * Friction–alignment gap resonating with persistence churn spikes.
+ */
+export function computeGapChurnResonanceIndex(
+  frictionAlignmentGapIndex: number,
+  persistenceChurnIndex: number,
+  persistenceGradientFrictionIndex: number,
+): GapChurnResonanceReport {
+  const notes: string[] = [];
+  if (frictionAlignmentGapIndex >= 42 && persistenceChurnIndex >= 38) {
+    notes.push('Alignment gap and persistence churn both elevated');
+  }
+  if (persistenceGradientFrictionIndex >= 44 && frictionAlignmentGapIndex >= 44) {
+    notes.push('Gradient friction reinforcing gap–churn resonance');
+  }
+
+  const resonanceIndex = Math.round(
+    Math.min(
+      100,
+      frictionAlignmentGapIndex * 0.37 +
+        persistenceChurnIndex * 0.35 +
+        persistenceGradientFrictionIndex * 0.2 +
+        (frictionAlignmentGapIndex >= 46 && persistenceChurnIndex >= 40 ? 15 : 0),
+    ),
+  );
+
+  return { resonanceIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamGapChurnResonance(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: stack-friction-convergence-index.ts ---
+export interface StackFrictionConvergenceReport {
+  convergenceIndex: number;
+  notes: string[];
+}
+
+/**
+ * Stack–mismatch coupling converging with friction–alignment gap under weak composite health.
+ */
+export function computeStackFrictionConvergenceIndex(
+  stackMismatchCouplingIndex: number,
+  frictionAlignmentGapIndex: number,
+  coordinationCompositeScore: number,
+): StackFrictionConvergenceReport {
+  const notes: string[] = [];
+  const weakComposite = coordinationCompositeScore < 55;
+  if (stackMismatchCouplingIndex >= 42 && frictionAlignmentGapIndex >= 42) {
+    notes.push('Stack coupling and friction gap both elevated');
+  }
+  if (weakComposite && frictionAlignmentGapIndex >= 44) {
+    notes.push('Friction gap under depressed coordination composite');
+  }
+
+  const compositePenalty = weakComposite ? Math.max(0, 60 - coordinationCompositeScore) * 0.4 : 0;
+  const convergenceIndex = Math.round(
+    Math.min(
+      100,
+      stackMismatchCouplingIndex * 0.35 +
+        frictionAlignmentGapIndex * 0.36 +
+        compositePenalty +
+        (weakComposite && stackMismatchCouplingIndex >= 46 ? 14 : 0),
+    ),
+  );
+
+  return { convergenceIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamStackFrictionConvergence(
+  friendly: number,
+  enemy: number | null,
+): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
 // --- source: coordination-audit.ts ---
   AGENT18_LIMITS,
   CoordinationAuditFinding,
@@ -4902,6 +5036,42 @@ export function auditTeamMultiAgentLayer(
     });
   }
 
+  if (
+    typeof state.meta.couplingAmplificationFusionIndex === 'number' &&
+    state.meta.couplingAmplificationFusionIndex >= 48
+  ) {
+    push({
+      severity: 'warning',
+      message: `Coupling–amplification fusion (${state.meta.couplingAmplificationFusionIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.gapChurnResonanceIndex === 'number' &&
+    state.meta.gapChurnResonanceIndex >= 47
+  ) {
+    push({
+      severity: 'warning',
+      message: `Gap–churn resonance (${state.meta.gapChurnResonanceIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.stackFrictionConvergenceIndex === 'number' &&
+    state.meta.stackFrictionConvergenceIndex >= 46
+  ) {
+    push({
+      severity: 'warning',
+      message: `Stack–friction convergence (${state.meta.stackFrictionConvergenceIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
   state.coordination.leases.forEach(lease => {
     if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
       push({
@@ -5445,6 +5615,18 @@ export function sanitizeTeamMultiAgentCoordinationState(
         typeof metaRaw.frictionAlignmentGapIndex === 'number'
           ? metaRaw.frictionAlignmentGapIndex
           : undefined,
+      couplingAmplificationFusionIndex:
+        typeof metaRaw.couplingAmplificationFusionIndex === 'number'
+          ? metaRaw.couplingAmplificationFusionIndex
+          : undefined,
+      gapChurnResonanceIndex:
+        typeof metaRaw.gapChurnResonanceIndex === 'number'
+          ? metaRaw.gapChurnResonanceIndex
+          : undefined,
+      stackFrictionConvergenceIndex:
+        typeof metaRaw.stackFrictionConvergenceIndex === 'number'
+          ? metaRaw.stackFrictionConvergenceIndex
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -5878,6 +6060,12 @@ export function evaluateTeamMultiAgentLayer(
     gradientAuditTension.tensionIndex,
   );
   auditStackAmplification.notes.forEach(n => diagnostics.push(n));
+  const couplingAmplificationFusion = computeCouplingAmplificationFusionIndex(
+    stackMismatchCoupling.couplingIndex,
+    auditStackAmplification.amplificationIndex,
+    state.meta.auditPressureIndex ?? 0,
+  );
+  couplingAmplificationFusion.notes.forEach(n => diagnostics.push(n));
   state = {
     ...state,
     meta: {
@@ -5887,6 +6075,7 @@ export function evaluateTeamMultiAgentLayer(
       recoveryCascadeMismatchIndex: recoveryCascadeMismatch.mismatchIndex,
       stackMismatchCouplingIndex: stackMismatchCoupling.couplingIndex,
       auditStackAmplificationIndex: auditStackAmplification.amplificationIndex,
+      couplingAmplificationFusionIndex: couplingAmplificationFusion.fusionIndex,
     },
   };
   state = { ...state, diagnostics };
@@ -5930,12 +6119,26 @@ export function evaluateTeamMultiAgentLayer(
     persistenceChurn.churnIndex,
   );
   frictionAlignmentGap.notes.forEach(n => diagnostics.push(n));
+  const gapChurnResonance = computeGapChurnResonanceIndex(
+    frictionAlignmentGap.gapIndex,
+    persistenceChurn.churnIndex,
+    persistenceGradientFriction.frictionIndex,
+  );
+  gapChurnResonance.notes.forEach(n => diagnostics.push(n));
+  const stackFrictionConvergence = computeStackFrictionConvergenceIndex(
+    stackMismatchCoupling.couplingIndex,
+    frictionAlignmentGap.gapIndex,
+    state.meta.coordinationCompositeScore ?? 100,
+  );
+  stackFrictionConvergence.notes.forEach(n => diagnostics.push(n));
   state = {
     ...state,
     diagnostics,
     meta: {
       ...state.meta,
       frictionAlignmentGapIndex: frictionAlignmentGap.gapIndex,
+      gapChurnResonanceIndex: gapChurnResonance.resonanceIndex,
+      stackFrictionConvergenceIndex: stackFrictionConvergence.convergenceIndex,
     },
   };
 
@@ -6020,6 +6223,9 @@ export interface DualTeamMultiAgentResult {
   stackMismatchCouplingCombined: number;
   auditStackAmplificationCombined: number;
   frictionAlignmentGapCombined: number;
+  couplingAmplificationFusionCombined: number;
+  gapChurnResonanceCombined: number;
+  stackFrictionConvergenceCombined: number;
 }
 
 /**
@@ -6100,6 +6306,9 @@ export function evaluateDualTeamMultiAgentLayers(
       stackMismatchCouplingCombined: friendly.state.meta.stackMismatchCouplingIndex ?? 0,
       auditStackAmplificationCombined: friendly.state.meta.auditStackAmplificationIndex ?? 0,
       frictionAlignmentGapCombined: friendly.state.meta.frictionAlignmentGapIndex ?? 0,
+      couplingAmplificationFusionCombined: friendly.state.meta.couplingAmplificationFusionIndex ?? 0,
+      gapChurnResonanceCombined: friendly.state.meta.gapChurnResonanceIndex ?? 0,
+      stackFrictionConvergenceCombined: friendly.state.meta.stackFrictionConvergenceIndex ?? 0,
     };
   }
 
@@ -6371,6 +6580,18 @@ export function evaluateDualTeamMultiAgentLayers(
     frictionAlignmentGapCombined: combineDualTeamFrictionAlignmentGap(
       friendly.state.meta.frictionAlignmentGapIndex ?? 0,
       enemy.state.meta.frictionAlignmentGapIndex ?? 0,
+    ),
+    couplingAmplificationFusionCombined: combineDualTeamCouplingAmplificationFusion(
+      friendly.state.meta.couplingAmplificationFusionIndex ?? 0,
+      enemy.state.meta.couplingAmplificationFusionIndex ?? 0,
+    ),
+    gapChurnResonanceCombined: combineDualTeamGapChurnResonance(
+      friendly.state.meta.gapChurnResonanceIndex ?? 0,
+      enemy.state.meta.gapChurnResonanceIndex ?? 0,
+    ),
+    stackFrictionConvergenceCombined: combineDualTeamStackFrictionConvergence(
+      friendly.state.meta.stackFrictionConvergenceIndex ?? 0,
+      enemy.state.meta.stackFrictionConvergenceIndex ?? 0,
     ),
   };
 }
@@ -8741,6 +8962,56 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.stackMismatchCouplingCombined === 'number' &&
       typeof dual.auditStackAmplificationCombined === 'number' &&
       typeof dual.frictionAlignmentGapCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_coupling_amplification_fusion', 'Coupling–amplification fusion: dual elevation scores high', () => {
+    const report = computeCouplingAmplificationFusionIndex(50, 48, 42);
+    return report.fusionIndex >= 48;
+  });
+
+  check(results, 'a18_gap_churn_resonance', 'Gap–churn resonance: gap plus churn scores high', () => {
+    const report = computeGapChurnResonanceIndex(46, 42, 44);
+    return report.resonanceIndex >= 47;
+  });
+
+  check(results, 'a18_stack_friction_convergence', 'Stack–friction convergence: coupling plus gap under weak composite', () => {
+    const report = computeStackFrictionConvergenceIndex(48, 46, 48);
+    return report.convergenceIndex >= 46;
+  });
+
+  check(results, 'a18_eval_round21_meta', 'Layer: round-21 meta exposes fusion, resonance, convergence', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.couplingAmplificationFusionIndex === 'number' &&
+      typeof m.gapChurnResonanceIndex === 'number' &&
+      typeof m.stackFrictionConvergenceIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_coupling_amplification_fusion', 'Audit: coupling–amplification fusion surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, couplingAmplificationFusionIndex: 72 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /Coupling–amplification fusion/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round21_combined', 'Dual team: round-21 combined fusion, resonance, convergence exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.couplingAmplificationFusionCombined === 'number' &&
+      typeof dual.gapChurnResonanceCombined === 'number' &&
+      typeof dual.stackFrictionConvergenceCombined === 'number'
     );
   });
 

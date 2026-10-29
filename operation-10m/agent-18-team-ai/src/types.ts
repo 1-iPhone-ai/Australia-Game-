@@ -309,6 +309,9 @@ export interface TeamMultiAgentCoordinationMeta {
   stackMismatchCouplingIndex?: number;
   auditStackAmplificationIndex?: number;
   frictionAlignmentGapIndex?: number;
+  couplingAmplificationFusionIndex?: number;
+  gapChurnResonanceIndex?: number;
+  stackFrictionConvergenceIndex?: number;
 }
 
 export const AGENT18_LIMITS = {

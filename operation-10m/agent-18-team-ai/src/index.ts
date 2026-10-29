@@ -66,4 +66,7 @@ export * from './persistence-gradient-friction-index.ts';
 export * from './stack-mismatch-coupling-index.ts';
 export * from './audit-stack-amplification-index.ts';
 export * from './friction-alignment-gap-index.ts';
+export * from './coupling-amplification-fusion-index.ts';
+export * from './gap-churn-resonance-index.ts';
+export * from './stack-friction-convergence-index.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';

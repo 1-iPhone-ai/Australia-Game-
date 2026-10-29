@@ -80,6 +80,9 @@ import { computePersistenceGradientFrictionIndex } from './persistence-gradient-
 import { computeStackMismatchCouplingIndex } from './stack-mismatch-coupling-index.ts';
 import { computeAuditStackAmplificationIndex } from './audit-stack-amplification-index.ts';
 import { computeFrictionAlignmentGapIndex } from './friction-alignment-gap-index.ts';
+import { computeCouplingAmplificationFusionIndex } from './coupling-amplification-fusion-index.ts';
+import { computeGapChurnResonanceIndex } from './gap-churn-resonance-index.ts';
+import { computeStackFrictionConvergenceIndex } from './stack-friction-convergence-index.ts';
 import {
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
@@ -432,6 +435,18 @@ export function sanitizeTeamMultiAgentCoordinationState(
       frictionAlignmentGapIndex:
         typeof metaRaw.frictionAlignmentGapIndex === 'number'
           ? metaRaw.frictionAlignmentGapIndex
+          : undefined,
+      couplingAmplificationFusionIndex:
+        typeof metaRaw.couplingAmplificationFusionIndex === 'number'
+          ? metaRaw.couplingAmplificationFusionIndex
+          : undefined,
+      gapChurnResonanceIndex:
+        typeof metaRaw.gapChurnResonanceIndex === 'number'
+          ? metaRaw.gapChurnResonanceIndex
+          : undefined,
+      stackFrictionConvergenceIndex:
+        typeof metaRaw.stackFrictionConvergenceIndex === 'number'
+          ? metaRaw.stackFrictionConvergenceIndex
           : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
@@ -866,6 +881,12 @@ export function evaluateTeamMultiAgentLayer(
     gradientAuditTension.tensionIndex,
   );
   auditStackAmplification.notes.forEach(n => diagnostics.push(n));
+  const couplingAmplificationFusion = computeCouplingAmplificationFusionIndex(
+    stackMismatchCoupling.couplingIndex,
+    auditStackAmplification.amplificationIndex,
+    state.meta.auditPressureIndex ?? 0,
+  );
+  couplingAmplificationFusion.notes.forEach(n => diagnostics.push(n));
   state = {
     ...state,
     meta: {
@@ -875,6 +896,7 @@ export function evaluateTeamMultiAgentLayer(
       recoveryCascadeMismatchIndex: recoveryCascadeMismatch.mismatchIndex,
       stackMismatchCouplingIndex: stackMismatchCoupling.couplingIndex,
       auditStackAmplificationIndex: auditStackAmplification.amplificationIndex,
+      couplingAmplificationFusionIndex: couplingAmplificationFusion.fusionIndex,
     },
   };
   state = { ...state, diagnostics };
@@ -918,12 +940,26 @@ export function evaluateTeamMultiAgentLayer(
     persistenceChurn.churnIndex,
   );
   frictionAlignmentGap.notes.forEach(n => diagnostics.push(n));
+  const gapChurnResonance = computeGapChurnResonanceIndex(
+    frictionAlignmentGap.gapIndex,
+    persistenceChurn.churnIndex,
+    persistenceGradientFriction.frictionIndex,
+  );
+  gapChurnResonance.notes.forEach(n => diagnostics.push(n));
+  const stackFrictionConvergence = computeStackFrictionConvergenceIndex(
+    stackMismatchCoupling.couplingIndex,
+    frictionAlignmentGap.gapIndex,
+    state.meta.coordinationCompositeScore ?? 100,
+  );
+  stackFrictionConvergence.notes.forEach(n => diagnostics.push(n));
   state = {
     ...state,
     diagnostics,
     meta: {
       ...state.meta,
       frictionAlignmentGapIndex: frictionAlignmentGap.gapIndex,
+      gapChurnResonanceIndex: gapChurnResonance.resonanceIndex,
+      stackFrictionConvergenceIndex: stackFrictionConvergence.convergenceIndex,
     },
   };
 
