@@ -129,6 +129,7 @@ export function attachVacaturSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     expungementSession: null,
     exonerationSession: null,
     acquittalSession: null,

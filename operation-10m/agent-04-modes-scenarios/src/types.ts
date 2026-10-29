@@ -389,6 +389,7 @@ export type O10mRemandPhase = 'order' | 'review' | 'remand';
 export type O10mReversalPhase = 'motion' | 'review' | 'reversal';
 export type O10mAnnulmentPhase = 'filing' | 'review' | 'annulment';
 export type O10mReinstatementPhase = 'filing' | 'review' | 'reinstatement';
+export type O10mSetAsidePhase = 'filing' | 'review' | 'setAside';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -720,6 +721,17 @@ export interface O10mReinstatementSession {
   phaseTag: O10mReinstatementPhase;
 }
 
+/** Schema v38 — set-aside arc with score accrual between phases. */
+export interface O10mSetAsideSession {
+  setAsideId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  setAsideScore: number;
+  phaseTag: O10mSetAsidePhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -744,6 +756,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'setaside_step'
     | 'reinstatement_step'
     | 'annulment_step'
     | 'reversal_step'
@@ -912,6 +925,10 @@ export interface O10mCampaignPlan {
   reinstatementCursor: number | null;
   reinstatementPhase: O10mReinstatementPhase | null;
   reinstatementScore: number | null;
+  setAsideId: string | null;
+  setAsideCursor: number | null;
+  setAsidePhase: O10mSetAsidePhase | null;
+  setAsideScore: number | null;
   reason: string;
 }
 
@@ -1005,10 +1022,12 @@ export interface O10mModesPersistedState {
   remandSession?: O10mRemandSession | null;
   /** Schema v35 — active reversal arc (mutually exclusive with annulment / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   reversalSession?: O10mReversalSession | null;
-  /** Schema v36 — active annulment arc (mutually exclusive with reinstatement / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v36 — active annulment arc (mutually exclusive with set-aside / reinstatement / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   annulmentSession?: O10mAnnulmentSession | null;
-  /** Schema v37 — active reinstatement arc (mutually exclusive with annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v37 — active reinstatement arc (mutually exclusive with set-aside / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   reinstatementSession?: O10mReinstatementSession | null;
+  /** Schema v38 — active set-aside arc (mutually exclusive with reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  setAsideSession?: O10mSetAsideSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

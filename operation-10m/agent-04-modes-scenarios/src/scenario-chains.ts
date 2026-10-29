@@ -1300,6 +1300,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_setaside_route',
+    title: 'Set-Aside Route',
+    description:
+      'Three-phase set-aside arc with score accrual between legs — round-38 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_setaside_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_setaside_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File set-aside motion before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 480 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_setaside_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, ACT: 5 },
+          forcedSettingsPatch: { o10mSetAsideMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_setaside_relief_finale',
+        title: 'Relief Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainSetAsideRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

@@ -149,6 +149,7 @@ export function attachPilgrimageSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,

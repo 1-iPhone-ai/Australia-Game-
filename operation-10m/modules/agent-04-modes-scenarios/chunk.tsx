@@ -393,6 +393,7 @@ export type O10mRemandPhase = 'order' | 'review' | 'remand';
 export type O10mReversalPhase = 'motion' | 'review' | 'reversal';
 export type O10mAnnulmentPhase = 'filing' | 'review' | 'annulment';
 export type O10mReinstatementPhase = 'filing' | 'review' | 'reinstatement';
+export type O10mSetAsidePhase = 'filing' | 'review' | 'setAside';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -724,6 +725,17 @@ export interface O10mReinstatementSession {
   phaseTag: O10mReinstatementPhase;
 }
 
+/** Schema v38 — set-aside arc with score accrual between phases. */
+export interface O10mSetAsideSession {
+  setAsideId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  setAsideScore: number;
+  phaseTag: O10mSetAsidePhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -748,6 +760,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'setaside_step'
     | 'reinstatement_step'
     | 'annulment_step'
     | 'reversal_step'
@@ -916,6 +929,10 @@ export interface O10mCampaignPlan {
   reinstatementCursor: number | null;
   reinstatementPhase: O10mReinstatementPhase | null;
   reinstatementScore: number | null;
+  setAsideId: string | null;
+  setAsideCursor: number | null;
+  setAsidePhase: O10mSetAsidePhase | null;
+  setAsideScore: number | null;
   reason: string;
 }
 
@@ -1009,10 +1026,12 @@ export interface O10mModesPersistedState {
   remandSession?: O10mRemandSession | null;
   /** Schema v35 — active reversal arc (mutually exclusive with annulment / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   reversalSession?: O10mReversalSession | null;
-  /** Schema v36 — active annulment arc (mutually exclusive with reinstatement / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v36 — active annulment arc (mutually exclusive with set-aside / reinstatement / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   annulmentSession?: O10mAnnulmentSession | null;
-  /** Schema v37 — active reinstatement arc (mutually exclusive with annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v37 — active reinstatement arc (mutually exclusive with set-aside / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   reinstatementSession?: O10mReinstatementSession | null;
+  /** Schema v38 — active set-aside arc (mutually exclusive with reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  setAsideSession?: O10mSetAsideSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -5149,6 +5168,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Reinstatement finales', 'Score ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_setaside_filing_docket',
+    title: 'Set-Aside Filing Docket',
+    description: 'Open a set-aside arc with low-pressure score pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100523,
+    startingMoney: 3700,
+    startingRegions: ['QLD', 'NSW'],
+    badgeId: 'badge_o10m_setaside_filing_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100523),
+      o10mSetAsideFilingDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_sfd_obj_day',
+        label: 'Filing Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Set-aside arcs', 'Score pacing', 'Filing phase'],
+  },
+  {
+    id: 'o10m_setaside_review_chamber',
+    title: 'Set-Aside Review Chamber',
+    description: 'Mid set-aside review with accrued score bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100524,
+    startingMoney: 4250,
+    startingRegions: ['WA', 'NT'],
+    startingStanding: { WA: 69, NT: 67 },
+    badgeId: 'badge_o10m_setaside_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100524),
+      regionalStandingEnabled: true,
+      o10mSetAsideReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_src_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 75',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 75,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Score carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_setaside_relief_finale',
+    title: 'Set-Aside Relief Finale',
+    description: 'Finale set-aside stage — net worth gate with full score bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100525,
+    startingMoney: 4700,
+    startingRegions: ['VIC', 'TAS', 'SA'],
+    badgeId: 'badge_o10m_setaside_relief_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100525),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mSetAsideReliefFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_srf_obj_net',
+        label: 'Relief Net Worth',
+        description: 'Reach $21,000 net worth',
+        targetType: 'netWorth',
+        targetValue: 21000,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Set-aside finales', 'Score ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -6889,6 +7005,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_setaside_route',
+    title: 'Set-Aside Route',
+    description:
+      'Three-phase set-aside arc with score accrual between legs — round-38 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_setaside_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_setaside_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File set-aside motion before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 480 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_setaside_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, ACT: 5 },
+          forcedSettingsPatch: { o10mSetAsideMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_setaside_relief_finale',
+        title: 'Relief Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainSetAsideRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -7715,7 +7865,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 37;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 38;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -7851,6 +8001,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
   };
 }
 
@@ -7907,6 +8058,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       reversalSession: merged.reversalSession ?? null,
       annulmentSession: merged.annulmentSession ?? null,
       reinstatementSession: merged.reinstatementSession ?? null,
+      setAsideSession: merged.setAsideSession ?? null,
     };
     return upgraded;
   }
@@ -7987,6 +8139,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     reversalSession: sanitizeReversalSession(o.reversalSession),
     annulmentSession: sanitizeAnnulmentSession(o.annulmentSession),
     reinstatementSession: sanitizeReinstatementSession(o.reinstatementSession),
+    setAsideSession: sanitizeSetAsideSession(o.setAsideSession),
   };
 }
 
@@ -8254,6 +8407,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Reinstatement cursor out of range; clamp on next sanitize.');
   }
 
+  const setAside = sanitizeSetAsideSession(state.setAsideSession);
+  if (state.setAsideSession && !setAside) {
+    warnings.push('Set-aside session failed sanitization; planner will ignore it.');
+  } else if (setAside && setAside.cursor >= setAside.scenarioIds.length) {
+    warnings.push('Set-aside cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -8394,6 +8554,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'reversalSession',
   'annulmentSession',
   'reinstatementSession',
+  'setAsideSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -8929,6 +9090,7 @@ export function attachMarathonQueueToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -9046,6 +9208,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceSetAsideSessionAfterRun(next, run);
   next = advanceReinstatementSessionAfterRun(next, run);
   next = advanceAnnulmentSessionAfterRun(next, run);
   next = advanceReversalSessionAfterRun(next, run);
@@ -9236,6 +9399,7 @@ export function attachGauntletSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -9495,6 +9659,7 @@ export function attachRelaySessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -9714,6 +9879,7 @@ export function attachCircuitSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -9951,6 +10117,7 @@ export function attachExpeditionSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -10186,6 +10353,7 @@ export function attachOdysseySessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -10420,6 +10588,7 @@ export function attachPilgrimageSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -10655,6 +10824,7 @@ export function attachCaravanSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -10884,6 +11054,7 @@ export function attachVoyageSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -11113,6 +11284,7 @@ export function attachSiegeSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -11342,6 +11514,7 @@ export function attachConvoySessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -11571,6 +11744,7 @@ export function attachEscortSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -11809,6 +11983,7 @@ export function attachExtractionSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -12055,6 +12230,7 @@ export function attachSubjectSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -12301,6 +12477,7 @@ export function attachWitnessSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -12547,6 +12724,7 @@ export function attachTribunalSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -12793,6 +12971,7 @@ export function attachIndictmentSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -13039,6 +13218,7 @@ export function attachAppealSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,
@@ -13285,6 +13465,7 @@ export function attachClemencySessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     appealSession: null,
     indictmentSession: null,
     tribunalSession: null,
@@ -13531,6 +13712,7 @@ export function attachPardonSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     clemencySession: null,
     appealSession: null,
     indictmentSession: null,
@@ -13777,6 +13959,7 @@ export function attachAmnestySessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     pardonSession: null,
     clemencySession: null,
     appealSession: null,
@@ -14023,6 +14206,7 @@ export function attachReprieveSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     amnestySession: null,
     pardonSession: null,
     clemencySession: null,
@@ -14269,6 +14453,7 @@ export function attachParoleSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     reprieveSession: null,
     amnestySession: null,
     pardonSession: null,
@@ -14515,6 +14700,7 @@ export function attachProbationSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     paroleSession: null,
     reprieveSession: null,
     amnestySession: null,
@@ -14761,6 +14947,7 @@ export function attachCommutationSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     probationSession: null,
     paroleSession: null,
     reprieveSession: null,
@@ -15007,6 +15194,7 @@ export function attachAcquittalSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     commutationSession: null,
     probationSession: null,
     paroleSession: null,
@@ -15253,6 +15441,7 @@ export function attachExonerationSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     acquittalSession: null,
     commutationSession: null,
     probationSession: null,
@@ -15499,6 +15688,7 @@ export function attachExpungementSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     exonerationSession: null,
     acquittalSession: null,
     commutationSession: null,
@@ -15745,6 +15935,7 @@ export function attachVacaturSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     expungementSession: null,
     exonerationSession: null,
     acquittalSession: null,
@@ -15991,6 +16182,7 @@ export function attachRemandSessionToState(
     reversalSession: null,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     vacaturSession: null,
     expungementSession: null,
     exonerationSession: null,
@@ -16237,6 +16429,7 @@ export function attachReversalSessionToState(
     reversalSession: sanitized,
     annulmentSession: null,
     reinstatementSession: null,
+    setAsideSession: null,
     remandSession: null,
     vacaturSession: null,
     expungementSession: null,
@@ -16483,6 +16676,7 @@ export function attachAnnulmentSessionToState(
     ...state,
     annulmentSession: sanitized,
     reinstatementSession: null,
+    setAsideSession: null,
     reversalSession: null,
     remandSession: null,
     vacaturSession: null,
@@ -16731,6 +16925,7 @@ export function attachReinstatementSessionToState(
   return {
     ...state,
     reinstatementSession: sanitized,
+    setAsideSession: null,
     annulmentSession: null,
     reversalSession: null,
     remandSession: null,
@@ -16855,6 +17050,256 @@ export function reinstatementSessionSummary(state: O10mModesPersistedState): {
     active: session?.active === true,
     cursor: session?.active ? session.cursor : null,
     reinstatementScore: session?.reinstatementScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
+// --- bundled from src/save-format-setaside.ts ---
+export const O10M_SETASIDE_SCENARIO_CAP = 6;
+export const O10M_SETASIDE_SCORE_CAP = 1040;
+export const O10M_SETASIDE_SCORE_MONEY_CAP = 1120;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mSetAsidePhase>(['filing', 'review', 'setAside']);
+
+export function unlockTokenForSetAsideId(setAsideId: string): string | null {
+  if (!setAsideId.startsWith('o10m_setaside_')) return null;
+  return `o10m_unlock_${setAsideId.slice('o10m_setaside_'.length)}`;
+}
+
+export function setAsidePhaseForCursor(cursor: number, scenarioCount: number): O10mSetAsidePhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'setAside';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'filing';
+}
+
+export function setAsideScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(137, Math.max(32, Math.floor(run.playerNetWorth / 134) + standingSlice));
+}
+
+export function sanitizeSetAsideSession(raw: unknown): O10mSetAsideSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const setAsideId =
+    typeof o.setAsideId === 'string' && o.setAsideId.startsWith('o10m_setaside_')
+      ? o.setAsideId
+      : null;
+  if (!setAsideId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : setAsideId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_SETASIDE_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const setAsideScore = Math.min(
+    O10M_SETASIDE_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.setAsideScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mSetAsidePhase)
+      ? (phaseRaw as O10mSetAsidePhase)
+      : setAsidePhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    setAsideId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    setAsideScore,
+    phaseTag,
+  };
+}
+
+export function createSetAsideSession(params: {
+  setAsideId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mSetAsideSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.setAsideId.startsWith('o10m_setaside_')) {
+    return { session: null, warnings: ['SetAside ids must start with o10m_setaside_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_SETASIDE_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'SetAside arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      setAsideId: params.setAsideId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      setAsideScore: 0,
+      phaseTag: setAsidePhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachSetAsideSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mSetAsideSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeSetAsideSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    setAsideSession: sanitized,
+    reinstatementSession: null,
+    annulmentSession: null,
+    reversalSession: null,
+    remandSession: null,
+    vacaturSession: null,
+    expungementSession: null,
+    exonerationSession: null,
+    acquittalSession: null,
+    commutationSession: null,
+    probationSession: null,
+    paroleSession: null,
+    reprieveSession: null,
+    amnestySession: null,
+    pardonSession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearSetAsideSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, setAsideSession: null };
+}
+
+export function getSetAsideScenarioAtCursor(
+  session: O10mSetAsideSession | null | undefined,
+): string | null {
+  const setAside = sanitizeSetAsideSession(session);
+  if (!setAside || !setAside.active) return null;
+  return setAside.scenarioIds[setAside.cursor] ?? null;
+}
+
+export function buildSetAsideScenarioStartOverrides(
+  session: O10mSetAsideSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const setAside = sanitizeSetAsideSession(session);
+  if (!setAside) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_SETASIDE_SCORE_MONEY_CAP,
+    Math.floor(setAside.setAsideScore * 0.87),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveSetAsideId: setAside.setAsideId,
+      o10mActiveSetAsideStep: setAside.cursor,
+      o10mActiveSetAsidePhase: setAside.phaseTag,
+      o10mSetAsideScore: setAside.setAsideScore,
+    },
+  };
+}
+
+export function advanceSetAsideSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeSetAsideSession(state.setAsideSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const setAsideScore = Math.min(
+    O10M_SETASIDE_SCORE_CAP,
+    session.setAsideScore + setAsideScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      setAsideSession: {
+        ...session,
+        cursor,
+        setAsideScore,
+        phaseTag: setAsidePhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForSetAsideId(session.setAsideId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    setAsideSession: { ...session, active: false, setAsideScore, phaseTag: 'setAside' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function setAsideSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  setAsideScore: number;
+  phase: O10mSetAsidePhase | null;
+} {
+  const session = sanitizeSetAsideSession(state.setAsideSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    setAsideScore: session?.setAsideScore ?? 0,
     phase: session?.active ? session.phaseTag : null,
   };
 }
@@ -16989,9 +17434,31 @@ const emptyQueuePlan = {
   reinstatementCursor: null as number | null,
   reinstatementPhase: null as O10mReinstatementPhase | null,
   reinstatementScore: null as number | null,
+  setAsideId: null as string | null,
+  setAsideCursor: null as number | null,
+  setAsidePhase: null as O10mSetAsidePhase | null,
+  setAsideScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const setAside = sanitizeSetAsideSession(state.setAsideSession);
+  const setAsideScenario = getSetAsideScenarioAtCursor(setAside);
+  if (setAside && setAside.active && setAsideScenario) {
+    return {
+      kind: 'setaside_step',
+      scenarioId: setAsideScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      setAsideId: setAside.setAsideId,
+      setAsideCursor: setAside.cursor,
+      setAsidePhase: setAside.phaseTag,
+      setAsideScore: setAside.setAsideScore,
+      reason: `Set-aside "${setAside.label}" ${setAside.phaseTag} phase ${setAside.cursor + 1}/${setAside.scenarioIds.length} (score ${setAside.setAsideScore}).`,
+    };
+  }
+
   const reinstatement = sanitizeReinstatementSession(state.reinstatementSession);
   const reinstatementScenario = getReinstatementScenarioAtCursor(reinstatement);
   if (reinstatement && reinstatement.active && reinstatementScenario) {
@@ -17684,6 +18151,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   reversalActive: boolean;
   annulmentActive: boolean;
   reinstatementActive: boolean;
+  setAsideActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -17724,6 +18192,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const reversal = reversalSessionSummary(state);
   const annulment = annulmentSessionSummary(state);
   const reinstatement = reinstatementSessionSummary(state);
+  const setAside = setAsideSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -17762,6 +18231,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     reversalActive: reversal.active,
     annulmentActive: annulment.active,
     reinstatementActive: reinstatement.active,
+    setAsideActive: setAside.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -17780,7 +18250,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 38, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 39, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -18072,16 +18542,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const reinstatementState = reinstatement ? attachReinstatementSessionToState(createEmptyO10mModesPersistedState(), reinstatement) : null;
   push('agent04_chunk_45', reinstatementState !== null && planNextCampaignAction(reinstatementState!).kind === 'reinstatement_step');
 
+  const setAside = createSetAsideSession({
+    setAsideId: 'o10m_setaside_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_setaside_filing_docket'],
+  }).session;
+  const setAsideState = setAside ? attachSetAsideSessionToState(createEmptyO10mModesPersistedState(), setAside) : null;
+  push('agent04_chunk_46', setAsideState !== null && planNextCampaignAction(setAsideState!).kind === 'setaside_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v38',
+  schemaVersion: 'op10m-agent04-v39',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 37,
+  saveSchemaVersion: 38,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;
