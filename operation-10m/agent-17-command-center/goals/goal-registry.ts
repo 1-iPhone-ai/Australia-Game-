@@ -506,6 +506,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Withdrawn theater or stalled campaign yields missionLatticeBlocksCampaign.',
     severity: 'major',
   },
+  {
+    id: 'G17-073',
+    title: 'Strategic index on planning depth',
+    category: 'telemetry',
+    acceptance: 'strategicIndex reports strategicScore 0–100 with coherent/forming/fractured band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-074',
+    title: 'Doctrine accord articles complete',
+    category: 'telemetry',
+    acceptance: 'doctrineAccord exposes ≥5 articles and doctrineScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-075',
+    title: 'Fractured strategic voids doctrine accord',
+    category: 'integration',
+    acceptance: 'Fractured strategic or void covenant yields doctrineAccordBlocksCommand.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

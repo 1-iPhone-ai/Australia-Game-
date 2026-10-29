@@ -45,6 +45,8 @@ export * from './planning/field-index.ts';
 export * from './planning/theater-commitment.ts';
 export * from './planning/campaign-index.ts';
 export * from './planning/mission-lattice.ts';
+export * from './planning/strategic-index.ts';
+export * from './planning/doctrine-accord.ts';
 export * from './planning/planning-orchestrator.ts';
 export * from './planning/ops-state.ts';
 export * from './evaluation/operations-evaluator.ts';
@@ -71,6 +73,7 @@ export * from './harness/run-authority-depth-tests.ts';
 export * from './harness/run-operations-depth-tests.ts';
 export * from './harness/run-field-depth-tests.ts';
 export * from './harness/run-campaign-depth-tests.ts';
+export * from './harness/run-strategic-depth-tests.ts';
 
 export const AGENT17_MODULE_ROOT = 'operation-10m/agent-17-command-center';
 export const AGENT17_ASSEMBLY_ANCHOR = '// SECTION 15: AI COMMAND CENTER';

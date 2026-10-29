@@ -134,6 +134,14 @@ import {
   missionLatticeBlocksCampaign,
 } from '../planning/mission-lattice.ts';
 import {
+  buildAgent17StrategicIndex,
+  strategicIndexBlocksDoctrine,
+} from '../planning/strategic-index.ts';
+import {
+  buildAgent17DoctrineAccord,
+  doctrineAccordBlocksCommand,
+} from '../planning/doctrine-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -1209,6 +1217,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const strategicIndex = depthEval.snapshot.planningDepth?.strategicIndex;
+  goalResults.push(
+    result(
+      'G17-073',
+      !!strategicIndex &&
+        strategicIndex.signals.length >= 5 &&
+        strategicIndex.strategicScore >= 0 &&
+        strategicIndex.strategicScore <= 100 &&
+        (strategicIndex.band === 'coherent' ||
+          strategicIndex.band === 'forming' ||
+          strategicIndex.band === 'fractured'),
+      `signals=${strategicIndex?.signals.length} score=${strategicIndex?.strategicScore}`
+    )
+  );
+
+  const doctrineAccord = depthEval.snapshot.planningDepth?.doctrineAccord;
+  goalResults.push(
+    result(
+      'G17-074',
+      !!doctrineAccord &&
+        doctrineAccord.articles.length >= 5 &&
+        doctrineAccord.doctrineScore >= 0 &&
+        doctrineAccord.doctrineScore <= 100,
+      `articles=${doctrineAccord?.articles.length} score=${doctrineAccord?.doctrineScore}`
+    )
+  );
+
+  const fracturedStrategic = buildAgent17StrategicIndex({
+    missionLattice: collapsedLattice,
+    convergenceIndex: depthEval.snapshot.planningDepth!.convergenceIndex,
+    commandEnvelope: depthEval.snapshot.planningDepth!.commandEnvelope,
+  });
+  const voidDoctrine = buildAgent17DoctrineAccord({
+    strategicIndex: fracturedStrategic,
+    missionLattice: collapsedLattice,
+    covenantGate: depthEval.snapshot.planningDepth!.covenantGate,
+  });
+  goalResults.push(
+    result(
+      'G17-075',
+      missionLatticeBlocksCampaign(collapsedLattice) ||
+        strategicIndexBlocksDoctrine(fracturedStrategic) ||
+        doctrineAccordBlocksCommand(voidDoctrine),
+      `${fracturedStrategic.band}/${voidDoctrine.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -1311,6 +1366,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-070',
     'G17-071',
     'G17-072',
+    'G17-073',
+    'G17-074',
+    'G17-075',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

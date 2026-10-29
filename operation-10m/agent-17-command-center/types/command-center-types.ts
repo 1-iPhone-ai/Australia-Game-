@@ -215,6 +215,8 @@ export interface Agent17PlanningDepthSnapshot {
   theaterCommitment: Agent17TheaterCommitmentSnapshot;
   campaignIndex: Agent17CampaignIndexSnapshot;
   missionLattice: Agent17MissionLatticeSnapshot;
+  strategicIndex: Agent17StrategicIndexSnapshot;
+  doctrineAccord: Agent17DoctrineAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -751,6 +753,40 @@ export interface Agent17MissionLatticeSnapshot {
   campaignBand: Agent17CampaignIndexSnapshot['band'];
   cadenceBand: Agent17CadenceLatticeSnapshot['band'];
   missionLocked: boolean;
+  headline: string;
+}
+
+export interface Agent17StrategicIndexSignal {
+  id: string;
+  label: string;
+  engaged: boolean;
+  weight: number;
+}
+
+export interface Agent17StrategicIndexSnapshot {
+  strategicScore: number;
+  band: 'coherent' | 'forming' | 'fractured';
+  signals: Agent17StrategicIndexSignal[];
+  latticeBand: Agent17MissionLatticeSnapshot['band'];
+  convergenceBand: Agent17ConvergenceIndexSnapshot['band'];
+  strategicReady: boolean;
+  headline: string;
+}
+
+export interface Agent17DoctrineAccordArticle {
+  id: string;
+  label: string;
+  ratified: boolean;
+  weight: number;
+}
+
+export interface Agent17DoctrineAccordSnapshot {
+  doctrineScore: number;
+  band: 'ratified' | 'provisional' | 'void';
+  articles: Agent17DoctrineAccordArticle[];
+  strategicBand: Agent17StrategicIndexSnapshot['band'];
+  covenantBand: Agent17CovenantGateSnapshot['band'];
+  doctrineRatified: boolean;
   headline: string;
 }
 

@@ -55,6 +55,8 @@ import { buildAgent17FieldIndex } from './field-index.ts';
 import { buildAgent17TheaterCommitment } from './theater-commitment.ts';
 import { buildAgent17CampaignIndex } from './campaign-index.ts';
 import { buildAgent17MissionLattice } from './mission-lattice.ts';
+import { buildAgent17StrategicIndex } from './strategic-index.ts';
+import { buildAgent17DoctrineAccord } from './doctrine-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -319,6 +321,16 @@ export function buildAgent17PlanningDepthSnapshot(
     theaterCommitment,
     cadenceLattice,
   });
+  const strategicIndex = buildAgent17StrategicIndex({
+    missionLattice,
+    convergenceIndex,
+    commandEnvelope,
+  });
+  const doctrineAccord = buildAgent17DoctrineAccord({
+    strategicIndex,
+    missionLattice,
+    covenantGate,
+  });
   return {
     ...core,
     intentQueue,
@@ -356,6 +368,8 @@ export function buildAgent17PlanningDepthSnapshot(
     theaterCommitment,
     campaignIndex,
     missionLattice,
+    strategicIndex,
+    doctrineAccord,
   };
 }
 
