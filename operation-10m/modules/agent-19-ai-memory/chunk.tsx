@@ -6538,6 +6538,293 @@ export function sealRecoveryOrchestratorWithinCap(report: SealRecoveryOrchestrat
 }
 
 
+// --- source: match-explainability-covenant-bundle.ts ---
+  auditMatchExplainabilityCovenantGate,
+  matchExplainabilityCovenantAllowed,
+} from './match-explainability-covenant-gate.ts';
+  buildMatchExplainabilitySealBundle,
+  matchExplainabilitySealReady,
+} from './match-explainability-seal-bundle.ts';
+  buildSessionSealExportBundle,
+  sessionSealExportShipped,
+} from './session-seal-export-bundle.ts';
+
+export const AGENT19_COVENANT_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityCovenantBundle {
+  covenantReady: boolean;
+  covenantAllowed: boolean;
+  sealReady: boolean;
+  sealExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type CovenantParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Covenant bundle: covenant gate and seal export must both be green. */
+export function buildMatchExplainabilityCovenantBundle(
+  packs: TurnExplainabilityPack[],
+  params: CovenantParams,
+): MatchExplainabilityCovenantBundle {
+  const covenant = auditMatchExplainabilityCovenantGate(packs, params);
+  const seal = buildMatchExplainabilitySealBundle(packs, params);
+  const sealExport = buildSessionSealExportBundle(packs, params);
+  const covenantAllowed = matchExplainabilityCovenantAllowed(covenant);
+  const sealReady = matchExplainabilitySealReady(seal);
+  const sealExportShipped = sessionSealExportShipped(sealExport);
+  const covenantReady = covenantAllowed && sealReady && sealExportShipped;
+  const narrativeLines = [
+    `Match explainability covenant bundle: ${covenantReady ? 'READY' : 'PENDING'} (gate ${covenantAllowed ? 'ok' : 'fail'}, seal ${sealReady ? 'ok' : 'fail'}).`,
+    ...covenant.narrativeLines.slice(0, 2),
+    ...seal.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_COVENANT_NARRATIVE_CAP);
+  return {
+    covenantReady,
+    covenantAllowed,
+    sealReady,
+    sealExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityCovenantReady(bundle: MatchExplainabilityCovenantBundle): boolean {
+  return bundle.covenantReady;
+}
+
+
+// --- source: session-covenant-export-bundle.ts ---
+  buildSessionSealExportBundle,
+  type SessionSealExportBundle,
+} from './session-seal-export-bundle.ts';
+  buildMatchExplainabilityCovenantBundle,
+  matchExplainabilityCovenantReady,
+} from './match-explainability-covenant-bundle.ts';
+
+export interface SessionCovenantExportBundle extends SessionSealExportBundle {
+  covenantReady: boolean;
+  covenantSchema: string;
+}
+
+/** Covenant export wraps seal export when covenant bundle is ready. */
+export function buildSessionCovenantExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionCovenantExportBundle {
+  const base = buildSessionSealExportBundle(packs, params);
+  const covenant = buildMatchExplainabilityCovenantBundle(packs, params);
+  const covenantReady = matchExplainabilityCovenantReady(covenant);
+  const exports = covenantReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    covenantReady,
+    covenantSchema: 'agent19.covenant.v1',
+    releaseReady: covenantReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Covenant export: ${covenantReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionCovenantExportShipped(bundle: SessionCovenantExportBundle): boolean {
+  return (
+    bundle.covenantReady &&
+    bundle.exports.length > 0 &&
+    bundle.covenantSchema === 'agent19.covenant.v1'
+  );
+}
+
+
+// --- source: seal-covenant-bridge.ts ---
+  buildMatchExplainabilityCovenantBundle,
+  matchExplainabilityCovenantReady,
+} from './match-explainability-covenant-bundle.ts';
+  buildMatchExplainabilitySealBundle,
+  matchExplainabilitySealReady,
+} from './match-explainability-seal-bundle.ts';
+
+export interface SealCovenantBridgeReport {
+  aligned: boolean;
+  covenantReady: boolean;
+  sealReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Covenant-ready should match seal-ready when seal export stack passes. */
+export function auditSealCovenantBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SealCovenantBridgeReport {
+  const covenant = buildMatchExplainabilityCovenantBundle(packs, params);
+  const seal = buildMatchExplainabilitySealBundle(packs, params);
+  const covenantReady = matchExplainabilityCovenantReady(covenant);
+  const sealReady = matchExplainabilitySealReady(seal);
+  const aligned = covenantReady === sealReady;
+  const narrativeLines = [
+    `Seal/covenant bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (covenant ${covenantReady ? 'ok' : 'fail'}, seal ${sealReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, covenantReady, sealReady, narrativeLines };
+}
+
+export function sealCovenantBridgeHealthy(report: SealCovenantBridgeReport): boolean {
+  return report.covenantReady && report.sealReady && report.aligned;
+}
+
+
+// --- source: match-explainability-charter-gate.ts ---
+  buildMatchExplainabilityCovenantBundle,
+  matchExplainabilityCovenantReady,
+} from './match-explainability-covenant-bundle.ts';
+  buildSessionCovenantExportBundle,
+  sessionCovenantExportShipped,
+} from './session-covenant-export-bundle.ts';
+
+export interface MatchExplainabilityCharterGateReport {
+  charterAllowed: boolean;
+  covenantReady: boolean;
+  covenantExportShipped: boolean;
+  sealCovenantHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Charter gate: covenant bundle + covenant export + seal/covenant bridge. */
+export function auditMatchExplainabilityCharterGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityCharterGateReport {
+  const covenant = buildMatchExplainabilityCovenantBundle(packs, params);
+  const covenantExport = buildSessionCovenantExportBundle(packs, params);
+  const bridge = auditSealCovenantBridge(packs, params);
+  const covenantReady = matchExplainabilityCovenantReady(covenant);
+  const covenantExportShipped = sessionCovenantExportShipped(covenantExport);
+  const sealCovenantHealthy = sealCovenantBridgeHealthy(bridge);
+  const charterAllowed = covenantReady && covenantExportShipped && sealCovenantHealthy;
+  const narrativeLines = [
+    `Match explainability charter: ${charterAllowed ? 'ALLOWED' : 'DENIED'} (covenant ${covenantReady ? 'ok' : 'fail'}, export ${covenantExportShipped ? 'ok' : 'fail'}).`,
+    ...covenant.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    charterAllowed,
+    covenantReady,
+    covenantExportShipped,
+    sealCovenantHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityCharterAllowed(report: MatchExplainabilityCharterGateReport): boolean {
+  return report.charterAllowed;
+}
+
+
+// --- source: covenant-recovery-orchestrator.ts ---
+  auditMatchExplainabilityCovenantGate,
+  matchExplainabilityCovenantAllowed,
+} from './match-explainability-covenant-gate.ts';
+
+export const AGENT19_COVENANT_RECOVERY_CAP = 10;
+
+export interface CovenantRecoveryOrchestratorReport {
+  covenantBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when covenant gate blocks charter rollout. */
+export function buildCovenantRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): CovenantRecoveryOrchestratorReport {
+  const covenant = auditMatchExplainabilityCovenantGate(packs, params);
+  const covenantBlocked = !matchExplainabilityCovenantAllowed(covenant);
+  const steps: string[] = [];
+  if (covenantBlocked) {
+    if (!covenant.sealReady) {
+      steps.push('Restore seal bundle: confirm and seal export must pass.');
+    }
+    if (!covenant.sealExportShipped) {
+      steps.push('Emit session seal export before covenant clearance.');
+    }
+    if (!covenant.confirmSealHealthy) {
+      steps.push('Reconcile confirm/seal bridge before covenant.');
+    }
+    steps.push(...buildSealRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const seal = buildMatchExplainabilitySealBundle(packs, params);
+    if (!seal.sealReady) {
+      steps.push('Re-run seal readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Covenant gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_COVENANT_RECOVERY_CAP);
+  return {
+    covenantBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Covenant recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function covenantRecoveryOrchestratorWithinCap(report: CovenantRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_COVENANT_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -6914,6 +7201,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilityCovenantGate,
   matchExplainabilityCovenantAllowed,
 } from '../match-explainability-covenant-gate.ts';
+  buildMatchExplainabilityCovenantBundle,
+  matchExplainabilityCovenantReady,
+} from '../match-explainability-covenant-bundle.ts';
+  buildSessionCovenantExportBundle,
+  sessionCovenantExportShipped,
+} from '../session-covenant-export-bundle.ts';
+  buildCovenantRecoveryOrchestrator,
+  covenantRecoveryOrchestratorWithinCap,
+} from '../covenant-recovery-orchestrator.ts';
+  auditMatchExplainabilityCharterGate,
+  matchExplainabilityCharterAllowed,
+} from '../match-explainability-charter-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -10459,6 +10758,270 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilitySealAllowed(report) && !report.confirmReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r25_seal_ready',
+        'Seal bundle ready when seal gate and confirm export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilitySealBundle([pack], params);
+          return matchExplainabilitySealReady(bundle) && bundle.sealAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r25_seal_held',
+        'Seal bundle pending when seal gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 25, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilitySealBundle([pack], {
+            memory: null,
+            currentTurn: 25,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilitySealReady(bundle) && !bundle.sealAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r25_seal_recovery',
+        'Seal recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 11, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 11, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildSealRecoveryOrchestrator([pack], params);
+          return report.sealBlocked && sealRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r25_confirm_seal_bridge',
+        'Confirm seal bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditConfirmSealBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return confirmSealBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r25_seal_export',
+        'Seal export shipped when seal ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionSealExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionSealExportShipped(bundle) && bundle.sealSchema === 'agent19.seal.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r25_covenant_gate_ok',
+        'Covenant gate allowed on healthy seal stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityCovenantGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityCovenantAllowed(report) && report.sealExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r25_covenant_gate_block',
+        'Covenant gate denied when seal pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 26, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityCovenantGate([pack], {
+            memory: null,
+            currentTurn: 26,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityCovenantAllowed(report) && !report.sealReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r26_covenant_ready',
+        'Covenant bundle ready when covenant gate and seal export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilityCovenantBundle([pack], params);
+          return matchExplainabilityCovenantReady(bundle) && bundle.covenantAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r26_covenant_held',
+        'Covenant bundle pending when covenant gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 27, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityCovenantBundle([pack], {
+            memory: null,
+            currentTurn: 27,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityCovenantReady(bundle) && !bundle.covenantAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r26_covenant_recovery',
+        'Covenant recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 12, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 12, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildCovenantRecoveryOrchestrator([pack], params);
+          return report.covenantBlocked && covenantRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r26_seal_covenant_bridge',
+        'Seal covenant bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditSealCovenantBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sealCovenantBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r26_covenant_export',
+        'Covenant export shipped when covenant ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionCovenantExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionCovenantExportShipped(bundle) && bundle.covenantSchema === 'agent19.covenant.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r26_charter_gate_ok',
+        'Charter gate allowed on healthy covenant stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityCharterGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityCharterAllowed(report) && report.covenantExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r26_charter_gate_block',
+        'Charter gate denied when covenant pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 28, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityCharterGate([pack], {
+            memory: null,
+            currentTurn: 28,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityCharterAllowed(report) && !report.covenantReady || JSON.stringify(report);
         },
       ],
     ]),
