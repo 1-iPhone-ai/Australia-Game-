@@ -281,6 +281,14 @@ import {
   closureAccordBlocksSettlement,
 } from '../planning/closure-accord.ts';
 import {
+  buildAgent17ReconciliationIndex,
+  reconciliationIndexBlocksFinality,
+} from '../planning/reconciliation-index.ts';
+import {
+  buildAgent17FinalityAccord,
+  finalityAccordBlocksReconciliation,
+} from '../planning/finality-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -2155,6 +2163,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const reconciliationIndex = depthEval.snapshot.planningDepth?.reconciliationIndex;
+  goalResults.push(
+    result(
+      'G17-124',
+      !!reconciliationIndex &&
+        reconciliationIndex.entries.length >= 5 &&
+        reconciliationIndex.reconciliationScore >= 0 &&
+        reconciliationIndex.reconciliationScore <= 100 &&
+        (reconciliationIndex.band === 'matched' ||
+          reconciliationIndex.band === 'pending' ||
+          reconciliationIndex.band === 'disputed'),
+      `entries=${reconciliationIndex?.entries.length} score=${reconciliationIndex?.reconciliationScore}`
+    )
+  );
+
+  const finalityAccord = depthEval.snapshot.planningDepth?.finalityAccord;
+  goalResults.push(
+    result(
+      'G17-125',
+      !!finalityAccord &&
+        finalityAccord.attestations.length >= 5 &&
+        finalityAccord.finalityScore >= 0 &&
+        finalityAccord.finalityScore <= 100,
+      `attestations=${finalityAccord?.attestations.length} score=${finalityAccord?.finalityScore}`
+    )
+  );
+
+  const disputedReconciliation = buildAgent17ReconciliationIndex({
+    closureAccord: reopenedClosure,
+    settlementIndex: failedSettlement,
+    transferAccord: haltedTransfer,
+  });
+  const revokedFinality = buildAgent17FinalityAccord({
+    reconciliationIndex: disputedReconciliation,
+    closureAccord: reopenedClosure,
+    settlementIndex: failedSettlement,
+  });
+  goalResults.push(
+    result(
+      'G17-126',
+      settlementIndexBlocksClosure(failedSettlement) ||
+        reconciliationIndexBlocksFinality(disputedReconciliation) ||
+        finalityAccordBlocksReconciliation(revokedFinality),
+      `${disputedReconciliation.band}/${revokedFinality.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -2308,6 +2363,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-121',
     'G17-122',
     'G17-123',
+    'G17-124',
+    'G17-125',
+    'G17-126',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

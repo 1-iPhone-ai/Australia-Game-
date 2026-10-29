@@ -1653,16 +1653,44 @@ export function runAgent17SettlementDepthTests(): Agent17DevTestReport {
       `${transferHalted.band} settled=${transferHalted.transferSettled}`
     );
 
+    const settlementFailed = buildAgent17SettlementIndex({
+      transferAccord: transferHalted,
+      vaultIndex: vaultCompromised,
+      releaseAccord: releaseBlocked,
+    });
+    push(
+      'stl_failed_closure',
+      'Halted transfer yields failed settlement or blocks closure',
+      settlementFailed.band === 'failed' ||
+        transferAccordBlocksSettlement(transferHalted) ||
+        !settlementFailed.settlementPosted,
+      `${settlementFailed.band} posted=${settlementFailed.settlementPosted}`
+    );
+
+    const closureReopened = buildAgent17ClosureAccord({
+      settlementIndex: settlementFailed,
+      transferAccord: transferHalted,
+      vaultIndex: vaultCompromised,
+    });
+    push(
+      'stl_reopened_settlement',
+      'Failed settlement yields reopened closure or blocks settlement',
+      closureReopened.band === 'reopened' ||
+        closureAccordBlocksSettlement(closureReopened) ||
+        !closureReopened.closureFinal,
+      `${closureReopened.band} final=${closureReopened.closureFinal}`
+    );
+
     const evalRes = evaluateAcc17CommandCenterOperations(state, settings, 'player', ops);
     const depth = evalRes.snapshot.planningDepth;
     push(
       'stl_evaluator_depth',
-      'Evaluator attaches vault index and transfer accord',
-      !!depth?.vaultIndex?.headline &&
-        !!depth?.transferAccord?.headline &&
-        (depth.vaultIndex.slots?.length ?? 0) >= 5 &&
-        (depth.transferAccord.legs?.length ?? 0) >= 5,
-      `${depth?.vaultIndex?.band}/${depth?.transferAccord?.band}`
+      'Evaluator attaches settlement index and closure accord',
+      !!depth?.settlementIndex?.headline &&
+        !!depth?.closureAccord?.headline &&
+        (depth.settlementIndex.lines?.length ?? 0) >= 5 &&
+        (depth.closureAccord.filings?.length ?? 0) >= 5,
+      `${depth?.settlementIndex?.band}/${depth?.closureAccord?.band}`
     );
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);

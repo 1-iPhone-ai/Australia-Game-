@@ -249,6 +249,8 @@ export interface Agent17PlanningDepthSnapshot {
   transferAccord: Agent17TransferAccordSnapshot;
   settlementIndex: Agent17SettlementIndexSnapshot;
   closureAccord: Agent17ClosureAccordSnapshot;
+  reconciliationIndex: Agent17ReconciliationIndexSnapshot;
+  finalityAccord: Agent17FinalityAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1363,6 +1365,40 @@ export interface Agent17ClosureAccordSnapshot {
   settlementBand: Agent17SettlementIndexSnapshot['band'];
   transferBand: Agent17TransferAccordSnapshot['band'];
   closureFinal: boolean;
+  headline: string;
+}
+
+export interface Agent17ReconciliationEntry {
+  id: string;
+  label: string;
+  matched: boolean;
+  weight: number;
+}
+
+export interface Agent17ReconciliationIndexSnapshot {
+  reconciliationScore: number;
+  band: 'matched' | 'pending' | 'disputed';
+  entries: Agent17ReconciliationEntry[];
+  closureBand: Agent17ClosureAccordSnapshot['band'];
+  settlementBand: Agent17SettlementIndexSnapshot['band'];
+  reconciliationMatched: boolean;
+  headline: string;
+}
+
+export interface Agent17FinalityAttestation {
+  id: string;
+  label: string;
+  attested: boolean;
+  weight: number;
+}
+
+export interface Agent17FinalityAccordSnapshot {
+  finalityScore: number;
+  band: 'absolute' | 'conditional' | 'revoked';
+  attestations: Agent17FinalityAttestation[];
+  reconciliationBand: Agent17ReconciliationIndexSnapshot['band'];
+  closureBand: Agent17ClosureAccordSnapshot['band'];
+  finalityAbsolute: boolean;
   headline: string;
 }
 

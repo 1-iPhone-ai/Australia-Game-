@@ -101,3 +101,9 @@ export function buildAgent17ClosureAccord(
 export function closureAccordBlocksSettlement(snapshot: Agent17ClosureAccordSnapshot): boolean {
   return snapshot.band === 'reopened' || !snapshot.closureFinal;
 }
+
+export function closureAccordBlocksReconciliation(
+  snapshot: Agent17ClosureAccordSnapshot
+): boolean {
+  return closureAccordBlocksSettlement(snapshot);
+}

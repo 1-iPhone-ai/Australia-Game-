@@ -863,6 +863,29 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Failed settlement or halted transfer yields closureAccordBlocksSettlement.',
     severity: 'major',
   },
+  {
+    id: 'G17-124',
+    title: 'Reconciliation index on planning depth',
+    category: 'telemetry',
+    acceptance:
+      'reconciliationIndex reports reconciliationScore 0–100 with matched/pending/disputed band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-125',
+    title: 'Finality accord attestations complete',
+    category: 'telemetry',
+    acceptance: 'finalityAccord exposes ≥5 attestations and finalityScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-126',
+    title: 'Disputed reconciliation revokes finality accord',
+    category: 'integration',
+    acceptance:
+      'Disputed reconciliation or reopened closure yields finalityAccordBlocksReconciliation.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

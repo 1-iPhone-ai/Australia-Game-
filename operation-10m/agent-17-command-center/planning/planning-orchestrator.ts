@@ -89,6 +89,8 @@ import { buildAgent17VaultIndex } from './vault-index.ts';
 import { buildAgent17TransferAccord } from './transfer-accord.ts';
 import { buildAgent17SettlementIndex } from './settlement-index.ts';
 import { buildAgent17ClosureAccord } from './closure-accord.ts';
+import { buildAgent17ReconciliationIndex } from './reconciliation-index.ts';
+import { buildAgent17FinalityAccord } from './finality-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -523,6 +525,16 @@ export function buildAgent17PlanningDepthSnapshot(
     transferAccord,
     vaultIndex,
   });
+  const reconciliationIndex = buildAgent17ReconciliationIndex({
+    closureAccord,
+    settlementIndex,
+    transferAccord,
+  });
+  const finalityAccord = buildAgent17FinalityAccord({
+    reconciliationIndex,
+    closureAccord,
+    settlementIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -594,6 +606,8 @@ export function buildAgent17PlanningDepthSnapshot(
     transferAccord,
     settlementIndex,
     closureAccord,
+    reconciliationIndex,
+    finalityAccord,
   };
 }
 
