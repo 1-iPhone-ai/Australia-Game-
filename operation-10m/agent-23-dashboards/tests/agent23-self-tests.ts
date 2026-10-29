@@ -188,6 +188,12 @@ import { nrDashBuildChokepointPulseAsymmetry } from '../core/chokepoint-pulse-as
 import { nrDashBuildLrDerivedSnippetTurnGap } from '../core/lr-derived-snippet-turn-gap.ts';
 import { nrDashBuildMergedCorridorSaturationShare } from '../core/merged-corridor-saturation-share.ts';
 import { nrDashBuildMajorHistoryOverlapGap } from '../core/major-history-overlap-gap.ts';
+import { nrDashBuildRivalOpenNeedsSkewGap } from '../core/rival-open-needs-skew-gap.ts';
+import { nrDashBuildPeakSeverityConcentration } from '../core/peak-severity-concentration.ts';
+import { nrDashBuildBorderPulseAsymmetry } from '../core/border-pulse-asymmetry.ts';
+import { nrDashBuildNsSnippetSourceGap } from '../core/ns-snippet-source-gap.ts';
+import { nrDashBuildHubLinkSaturationShare } from '../core/hub-link-saturation-share.ts';
+import { nrDashBuildMeaningfulHistoryOverlapGap } from '../core/meaningful-history-overlap-gap.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -1487,6 +1493,45 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     const lr = createAgent23LrFixture();
     lr.state.derived.push({ turn: 5, text: 'National beat', significance: 'major' });
     const gap = nrDashBuildMajorHistoryOverlapGap(lr, createAgent23NsFixture())!;
+    return gap.sharedTurnCount === 1 && gap.overlapGap === 1;
+  });
+
+  check('a23_rival_open_needs_skew_gap', 'Rival open-needs skew gap tracks NSW rival fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { NSW: 'rival' })!;
+    const gap = nrDashBuildRivalOpenNeedsSkewGap(snap)!;
+    return gap.rivalRegionCount === 1 && gap.openNeedsSkewGap >= 0 && gap.ownershipSkew === 0;
+  });
+
+  check('a23_peak_severity_concentration', 'Peak severity concentration splits critical NSW fixture', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.regions.NSW!.needs[0]!.severity = 'critical';
+    const conc = nrDashBuildPeakSeverityConcentration(lr)!;
+    return conc.regionCount === COMM_REGION_CODES.length && conc.concentrationIndex > 0.1;
+  });
+
+  check('a23_border_pulse_asymmetry', 'Border pulse asymmetry is positive on hottest border fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const asym = nrDashBuildBorderPulseAsymmetry(createAgent23NsFixture(), nrDashBuildRegionMapNodes(snap))!;
+    return asym.borderLinkCount > 0 && asym.maxEndpointDelta > 0.01;
+  });
+
+  check('a23_ns_snippet_source_gap', 'NS snippet source gap matches NS history on merged fixture', () => {
+    const ns = createAgent23NsFixture();
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), ns, null)!;
+    const gap = nrDashBuildNsSnippetSourceGap(ns, snap)!;
+    return gap.nsSourceCount === 1 && gap.matchedSnippetCount === 1 && gap.sourceGap === 0;
+  });
+
+  check('a23_hub_link_saturation_share', 'Hub link saturation share is below one on fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const sat = nrDashBuildHubLinkSaturationShare(createAgent23NsFixture(), nrDashBuildRegionMapNodes(snap))!;
+    return sat.touchingLinkCount > 0 && sat.saturationShare > 0 && sat.saturationShare <= 1;
+  });
+
+  check('a23_meaningful_history_overlap_gap', 'Meaningful-history overlap gap counts duplicate NS turns', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.derived.push({ turn: 5, text: 'Echo', significance: 'meaningful' });
+    const gap = nrDashBuildMeaningfulHistoryOverlapGap(lr, createAgent23NsFixture())!;
     return gap.sharedTurnCount === 1 && gap.overlapGap === 1;
   });
 
