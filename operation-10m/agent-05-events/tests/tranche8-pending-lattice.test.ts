@@ -17,12 +17,12 @@ describe('Tranche 8 pending-lattice catalog', () => {
   it('adds 320 pending-lattice chains', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE8_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche8Chains, 320);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 14280);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 14600);
   });
 
   it('uses op10m_t8 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 14280);
+    assert.equal(ids.size, 14600);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE8) {
       assert.match(c.chainId, /^op10m_t8_/);
     }
