@@ -144,6 +144,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Accessibility & timeline stress',
     shockIds: ['global_slowdown', 'credit_contraction'],
     description: 'Failing UI accessibility with broken history timeline continuity (harness overlay).'
+  },
+  {
+    id: 'liquidity_maps_stress',
+    label: 'Liquidity & maps stress',
+    shockIds: ['credit_contraction', 'global_slowdown'],
+    description: 'Frozen system liquidity with distorted maps telemetry (harness overlay).'
   }
 ];
 

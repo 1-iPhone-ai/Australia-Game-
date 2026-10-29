@@ -38,6 +38,8 @@ import type { MacroClimatePolicySpillover } from './bridge-v1018-climate-policy.
 import type { MacroForecastDispersionSpillover } from './bridge-v1021-forecast-dispersion.ts';
 import type { MacroAccessibilitySpillover } from './bridge-v1022-accessibility.ts';
 import type { MacroTimelineSpillover } from './bridge-v1024-timeline.ts';
+import type { MacroLiquiditySpillover } from './bridge-v1016-liquidity.ts';
+import type { MacroMapsTelemetrySpillover } from './bridge-v1023-maps-telemetry.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -84,6 +86,8 @@ export function buildMacroTransmissionReport(params: {
   forecastDispersion?: MacroForecastDispersionSpillover;
   accessibility?: MacroAccessibilitySpillover;
   timeline?: MacroTimelineSpillover;
+  liquidity?: MacroLiquiditySpillover;
+  mapsTelemetry?: MacroMapsTelemetrySpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -115,6 +119,8 @@ export function buildMacroTransmissionReport(params: {
   const forecastDispersion = params.forecastDispersion ?? ZERO_SPILLOVER;
   const accessibility = params.accessibility ?? ZERO_SPILLOVER;
   const timeline = params.timeline ?? ZERO_SPILLOVER;
+  const liquidity = params.liquidity ?? ZERO_SPILLOVER;
+  const mapsTelemetry = params.mapsTelemetry ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -407,6 +413,22 @@ export function buildMacroTransmissionReport(params: {
       timeline.investmentNudge,
       timeline.productivityNudge,
       timeline.summary
+    ),
+    layer(
+      'v10.16_liquidity',
+      'System liquidity',
+      liquidity.cycleNudge,
+      liquidity.investmentNudge,
+      liquidity.productivityNudge,
+      liquidity.summary
+    ),
+    layer(
+      'v10.23_maps_telemetry',
+      'Maps telemetry',
+      mapsTelemetry.cycleNudge,
+      mapsTelemetry.investmentNudge,
+      mapsTelemetry.productivityNudge,
+      mapsTelemetry.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

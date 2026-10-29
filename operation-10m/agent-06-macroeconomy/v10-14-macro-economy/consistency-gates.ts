@@ -707,5 +707,42 @@ export function evaluateMacroConsistencyGates(
       summary: 'Firm cycle/investment transmission coupling — shocks may propagate quickly across layers.'
     });
   }
+  const liq: any = inputs.systemLiquidity ?? inputs.creditMarkets?.liquidity;
+  const liqBand = String(liq?.band ?? liq?.stressBand ?? liq?.stance ?? '');
+  if (
+    (liqBand === 'frozen' || liqBand === 'critical') &&
+    (state.investmentClimate === 'frozen' || state.creditSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'system_liquidity_frozen',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Frozen system liquidity aligns with tight macro investment/credit read.'
+    });
+  }
+  const mt: any = inputs.mapsTelemetry ?? inputs.dashboardsMaps?.telemetry;
+  const mapFidelity = String(mt?.geoFidelityBand ?? mt?.fidelityBand ?? '');
+  if (
+    (mapFidelity === 'distorted' || mapFidelity === 'critical') &&
+    (state.regionalDivergence?.band === 'wide_spread' || state.transmissionImbalance?.band === 'tilted')
+  ) {
+    gates.push({
+      id: 'maps_telemetry_distorted',
+      triggered: true,
+      severity: 'info',
+      summary: 'Distorted maps telemetry coincides with wide regional or tilted transmission imbalance.'
+    });
+  }
+  if (
+    state.transmissionImbalance?.band === 'restrictive_heavy' ||
+    state.transmissionImbalance?.band === 'tilted'
+  ) {
+    gates.push({
+      id: 'transmission_imbalance_tilted',
+      triggered: true,
+      severity: 'info',
+      summary: 'Tilted transmission imbalance — restrictive mass dominates supportive spillover.'
+    });
+  }
   return gates;
 }
