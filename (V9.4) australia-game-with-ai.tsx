@@ -12808,7 +12808,7 @@ export function reduceGameAction(
             description: action.payload?.description || action.parameters?.description || 'Earned XP',
           };
           currentProfile.totalXP = newXP;
-          currentProfile.level = newLevel;
+          currentProfile.currentLevel = newLevel;
           if (!currentProfile.history) currentProfile.history = [];
           currentProfile.history.push(newRecord);
           nextState.careerProfile = currentProfile;
@@ -79243,6 +79243,12 @@ export function evaluateTurnMasterSwitches(gameState: GameStateSnapshot, setting
   if (currentSettings?.campaignEngineEnabled) {
     nextState = evaluateCampaignChapterProgression(nextState);
   }
+  if (currentSettings?.fogOfWarEnabled) {
+    nextState = evaluateFogOfWarAndIntel(nextState);
+  }
+  if (currentSettings?.aiRivalryEnabled) {
+    nextState = evaluateAiRelationshipDecay(nextState);
+  }
   return nextState;
 }
 
@@ -79282,6 +79288,185 @@ export function evaluateCampaignProgression(
   }
 
   return { campaignState };
+}
+
+// O111 Agent 15 — integrated career + campaign progression on each turn/day boundary
+const CAREER_XP_PER_LEVEL = 1000;
+
+function careerDeterministicTimestamp(turnNumber: number): string {
+  const FIXED_EPOCH = 1704067200000;
+  return new Date(FIXED_EPOCH + (Math.max(1, turnNumber) - 1) * 86400000).toISOString();
+}
+
+function countProgressionControlledRegions(gameState: GameStateSnapshot): number {
+  const player = (gameState as { player?: { visitedRegions?: string[]; startingRegions?: string[] } }).player;
+  const visited = player?.visitedRegions || player?.startingRegions || (gameState as { controlledRegions?: string[] }).controlledRegions || [];
+  return Array.isArray(visited) ? visited.length : 0;
+}
+
+function countEquippedHighTierRelics(gameState: GameStateSnapshot, playerId: string = 'player'): number {
+  const equipped = (gameState as { equippedRelicsByActor?: Record<string, Record<string, RelicRewardItem | null>> }).equippedRelicsByActor?.[playerId];
+  if (!equipped) return 0;
+  return Object.values(equipped).filter(r => r && ['rare', 'epic', 'legendary'].includes(String(r.rarity))).length;
+}
+
+function careerHistoryHasSource(profile: CareerProfile, sourceKey: string): boolean {
+  return (profile.history || []).some(h => h.source === sourceKey || h.id === sourceKey);
+}
+
+export function syncCareerLevelRewardUnlocks(profile: CareerProfile): CareerProfile {
+  const newLevel = Math.floor(profile.totalXP / CAREER_XP_PER_LEVEL) + 1;
+  const unlocks = (profile.unlocks || []).map(u => ({
+    ...u,
+    unlocked: Boolean(u.unlocked) || newLevel >= u.requiredLevel,
+  }));
+  return { ...profile, currentLevel: newLevel, unlocks };
+}
+
+export function deriveLiveCareerAchievementProgress(
+  gameState: GameStateSnapshot,
+  profile: CareerProfile
+): Record<string, { current: number; target: number }> {
+  const player = (gameState as { player?: { money?: number } }).player || {};
+  const money = Number(player.money || 0);
+  const regions = countProgressionControlledRegions(gameState);
+  const stats = profile.stats || createDefaultCareerProfile().stats;
+  const rareRelics = countEquippedHighTierRelics(gameState);
+  const achievements = profile.achievements || DEFAULT_CAREER_ACHIEVEMENTS;
+
+  const base: Record<string, { current: number; target: number }> = {};
+  Object.entries(achievements).forEach(([id, ach]) => {
+    base[id] = { current: ach.progress?.current ?? 0, target: ach.progress?.target ?? 1 };
+  });
+
+  if (base.ach_outback_dominator) {
+    base.ach_outback_dominator.current = Math.min(regions, base.ach_outback_dominator.target);
+  }
+  if (base.ach_expansionist_supreme) {
+    base.ach_expansionist_supreme.current = Math.min(regions, base.ach_expansionist_supreme.target);
+  }
+  if (base.ach_tycoon_north) {
+    base.ach_tycoon_north.current = Math.min(money, base.ach_tycoon_north.target);
+  }
+  if (base.ach_consensus_architect) {
+    base.ach_consensus_architect.current = Math.min(stats.governanceProposalsPassed, base.ach_consensus_architect.target);
+  }
+  if (base.ach_relic_hunter) {
+    base.ach_relic_hunter.current = Math.min(rareRelics, base.ach_relic_hunter.target);
+  }
+  if (base.ach_outback_scout) {
+    base.ach_outback_scout.current = Math.min(stats.reconMissionsCompleted, base.ach_outback_scout.target);
+  }
+
+  return base;
+}
+
+function applyCareerXPGain(profile: CareerProfile, amount: number, turn: number, source: string, description: string): CareerProfile {
+  if (amount <= 0) return profile;
+  const recordIndex = (profile.history?.length || 0) + 1;
+  const newRecord: CareerXPRecord = {
+    id: `xp_t${turn}_idx${recordIndex}_${source}`,
+    timestamp: careerDeterministicTimestamp(turn),
+    turn,
+    amount,
+    source,
+    description,
+  };
+  const next: CareerProfile = {
+    ...profile,
+    totalXP: profile.totalXP + amount,
+    history: [newRecord, ...(profile.history || [])].slice(0, 100),
+  };
+  return syncCareerLevelRewardUnlocks(next);
+}
+
+function unlockCareerAchievementInProfile(profile: CareerProfile, achId: string, turn: number): CareerProfile {
+  const ach = profile.achievements?.[achId];
+  if (!ach || ach.unlocked) return profile;
+  const updatedAch: CareerAchievement = {
+    ...ach,
+    unlocked: true,
+    unlockedAtTurn: turn,
+    unlockedAtTimestamp: careerDeterministicTimestamp(turn),
+    progress: { ...ach.progress, current: ach.progress.target },
+  };
+  let next: CareerProfile = {
+    ...profile,
+    achievements: { ...profile.achievements, [achId]: updatedAch },
+  };
+  return applyCareerXPGain(next, ach.xpReward, turn, `achievement_${achId}`, `Unlocked: ${ach.title}`);
+}
+
+/** Deterministic per-turn career + achievement sync; respects gameplay settings gates. */
+export function evaluateCareerProgressionTurnStep(
+  gameState: GameStateSnapshot,
+  settings?: GameSettingsState
+): GameStateSnapshot {
+  const currentSettings = settings || (gameState as ExtendedGameState).gameSettings;
+  const careerOn = Boolean(currentSettings?.careerProgressionEnabled);
+  const achievementsOn = Boolean(currentSettings?.achievementsEnabled);
+  if (!careerOn && !achievementsOn) return gameState;
+
+  const turn = gameState.turnCounter || gameState.day || 1;
+  const priorProfile = gameState.careerProfile || createDefaultCareerProfile(
+    (gameState as { player?: { id?: string } }).player?.id || 'player'
+  );
+  let profile = priorProfile;
+
+  if (careerOn && currentSettings?.campaignEngineEnabled && gameState.campaignState?.chapterOutcomes) {
+    Object.entries(gameState.campaignState.chapterOutcomes).forEach(([chapterId, outcome]) => {
+      const sourceKey = `campaign_chapter_${chapterId}`;
+      if (outcome.completedOnDay === turn && !careerHistoryHasSource(profile, sourceKey)) {
+        profile = applyCareerXPGain(profile, 250, turn, sourceKey, `Campaign chapter completed: ${chapterId}`);
+      }
+    });
+  }
+
+  if (achievementsOn) {
+    let achievements = { ...(profile.achievements || DEFAULT_CAREER_ACHIEVEMENTS) };
+    const progressMap = deriveLiveCareerAchievementProgress(gameState, { ...profile, achievements });
+    Object.entries(progressMap).forEach(([id, prog]) => {
+      const existing = achievements[id];
+      if (!existing || existing.unlocked) return;
+      achievements[id] = { ...existing, progress: { current: prog.current, target: prog.target } };
+      if (prog.current >= prog.target) {
+        profile = { ...profile, achievements };
+        profile = unlockCareerAchievementInProfile(profile, id, turn);
+        achievements = { ...profile.achievements };
+      }
+    });
+    profile = { ...profile, achievements };
+  }
+
+  if (careerOn) {
+    profile = syncCareerLevelRewardUnlocks(profile);
+  }
+
+  if (profile === priorProfile) return gameState;
+  return { ...gameState, careerProfile: profile };
+}
+
+/** Narrative, campaign, fog, rivalry, then career — used after advanceDay crisis tick (avoids double crisis eval). */
+export function evaluateIntegratedProgressionTurnStep(
+  gameState: GameStateSnapshot,
+  settings?: GameSettingsState
+): GameStateSnapshot {
+  const currentSettings = settings || (gameState as ExtendedGameState).gameSettings;
+  let nextState = gameState;
+  if (currentSettings?.narrativeEngineEnabled) {
+    nextState = evaluateNarrativeDecisions(nextState);
+  }
+  if (currentSettings?.campaignEngineEnabled) {
+    nextState = evaluateCampaignChapterProgression(nextState);
+  }
+  if (currentSettings?.fogOfWarEnabled) {
+    nextState = evaluateFogOfWarAndIntel(nextState);
+  }
+  if (currentSettings?.aiRivalryEnabled) {
+    nextState = evaluateAiRelationshipDecay(nextState);
+  }
+  nextState = evaluateCareerProgressionTurnStep(nextState, settings);
+  return nextState;
 }
 
 export function evaluateNarrativeDecisions(gameState: GameStateSnapshot): GameStateSnapshot {
@@ -135810,6 +135995,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'replay', label: 'Replay Studio', tier: 'quick', section: 'Replay Integrity', severity: 'CRITICAL', run: () => runReplayStudioSelfTests() },
   { id: 'intent', label: 'Player Intent', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runPlayerIntentLayerSelfTests() },
   { id: 'copilot', label: 'Co-Pilot', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runCoPilotDevSelfTests() },
+  { id: 'progression', label: 'Progression integration (O111-15)', tier: 'quick', section: 'Critical Invariants', severity: 'MAJOR', run: () => runProgressionIntegrationSelfTests() },
   { id: 'reliability', label: 'Reliability upgrade regressions', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runReliabilityUpgradeSelfTests() },
   { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
@@ -180324,6 +180510,36 @@ export function triggerJsonFileDownload(filename: string, data: unknown): boolea
   }
 }
 
+
+export function runProgressionIntegrationSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  check('prog_master_switches_fog', 'evaluateTurnMasterSwitches includes fog-of-war tick when enabled', () => {
+    const settings = { ...createDefaultGameSettings(), fogOfWarEnabled: true };
+    const mission: ReconMission = { id: 'm1', targetRegion: 'NSW', actorId: 'player', missionType: 'satellite_scan', cost: 100, turnsRemaining: 1, successRate: 1, riskFactor: 0, status: 'active' };
+    const gs: any = { day: 2, turnCounter: 2, gameSettings: settings, activeReconMissions: { player: [mission] } };
+    const out = evaluateTurnMasterSwitches(gs, settings);
+    return (out.activeReconMissions?.player?.[0]?.status === 'completed') || JSON.stringify(out.activeReconMissions);
+  });
+  check('prog_career_tycoon_unlock', 'Career progression unlocks Tycoon of the North at treasury threshold', () => {
+    const settings = { ...createDefaultGameSettings(), careerProgressionEnabled: true, achievementsEnabled: true };
+    const gs: any = { day: 4, turnCounter: 4, player: { id: 'player', money: 100000 }, gameSettings: settings };
+    const out = evaluateCareerProgressionTurnStep(gs, settings);
+    const ach = out.careerProfile?.achievements?.ach_tycoon_north;
+    return (ach?.unlocked === true && (out.careerProfile?.totalXP || 0) >= 400) || JSON.stringify(ach);
+  });
+  check('prog_integrated_entry', 'Integrated progression turn step chains master switches then career', () => {
+    const settings = { ...createDefaultGameSettings(), careerProgressionEnabled: true, achievementsEnabled: true, campaignEngineEnabled: false };
+    const gs: any = { day: 1, turnCounter: 1, player: { id: 'player', money: 100000 }, gameSettings: settings };
+    const out = evaluateIntegratedProgressionTurnStep(gs, settings);
+    return Boolean(out.careerProfile?.achievements?.ach_tycoon_north?.unlocked);
+  });
+  return results;
+}
+
 // ============================================================================
 // SECTION 21B: RELIABILITY UPGRADE — FOCUSED REGRESSION SELF-TESTS
 // ----------------------------------------------------------------------------
@@ -198276,18 +198492,7 @@ function dispatchGameSettingsChange(
     if (gameSettings?.dynamicCrisisChainsEnabled) {
       nextState = evaluateTurnCrisisChains(nextState, gameSettings, mergeRegionalCrisisContext(worldCrisisContext(swrStateRef.current), lrStateRef.current));
     }
-    if (gameSettings?.narrativeEngineEnabled) {
-      nextState = evaluateNarrativeDecisions(nextState);
-    }
-    if (gameSettings?.campaignEngineEnabled) {
-      nextState = evaluateCampaignChapterProgression(nextState);
-    }
-    if (gameSettings?.fogOfWarEnabled) {
-      nextState = evaluateFogOfWarAndIntel(nextState);
-    }
-    if (gameSettings?.aiRivalryEnabled) {
-      nextState = evaluateAiRelationshipDecay(nextState);
-    }
+    nextState = evaluateIntegratedProgressionTurnStep(nextState, gameSettings);
     if (gameSettings.aiMemoryEnabled !== false) {
       const decayTurn = Math.max(newDay, gameState.turnCounter || 0);
       const nextMemories = applyTurnDecayToAiMemories(aiMemoriesRef.current || gameState.aiMemoriesByActor || {}, decayTurn);
@@ -198326,6 +198531,15 @@ function dispatchGameSettingsChange(
     }
     if (nextState.campaignState !== gameState.campaignState) {
       dispatchGameState({ type: 'SET_CAMPAIGN_STATE', payload: nextState.campaignState });
+    }
+    if (nextState.careerProfile !== gameState.careerProfile) {
+      dispatchGameState({ type: 'LOAD_STATE', payload: { careerProfile: nextState.careerProfile } });
+    }
+    if (nextState.activeReconMissions !== gameState.activeReconMissions) {
+      dispatchGameState({ type: 'LOAD_STATE', payload: { activeReconMissions: nextState.activeReconMissions } });
+    }
+    if (nextState.aiRelationshipState !== gameState.aiRelationshipState) {
+      dispatchGameState({ type: 'LOAD_STATE', payload: { aiRelationshipState: nextState.aiRelationshipState } });
     }
 
     if (gameSettings.automationDailyDigestEnabled) {
