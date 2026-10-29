@@ -151,6 +151,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     guardianRiskBand: 'low',
     copilotSpendingHeadroom: 0,
     objectiveBehindSchedule: false,
+    liquidityStressIndex: 0,
+    copilotTrustGapScore: 0,
+    objectivePacePct: null,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));

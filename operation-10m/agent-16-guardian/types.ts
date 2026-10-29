@@ -72,6 +72,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   guardianRiskBand: 'low' | 'elevated' | 'critical';
   copilotSpendingHeadroom: number;
   objectiveBehindSchedule: boolean;
+  liquidityStressIndex: number;
+  copilotTrustGapScore: number;
+  objectivePacePct: number | null;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {

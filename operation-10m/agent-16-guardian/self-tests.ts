@@ -20,7 +20,7 @@ import {
   parseObjectiveContextFromGame,
 } from './objective-context.js';
 import { buildGuardianCoPilotMonitorSnapshot } from './snapshot.js';
-import { buildGuardianDepthAdviceLines, runGuardianDepthUnitSelfTests } from './guardian-depth.js';
+import { buildGuardianDepthAdviceLines, buildGuardianDepthCouplingReport, runGuardianDepthUnitSelfTests } from './guardian-depth.js';
 import type { AdvisoryRecommendation, Agent16SelfTestResult, AiSuggestedAction } from './types.js';
 
 function check(
@@ -193,22 +193,30 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 2 scale wave brings monitor catalog to 58+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 58;
+  check(results, 'a16_expansion_count', 'Round 3 scale wave brings monitor catalog to 70+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 70;
   });
 
-  check(results, 'a16_risk_score_enrich', 'Enriched snapshot exposes Guardian risk score band', () => {
+  check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
     const snap = createAdvisoryOpsFixtureSnapshot({
-      guardianEnabled: true,
-      cash: 10,
-      minCashReserve: 500,
+      cash: 30,
+      minCashReserve: 400,
+      debt: 600,
+      maxSpendPerAction: 8000,
+      copilotEnabled: true,
       copilotAutonomousActive: true,
       guardianRequiresConfirmation: true,
       objectiveActive: true,
-      objectiveProgressPct: 10,
+      objectiveProgressPct: 12,
       objectiveTurnsRemaining: 2,
     });
-    return snap.guardianRiskScore >= 40 && snap.guardianRiskBand !== 'low';
+    const report = buildGuardianDepthCouplingReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round3_metrics', 'Round 3 depth metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({ cash: 50, minCashReserve: 400, debt: 700 });
+    return snap.liquidityStressIndex >= 40 && snap.copilotSpendingHeadroom >= 0;
   });
 
   check(results, 'a16_depth_advice_lines', 'Guardian depth advice lines are non-executable strings', () => {

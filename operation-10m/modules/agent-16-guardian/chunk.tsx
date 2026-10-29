@@ -72,6 +72,10 @@ export interface GuardianCoPilotMonitorSnapshot {
   guardianProtectionMaximum: boolean;
   guardianAutomationLikelyBlocked: boolean;
   guardianConfirmationLikelyRequired: boolean;
+  guardianRiskScore: number;
+  guardianRiskBand: 'low' | 'elevated' | 'critical';
+  copilotSpendingHeadroom: number;
+  objectiveBehindSchedule: boolean;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -183,6 +187,10 @@ const FIELD_LABELS: Partial<Record<keyof GuardianCoPilotMonitorSnapshot, string>
   guardianProtectionLevel: 'Guardian protection level',
   guardianAutomationLikelyBlocked: 'Guardian may block automation',
   guardianConfirmationLikelyRequired: 'Guardian confirmation likely',
+  guardianRiskScore: 'Guardian risk score',
+  guardianRiskBand: 'Guardian risk band',
+  copilotSpendingHeadroom: 'Co-Pilot spending headroom',
+  objectiveBehindSchedule: 'Objective behind schedule',
 };
 
 export function formatSnapshotValue(value: unknown): string | number | boolean | null {
@@ -453,12 +461,58 @@ export function buildGuardianDepthAdviceLines(snapshot: GuardianCoPilotMonitorSn
   return lines.slice(0, 4);
 }
 
+export function computeCopilotSpendingHeadroom(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  return Math.max(0, snapshot.cash - snapshot.minCashReserve);
+}
+
+export function computeObjectiveBehindSchedule(snapshot: GuardianCoPilotMonitorSnapshot): boolean {
+  if (!snapshot.objectiveActive || snapshot.objectiveProgressPct === null || snapshot.objectiveTurnsRemaining === null) {
+    return false;
+  }
+  if (snapshot.objectiveProgressPct >= 100) return false;
+  const turns = Math.max(1, snapshot.objectiveTurnsRemaining);
+  const paceRequired = (100 - snapshot.objectiveProgressPct) / turns;
+  return paceRequired > 22;
+}
+
+export function computeGuardianRiskScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  if (!snapshot.guardianEnabled) return 0;
+  let score = 0;
+  if (snapshot.cash < snapshot.minCashReserve) score += 25;
+  if (snapshot.debt > snapshot.cash) score += 20;
+  if (snapshot.maxSpendPerAction > snapshot.cash && snapshot.cash > 0) score += 15;
+  if (snapshot.guardianAutomationLikelyBlocked) score += 20;
+  if (snapshot.copilotAutonomousActive && snapshot.guardianRequiresConfirmation) score += 15;
+  if (snapshot.takeoverSessionActive && snapshot.takeoverSessionAgeTurns >= 3) score += 10;
+  if (snapshot.blockedContinueCount >= 1) score += 10;
+  if (snapshot.objectiveBehindSchedule) score += 15;
+  if (snapshot.rivalVictoryProgressPct !== null && snapshot.rivalVictoryProgressPct >= snapshot.victoryThresholdPct * 0.75) {
+    score += 15;
+  }
+  return Math.min(100, score);
+}
+
+export function classifyGuardianRiskBand(score: number): GuardianCoPilotMonitorSnapshot['guardianRiskBand'] {
+  if (score >= 70) return 'critical';
+  if (score >= 40) return 'elevated';
+  return 'low';
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
-  return {
+  const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
+  const merged: GuardianCoPilotMonitorSnapshot = {
     ...snapshot,
     guardianAutomationLikelyBlocked: posture.automationLikelyBlocked,
     guardianConfirmationLikelyRequired: posture.confirmationLikelyRequired,
+    objectiveBehindSchedule,
+    copilotSpendingHeadroom: computeCopilotSpendingHeadroom(snapshot),
+  };
+  const guardianRiskScore = computeGuardianRiskScore(merged);
+  return {
+    ...merged,
+    guardianRiskScore,
+    guardianRiskBand: classifyGuardianRiskBand(guardianRiskScore),
   };
 }
 
@@ -481,6 +535,34 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
   ok('gd_clear', () =>
     !guardianBlocksAutomation({ allowedToProceed: true, highestSeverity: 'none', confirmationRequired: false }, 'major_mistakes')
   );
+  ok('gd_risk_score_band', () => {
+    const snap = {
+      guardianEnabled: true,
+      cash: 10,
+      minCashReserve: 500,
+      debt: 0,
+      maxSpendPerAction: 2500,
+      guardianAutomationLikelyBlocked: true,
+      guardianRequiresConfirmation: true,
+      copilotAutonomousActive: true,
+      takeoverSessionActive: false,
+      takeoverSessionAgeTurns: 0,
+      blockedContinueCount: 0,
+      objectiveBehindSchedule: true,
+      rivalVictoryProgressPct: 70,
+      victoryThresholdPct: 80,
+    } as GuardianCoPilotMonitorSnapshot;
+    const score = computeGuardianRiskScore(snap);
+    return score >= 70 && classifyGuardianRiskBand(score) === 'critical';
+  });
+  ok('gd_objective_behind', () => {
+    const snap = {
+      objectiveActive: true,
+      objectiveProgressPct: 20,
+      objectiveTurnsRemaining: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeObjectiveBehindSchedule(snap);
+  });
   return out;
 }
 
@@ -791,6 +873,145 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE.length;
 
 
+// --- source: monitor-rules-scale-wave-2.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_2: AdvisoryMonitorRule[] = [
+  {
+    id: 'guardian_risk_score_elevated',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Guardian Risk Score Elevated',
+    detailTemplate: 'Composite Guardian risk score is in the elevated band',
+    evidenceFields: ['guardianRiskScore', 'guardianRiskBand'],
+    evaluate: s => s.guardianEnabled && s.guardianRiskBand === 'elevated',
+  },
+  {
+    id: 'guardian_risk_score_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Risk Score Critical',
+    detailTemplate: 'Composite Guardian risk score is critical — review before spending AP',
+    evidenceFields: ['guardianRiskScore', 'guardianRiskBand'],
+    evaluate: s => s.guardianEnabled && s.guardianRiskBand === 'critical',
+    deepLink: { tab: 'aiTeams', section: 'aiTeams.guardian' },
+  },
+  {
+    id: 'copilot_spending_headroom_zero',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Co-Pilot Spending Headroom Zero',
+    detailTemplate: 'Cash is at or below the Co-Pilot reserve — discretionary spend blocked',
+    evidenceFields: ['copilotSpendingHeadroom', 'cash', 'minCashReserve'],
+    evaluate: s => s.copilotEnabled && s.copilotSpendingHeadroom <= 0,
+  },
+  {
+    id: 'copilot_spending_headroom_tight',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Co-Pilot Spending Headroom Tight',
+    detailTemplate: 'Less than one max-spend action of headroom above reserve',
+    evidenceFields: ['copilotSpendingHeadroom', 'maxSpendPerAction'],
+    evaluate: s => s.copilotEnabled && s.copilotSpendingHeadroom > 0 && s.copilotSpendingHeadroom < s.maxSpendPerAction,
+  },
+  {
+    id: 'objective_behind_schedule',
+    category: 'objective',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Objective Behind Schedule',
+    detailTemplate: 'Primary objective progress trails the deadline pace',
+    evidenceFields: ['objectiveBehindSchedule', 'objectiveProgressPct', 'objectiveTurnsRemaining'],
+    evaluate: s => s.objectiveActive && s.objectiveBehindSchedule,
+  },
+  {
+    id: 'objective_ap_exhausted_active',
+    category: 'objective',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Objective Active Ap Exhausted',
+    detailTemplate: 'Primary objective still open but no AP remains this turn',
+    evidenceFields: ['objectiveActive', 'apRemaining', 'objectiveProgressPct'],
+    evaluate: s =>
+      s.objectiveActive &&
+      s.apRemaining <= 0 &&
+      (s.objectiveProgressPct === null || s.objectiveProgressPct < 100),
+  },
+  {
+    id: 'guardian_strict_copilot_disabled',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'low',
+    title: 'Strict Guardian Co-Pilot Off',
+    detailTemplate: 'Guardian confirmations enabled while Co-Pilot master toggle is off',
+    evidenceFields: ['guardianRequiresConfirmation', 'copilotEnabled'],
+    evaluate: s => s.guardianEnabled && s.guardianRequiresConfirmation && !s.copilotEnabled,
+  },
+  {
+    id: 'guardian_major_mistakes_autonomous',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Major Mistakes With Autonomous Co-Pilot',
+    detailTemplate: 'Co-Pilot autonomous session under major-mistakes Guardian protection',
+    evidenceFields: ['guardianProtectionLevel', 'copilotAutonomousActive'],
+    evaluate: s =>
+      s.guardianEnabled && s.guardianProtectionLevel === 'major_mistakes' && s.copilotAutonomousActive,
+  },
+  {
+    id: 'contract_expiring_wrong_region',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contract Expiring Wrong Region',
+    detailTemplate: 'Contract expiring soon while you are not in the objective region',
+    evidenceFields: ['expiringContractCount', 'playerInObjectiveRegion', 'objectiveTargetRegion'],
+    evaluate: s =>
+      s.expiringContractCount > 0 && s.objectiveActive && Boolean(s.objectiveTargetRegion) && !s.playerInObjectiveRegion,
+  },
+  {
+    id: 'takeover_stale_guardian_replay',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Takeover Stale With Replay Log',
+    detailTemplate: 'Long takeover session with Guardian replay history — verify posture',
+    evidenceFields: ['takeoverSessionActive', 'takeoverSessionAgeTurns', 'guardianReplayCount'],
+    evaluate: s => s.takeoverSessionActive && s.takeoverSessionAgeTurns >= 3 && s.guardianReplayCount > 5,
+  },
+  {
+    id: 'rival_victory_watch_band',
+    category: 'objective',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Rival Victory Watch Band',
+    detailTemplate: 'Rival victory progress crossed 75% of threshold',
+    evidenceFields: ['rivalVictoryProgressPct', 'victoryThresholdPct'],
+    evaluate: (s: GuardianCoPilotMonitorSnapshot) => {
+      if (s.rivalVictoryProgressPct === null) return false;
+      const watch = s.victoryThresholdPct * 0.75;
+      const critical = s.victoryThresholdPct * 0.85;
+      return s.rivalVictoryProgressPct >= watch && s.rivalVictoryProgressPct < critical;
+    },
+  },
+  {
+    id: 'team_plan_objective_behind',
+    category: 'team',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Team Plan While Objective Behind',
+    detailTemplate: 'Team plan pending approval while objective is behind schedule',
+    evidenceFields: ['teamPlanPending', 'objectiveBehindSchedule'],
+    evaluate: s => s.teamPlanPending && s.objectiveBehindSchedule,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_2_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_2.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -1021,6 +1242,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   },
   ...ADVISORY_MONITOR_RULES_EXPANSION,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_2,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -1339,6 +1561,10 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     guardianProtectionMaximum: guardian.protectionLevel === 'maximum_protection',
     guardianAutomationLikelyBlocked: false,
     guardianConfirmationLikelyRequired: false,
+    guardianRiskScore: 0,
+    guardianRiskBand: 'low',
+    copilotSpendingHeadroom: 0,
+    objectiveBehindSchedule: false,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -1397,6 +1623,10 @@ export function createAdvisoryOpsFixtureSnapshot(
     guardianProtectionMaximum: false,
     guardianAutomationLikelyBlocked: false,
     guardianConfirmationLikelyRequired: false,
+    guardianRiskScore: 0,
+    guardianRiskBand: 'low',
+    copilotSpendingHeadroom: 950,
+    objectiveBehindSchedule: false,
     ...overrides,
   };
   if (snap.objectiveTargetRegion && !snap.objectiveRegion) {
@@ -1704,6 +1934,42 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['objective_near_complete'],
     notes: 'Objective above 90%',
   },
+  {
+    id: 'sc_guardian_risk_critical',
+    category: 'guardian',
+    snapshot: {
+      guardianEnabled: true,
+      cash: 10,
+      minCashReserve: 500,
+      maxSpendPerAction: 3000,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianResponseMode: 'require_confirmation',
+      guardianProtectionLevel: 'maximum_protection',
+      guardianProtectionMaximum: true,
+      objectiveActive: true,
+      objectiveProgressPct: 15,
+      objectiveTurnsRemaining: 2,
+      rivalVictoryProgressPct: 62,
+      victoryThresholdPct: 80,
+    },
+    expectRuleIds: ['guardian_risk_score_critical', 'objective_behind_schedule'],
+    notes: 'Composite risk score critical band',
+  },
+  {
+    id: 'sc_copilot_headroom_zero',
+    category: 'copilot',
+    snapshot: { copilotEnabled: true, cash: 200, minCashReserve: 250 },
+    expectRuleIds: ['copilot_spending_headroom_zero', 'cash_below_reserve'],
+    notes: 'No headroom above reserve',
+  },
+  {
+    id: 'sc_rival_watch_band',
+    category: 'objective',
+    snapshot: { rivalVictoryProgressPct: 62, victoryThresholdPct: 80 },
+    expectRuleIds: ['rival_victory_watch_band'],
+    notes: 'Rival between 75% and 85% of threshold',
+  },
 ];
 
 
@@ -1879,8 +2145,22 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Scale wave brings monitor rule catalog to 46+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 46;
+  check(results, 'a16_expansion_count', 'Round 2 scale wave brings monitor catalog to 58+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 58;
+  });
+
+  check(results, 'a16_risk_score_enrich', 'Enriched snapshot exposes Guardian risk score band', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      guardianEnabled: true,
+      cash: 10,
+      minCashReserve: 500,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 2,
+    });
+    return snap.guardianRiskScore >= 40 && snap.guardianRiskBand !== 'low';
   });
 
   check(results, 'a16_depth_advice_lines', 'Guardian depth advice lines are non-executable strings', () => {

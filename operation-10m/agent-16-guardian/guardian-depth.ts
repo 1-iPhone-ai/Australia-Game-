@@ -145,21 +145,73 @@ export function classifyGuardianRiskBand(score: number): GuardianCoPilotMonitorS
   return 'low';
 }
 
+export function computeObjectivePacePct(snapshot: GuardianCoPilotMonitorSnapshot): number | null {
+  if (!snapshot.objectiveActive || snapshot.objectiveProgressPct === null || snapshot.objectiveTurnsRemaining === null) {
+    return null;
+  }
+  if (snapshot.objectiveTurnsRemaining <= 0) return snapshot.objectiveProgressPct >= 100 ? 0 : 100;
+  return Math.round((100 - snapshot.objectiveProgressPct) / Math.max(1, snapshot.objectiveTurnsRemaining));
+}
+
+export function computeLiquidityStressIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let stress = 0;
+  if (snapshot.cash <= 0) stress += 35;
+  else if (snapshot.cash < snapshot.minCashReserve) stress += 25;
+  if (snapshot.debt > snapshot.cash) stress += 25;
+  if (snapshot.copilotSpendingHeadroom <= 0) stress += 20;
+  else if (snapshot.copilotSpendingHeadroom < snapshot.maxSpendPerAction * 0.5) stress += 10;
+  if (snapshot.maxSpendPerAction > snapshot.cash && snapshot.cash > 0) stress += 15;
+  return Math.min(100, stress);
+}
+
+export function computeCopilotTrustGapScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  if (!snapshot.copilotEnabled && !snapshot.copilotAutonomousActive) return 0;
+  let gap = 0;
+  if (snapshot.guardianRequiresConfirmation) gap += 25;
+  if (snapshot.guardianProtectionMaximum) gap += 20;
+  if (snapshot.copilotAutonomousActive) gap += 25;
+  if (snapshot.copilotHoldsControl) gap += 15;
+  if (!snapshot.guardianEnabled) gap += 30;
+  if (snapshot.guardianAutomationLikelyBlocked) gap += 15;
+  return Math.min(100, gap);
+}
+
+export function buildGuardianDepthCouplingReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.liquidityStressIndex >= 60) {
+    lines.push(`Liquidity stress index ${snapshot.liquidityStressIndex} — discretionary Co-Pilot spend is constrained`);
+  }
+  if (snapshot.copilotTrustGapScore >= 50) {
+    lines.push(`Co-Pilot / Guardian trust gap ${snapshot.copilotTrustGapScore} — align authority and protection before automation`);
+  }
+  if (snapshot.objectivePacePct !== null && snapshot.objectivePacePct > 30) {
+    lines.push(`Objective needs ~${snapshot.objectivePacePct}% progress per remaining turn (advisory estimate)`);
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
+  const copilotSpendingHeadroom = computeCopilotSpendingHeadroom(snapshot);
   const merged: GuardianCoPilotMonitorSnapshot = {
     ...snapshot,
     guardianAutomationLikelyBlocked: posture.automationLikelyBlocked,
     guardianConfirmationLikelyRequired: posture.confirmationLikelyRequired,
     objectiveBehindSchedule,
-    copilotSpendingHeadroom: computeCopilotSpendingHeadroom(snapshot),
+    copilotSpendingHeadroom,
   };
   const guardianRiskScore = computeGuardianRiskScore(merged);
-  return {
+  const withRisk: GuardianCoPilotMonitorSnapshot = {
     ...merged,
     guardianRiskScore,
     guardianRiskBand: classifyGuardianRiskBand(guardianRiskScore),
+  };
+  return {
+    ...withRisk,
+    liquidityStressIndex: computeLiquidityStressIndex(withRisk),
+    copilotTrustGapScore: computeCopilotTrustGapScore(withRisk),
+    objectivePacePct: computeObjectivePacePct(withRisk),
   };
 }
 
@@ -209,6 +261,28 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       objectiveTurnsRemaining: 3,
     } as GuardianCoPilotMonitorSnapshot;
     return computeObjectiveBehindSchedule(snap);
+  });
+  ok('gd_liquidity_stress', () => {
+    const snap = {
+      cash: 50,
+      minCashReserve: 500,
+      debt: 800,
+      maxSpendPerAction: 2000,
+      copilotSpendingHeadroom: 0,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeLiquidityStressIndex(snap) >= 60;
+  });
+  ok('gd_trust_gap', () => {
+    const snap = {
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      guardianEnabled: true,
+      guardianAutomationLikelyBlocked: true,
+      copilotHoldsControl: false,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeCopilotTrustGapScore(snap) >= 50;
   });
   return out;
 }

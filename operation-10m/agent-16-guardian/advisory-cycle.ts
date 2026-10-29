@@ -71,6 +71,9 @@ export function createAdvisoryOpsFixtureSnapshot(
     guardianRiskBand: 'low',
     copilotSpendingHeadroom: 950,
     objectiveBehindSchedule: false,
+    liquidityStressIndex: 0,
+    copilotTrustGapScore: 0,
+    objectivePacePct: null,
     ...overrides,
   };
   if (snap.objectiveTargetRegion && !snap.objectiveRegion) {
