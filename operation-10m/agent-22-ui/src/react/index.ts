@@ -57,3 +57,7 @@ export { AnnouncementDedupDayHintStrip } from './AnnouncementDedupDayHintStrip.j
 export { LayoutPresetDensityDayCoachStrip } from './LayoutPresetDensityDayCoachStrip.js';
 export { MotionTimingDayCoachStrip } from './MotionTimingDayCoachStrip.js';
 export { MemoryQuickActionDayCoachStrip } from './MemoryQuickActionDayCoachStrip.js';
+export { DeferredAnnouncementFlushDayHintStrip } from './DeferredAnnouncementFlushDayHintStrip.js';
+export { TextScaleReadabilityDayCoachStrip } from './TextScaleReadabilityDayCoachStrip.js';
+export { ResponsiveNavRailDayCoachStrip } from './ResponsiveNavRailDayCoachStrip.js';
+export { OnboardingFunnelDayHintStrip } from './OnboardingFunnelDayHintStrip.js';

@@ -120,6 +120,18 @@ export function SimulationUiEvolutionBridge({
       {result.memoryQuickActionDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-memory-qa-day">{result.memoryQuickActionDayCoachCopy}</div>
       ) : null}
+      {result.deferredAnnouncementFlushDayHintCopy ? (
+        <div data-testid="sim-ui-evolution-deferred-flush-day">{result.deferredAnnouncementFlushDayHintCopy}</div>
+      ) : null}
+      {result.textScaleReadabilityDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-text-readability-day">{result.textScaleReadabilityDayCoachCopy}</div>
+      ) : null}
+      {result.responsiveNavRailDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-nav-rail-day">{result.responsiveNavRailDayCoachCopy}</div>
+      ) : null}
+      {result.onboardingFunnelDayHintCopy ? (
+        <div data-testid="sim-ui-evolution-onboarding-day">{result.onboardingFunnelDayHintCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets

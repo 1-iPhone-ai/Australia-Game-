@@ -95,6 +95,11 @@ const FILES = [
   'engine/layout-preset-density-day-coach.ts',
   'engine/motion-timing-day-coach.ts',
   'engine/memory-quick-action-day-coach.ts',
+  'engine/deferred-announcement-flush-day-hint.ts',
+  'engine/text-scale-readability-day-coach.ts',
+  'engine/responsive-nav-rail-day-coach.ts',
+  'engine/onboarding-funnel-day-hint.ts',
+  'engine/round21-self-tests.ts',
   'engine/round20-self-tests.ts',
   'engine/round19-self-tests.ts',
   'engine/round18-self-tests.ts',
@@ -182,6 +187,10 @@ const FILES = [
   'react/LayoutPresetDensityDayCoachStrip.tsx',
   'react/MotionTimingDayCoachStrip.tsx',
   'react/MemoryQuickActionDayCoachStrip.tsx',
+  'react/DeferredAnnouncementFlushDayHintStrip.tsx',
+  'react/TextScaleReadabilityDayCoachStrip.tsx',
+  'react/ResponsiveNavRailDayCoachStrip.tsx',
+  'react/OnboardingFunnelDayHintStrip.tsx',
 ];
 
 function stripModulePreamble(source) {
@@ -223,7 +232,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.20.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.21.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -366,6 +375,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
     check(\`agent22_round20_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
+  const round21 = runAgent22Round21SelfTests();
+  for (const r of round21.results) {
+    check(\`agent22_round21_\${r.id}\`, r.name, r.passed, r.detail);
+  }
+
   const failed = results.filter(r => !r.passed).length;
   return {
     passed: results.length - failed,
@@ -392,7 +406,7 @@ const manifest = {
   contentSha256,
   chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
   selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
-  moduleVersion: '1.20.0',
+  moduleVersion: '1.21.0',
 };
 fs.writeFileSync(
   path.join(outDir, 'module.manifest.json'),

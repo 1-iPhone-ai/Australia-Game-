@@ -1,6 +1,6 @@
 import type { EvolvingUiAccessPolicy } from '../types/access-policy.js';
 import type { ProgressionSignalSnapshot } from '../types/progression.js';
-import { EVOLVING_UI_PANEL_BY_ID } from '../registry/panel-definitions.js';
+import { EVOLVING_UI_PANEL_BY_ID, EVOLVING_UI_PANEL_REGISTRY } from '../registry/panel-definitions.js';
 import { resolveEvolvingPanelVisibility } from '../engine/resolve-panel-visibility.js';
 import { formatPanelUnlockAnnouncement } from '../a11y/live-region-controller.js';
 import { buildUnlockHintForPanel } from '../engine/unlock-hint-formatter.js';
@@ -61,6 +61,10 @@ import { buildAnnouncementDedupDayHint } from '../engine/announcement-dedup-day-
 import { buildLayoutPresetDensityDayCoach } from '../engine/layout-preset-density-day-coach.js';
 import { buildMotionTimingDayCoach } from '../engine/motion-timing-day-coach.js';
 import { buildMemoryQuickActionDayCoach } from '../engine/memory-quick-action-day-coach.js';
+import { buildDeferredAnnouncementFlushDayHint } from '../engine/deferred-announcement-flush-day-hint.js';
+import { buildTextScaleReadabilityDayCoach } from '../engine/text-scale-readability-day-coach.js';
+import { buildResponsiveNavRailDayCoach } from '../engine/responsive-nav-rail-day-coach.js';
+import { buildOnboardingFunnelDayHint } from '../engine/onboarding-funnel-day-hint.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -130,6 +134,10 @@ export interface DayAdvanceUiEvolutionResult {
   layoutPresetDensityDayCoachCopy: string | null;
   motionTimingDayCoachCopy: string | null;
   memoryQuickActionDayCoachCopy: string | null;
+  deferredAnnouncementFlushDayHintCopy: string | null;
+  textScaleReadabilityDayCoachCopy: string | null;
+  responsiveNavRailDayCoachCopy: string | null;
+  onboardingFunnelDayHintCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -142,6 +150,7 @@ export interface TickEvolvingUiDayAdvanceContext {
   autoRememberLegacyNav?: boolean;
   sessionMemory?: SessionUiMemory;
   layoutPreset?: V94LayoutPreset;
+  viewportWidthPx?: number;
 }
 
 export function createDefaultEvolvingUiPersistedState(): EvolvingUiPersistedState {
@@ -408,6 +417,36 @@ export function tickEvolvingUiOnDayAdvance(
         })
       : { boostedNavTarget: null, coachCopy: null };
 
+  const deferredFlushDayHint = buildDeferredAnnouncementFlushDayHint({
+    flushedCount: flush.flushedAnnouncements.length,
+    remainingCount: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const textScaleReadabilityDayCoach = buildTextScaleReadabilityDayCoach({
+    accessibility,
+    activeDensity: densityForTouch.tier,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const railOrderedPanelIds = [...EVOLVING_UI_PANEL_REGISTRY]
+    .sort((a, b) => (a.railOrder ?? 999) - (b.railOrder ?? 999))
+    .map(p => p.id);
+
+  const responsiveNavRailDayCoach = buildResponsiveNavRailDayCoach({
+    orderedPanelIds: railOrderedPanelIds,
+    viewportWidthPx: context.viewportWidthPx ?? 1280,
+    layoutPreset: context.layoutPreset,
+    densityTier: densityForTouch.tier,
+    sessionMemory: context.sessionMemory,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const onboardingFunnelDayHint = buildOnboardingFunnelDayHint({
+    nextGameDay: nextSignals.gameDay,
+    dismissedKeys: persistedAfterCalm.onboardingDismissedKeys ?? [],
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   if (context.phase) {
@@ -468,6 +507,10 @@ export function tickEvolvingUiOnDayAdvance(
     layoutPresetDensityDayCoachCopy: layoutPresetDensityDayCoach.coachCopy,
     motionTimingDayCoachCopy: motionTimingDayCoach.coachCopy,
     memoryQuickActionDayCoachCopy: memoryQuickActionDayCoach.coachCopy,
+    deferredAnnouncementFlushDayHintCopy: deferredFlushDayHint.coachCopy,
+    textScaleReadabilityDayCoachCopy: textScaleReadabilityDayCoach.coachCopy,
+    responsiveNavRailDayCoachCopy: responsiveNavRailDayCoach.coachCopy,
+    onboardingFunnelDayHintCopy: onboardingFunnelDayHint.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

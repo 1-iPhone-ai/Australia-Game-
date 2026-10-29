@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 0f2d78399b326c44
+// content-sha256-prefix: ade3d960a5ba86fb
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -899,6 +899,10 @@ export interface DayAdvanceUiEvolutionResult {
   layoutPresetDensityDayCoachCopy: string | null;
   motionTimingDayCoachCopy: string | null;
   memoryQuickActionDayCoachCopy: string | null;
+  deferredAnnouncementFlushDayHintCopy: string | null;
+  textScaleReadabilityDayCoachCopy: string | null;
+  responsiveNavRailDayCoachCopy: string | null;
+  onboardingFunnelDayHintCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -911,6 +915,7 @@ export interface TickEvolvingUiDayAdvanceContext {
   autoRememberLegacyNav?: boolean;
   sessionMemory?: SessionUiMemory;
   layoutPreset?: V94LayoutPreset;
+  viewportWidthPx?: number;
 }
 
 export function createDefaultEvolvingUiPersistedState(): EvolvingUiPersistedState {
@@ -1177,6 +1182,36 @@ export function tickEvolvingUiOnDayAdvance(
         })
       : { boostedNavTarget: null, coachCopy: null };
 
+  const deferredFlushDayHint = buildDeferredAnnouncementFlushDayHint({
+    flushedCount: flush.flushedAnnouncements.length,
+    remainingCount: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const textScaleReadabilityDayCoach = buildTextScaleReadabilityDayCoach({
+    accessibility,
+    activeDensity: densityForTouch.tier,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const railOrderedPanelIds = [...EVOLVING_UI_PANEL_REGISTRY]
+    .sort((a, b) => (a.railOrder ?? 999) - (b.railOrder ?? 999))
+    .map(p => p.id);
+
+  const responsiveNavRailDayCoach = buildResponsiveNavRailDayCoach({
+    orderedPanelIds: railOrderedPanelIds,
+    viewportWidthPx: context.viewportWidthPx ?? 1280,
+    layoutPreset: context.layoutPreset,
+    densityTier: densityForTouch.tier,
+    sessionMemory: context.sessionMemory,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const onboardingFunnelDayHint = buildOnboardingFunnelDayHint({
+    nextGameDay: nextSignals.gameDay,
+    dismissedKeys: persistedAfterCalm.onboardingDismissedKeys ?? [],
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   if (context.phase) {
@@ -1237,6 +1272,10 @@ export function tickEvolvingUiOnDayAdvance(
     layoutPresetDensityDayCoachCopy: layoutPresetDensityDayCoach.coachCopy,
     motionTimingDayCoachCopy: motionTimingDayCoach.coachCopy,
     memoryQuickActionDayCoachCopy: memoryQuickActionDayCoach.coachCopy,
+    deferredAnnouncementFlushDayHintCopy: deferredFlushDayHint.coachCopy,
+    textScaleReadabilityDayCoachCopy: textScaleReadabilityDayCoach.coachCopy,
+    responsiveNavRailDayCoachCopy: responsiveNavRailDayCoach.coachCopy,
+    onboardingFunnelDayHintCopy: onboardingFunnelDayHint.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -4981,6 +5020,288 @@ export function buildMemoryQuickActionDayCoach(input: {
   const coachCopy = baseCopy ? `Day ${input.nextGameDay}: ${baseCopy}` : null;
 
   return { boostedNavTarget, coachCopy };
+}
+
+// --- source: engine/deferred-announcement-flush-day-hint.ts ---
+export interface DeferredAnnouncementFlushDayHint {
+  flushedCount: number;
+  remainingCount: number;
+  coachCopy: string | null;
+}
+
+export function buildDeferredAnnouncementFlushDayHint(input: {
+  flushedCount: number;
+  remainingCount: number;
+  nextGameDay: number;
+}): DeferredAnnouncementFlushDayHint {
+  const base = deferredFlushStatusCopy(input.flushedCount, input.remainingCount);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+  return {
+    flushedCount: input.flushedCount,
+    remainingCount: input.remainingCount,
+    coachCopy,
+  };
+}
+
+// --- source: engine/text-scale-readability-day-coach.ts ---
+export interface TextScaleReadabilityDayCoach {
+  needsSpaciousDensity: boolean;
+  coachCopy: string | null;
+}
+
+export function buildTextScaleReadabilityDayCoach(input: {
+  accessibility: AccessibilitySettingsSnapshot;
+  activeDensity: UiDensityTier;
+  nextGameDay: number;
+}): TextScaleReadabilityDayCoach {
+  const assessment = assessTextScaleReadability({
+    accessibility: input.accessibility,
+    activeDensity: input.activeDensity,
+  });
+
+  let coachCopy = assessment.coachCopy;
+  if (coachCopy) {
+    coachCopy = `Day ${input.nextGameDay}: ${coachCopy}`;
+  }
+
+  return {
+    needsSpaciousDensity: assessment.needsSpaciousDensity,
+    coachCopy,
+  };
+}
+
+// --- source: engine/responsive-nav-rail-day-coach.ts ---
+export interface ResponsiveNavRailDayCoach {
+  overflowCount: number;
+  coachCopy: string | null;
+}
+
+export function buildResponsiveNavRailDayCoach(input: {
+  orderedPanelIds: string[];
+  viewportWidthPx: number;
+  layoutPreset?: V94LayoutPreset;
+  densityTier?: UiDensityTier;
+  sessionMemory?: SessionUiMemory;
+  nextGameDay: number;
+}): ResponsiveNavRailDayCoach {
+  const plan = planNavRailVisibleItems({
+    orderedPanelIds: input.orderedPanelIds,
+    viewportWidthPx: input.viewportWidthPx,
+    layoutPreset: input.layoutPreset,
+    densityTier: input.densityTier,
+    sessionMemory: input.sessionMemory,
+  });
+  const base = responsiveNavRailCoachCopy(plan);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+
+  return {
+    overflowCount: plan.overflowCount,
+    coachCopy,
+  };
+}
+
+// --- source: engine/onboarding-funnel-day-hint.ts ---
+export interface OnboardingFunnelDayHint {
+  activeStepCount: number;
+  coachCopy: string | null;
+}
+
+export function buildOnboardingFunnelDayHint(input: {
+  nextGameDay: number;
+  dismissedKeys: string[];
+}): OnboardingFunnelDayHint {
+  const active = listActiveOnboardingSteps(input.nextGameDay, input.dismissedKeys);
+  if (!active.length) {
+    return { activeStepCount: 0, coachCopy: null };
+  }
+
+  const step = active[0];
+  return {
+    activeStepCount: active.length,
+    coachCopy: `Day ${input.nextGameDay}: ${step.coachMessage}`,
+  };
+}
+
+// --- source: engine/round21-self-tests.ts ---
+export function runAgent22Round21SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r21_deferred_flush',
+    'deferred flush day hint mentions day',
+    (() => {
+      const hint = buildDeferredAnnouncementFlushDayHint({
+        flushedCount: 2,
+        remainingCount: 1,
+        nextGameDay: 5,
+      });
+      return Boolean(hint.coachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r21_deferred_empty',
+    'deferred flush day hint null when idle',
+    (() => {
+      const hint = buildDeferredAnnouncementFlushDayHint({
+        flushedCount: 0,
+        remainingCount: 0,
+        nextGameDay: 3,
+      });
+      return hint.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r21_text_scale_readability',
+    'text scale readability day coach on compact + large scale',
+    (() => {
+      const coach = buildTextScaleReadabilityDayCoach({
+        accessibility: { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, textScaleMultiplier: 1.2 },
+        activeDensity: 'compact',
+        nextGameDay: 4,
+      });
+      return coach.needsSpaciousDensity && Boolean(coach.coachCopy?.includes('Day 4'));
+    })()
+  );
+
+  check(
+    'r21_text_scale_ok',
+    'text scale readability day coach null when balanced',
+    (() => {
+      const coach = buildTextScaleReadabilityDayCoach({
+        accessibility: { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, textScaleMultiplier: 1.0, highContrastFocusRings: false },
+        activeDensity: 'comfortable',
+        nextGameDay: 2,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r21_nav_rail_overflow',
+    'responsive nav rail day coach on narrow viewport',
+    (() => {
+      const ordered = [...EVOLVING_UI_PANEL_REGISTRY]
+        .sort((a, b) => (a.railOrder ?? 999) - (b.railOrder ?? 999))
+        .map(p => p.id);
+      const coach = buildResponsiveNavRailDayCoach({
+        orderedPanelIds: ordered,
+        viewportWidthPx: 480,
+        nextGameDay: 6,
+      });
+      return coach.overflowCount > 0 && Boolean(coach.coachCopy?.includes('Day 6'));
+    })()
+  );
+
+  check(
+    'r21_onboarding_funnel',
+    'onboarding funnel day hint on day 2',
+    (() => {
+      const hint = buildOnboardingFunnelDayHint({ nextGameDay: 2, dismissedKeys: [] });
+      return hint.activeStepCount > 0 && Boolean(hint.coachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r21_onboarding_dismissed',
+    'onboarding funnel day hint respects dismiss keys',
+    (() => {
+      const hint = buildOnboardingFunnelDayHint({
+        nextGameDay: 2,
+        dismissedKeys: ['onboarding_map', 'onboarding_economy'],
+      });
+      return hint.coachCopy === null || !hint.coachCopy.includes('map is always');
+    })()
+  );
+
+  check(
+    'r21_tick_deferred_field',
+    'day advance exposes deferred flush day hint copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.deferredAnnouncementFlushDayHintCopy === 'string' || r.deferredAnnouncementFlushDayHintCopy === null;
+    })()
+  );
+
+  check(
+    'r21_tick_readability_field',
+    'day advance exposes text scale readability day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        { ...createDefaultEvolvingUiPersistedState(), preferredDensity: 'compact' },
+        {
+          phase: 'human_turn',
+          accessibility: { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, textScaleMultiplier: 1.25 },
+        }
+      );
+      return typeof r.textScaleReadabilityDayCoachCopy === 'string' || r.textScaleReadabilityDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r21_tick_nav_rail_field',
+    'day advance exposes responsive nav rail day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'guided' },
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn', viewportWidthPx: 520 }
+      );
+      return typeof r.responsiveNavRailDayCoachCopy === 'string' || r.responsiveNavRailDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r21_tick_onboarding_field',
+    'day advance exposes onboarding funnel day hint copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.onboardingFunnelDayHintCopy === 'string' || r.onboardingFunnelDayHintCopy === null;
+    })()
+  );
+
+  check(
+    'r21_tick_onboarding_active',
+    'day advance onboarding funnel copy on day 2',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.onboardingFunnelDayHintCopy?.includes('Day 2'));
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round20-self-tests.ts ---
@@ -8803,6 +9124,18 @@ export function SimulationUiEvolutionBridge({
       {result.memoryQuickActionDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-memory-qa-day">{result.memoryQuickActionDayCoachCopy}</div>
       ) : null}
+      {result.deferredAnnouncementFlushDayHintCopy ? (
+        <div data-testid="sim-ui-evolution-deferred-flush-day">{result.deferredAnnouncementFlushDayHintCopy}</div>
+      ) : null}
+      {result.textScaleReadabilityDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-text-readability-day">{result.textScaleReadabilityDayCoachCopy}</div>
+      ) : null}
+      {result.responsiveNavRailDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-nav-rail-day">{result.responsiveNavRailDayCoachCopy}</div>
+      ) : null}
+      {result.onboardingFunnelDayHintCopy ? (
+        <div data-testid="sim-ui-evolution-onboarding-day">{result.onboardingFunnelDayHintCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -10586,8 +10919,98 @@ export function MemoryQuickActionDayCoachStrip({
   );
 }
 
+// --- source: react/DeferredAnnouncementFlushDayHintStrip.tsx ---
+export function DeferredAnnouncementFlushDayHintStrip({
+  hint,
+  accessibility,
+}: {
+  hint: DeferredAnnouncementFlushDayHint;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!hint.coachCopy) return null;
+  return (
+    <div
+      data-testid="deferred-flush-day-hint"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-stone-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {hint.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/TextScaleReadabilityDayCoachStrip.tsx ---
+export function TextScaleReadabilityDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: TextScaleReadabilityDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="text-scale-readability-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-pink-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/ResponsiveNavRailDayCoachStrip.tsx ---
+export function ResponsiveNavRailDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: ResponsiveNavRailDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="responsive-nav-rail-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-blue-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-overflow-count={coach.overflowCount}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/OnboardingFunnelDayHintStrip.tsx ---
+export function OnboardingFunnelDayHintStrip({
+  hint,
+  accessibility,
+}: {
+  hint: OnboardingFunnelDayHint;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!hint.coachCopy) return null;
+  return (
+    <div
+      data-testid="onboarding-funnel-day-hint"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-green-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-active-steps={hint.activeStepCount}
+    >
+      {hint.coachCopy}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.20.0';
+export const AGENT_22_MODULE_VERSION = '1.21.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -10728,6 +11151,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round20 = runAgent22Round20SelfTests();
   for (const r of round20.results) {
     check(`agent22_round20_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round21 = runAgent22Round21SelfTests();
+  for (const r of round21.results) {
+    check(`agent22_round21_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;
