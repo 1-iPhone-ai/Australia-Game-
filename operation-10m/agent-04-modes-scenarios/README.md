@@ -12,3 +12,5 @@ npm run typecheck
 ```
 
 See [INTEGRATION.md](./INTEGRATION.md) for assembly exports.
+
+Includes scenario chains (`src/scenario-chains.ts`) and sandbox knob profiles (`src/sandbox-knobs.ts`).
