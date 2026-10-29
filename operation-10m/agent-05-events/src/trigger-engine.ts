@@ -32,6 +32,10 @@ import {
   OP10M_DIGEST_CLOSURE_LATCH_FLAG,
   OP10M_STABILIZATION_CLOSURE_WAVE_FLAG,
 } from './pending-stabilization-closure-coordinator.ts';
+import {
+  OP10M_CLOSURE_SEAL_READY_FLAG,
+  OP10M_INTEGRATION_SYNC_GATE_FLAG,
+} from './compute-turn-integration-sync-coordinator.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -262,6 +266,16 @@ export function evaluateRequirements(
       case 'digest_closure_latch':
         if (!sim.flags[OP10M_DIGEST_CLOSURE_LATCH_FLAG]) {
           return { ok: false, reason: 'digest closure not latched' };
+        }
+        break;
+      case 'integration_sync_gate':
+        if (!sim.flags[OP10M_INTEGRATION_SYNC_GATE_FLAG]) {
+          return { ok: false, reason: 'integration sync gate closed' };
+        }
+        break;
+      case 'closure_seal_ready':
+        if (!sim.flags[OP10M_CLOSURE_SEAL_READY_FLAG]) {
+          return { ok: false, reason: 'closure seal not ready' };
         }
         break;
       default:

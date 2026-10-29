@@ -83,6 +83,8 @@ export function createDefaultOp10mNarrativeEngineState(): Op10mNarrativeEngineSt
       postQueueCalmPasses: 0,
       stabilizationClosureWaves: 0,
       digestClosureLatches: 0,
+      integrationSyncGates: 0,
+      closureSealReadyPasses: 0,
     },
     regional: createDefaultRegionalContagionLedger(),
   };
@@ -152,6 +154,8 @@ export function sanitizeOp10mNarrativeEngineState(raw: unknown): Op10mNarrativeE
     base.telemetry.postQueueCalmPasses = Math.max(0, Number(t.postQueueCalmPasses) || 0);
     base.telemetry.stabilizationClosureWaves = Math.max(0, Number(t.stabilizationClosureWaves) || 0);
     base.telemetry.digestClosureLatches = Math.max(0, Number(t.digestClosureLatches) || 0);
+    base.telemetry.integrationSyncGates = Math.max(0, Number(t.integrationSyncGates) || 0);
+    base.telemetry.closureSealReadyPasses = Math.max(0, Number(t.closureSealReadyPasses) || 0);
   }
 
   if (r.turnCompute) {

@@ -15,6 +15,7 @@ export * from './pending-response-orchestrator.ts';
 export * from './pending-response-expiry-coordinator.ts';
 export * from './pending-response-stabilization-coordinator.ts';
 export * from './pending-stabilization-closure-coordinator.ts';
+export * from './compute-turn-integration-sync-coordinator.ts';
 export * from './compute-turn-hooks.ts';
 export * from './chain-catalog-aggregate.ts';
 export {

@@ -1,7 +1,7 @@
 /** Operation 10M · Agent 05 — dynamic events & narrative (standalone contract). */
 
 export const OP10M_AGENT05_MODULE_ID = 'op10m_agent05_dynamic_events';
-export const OP10M_AGENT05_MODULE_VERSION = '1.8.0';
+export const OP10M_AGENT05_MODULE_VERSION = '1.9.0';
 export const OP10M_TURN_COMPUTE_DIGEST_FLAG = 'op10m_turn_compute_digest';
 
 export type Op10mChainPhase = 'signal' | 'pressure' | 'rupture' | 'recovery';
@@ -265,6 +265,14 @@ export interface Op10mTriggerRequireDigestClosureLatch {
   k: 'digest_closure_latch';
 }
 
+export interface Op10mTriggerRequireIntegrationSyncGate {
+  k: 'integration_sync_gate';
+}
+
+export interface Op10mTriggerRequireClosureSealReady {
+  k: 'closure_seal_ready';
+}
+
 export type Op10mComputeTurnStage =
   | 'pre_simulation'
   | 'post_simulation'
@@ -323,7 +331,9 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequirePendingStabilizationWave
   | Op10mTriggerRequirePostQueueCalm
   | Op10mTriggerRequireStabilizationClosureWave
-  | Op10mTriggerRequireDigestClosureLatch;
+  | Op10mTriggerRequireDigestClosureLatch
+  | Op10mTriggerRequireIntegrationSyncGate
+  | Op10mTriggerRequireClosureSealReady;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
@@ -419,6 +429,8 @@ export interface Op10mNarrativeEngineState {
     postQueueCalmPasses: number;
     stabilizationClosureWaves: number;
     digestClosureLatches: number;
+    integrationSyncGates: number;
+    closureSealReadyPasses: number;
   };
   regional?: Op10mRegionalContagionLedger;
   turnCompute?: Op10mTurnComputeLedger;
