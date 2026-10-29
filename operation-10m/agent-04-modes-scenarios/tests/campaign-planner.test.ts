@@ -23,6 +23,7 @@ import {
   attachReprieveSessionToState,
   attachParoleSessionToState,
   attachProbationSessionToState,
+  attachCommutationSessionToState,
   attachGauntletSessionToState,
   attachMarathonQueueToState,
   attachRelaySessionToState,
@@ -49,6 +50,7 @@ import {
   createReprieveSession,
   createParoleSession,
   createProbationSession,
+  createCommutationSession,
   createGauntletSession,
   createMarathonQueue,
   createRelaySession,
@@ -224,6 +226,28 @@ describe('scenario campaign planner round 4', () => {
     state = attachReprieveSessionToState(state, reprieve!);
     state = attachParoleSessionToState(state, parole!);
     assert.equal(planNextCampaignAction(state).kind, 'parole_step');
+  });
+
+  it('prefers active commutation over probation, parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: commutation } = createCommutationSession({
+      commutationId: 'o10m_commutation_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_commutation_petition_docket', 'o10m_commutation_review_chamber'],
+    });
+    const { session: probation } = createProbationSession({
+      probationId: 'o10m_probation_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_probation_enrollment_docket', 'o10m_probation_review_chamber'],
+    });
+    const { session: parole } = createParoleSession({
+      paroleId: 'o10m_parole_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_parole_intake_docket', 'o10m_parole_review_chamber'],
+    });
+    let state = attachParoleSessionToState(createEmptyO10mModesPersistedState(), parole!);
+    state = attachProbationSessionToState(state, probation!);
+    state = attachCommutationSessionToState(state, commutation!);
+    assert.equal(planNextCampaignAction(state).kind, 'commutation_step');
   });
 
   it('prefers active probation over parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {

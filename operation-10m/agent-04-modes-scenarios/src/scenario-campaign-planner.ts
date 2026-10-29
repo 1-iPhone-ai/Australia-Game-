@@ -97,6 +97,11 @@ import {
   sanitizeAmnestySession,
 } from './save-format-amnesty.js';
 import {
+  getCommutationScenarioAtCursor,
+  commutationSessionSummary,
+  sanitizeCommutationSession,
+} from './save-format-commutation.js';
+import {
   getProbationScenarioAtCursor,
   probationSessionSummary,
   sanitizeProbationSession,
@@ -143,6 +148,7 @@ import type {
   O10mReprievePhase,
   O10mParolePhase,
   O10mProbationPhase,
+  O10mCommutationPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -241,9 +247,31 @@ const emptyQueuePlan = {
   probationCursor: null as number | null,
   probationPhase: null as O10mProbationPhase | null,
   probationCompliance: null as number | null,
+  commutationId: null as string | null,
+  commutationCursor: null as number | null,
+  commutationPhase: null as O10mCommutationPhase | null,
+  commutationLeniency: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const commutation = sanitizeCommutationSession(state.commutationSession);
+  const commutationScenario = getCommutationScenarioAtCursor(commutation);
+  if (commutation && commutation.active && commutationScenario) {
+    return {
+      kind: 'commutation_step',
+      scenarioId: commutationScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      commutationId: commutation.commutationId,
+      commutationCursor: commutation.cursor,
+      commutationPhase: commutation.phaseTag,
+      commutationLeniency: commutation.leniencyScore,
+      reason: `Commutation "${commutation.label}" ${commutation.phaseTag} phase ${commutation.cursor + 1}/${commutation.scenarioIds.length} (leniency ${commutation.leniencyScore}).`,
+    };
+  }
+
   const probation = sanitizeProbationSession(state.probationSession);
   const probationScenario = getProbationScenarioAtCursor(probation);
   if (probation && probation.active && probationScenario) {
@@ -765,6 +793,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   reprieveActive: boolean;
   paroleActive: boolean;
   probationActive: boolean;
+  commutationActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -796,6 +825,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const reprieve = reprieveSessionSummary(state);
   const parole = paroleSessionSummary(state);
   const probation = probationSessionSummary(state);
+  const commutation = commutationSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -825,6 +855,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     reprieveActive: reprieve.active,
     paroleActive: parole.active,
     probationActive: probation.active,
+    commutationActive: commutation.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

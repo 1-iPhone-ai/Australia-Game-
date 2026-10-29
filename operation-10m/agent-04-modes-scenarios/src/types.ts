@@ -380,6 +380,7 @@ export type O10mAmnestyPhase = 'warrant' | 'review' | 'amnesty';
 export type O10mReprievePhase = 'filing' | 'review' | 'reprieve';
 export type O10mParolePhase = 'intake' | 'review' | 'parole';
 export type O10mProbationPhase = 'enrollment' | 'review' | 'probation';
+export type O10mCommutationPhase = 'petition' | 'review' | 'commutation';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -612,6 +613,17 @@ export interface O10mProbationSession {
   phaseTag: O10mProbationPhase;
 }
 
+/** Schema v29 — commutation arc with leniency accrual between phases. */
+export interface O10mCommutationSession {
+  commutationId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  leniencyScore: number;
+  phaseTag: O10mCommutationPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -636,6 +648,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'commutation_step'
     | 'probation_step'
     | 'parole_step'
     | 'reprieve_step'
@@ -759,6 +772,10 @@ export interface O10mCampaignPlan {
   probationCursor: number | null;
   probationPhase: O10mProbationPhase | null;
   probationCompliance: number | null;
+  commutationId: string | null;
+  commutationCursor: number | null;
+  commutationPhase: O10mCommutationPhase | null;
+  commutationLeniency: number | null;
   reason: string;
 }
 
@@ -836,8 +853,10 @@ export interface O10mModesPersistedState {
   reprieveSession?: O10mReprieveSession | null;
   /** Schema v27 — active parole arc (mutually exclusive with probation / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   paroleSession?: O10mParoleSession | null;
-  /** Schema v28 — active probation arc (mutually exclusive with parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v28 — active probation arc (mutually exclusive with commutation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   probationSession?: O10mProbationSession | null;
+  /** Schema v29 — active commutation arc (mutually exclusive with probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  commutationSession?: O10mCommutationSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

@@ -39,4 +39,5 @@ export * from './save-format-amnesty.js';
 export * from './save-format-reprieve.js';
 export * from './save-format-parole.js';
 export * from './save-format-probation.js';
+export * from './save-format-commutation.js';
 export * from './scenario-campaign-planner.js';

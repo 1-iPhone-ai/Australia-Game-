@@ -131,6 +131,7 @@ export function attachAppealSessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,

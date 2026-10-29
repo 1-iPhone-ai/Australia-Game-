@@ -384,6 +384,7 @@ export type O10mAmnestyPhase = 'warrant' | 'review' | 'amnesty';
 export type O10mReprievePhase = 'filing' | 'review' | 'reprieve';
 export type O10mParolePhase = 'intake' | 'review' | 'parole';
 export type O10mProbationPhase = 'enrollment' | 'review' | 'probation';
+export type O10mCommutationPhase = 'petition' | 'review' | 'commutation';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -616,6 +617,17 @@ export interface O10mProbationSession {
   phaseTag: O10mProbationPhase;
 }
 
+/** Schema v29 — commutation arc with leniency accrual between phases. */
+export interface O10mCommutationSession {
+  commutationId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  leniencyScore: number;
+  phaseTag: O10mCommutationPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -640,6 +652,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'commutation_step'
     | 'probation_step'
     | 'parole_step'
     | 'reprieve_step'
@@ -763,6 +776,10 @@ export interface O10mCampaignPlan {
   probationCursor: number | null;
   probationPhase: O10mProbationPhase | null;
   probationCompliance: number | null;
+  commutationId: string | null;
+  commutationCursor: number | null;
+  commutationPhase: O10mCommutationPhase | null;
+  commutationLeniency: number | null;
   reason: string;
 }
 
@@ -840,8 +857,10 @@ export interface O10mModesPersistedState {
   reprieveSession?: O10mReprieveSession | null;
   /** Schema v27 — active parole arc (mutually exclusive with probation / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   paroleSession?: O10mParoleSession | null;
-  /** Schema v28 — active probation arc (mutually exclusive with parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v28 — active probation arc (mutually exclusive with commutation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   probationSession?: O10mProbationSession | null;
+  /** Schema v29 — active commutation arc (mutually exclusive with probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  commutationSession?: O10mCommutationSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -4105,6 +4124,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Probation finales', 'Compliance ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_commutation_petition_docket',
+    title: 'Commutation Petition Docket',
+    description: 'Open a commutation arc with low-pressure leniency pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100496,
+    startingMoney: 3250,
+    startingRegions: ['TAS', 'VIC'],
+    badgeId: 'badge_o10m_commutation_petition_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100496),
+      o10mCommutationPetitionDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_cpd_obj_day',
+        label: 'Petition Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Commutation arcs', 'Leniency pacing', 'Petition phase'],
+  },
+  {
+    id: 'o10m_commutation_review_chamber',
+    title: 'Commutation Review Chamber',
+    description: 'Mid-commutation review with accrued leniency bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100497,
+    startingMoney: 3800,
+    startingRegions: ['NSW', 'WA'],
+    startingStanding: { NSW: 62, WA: 60 },
+    badgeId: 'badge_o10m_commutation_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100497),
+      regionalStandingEnabled: true,
+      o10mCommutationReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_crc_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 68',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 68,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Leniency carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_commutation_grant_finale',
+    title: 'Commutation Grant Finale',
+    description: 'Finale commutation stage — net worth gate with full leniency bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100498,
+    startingMoney: 4250,
+    startingRegions: ['QLD', 'NT', 'SA'],
+    badgeId: 'badge_o10m_commutation_grant_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100498),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mCommutationGrantFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_cgf_obj_net',
+        label: 'Grant Net Worth',
+        description: 'Reach $19,000 net worth',
+        targetType: 'netWorth',
+        targetValue: 19000,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Commutation finales', 'Leniency ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -5539,6 +5655,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_commutation_route',
+    title: 'Commutation Route',
+    description:
+      'Three-phase commutation arc with leniency accrual between legs — round-29 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_commutation_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_commutation_petition_docket',
+        title: 'Petition Docket',
+        narrativeBridge: 'File petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 390 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_commutation_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 6, NSW: 5 },
+          forcedSettingsPatch: { o10mCommutationMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_commutation_grant_finale',
+        title: 'Grant Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainCommutationRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -6365,7 +6515,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 28;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 29;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -6492,6 +6642,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
   };
 }
 
@@ -6539,6 +6690,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       reprieveSession: merged.reprieveSession ?? null,
       paroleSession: merged.paroleSession ?? null,
       probationSession: merged.probationSession ?? null,
+      commutationSession: merged.commutationSession ?? null,
     };
     return upgraded;
   }
@@ -6610,6 +6762,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     reprieveSession: sanitizeReprieveSession(o.reprieveSession),
     paroleSession: sanitizeParoleSession(o.paroleSession),
     probationSession: sanitizeProbationSession(o.probationSession),
+    commutationSession: sanitizeCommutationSession(o.commutationSession),
   };
 }
 
@@ -6814,6 +6967,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Probation cursor out of range; clamp on next sanitize.');
   }
 
+  const commutation = sanitizeCommutationSession(state.commutationSession);
+  if (state.commutationSession && !commutation) {
+    warnings.push('Commutation session failed sanitization; planner will ignore it.');
+  } else if (commutation && commutation.cursor >= commutation.scenarioIds.length) {
+    warnings.push('Commutation cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -6945,6 +7105,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'reprieveSession',
   'paroleSession',
   'probationSession',
+  'commutationSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -7471,6 +7632,7 @@ export function attachMarathonQueueToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -7588,6 +7750,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceCommutationSessionAfterRun(next, run);
   next = advanceProbationSessionAfterRun(next, run);
   next = advanceParoleSessionAfterRun(next, run);
   next = advanceReprieveSessionAfterRun(next, run);
@@ -7760,6 +7923,7 @@ export function attachGauntletSessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -8010,6 +8174,7 @@ export function attachRelaySessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -8220,6 +8385,7 @@ export function attachCircuitSessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -8448,6 +8614,7 @@ export function attachExpeditionSessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -8674,6 +8841,7 @@ export function attachOdysseySessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -8899,6 +9067,7 @@ export function attachPilgrimageSessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -9125,6 +9294,7 @@ export function attachCaravanSessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -9345,6 +9515,7 @@ export function attachVoyageSessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -9565,6 +9736,7 @@ export function attachSiegeSessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -9785,6 +9957,7 @@ export function attachConvoySessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -10005,6 +10178,7 @@ export function attachEscortSessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -10234,6 +10408,7 @@ export function attachExtractionSessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -10471,6 +10646,7 @@ export function attachSubjectSessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -10708,6 +10884,7 @@ export function attachWitnessSessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -10945,6 +11122,7 @@ export function attachTribunalSessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -11182,6 +11360,7 @@ export function attachIndictmentSessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -11419,6 +11598,7 @@ export function attachAppealSessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,
@@ -11656,6 +11836,7 @@ export function attachClemencySessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     appealSession: null,
     indictmentSession: null,
     tribunalSession: null,
@@ -11893,6 +12074,7 @@ export function attachPardonSessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     clemencySession: null,
     appealSession: null,
     indictmentSession: null,
@@ -12130,6 +12312,7 @@ export function attachAmnestySessionToState(
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     pardonSession: null,
     clemencySession: null,
     appealSession: null,
@@ -12367,6 +12550,7 @@ export function attachReprieveSessionToState(
     reprieveSession: sanitized,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
     amnestySession: null,
     pardonSession: null,
     clemencySession: null,
@@ -12604,6 +12788,7 @@ export function attachParoleSessionToState(
     ...state,
     paroleSession: sanitized,
     probationSession: null,
+    commutationSession: null,
     reprieveSession: null,
     amnestySession: null,
     pardonSession: null,
@@ -12841,6 +13026,7 @@ export function attachProbationSessionToState(
   return {
     ...state,
     probationSession: sanitized,
+    commutationSession: null,
     paroleSession: null,
     reprieveSession: null,
     amnestySession: null,
@@ -12960,6 +13146,245 @@ export function probationSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-commutation.ts ---
+export const O10M_COMMUTATION_SCENARIO_CAP = 6;
+export const O10M_COMMUTATION_LENIENCY_SCORE_CAP = 920;
+export const O10M_COMMUTATION_LENIENCY_SCORE_MONEY_CAP = 1000;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mCommutationPhase>(['petition', 'review', 'commutation']);
+
+export function unlockTokenForCommutationId(commutationId: string): string | null {
+  if (!commutationId.startsWith('o10m_commutation_')) return null;
+  return `o10m_unlock_${commutationId.slice('o10m_commutation_'.length)}`;
+}
+
+export function commutationPhaseForCursor(cursor: number, scenarioCount: number): O10mCommutationPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'commutation';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'petition';
+}
+
+export function commutationLeniencyScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(120, Math.max(23, Math.floor(run.playerNetWorth / 158) + standingSlice));
+}
+
+export function sanitizeCommutationSession(raw: unknown): O10mCommutationSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const commutationId =
+    typeof o.commutationId === 'string' && o.commutationId.startsWith('o10m_commutation_') ? o.commutationId : null;
+  if (!commutationId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : commutationId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_COMMUTATION_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const leniencyScore = Math.min(
+    O10M_COMMUTATION_LENIENCY_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.leniencyScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mCommutationPhase)
+      ? (phaseRaw as O10mCommutationPhase)
+      : commutationPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    commutationId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    leniencyScore,
+    phaseTag,
+  };
+}
+
+export function createCommutationSession(params: {
+  commutationId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mCommutationSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.commutationId.startsWith('o10m_commutation_')) {
+    return { session: null, warnings: ['Commutation ids must start with o10m_commutation_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_COMMUTATION_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Commutation arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      commutationId: params.commutationId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      leniencyScore: 0,
+      phaseTag: commutationPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachCommutationSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mCommutationSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeCommutationSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    commutationSession: sanitized,
+    probationSession: null,
+    paroleSession: null,
+    reprieveSession: null,
+    amnestySession: null,
+    pardonSession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearCommutationSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, commutationSession: null };
+}
+
+export function getCommutationScenarioAtCursor(
+  session: O10mCommutationSession | null | undefined,
+): string | null {
+  const commutation = sanitizeCommutationSession(session);
+  if (!commutation || !commutation.active) return null;
+  return commutation.scenarioIds[commutation.cursor] ?? null;
+}
+
+export function buildCommutationScenarioStartOverrides(
+  session: O10mCommutationSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const commutation = sanitizeCommutationSession(session);
+  if (!commutation) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_COMMUTATION_LENIENCY_SCORE_MONEY_CAP,
+    Math.floor(commutation.leniencyScore * 0.87),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveCommutationId: commutation.commutationId,
+      o10mActiveCommutationStep: commutation.cursor,
+      o10mActiveCommutationPhase: commutation.phaseTag,
+      o10mCommutationLeniencyScore: commutation.leniencyScore,
+    },
+  };
+}
+
+export function advanceCommutationSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeCommutationSession(state.commutationSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const leniencyScore = Math.min(
+    O10M_COMMUTATION_LENIENCY_SCORE_CAP,
+    session.leniencyScore + commutationLeniencyScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      commutationSession: {
+        ...session,
+        cursor,
+        leniencyScore,
+        phaseTag: commutationPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForCommutationId(session.commutationId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    commutationSession: { ...session, active: false, leniencyScore, phaseTag: 'commutation' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function commutationSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  leniencyScore: number;
+  phase: O10mCommutationPhase | null;
+} {
+  const session = sanitizeCommutationSession(state.commutationSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    leniencyScore: session?.leniencyScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -13054,9 +13479,31 @@ const emptyQueuePlan = {
   probationCursor: null as number | null,
   probationPhase: null as O10mProbationPhase | null,
   probationCompliance: null as number | null,
+  commutationId: null as string | null,
+  commutationCursor: null as number | null,
+  commutationPhase: null as O10mCommutationPhase | null,
+  commutationLeniency: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const commutation = sanitizeCommutationSession(state.commutationSession);
+  const commutationScenario = getCommutationScenarioAtCursor(commutation);
+  if (commutation && commutation.active && commutationScenario) {
+    return {
+      kind: 'commutation_step',
+      scenarioId: commutationScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      commutationId: commutation.commutationId,
+      commutationCursor: commutation.cursor,
+      commutationPhase: commutation.phaseTag,
+      commutationLeniency: commutation.leniencyScore,
+      reason: `Commutation "${commutation.label}" ${commutation.phaseTag} phase ${commutation.cursor + 1}/${commutation.scenarioIds.length} (leniency ${commutation.leniencyScore}).`,
+    };
+  }
+
   const probation = sanitizeProbationSession(state.probationSession);
   const probationScenario = getProbationScenarioAtCursor(probation);
   if (probation && probation.active && probationScenario) {
@@ -13578,6 +14025,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   reprieveActive: boolean;
   paroleActive: boolean;
   probationActive: boolean;
+  commutationActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -13609,6 +14057,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const reprieve = reprieveSessionSummary(state);
   const parole = paroleSessionSummary(state);
   const probation = probationSessionSummary(state);
+  const commutation = commutationSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -13638,6 +14087,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     reprieveActive: reprieve.active,
     paroleActive: parole.active,
     probationActive: probation.active,
+    commutationActive: commutation.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -13656,7 +14106,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 29, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 30, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -13876,16 +14326,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const probationState = probation ? attachProbationSessionToState(createEmptyO10mModesPersistedState(), probation) : null;
   push('agent04_chunk_36', probationState !== null && planNextCampaignAction(probationState!).kind === 'probation_step');
 
+  const commutation = createCommutationSession({
+    commutationId: 'o10m_commutation_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_commutation_petition_docket'],
+  }).session;
+  const commutationState = commutation ? attachCommutationSessionToState(createEmptyO10mModesPersistedState(), commutation) : null;
+  push('agent04_chunk_37', commutationState !== null && planNextCampaignAction(commutationState!).kind === 'commutation_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v29',
+  schemaVersion: 'op10m-agent04-v30',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 28,
+  saveSchemaVersion: 29,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

@@ -53,6 +53,7 @@ const SOURCE_FILES = [
   'operation-10m/agent-04-modes-scenarios/src/save-format-reprieve.ts',
   'operation-10m/agent-04-modes-scenarios/src/save-format-parole.ts',
   'operation-10m/agent-04-modes-scenarios/src/save-format-probation.ts',
+  'operation-10m/agent-04-modes-scenarios/src/save-format-commutation.ts',
   'operation-10m/agent-04-modes-scenarios/src/scenario-campaign-planner.ts',
 ];
 
@@ -88,7 +89,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 29, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 30, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -308,16 +309,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const probationState = probation ? attachProbationSessionToState(createEmptyO10mModesPersistedState(), probation) : null;
   push('agent04_chunk_36', probationState !== null && planNextCampaignAction(probationState!).kind === 'probation_step');
 
+  const commutation = createCommutationSession({
+    commutationId: 'o10m_commutation_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_commutation_petition_docket'],
+  }).session;
+  const commutationState = commutation ? attachCommutationSessionToState(createEmptyO10mModesPersistedState(), commutation) : null;
+  push('agent04_chunk_37', commutationState !== null && planNextCampaignAction(commutationState!).kind === 'commutation_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: '${MODULE_ID}',
-  schemaVersion: 'op10m-agent04-v29',
+  schemaVersion: 'op10m-agent04-v30',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 28,
+  saveSchemaVersion: 29,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;
@@ -358,9 +367,9 @@ const manifest = {
   touchesSaveFormat: true,
   proposedGameStateFields: ['o10mModesProgress'],
   saveFormat: {
-    schemaVersion: 28,
+    schemaVersion: 29,
     gameStateKey: 'o10mModesProgress',
-    nestedFields: ['chainProgress', 'milestones', 'challengeModeIds', 'sandboxProfileId', 'recentRuns', 'integrityFingerprint', 'saveKind', 'objectiveProgress', 'campaignSlots', 'challengeStreak', 'marathonQueue', 'replayLedger', 'gauntletSession', 'catalogUnlockTokens', 'relaySession', 'circuitSession', 'expeditionSession', 'odysseySession', 'pilgrimageSession', 'caravanSession', 'voyageSession', 'siegeSession', 'convoySession', 'escortSession', 'extractionSession', 'subjectSession', 'witnessSession', 'tribunalSession', 'indictmentSession', 'appealSession', 'clemencySession', 'pardonSession', 'amnestySession', 'reprieveSession', 'paroleSession', 'probationSession'],
+    nestedFields: ['chainProgress', 'milestones', 'challengeModeIds', 'sandboxProfileId', 'recentRuns', 'integrityFingerprint', 'saveKind', 'objectiveProgress', 'campaignSlots', 'challengeStreak', 'marathonQueue', 'replayLedger', 'gauntletSession', 'catalogUnlockTokens', 'relaySession', 'circuitSession', 'expeditionSession', 'odysseySession', 'pilgrimageSession', 'caravanSession', 'voyageSession', 'siegeSession', 'convoySession', 'escortSession', 'extractionSession', 'subjectSession', 'witnessSession', 'tribunalSession', 'indictmentSession', 'appealSession', 'clemencySession', 'pardonSession', 'amnestySession', 'reprieveSession', 'paroleSession', 'probationSession', 'commutationSession'],
   },
   contentSha256: hash,
   chunkPath: 'operation-10m/modules/agent-04-modes-scenarios/chunk.tsx',

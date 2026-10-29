@@ -28,6 +28,7 @@ import { sanitizeAmnestySession } from './save-format-amnesty.js';
 import { sanitizeReprieveSession } from './save-format-reprieve.js';
 import { sanitizeParoleSession } from './save-format-parole.js';
 import { sanitizeProbationSession } from './save-format-probation.js';
+import { sanitizeCommutationSession } from './save-format-commutation.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -46,7 +47,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 28;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 29;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -173,6 +174,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     reprieveSession: null,
     paroleSession: null,
     probationSession: null,
+    commutationSession: null,
   };
 }
 
@@ -220,6 +222,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       reprieveSession: merged.reprieveSession ?? null,
       paroleSession: merged.paroleSession ?? null,
       probationSession: merged.probationSession ?? null,
+      commutationSession: merged.commutationSession ?? null,
     };
     return upgraded;
   }
@@ -291,6 +294,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     reprieveSession: sanitizeReprieveSession(o.reprieveSession),
     paroleSession: sanitizeParoleSession(o.paroleSession),
     probationSession: sanitizeProbationSession(o.probationSession),
+    commutationSession: sanitizeCommutationSession(o.commutationSession),
   };
 }
 
@@ -493,6 +497,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Probation session failed sanitization; planner will ignore it.');
   } else if (probation && probation.cursor >= probation.scenarioIds.length) {
     warnings.push('Probation cursor out of range; clamp on next sanitize.');
+  }
+
+  const commutation = sanitizeCommutationSession(state.commutationSession);
+  if (state.commutationSession && !commutation) {
+    warnings.push('Commutation session failed sanitization; planner will ignore it.');
+  } else if (commutation && commutation.cursor >= commutation.scenarioIds.length) {
+    warnings.push('Commutation cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
