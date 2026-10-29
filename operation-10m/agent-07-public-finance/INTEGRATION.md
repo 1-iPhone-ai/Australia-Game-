@@ -10,8 +10,8 @@
 
 | Slice | Target section | Notes |
 |-------|----------------|-------|
-| V10.14 fiscal core | `SECTION 20AW` | Already inlined on `australia-game-upgrade`; this tree is source-of-truth for deltas |
-| Op10M extensions | `SECTION 20AW` append or `20AY` (Agent 25 decision) | Revenue ledger, infra financing, reconciliation |
+| V10.14 fiscal core | `SECTION 20AW` | Already inlined on `australia-game-upgrade`; module tree is delta source |
+| Op10M assembly chunk | `OP10M_MODULE_BEGIN agent-07-public-finance` | `operation-10m/modules/agent-07-public-finance/chunk.tsx` via `npm run build:agent07-chunk` |
 
 ## State & persistence
 

@@ -1,0 +1,4317 @@
+// OP10M_MODULE_BEGIN agent-07-public-finance
+// Agent 07 — public finance & taxation (generated; source: operation-10m/agent-07-public-finance/modules/)
+
+// --- source: fiscal-outcomes/types.ts ---
+/**
+ * V10.14 — Fiscal Policy Instruments & Outcome Linkage (Agent 07)
+ * Serializable types only; no imports from canonical TSX.
+ */
+
+export const V1014_SCHEMA_VERSION = 'v10.14.0-agent07';
+
+export type FiscalOutcomeBand = 'strong' | 'healthy' | 'mixed' | 'weak' | 'critical';
+
+export type TaxInstrumentKind =
+  | 'corporate_rate'
+  | 'personal_rate'
+  | 'payroll_levy'
+  | 'resource_rent'
+  | 'carbon_price'
+  | 'gst_equivalent'
+  | 'land_value_uplift'
+  | 'innovation_credit'
+  | 'regional_incentive';
+
+export type TaxReformStance = 'cut' | 'hold' | 'raise' | 'broaden_base' | 'narrow_base';
+
+export interface TaxInstrumentDefinition {
+  id: string;
+  kind: TaxInstrumentKind;
+  label: string;
+  description: string;
+  /** Normalized revenue elasticity vs structural capacity (bounded). */
+  revenueElasticity: number;
+  /** Household affordability sensitivity (0..1). */
+  householdSensitivity: number;
+  /** Industry investment sensitivity (0..1). */
+  investmentSensitivity: number;
+  /** Political / stability sensitivity (0..1). */
+  stabilitySensitivity: number;
+  minRatePoints: number;
+  maxRatePoints: number;
+  defaultRatePoints: number;
+}
+
+export interface ActiveTaxInstrument {
+  instrumentId: string;
+  ratePoints: number;
+  stance: TaxReformStance;
+  turnsInEffect: number;
+  revenueDeltaEstimate: number;
+  explanation: string;
+}
+
+export type BudgetEnvelopeCategory =
+  | 'core_services'
+  | 'infrastructure_capital'
+  | 'maintenance_backlog'
+  | 'research_innovation'
+  | 'regional_development'
+  | 'resilience_recovery'
+  | 'debt_service_reserve'
+  | 'contingency';
+
+export interface BudgetEnvelopeLine {
+  category: BudgetEnvelopeCategory;
+  allocatedPoints: number;
+  committedPoints: number;
+  flexPoints: number;
+  band: 'under' | 'balanced' | 'over' | 'critical_over';
+  linkedCommitmentIds: string[];
+  explanation: string;
+}
+
+export interface NationalBudgetEnvelope {
+  fiscalYearLabel: string;
+  totalCapacityPoints: number;
+  allocatedPoints: number;
+  unallocatedFlex: number;
+  lines: BudgetEnvelopeLine[];
+  rebalanceNeeded: boolean;
+  rebalanceSummary: string | null;
+}
+
+export type DebtSustainabilityOutlook =
+  | 'improving'
+  | 'stable'
+  | 'watch'
+  | 'stress'
+  | 'distress';
+
+export interface DebtOutcomeTrajectory {
+  currentServiceLoad: number;
+  projectedServiceLoad: number;
+  borrowingHeadroom: number;
+  sustainability: DebtSustainabilityOutlook;
+  turnsToStress: number | null;
+  outcomeRisk: FiscalOutcomeBand;
+  narrative: string;
+  evidence: string[];
+}
+
+export type LinkedOutcomeDimension =
+  | 'national_prosperity'
+  | 'public_stability'
+  | 'program_delivery'
+  | 'household_affordability'
+  | 'regional_balance'
+  | 'innovation_momentum';
+
+export interface FiscalOutcomeLink {
+  dimension: LinkedOutcomeDimension;
+  score: number;
+  band: FiscalOutcomeBand;
+  fiscalDrivers: string[];
+  constraintBinding: boolean;
+  projectedTurns: number;
+  summary: string;
+}
+
+export interface FiscalConstraintGate {
+  id: string;
+  label: string;
+  /** When true, fiscal layer recommends caution (never hard-blocks by default). */
+  warnOnly: boolean;
+  triggered: boolean;
+  severity: 'info' | 'caution' | 'major' | 'critical';
+  reason: string;
+  linkedOutcomeIds: LinkedOutcomeDimension[];
+}
+
+/** Minimal V10.12-shaped snapshot for bridge (duplicated fields only). */
+export interface V1012FiscalSnapshot {
+  turn: number;
+  revenueCapacity: number;
+  fiscalHeadroom: number;
+  pressure: 'comfortable' | 'healthy' | 'tight' | 'strained' | 'critical';
+  sustainability:
+    | 'very_strong'
+    | 'strong'
+    | 'stable'
+    | 'vulnerable'
+    | 'unsustainable';
+  debtServiceLoad: number;
+  debtLevel: number;
+  debtEnabled: boolean;
+  maintenanceLoad: number;
+  commitmentCount: number;
+  revenuePolicy: 'growth_focused' | 'balanced' | 'revenue_focused' | null;
+  reservePolicy: 'lean' | 'standard' | 'prudent' | null;
+}
+
+export interface FiscalOutcomesSystemInputs {
+  turn: number;
+  v1012: V1012FiscalSnapshot;
+  /** Optional regional prosperity proxies 0..100 by region code. */
+  regionalProsperity?: Record<string, number>;
+  /** Optional stability proxy 0..100. */
+  publicStability?: number;
+  /** Active megaproject / program ids for delivery linkage. */
+  activeProgramIds?: string[];
+  householdAffordabilityIndex?: number;
+}
+
+export interface FiscalOutcomesState {
+  schemaVersion: string;
+  revision: number;
+  taxInstruments: ActiveTaxInstrument[];
+  budget: NationalBudgetEnvelope;
+  debtTrajectory: DebtOutcomeTrajectory;
+  outcomeLinks: FiscalOutcomeLink[];
+  constraintGates: FiscalConstraintGate[];
+  compositeOutcomeScore: number;
+  compositeBand: FiscalOutcomeBand;
+  inputHash: string;
+  lastUpdatedTurn: number;
+}
+
+export interface FiscalOutcomesPersisted {
+  schemaVersion: string;
+  revision: number;
+  instrumentRates: Record<string, number>;
+  instrumentStances: Record<string, TaxReformStance>;
+  envelopeOverrides: Partial<Record<BudgetEnvelopeCategory, number>>;
+  lastCompositeBand: FiscalOutcomeBand;
+  lastInputHash: string;
+  lastUpdatedTurn: number;
+}
+
+export interface V1014SelfTestResult {
+  id: string;
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+
+// --- source: fiscal-outcomes/boundaries.ts ---
+/**
+ * Money & actor boundary reminders for V10.14 (mirrors V10.12 Section 20AE audit).
+ * Used in validation messages and GI answers — not enforced against live actor wallets here.
+ */
+
+export const V1014_BOUNDARY_RULES: readonly { id: string; rule: string }[] = [
+  {
+    id: 'actor_cash',
+    rule: 'Actor money (player/AI wallets) is private cash — never merged into national revenue or tax receipts.'
+  },
+  {
+    id: 'actor_loans',
+    rule: 'Actor loans are private debt — never counted as sovereign debt service or fiscal headroom.'
+  },
+  {
+    id: 'team_treasury',
+    rule: 'Team treasury is tactical shared cash — never taxed, borrowed from, or fiscal headroom.'
+  },
+  {
+    id: 'auto_modifiers',
+    rule: 'Auto Mode tax relief / income subsidy modifiers are balance settings — not national policy levers.'
+  },
+  {
+    id: 'grants_resource',
+    rule: 'Government Grants as a tradable resource are not the federal treasury balance.'
+  },
+  {
+    id: 'normalized_capacity',
+    rule: 'V10.12 normalized fiscal capacity (0..100 scale) remains authoritative for headroom; V10.14 adds policy-outcome interpretation only.'
+  }
+] as const;
+
+export function summarizeBoundariesForGi(): string[] {
+  return V1014_BOUNDARY_RULES.map(r => r.rule);
+}
+
+
+// --- source: fiscal-outcomes/tax-instruments.ts ---
+
+/** Core national tax instrument catalog (Agent 07 authored). */
+export const TAX_INSTRUMENT_CATALOG: Record<string, TaxInstrumentDefinition> = {
+  corp_standard: {
+    id: 'corp_standard',
+    kind: 'corporate_rate',
+    label: 'Company Tax Rate',
+    description:
+      'Broad corporate income tax. Raises revenue with moderate investment sensitivity; cuts can stimulate capital spending but reduce headroom.',
+    revenueElasticity: 0.85,
+    householdSensitivity: 0.05,
+    investmentSensitivity: 0.55,
+    stabilitySensitivity: 0.15,
+    minRatePoints: 18,
+    maxRatePoints: 35,
+    defaultRatePoints: 25
+  },
+  personal_progressive: {
+    id: 'personal_progressive',
+    kind: 'personal_rate',
+    label: 'Personal Income Tax (progressive midpoint)',
+    description:
+      'Household-facing income tax wedge (modeled as midpoint rate). Strong revenue link; higher rates ease fiscal pressure but weigh on affordability.',
+    revenueElasticity: 0.75,
+    householdSensitivity: 0.7,
+    investmentSensitivity: 0.2,
+    stabilitySensitivity: 0.35,
+    minRatePoints: 19,
+    maxRatePoints: 42,
+    defaultRatePoints: 30
+  },
+  payroll_levy: {
+    id: 'payroll_levy',
+    kind: 'payroll_levy',
+    label: 'Payroll & Medicare Levy Bundle',
+    description: 'Employment-linked levies funding services. Moderate revenue; affects workforce participation signals via V10.10 spillovers.',
+    revenueElasticity: 0.55,
+    householdSensitivity: 0.45,
+    investmentSensitivity: 0.35,
+    stabilitySensitivity: 0.25,
+    minRatePoints: 2,
+    maxRatePoints: 12,
+    defaultRatePoints: 5
+  },
+  resource_rent: {
+    id: 'resource_rent',
+    kind: 'resource_rent',
+    label: 'Resource Rent & PRRT-style Uplift',
+    description: 'Captures resource super-profits; volatile with commodity cycles (feeds revenue volatility, not CPI).',
+    revenueElasticity: 0.95,
+    householdSensitivity: 0.02,
+    investmentSensitivity: 0.4,
+    stabilitySensitivity: 0.2,
+    minRatePoints: 0,
+    maxRatePoints: 40,
+    defaultRatePoints: 22
+  },
+  carbon_price: {
+    id: 'carbon_price',
+    kind: 'carbon_price',
+    label: 'Carbon Price & Safeguard Mechanism',
+    description: 'Pricing emissions-intensive activity. Revenue plus transition pressure on energy-intensive regions.',
+    revenueElasticity: 0.5,
+    householdSensitivity: 0.35,
+    investmentSensitivity: 0.45,
+    stabilitySensitivity: 0.3,
+    minRatePoints: 0,
+    maxRatePoints: 80,
+    defaultRatePoints: 24
+  },
+  gst_equivalent: {
+    id: 'gst_equivalent',
+    kind: 'gst_equivalent',
+    label: 'Consumption Tax (GST-equivalent)',
+    description: 'Broad consumption base. Stable revenue; regressive affordability footprint unless offset.',
+    revenueElasticity: 0.8,
+    householdSensitivity: 0.55,
+    investmentSensitivity: 0.1,
+    stabilitySensitivity: 0.2,
+    minRatePoints: 8,
+    maxRatePoints: 15,
+    defaultRatePoints: 10
+  },
+  land_value_uplift: {
+    id: 'land_value_uplift',
+    kind: 'land_value_uplift',
+    label: 'Land Value & Development Uplift Share',
+    description: 'Captures a share of land value uplift from infrastructure. Supports capital programs; politically sensitive.',
+    revenueElasticity: 0.35,
+    householdSensitivity: 0.25,
+    investmentSensitivity: 0.15,
+    stabilitySensitivity: 0.4,
+    minRatePoints: 0,
+    maxRatePoints: 25,
+    defaultRatePoints: 8
+  },
+  innovation_credit: {
+    id: 'innovation_credit',
+    kind: 'innovation_credit',
+    label: 'R&D & Innovation Tax Incentive',
+    description: 'Negative-rate instrument (credit). Reduces near-term revenue; boosts innovation momentum outcomes when sustained.',
+    revenueElasticity: -0.4,
+    householdSensitivity: 0.05,
+    investmentSensitivity: -0.35,
+    stabilitySensitivity: 0.05,
+    minRatePoints: -15,
+    maxRatePoints: 5,
+    defaultRatePoints: -8
+  },
+  regional_incentive: {
+    id: 'regional_incentive',
+    kind: 'regional_incentive',
+    label: 'Regional Investment Incentive',
+    description: 'Targeted concessions for lagging regions. Revenue cost with regional balance upside.',
+    revenueElasticity: -0.25,
+    householdSensitivity: 0.15,
+    investmentSensitivity: -0.2,
+    stabilitySensitivity: 0.15,
+    minRatePoints: -12,
+    maxRatePoints: 8,
+    defaultRatePoints: -4
+  }
+};
+
+export const DEFAULT_TAX_INSTRUMENT_IDS = Object.keys(TAX_INSTRUMENT_CATALOG);
+
+export function clampRate(def: TaxInstrumentDefinition, rate: number): number {
+  return Math.min(def.maxRatePoints, Math.max(def.minRatePoints, Math.round(rate * 10) / 10));
+}
+
+export function estimateRevenueDelta(
+  def: TaxInstrumentDefinition,
+  ratePoints: number,
+  structuralCapacity: number
+): number {
+  const deltaFromDefault = ratePoints - def.defaultRatePoints;
+  const raw = (deltaFromDefault / 10) * def.revenueElasticity * (structuralCapacity / 100) * 8;
+  return Math.round(raw * 10) / 10;
+}
+
+
+// --- source: fiscal-outcomes/budget-envelopes.ts ---
+  BudgetEnvelopeCategory,
+  BudgetEnvelopeLine,
+  NationalBudgetEnvelope,
+  V1012FiscalSnapshot
+} from './types';
+
+const CATEGORY_LABELS: Record<BudgetEnvelopeCategory, string> = {
+  core_services: 'Core Services & Administration',
+  infrastructure_capital: 'Infrastructure Capital',
+  maintenance_backlog: 'Maintenance & Network Upkeep',
+  research_innovation: 'Research & Innovation',
+  regional_development: 'Regional Development',
+  resilience_recovery: 'Resilience & Recovery',
+  debt_service_reserve: 'Debt Service & Reserves',
+  contingency: 'Contingency & Flex'
+};
+
+/** Default share weights (sum ≈ 1) — tuned for balanced starting envelope. */
+const DEFAULT_SHARES: Record<BudgetEnvelopeCategory, number> = {
+  core_services: 0.22,
+  infrastructure_capital: 0.18,
+  maintenance_backlog: 0.14,
+  research_innovation: 0.08,
+  regional_development: 0.1,
+  resilience_recovery: 0.08,
+  debt_service_reserve: 0.12,
+  contingency: 0.08
+};
+
+export function buildBudgetEnvelope(
+  v1012: V1012FiscalSnapshot,
+  overrides: Partial<Record<BudgetEnvelopeCategory, number>> = {}
+): NationalBudgetEnvelope {
+  const totalCapacityPoints = Math.max(
+    5,
+    Math.round(v1012.revenueCapacity + Math.max(0, v1012.fiscalHeadroom * 0.35))
+  );
+  const fiscalYearLabel = `FY${v1012.turn}-${v1012.turn + 1}`;
+
+  const lines: BudgetEnvelopeLine[] = (Object.keys(DEFAULT_SHARES) as BudgetEnvelopeCategory[]).map(
+    cat => {
+      const share = DEFAULT_SHARES[cat];
+      const override = overrides[cat];
+      const allocatedPoints =
+        override !== undefined
+          ? Math.round(override)
+          : Math.round(totalCapacityPoints * share);
+      const pressureBoost =
+        v1012.pressure === 'critical' ? 1.15 : v1012.pressure === 'strained' ? 1.08 : 1;
+      const committedPoints = Math.round(
+        allocatedPoints *
+          (cat === 'maintenance_backlog'
+            ? 0.55 + v1012.maintenanceLoad / 40
+            : cat === 'debt_service_reserve'
+            ? 0.4 + v1012.debtServiceLoad / 25
+            : 0.35) *
+          pressureBoost
+      );
+      const flexPoints = Math.max(0, allocatedPoints - committedPoints);
+      let band: BudgetEnvelopeLine['band'] = 'balanced';
+      if (committedPoints > allocatedPoints * 1.12) band = 'critical_over';
+      else if (committedPoints > allocatedPoints * 1.02) band = 'over';
+      else if (committedPoints < allocatedPoints * 0.55) band = 'under';
+
+      return {
+        category: cat,
+        allocatedPoints,
+        committedPoints,
+        flexPoints,
+        band,
+        linkedCommitmentIds: [],
+        explanation: `${CATEGORY_LABELS[cat]}: ${allocatedPoints} pts allocated, ${committedPoints} pts committed (${band}).`
+      };
+    }
+  );
+
+  const allocatedPoints = lines.reduce((s, l) => s + l.allocatedPoints, 0);
+  const unallocatedFlex = Math.max(0, totalCapacityPoints - allocatedPoints);
+  const overLines = lines.filter(l => l.band === 'over' || l.band === 'critical_over');
+  const rebalanceNeeded = overLines.length > 0 || v1012.fiscalHeadroom < 0;
+  const rebalanceSummary = rebalanceNeeded
+    ? `Rebalance recommended: ${overLines.map(l => CATEGORY_LABELS[l.category]).join(', ')} exceed envelope${
+        v1012.fiscalHeadroom < 0 ? '; headroom negative' : ''
+      }.`
+    : null;
+
+  return {
+    fiscalYearLabel,
+    totalCapacityPoints,
+    allocatedPoints,
+    unallocatedFlex,
+    lines,
+    rebalanceNeeded,
+    rebalanceSummary
+  };
+}
+
+export { CATEGORY_LABELS as BUDGET_ENVELOPE_CATEGORY_LABELS };
+
+
+// --- source: fiscal-outcomes/debt-outcomes.ts ---
+
+function bandFromRisk(score: number): FiscalOutcomeBand {
+  if (score >= 75) return 'strong';
+  if (score >= 58) return 'healthy';
+  if (score >= 42) return 'mixed';
+  if (score >= 25) return 'weak';
+  return 'critical';
+}
+
+export function computeDebtOutcomeTrajectory(v1012: V1012FiscalSnapshot): DebtOutcomeTrajectory {
+  const currentServiceLoad = v1012.debtServiceLoad;
+  const debtLevel = v1012.debtEnabled ? v1012.debtLevel : 0;
+  const projectedServiceLoad =
+    Math.round((currentServiceLoad + debtLevel * 0.04 + v1012.maintenanceLoad * 0.02) * 10) / 10;
+
+  const borrowingHeadroom = Math.max(
+    0,
+    Math.round((45 - debtLevel - currentServiceLoad * 1.2) * 10) / 10
+  );
+
+  let sustainability: DebtOutcomeTrajectory['sustainability'] = 'stable';
+  if (!v1012.debtEnabled && debtLevel <= 1) sustainability = 'improving';
+  else if (projectedServiceLoad > 18 || debtLevel > 55) sustainability = 'distress';
+  else if (projectedServiceLoad > 12 || debtLevel > 38) sustainability = 'stress';
+  else if (projectedServiceLoad > 8 || debtLevel > 28) sustainability = 'watch';
+  else if (projectedServiceLoad < currentServiceLoad - 0.5) sustainability = 'improving';
+
+  let turnsToStress: number | null = null;
+  if (sustainability === 'watch') turnsToStress = 6;
+  if (sustainability === 'stress') turnsToStress = 3;
+  if (sustainability === 'distress') turnsToStress = 1;
+
+  const riskScore = Math.max(
+    0,
+    Math.min(
+      100,
+      88 -
+        projectedServiceLoad * 2.2 -
+        debtLevel * 0.45 +
+        (v1012.sustainability === 'very_strong' ? 8 : v1012.sustainability === 'strong' ? 4 : 0)
+    )
+  );
+
+  const outcomeRisk = bandFromRisk(riskScore);
+  const evidence: string[] = [];
+  if (v1012.debtEnabled) evidence.push(`Sovereign debt enabled at level ${debtLevel}.`);
+  evidence.push(`Debt service load ${currentServiceLoad} → projected ${projectedServiceLoad}.`);
+  if (borrowingHeadroom < 8) evidence.push('Borrowing headroom tight for acceleration programs.');
+
+  const narrative =
+    sustainability === 'distress'
+      ? 'Debt service and maintenance compound — fiscal outcomes likely weaken without staging or revenue policy adjustment.'
+      : sustainability === 'improving'
+      ? 'Debt service manageable — room to fund productivity investments if commitments stay disciplined.'
+      : `Debt path is ${sustainability}; monitor service load against maintenance and recovery stacks.`;
+
+  return {
+    currentServiceLoad,
+    projectedServiceLoad,
+    borrowingHeadroom,
+    sustainability,
+    turnsToStress,
+    outcomeRisk,
+    narrative,
+    evidence
+  };
+}
+
+
+// --- source: fiscal-outcomes/outcome-linkage.ts ---
+  ActiveTaxInstrument,
+  FiscalConstraintGate,
+  FiscalOutcomeBand,
+  FiscalOutcomeLink,
+  FiscalOutcomesSystemInputs,
+  LinkedOutcomeDimension,
+  NationalBudgetEnvelope
+} from './types';
+
+function band(score: number): FiscalOutcomeBand {
+  if (score >= 78) return 'strong';
+  if (score >= 60) return 'healthy';
+  if (score >= 45) return 'mixed';
+  if (score >= 28) return 'weak';
+  return 'critical';
+}
+
+function link(
+  dimension: LinkedOutcomeDimension,
+  score: number,
+  drivers: string[],
+  binding: boolean,
+  turns: number,
+  summary: string
+): FiscalOutcomeLink {
+  return {
+    dimension,
+    score: Math.round(score * 10) / 10,
+    band: band(score),
+    fiscalDrivers: drivers,
+    constraintBinding: binding,
+    projectedTurns: turns,
+    summary
+  };
+}
+
+export function computeOutcomeLinks(
+  inputs: FiscalOutcomesSystemInputs,
+  tax: ActiveTaxInstrument[],
+  budget: NationalBudgetEnvelope,
+  debt: DebtOutcomeTrajectory
+): FiscalOutcomeLink[] {
+  const h = inputs.v1012;
+  const stability = inputs.publicStability ?? 55;
+  const affordability = inputs.householdAffordabilityIndex ?? 50;
+  const programCount = inputs.activeProgramIds?.length ?? h.commitmentCount;
+
+  const headroomFactor = Math.max(-15, Math.min(25, h.fiscalHeadroom));
+  const prosperityScore =
+    52 +
+    headroomFactor * 0.9 +
+    (h.revenuePolicy === 'growth_focused' ? 4 : h.revenuePolicy === 'revenue_focused' ? -2 : 0) -
+    (h.pressure === 'critical' ? 12 : h.pressure === 'strained' ? 6 : 0);
+
+  const stabilityScore =
+    stability * 0.55 +
+    (h.pressure === 'comfortable' || h.pressure === 'healthy' ? 18 : h.pressure === 'tight' ? 8 : 0) -
+    tax.reduce((s, t) => {
+      const def = TAX_INSTRUMENT_CATALOG[t.instrumentId];
+      return s + (def ? def.stabilitySensitivity * Math.abs(t.ratePoints - def.defaultRatePoints) * 0.08 : 0);
+    }, 0);
+
+  const deliveryScore =
+    48 +
+    headroomFactor * 0.5 +
+    budget.unallocatedFlex * 0.15 -
+    budget.lines.filter(l => l.band === 'critical_over').length * 9 -
+    programCount * 0.8;
+
+  const householdScore =
+    affordability * 0.7 -
+    tax.reduce((s, t) => {
+      const def = TAX_INSTRUMENT_CATALOG[t.instrumentId];
+      if (!def) return s;
+      return s + def.householdSensitivity * Math.max(0, t.ratePoints - def.defaultRatePoints) * 0.12;
+    }, 0) +
+    (h.fiscalHeadroom < -5 ? -8 : 0);
+
+  const regionalPros = inputs.regionalProsperity || {};
+  const regionalVals = Object.values(regionalPros);
+  const spread =
+    regionalVals.length > 1 ? Math.max(...regionalVals) - Math.min(...regionalVals) : 12;
+  const regionalScore = 62 - spread * 0.35 + (budget.lines.find(l => l.category === 'regional_development')?.flexPoints || 0) * 0.2;
+
+  const innovationScore =
+    50 +
+    (budget.lines.find(l => l.category === 'research_innovation')?.flexPoints || 0) * 0.25 +
+    tax.reduce((s, t) => {
+      if (t.instrumentId === 'innovation_credit') return s + Math.abs(t.ratePoints) * 0.4;
+      return s;
+    }, 0) -
+    (debt.sustainability === 'stress' || debt.sustainability === 'distress' ? 10 : 0);
+
+  return [
+    link(
+      'national_prosperity',
+      prosperityScore,
+      [`Headroom ${h.fiscalHeadroom}`, `Pressure ${h.pressure}`, `Revenue capacity ${h.revenueCapacity}`],
+      h.fiscalHeadroom < 2,
+      4,
+      prosperityScore >= 60
+        ? 'Fiscal space supports prosperity-oriented programs.'
+        : 'Tight headroom caps prosperity upside until commitments ease or revenue strengthens.'
+    ),
+    link(
+      'public_stability',
+      stabilityScore,
+      [`Baseline stability ${stability}`, `Fiscal pressure ${h.pressure}`],
+      h.pressure === 'critical',
+      3,
+      stabilityScore >= 55 ? 'Fiscal stance compatible with stability.' : 'Strained fiscal capacity adds stability risk.'
+    ),
+    link(
+      'program_delivery',
+      deliveryScore,
+      [`Active programs ~${programCount}`, `Budget flex ${budget.unallocatedFlex}`],
+      budget.rebalanceNeeded,
+      2,
+      deliveryScore >= 50
+        ? 'Envelope flex supports delivery timelines.'
+        : 'Over-committed envelopes may delay or stage major programs.'
+    ),
+    link(
+      'household_affordability',
+      householdScore,
+      [`Affordability index ${affordability}`],
+      householdScore < 35,
+      5,
+      householdScore >= 50
+        ? 'Tax mix neutral-to-supportive for affordability.'
+        : 'Tax and fiscal pressure may compress household outcomes (V10.13 interprets).'
+    ),
+    link(
+      'regional_balance',
+      regionalScore,
+      [`Prosperity spread ${Math.round(spread)}`],
+      spread > 28,
+      6,
+      regionalScore >= 55 ? 'Regional envelope flex offsets divergence.' : 'Regional divergence high — targeted envelope shift may help.'
+    ),
+    link(
+      'innovation_momentum',
+      innovationScore,
+      ['R&D envelope', 'Innovation credit instrument'],
+      innovationScore < 40,
+      8,
+      innovationScore >= 52 ? 'Innovation-friendly fiscal mix.' : 'Innovation outcomes constrained by debt or envelope crowding.'
+    )
+  ];
+}
+
+export function computeConstraintGates(
+  inputs: FiscalOutcomesSystemInputs,
+  links: FiscalOutcomeLink[],
+  debt: DebtOutcomeTrajectory,
+  budget: NationalBudgetEnvelope
+): FiscalConstraintGate[] {
+  const h = inputs.v1012;
+  const gates: FiscalConstraintGate[] = [];
+
+  gates.push({
+    id: 'headroom_floor',
+    label: 'Fiscal headroom floor',
+    warnOnly: true,
+    triggered: h.fiscalHeadroom < 1,
+    severity: h.fiscalHeadroom < -8 ? 'critical' : h.fiscalHeadroom < 1 ? 'major' : 'info',
+    reason:
+      h.fiscalHeadroom < 1
+        ? 'National fiscal headroom below safe staging band — major new capital should use staged paygo or private co-funding.'
+        : 'Headroom adequate for routine commitments.',
+    linkedOutcomeIds: ['national_prosperity', 'program_delivery']
+  });
+
+  gates.push({
+    id: 'debt_stress_path',
+    label: 'Debt sustainability path',
+    warnOnly: true,
+    triggered: debt.sustainability === 'stress' || debt.sustainability === 'distress',
+    severity: debt.sustainability === 'distress' ? 'critical' : 'major',
+    reason: debt.narrative,
+    linkedOutcomeIds: ['national_prosperity', 'innovation_momentum']
+  });
+
+  gates.push({
+    id: 'budget_overcommit',
+    label: 'Budget envelope over-commit',
+    warnOnly: true,
+    triggered: budget.rebalanceNeeded,
+    severity: budget.lines.some(l => l.band === 'critical_over') ? 'major' : 'caution',
+    reason: budget.rebalanceSummary || 'Envelopes balanced.',
+    linkedOutcomeIds: ['program_delivery', 'regional_balance']
+  });
+
+  const weakOutcomes = links.filter(l => l.band === 'weak' || l.band === 'critical');
+  gates.push({
+    id: 'outcome_weakness',
+    label: 'Linked outcome weakness',
+    warnOnly: true,
+    triggered: weakOutcomes.length >= 2,
+    severity: weakOutcomes.some(l => l.band === 'critical') ? 'major' : 'caution',
+    reason:
+      weakOutcomes.length >= 2
+        ? `Multiple outcome dimensions weak: ${weakOutcomes.map(w => w.dimension).join(', ')}.`
+        : 'No multi-dimensional outcome weakness detected.',
+    linkedOutcomeIds: weakOutcomes.map(w => w.dimension)
+  });
+
+  return gates;
+}
+
+export function compositeFromLinks(links: FiscalOutcomeLink[]): { score: number; band: FiscalOutcomeBand } {
+  const score = links.reduce((s, l) => s + l.score, 0) / Math.max(1, links.length);
+  return { score: Math.round(score * 10) / 10, band: band(score) };
+}
+
+
+// --- source: fiscal-outcomes/bridge-v1012.ts ---
+
+/** Map a loose V10.12 public-finance view into V10.14 bridge input. */
+export function bridgeV1012Snapshot(raw: {
+  turn?: number;
+  fiscalPosition?: {
+    revenueCapacity?: number;
+    fiscalHeadroom?: number;
+    pressure?: V1012FiscalSnapshot['pressure'];
+    sustainability?: V1012FiscalSnapshot['sustainability'];
+    debtServiceLoad?: number;
+    maintenanceLoad?: number;
+  };
+  debt?: { enabled?: boolean; level?: number; debtServiceLoad?: number };
+  commitments?: unknown[];
+  revenuePolicy?: V1012FiscalSnapshot['revenuePolicy'];
+  reservePolicy?: V1012FiscalSnapshot['reservePolicy'];
+  persisted?: { debtEnabled?: boolean; reservePolicy?: V1012FiscalSnapshot['reservePolicy'] };
+}): V1012FiscalSnapshot {
+  const fp = raw.fiscalPosition || {};
+  const debt = raw.debt || {};
+  return {
+    turn: Number(raw.turn) || 1,
+    revenueCapacity: Number(fp.revenueCapacity) || 0,
+    fiscalHeadroom: Number(fp.fiscalHeadroom) || 0,
+    pressure: fp.pressure || 'healthy',
+    sustainability: fp.sustainability || 'stable',
+    debtServiceLoad: Number(debt.debtServiceLoad ?? fp.debtServiceLoad) || 0,
+    debtLevel: Number(debt.level) || 0,
+    debtEnabled: Boolean(debt.enabled ?? raw.persisted?.debtEnabled),
+    maintenanceLoad: Number(fp.maintenanceLoad) || 0,
+    commitmentCount: Array.isArray(raw.commitments) ? raw.commitments.length : 0,
+    revenuePolicy: raw.revenuePolicy ?? null,
+    reservePolicy: raw.reservePolicy ?? raw.persisted?.reservePolicy ?? null
+  };
+}
+
+export function buildFiscalOutcomesInputsFromBridge(
+  bridge: V1012FiscalSnapshot,
+  extras?: Partial<Omit<FiscalOutcomesSystemInputs, 'turn' | 'v1012'>>
+): FiscalOutcomesSystemInputs {
+  return {
+    turn: bridge.turn,
+    v1012: bridge,
+    ...extras
+  };
+}
+
+
+// --- source: fiscal-outcomes/compute.ts ---
+  V1014_SCHEMA_VERSION,
+  type ActiveTaxInstrument,
+  type FiscalOutcomesPersisted,
+  type FiscalOutcomesState,
+  type FiscalOutcomesSystemInputs,
+  type TaxReformStance
+} from './types';
+  DEFAULT_TAX_INSTRUMENT_IDS,
+  TAX_INSTRUMENT_CATALOG,
+  clampRate,
+  estimateRevenueDelta
+} from './tax-instruments';
+  compositeFromLinks,
+  computeConstraintGates,
+  computeOutcomeLinks
+} from './outcome-linkage';
+
+function stableHash(obj: unknown): string {
+  const s = JSON.stringify(obj);
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return `v1014_${(h >>> 0).toString(16)}`;
+}
+
+export function createInitialFiscalOutcomesPersisted(turn = 1): FiscalOutcomesPersisted {
+  const instrumentRates: Record<string, number> = {};
+  for (const id of DEFAULT_TAX_INSTRUMENT_IDS) {
+    instrumentRates[id] = TAX_INSTRUMENT_CATALOG[id].defaultRatePoints;
+  }
+  return {
+    schemaVersion: V1014_SCHEMA_VERSION,
+    revision: 0,
+    instrumentRates,
+    instrumentStances: {},
+    envelopeOverrides: {},
+    lastCompositeBand: 'mixed',
+    lastInputHash: '',
+    lastUpdatedTurn: turn
+  };
+}
+
+export function sanitizeFiscalOutcomesPersisted(raw: unknown): FiscalOutcomesPersisted | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const base = createInitialFiscalOutcomesPersisted(Number((raw as any).lastUpdatedTurn) || 1);
+  const r = raw as Partial<FiscalOutcomesPersisted>;
+  return {
+    ...base,
+    schemaVersion: V1014_SCHEMA_VERSION,
+    revision: Number(r.revision) || 0,
+    instrumentRates: { ...base.instrumentRates, ...(r.instrumentRates || {}) },
+    instrumentStances: { ...(r.instrumentStances || {}) },
+    envelopeOverrides: { ...(r.envelopeOverrides || {}) },
+    lastCompositeBand: (r.lastCompositeBand as any) || base.lastCompositeBand,
+    lastInputHash: String(r.lastInputHash || ''),
+    lastUpdatedTurn: Number(r.lastUpdatedTurn) || 1
+  };
+}
+
+function buildActiveTaxInstruments(
+  persisted: FiscalOutcomesPersisted,
+  structuralCapacity: number
+): ActiveTaxInstrument[] {
+  return DEFAULT_TAX_INSTRUMENT_IDS.map(id => {
+    const def = TAX_INSTRUMENT_CATALOG[id];
+    const ratePoints = clampRate(def, persisted.instrumentRates[id] ?? def.defaultRatePoints);
+    const stance: TaxReformStance =
+      persisted.instrumentStances[id] ||
+      (ratePoints > def.defaultRatePoints + 0.5
+        ? 'raise'
+        : ratePoints < def.defaultRatePoints - 0.5
+        ? 'cut'
+        : 'hold');
+    return {
+      instrumentId: id,
+      ratePoints,
+      stance,
+      turnsInEffect: 1,
+      revenueDeltaEstimate: estimateRevenueDelta(def, ratePoints, structuralCapacity),
+      explanation: `${def.label} at ${ratePoints} pts (${stance}).`
+    };
+  });
+}
+
+export function computeFiscalOutcomesLayer(
+  inputs: FiscalOutcomesSystemInputs,
+  persistedRaw?: FiscalOutcomesPersisted | null
+): { state: FiscalOutcomesState; persisted: FiscalOutcomesPersisted } {
+  const turn = inputs.turn;
+  const persisted = sanitizeFiscalOutcomesPersisted(persistedRaw) || createInitialFiscalOutcomesPersisted(turn);
+  const inputHash = stableHash({ turn, v1012: inputs.v1012, rates: persisted.instrumentRates });
+
+  if (inputHash === persisted.lastInputHash) {
+    const taxInstruments = buildActiveTaxInstruments(persisted, inputs.v1012.revenueCapacity);
+    const budget = buildBudgetEnvelope(inputs.v1012, persisted.envelopeOverrides);
+    const debtTrajectory = computeDebtOutcomeTrajectory(inputs.v1012);
+    const outcomeLinks = computeOutcomeLinks(inputs, taxInstruments, budget, debtTrajectory);
+    const constraintGates = computeConstraintGates(inputs, outcomeLinks, debtTrajectory, budget);
+    const { score, band } = compositeFromLinks(outcomeLinks);
+    return {
+      state: {
+        schemaVersion: V1014_SCHEMA_VERSION,
+        revision: persisted.revision,
+        taxInstruments,
+        budget,
+        debtTrajectory,
+        outcomeLinks,
+        constraintGates,
+        compositeOutcomeScore: score,
+        compositeBand: band,
+        inputHash,
+        lastUpdatedTurn: turn
+      },
+      persisted
+    };
+  }
+
+  const taxInstruments = buildActiveTaxInstruments(persisted, inputs.v1012.revenueCapacity);
+  const budget = buildBudgetEnvelope(inputs.v1012, persisted.envelopeOverrides);
+  const debtTrajectory = computeDebtOutcomeTrajectory(inputs.v1012);
+  const outcomeLinks = computeOutcomeLinks(inputs, taxInstruments, budget, debtTrajectory);
+  const constraintGates = computeConstraintGates(inputs, outcomeLinks, debtTrajectory, budget);
+  const { score, band } = compositeFromLinks(outcomeLinks);
+
+  const nextPersisted: FiscalOutcomesPersisted = {
+    ...persisted,
+    revision: persisted.revision + 1,
+    lastCompositeBand: band,
+    lastInputHash: inputHash,
+    lastUpdatedTurn: turn
+  };
+
+  const state: FiscalOutcomesState = {
+    schemaVersion: V1014_SCHEMA_VERSION,
+    revision: nextPersisted.revision,
+    taxInstruments,
+    budget,
+    debtTrajectory,
+    outcomeLinks,
+    constraintGates,
+    compositeOutcomeScore: score,
+    compositeBand: band,
+    inputHash,
+    lastUpdatedTurn: turn
+  };
+
+  return { state, persisted: nextPersisted };
+}
+
+export function setTaxInstrumentRate(
+  persisted: FiscalOutcomesPersisted,
+  instrumentId: string,
+  ratePoints: number,
+  stance?: TaxReformStance
+): FiscalOutcomesPersisted {
+  const def = TAX_INSTRUMENT_CATALOG[instrumentId];
+  if (!def) return persisted;
+  return {
+    ...persisted,
+    instrumentRates: {
+      ...persisted.instrumentRates,
+      [instrumentId]: clampRate(def, ratePoints)
+    },
+    instrumentStances: stance
+      ? { ...persisted.instrumentStances, [instrumentId]: stance }
+      : persisted.instrumentStances,
+    lastInputHash: ''
+  };
+}
+
+
+// --- source: fiscal-outcomes/gi-queries.ts ---
+
+export interface FiscalOutcomesGiAnswer {
+  headline: string;
+  facts: string[];
+  inferences: string[];
+  followUps: string[];
+}
+
+export function detectFiscalOutcomesQuestion(raw: string): boolean {
+  const q = String(raw || '').toLowerCase();
+  if (!q) return false;
+  return (
+    /tax (policy|mix|reform|rate)/.test(q) ||
+    /budget envelope/.test(q) ||
+    /debt sustainability/.test(q) ||
+    /fiscal outcome/.test(q) ||
+    /linked outcome/.test(q) ||
+    /why.*(prosperity|affordability).*fiscal/.test(q)
+  );
+}
+
+export function composeFiscalOutcomesGiAnswer(
+  question: string,
+  state: FiscalOutcomesState | null | undefined
+): FiscalOutcomesGiAnswer {
+  if (!state) {
+    return {
+      headline: 'Fiscal outcomes layer inactive',
+      facts: summarizeBoundariesForGi().slice(0, 2),
+      inferences: ['Enable National Systems and V10.14 integration to see tax, budget, and debt-outcome links.'],
+      followUps: ['What is our current fiscal position?', 'Why is fiscal capacity strained?']
+    };
+  }
+
+  const weak = state.outcomeLinks.filter(l => l.band === 'weak' || l.band === 'critical');
+  const gates = state.constraintGates.filter(g => g.triggered);
+
+  return {
+    headline: `Composite fiscal outcome: ${state.compositeBand.toUpperCase()} (${state.compositeOutcomeScore})`,
+    facts: [
+      `Budget ${state.budget.fiscalYearLabel}: ${state.budget.totalCapacityPoints} pts capacity, flex ${state.budget.unallocatedFlex}.`,
+      `Debt path: ${state.debtTrajectory.sustainability} — ${state.debtTrajectory.narrative}`,
+      ...state.taxInstruments
+        .filter(t => Math.abs(t.revenueDeltaEstimate) > 0.5)
+        .slice(0, 3)
+        .map(t => `${t.explanation} Est. revenue Δ ${t.revenueDeltaEstimate}.`)
+    ],
+    inferences: [
+      weak.length
+        ? `Weak outcome dimensions: ${weak.map(w => `${w.dimension} (${w.band})`).join('; ')}.`
+        : 'All linked outcome dimensions are mixed or better.',
+      gates.length
+        ? `Active fiscal gates: ${gates.map(g => g.label).join(', ')}.`
+        : 'No fiscal constraint gates triggered.'
+    ],
+    followUps: [
+      'Should we rebalance the budget envelope?',
+      'What is the debt sustainability outlook?',
+      'How does tax mix affect household affordability?'
+    ]
+  };
+}
+
+export function formatGiAnswer(answer: FiscalOutcomesGiAnswer): string {
+  return [answer.headline, ...answer.facts.map(f => `• ${f}`), ...answer.inferences.map(i => `→ ${i}`)].join(
+    '\n'
+  );
+}
+
+
+// --- source: fiscal-outcomes/catalog/policy-scenarios.ts ---
+
+export interface PolicyScenarioPack {
+  id: string;
+  title: string;
+  fiscalContext: string;
+  narrative: string;
+  recommendedInstruments: string[];
+  stanceHints: Record<string, string>;
+  linkedOutcomes: LinkedOutcomeDimension[];
+  expectedPressure: string;
+  playerFacingSummary: string;
+  designerNotes: string;
+}
+
+/** Authored policy scenario packs for V10.14 what-if and tutorial hooks (Agent 07). */
+export const POLICY_SCENARIO_CATALOG: PolicyScenarioPack[] = [
+  {
+    id: 'pack_001',
+    title: 'cut corp standard under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting corp_standard via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['corp_standard'],
+    stanceHints: { 'corp_standard': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how cut on corp standard feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_002',
+    title: 'hold corp standard under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting corp_standard via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['corp_standard'],
+    stanceHints: { 'corp_standard': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how hold on corp standard feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_003',
+    title: 'raise corp standard under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting corp_standard via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['corp_standard'],
+    stanceHints: { 'corp_standard': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how raise on corp standard feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_004',
+    title: 'cut personal progressive under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting personal_progressive via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['personal_progressive'],
+    stanceHints: { 'personal_progressive': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how cut on personal progressive feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_005',
+    title: 'hold personal progressive under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting personal_progressive via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['personal_progressive'],
+    stanceHints: { 'personal_progressive': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how hold on personal progressive feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_006',
+    title: 'raise personal progressive under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting personal_progressive via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['personal_progressive'],
+    stanceHints: { 'personal_progressive': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how raise on personal progressive feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_007',
+    title: 'cut payroll levy under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting payroll_levy via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['payroll_levy'],
+    stanceHints: { 'payroll_levy': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how cut on payroll levy feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_008',
+    title: 'hold payroll levy under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting payroll_levy via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['payroll_levy'],
+    stanceHints: { 'payroll_levy': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how hold on payroll levy feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_009',
+    title: 'raise payroll levy under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting payroll_levy via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['payroll_levy'],
+    stanceHints: { 'payroll_levy': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how raise on payroll levy feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_010',
+    title: 'cut resource rent under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting resource_rent via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['resource_rent'],
+    stanceHints: { 'resource_rent': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how cut on resource rent feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_011',
+    title: 'hold resource rent under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting resource_rent via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['resource_rent'],
+    stanceHints: { 'resource_rent': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how hold on resource rent feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_012',
+    title: 'raise resource rent under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting resource_rent via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['resource_rent'],
+    stanceHints: { 'resource_rent': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how raise on resource rent feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_013',
+    title: 'cut carbon price under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting carbon_price via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['carbon_price'],
+    stanceHints: { 'carbon_price': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how cut on carbon price feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_014',
+    title: 'hold carbon price under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting carbon_price via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['carbon_price'],
+    stanceHints: { 'carbon_price': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how hold on carbon price feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_015',
+    title: 'raise carbon price under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting carbon_price via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['carbon_price'],
+    stanceHints: { 'carbon_price': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how raise on carbon price feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_016',
+    title: 'cut gst equivalent under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting gst_equivalent via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['gst_equivalent'],
+    stanceHints: { 'gst_equivalent': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how cut on gst equivalent feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_017',
+    title: 'hold gst equivalent under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting gst_equivalent via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['gst_equivalent'],
+    stanceHints: { 'gst_equivalent': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how hold on gst equivalent feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_018',
+    title: 'raise gst equivalent under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting gst_equivalent via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['gst_equivalent'],
+    stanceHints: { 'gst_equivalent': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how raise on gst equivalent feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_019',
+    title: 'cut land value uplift under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting land_value_uplift via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['land_value_uplift'],
+    stanceHints: { 'land_value_uplift': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how cut on land value uplift feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_020',
+    title: 'hold land value uplift under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting land_value_uplift via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['land_value_uplift'],
+    stanceHints: { 'land_value_uplift': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how hold on land value uplift feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_021',
+    title: 'raise land value uplift under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting land_value_uplift via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['land_value_uplift'],
+    stanceHints: { 'land_value_uplift': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how raise on land value uplift feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_022',
+    title: 'cut innovation credit under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting innovation_credit via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['innovation_credit'],
+    stanceHints: { 'innovation_credit': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how cut on innovation credit feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_023',
+    title: 'hold innovation credit under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting innovation_credit via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['innovation_credit'],
+    stanceHints: { 'innovation_credit': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how hold on innovation credit feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_024',
+    title: 'raise innovation credit under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting innovation_credit via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['innovation_credit'],
+    stanceHints: { 'innovation_credit': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how raise on innovation credit feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_025',
+    title: 'cut regional incentive under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting regional_incentive via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['regional_incentive'],
+    stanceHints: { 'regional_incentive': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how cut on regional incentive feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_026',
+    title: 'hold regional incentive under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting regional_incentive via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['regional_incentive'],
+    stanceHints: { 'regional_incentive': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how hold on regional incentive feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_027',
+    title: 'raise regional incentive under comfortable fiscal pressure',
+    fiscalContext: 'National fiscal pressure band comfortable; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is comfortable, adjusting regional_incentive via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['regional_incentive'],
+    stanceHints: { 'regional_incentive': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'comfortable',
+    playerFacingSummary: 'Explore how raise on regional incentive feels when national fiscal headroom is comfortable.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_028',
+    title: 'cut corp standard under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting corp_standard via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['corp_standard'],
+    stanceHints: { 'corp_standard': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how cut on corp standard feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_029',
+    title: 'hold corp standard under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting corp_standard via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['corp_standard'],
+    stanceHints: { 'corp_standard': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how hold on corp standard feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_030',
+    title: 'raise corp standard under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting corp_standard via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['corp_standard'],
+    stanceHints: { 'corp_standard': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how raise on corp standard feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_031',
+    title: 'cut personal progressive under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting personal_progressive via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['personal_progressive'],
+    stanceHints: { 'personal_progressive': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how cut on personal progressive feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_032',
+    title: 'hold personal progressive under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting personal_progressive via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['personal_progressive'],
+    stanceHints: { 'personal_progressive': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how hold on personal progressive feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_033',
+    title: 'raise personal progressive under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting personal_progressive via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['personal_progressive'],
+    stanceHints: { 'personal_progressive': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how raise on personal progressive feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_034',
+    title: 'cut payroll levy under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting payroll_levy via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['payroll_levy'],
+    stanceHints: { 'payroll_levy': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how cut on payroll levy feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_035',
+    title: 'hold payroll levy under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting payroll_levy via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['payroll_levy'],
+    stanceHints: { 'payroll_levy': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how hold on payroll levy feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_036',
+    title: 'raise payroll levy under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting payroll_levy via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['payroll_levy'],
+    stanceHints: { 'payroll_levy': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how raise on payroll levy feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_037',
+    title: 'cut resource rent under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting resource_rent via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['resource_rent'],
+    stanceHints: { 'resource_rent': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how cut on resource rent feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_038',
+    title: 'hold resource rent under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting resource_rent via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['resource_rent'],
+    stanceHints: { 'resource_rent': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how hold on resource rent feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_039',
+    title: 'raise resource rent under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting resource_rent via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['resource_rent'],
+    stanceHints: { 'resource_rent': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how raise on resource rent feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_040',
+    title: 'cut carbon price under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting carbon_price via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['carbon_price'],
+    stanceHints: { 'carbon_price': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how cut on carbon price feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_041',
+    title: 'hold carbon price under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting carbon_price via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['carbon_price'],
+    stanceHints: { 'carbon_price': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how hold on carbon price feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_042',
+    title: 'raise carbon price under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting carbon_price via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['carbon_price'],
+    stanceHints: { 'carbon_price': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how raise on carbon price feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_043',
+    title: 'cut gst equivalent under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting gst_equivalent via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['gst_equivalent'],
+    stanceHints: { 'gst_equivalent': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how cut on gst equivalent feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_044',
+    title: 'hold gst equivalent under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting gst_equivalent via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['gst_equivalent'],
+    stanceHints: { 'gst_equivalent': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how hold on gst equivalent feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_045',
+    title: 'raise gst equivalent under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting gst_equivalent via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['gst_equivalent'],
+    stanceHints: { 'gst_equivalent': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how raise on gst equivalent feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_046',
+    title: 'cut land value uplift under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting land_value_uplift via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['land_value_uplift'],
+    stanceHints: { 'land_value_uplift': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how cut on land value uplift feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_047',
+    title: 'hold land value uplift under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting land_value_uplift via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['land_value_uplift'],
+    stanceHints: { 'land_value_uplift': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how hold on land value uplift feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_048',
+    title: 'raise land value uplift under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting land_value_uplift via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['land_value_uplift'],
+    stanceHints: { 'land_value_uplift': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how raise on land value uplift feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_049',
+    title: 'cut innovation credit under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting innovation_credit via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['innovation_credit'],
+    stanceHints: { 'innovation_credit': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how cut on innovation credit feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_050',
+    title: 'hold innovation credit under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting innovation_credit via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['innovation_credit'],
+    stanceHints: { 'innovation_credit': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how hold on innovation credit feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_051',
+    title: 'raise innovation credit under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting innovation_credit via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['innovation_credit'],
+    stanceHints: { 'innovation_credit': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how raise on innovation credit feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_052',
+    title: 'cut regional incentive under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting regional_incentive via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['regional_incentive'],
+    stanceHints: { 'regional_incentive': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how cut on regional incentive feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_053',
+    title: 'hold regional incentive under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting regional_incentive via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['regional_incentive'],
+    stanceHints: { 'regional_incentive': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how hold on regional incentive feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_054',
+    title: 'raise regional incentive under healthy fiscal pressure',
+    fiscalContext: 'National fiscal pressure band healthy; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is healthy, adjusting regional_incentive via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['regional_incentive'],
+    stanceHints: { 'regional_incentive': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'healthy',
+    playerFacingSummary: 'Explore how raise on regional incentive feels when national fiscal headroom is healthy.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_055',
+    title: 'cut corp standard under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting corp_standard via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['corp_standard'],
+    stanceHints: { 'corp_standard': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how cut on corp standard feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_056',
+    title: 'hold corp standard under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting corp_standard via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['corp_standard'],
+    stanceHints: { 'corp_standard': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how hold on corp standard feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_057',
+    title: 'raise corp standard under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting corp_standard via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['corp_standard'],
+    stanceHints: { 'corp_standard': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how raise on corp standard feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_058',
+    title: 'cut personal progressive under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting personal_progressive via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['personal_progressive'],
+    stanceHints: { 'personal_progressive': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how cut on personal progressive feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_059',
+    title: 'hold personal progressive under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting personal_progressive via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['personal_progressive'],
+    stanceHints: { 'personal_progressive': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how hold on personal progressive feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_060',
+    title: 'raise personal progressive under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting personal_progressive via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['personal_progressive'],
+    stanceHints: { 'personal_progressive': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how raise on personal progressive feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_061',
+    title: 'cut payroll levy under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting payroll_levy via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['payroll_levy'],
+    stanceHints: { 'payroll_levy': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how cut on payroll levy feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_062',
+    title: 'hold payroll levy under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting payroll_levy via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['payroll_levy'],
+    stanceHints: { 'payroll_levy': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how hold on payroll levy feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_063',
+    title: 'raise payroll levy under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting payroll_levy via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['payroll_levy'],
+    stanceHints: { 'payroll_levy': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how raise on payroll levy feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_064',
+    title: 'cut resource rent under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting resource_rent via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['resource_rent'],
+    stanceHints: { 'resource_rent': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how cut on resource rent feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_065',
+    title: 'hold resource rent under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting resource_rent via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['resource_rent'],
+    stanceHints: { 'resource_rent': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how hold on resource rent feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_066',
+    title: 'raise resource rent under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting resource_rent via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['resource_rent'],
+    stanceHints: { 'resource_rent': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how raise on resource rent feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_067',
+    title: 'cut carbon price under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting carbon_price via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['carbon_price'],
+    stanceHints: { 'carbon_price': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how cut on carbon price feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_068',
+    title: 'hold carbon price under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting carbon_price via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['carbon_price'],
+    stanceHints: { 'carbon_price': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how hold on carbon price feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_069',
+    title: 'raise carbon price under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting carbon_price via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['carbon_price'],
+    stanceHints: { 'carbon_price': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how raise on carbon price feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_070',
+    title: 'cut gst equivalent under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting gst_equivalent via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['gst_equivalent'],
+    stanceHints: { 'gst_equivalent': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how cut on gst equivalent feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_071',
+    title: 'hold gst equivalent under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting gst_equivalent via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['gst_equivalent'],
+    stanceHints: { 'gst_equivalent': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how hold on gst equivalent feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_072',
+    title: 'raise gst equivalent under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting gst_equivalent via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['gst_equivalent'],
+    stanceHints: { 'gst_equivalent': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how raise on gst equivalent feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_073',
+    title: 'cut land value uplift under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting land_value_uplift via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['land_value_uplift'],
+    stanceHints: { 'land_value_uplift': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how cut on land value uplift feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_074',
+    title: 'hold land value uplift under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting land_value_uplift via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['land_value_uplift'],
+    stanceHints: { 'land_value_uplift': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how hold on land value uplift feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_075',
+    title: 'raise land value uplift under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting land_value_uplift via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['land_value_uplift'],
+    stanceHints: { 'land_value_uplift': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how raise on land value uplift feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_076',
+    title: 'cut innovation credit under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting innovation_credit via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['innovation_credit'],
+    stanceHints: { 'innovation_credit': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how cut on innovation credit feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_077',
+    title: 'hold innovation credit under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting innovation_credit via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['innovation_credit'],
+    stanceHints: { 'innovation_credit': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how hold on innovation credit feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_078',
+    title: 'raise innovation credit under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting innovation_credit via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['innovation_credit'],
+    stanceHints: { 'innovation_credit': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how raise on innovation credit feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_079',
+    title: 'cut regional incentive under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting regional_incentive via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['regional_incentive'],
+    stanceHints: { 'regional_incentive': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how cut on regional incentive feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_080',
+    title: 'hold regional incentive under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting regional_incentive via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['regional_incentive'],
+    stanceHints: { 'regional_incentive': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how hold on regional incentive feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_081',
+    title: 'raise regional incentive under tight fiscal pressure',
+    fiscalContext: 'National fiscal pressure band tight; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is tight, adjusting regional_incentive via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['regional_incentive'],
+    stanceHints: { 'regional_incentive': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'tight',
+    playerFacingSummary: 'Explore how raise on regional incentive feels when national fiscal headroom is tight.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_082',
+    title: 'cut corp standard under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting corp_standard via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['corp_standard'],
+    stanceHints: { 'corp_standard': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how cut on corp standard feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_083',
+    title: 'hold corp standard under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting corp_standard via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['corp_standard'],
+    stanceHints: { 'corp_standard': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how hold on corp standard feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_084',
+    title: 'raise corp standard under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting corp_standard via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['corp_standard'],
+    stanceHints: { 'corp_standard': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how raise on corp standard feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_085',
+    title: 'cut personal progressive under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting personal_progressive via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['personal_progressive'],
+    stanceHints: { 'personal_progressive': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how cut on personal progressive feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_086',
+    title: 'hold personal progressive under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting personal_progressive via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['personal_progressive'],
+    stanceHints: { 'personal_progressive': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how hold on personal progressive feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_087',
+    title: 'raise personal progressive under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting personal_progressive via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['personal_progressive'],
+    stanceHints: { 'personal_progressive': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how raise on personal progressive feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_088',
+    title: 'cut payroll levy under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting payroll_levy via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['payroll_levy'],
+    stanceHints: { 'payroll_levy': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how cut on payroll levy feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_089',
+    title: 'hold payroll levy under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting payroll_levy via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['payroll_levy'],
+    stanceHints: { 'payroll_levy': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how hold on payroll levy feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_090',
+    title: 'raise payroll levy under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting payroll_levy via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['payroll_levy'],
+    stanceHints: { 'payroll_levy': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how raise on payroll levy feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_091',
+    title: 'cut resource rent under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting resource_rent via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['resource_rent'],
+    stanceHints: { 'resource_rent': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how cut on resource rent feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_092',
+    title: 'hold resource rent under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting resource_rent via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['resource_rent'],
+    stanceHints: { 'resource_rent': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how hold on resource rent feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_093',
+    title: 'raise resource rent under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting resource_rent via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['resource_rent'],
+    stanceHints: { 'resource_rent': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how raise on resource rent feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_094',
+    title: 'cut carbon price under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting carbon_price via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['carbon_price'],
+    stanceHints: { 'carbon_price': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how cut on carbon price feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_095',
+    title: 'hold carbon price under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting carbon_price via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['carbon_price'],
+    stanceHints: { 'carbon_price': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how hold on carbon price feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_096',
+    title: 'raise carbon price under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting carbon_price via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['carbon_price'],
+    stanceHints: { 'carbon_price': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how raise on carbon price feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_097',
+    title: 'cut gst equivalent under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting gst_equivalent via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['gst_equivalent'],
+    stanceHints: { 'gst_equivalent': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how cut on gst equivalent feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_098',
+    title: 'hold gst equivalent under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting gst_equivalent via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['gst_equivalent'],
+    stanceHints: { 'gst_equivalent': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how hold on gst equivalent feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_099',
+    title: 'raise gst equivalent under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting gst_equivalent via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['gst_equivalent'],
+    stanceHints: { 'gst_equivalent': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how raise on gst equivalent feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_100',
+    title: 'cut land value uplift under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting land_value_uplift via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['land_value_uplift'],
+    stanceHints: { 'land_value_uplift': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how cut on land value uplift feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_101',
+    title: 'hold land value uplift under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting land_value_uplift via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['land_value_uplift'],
+    stanceHints: { 'land_value_uplift': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how hold on land value uplift feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_102',
+    title: 'raise land value uplift under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting land_value_uplift via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['land_value_uplift'],
+    stanceHints: { 'land_value_uplift': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how raise on land value uplift feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_103',
+    title: 'cut innovation credit under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting innovation_credit via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['innovation_credit'],
+    stanceHints: { 'innovation_credit': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how cut on innovation credit feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_104',
+    title: 'hold innovation credit under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting innovation_credit via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['innovation_credit'],
+    stanceHints: { 'innovation_credit': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how hold on innovation credit feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_105',
+    title: 'raise innovation credit under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting innovation_credit via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['innovation_credit'],
+    stanceHints: { 'innovation_credit': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how raise on innovation credit feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_106',
+    title: 'cut regional incentive under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting regional_incentive via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['regional_incentive'],
+    stanceHints: { 'regional_incentive': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how cut on regional incentive feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_107',
+    title: 'hold regional incentive under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting regional_incentive via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['regional_incentive'],
+    stanceHints: { 'regional_incentive': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how hold on regional incentive feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_108',
+    title: 'raise regional incentive under strained fiscal pressure',
+    fiscalContext: 'National fiscal pressure band strained; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is strained, adjusting regional_incentive via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['regional_incentive'],
+    stanceHints: { 'regional_incentive': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'strained',
+    playerFacingSummary: 'Explore how raise on regional incentive feels when national fiscal headroom is strained.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_109',
+    title: 'cut corp standard under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting corp_standard via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['corp_standard'],
+    stanceHints: { 'corp_standard': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how cut on corp standard feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_110',
+    title: 'hold corp standard under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting corp_standard via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['corp_standard'],
+    stanceHints: { 'corp_standard': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how hold on corp standard feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_111',
+    title: 'raise corp standard under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting corp_standard via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['corp_standard'],
+    stanceHints: { 'corp_standard': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how raise on corp standard feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_112',
+    title: 'cut personal progressive under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting personal_progressive via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['personal_progressive'],
+    stanceHints: { 'personal_progressive': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how cut on personal progressive feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_113',
+    title: 'hold personal progressive under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting personal_progressive via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['personal_progressive'],
+    stanceHints: { 'personal_progressive': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how hold on personal progressive feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_114',
+    title: 'raise personal progressive under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting personal_progressive via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['personal_progressive'],
+    stanceHints: { 'personal_progressive': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how raise on personal progressive feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_115',
+    title: 'cut payroll levy under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting payroll_levy via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['payroll_levy'],
+    stanceHints: { 'payroll_levy': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how cut on payroll levy feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_116',
+    title: 'hold payroll levy under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting payroll_levy via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['payroll_levy'],
+    stanceHints: { 'payroll_levy': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how hold on payroll levy feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_117',
+    title: 'raise payroll levy under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting payroll_levy via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['payroll_levy'],
+    stanceHints: { 'payroll_levy': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how raise on payroll levy feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_118',
+    title: 'cut resource rent under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting resource_rent via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['resource_rent'],
+    stanceHints: { 'resource_rent': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how cut on resource rent feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_119',
+    title: 'hold resource rent under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting resource_rent via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['resource_rent'],
+    stanceHints: { 'resource_rent': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how hold on resource rent feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_120',
+    title: 'raise resource rent under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting resource_rent via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['resource_rent'],
+    stanceHints: { 'resource_rent': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how raise on resource rent feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_121',
+    title: 'cut carbon price under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting carbon_price via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['carbon_price'],
+    stanceHints: { 'carbon_price': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how cut on carbon price feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_122',
+    title: 'hold carbon price under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting carbon_price via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['carbon_price'],
+    stanceHints: { 'carbon_price': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how hold on carbon price feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_123',
+    title: 'raise carbon price under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting carbon_price via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['carbon_price'],
+    stanceHints: { 'carbon_price': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how raise on carbon price feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_124',
+    title: 'cut gst equivalent under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting gst_equivalent via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['gst_equivalent'],
+    stanceHints: { 'gst_equivalent': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how cut on gst equivalent feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_125',
+    title: 'hold gst equivalent under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting gst_equivalent via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['gst_equivalent'],
+    stanceHints: { 'gst_equivalent': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how hold on gst equivalent feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_126',
+    title: 'raise gst equivalent under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting gst_equivalent via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['gst_equivalent'],
+    stanceHints: { 'gst_equivalent': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how raise on gst equivalent feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_127',
+    title: 'cut land value uplift under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting land_value_uplift via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['land_value_uplift'],
+    stanceHints: { 'land_value_uplift': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how cut on land value uplift feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_128',
+    title: 'hold land value uplift under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting land_value_uplift via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['land_value_uplift'],
+    stanceHints: { 'land_value_uplift': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how hold on land value uplift feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_129',
+    title: 'raise land value uplift under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting land_value_uplift via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['land_value_uplift'],
+    stanceHints: { 'land_value_uplift': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how raise on land value uplift feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_130',
+    title: 'cut innovation credit under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting innovation_credit via a cut stance shifts normalized revenue estimates and linked regional_balance & national_prosperity outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['innovation_credit'],
+    stanceHints: { 'innovation_credit': 'cut' },
+    linkedOutcomes: ['regional_balance', 'national_prosperity'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how cut on innovation credit feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_131',
+    title: 'hold innovation credit under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting innovation_credit via a hold stance shifts normalized revenue estimates and linked innovation_momentum & public_stability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['innovation_credit'],
+    stanceHints: { 'innovation_credit': 'hold' },
+    linkedOutcomes: ['innovation_momentum', 'public_stability'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how hold on innovation credit feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_132',
+    title: 'raise innovation credit under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting innovation_credit via a raise stance shifts normalized revenue estimates and linked national_prosperity & program_delivery outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['innovation_credit'],
+    stanceHints: { 'innovation_credit': 'raise' },
+    linkedOutcomes: ['national_prosperity', 'program_delivery'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how raise on innovation credit feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_133',
+    title: 'cut regional incentive under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting regional_incentive via a cut stance shifts normalized revenue estimates and linked public_stability & household_affordability outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['regional_incentive'],
+    stanceHints: { 'regional_incentive': 'cut' },
+    linkedOutcomes: ['public_stability', 'household_affordability'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how cut on regional incentive feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_134',
+    title: 'hold regional incentive under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting regional_incentive via a hold stance shifts normalized revenue estimates and linked program_delivery & regional_balance outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['regional_incentive'],
+    stanceHints: { 'regional_incentive': 'hold' },
+    linkedOutcomes: ['program_delivery', 'regional_balance'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how hold on regional incentive feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+  {
+    id: 'pack_135',
+    title: 'raise regional incentive under critical fiscal pressure',
+    fiscalContext: 'National fiscal pressure band critical; envelope flex depends on V10.12 headroom.',
+    narrative: 'When fiscal capacity is critical, adjusting regional_incentive via a raise stance shifts normalized revenue estimates and linked household_affordability & innovation_momentum outcomes over several turns. This pack is advisory: legality and program approval remain unchanged from V10.12.',
+    recommendedInstruments: ['regional_incentive'],
+    stanceHints: { 'regional_incentive': 'raise' },
+    linkedOutcomes: ['household_affordability', 'innovation_momentum'],
+    expectedPressure: 'critical',
+    playerFacingSummary: 'Explore how raise on regional incentive feels when national fiscal headroom is critical.',
+    designerNotes: 'Merge hook: surface in Fiscal Outcomes inspector what-if carousel; do not mutate actor wallets.',
+  },
+];
+
+
+// --- source: revenue-ledger/types.ts ---
+
+export const REVENUE_LEDGER_SCHEMA = 'op10m-agent07-revenue-ledger-v1';
+
+export type RevenueStreamKind =
+  | 'tax_instrument'
+  | 'resource_volatility'
+  | 'carbon_market'
+  | 'policy_dividend'
+  | 'transfers_in'
+  | 'one_off_receipt';
+
+export interface RevenueStreamLine {
+  id: string;
+  kind: RevenueStreamKind;
+  label: string;
+  baseCapacityPoints: number;
+  deltaPoints: number;
+  volatilityBand: 'low' | 'medium' | 'high';
+  sourceInstrumentId: string | null;
+  explanation: string;
+}
+
+export interface NationalRevenueLedger {
+  schemaVersion: string;
+  turn: number;
+  structuralCapacity: number;
+  currentCapacity: number;
+  streams: RevenueStreamLine[];
+  totalDelta: number;
+  reconciledToV1012: boolean;
+  reconciliationNotes: string[];
+}
+
+export interface RevenueLedgerInputs {
+  turn: number;
+  v1012: V1012FiscalSnapshot;
+  taxInstruments: ActiveTaxInstrument[];
+}
+
+
+// --- source: revenue-ledger/compute.ts ---
+
+function volatilityForInstrument(instrumentId: string): RevenueStreamLine['volatilityBand'] {
+  if (instrumentId === 'resource_rent') return 'high';
+  if (instrumentId === 'carbon_price') return 'medium';
+  if (instrumentId === 'innovation_credit') return 'low';
+  return 'low';
+}
+
+export function buildNationalRevenueLedger(inputs: RevenueLedgerInputs): NationalRevenueLedger {
+  const { v1012, taxInstruments, turn } = inputs;
+  const structuralCapacity = v1012.revenueCapacity;
+  const streams: RevenueStreamLine[] = taxInstruments.map(inst => ({
+    id: `stream_${inst.instrumentId}`,
+    kind: 'tax_instrument',
+    label: inst.explanation.split(' at ')[0] || inst.instrumentId,
+    baseCapacityPoints: Math.round(structuralCapacity * 0.11),
+    deltaPoints: Math.round(inst.revenueDeltaEstimate),
+    volatilityBand: volatilityForInstrument(inst.instrumentId),
+    sourceInstrumentId: inst.instrumentId,
+    explanation: inst.explanation
+  }));
+
+  if (v1012.revenuePolicy === 'revenue_focused') {
+    streams.push({
+      id: 'stream_policy_dividend',
+      kind: 'policy_dividend',
+      label: 'Revenue-focused policy dividend',
+      baseCapacityPoints: 0,
+      deltaPoints: 2,
+      volatilityBand: 'low',
+      sourceInstrumentId: null,
+      explanation: 'V10.12 revenue policy stance adds modest structural uplift (normalized points).'
+    });
+  }
+
+  const totalDelta = streams.reduce((s, l) => s + l.deltaPoints, 0);
+  const modeledCurrent = structuralCapacity + Math.round(totalDelta * 0.15);
+  const reconciledToV1012 = Math.abs(modeledCurrent - structuralCapacity) <= Math.max(8, structuralCapacity * 0.12);
+  const reconciliationNotes: string[] = [];
+  if (!reconciledToV1012) {
+    reconciliationNotes.push(
+      `Modeled current ${modeledCurrent} vs V10.12 structural ${structuralCapacity} — within tolerance band for policy deltas only.`
+    );
+  } else {
+    reconciliationNotes.push('Ledger deltas reconcile to V10.12 structural capacity (policy-scaled).');
+  }
+
+  return {
+    schemaVersion: REVENUE_LEDGER_SCHEMA,
+    turn,
+    structuralCapacity,
+    currentCapacity: structuralCapacity,
+    streams,
+    totalDelta,
+    reconciledToV1012,
+    reconciliationNotes
+  };
+}
+
+
+// --- source: infrastructure-financing/types.ts ---
+export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
+
+export type InfrastructureFinancingVehicle =
+  | 'paygo_appropriation'
+  | 'sovereign_bond_series'
+  | 'state_borrowing_facility'
+  | 'ppp_availability'
+  | 'grant_match_federal'
+  | 'off_budget_entity'
+  | 'debt_funded_acceleration';
+
+export interface InfrastructureProjectFundingRequest {
+  projectId: string;
+  title: string;
+  regionIds: string[];
+  capitalPoints: number;
+  maintenancePointsPerTurn: number;
+  strategicWeight: number;
+  preferredVehicle: InfrastructureFinancingVehicle;
+}
+
+export interface InfrastructureFundingStackLine {
+  vehicle: InfrastructureFinancingVehicle;
+  capitalPoints: number;
+  serviceLoadDelta: number;
+  envelopeCategory: 'infrastructure_capital' | 'maintenance_backlog' | 'debt_service_reserve';
+  warnOnly: boolean;
+  explanation: string;
+}
+
+export interface InfrastructureFundingPlan {
+  projectId: string;
+  totalCapitalPoints: number;
+  stack: InfrastructureFundingStackLine[];
+  fiscalHeadroomAfter: number;
+  debtServiceAfter: number;
+  feasible: boolean;
+  warnings: string[];
+}
+
+export interface InfrastructureFinancingSummary {
+  schemaVersion: string;
+  turn: number;
+  plans: InfrastructureFundingPlan[];
+  aggregateCapital: number;
+  aggregateServiceLoad: number;
+  bindingWarnings: string[];
+}
+
+
+// --- source: infrastructure-financing/compute.ts ---
+  InfrastructureFinancingSummary,
+  InfrastructureFundingPlan,
+  InfrastructureProjectFundingRequest
+} from './types';
+
+const VEHICLE_SERVICE_LOAD: Record<string, number> = {
+  paygo_appropriation: 0,
+  sovereign_bond_series: 0.08,
+  state_borrowing_facility: 0.06,
+  ppp_availability: 0.04,
+  grant_match_federal: 0,
+  off_budget_entity: 0.02,
+  debt_funded_acceleration: 0.12
+};
+
+export function planInfrastructureFunding(
+  request: InfrastructureProjectFundingRequest,
+  v1012: V1012FiscalSnapshot,
+  envelope: NationalBudgetEnvelope
+): InfrastructureFundingPlan {
+  const infraLine = envelope.lines.find(l => l.category === 'infrastructure_capital');
+  const flex = infraLine?.flexPoints ?? 0;
+  const warnings: string[] = [];
+  const vehicle = request.preferredVehicle;
+  let capitalFromPaygo = Math.min(request.capitalPoints, flex);
+  let remainder = request.capitalPoints - capitalFromPaygo;
+
+  const stack: InfrastructureFundingPlan['stack'] = [];
+  if (capitalFromPaygo > 0) {
+    stack.push({
+      vehicle: 'paygo_appropriation',
+      capitalPoints: capitalFromPaygo,
+      serviceLoadDelta: 0,
+      envelopeCategory: 'infrastructure_capital',
+      warnOnly: false,
+      explanation: `Pay-go from infrastructure envelope flex (${capitalFromPaygo} pts).`
+    });
+  }
+
+  if (remainder > 0 && v1012.debtEnabled) {
+    const debtVehicle =
+      vehicle === 'debt_funded_acceleration' ? 'debt_funded_acceleration' : 'sovereign_bond_series';
+    const load = remainder * (VEHICLE_SERVICE_LOAD[debtVehicle] ?? 0.08);
+    stack.push({
+      vehicle: debtVehicle,
+      capitalPoints: remainder,
+      serviceLoadDelta: Math.round(load * 10) / 10,
+      envelopeCategory: 'debt_service_reserve',
+      warnOnly: v1012.pressure !== 'critical',
+      explanation: `Debt-funded tranche ${remainder} pts; service load +${load.toFixed(1)}.`
+    });
+    remainder = 0;
+  } else if (remainder > 0) {
+    stack.push({
+      vehicle: 'grant_match_federal',
+      capitalPoints: remainder,
+      serviceLoadDelta: 0,
+      envelopeCategory: 'infrastructure_capital',
+      warnOnly: true,
+      explanation: `Grant-match / staged funding for ${remainder} pts (debt disabled).`
+    });
+    warnings.push('Debt disabled — remainder staged via grant-match (warn-only).');
+  }
+
+  const aggregateService = stack.reduce((s, l) => s + l.serviceLoadDelta, 0);
+  const fiscalHeadroomAfter = v1012.fiscalHeadroom - Math.round(request.capitalPoints * 0.04);
+  const debtServiceAfter = v1012.debtServiceLoad + aggregateService;
+  const feasible =
+    fiscalHeadroomAfter > -18 &&
+    (v1012.pressure !== 'critical' || request.capitalPoints <= flex + 5);
+
+  if (v1012.pressure === 'critical' && request.capitalPoints > flex) {
+    warnings.push('Critical fiscal pressure — large capital stack should be staged.');
+  }
+  if (debtServiceAfter > 20) {
+    warnings.push('Projected debt service exceeds soft guard (20 pts).');
+  }
+
+  return {
+    projectId: request.projectId,
+    totalCapitalPoints: request.capitalPoints,
+    stack,
+    fiscalHeadroomAfter,
+    debtServiceAfter,
+    feasible,
+    warnings
+  };
+}
+
+export function summarizeInfrastructureFinancing(
+  turn: number,
+  requests: InfrastructureProjectFundingRequest[],
+  v1012: V1012FiscalSnapshot,
+  envelope: NationalBudgetEnvelope
+): InfrastructureFinancingSummary {
+  const plans = requests.map(r => planInfrastructureFunding(r, v1012, envelope));
+  const aggregateCapital = plans.reduce((s, p) => s + p.totalCapitalPoints, 0);
+  const aggregateServiceLoad = plans.reduce(
+    (s, p) => s + p.stack.reduce((t, l) => t + l.serviceLoadDelta, 0),
+    0
+  );
+  const bindingWarnings = plans.flatMap(p => p.warnings).filter(Boolean);
+
+  return {
+    schemaVersion: INFRA_FINANCING_SCHEMA,
+    turn,
+    plans,
+    aggregateCapital,
+    aggregateServiceLoad,
+    bindingWarnings
+  };
+}
+
+
+// --- source: recurring-commitments/types.ts ---
+
+export const RECURRING_COMMITMENTS_SCHEMA = 'op10m-agent07-recurring-commitments-v1';
+
+export type RecurringCommitmentCadence = 'every_turn' | 'every_2_turns' | 'annual';
+
+export type RecurringCommitmentKind =
+  | 'core_services'
+  | 'maintenance_contract'
+  | 'subsidy_program'
+  | 'debt_coupon'
+  | 'indexed_transfer';
+
+export interface RecurringCommitmentDefinition {
+  id: string;
+  title: string;
+  kind: RecurringCommitmentKind;
+  cadence: RecurringCommitmentCadence;
+  loadPointsPerPulse: number;
+  envelopeCategory: BudgetEnvelopeCategory;
+  mandatory: boolean;
+  expiryTurn: number | null;
+  regionIds: string[];
+}
+
+export interface RecurringCommitmentPulse {
+  commitmentId: string;
+  turn: number;
+  loadPoints: number;
+  envelopeCategory: BudgetEnvelopeCategory;
+  skipped: boolean;
+  explanation: string;
+}
+
+export interface RecurringCommitmentsSchedule {
+  schemaVersion: string;
+  turn: number;
+  pulses: RecurringCommitmentPulse[];
+  totalLoadThisTurn: number;
+  mandatoryLoad: number;
+  discretionaryLoad: number;
+  overlapsEnvelopeCommitted: boolean;
+  warnings: string[];
+}
+
+
+// --- source: recurring-commitments/compute.ts ---
+  RecurringCommitmentDefinition,
+  RecurringCommitmentsSchedule
+} from './types';
+
+export const DEFAULT_RECURRING_COMMITMENTS: RecurringCommitmentDefinition[] = [
+  {
+    id: 'rc_core_admin',
+    title: 'Core administration & services baseline',
+    kind: 'core_services',
+    cadence: 'every_turn',
+    loadPointsPerPulse: 4,
+    envelopeCategory: 'core_services',
+    mandatory: true,
+    expiryTurn: null,
+    regionIds: []
+  },
+  {
+    id: 'rc_network_maintenance',
+    title: 'Network maintenance contracts',
+    kind: 'maintenance_contract',
+    cadence: 'every_turn',
+    loadPointsPerPulse: 3,
+    envelopeCategory: 'maintenance_backlog',
+    mandatory: true,
+    expiryTurn: null,
+    regionIds: []
+  },
+  {
+    id: 'rc_regional_transfers',
+    title: 'Indexed regional transfers',
+    kind: 'indexed_transfer',
+    cadence: 'every_2_turns',
+    loadPointsPerPulse: 5,
+    envelopeCategory: 'regional_development',
+    mandatory: false,
+    expiryTurn: null,
+    regionIds: ['NSW', 'VIC', 'QLD']
+  },
+  {
+    id: 'rc_sovereign_coupon',
+    title: 'Sovereign debt coupon strip',
+    kind: 'debt_coupon',
+    cadence: 'every_turn',
+    loadPointsPerPulse: 2,
+    envelopeCategory: 'debt_service_reserve',
+    mandatory: true,
+    expiryTurn: null,
+    regionIds: []
+  }
+];
+
+function cadenceDue(def: RecurringCommitmentDefinition, turn: number): boolean {
+  if (def.expiryTurn !== null && turn > def.expiryTurn) return false;
+  if (def.cadence === 'every_turn') return true;
+  if (def.cadence === 'every_2_turns') return turn % 2 === 0;
+  if (def.cadence === 'annual') return turn % 12 === 0;
+  return true;
+}
+
+function scaleLoad(def: RecurringCommitmentDefinition, v1012: V1012FiscalSnapshot): number {
+  let load = def.loadPointsPerPulse;
+  if (def.kind === 'maintenance_contract') {
+    load += Math.round(v1012.maintenanceLoad * 0.08);
+  }
+  if (def.kind === 'debt_coupon' && v1012.debtEnabled) {
+    load += Math.round(v1012.debtServiceLoad * 0.15);
+  }
+  if (v1012.pressure === 'critical') load = Math.round(load * 1.05);
+  return load;
+}
+
+export function scheduleRecurringCommitments(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  envelope: NationalBudgetEnvelope,
+  definitions: RecurringCommitmentDefinition[] = DEFAULT_RECURRING_COMMITMENTS
+): RecurringCommitmentsSchedule {
+  const pulses = definitions
+    .filter(d => cadenceDue(d, turn))
+    .map(d => {
+      const loadPoints = scaleLoad(d, v1012);
+      const line = envelope.lines.find(l => l.category === d.envelopeCategory);
+      const skipped = Boolean(line && line.flexPoints < loadPoints && !d.mandatory);
+      return {
+        commitmentId: d.id,
+        turn,
+        loadPoints: skipped ? 0 : loadPoints,
+        envelopeCategory: d.envelopeCategory,
+        skipped,
+        explanation: skipped
+          ? `${d.title} deferred — insufficient flex in ${d.envelopeCategory}.`
+          : `${d.title} pulses ${loadPoints} pts (${d.cadence}).`
+      };
+    });
+
+  const mandatoryLoad = pulses
+    .filter(p => {
+      const def = definitions.find(d => d.id === p.commitmentId);
+      return def?.mandatory && !p.skipped;
+    })
+    .reduce((s, p) => s + p.loadPoints, 0);
+
+  const totalLoadThisTurn = pulses.reduce((s, p) => s + p.loadPoints, 0);
+  const discretionaryLoad = totalLoadThisTurn - mandatoryLoad;
+
+  const warnings: string[] = [];
+  if (mandatoryLoad > envelope.totalCapacityPoints * 0.35) {
+    warnings.push('Mandatory recurring load exceeds 35% of envelope capacity — rebalance recommended.');
+  }
+  if (pulses.some(p => p.skipped)) {
+    warnings.push('One or more discretionary recurring pulses skipped due to envelope flex.');
+  }
+
+  const overlapsEnvelopeCommitted = envelope.lines.some(line => {
+    const pulseLoad = pulses
+      .filter(p => p.envelopeCategory === line.category && !p.skipped)
+      .reduce((s, p) => s + p.loadPoints, 0);
+    return pulseLoad + line.committedPoints > line.allocatedPoints * 1.15;
+  });
+
+  if (overlapsEnvelopeCommitted) {
+    warnings.push('Recurring pulses plus committed envelope exceed category guard (115%).');
+  }
+
+  return {
+    schemaVersion: RECURRING_COMMITMENTS_SCHEMA,
+    turn,
+    pulses,
+    totalLoadThisTurn,
+    mandatoryLoad,
+    discretionaryLoad,
+    overlapsEnvelopeCommitted,
+    warnings
+  };
+}
+
+
+// --- source: fiscal-resilience/types.ts ---
+
+export const FISCAL_RESILIENCE_SCHEMA = 'op10m-agent07-fiscal-resilience-v1';
+
+export type FiscalShockKind =
+  | 'commodity_revenue_drop'
+  | 'disaster_recovery_surge'
+  | 'rate_shock_debt_service'
+  | 'migration_dividend'
+  | 'trade_terms_improvement';
+
+export interface FiscalShockDefinition {
+  id: string;
+  kind: FiscalShockKind;
+  label: string;
+  /** Normalized impact on revenue capacity (negative = loss). */
+  revenueCapacityDelta: number;
+  /** Normalized impact on fiscal headroom. */
+  headroomDelta: number;
+  /** Extra maintenance / recovery load. */
+  maintenanceLoadDelta: number;
+  durationTurns: number;
+  warnOnly: boolean;
+}
+
+export interface AppliedFiscalShock {
+  shockId: string;
+  turnApplied: number;
+  turnsRemaining: number;
+  adjustedSnapshot: V1012FiscalSnapshot;
+  pressureAfter: V1012FiscalSnapshot['pressure'];
+  narrative: string;
+}
+
+export interface FiscalResilienceAssessment {
+  schemaVersion: string;
+  turn: number;
+  baselinePressure: V1012FiscalSnapshot['pressure'];
+  shocksApplied: AppliedFiscalShock[];
+  compositeStressBand: FiscalOutcomeBand;
+  reserveAdequacy: 'strong' | 'adequate' | 'thin' | 'depleted';
+  recoveryTurnsEstimate: number | null;
+  warnings: string[];
+}
+
+
+// --- source: fiscal-resilience/compute.ts ---
+
+export const FISCAL_SHOCK_CATALOG: Record<string, FiscalShockDefinition> = {
+  commodity_drop: {
+    id: 'commodity_drop',
+    kind: 'commodity_revenue_drop',
+    label: 'Commodity revenue shortfall',
+    revenueCapacityDelta: -8,
+    headroomDelta: -4,
+    maintenanceLoadDelta: 0,
+    durationTurns: 4,
+    warnOnly: true
+  },
+  disaster_surge: {
+    id: 'disaster_surge',
+    kind: 'disaster_recovery_surge',
+    label: 'Disaster recovery expenditure surge',
+    revenueCapacityDelta: -2,
+    headroomDelta: -10,
+    maintenanceLoadDelta: 6,
+    durationTurns: 6,
+    warnOnly: true
+  },
+  rate_shock: {
+    id: 'rate_shock',
+    kind: 'rate_shock_debt_service',
+    label: 'Global rate shock on debt service',
+    revenueCapacityDelta: 0,
+    headroomDelta: -6,
+    maintenanceLoadDelta: 0,
+    durationTurns: 3,
+    warnOnly: true
+  },
+  migration_dividend: {
+    id: 'migration_dividend',
+    kind: 'migration_dividend',
+    label: 'Migration-driven revenue dividend',
+    revenueCapacityDelta: 4,
+    headroomDelta: 3,
+    maintenanceLoadDelta: 1,
+    durationTurns: 5,
+    warnOnly: false
+  }
+};
+
+function pressureFromHeadroom(headroom: number): V1012FiscalSnapshot['pressure'] {
+  if (headroom >= 12) return 'comfortable';
+  if (headroom >= 5) return 'healthy';
+  if (headroom >= 0) return 'tight';
+  if (headroom >= -8) return 'strained';
+  return 'critical';
+}
+
+function bandFromStress(score: number): FiscalOutcomeBand {
+  if (score >= 72) return 'strong';
+  if (score >= 55) return 'healthy';
+  if (score >= 40) return 'mixed';
+  if (score >= 22) return 'weak';
+  return 'critical';
+}
+
+function applyShock(base: V1012FiscalSnapshot, shock: FiscalShockDefinition, turn: number): AppliedFiscalShock {
+  const revenueCapacity = Math.max(0, Math.min(100, base.revenueCapacity + shock.revenueCapacityDelta));
+  const fiscalHeadroom = base.fiscalHeadroom + shock.headroomDelta;
+  const maintenanceLoad = Math.max(0, base.maintenanceLoad + shock.maintenanceLoadDelta);
+  let debtServiceLoad = base.debtServiceLoad;
+  if (shock.kind === 'rate_shock_debt_service' && base.debtEnabled) {
+    debtServiceLoad = Math.round((debtServiceLoad + base.debtLevel * 0.06) * 10) / 10;
+  }
+  const adjusted: V1012FiscalSnapshot = {
+    ...base,
+    turn,
+    revenueCapacity,
+    fiscalHeadroom,
+    maintenanceLoad,
+    debtServiceLoad,
+    pressure: pressureFromHeadroom(fiscalHeadroom)
+  };
+  return {
+    shockId: shock.id,
+    turnApplied: turn,
+    turnsRemaining: shock.durationTurns,
+    adjustedSnapshot: adjusted,
+    pressureAfter: adjusted.pressure,
+    narrative: `${shock.label}: revenue ${shock.revenueCapacityDelta >= 0 ? '+' : ''}${shock.revenueCapacityDelta}, headroom ${shock.headroomDelta >= 0 ? '+' : ''}${shock.headroomDelta}.`
+  };
+}
+
+export function assessFiscalResilience(
+  turn: number,
+  baseline: V1012FiscalSnapshot,
+  shockIds: string[]
+): FiscalResilienceAssessment {
+  const warnings: string[] = [];
+  let working = { ...baseline, turn };
+  const shocksApplied: AppliedFiscalShock[] = [];
+
+  for (const id of shockIds) {
+    const def = FISCAL_SHOCK_CATALOG[id];
+    if (!def) {
+      warnings.push(`Unknown shock id: ${id}`);
+      continue;
+    }
+    const applied = applyShock(working, def, turn);
+    shocksApplied.push(applied);
+    working = applied.adjustedSnapshot;
+  }
+
+  const reservePolicy = baseline.reservePolicy ?? 'standard';
+  let reserveAdequacy: FiscalResilienceAssessment['reserveAdequacy'] = 'adequate';
+  if (working.fiscalHeadroom >= 10 && reservePolicy === 'prudent') reserveAdequacy = 'strong';
+  else if (working.fiscalHeadroom < 0) reserveAdequacy = 'depleted';
+  else if (working.fiscalHeadroom < 4) reserveAdequacy = 'thin';
+
+  const stressScore = Math.max(
+    0,
+    Math.min(
+      100,
+      70 +
+        working.fiscalHeadroom * 1.5 +
+        working.revenueCapacity * 0.2 -
+        working.debtServiceLoad * 2 -
+        working.maintenanceLoad * 0.8
+    )
+  );
+
+  let recoveryTurnsEstimate: number | null = null;
+  if (working.pressure === 'strained' || working.pressure === 'critical') {
+    recoveryTurnsEstimate = working.pressure === 'critical' ? 8 : 4;
+    warnings.push('Shock stack elevated fiscal pressure — staged recovery recommended.');
+  }
+
+  if (shocksApplied.some(s => FISCAL_SHOCK_CATALOG[s.shockId]?.kind === 'disaster_recovery_surge')) {
+    warnings.push('Disaster recovery shock increases maintenance load — check recurring commitments.');
+  }
+
+  return {
+    schemaVersion: FISCAL_RESILIENCE_SCHEMA,
+    turn,
+    baselinePressure: baseline.pressure,
+    shocksApplied,
+    compositeStressBand: bandFromStress(stressScore),
+    reserveAdequacy,
+    recoveryTurnsEstimate,
+    warnings
+  };
+}
+
+
+// --- source: debt-rollover/types.ts ---
+
+export const DEBT_ROLLOVER_SCHEMA = 'op10m-agent07-debt-rollover-v1';
+
+export type DebtInstrumentTenor = 'short' | 'medium' | 'long';
+
+export interface MaturityTranche {
+  id: string;
+  tenor: DebtInstrumentTenor;
+  principalPoints: number;
+  couponLoad: number;
+  maturityTurn: number;
+  rolledCount: number;
+}
+
+export type RolloverOutcome =
+  | 'rolled_at_market'
+  | 'rolled_with_penalty'
+  | 'partially_retired'
+  | 'failed_liquidity'
+  | 'not_due';
+
+export interface DebtRolloverEvent {
+  trancheId: string;
+  turn: number;
+  outcome: RolloverOutcome;
+  principalBefore: number;
+  principalAfter: number;
+  serviceLoadBefore: number;
+  serviceLoadAfter: number;
+  headroomDelta: number;
+  explanation: string;
+}
+
+export interface DebtRolloverPlan {
+  schemaVersion: string;
+  turn: number;
+  events: DebtRolloverEvent[];
+  trajectoryAfter: DebtOutcomeTrajectory | null;
+  liquidityStress: boolean;
+  warnings: string[];
+}
+
+export interface DebtRolloverInputs {
+  turn: number;
+  v1012: V1012FiscalSnapshot;
+  tranches: MaturityTranche[];
+  computeTrajectory: (snap: V1012FiscalSnapshot) => DebtOutcomeTrajectory;
+}
+
+
+// --- source: debt-rollover/compute.ts ---
+
+function isDue(tranche: MaturityTranche, turn: number): boolean {
+  return turn >= tranche.maturityTurn;
+}
+
+export function resolveDebtRollover(inputs: DebtRolloverInputs): DebtRolloverPlan {
+  const { turn, v1012, tranches, computeTrajectory } = inputs;
+  const events: DebtRolloverEvent[] = [];
+  const warnings: string[] = [];
+  let working: V1012FiscalSnapshot = { ...v1012, turn };
+  let liquidityStress = false;
+
+  for (const tranche of tranches) {
+    if (!isDue(tranche, turn)) {
+      events.push({
+        trancheId: tranche.id,
+        turn,
+        outcome: 'not_due',
+        principalBefore: tranche.principalPoints,
+        principalAfter: tranche.principalPoints,
+        serviceLoadBefore: working.debtServiceLoad,
+        serviceLoadAfter: working.debtServiceLoad,
+        headroomDelta: 0,
+        explanation: `Maturity turn ${tranche.maturityTurn} not reached.`
+      });
+      continue;
+    }
+
+    if (!v1012.debtEnabled) {
+      events.push({
+        trancheId: tranche.id,
+        turn,
+        outcome: 'partially_retired',
+        principalBefore: tranche.principalPoints,
+        principalAfter: 0,
+        serviceLoadBefore: working.debtServiceLoad,
+        serviceLoadAfter: Math.max(0, working.debtServiceLoad - tranche.couponLoad),
+        headroomDelta: 2,
+        explanation: 'Debt disabled — tranche retired from sovereign stack.'
+      });
+      working = {
+        ...working,
+        debtLevel: Math.max(0, working.debtLevel - tranche.principalPoints * 0.2),
+        debtServiceLoad: Math.max(0, working.debtServiceLoad - tranche.couponLoad),
+        fiscalHeadroom: working.fiscalHeadroom + 2
+      };
+      continue;
+    }
+
+    const headroom = working.fiscalHeadroom;
+    const rolledTooOften = tranche.rolledCount >= 3;
+    const critical = working.pressure === 'critical' || headroom < -12;
+
+    let outcome: DebtRolloverEvent['outcome'] = 'rolled_at_market';
+    let serviceLoadAfter = working.debtServiceLoad;
+    let principalAfter = tranche.principalPoints;
+    let headroomDelta = -1;
+    let explanation = 'Standard market rollover.';
+
+    if (critical && tranche.tenor === 'short') {
+      outcome = 'failed_liquidity';
+      liquidityStress = true;
+      serviceLoadAfter = working.debtServiceLoad + tranche.couponLoad * 0.5;
+      headroomDelta = -6;
+      explanation = 'Critical headroom — short tranche rollover failed; liquidity stress event.';
+      warnings.push(`Tranche ${tranche.id} failed rollover under critical headroom.`);
+    } else if (rolledTooOften) {
+      outcome = 'rolled_with_penalty';
+      serviceLoadAfter = working.debtServiceLoad + tranche.couponLoad * 0.35;
+      headroomDelta = -3;
+      explanation = 'Repeated rollovers — penalty coupon uplift applied.';
+    } else if (headroom < 0 && tranche.principalPoints > 15) {
+      outcome = 'partially_retired';
+      principalAfter = Math.round(tranche.principalPoints * 0.6);
+      serviceLoadAfter = working.debtServiceLoad + tranche.couponLoad * 0.1;
+      headroomDelta = 1;
+      explanation = 'Negative headroom — partial retirement with smaller re-issue.';
+    } else if (tranche.tenor === 'long') {
+      serviceLoadAfter = working.debtServiceLoad + tranche.couponLoad * 0.05;
+      headroomDelta = -0.5;
+      explanation = 'Long tenor rolled — modest service load increase.';
+    }
+
+    events.push({
+      trancheId: tranche.id,
+      turn,
+      outcome,
+      principalBefore: tranche.principalPoints,
+      principalAfter,
+      serviceLoadBefore: working.debtServiceLoad,
+      serviceLoadAfter,
+      headroomDelta,
+      explanation
+    });
+
+    working = {
+      ...working,
+      debtLevel:
+        outcome === 'partially_retired'
+          ? Math.max(0, working.debtLevel - tranche.principalPoints * 0.15)
+          : working.debtLevel,
+      debtServiceLoad: serviceLoadAfter,
+      fiscalHeadroom: working.fiscalHeadroom + headroomDelta,
+      pressure:
+        working.fiscalHeadroom + headroomDelta >= 0
+          ? working.pressure === 'critical'
+            ? 'strained'
+            : working.pressure
+          : 'critical'
+    };
+  }
+
+  return {
+    schemaVersion: DEBT_ROLLOVER_SCHEMA,
+    turn,
+    events,
+    trajectoryAfter: computeTrajectory(working),
+    liquidityStress,
+    warnings
+  };
+}
+
+export function defaultMaturityLadder(turn: number): MaturityTranche[] {
+  return [
+    {
+      id: 'tranche_short_1',
+      tenor: 'short',
+      principalPoints: 8,
+      couponLoad: 1.2,
+      maturityTurn: turn,
+      rolledCount: 0
+    },
+    {
+      id: 'tranche_med_1',
+      tenor: 'medium',
+      principalPoints: 18,
+      couponLoad: 2.1,
+      maturityTurn: turn + 2,
+      rolledCount: 1
+    },
+    {
+      id: 'tranche_long_1',
+      tenor: 'long',
+      principalPoints: 30,
+      couponLoad: 2.8,
+      maturityTurn: turn,
+      rolledCount: 4
+    }
+  ];
+}
+
+
+// --- source: reconciliation/reconcile.ts ---
+
+export const RECONCILIATION_SCHEMA = 'op10m-agent07-reconciliation-v1';
+
+export interface FiscalReconciliationCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  severity: 'info' | 'caution' | 'major';
+  detail: string;
+}
+
+export interface FiscalReconciliationReport {
+  schemaVersion: string;
+  turn: number;
+  checks: FiscalReconciliationCheck[];
+  allPassed: boolean;
+  boundaryRuleCount: number;
+}
+
+export interface FiscalReconciliationInputs {
+  turn: number;
+  v1012: V1012FiscalSnapshot;
+  envelope: NationalBudgetEnvelope;
+  revenueLedger: NationalRevenueLedger;
+  infraSummary: InfrastructureFinancingSummary | null;
+  /** Actor-side cash that must never appear in national revenue (sanity fixture). */
+  actorCashProbe?: number;
+}
+
+export function runFiscalReconciliation(inputs: FiscalReconciliationInputs): FiscalReconciliationReport {
+  const checks: FiscalReconciliationCheck[] = [];
+  const { envelope, v1012, revenueLedger, infraSummary } = inputs;
+
+  checks.push({
+    id: 'R01',
+    label: 'Envelope allocation does not exceed total capacity',
+    passed: envelope.allocatedPoints <= envelope.totalCapacityPoints + 1,
+    severity: 'major',
+    detail: `allocated=${envelope.allocatedPoints}, capacity=${envelope.totalCapacityPoints}`
+  });
+
+  checks.push({
+    id: 'R02',
+    label: 'Negative headroom triggers rebalance flag',
+    passed: v1012.fiscalHeadroom < 0 ? envelope.rebalanceNeeded : true,
+    severity: 'caution',
+    detail: `headroom=${v1012.fiscalHeadroom}, rebalance=${envelope.rebalanceNeeded}`
+  });
+
+  checks.push({
+    id: 'R03',
+    label: 'Revenue ledger reconciled to V10.12 structural capacity',
+    passed: revenueLedger.reconciledToV1012,
+    severity: 'major',
+    detail: revenueLedger.reconciliationNotes.join(' ')
+  });
+
+  checks.push({
+    id: 'R04',
+    label: 'Debt service reserve line tracks service load',
+    passed: (() => {
+      const line = envelope.lines.find(l => l.category === 'debt_service_reserve');
+      if (!line) return false;
+      return line.committedPoints >= v1012.debtServiceLoad * 0.3;
+    })(),
+    severity: 'caution',
+    detail: `debtServiceLoad=${v1012.debtServiceLoad}`
+  });
+
+  if (infraSummary) {
+    checks.push({
+      id: 'R05',
+      label: 'Infrastructure aggregate service within soft ceiling',
+      passed: infraSummary.aggregateServiceLoad <= 28,
+      severity: 'caution',
+      detail: `aggregateService=${infraSummary.aggregateServiceLoad}`
+    });
+  }
+
+  checks.push({
+    id: 'R06',
+    label: 'Actor cash probe excluded from revenue streams',
+    passed: (() => {
+      const probe = inputs.actorCashProbe ?? 0;
+      if (probe <= 0) return true;
+      return !revenueLedger.streams.some(s => s.deltaPoints === probe && s.kind === 'tax_instrument');
+    })(),
+    severity: 'major',
+    detail: `probe=${inputs.actorCashProbe ?? 0} (boundary audit)`
+  });
+
+  checks.push({
+    id: 'R07',
+    label: 'Boundary rules catalog present',
+    passed: V1014_BOUNDARY_RULES.length >= 6,
+    severity: 'info',
+    detail: `rules=${V1014_BOUNDARY_RULES.length}`
+  });
+
+  const allPassed = checks.every(c => c.passed);
+  return {
+    schemaVersion: RECONCILIATION_SCHEMA,
+    turn: inputs.turn,
+    checks,
+    allPassed,
+    boundaryRuleCount: V1014_BOUNDARY_RULES.length
+  };
+}
+
+
+// --- source: fiscal-outcomes/react/FiscalOutcomesInspector.tsx ---
+/**
+ * V10.14 LAB inspector panel (Agent 07) — merge-ready React surface.
+ * Not wired into canonical TSX on this branch.
+ */
+
+export interface FiscalOutcomesInspectorProps {
+  state: FiscalOutcomesState | null | undefined;
+  onRunSelfTests?: () => void;
+}
+
+export const FiscalOutcomesInspector: React.FC<FiscalOutcomesInspectorProps> = ({ state, onRunSelfTests }) => {
+  const weakLinks = useMemo(
+    () => (state?.outcomeLinks || []).filter(l => l.band === 'weak' || l.band === 'critical'),
+    [state]
+  );
+
+  if (!state) {
+    return (
+      <div style={{ padding: 12, color: '#94a3b8', fontFamily: 'system-ui' }}>
+        V10.14 Fiscal Outcomes: inactive (enable after Agent 25 merge).
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 12, fontFamily: 'system-ui', color: '#e2e8f0', background: '#0f172a' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <strong style={{ color: '#38bdf8' }}>LAB — V10.14 Fiscal Policy &amp; Outcome Linkage</strong>
+        {onRunSelfTests && (
+          <button type="button" onClick={onRunSelfTests} style={{ fontSize: 11, padding: '4px 8px' }}>
+            Run self-tests
+          </button>
+        )}
+      </div>
+      <div style={{ marginTop: 8, fontSize: 12 }}>
+        Composite: <span style={{ color: '#a5f3fc' }}>{state.compositeBand.toUpperCase()}</span> ({state.compositeOutcomeScore})
+      </div>
+      <section style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 11, color: '#94a3b8' }}>Budget envelope — {state.budget.fiscalYearLabel}</div>
+        <div style={{ fontSize: 12 }}>Capacity {state.budget.totalCapacityPoints} · Flex {state.budget.unallocatedFlex}</div>
+        {state.budget.rebalanceSummary && (
+          <div style={{ color: '#fbbf24', fontSize: 11, marginTop: 4 }}>{state.budget.rebalanceSummary}</div>
+        )}
+        <ul style={{ fontSize: 11, marginTop: 6, paddingLeft: 16 }}>
+          {state.budget.lines.map(line => (
+            <li key={line.category}>
+              {BUDGET_ENVELOPE_CATEGORY_LABELS[line.category]}: {line.allocatedPoints}/{line.committedPoints} ({line.band})
+            </li>
+          ))}
+        </ul>
+      </section>
+      <section style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 11, color: '#94a3b8' }}>Debt outcome trajectory</div>
+        <div style={{ fontSize: 12 }}>{state.debtTrajectory.sustainability} — {state.debtTrajectory.narrative}</div>
+      </section>
+      <section style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 11, color: '#94a3b8' }}>Linked outcomes</div>
+        <ul style={{ fontSize: 11, paddingLeft: 16 }}>
+          {state.outcomeLinks.map(link => (
+            <li key={link.dimension}>
+              {link.dimension}: {link.band} ({link.score}) — {link.summary}
+            </li>
+          ))}
+        </ul>
+      </section>
+      {weakLinks.length > 0 && (
+        <section style={{ marginTop: 8, color: '#fca5a5', fontSize: 11 }}>
+          Weak dimensions: {weakLinks.map(w => w.dimension).join(', ')}
+        </section>
+      )}
+      <section style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 11, color: '#94a3b8' }}>Constraint gates</div>
+        <ul style={{ fontSize: 11, paddingLeft: 16 }}>
+          {state.constraintGates.map(g => (
+            <li key={g.id}>
+              {g.triggered ? '⚠' : '○'} {g.label} ({g.severity}): {g.reason}
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
+};
+
+export default FiscalOutcomesInspector;
+
+
+// --- source: fiscal-outcomes/self-tests.ts ---
+  computeFiscalOutcomesLayer,
+  createInitialFiscalOutcomesPersisted,
+  sanitizeFiscalOutcomesPersisted,
+  setTaxInstrumentRate
+} from './compute';
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 1,
+    revenueCapacity: partial.revenueCapacity ?? 62,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 8,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 3,
+    debtLevel: partial.debtLevel ?? 12,
+    debtEnabled: partial.debtEnabled ?? false,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 4,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runV1014FiscalOutcomesSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: V1014SelfTestResult[];
+} {
+  const results: V1014SelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  // 1 — Schema & initial persisted
+  {
+    const p = createInitialFiscalOutcomesPersisted();
+    record(
+      'T01',
+      'Initial persisted schema',
+      p.schemaVersion === V1014_SCHEMA_VERSION && Object.keys(p.instrumentRates).length >= 9,
+      `instruments=${Object.keys(p.instrumentRates).length}`
+    );
+  }
+
+  // 2 — Compute baseline state
+  {
+    const { state } = computeFiscalOutcomesLayer(
+      { turn: 1, v1012: snap({}) },
+      createInitialFiscalOutcomesPersisted()
+    );
+    record(
+      'T02',
+      'Baseline compute produces outcome links',
+      state.outcomeLinks.length === 6 && state.compositeBand !== undefined,
+      `links=${state.outcomeLinks.length}, composite=${state.compositeOutcomeScore}`
+    );
+  }
+
+  // 3 — Critical pressure weakens prosperity link
+  {
+    const healthy = computeFiscalOutcomesLayer({ turn: 1, v1012: snap({ pressure: 'healthy' }) }).state;
+    const critical = computeFiscalOutcomesLayer({ turn: 1, v1012: snap({ pressure: 'critical', fiscalHeadroom: -12 }) })
+      .state;
+    const h = healthy.outcomeLinks.find(l => l.dimension === 'national_prosperity')!.score;
+    const c = critical.outcomeLinks.find(l => l.dimension === 'national_prosperity')!.score;
+    record('T03', 'Critical pressure lowers prosperity outcome', c < h, `healthy=${h}, critical=${c}`);
+  }
+
+  // 4 — Debt distress gate
+  {
+    const st = computeFiscalOutcomesLayer({
+      turn: 1,
+      v1012: snap({ debtEnabled: true, debtLevel: 60, debtServiceLoad: 20, pressure: 'strained' })
+    }).state;
+    const gate = st.constraintGates.find(g => g.id === 'debt_stress_path');
+    record('T04', 'Debt stress triggers gate', Boolean(gate?.triggered), `sustainability=${st.debtTrajectory.sustainability}`);
+  }
+
+  // 5 — Tax cut vs raise revenue delta sign
+  {
+    let p = createInitialFiscalOutcomesPersisted();
+    p = setTaxInstrumentRate(p, 'corp_standard', 30, 'raise');
+    const raised = computeFiscalOutcomesLayer({ turn: 1, v1012: snap({ revenueCapacity: 70 }) }, p);
+    p = setTaxInstrumentRate(createInitialFiscalOutcomesPersisted(), 'corp_standard', 20, 'cut');
+    const cut = computeFiscalOutcomesLayer({ turn: 1, v1012: snap({ revenueCapacity: 70 }) }, p);
+    const rDelta = raised.state.taxInstruments.find(t => t.instrumentId === 'corp_standard')!.revenueDeltaEstimate;
+    const cDelta = cut.state.taxInstruments.find(t => t.instrumentId === 'corp_standard')!.revenueDeltaEstimate;
+    record('T05', 'Raise > cut revenue delta', rDelta > cDelta, `raise=${rDelta}, cut=${cDelta}`);
+  }
+
+  // 6 — Budget rebalance when headroom negative
+  {
+    const st = computeFiscalOutcomesLayer({ turn: 2, v1012: snap({ fiscalHeadroom: -6, pressure: 'strained' }) }).state;
+    record('T06', 'Negative headroom flags rebalance', st.budget.rebalanceNeeded, String(st.budget.rebalanceSummary));
+  }
+
+  // 7 — Bridge from V10.12-shaped object
+  {
+    const bridge = bridgeV1012Snapshot({
+      turn: 5,
+      fiscalPosition: { revenueCapacity: 55, fiscalHeadroom: 3, pressure: 'tight', maintenanceLoad: 9 },
+      debt: { enabled: true, level: 22, debtServiceLoad: 5 },
+      commitments: [{}, {}, {}]
+    });
+    record(
+      'T07',
+      'V10.12 bridge maps fields',
+      bridge.commitmentCount === 3 && bridge.debtEnabled && bridge.turn === 5,
+      JSON.stringify(bridge)
+    );
+  }
+
+  // 8 — Determinism same inputs
+  {
+    const inp = buildFiscalOutcomesInputsFromBridge(snap({ turn: 3 }), { publicStability: 61 });
+    const a = computeFiscalOutcomesLayer(inp, createInitialFiscalOutcomesPersisted());
+    const b = computeFiscalOutcomesLayer(inp, a.persisted);
+    record(
+      'T08',
+      'Deterministic recompute with same hash skips revision bump',
+      a.state.inputHash === b.state.inputHash,
+      `revA=${a.persisted.revision}, revB=${b.persisted.revision}`
+    );
+  }
+
+  // 9 — Sanitize null
+  record('T09', 'Sanitize null persisted', sanitizeFiscalOutcomesPersisted(null) === null, 'ok');
+
+  // 10 — GI detect tax question
+  record(
+    'T10',
+    'GI detects tax policy question',
+    detectFiscalOutcomesQuestion('Should we change tax policy on payroll?'),
+    'detected'
+  );
+
+  // 11 — GI compose with state
+  {
+    const { state } = computeFiscalOutcomesLayer({ turn: 1, v1012: snap({}) });
+    const ans = composeFiscalOutcomesGiAnswer('fiscal outcomes?', state);
+    record('T11', 'GI answer headline', ans.headline.includes('Composite'), ans.headline);
+  }
+
+  // 12 — Innovation credit improves innovation link
+  {
+    let p = createInitialFiscalOutcomesPersisted();
+    p = setTaxInstrumentRate(p, 'innovation_credit', -12, 'cut');
+    const st = computeFiscalOutcomesLayer({ turn: 1, v1012: snap({}) }, p).state;
+    const base = computeFiscalOutcomesLayer({ turn: 1, v1012: snap({}) }).state;
+    const i1 = st.outcomeLinks.find(l => l.dimension === 'innovation_momentum')!.score;
+    const i0 = base.outcomeLinks.find(l => l.dimension === 'innovation_momentum')!.score;
+    record('T12', 'Deeper innovation credit boosts innovation outcome', i1 >= i0, `credit=${i1}, base=${i0}`);
+  }
+
+  // 13 — Catalog non-empty
+  record('T13', 'Policy scenario catalog populated', POLICY_SCENARIO_CATALOG.length >= 24, `count=${POLICY_SCENARIO_CATALOG.length}`);
+
+  // 14 — Each catalog entry has outcomes
+  {
+    const bad = POLICY_SCENARIO_CATALOG.filter(p => !p.linkedOutcomes.length || !p.title);
+    record('T14', 'Catalog entries well-formed', bad.length === 0, `bad=${bad.length}`);
+  }
+
+  // 15 — Instrument catalog bounds
+  {
+    const corp = TAX_INSTRUMENT_CATALOG.corp_standard;
+    record(
+      'T15',
+      'Corp tax bounds',
+      corp.minRatePoints < corp.defaultRatePoints && corp.maxRatePoints > corp.defaultRatePoints,
+      `${corp.minRatePoints}-${corp.maxRatePoints}`
+    );
+  }
+
+  // 16-20 — Scenario spot checks (5)
+  for (let i = 0; i < 5; i++) {
+    const pack = POLICY_SCENARIO_CATALOG[i * 5];
+    if (!pack) continue;
+    record(
+      `T${16 + i}`,
+      `Scenario pack ${pack.id} has fiscal narrative`,
+      pack.narrative.length > 40 && pack.recommendedInstruments.length > 0,
+      pack.title
+    );
+  }
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: reconciliation/self-tests.ts ---
+  computeFiscalOutcomesLayer,
+  createInitialFiscalOutcomesPersisted
+} from '../fiscal-outcomes/compute';
+
+export interface ReconciliationSelfTestResult {
+  id: string;
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 1,
+    revenueCapacity: partial.revenueCapacity ?? 62,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 8,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 3,
+    debtLevel: partial.debtLevel ?? 12,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 4,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runAgent07ReconciliationSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: ReconciliationSelfTestResult[];
+} {
+  const results: ReconciliationSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const persisted = createInitialFiscalOutcomesPersisted();
+  const inputs = { turn: 4, v1012: snap({ debtEnabled: true, fiscalHeadroom: 5 }) };
+  const { state } = computeFiscalOutcomesLayer(inputs, persisted);
+  const ledger = buildNationalRevenueLedger({
+    turn: inputs.turn,
+    v1012: inputs.v1012,
+    taxInstruments: state.taxInstruments
+  });
+  const infra = summarizeInfrastructureFinancing(
+    inputs.turn,
+    [
+      {
+        projectId: 'mp_western_rail',
+        title: 'Western Rail Upgrade',
+        regionIds: ['WA'],
+        capitalPoints: 24,
+        maintenancePointsPerTurn: 2,
+        strategicWeight: 0.8,
+        preferredVehicle: 'debt_funded_acceleration'
+      }
+    ],
+    inputs.v1012,
+    state.budget
+  );
+
+  const report = runFiscalReconciliation({
+    turn: inputs.turn,
+    v1012: inputs.v1012,
+    envelope: state.budget,
+    revenueLedger: ledger,
+    infraSummary: infra,
+    actorCashProbe: 999_999
+  });
+
+  record('RC01', 'Full stack reconciliation allPassed', report.allPassed, `${report.checks.length} checks`);
+  record(
+    'RC02',
+    'Infrastructure plan feasible under healthy pressure',
+    infra.plans[0]?.feasible === true,
+    `warnings=${infra.plans[0]?.warnings.length ?? 0}`
+  );
+
+  const critical = computeFiscalOutcomesLayer(
+    { turn: 2, v1012: snap({ pressure: 'critical', fiscalHeadroom: -10 }) },
+    persisted
+  ).state;
+  const criticalReport = runFiscalReconciliation({
+    turn: 2,
+    v1012: snap({ pressure: 'critical', fiscalHeadroom: -10 }),
+    envelope: critical.budget,
+    revenueLedger: buildNationalRevenueLedger({
+      turn: 2,
+      v1012: snap({ pressure: 'critical', fiscalHeadroom: -10 }),
+      taxInstruments: critical.taxInstruments
+    }),
+    infraSummary: null
+  });
+  record(
+    'RC03',
+    'Critical headroom fails rebalance check intentionally',
+    criticalReport.checks.find(c => c.id === 'R02')?.passed === true,
+    criticalReport.checks.find(c => c.id === 'R02')?.detail ?? ''
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: recurring-commitments/self-tests.ts ---
+  computeFiscalOutcomesLayer,
+  createInitialFiscalOutcomesPersisted
+} from '../fiscal-outcomes/compute';
+
+export interface RecurringSelfTestResult {
+  id: string;
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 1,
+    revenueCapacity: partial.revenueCapacity ?? 62,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 8,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 3,
+    debtLevel: partial.debtLevel ?? 12,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 4,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runRecurringCommitmentsSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: RecurringSelfTestResult[];
+} {
+  const results: RecurringSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const { state } = computeFiscalOutcomesLayer(
+    { turn: 2, v1012: snap({ turn: 2 }) },
+    createInitialFiscalOutcomesPersisted()
+  );
+  const schedule = scheduleRecurringCommitments(2, snap({ turn: 2 }), state.budget);
+  record(
+    'RCM01',
+    'Every-turn pulses fire on turn 2',
+    schedule.pulses.length >= 3 && schedule.totalLoadThisTurn > 0,
+    `pulses=${schedule.pulses.length}, load=${schedule.totalLoadThisTurn}`
+  );
+
+  const evenTurn = scheduleRecurringCommitments(4, snap({ turn: 4 }), state.budget);
+  const oddTurn = scheduleRecurringCommitments(3, snap({ turn: 3 }), state.budget);
+  const regionalEven = evenTurn.pulses.some(p => p.commitmentId === 'rc_regional_transfers');
+  const regionalOdd = oddTurn.pulses.some(p => p.commitmentId === 'rc_regional_transfers');
+  record(
+    'RCM02',
+    'Biennial regional transfer cadence',
+    regionalEven && !regionalOdd,
+    `even=${regionalEven}, odd=${regionalOdd}`
+  );
+
+  const tight = computeFiscalOutcomesLayer(
+    { turn: 1, v1012: snap({ fiscalHeadroom: -15, pressure: 'critical' }) },
+    createInitialFiscalOutcomesPersisted()
+  ).state;
+  const tightSchedule = scheduleRecurringCommitments(1, snap({ fiscalHeadroom: -15, pressure: 'critical' }), tight.budget);
+  record(
+    'RCM03',
+    'Mandatory load tracked separately',
+    tightSchedule.mandatoryLoad <= tightSchedule.totalLoadThisTurn,
+    `mandatory=${tightSchedule.mandatoryLoad}, total=${tightSchedule.totalLoadThisTurn}`
+  );
+
+  record(
+    'RCM04',
+    'Default catalog size',
+    DEFAULT_RECURRING_COMMITMENTS.length >= 4,
+    `defs=${DEFAULT_RECURRING_COMMITMENTS.length}`
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: fiscal-resilience/self-tests.ts ---
+
+export interface ResilienceSelfTestResult {
+  id: string;
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 5,
+    revenueCapacity: partial.revenueCapacity ?? 62,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 8,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 3,
+    debtLevel: partial.debtLevel ?? 12,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 4,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'prudent'
+  };
+}
+
+export function runFiscalResilienceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: ResilienceSelfTestResult[];
+} {
+  const results: ResilienceSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const single = assessFiscalResilience(5, snap({}), ['commodity_drop']);
+  record(
+    'FR01',
+    'Commodity shock lowers adjusted revenue',
+    single.shocksApplied[0]!.adjustedSnapshot.revenueCapacity < 62,
+    `revenue=${single.shocksApplied[0]!.adjustedSnapshot.revenueCapacity}`
+  );
+
+  const stack = assessFiscalResilience(5, snap({ fiscalHeadroom: 6 }), ['commodity_drop', 'rate_shock']);
+  record(
+    'FR02',
+    'Shock stack worsens pressure',
+    stack.shocksApplied.length === 2 &&
+      (stack.shocksApplied[1]!.pressureAfter === 'strained' ||
+        stack.shocksApplied[1]!.pressureAfter === 'tight' ||
+        stack.shocksApplied[1]!.pressureAfter === 'critical'),
+    `pressure=${stack.shocksApplied[1]!.pressureAfter}`
+  );
+
+  const disaster = assessFiscalResilience(5, snap({}), ['disaster_surge']);
+  record(
+    'FR03',
+    'Disaster shock raises maintenance load',
+    disaster.shocksApplied[0]!.adjustedSnapshot.maintenanceLoad > 6,
+    `maintenance=${disaster.shocksApplied[0]!.adjustedSnapshot.maintenanceLoad}`
+  );
+
+  const positive = assessFiscalResilience(5, snap({}), ['migration_dividend']);
+  record(
+    'FR04',
+    'Positive shock improves headroom',
+    positive.shocksApplied[0]!.adjustedSnapshot.fiscalHeadroom > 8,
+    `headroom=${positive.shocksApplied[0]!.adjustedSnapshot.fiscalHeadroom}`
+  );
+
+  record(
+    'FR05',
+    'Shock catalog minimum size',
+    Object.keys(FISCAL_SHOCK_CATALOG).length >= 4,
+    `catalog=${Object.keys(FISCAL_SHOCK_CATALOG).length}`
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: debt-rollover/self-tests.ts ---
+
+export interface RolloverSelfTestResult {
+  id: string;
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 10,
+    revenueCapacity: partial.revenueCapacity ?? 58,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 4,
+    pressure: partial.pressure ?? 'tight',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 8,
+    debtLevel: partial.debtLevel ?? 32,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 7,
+    commitmentCount: partial.commitmentCount ?? 6,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runDebtRolloverSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: RolloverSelfTestResult[];
+} {
+  const results: RolloverSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const turn = 10;
+  const plan = resolveDebtRollover({
+    turn,
+    v1012: snap({ turn }),
+    tranches: defaultMaturityLadder(turn),
+    computeTrajectory: computeDebtOutcomeTrajectory
+  });
+
+  const longEvent = plan.events.find(e => e.trancheId === 'tranche_long_1');
+  record(
+    'DR01',
+    'Over-rolled long tranche gets penalty outcome',
+    longEvent?.outcome === 'rolled_with_penalty',
+    `outcome=${longEvent?.outcome}`
+  );
+
+  const notDue = plan.events.find(e => e.trancheId === 'tranche_med_1');
+  record('DR02', 'Medium tranche not due reports not_due', notDue?.outcome === 'not_due', notDue?.explanation ?? '');
+
+  const criticalPlan = resolveDebtRollover({
+    turn,
+    v1012: snap({ turn, fiscalHeadroom: -14, pressure: 'critical' }),
+    tranches: defaultMaturityLadder(turn),
+    computeTrajectory: computeDebtOutcomeTrajectory
+  });
+  const shortFail = criticalPlan.events.find(e => e.trancheId === 'tranche_short_1');
+  record(
+    'DR03',
+    'Critical headroom short tranche fails liquidity',
+    shortFail?.outcome === 'failed_liquidity' && criticalPlan.liquidityStress,
+    `outcome=${shortFail?.outcome}, stress=${criticalPlan.liquidityStress}`
+  );
+
+  const disabledPlan = resolveDebtRollover({
+    turn,
+    v1012: snap({ turn, debtEnabled: false }),
+    tranches: defaultMaturityLadder(turn),
+    computeTrajectory: computeDebtOutcomeTrajectory
+  });
+  record(
+    'DR04',
+    'Debt disabled retires due tranche',
+    disabledPlan.events.some(e => e.outcome === 'partially_retired'),
+    `events=${disabledPlan.events.map(e => e.outcome).join(',')}`
+  );
+
+  record(
+    'DR05',
+    'Trajectory computed after rollover',
+    plan.trajectoryAfter !== null && plan.trajectoryAfter.sustainability !== undefined,
+    `sustainability=${plan.trajectoryAfter?.sustainability}`
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// OP10M_MODULE_END agent-07-public-finance

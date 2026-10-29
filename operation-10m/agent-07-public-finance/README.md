@@ -27,6 +27,7 @@ npm run test:op10m-agent07:fiscal   # V10.14 fiscal outcomes only
 
 ## Assembly
 
-`scripts/bundle-for-agent25.py` concatenates module sources in merge order for SECTION 20AW extension (Agent 25 pipeline).
+- **Agent 25 chunk (preferred):** `npm run build:agent07-chunk` → `operation-10m/modules/agent-07-public-finance/chunk.tsx` (`OP10M_MODULE_BEGIN agent-07-public-finance`)
+- **Legacy bundle:** `scripts/bundle-for-agent25.py` → `dist/section-20aw-agent07-bundle.ts`
 
 See [INTEGRATION.md](./INTEGRATION.md) for state keys, prerequisites, and regression hooks.

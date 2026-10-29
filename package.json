@@ -7,7 +7,8 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 5173",
     "test:op10m-agent07": "tsx operation-10m/agent-07-public-finance/run-all-self-tests.ts",
-    "test:op10m-agent07:fiscal": "tsx operation-10m/agent-07-public-finance/run-fiscal-outcomes-tests.ts"
+    "test:op10m-agent07:fiscal": "tsx operation-10m/agent-07-public-finance/run-fiscal-outcomes-tests.ts",
+    "build:agent07-chunk": "node operation-10m/agent-07-public-finance/scripts/build-chunk.mjs"
   },
   "dependencies": {
     "react": "19.3.1",
