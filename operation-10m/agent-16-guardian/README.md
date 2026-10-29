@@ -306,4 +306,6 @@ Anchor: canonical V9.4 `SECTION 20PA` (Guardian & Human Co-Pilot Advisory Ops).
 - **Entrustment envelope metrics:** `entrustmentStrainIndex`, `entrustmentIntegrityScore`, `governanceVimScore`; `buildGuardianDepthEntrustmentReport()`
 - **`monitor-rules-scale-wave-50.ts`** — 12 rules (**634** monitor rules total)
 - **Assignment envelope metrics:** `assignmentStrainIndex`, `assignmentIntegrityScore`, `governanceVivacityScore`; `buildGuardianDepthAssignmentReport()`
+- **`monitor-rules-scale-wave-51.ts`** — 12 rules (**646** monitor rules total)
+- **Commission envelope metrics:** `commissionStrainIndex`, `commissionIntegrityScore`, `governanceVibrancyScore`; `buildGuardianDepthCommissionReport()`
 - Regenerate chunk with `npm run build:agent16-chunk`
