@@ -10730,6 +10730,7 @@ export function canonicalStateFromSave(saveData: any): CanonicalGameState {
     settingsIntelligence: sanitizeSettingsIntelligenceState(save?.settingsIntelligence || gameState?.settingsIntelligence),
     diplomacyState: sanitizeDiplomacyState(save?.diplomacyState || gameState?.diplomacyState, (gameState as any)?.diplomacy || (save as any)?.diplomacy, Number(gameState?.turnCounter || 0)),
     worldReaction: sanitizeWorldReactionState((save as any)?.worldReaction || (gameState as any)?.worldReaction),
+    globalEconomicEnvironment: sanitizeGlobalEconomicEnvironmentPersisted((save as any)?.globalEconomicEnvironment || (gameState as any)?.globalEconomicEnvironment, Number(gameState?.day || 1)),
     livingRegions: sanitizeLivingRegionsState((save as any)?.livingRegions || (gameState as any)?.livingRegions),
     regionalFactions: sanitizeRegionalFactionsState((save as any)?.regionalFactions || (gameState as any)?.regionalFactions),
     contentState: sanitizeMatchContentState((save as any)?.contentState || (gameState as any)?.contentState),
@@ -10911,6 +10912,7 @@ export function canonicalStateFromLiveRuntime(
     settingsIntelligence: sanitizeSettingsIntelligenceState(liveState.settingsIntelligence || gameState?.settingsIntelligence),
     diplomacyState: sanitizeDiplomacyState(liveState.diplomacyState || gameState?.diplomacyState, (gameState as any)?.diplomacy, Number(gameState?.turnCounter || 0)),
     worldReaction: sanitizeWorldReactionState((liveState as any).worldReaction || (gameState as any)?.worldReaction),
+    globalEconomicEnvironment: sanitizeGlobalEconomicEnvironmentPersisted((liveState as any).globalEconomicEnvironment || (gameState as any)?.globalEconomicEnvironment, Number(liveState?.day || gameState?.day || 1)),
     livingRegions: sanitizeLivingRegionsState((liveState as any).livingRegions || (gameState as any)?.livingRegions),
     regionalFactions: sanitizeRegionalFactionsState((liveState as any).regionalFactions || (gameState as any)?.regionalFactions),
     megaprojects: sanitizeMegaprojectsPersisted((liveState as any).megaprojects || (gameState as any)?.megaprojects),
@@ -27714,6 +27716,8 @@ export function gameStateReducer(state: any, action: any) {
       };
     case 'UPDATE_MARKET_TREND':
       return { ...state, marketTrend: action.payload };
+    case 'UPDATE_GLOBAL_ECONOMIC_ENVIRONMENT':
+      return { ...state, globalEconomicEnvironment: sanitizeGlobalEconomicEnvironmentPersisted(action.payload, state.day) };
     case 'SET_GAME_MODE': {
       const nextMode = action.payload;
       if (nextMode !== 'game' && nextMode !== 'menu' && nextMode !== 'end' && nextMode !== 'start_screen') return state;
@@ -36730,6 +36734,8 @@ export const initialGameState = {
   settingsIntelligence: createEmptySettingsIntelligenceState(),
   diplomacyState: createEmptyDiplomacyState(),
   worldReaction: createEmptyWorldReactionState(),
+  /** O111 Agent 56: external cycle hysteresis. */
+  globalEconomicEnvironment: createEmptyGlobalEconomicEnvironment(1),
   // Living Regions initialises from canonical state on the first live pass (history starts then).
   livingRegions: null as LivingRegionsState | null,
   /** V10: only non-derivable national memory (bands, history); the network snapshot is always recomputed. */
@@ -80943,6 +80949,7 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   // Diplomacy 2.0: old saves load empty; legacy pacts are migrated; trust / stance / historicEvents stay untouched.
   // World Reaction: old saves start with empty history / windows / deferred queue (no ledger back-fill).
   if (migrated.gameState) migrated.gameState.worldReaction = sanitizeWorldReactionState(migrated.gameState.worldReaction || migrated.worldReaction);
+  if (migrated.gameState) migrated.gameState.globalEconomicEnvironment = sanitizeGlobalEconomicEnvironmentPersisted(migrated.gameState.globalEconomicEnvironment, Number(migrated.gameState.day || 1));
   // Living Regions: old saves carry none — it initialises from current canonical systems on load (no fake history).
   if (migrated.gameState) migrated.gameState.livingRegions = sanitizeLivingRegionsState(migrated.gameState.livingRegions || migrated.livingRegions);
   // Regional Factions: old saves initialise on load from canonical systems (no invented interactions).
@@ -123982,6 +123989,228 @@ export function worldCrisisContext(state: WorldReactionState | null | undefined)
   return { instability, shortage, chanceMultiplier: Math.round(Math.min(1.5, 1 + 0.5 * Math.max(instability, shortage)) * 100) / 100 };
 }
 
+
+// ============================================================================
+// SECTION 20I-A56: GLOBAL ECONOMIC ENVIRONMENT — O111 AGENT 56
+// ----------------------------------------------------------------------------
+// External cycle + export-demand layer for canonical commodity prices.
+// Persists band hysteresis and smoothed indices only; headline pressures are
+// derived each day from World Reaction signals, market trend, and content flags.
+// Feeds computeDailyMarketUpdate via mergeCanonicalMarketPressure (±6% cap total).
+// ============================================================================
+
+export type GeeCycleBand = 'expansion' | 'neutral' | 'contraction';
+
+export interface GeeHistoryEntry { day: number; band: GeeCycleBand; exportDemand: number }
+
+export interface GlobalEconomicEnvironmentPersisted {
+  version: 1;
+  cycleBand: GeeCycleBand;
+  bandEnteredDay: number;
+  /** Smoothed external export demand (−1..1). */
+  exportDemandIndex: number;
+  /** Smoothed FX / funding stress (0..1) for eligibility weighting only. */
+  fxStressIndex: number;
+  history: GeeHistoryEntry[];
+}
+
+export const GEE_LIMITS = { history: 14, bandHoldDays: 4, exportSmooth: 0.35, fxSmooth: 0.25 } as const;
+
+const GEE_EXPORT_RESOURCES = ['Iron Ore', 'Coal', 'Gold', 'Uranium', 'Wheat', 'Timber'] as const;
+
+export function createEmptyGlobalEconomicEnvironment(day = 1): GlobalEconomicEnvironmentPersisted {
+  return { version: 1, cycleBand: 'neutral', bandEnteredDay: day, exportDemandIndex: 0, fxStressIndex: 0, history: [] };
+}
+
+export function sanitizeGlobalEconomicEnvironmentPersisted(raw: unknown, day = 1): GlobalEconomicEnvironmentPersisted {
+  const base = createEmptyGlobalEconomicEnvironment(day);
+  if (!raw || typeof raw !== 'object') return base;
+  const d = raw as Partial<GlobalEconomicEnvironmentPersisted>;
+  const band: GeeCycleBand = d.cycleBand === 'expansion' || d.cycleBand === 'contraction' ? d.cycleBand : 'neutral';
+  const exportDemandIndex = typeof d.exportDemandIndex === 'number' && Number.isFinite(d.exportDemandIndex)
+    ? Math.max(-1, Math.min(1, Math.round(d.exportDemandIndex * 1000) / 1000)) : 0;
+  const fxStressIndex = typeof d.fxStressIndex === 'number' && Number.isFinite(d.fxStressIndex)
+    ? Math.max(0, Math.min(1, Math.round(d.fxStressIndex * 1000) / 1000)) : 0;
+  const bandEnteredDay = typeof d.bandEnteredDay === 'number' && Number.isFinite(d.bandEnteredDay)
+    ? Math.max(1, Math.floor(d.bandEnteredDay)) : day;
+  const history = Array.isArray(d.history)
+    ? d.history
+        .filter((h): h is GeeHistoryEntry => Boolean(h && typeof h === 'object' && typeof (h as GeeHistoryEntry).day === 'number'))
+        .map(h => ({
+          day: Math.max(1, Math.floor(h.day)),
+          band: h.band === 'expansion' || h.band === 'contraction' ? h.band : 'neutral',
+          exportDemand: Math.max(-1, Math.min(1, Number(h.exportDemand) || 0))
+        }))
+        .slice(-GEE_LIMITS.history)
+    : [];
+  return { version: 1, cycleBand: band, bandEnteredDay, exportDemandIndex, fxStressIndex, history };
+}
+
+export interface GeeDayInputs {
+  day: number;
+  turn: number;
+  marketTrend: string;
+  worldReaction: WorldReactionState | null | undefined;
+  contentFlags?: Record<string, string | number | boolean> | null;
+  scenarioOpening?: string | null;
+}
+
+const geeClamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(v * 1000) / 1000));
+
+export function computeGlobalEconomicEnvironmentView(
+  persisted: GlobalEconomicEnvironmentPersisted,
+  inputs: GeeDayInputs
+): { cycleBand: GeeCycleBand; exportDemandIndex: number; fxStressIndex: number; headline: string } {
+  const flags = inputs.contentFlags || {};
+  const crash = flags.commodity_crash === true || flags.commodity_crash === 1;
+  const surge = flags.export_surge === true || flags.export_surge === 1;
+  const wr = inputs.worldReaction;
+  const demandSig = Math.max(0, ...(wr?.signals || []).filter(s => s.kind === 'market_demand_pressure').map(s => s.value));
+  const supplySig = Math.max(0, ...(wr?.signals || []).filter(s => s.kind === 'market_supply_pressure').map(s => s.value));
+  const liquidity = Math.max(0, ...(wr?.signals || []).filter(s => s.kind === 'economic_liquidity_pressure').map(s => s.value));
+  let targetExport = persisted.exportDemandIndex;
+  if (inputs.marketTrend === 'rising') targetExport += 0.12;
+  else if (inputs.marketTrend === 'falling') targetExport -= 0.12;
+  else if (inputs.marketTrend === 'volatile') targetExport += 0.04;
+  targetExport += 0.25 * (demandSig - supplySig);
+  if (surge) targetExport += 0.35;
+  if (crash) targetExport -= 0.45;
+  if (inputs.scenarioOpening === 'commodity_boom') targetExport += 0.2;
+  if (inputs.scenarioOpening === 'resource_cycle') targetExport += 0.15;
+  targetExport = geeClamp(targetExport, -1, 1);
+  const targetFx = geeClamp(liquidity * 0.6 + (crash ? 0.35 : 0) + (targetExport < -0.35 ? 0.2 : 0), 0, 1);
+  const exportDemandIndex = geeClamp(
+    persisted.exportDemandIndex * (1 - GEE_LIMITS.exportSmooth) + targetExport * GEE_LIMITS.exportSmooth,
+    -1,
+    1
+  );
+  const fxStressIndex = geeClamp(
+    persisted.fxStressIndex * (1 - GEE_LIMITS.fxSmooth) + targetFx * GEE_LIMITS.fxSmooth,
+    0,
+    1
+  );
+  let cycleBand: GeeCycleBand = persisted.cycleBand;
+  if (exportDemandIndex >= 0.42) cycleBand = 'expansion';
+  else if (exportDemandIndex <= -0.38) cycleBand = 'contraction';
+  else cycleBand = 'neutral';
+  const headline =
+    cycleBand === 'expansion'
+      ? 'Global export demand is firm — bulk commodities trade above trend.'
+      : cycleBand === 'contraction'
+        ? 'Global demand is soft — export prices face headwinds.'
+        : 'Global conditions are mixed — export markets are range-bound.';
+  return { cycleBand, exportDemandIndex, fxStressIndex, headline };
+}
+
+export function advanceGlobalEconomicEnvironmentDay(
+  persistedIn: GlobalEconomicEnvironmentPersisted,
+  inputs: GeeDayInputs
+): GlobalEconomicEnvironmentPersisted {
+  const persisted = sanitizeGlobalEconomicEnvironmentPersisted(persistedIn, inputs.day);
+  const view = computeGlobalEconomicEnvironmentView(persisted, inputs);
+  let { cycleBand, bandEnteredDay } = persisted;
+  if (view.cycleBand !== cycleBand) {
+    const held = inputs.day - bandEnteredDay;
+    if (held >= GEE_LIMITS.bandHoldDays || cycleBand === 'neutral') {
+      cycleBand = view.cycleBand;
+      bandEnteredDay = inputs.day;
+    }
+  }
+  const history = [...persisted.history, { day: inputs.day, band: cycleBand, exportDemand: view.exportDemandIndex }].slice(-GEE_LIMITS.history);
+  return {
+    version: 1,
+    cycleBand,
+    bandEnteredDay,
+    exportDemandIndex: view.exportDemandIndex,
+    fxStressIndex: view.fxStressIndex,
+    history
+  };
+}
+
+/** Bounded market pressure from the external cycle (fraction of base price, shares ±6% budget with World Reaction). */
+export function globalEconomicMarketPressure(
+  persisted: GlobalEconomicEnvironmentPersisted | null | undefined,
+  inputs: GeeDayInputs
+): Record<string, number> {
+  if (!persisted) return {};
+  const view = computeGlobalEconomicEnvironmentView(sanitizeGlobalEconomicEnvironmentPersisted(persisted, inputs.day), inputs);
+  const baseShift = view.exportDemandIndex * 0.045;
+  const out: Record<string, number> = {};
+  GEE_EXPORT_RESOURCES.forEach((res, i) => {
+    const w = 1 - i * 0.08;
+    const v = geeClamp(baseShift * w, -0.045, 0.045);
+    if (Math.abs(v) >= 0.002) out[res] = v;
+  });
+  if (view.cycleBand === 'contraction' && view.fxStressIndex > 0.45) {
+    out['Government Grants'] = geeClamp(-0.02 - view.fxStressIndex * 0.02, -0.04, 0);
+  }
+  return out;
+}
+
+export function mergeCanonicalMarketPressure(
+  swr: WorldReactionState | null | undefined,
+  gee: GlobalEconomicEnvironmentPersisted | null | undefined,
+  inputs: GeeDayInputs
+): Record<string, number> {
+  const out: Record<string, number> = { ...worldMarketPressure(swr) };
+  Object.entries(globalEconomicMarketPressure(gee, inputs)).forEach(([k, v]) => {
+    const merged = geeClamp((out[k] || 0) + v, -0.06, 0.06);
+    if (Math.abs(merged) >= 0.001) out[k] = merged;
+    else delete out[k];
+  });
+  return out;
+}
+
+/** Content / crisis eligibility weighting (never spawns events by itself). */
+export function globalEconomicContentContext(
+  persisted: GlobalEconomicEnvironmentPersisted | null | undefined,
+  inputs: GeeDayInputs
+): { exportShock: number; cycleMultiplier: number } {
+  const p = sanitizeGlobalEconomicEnvironmentPersisted(persisted, inputs.day);
+  const view = computeGlobalEconomicEnvironmentView(p, inputs);
+  const exportShock = Math.max(0, -view.exportDemandIndex);
+  const cycleMultiplier = view.cycleBand === 'expansion' ? 1.08 : view.cycleBand === 'contraction' ? 0.92 : 1;
+  return { exportShock, cycleMultiplier: Math.round(cycleMultiplier * 100) / 100 };
+}
+
+export function describeGlobalEconomicHeadline(persisted: GlobalEconomicEnvironmentPersisted | null | undefined, inputs: GeeDayInputs): string {
+  return computeGlobalEconomicEnvironmentView(sanitizeGlobalEconomicEnvironmentPersisted(persisted, inputs.day), inputs).headline;
+}
+
+export function runGlobalEconomicEnvironmentSelfTests(): Array<{ id: string; passed: boolean; detail?: string }> {
+  const results: Array<{ id: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, ok: boolean, detail?: string) => { results.push({ id, passed: ok, detail: ok ? undefined : detail }); };
+  const J = (x: unknown) => JSON.stringify(x);
+  check('gee_sanitize', sanitizeGlobalEconomicEnvironmentPersisted(null).cycleBand === 'neutral', 'empty');
+  let boom = createEmptyGlobalEconomicEnvironment(1);
+  for (let d = 2; d <= 14; d++) {
+    boom = advanceGlobalEconomicEnvironmentDay(boom, {
+      day: d, turn: 2, marketTrend: 'rising', worldReaction: null, contentFlags: { export_surge: true }, scenarioOpening: 'commodity_boom'
+    });
+  }
+  check('gee_expansion', boom.cycleBand === 'expansion' && boom.exportDemandIndex > 0.35, J({ band: boom.cycleBand, exp: boom.exportDemandIndex }));
+  const crash = advanceGlobalEconomicEnvironmentDay(createEmptyGlobalEconomicEnvironment(1), {
+    day: 12, turn: 3, marketTrend: 'falling', worldReaction: null, contentFlags: { commodity_crash: true }
+  });
+  check('gee_contraction', crash.exportDemandIndex < 0 || crash.cycleBand === 'contraction', J(crash));
+  const wr: WorldReactionState = {
+    ...createEmptyWorldReactionState(),
+    signals: [{ key: 'd:Iron Ore', kind: 'market_demand_pressure', subject: 'Iron Ore', value: 1, updatedTurn: 5, source: 't' }]
+  };
+  const merged = mergeCanonicalMarketPressure(wr, boom, { day: 8, turn: 2, marketTrend: 'rising', worldReaction: wr });
+  check('gee_merge_cap', (merged['Iron Ore'] ?? 0) <= 0.06 && (merged['Iron Ore'] ?? 0) >= -0.06, J(merged['Iron Ore']));
+  check('gee_pressure_resources', Object.keys(globalEconomicMarketPressure(boom, { day: 8, turn: 2, marketTrend: 'rising', worldReaction: wr })).includes('Iron Ore'), 'missing iron ore');
+  check('gee_hysteresis', (() => {
+    let p = createEmptyGlobalEconomicEnvironment(1);
+    for (let d = 2; d <= 6; d++) {
+      p = advanceGlobalEconomicEnvironmentDay(p, { day: d, turn: 1, marketTrend: 'rising', worldReaction: null, contentFlags: { export_surge: true } });
+    }
+    return p.cycleBand === 'neutral' || p.bandEnteredDay <= 6;
+  })(), 'band flipped too early');
+  check('gee_content_ctx', globalEconomicContentContext(crash, { day: 12, turn: 3, marketTrend: 'falling', worldReaction: null }).exportShock > 0, 'export shock');
+  return results;
+}
+
 /** Compact temporary strategic conditions (interpretations, not mechanics). */
 export function deriveStrategicConditions(state: WorldReactionState, viewerId: string): string[] {
   const out: string[] = [];
@@ -134408,6 +134637,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         settingsIntelligence: sanitizeSettingsIntelligenceState(stateData.settingsIntelligence || raw.settingsIntelligence || raw.gameState?.settingsIntelligence),
         diplomacyState: sanitizeDiplomacyState(stateData.diplomacyState || raw.diplomacyState || raw.gameState?.diplomacyState, stateData.diplomacy || raw.diplomacy, Number(stateData.turnCounter || 0)),
         worldReaction: sanitizeWorldReactionState(stateData.worldReaction || raw.worldReaction || raw.gameState?.worldReaction),
+        globalEconomicEnvironment: sanitizeGlobalEconomicEnvironmentPersisted(stateData.globalEconomicEnvironment || raw.globalEconomicEnvironment || raw.gameState?.globalEconomicEnvironment, Number(stateData.day || 1)),
         livingRegions: sanitizeLivingRegionsState(stateData.livingRegions || raw.livingRegions || raw.gameState?.livingRegions),
         regionalFactions: sanitizeRegionalFactionsState(stateData.regionalFactions || raw.regionalFactions || raw.gameState?.regionalFactions),
         contentState: sanitizeMatchContentState(stateData.contentState || raw.contentState || raw.gameState?.contentState),
@@ -136513,6 +136743,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
+  { id: 'o111_a56', label: 'O111 Global Economic Environment (A56)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runGlobalEconomicEnvironmentSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
   { id: 'v91', label: 'V9.1 Strategic Balance', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicDepthBalanceSelfTests() },
@@ -200038,7 +200269,25 @@ function dispatchGameSettingsChange(
       const newWeather = drawGameplayRandomChoice('RandomEvents', weatherOptions);
       dispatchGameState({ type: 'UPDATE_WEATHER', payload: newWeather });
 
-      const { nextTrend, nextPrices } = computeDailyMarketUpdate(newDay, gameState.resourcePrices, gameState.marketTrend, worldMarketPressure(swrStateRef.current));
+      const geeDayInputs: GeeDayInputs = {
+        day: newDay,
+        turn: gameState.turnCounter,
+        marketTrend: gameState.marketTrend,
+        worldReaction: swrStateRef.current,
+        contentFlags: gameState.contentState?.flags || null,
+        scenarioOpening: gameState.contentState?.profile?.regionalOpening || null
+      };
+      const nextGee = advanceGlobalEconomicEnvironmentDay(
+        sanitizeGlobalEconomicEnvironmentPersisted(gameState.globalEconomicEnvironment, gameState.day),
+        geeDayInputs
+      );
+      dispatchGameState({ type: 'UPDATE_GLOBAL_ECONOMIC_ENVIRONMENT', payload: nextGee });
+      const { nextTrend, nextPrices } = computeDailyMarketUpdate(
+        newDay,
+        gameState.resourcePrices,
+        gameState.marketTrend,
+        mergeCanonicalMarketPressure(swrStateRef.current, nextGee, geeDayInputs)
+      );
       dispatchGameState({ type: 'UPDATE_MARKET_TREND', payload: nextTrend });
       dispatchGameState({ type: 'UPDATE_RESOURCE_PRICES', payload: nextPrices });
 
@@ -201459,7 +201708,25 @@ function dispatchGameSettingsChange(
     dispatchGameState({ type: 'UPDATE_WEATHER', payload: newWeather });
 
     // Market trend & price updates
-    const { nextTrend, nextPrices } = computeDailyMarketUpdate(newDay, gameState.resourcePrices, gameState.marketTrend, worldMarketPressure(swrStateRef.current));
+    const geeDayInputs: GeeDayInputs = {
+      day: newDay,
+      turn: gameState.turnCounter,
+      marketTrend: gameState.marketTrend,
+      worldReaction: swrStateRef.current,
+      contentFlags: gameState.contentState?.flags || null,
+      scenarioOpening: gameState.contentState?.profile?.regionalOpening || null
+    };
+    const nextGee = advanceGlobalEconomicEnvironmentDay(
+      sanitizeGlobalEconomicEnvironmentPersisted(gameState.globalEconomicEnvironment, gameState.day),
+      geeDayInputs
+    );
+    dispatchGameState({ type: 'UPDATE_GLOBAL_ECONOMIC_ENVIRONMENT', payload: nextGee });
+    const { nextTrend, nextPrices } = computeDailyMarketUpdate(
+      newDay,
+      gameState.resourcePrices,
+      gameState.marketTrend,
+      mergeCanonicalMarketPressure(swrStateRef.current, nextGee, geeDayInputs)
+    );
     dispatchGameState({ type: 'UPDATE_MARKET_TREND', payload: nextTrend });
     dispatchGameState({ type: 'UPDATE_RESOURCE_PRICES', payload: nextPrices });
 
