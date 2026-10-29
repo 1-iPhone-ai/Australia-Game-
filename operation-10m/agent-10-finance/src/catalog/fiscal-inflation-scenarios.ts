@@ -236,6 +236,42 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'energy', 'round8'],
   },
+  {
+    id: 'food_supply_chain_shock',
+    label: 'Food supply chain shock',
+    description: 'Harvest stress with supply disruption — grocery CPI pass-through.',
+    patch: {
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.24,
+      fiscalPressure: 'strained',
+      creditShockActive: true,
+    },
+    tags: ['inflation', 'food', 'round9'],
+  },
+  {
+    id: 'transport_freight_bottleneck',
+    label: 'Transport freight bottleneck',
+    description: 'Critical freight capacity with strained liquidity — logistics inflation.',
+    patch: {
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.21,
+      systemicLiquidityBand: 'critical',
+      fiscalPressure: 'critical',
+    },
+    tags: ['inflation', 'transport', 'round9'],
+  },
+  {
+    id: 'housing_wellbeing_cost_stack',
+    label: 'Housing wellbeing cost stack',
+    description: 'Mortgage and essential-services pressure — household inflation flags.',
+    patch: {
+      householdAffordability: 'severe_pressure',
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.2,
+      publicStability: 44,
+    },
+    tags: ['inflation', 'housing', 'round9'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

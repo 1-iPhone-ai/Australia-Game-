@@ -10,11 +10,13 @@ import type { ImportPassThroughBand } from '../inflation/import-price-pass-throu
 import type { TermPremiumSignalBand } from '../rates/term-premium-inflation-signal.js';
 import type { EnergyPassThroughBand } from '../inflation/energy-price-pass-through.js';
 import type { ShelterRentPressureBand } from '../inflation/shelter-rent-inflation.js';
+import type { FoodGroceryPassThroughBand } from '../inflation/food-grocery-pass-through.js';
+import type { TransportLogisticsPressureBand } from '../inflation/transport-logistics-inflation.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r8';
+  schemaVersion: '10.14.agent10.r9';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -26,6 +28,8 @@ export interface Agent21InflationForecastBundle {
   terminalTermPremiumSignal: TermPremiumSignalBand;
   terminalEnergyPassThrough: EnergyPassThroughBand;
   terminalShelterRentPressure: ShelterRentPressureBand;
+  terminalFoodGroceryPassThrough: FoodGroceryPassThroughBand;
+  terminalTransportLogisticsPressure: TransportLogisticsPressureBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -54,7 +58,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r8',
+    schemaVersion: '10.14.agent10.r9',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -66,6 +70,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalTermPremiumSignal: lastPoint?.termPremiumSignalBand ?? 'anchored',
     terminalEnergyPassThrough: lastPoint?.energyPassThroughBand ?? 'subdued',
     terminalShelterRentPressure: lastPoint?.shelterRentPressureBand ?? 'soft',
+    terminalFoodGroceryPassThrough: lastPoint?.foodGroceryPassThroughBand ?? 'stable',
+    terminalTransportLogisticsPressure: lastPoint?.transportLogisticsPressureBand ?? 'smooth',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

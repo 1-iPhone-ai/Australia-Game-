@@ -31,6 +31,14 @@ import {
   assessShelterRentInflation,
   type ShelterRentPressureBand,
 } from '../inflation/shelter-rent-inflation.js';
+import {
+  assessFoodGroceryPassThrough,
+  type FoodGroceryPassThroughBand,
+} from '../inflation/food-grocery-pass-through.js';
+import {
+  assessTransportLogisticsInflation,
+  type TransportLogisticsPressureBand,
+} from '../inflation/transport-logistics-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -47,6 +55,8 @@ export interface InflationForecastPoint {
   termPremiumSignalBand: TermPremiumSignalBand;
   energyPassThroughBand: EnergyPassThroughBand;
   shelterRentPressureBand: ShelterRentPressureBand;
+  foodGroceryPassThroughBand: FoodGroceryPassThroughBand;
+  transportLogisticsPressureBand: TransportLogisticsPressureBand;
 }
 
 export interface InflationForecastPath {
@@ -126,6 +136,25 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const foodGrocery = assessFoodGroceryPassThrough({
+      harvestStressBand: inputs.fiscalPressure === 'critical' ? 'severe' : inputs.highInflationScenario ? 'weak' : 'normal',
+      retailMarginPressure: inputs.householdAffordability === 'severe_pressure' ? 'high' : 'medium',
+      supplyChainDisruption: inputs.systemicLiquidityBand === 'critical' || inputs.creditShockActive,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const transportLog = assessTransportLogisticsInflation({
+      freightCapacityBand:
+        inputs.systemicLiquidityBand === 'critical'
+          ? 'critical'
+          : inputs.systemicLiquidityBand === 'strained'
+            ? 'tight'
+            : 'balanced',
+      fuelSurchargeActive: inputs.highInflationScenario,
+      portBacklogBand: inputs.fiscalPressure === 'critical' ? 'severe' : 'moderate',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -142,6 +171,8 @@ export function projectInflationForecastPath(
       termPremiumSignalBand: termPrem.signalBand,
       energyPassThroughBand: energyPass.passThroughBand,
       shelterRentPressureBand: shelterRent.pressureBand,
+      foodGroceryPassThroughBand: foodGrocery.passThroughBand,
+      transportLogisticsPressureBand: transportLog.pressureBand,
     });
   }
 

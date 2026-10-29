@@ -1,0 +1,59 @@
+import type { MacroFinancialSystemInputs } from '../definitions/types.js';
+import { finClamp } from '../compute/math.js';
+
+/** Read-only transport infrastructure snapshot from Agent 12 (contract only). */
+export interface Agent12TransportSnapshot {
+  turn: number;
+  freightCapacityBand: 'ample' | 'balanced' | 'tight' | 'critical';
+  fuelSurchargeActive: boolean;
+  portBacklogBand: 'clear' | 'moderate' | 'severe';
+  logisticsInflationScenarioActive: boolean;
+}
+
+export function mergeAgent12IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent12TransportSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.freightCapacityBand === 'critical' || snapshot.freightCapacityBand === 'tight') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.09, 0.85, 1.45);
+  } else if (snapshot.freightCapacityBand === 'balanced') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.fuelSurchargeActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  }
+  if (snapshot.portBacklogBand === 'severe') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.07, 0.85, 1.45);
+  } else if (snapshot.portBacklogBand === 'moderate') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  let highInflationScenario = base.highInflationScenario;
+  if (
+    snapshot.logisticsInflationScenarioActive ||
+    (snapshot.freightCapacityBand === 'critical' && snapshot.portBacklogBand === 'severe')
+  ) {
+    highInflationScenario = true;
+  }
+
+  let systemicLiquidityBand = base.systemicLiquidityBand;
+  if (snapshot.freightCapacityBand === 'critical' && snapshot.portBacklogBand !== 'clear') {
+    systemicLiquidityBand = systemicLiquidityBand === 'critical' ? 'critical' : 'strained';
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    highInflationScenario,
+    systemicLiquidityBand,
+  };
+}
+
+export function agent12TransportBridgeIntegrationNote(): string {
+  return 'Agent 12 transport snapshot adjusts logistics-side inflation flags; no infrastructure ledger writes.';
+}

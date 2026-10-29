@@ -65,6 +65,10 @@ import { mergeAgent11IntoMacroFinancialInputs } from '../src/integration/agent11
 import { mergeAgent13IntoMacroFinancialInputs } from '../src/integration/agent13-energy-bridge.js';
 import { assessEnergyPricePassThrough } from '../src/inflation/energy-price-pass-through.js';
 import { assessShelterRentInflation } from '../src/inflation/shelter-rent-inflation.js';
+import { assessFoodGroceryPassThrough } from '../src/inflation/food-grocery-pass-through.js';
+import { assessTransportLogisticsInflation } from '../src/inflation/transport-logistics-inflation.js';
+import { mergeAgent14IntoMacroFinancialInputs } from '../src/integration/agent14-housing-bridge.js';
+import { mergeAgent12IntoMacroFinancialInputs } from '../src/integration/agent12-transport-bridge.js';
 
 describe('Agent 10 glossary & boundaries', () => {
   it('defines coherent finance terms', () => {
@@ -430,7 +434,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r8');
+    assert.equal(b.schemaVersion, '10.14.agent10.r9');
   });
 
   it('round-6 scenario preset credit vicious loop', () => {
@@ -493,7 +497,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r8');
+    assert.equal(b.schemaVersion, '10.14.agent10.r9');
     assert.ok(b.terminalImportPassThrough);
   });
 
@@ -565,7 +569,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r8');
+    assert.equal(b.schemaVersion, '10.14.agent10.r9');
     assert.ok(b.terminalEnergyPassThrough);
     assert.ok(b.terminalShelterRentPressure);
   });
@@ -577,6 +581,78 @@ describe('Agent 10 scale-wave extensions', () => {
 
   it('round-8 scenario preset energy grid crisis', () => {
     const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'energy_grid_crisis_pass_through');
+    assert.ok(inp?.systemicLiquidityBand === 'critical');
+  });
+
+  it('round-9 food grocery pass-through', () => {
+    const f = assessFoodGroceryPassThrough({
+      harvestStressBand: 'severe',
+      retailMarginPressure: 'high',
+      supplyChainDisruption: true,
+      inflationBand: 'high',
+      turn: 2,
+    });
+    assert.ok(f.passThroughBand === 'sharp' || f.passThroughBand === 'supply_shock');
+  });
+
+  it('round-9 transport logistics inflation', () => {
+    const t = assessTransportLogisticsInflation({
+      freightCapacityBand: 'critical',
+      fuelSurchargeActive: true,
+      portBacklogBand: 'severe',
+      inflationBand: 'elevated',
+      turn: 2,
+    });
+    assert.ok(t.pressureBand === 'bottleneck' || t.pressureBand === 'crisis');
+  });
+
+  it('round-9 agent14 housing bridge', () => {
+    const m = mergeAgent14IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      mortgageStressBand: 'severe',
+      wellbeingCostBand: 'critical',
+      essentialServicesInflationFlag: true,
+    });
+    assert.equal(m.householdInflationScenarioActive, true);
+  });
+
+  it('round-9 agent12 transport bridge', () => {
+    const m = mergeAgent12IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      freightCapacityBand: 'critical',
+      fuelSurchargeActive: true,
+      portBacklogBand: 'severe',
+      logisticsInflationScenarioActive: true,
+    });
+    assert.equal(m.highInflationScenario, true);
+  });
+
+  it('round-9 forecast food and transport on path', () => {
+    const p = projectInflationForecastPath(3);
+    assert.ok(p.points.every((pt) => pt.foodGroceryPassThroughBand && pt.transportLogisticsPressureBand));
+  });
+
+  it('round-9 agent21 bundle r9', () => {
+    const path = projectInflationForecastPath(2);
+    const b = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('high', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(80),
+    });
+    assert.equal(b.schemaVersion, '10.14.agent10.r9');
+    assert.ok(b.terminalFoodGroceryPassThrough);
+    assert.ok(b.terminalTransportLogisticsPressure);
+  });
+
+  it('round-9 scenario preset food supply chain', () => {
+    const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'food_supply_chain_shock');
+    assert.ok(inp?.creditShockActive && inp.highInflationScenario);
+  });
+
+  it('round-9 scenario preset transport freight', () => {
+    const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'transport_freight_bottleneck');
     assert.ok(inp?.systemicLiquidityBand === 'critical');
   });
 });

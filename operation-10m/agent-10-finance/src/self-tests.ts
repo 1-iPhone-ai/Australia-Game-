@@ -101,6 +101,22 @@ import {
   mergeAgent13IntoMacroFinancialInputs,
   agent13EnergyBridgeIntegrationNote,
 } from './integration/agent13-energy-bridge.js';
+import {
+  assessFoodGroceryPassThrough,
+  foodGroceryPassThroughInflationScoreAdjustment,
+} from './inflation/food-grocery-pass-through.js';
+import {
+  assessTransportLogisticsInflation,
+  transportLogisticsInflationScoreAdjustment,
+} from './inflation/transport-logistics-inflation.js';
+import {
+  mergeAgent14IntoMacroFinancialInputs,
+  agent14HousingBridgeIntegrationNote,
+} from './integration/agent14-housing-bridge.js';
+import {
+  mergeAgent12IntoMacroFinancialInputs,
+  agent12TransportBridgeIntegrationNote,
+} from './integration/agent12-transport-bridge.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -499,7 +515,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r8');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r9');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -646,7 +662,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r8' &&
+      bundle.schemaVersion === '10.14.agent10.r9' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -738,7 +754,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r8' &&
+      bundle.schemaVersion === '10.14.agent10.r9' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -765,6 +781,105 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'energy_transition_cost_stack');
       return inp?.fiscalPressure === 'critical' && (inp.inflationSettingMultiplier ?? 1) > 1.15;
+    })(),
+  );
+
+  // --- Round 9 scale wave ---
+  {
+    const food = assessFoodGroceryPassThrough({
+      harvestStressBand: 'severe',
+      retailMarginPressure: 'high',
+      supplyChainDisruption: true,
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r9_01',
+      'food grocery sharp or supply shock',
+      food.passThroughBand === 'sharp' || food.passThroughBand === 'supply_shock',
+    );
+    check('a10_r9_02', 'food score adj', foodGroceryPassThroughInflationScoreAdjustment(food.passThroughBand) >= 3);
+  }
+  {
+    const transport = assessTransportLogisticsInflation({
+      freightCapacityBand: 'critical',
+      fuelSurchargeActive: true,
+      portBacklogBand: 'severe',
+      inflationBand: 'elevated',
+      turn: 3,
+    });
+    check(
+      'a10_r9_03',
+      'transport bottleneck or crisis',
+      transport.pressureBand === 'bottleneck' || transport.pressureBand === 'crisis',
+    );
+    check('a10_r9_04', 'transport score adj', transportLogisticsInflationScoreAdjustment(transport.pressureBand) >= 3);
+  }
+  {
+    const merged14 = mergeAgent14IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      mortgageStressBand: 'severe',
+      wellbeingCostBand: 'critical',
+      essentialServicesInflationFlag: true,
+    });
+    check('a10_r9_05', 'agent14 housing merge', merged14.householdInflationScenarioActive === true);
+    check('a10_r9_06', 'agent14 bridge note', agent14HousingBridgeIntegrationNote().includes('Agent 14'));
+  }
+  {
+    const merged12 = mergeAgent12IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      freightCapacityBand: 'critical',
+      fuelSurchargeActive: true,
+      portBacklogBand: 'severe',
+      logisticsInflationScenarioActive: true,
+    });
+    check('a10_r9_07', 'agent12 transport merge', merged12.highInflationScenario === true);
+    check('a10_r9_08', 'agent12 bridge note', agent12TransportBridgeIntegrationNote().includes('Agent 12'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r9_09',
+      'forecast food and transport fields',
+      path.points.every((p) => !!p.foodGroceryPassThroughBand && !!p.transportLogisticsPressureBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r9_10',
+      'agent21 r9 fields',
+      bundle.schemaVersion === '10.14.agent10.r9' &&
+        bundle.terminalFoodGroceryPassThrough !== undefined &&
+        bundle.terminalTransportLogisticsPressure !== undefined,
+    );
+  }
+  check(
+    'a10_r9_11',
+    'round9 preset food supply chain',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'food_supply_chain_shock');
+      return inp?.highInflationScenario === true && inp.creditShockActive === true;
+    })(),
+  );
+  check(
+    'a10_r9_12',
+    'round9 preset transport freight',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'transport_freight_bottleneck');
+      return inp?.systemicLiquidityBand === 'critical' && inp.highInflationScenario === true;
+    })(),
+  );
+  check(
+    'a10_r9_13',
+    'round9 preset housing wellbeing',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'housing_wellbeing_cost_stack');
+      return inp?.householdAffordability === 'severe_pressure' && inp.householdInflationScenarioActive === true;
     })(),
   );
 

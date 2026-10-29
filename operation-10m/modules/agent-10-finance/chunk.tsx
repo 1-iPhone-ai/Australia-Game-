@@ -1953,6 +1953,140 @@ export function shelterRentInflationScoreAdjustment(band: ShelterRentPressureBan
 }
 
 
+// --- source: inflation/food-grocery-pass-through.ts ---
+
+export type FoodGroceryPassThroughBand = 'stable' | 'firming' | 'sharp' | 'supply_shock';
+
+export interface FoodGroceryPassThroughAssessment {
+  passThroughBand: FoodGroceryPassThroughBand;
+  groceryIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Staples and grocery channel into macro CPI metadata (not commodity resourcePrices). */
+export function assessFoodGroceryPassThrough(input: {
+  harvestStressBand: 'normal' | 'weak' | 'severe';
+  retailMarginPressure: 'low' | 'medium' | 'high';
+  supplyChainDisruption: boolean;
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): FoodGroceryPassThroughAssessment {
+  let pressure = 0;
+  if (input.harvestStressBand === 'severe') pressure += 0.45;
+  else if (input.harvestStressBand === 'weak') pressure += 0.24;
+
+  if (input.retailMarginPressure === 'high') pressure += 0.2;
+  else if (input.retailMarginPressure === 'medium') pressure += 0.1;
+
+  if (input.supplyChainDisruption) pressure += 0.22;
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.09;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.005, 0, 1.05);
+  const groceryIndex = finRound(100 + pressure * 18, 1);
+
+  let passThroughBand: FoodGroceryPassThroughBand = 'stable';
+  if (pressure >= 0.68) passThroughBand = 'supply_shock';
+  else if (pressure >= 0.42) passThroughBand = 'sharp';
+  else if (pressure >= 0.2) passThroughBand = 'firming';
+
+  const inflationScoreNudge =
+    passThroughBand === 'supply_shock'
+      ? 0.1
+      : passThroughBand === 'sharp'
+        ? 0.07
+        : passThroughBand === 'firming'
+          ? 0.03
+          : 0;
+
+  const narrative =
+    passThroughBand === 'supply_shock' || passThroughBand === 'sharp'
+      ? 'Grocery and staples are lifting headline CPI through food basket pass-through.'
+      : passThroughBand === 'firming'
+        ? 'Food pass-through firming — watch harvest and supply chain stress.'
+        : 'Food grocery pass-through stable relative to domestic services.';
+
+  return { passThroughBand, groceryIndex, inflationScoreNudge, narrative };
+}
+
+export function foodGroceryPassThroughInflationScoreAdjustment(band: FoodGroceryPassThroughBand): number {
+  if (band === 'supply_shock') return 5;
+  if (band === 'sharp') return 3;
+  if (band === 'firming') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/transport-logistics-inflation.ts ---
+
+export type TransportLogisticsPressureBand = 'smooth' | 'congested' | 'bottleneck' | 'crisis';
+
+export interface TransportLogisticsInflationAssessment {
+  pressureBand: TransportLogisticsPressureBand;
+  freightIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Freight and logistics channel into macro CPI (fuel-linked services, not resource board). */
+export function assessTransportLogisticsInflation(input: {
+  freightCapacityBand: 'ample' | 'balanced' | 'tight' | 'critical';
+  fuelSurchargeActive: boolean;
+  portBacklogBand: 'clear' | 'moderate' | 'severe';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): TransportLogisticsInflationAssessment {
+  let pressure = 0;
+  if (input.freightCapacityBand === 'critical') pressure += 0.4;
+  else if (input.freightCapacityBand === 'tight') pressure += 0.26;
+  else if (input.freightCapacityBand === 'balanced') pressure += 0.08;
+
+  if (input.fuelSurchargeActive) pressure += 0.18;
+  if (input.portBacklogBand === 'severe') pressure += 0.24;
+  else if (input.portBacklogBand === 'moderate') pressure += 0.12;
+
+  if (input.inflationBand === 'elevated' || input.inflationBand === 'high') {
+    pressure += 0.07;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.006, 0, 1.05);
+  const freightIndex = finRound(100 + pressure * 20, 1);
+
+  let pressureBand: TransportLogisticsPressureBand = 'smooth';
+  if (pressure >= 0.65) pressureBand = 'crisis';
+  else if (pressure >= 0.42) pressureBand = 'bottleneck';
+  else if (pressure >= 0.22) pressureBand = 'congested';
+
+  const inflationScoreNudge =
+    pressureBand === 'crisis'
+      ? 0.11
+      : pressureBand === 'bottleneck'
+        ? 0.08
+        : pressureBand === 'congested'
+          ? 0.04
+          : 0;
+
+  const narrative =
+    pressureBand === 'crisis' || pressureBand === 'bottleneck'
+      ? 'Transport and logistics bottlenecks are feeding goods inflation and delivery surcharges.'
+      : pressureBand === 'congested'
+        ? 'Freight congestion building — fuel surcharges and backlog risk elevated.'
+        : 'Transport logistics inflation smooth relative to domestic demand.';
+
+  return { pressureBand, freightIndex, inflationScoreNudge, narrative };
+}
+
+export function transportLogisticsInflationScoreAdjustment(band: TransportLogisticsPressureBand): number {
+  if (band === 'crisis') return 5;
+  if (band === 'bottleneck') return 3;
+  if (band === 'congested') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -2426,6 +2560,42 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
       publicStability: 42,
     },
     tags: ['inflation', 'energy', 'round8'],
+  },
+  {
+    id: 'food_supply_chain_shock',
+    label: 'Food supply chain shock',
+    description: 'Harvest stress with supply disruption — grocery CPI pass-through.',
+    patch: {
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.24,
+      fiscalPressure: 'strained',
+      creditShockActive: true,
+    },
+    tags: ['inflation', 'food', 'round9'],
+  },
+  {
+    id: 'transport_freight_bottleneck',
+    label: 'Transport freight bottleneck',
+    description: 'Critical freight capacity with strained liquidity — logistics inflation.',
+    patch: {
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.21,
+      systemicLiquidityBand: 'critical',
+      fiscalPressure: 'critical',
+    },
+    tags: ['inflation', 'transport', 'round9'],
+  },
+  {
+    id: 'housing_wellbeing_cost_stack',
+    label: 'Housing wellbeing cost stack',
+    description: 'Mortgage and essential-services pressure — household inflation flags.',
+    patch: {
+      householdAffordability: 'severe_pressure',
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.2,
+      publicStability: 44,
+    },
+    tags: ['inflation', 'housing', 'round9'],
   },
 ] as const;
 
@@ -3526,6 +3696,126 @@ export function agent13EnergyBridgeIntegrationNote(): string {
 }
 
 
+// --- source: integration/agent14-housing-bridge.ts ---
+
+/** Read-only housing / wellbeing snapshot from Agent 14 (contract only). */
+export interface Agent14HousingSnapshot {
+  turn: number;
+  mortgageStressBand: 'low' | 'elevated' | 'severe';
+  wellbeingCostBand: 'stable' | 'strained' | 'critical';
+  essentialServicesInflationFlag: boolean;
+}
+
+export function mergeAgent14IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent14HousingSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.mortgageStressBand === 'severe') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.08, 0.85, 1.45);
+  } else if (snapshot.mortgageStressBand === 'elevated') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
+  if (snapshot.wellbeingCostBand === 'critical') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.07, 0.85, 1.45);
+  } else if (snapshot.wellbeingCostBand === 'strained') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.essentialServicesInflationFlag) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  }
+
+  let householdAffordability = base.householdAffordability;
+  if (
+    snapshot.mortgageStressBand === 'severe' &&
+    (snapshot.wellbeingCostBand === 'critical' || snapshot.wellbeingCostBand === 'strained')
+  ) {
+    householdAffordability = 'severe_pressure';
+  } else if (snapshot.mortgageStressBand === 'elevated' && householdAffordability === 'healthy') {
+    householdAffordability = 'strained';
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    householdAffordability,
+    householdInflationScenarioActive:
+      base.householdInflationScenarioActive ||
+      snapshot.essentialServicesInflationFlag ||
+      snapshot.wellbeingCostBand === 'critical',
+  };
+}
+
+export function agent14HousingBridgeIntegrationNote(): string {
+  return 'Agent 14 housing snapshot adjusts wellbeing-side inflation multipliers; no mortgage ledger writes.';
+}
+
+
+// --- source: integration/agent12-transport-bridge.ts ---
+
+/** Read-only transport infrastructure snapshot from Agent 12 (contract only). */
+export interface Agent12TransportSnapshot {
+  turn: number;
+  freightCapacityBand: 'ample' | 'balanced' | 'tight' | 'critical';
+  fuelSurchargeActive: boolean;
+  portBacklogBand: 'clear' | 'moderate' | 'severe';
+  logisticsInflationScenarioActive: boolean;
+}
+
+export function mergeAgent12IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent12TransportSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.freightCapacityBand === 'critical' || snapshot.freightCapacityBand === 'tight') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.09, 0.85, 1.45);
+  } else if (snapshot.freightCapacityBand === 'balanced') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.fuelSurchargeActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  }
+  if (snapshot.portBacklogBand === 'severe') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.07, 0.85, 1.45);
+  } else if (snapshot.portBacklogBand === 'moderate') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  let highInflationScenario = base.highInflationScenario;
+  if (
+    snapshot.logisticsInflationScenarioActive ||
+    (snapshot.freightCapacityBand === 'critical' && snapshot.portBacklogBand === 'severe')
+  ) {
+    highInflationScenario = true;
+  }
+
+  let systemicLiquidityBand = base.systemicLiquidityBand;
+  if (snapshot.freightCapacityBand === 'critical' && snapshot.portBacklogBand !== 'clear') {
+    systemicLiquidityBand = systemicLiquidityBand === 'critical' ? 'critical' : 'strained';
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    highInflationScenario,
+    systemicLiquidityBand,
+  };
+}
+
+export function agent12TransportBridgeIntegrationNote(): string {
+  return 'Agent 12 transport snapshot adjusts logistics-side inflation flags; no infrastructure ledger writes.';
+}
+
+
 // --- source: integration/inflation-forecast.ts ---
   stepInflationRegimeTracker,
   createInitialInflationRegimeTracker,
@@ -3547,6 +3837,12 @@ export function agent13EnergyBridgeIntegrationNote(): string {
   assessShelterRentInflation,
   type ShelterRentPressureBand,
 } from '../inflation/shelter-rent-inflation.js';
+  assessFoodGroceryPassThrough,
+  type FoodGroceryPassThroughBand,
+} from '../inflation/food-grocery-pass-through.js';
+  assessTransportLogisticsInflation,
+  type TransportLogisticsPressureBand,
+} from '../inflation/transport-logistics-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -3563,6 +3859,8 @@ export interface InflationForecastPoint {
   termPremiumSignalBand: TermPremiumSignalBand;
   energyPassThroughBand: EnergyPassThroughBand;
   shelterRentPressureBand: ShelterRentPressureBand;
+  foodGroceryPassThroughBand: FoodGroceryPassThroughBand;
+  transportLogisticsPressureBand: TransportLogisticsPressureBand;
 }
 
 export interface InflationForecastPath {
@@ -3642,6 +3940,25 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const foodGrocery = assessFoodGroceryPassThrough({
+      harvestStressBand: inputs.fiscalPressure === 'critical' ? 'severe' : inputs.highInflationScenario ? 'weak' : 'normal',
+      retailMarginPressure: inputs.householdAffordability === 'severe_pressure' ? 'high' : 'medium',
+      supplyChainDisruption: inputs.systemicLiquidityBand === 'critical' || inputs.creditShockActive,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const transportLog = assessTransportLogisticsInflation({
+      freightCapacityBand:
+        inputs.systemicLiquidityBand === 'critical'
+          ? 'critical'
+          : inputs.systemicLiquidityBand === 'strained'
+            ? 'tight'
+            : 'balanced',
+      fuelSurchargeActive: inputs.highInflationScenario,
+      portBacklogBand: inputs.fiscalPressure === 'critical' ? 'severe' : 'moderate',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -3658,6 +3975,8 @@ export function projectInflationForecastPath(
       termPremiumSignalBand: termPrem.signalBand,
       energyPassThroughBand: energyPass.passThroughBand,
       shelterRentPressureBand: shelterRent.pressureBand,
+      foodGroceryPassThroughBand: foodGrocery.passThroughBand,
+      transportLogisticsPressureBand: transportLog.pressureBand,
     });
   }
 
@@ -3763,7 +4082,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r8';
+  schemaVersion: '10.14.agent10.r9';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -3775,6 +4094,8 @@ export interface Agent21InflationForecastBundle {
   terminalTermPremiumSignal: TermPremiumSignalBand;
   terminalEnergyPassThrough: EnergyPassThroughBand;
   terminalShelterRentPressure: ShelterRentPressureBand;
+  terminalFoodGroceryPassThrough: FoodGroceryPassThroughBand;
+  terminalTransportLogisticsPressure: TransportLogisticsPressureBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -3803,7 +4124,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r8',
+    schemaVersion: '10.14.agent10.r9',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -3815,6 +4136,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalTermPremiumSignal: lastPoint?.termPremiumSignalBand ?? 'anchored',
     terminalEnergyPassThrough: lastPoint?.energyPassThroughBand ?? 'subdued',
     terminalShelterRentPressure: lastPoint?.shelterRentPressureBand ?? 'soft',
+    terminalFoodGroceryPassThrough: lastPoint?.foodGroceryPassThroughBand ?? 'stable',
+    terminalTransportLogisticsPressure: lastPoint?.transportLogisticsPressureBand ?? 'smooth',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -3924,6 +4247,18 @@ export function effectiveTierLoanRate(
   mergeAgent13IntoMacroFinancialInputs,
   agent13EnergyBridgeIntegrationNote,
 } from './integration/agent13-energy-bridge.js';
+  assessFoodGroceryPassThrough,
+  foodGroceryPassThroughInflationScoreAdjustment,
+} from './inflation/food-grocery-pass-through.js';
+  assessTransportLogisticsInflation,
+  transportLogisticsInflationScoreAdjustment,
+} from './inflation/transport-logistics-inflation.js';
+  mergeAgent14IntoMacroFinancialInputs,
+  agent14HousingBridgeIntegrationNote,
+} from './integration/agent14-housing-bridge.js';
+  mergeAgent12IntoMacroFinancialInputs,
+  agent12TransportBridgeIntegrationNote,
+} from './integration/agent12-transport-bridge.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -4322,7 +4657,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r8');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r9');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -4469,7 +4804,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r8' &&
+      bundle.schemaVersion === '10.14.agent10.r9' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -4561,7 +4896,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r8' &&
+      bundle.schemaVersion === '10.14.agent10.r9' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -4588,6 +4923,105 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'energy_transition_cost_stack');
       return inp?.fiscalPressure === 'critical' && (inp.inflationSettingMultiplier ?? 1) > 1.15;
+    })(),
+  );
+
+  // --- Round 9 scale wave ---
+  {
+    const food = assessFoodGroceryPassThrough({
+      harvestStressBand: 'severe',
+      retailMarginPressure: 'high',
+      supplyChainDisruption: true,
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r9_01',
+      'food grocery sharp or supply shock',
+      food.passThroughBand === 'sharp' || food.passThroughBand === 'supply_shock',
+    );
+    check('a10_r9_02', 'food score adj', foodGroceryPassThroughInflationScoreAdjustment(food.passThroughBand) >= 3);
+  }
+  {
+    const transport = assessTransportLogisticsInflation({
+      freightCapacityBand: 'critical',
+      fuelSurchargeActive: true,
+      portBacklogBand: 'severe',
+      inflationBand: 'elevated',
+      turn: 3,
+    });
+    check(
+      'a10_r9_03',
+      'transport bottleneck or crisis',
+      transport.pressureBand === 'bottleneck' || transport.pressureBand === 'crisis',
+    );
+    check('a10_r9_04', 'transport score adj', transportLogisticsInflationScoreAdjustment(transport.pressureBand) >= 3);
+  }
+  {
+    const merged14 = mergeAgent14IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      mortgageStressBand: 'severe',
+      wellbeingCostBand: 'critical',
+      essentialServicesInflationFlag: true,
+    });
+    check('a10_r9_05', 'agent14 housing merge', merged14.householdInflationScenarioActive === true);
+    check('a10_r9_06', 'agent14 bridge note', agent14HousingBridgeIntegrationNote().includes('Agent 14'));
+  }
+  {
+    const merged12 = mergeAgent12IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      freightCapacityBand: 'critical',
+      fuelSurchargeActive: true,
+      portBacklogBand: 'severe',
+      logisticsInflationScenarioActive: true,
+    });
+    check('a10_r9_07', 'agent12 transport merge', merged12.highInflationScenario === true);
+    check('a10_r9_08', 'agent12 bridge note', agent12TransportBridgeIntegrationNote().includes('Agent 12'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r9_09',
+      'forecast food and transport fields',
+      path.points.every((p) => !!p.foodGroceryPassThroughBand && !!p.transportLogisticsPressureBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r9_10',
+      'agent21 r9 fields',
+      bundle.schemaVersion === '10.14.agent10.r9' &&
+        bundle.terminalFoodGroceryPassThrough !== undefined &&
+        bundle.terminalTransportLogisticsPressure !== undefined,
+    );
+  }
+  check(
+    'a10_r9_11',
+    'round9 preset food supply chain',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'food_supply_chain_shock');
+      return inp?.highInflationScenario === true && inp.creditShockActive === true;
+    })(),
+  );
+  check(
+    'a10_r9_12',
+    'round9 preset transport freight',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'transport_freight_bottleneck');
+      return inp?.systemicLiquidityBand === 'critical' && inp.highInflationScenario === true;
+    })(),
+  );
+  check(
+    'a10_r9_13',
+    'round9 preset housing wellbeing',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'housing_wellbeing_cost_stack');
+      return inp?.householdAffordability === 'severe_pressure' && inp.householdInflationScenarioActive === true;
     })(),
   );
 
@@ -4940,6 +5374,71 @@ export function UrbanEnergyInflationPanel(props: UrbanEnergyInflationPanelProps)
       </p>
       <p>{shelter.narrative}</p>
       <p data-testid="urban-energy-energy-note">{energyPass.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/TransportFoodInflationPanel.tsx ---
+  assessFoodGroceryPassThrough,
+  foodGroceryPassThroughInflationScoreAdjustment,
+} from '../inflation/food-grocery-pass-through.js';
+  assessTransportLogisticsInflation,
+  transportLogisticsInflationScoreAdjustment,
+} from '../inflation/transport-logistics-inflation.js';
+
+export interface TransportFoodInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent14?: Agent14HousingSnapshot | null;
+  agent12?: Agent12TransportSnapshot | null;
+}
+
+export function TransportFoodInflationPanel(props: TransportFoodInflationPanelProps) {
+  const housing = props.agent14 ?? {
+    turn: props.inputs.turn,
+    mortgageStressBand: 'elevated' as const,
+    wellbeingCostBand: 'strained' as const,
+    essentialServicesInflationFlag: props.inputs.householdInflationScenarioActive,
+  };
+
+  const transport = props.agent12 ?? {
+    turn: props.inputs.turn,
+    freightCapacityBand: 'tight' as const,
+    fuelSurchargeActive: props.inputs.highInflationScenario,
+    portBacklogBand: 'moderate' as const,
+    logisticsInflationScenarioActive: props.inputs.highInflationScenario,
+  };
+
+  const food = assessFoodGroceryPassThrough({
+    harvestStressBand: props.inputs.fiscalPressure === 'critical' ? 'severe' : 'weak',
+    retailMarginPressure: housing.wellbeingCostBand === 'critical' ? 'high' : 'medium',
+    supplyChainDisruption: transport.portBacklogBand === 'severe' || transport.freightCapacityBand === 'critical',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const logistics = assessTransportLogisticsInflation({
+    freightCapacityBand: transport.freightCapacityBand,
+    fuelSurchargeActive: transport.fuelSurchargeActive,
+    portBacklogBand: transport.portBacklogBand,
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-transport-food-inflation" data-testid="transport-food-inflation-panel">
+      <h4>Food, transport & wellbeing (round 9)</h4>
+      <p>
+        Grocery {food.passThroughBand} · index {food.groceryIndex.toFixed(0)} · score adj{' '}
+        {foodGroceryPassThroughInflationScoreAdjustment(food.passThroughBand)}
+      </p>
+      <p>
+        Logistics {logistics.pressureBand} · index {logistics.freightIndex.toFixed(0)} · score adj{' '}
+        {transportLogisticsInflationScoreAdjustment(logistics.pressureBand)}
+      </p>
+      <p data-testid="transport-food-food-note">{food.narrative}</p>
+      <p>{logistics.narrative}</p>
     </div>
   );
 }
