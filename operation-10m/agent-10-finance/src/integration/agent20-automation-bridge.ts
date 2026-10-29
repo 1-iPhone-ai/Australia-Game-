@@ -7,6 +7,10 @@ export interface Agent20AutomationSnapshot {
   macroAutopilotInflationBias: 'deflate' | 'neutral' | 'inflate';
   unattendedShockDriftActive: boolean;
   automationConfidenceScore: number;
+  /** Round 25: idle macro inflation escalation under autopilot. */
+  idleMacroInflationEscalation?: boolean;
+  /** Round 25: autopilot drift cascade band. */
+  autopilotDriftCascadeBand?: 'none' | 'drifting' | 'runaway';
 }
 
 export function mergeAgent20IntoMacroFinancialInputs(
@@ -29,6 +33,9 @@ export function mergeAgent20IntoMacroFinancialInputs(
   let highInflationScenario = base.highInflationScenario;
   if (snapshot.macroAutopilotInflationBias === 'inflate' && snapshot.unattendedShockDriftActive) {
     highInflationScenario = true;
+  }
+  if (snapshot.autopilotDriftCascadeBand === 'runaway' || snapshot.idleMacroInflationEscalation) {
+    highInflationScenario = highInflationScenario || snapshot.autopilotDriftCascadeBand === 'runaway';
   }
 
   return {

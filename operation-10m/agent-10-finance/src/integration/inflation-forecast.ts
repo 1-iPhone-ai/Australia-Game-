@@ -160,6 +160,14 @@ import {
   assessAiMemoryInflationRecallInflation,
   type AiMemoryInflationRecallBand,
 } from '../inflation/ai-memory-inflation-recall-inflation.js';
+import {
+  assessCalendarSeasonInflationCarryover,
+  type CalendarSeasonInflationCarryoverBand,
+} from '../inflation/calendar-season-inflation-carryover.js';
+import {
+  assessAutomationAutopilotInflationDrift,
+  type AutomationAutopilotInflationDriftBand,
+} from '../inflation/automation-autopilot-inflation-drift.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -208,6 +216,8 @@ export interface InflationForecastPoint {
   teamIntelligenceConsensusBand: TeamIntelligenceConsensusBand;
   strategicGeopoliticalPremiumBand: StrategicGeopoliticalPremiumBand;
   aiMemoryInflationRecallBand: AiMemoryInflationRecallBand;
+  calendarSeasonInflationCarryoverBand: CalendarSeasonInflationCarryoverBand;
+  automationAutopilotInflationDriftBand: AutomationAutopilotInflationDriftBand;
 }
 
 export interface InflationForecastPath {
@@ -588,6 +598,24 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const calendarCarryover = assessCalendarSeasonInflationCarryover({
+      calendarSeasonBand: inputs.highInflationScenario ? 'peak_demand' : 'normal',
+      policyReviewWindowOpen: inputs.fiscalPressure === 'critical',
+      multiTurnInflationCarryover: inputs.householdInflationScenarioActive ? 0.28 : 0.1,
+      fiscalCalendarInflationLatch: inputs.creditShockActive,
+      multiTurnCarryoverBand: inputs.highInflationScenario ? 'persistent' : 'building',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const automationDrift = assessAutomationAutopilotInflationDrift({
+      macroAutopilotInflationBias: inputs.highInflationScenario ? 'inflate' : 'neutral',
+      unattendedShockDriftActive: inputs.creditShockActive,
+      automationConfidenceScore: inputs.publicStability < 45 ? 0.4 : 0.65,
+      idleMacroInflationEscalation: inputs.householdInflationScenarioActive,
+      autopilotDriftCascadeBand: inputs.fiscalPressure === 'critical' ? 'runaway' : inputs.creditShockActive ? 'drifting' : 'none',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -636,6 +664,8 @@ export function projectInflationForecastPath(
       teamIntelligenceConsensusBand: teamConsensus.consensusBand,
       strategicGeopoliticalPremiumBand: strategicPremium.premiumBand,
       aiMemoryInflationRecallBand: memoryRecall.recallBand,
+      calendarSeasonInflationCarryoverBand: calendarCarryover.carryoverBand,
+      automationAutopilotInflationDriftBand: automationDrift.driftBand,
     });
   }
 

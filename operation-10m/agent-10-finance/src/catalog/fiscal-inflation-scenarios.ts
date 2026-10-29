@@ -821,6 +821,44 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'strategic', 'memory', 'round24'],
   },
+  {
+    id: 'calendar_season_carryover_stack',
+    label: 'Calendar season carryover stack',
+    description: 'Peak demand with persistent multi-turn carryover latch.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.29,
+    },
+    tags: ['inflation', 'turns', 'round25'],
+  },
+  {
+    id: 'automation_autopilot_drift_stress',
+    label: 'Automation autopilot drift stress',
+    description: 'Inflate bias with unattended shock drift and low confidence.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.27,
+    },
+    tags: ['inflation', 'automation', 'round25'],
+  },
+  {
+    id: 'turns_automation_fusion_stress',
+    label: 'Turns & automation fusion stress',
+    description: 'Aligned Agent 02 persistent carryover + Agent 20 runaway drift.',
+    patch: {
+      inflationSettingMultiplier: 1.36,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      publicStability: 32,
+    },
+    tags: ['inflation', 'turns', 'automation', 'round25'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

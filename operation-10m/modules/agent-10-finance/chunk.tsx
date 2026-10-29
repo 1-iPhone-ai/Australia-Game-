@@ -4287,6 +4287,166 @@ export function aiMemoryInflationRecallScoreAdjustment(band: AiMemoryInflationRe
 }
 
 
+// --- source: inflation/calendar-season-inflation-carryover.ts ---
+
+export type CalendarSeasonInflationCarryoverBand = 'off_season' | 'normal' | 'peak' | 'carryover_shock';
+
+export interface CalendarSeasonInflationCarryoverAssessment {
+  carryoverBand: CalendarSeasonInflationCarryoverBand;
+  calendarIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Calendar season and multi-turn inflation carryover (Agent 02). */
+export function assessCalendarSeasonInflationCarryover(input: {
+  calendarSeasonBand: 'off_peak' | 'normal' | 'peak_demand';
+  policyReviewWindowOpen: boolean;
+  multiTurnInflationCarryover: number;
+  fiscalCalendarInflationLatch: boolean;
+  multiTurnCarryoverBand: 'muted' | 'building' | 'persistent';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): CalendarSeasonInflationCarryoverAssessment {
+  let pressure = 0;
+  if (input.calendarSeasonBand === 'peak_demand') {
+    pressure += 0.2;
+  } else if (input.calendarSeasonBand === 'normal') {
+    pressure += 0.06;
+  }
+  pressure += finClamp(input.multiTurnInflationCarryover, 0, 1) * 0.28;
+  if (input.policyReviewWindowOpen && input.calendarSeasonBand === 'peak_demand') {
+    pressure += 0.1;
+  }
+  if (input.fiscalCalendarInflationLatch) {
+    pressure += 0.14;
+  }
+  if (input.multiTurnCarryoverBand === 'persistent') {
+    pressure += 0.2;
+  } else if (input.multiTurnCarryoverBand === 'building') {
+    pressure += 0.1;
+  }
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.05;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.0035, 0, 1.05);
+  const calendarIndex = finRound(100 + pressure * 15, 1);
+
+  let carryoverBand: CalendarSeasonInflationCarryoverBand = 'off_season';
+  if (pressure >= 0.54) carryoverBand = 'carryover_shock';
+  else if (pressure >= 0.34) carryoverBand = 'peak';
+  else if (pressure >= 0.15) carryoverBand = 'normal';
+
+  const inflationScoreNudge =
+    carryoverBand === 'carryover_shock'
+      ? 0.086
+      : carryoverBand === 'peak'
+        ? 0.054
+        : carryoverBand === 'normal'
+          ? 0.024
+          : 0;
+
+  const narrative =
+    carryoverBand === 'carryover_shock' || carryoverBand === 'peak'
+      ? 'Calendar season and multi-turn carryover lifting CPI through peak demand windows.'
+      : carryoverBand === 'normal'
+        ? 'Seasonal inflation carryover building across turn boundaries.'
+        : 'Calendar carryover subdued versus headline CPI.';
+
+  return { carryoverBand, calendarIndex, inflationScoreNudge, narrative };
+}
+
+export function calendarSeasonInflationCarryoverScoreAdjustment(band: CalendarSeasonInflationCarryoverBand): number {
+  if (band === 'carryover_shock') return 4;
+  if (band === 'peak') return 3;
+  if (band === 'normal') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/automation-autopilot-inflation-drift.ts ---
+
+export type AutomationAutopilotInflationDriftBand = 'neutral' | 'biased' | 'elevated' | 'autopilot_runaway';
+
+export interface AutomationAutopilotInflationDriftAssessment {
+  driftBand: AutomationAutopilotInflationDriftBand;
+  autopilotIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Idle automation autopilot bias and unattended shock drift (Agent 20). */
+export function assessAutomationAutopilotInflationDrift(input: {
+  macroAutopilotInflationBias: 'deflate' | 'neutral' | 'inflate';
+  unattendedShockDriftActive: boolean;
+  automationConfidenceScore: number;
+  idleMacroInflationEscalation: boolean;
+  autopilotDriftCascadeBand: 'none' | 'drifting' | 'runaway';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): AutomationAutopilotInflationDriftAssessment {
+  let pressure = 0;
+  if (input.macroAutopilotInflationBias === 'inflate') {
+    pressure += 0.22;
+  }
+  if (input.unattendedShockDriftActive) {
+    pressure += 0.18;
+  }
+  if (input.automationConfidenceScore < 0.45) {
+    pressure += 0.16;
+  } else if (input.automationConfidenceScore < 0.6) {
+    pressure += 0.08;
+  }
+  if (input.idleMacroInflationEscalation) {
+    pressure += 0.14;
+  }
+  if (input.autopilotDriftCascadeBand === 'runaway') {
+    pressure += 0.22;
+  } else if (input.autopilotDriftCascadeBand === 'drifting') {
+    pressure += 0.11;
+  }
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.05;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.004, 0, 1.05);
+  const autopilotIndex = finRound(100 + pressure * 16, 1);
+
+  let driftBand: AutomationAutopilotInflationDriftBand = 'neutral';
+  if (pressure >= 0.56) driftBand = 'autopilot_runaway';
+  else if (pressure >= 0.36) driftBand = 'elevated';
+  else if (pressure >= 0.17) driftBand = 'biased';
+
+  const inflationScoreNudge =
+    driftBand === 'autopilot_runaway'
+      ? 0.09
+      : driftBand === 'elevated'
+        ? 0.058
+        : driftBand === 'biased'
+          ? 0.027
+          : 0;
+
+  const narrative =
+    driftBand === 'autopilot_runaway' || driftBand === 'elevated'
+      ? 'Automation autopilot drift is passing inflation bias into CPI metadata.'
+      : driftBand === 'biased'
+        ? 'Idle macro inflation escalation biasing unattended shock drift.'
+        : 'Automation autopilot inflation drift neutral versus headline.';
+
+  return { driftBand, autopilotIndex, inflationScoreNudge, narrative };
+}
+
+export function automationAutopilotInflationDriftScoreAdjustment(band: AutomationAutopilotInflationDriftBand): number {
+  if (band === 'autopilot_runaway') return 4;
+  if (band === 'elevated') return 3;
+  if (band === 'biased') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -5345,6 +5505,44 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
       systemicLiquidityBand: 'critical',
     },
     tags: ['inflation', 'strategic', 'memory', 'round24'],
+  },
+  {
+    id: 'calendar_season_carryover_stack',
+    label: 'Calendar season carryover stack',
+    description: 'Peak demand with persistent multi-turn carryover latch.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.29,
+    },
+    tags: ['inflation', 'turns', 'round25'],
+  },
+  {
+    id: 'automation_autopilot_drift_stress',
+    label: 'Automation autopilot drift stress',
+    description: 'Inflate bias with unattended shock drift and low confidence.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.27,
+    },
+    tags: ['inflation', 'automation', 'round25'],
+  },
+  {
+    id: 'turns_automation_fusion_stress',
+    label: 'Turns & automation fusion stress',
+    description: 'Aligned Agent 02 persistent carryover + Agent 20 runaway drift.',
+    patch: {
+      inflationSettingMultiplier: 1.36,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      publicStability: 32,
+    },
+    tags: ['inflation', 'turns', 'automation', 'round25'],
   },
 ] as const;
 
@@ -7038,6 +7236,10 @@ export interface Agent02TurnsSnapshot {
   calendarSeasonBand: 'off_peak' | 'normal' | 'peak_demand';
   policyReviewWindowOpen: boolean;
   multiTurnInflationCarryover: number;
+  /** Round 25: fiscal calendar inflation latch across turns. */
+  fiscalCalendarInflationLatch?: boolean;
+  /** Round 25: multi-turn carryover persistence band. */
+  multiTurnCarryoverBand?: 'muted' | 'building' | 'persistent';
 }
 
 export function mergeAgent02IntoMacroFinancialInputs(
@@ -7063,10 +7265,17 @@ export function mergeAgent02IntoMacroFinancialInputs(
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
+  let highInflationScenario = base.highInflationScenario;
+  if (snapshot.fiscalCalendarInflationLatch && snapshot.multiTurnCarryoverBand === 'persistent') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
   return {
     ...base,
     turn: Math.max(base.turn, snapshot.turn),
     inflationSettingMultiplier,
+    highInflationScenario,
   };
 }
 
@@ -7083,6 +7292,10 @@ export interface Agent20AutomationSnapshot {
   macroAutopilotInflationBias: 'deflate' | 'neutral' | 'inflate';
   unattendedShockDriftActive: boolean;
   automationConfidenceScore: number;
+  /** Round 25: idle macro inflation escalation under autopilot. */
+  idleMacroInflationEscalation?: boolean;
+  /** Round 25: autopilot drift cascade band. */
+  autopilotDriftCascadeBand?: 'none' | 'drifting' | 'runaway';
 }
 
 export function mergeAgent20IntoMacroFinancialInputs(
@@ -7105,6 +7318,9 @@ export function mergeAgent20IntoMacroFinancialInputs(
   let highInflationScenario = base.highInflationScenario;
   if (snapshot.macroAutopilotInflationBias === 'inflate' && snapshot.unattendedShockDriftActive) {
     highInflationScenario = true;
+  }
+  if (snapshot.autopilotDriftCascadeBand === 'runaway' || snapshot.idleMacroInflationEscalation) {
+    highInflationScenario = highInflationScenario || snapshot.autopilotDriftCascadeBand === 'runaway';
   }
 
   return {
@@ -7458,6 +7674,12 @@ export function agent23DashboardsBridgeIntegrationNote(): string {
   assessAiMemoryInflationRecallInflation,
   type AiMemoryInflationRecallBand,
 } from '../inflation/ai-memory-inflation-recall-inflation.js';
+  assessCalendarSeasonInflationCarryover,
+  type CalendarSeasonInflationCarryoverBand,
+} from '../inflation/calendar-season-inflation-carryover.js';
+  assessAutomationAutopilotInflationDrift,
+  type AutomationAutopilotInflationDriftBand,
+} from '../inflation/automation-autopilot-inflation-drift.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -7506,6 +7728,8 @@ export interface InflationForecastPoint {
   teamIntelligenceConsensusBand: TeamIntelligenceConsensusBand;
   strategicGeopoliticalPremiumBand: StrategicGeopoliticalPremiumBand;
   aiMemoryInflationRecallBand: AiMemoryInflationRecallBand;
+  calendarSeasonInflationCarryoverBand: CalendarSeasonInflationCarryoverBand;
+  automationAutopilotInflationDriftBand: AutomationAutopilotInflationDriftBand;
 }
 
 export interface InflationForecastPath {
@@ -7886,6 +8110,24 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const calendarCarryover = assessCalendarSeasonInflationCarryover({
+      calendarSeasonBand: inputs.highInflationScenario ? 'peak_demand' : 'normal',
+      policyReviewWindowOpen: inputs.fiscalPressure === 'critical',
+      multiTurnInflationCarryover: inputs.householdInflationScenarioActive ? 0.28 : 0.1,
+      fiscalCalendarInflationLatch: inputs.creditShockActive,
+      multiTurnCarryoverBand: inputs.highInflationScenario ? 'persistent' : 'building',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const automationDrift = assessAutomationAutopilotInflationDrift({
+      macroAutopilotInflationBias: inputs.highInflationScenario ? 'inflate' : 'neutral',
+      unattendedShockDriftActive: inputs.creditShockActive,
+      automationConfidenceScore: inputs.publicStability < 45 ? 0.4 : 0.65,
+      idleMacroInflationEscalation: inputs.householdInflationScenarioActive,
+      autopilotDriftCascadeBand: inputs.fiscalPressure === 'critical' ? 'runaway' : inputs.creditShockActive ? 'drifting' : 'none',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -7934,6 +8176,8 @@ export function projectInflationForecastPath(
       teamIntelligenceConsensusBand: teamConsensus.consensusBand,
       strategicGeopoliticalPremiumBand: strategicPremium.premiumBand,
       aiMemoryInflationRecallBand: memoryRecall.recallBand,
+      calendarSeasonInflationCarryoverBand: calendarCarryover.carryoverBand,
+      automationAutopilotInflationDriftBand: automationDrift.driftBand,
     });
   }
 
@@ -8039,7 +8283,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r24';
+  schemaVersion: '10.14.agent10.r25';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -8083,6 +8327,8 @@ export interface Agent21InflationForecastBundle {
   terminalTeamIntelligenceConsensus: TeamIntelligenceConsensusBand;
   terminalStrategicGeopoliticalPremium: StrategicGeopoliticalPremiumBand;
   terminalAiMemoryInflationRecall: AiMemoryInflationRecallBand;
+  terminalCalendarSeasonInflationCarryover: CalendarSeasonInflationCarryoverBand;
+  terminalAutomationAutopilotInflationDrift: AutomationAutopilotInflationDriftBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -8111,7 +8357,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r24',
+    schemaVersion: '10.14.agent10.r25',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -8155,6 +8401,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalTeamIntelligenceConsensus: lastPoint?.teamIntelligenceConsensusBand ?? 'anchored',
     terminalStrategicGeopoliticalPremium: lastPoint?.strategicGeopoliticalPremiumBand ?? 'contained',
     terminalAiMemoryInflationRecall: lastPoint?.aiMemoryInflationRecallBand ?? 'anchored',
+    terminalCalendarSeasonInflationCarryover: lastPoint?.calendarSeasonInflationCarryoverBand ?? 'off_season',
+    terminalAutomationAutopilotInflationDrift: lastPoint?.automationAutopilotInflationDriftBand ?? 'neutral',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -8396,6 +8644,12 @@ export function effectiveTierLoanRate(
   assessAiMemoryInflationRecallInflation,
   aiMemoryInflationRecallScoreAdjustment,
 } from './inflation/ai-memory-inflation-recall-inflation.js';
+  assessCalendarSeasonInflationCarryover,
+  calendarSeasonInflationCarryoverScoreAdjustment,
+} from './inflation/calendar-season-inflation-carryover.js';
+  assessAutomationAutopilotInflationDrift,
+  automationAutopilotInflationDriftScoreAdjustment,
+} from './inflation/automation-autopilot-inflation-drift.js';
   mergeAgent22IntoMacroFinancialInputs,
   agent22UiBridgeIntegrationNote,
 } from './integration/agent22-ui-bridge.js';
@@ -8800,7 +9054,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r24');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r25');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -8947,7 +9201,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r24' &&
+      bundle.schemaVersion === '10.14.agent10.r25' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -9039,7 +9293,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r24' &&
+      bundle.schemaVersion === '10.14.agent10.r25' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -9138,7 +9392,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r24' &&
+      bundle.schemaVersion === '10.14.agent10.r25' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -9236,7 +9490,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r24' &&
+      bundle.schemaVersion === '10.14.agent10.r25' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -9334,7 +9588,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r24' &&
+      bundle.schemaVersion === '10.14.agent10.r25' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -9424,7 +9678,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r12_10',
       'agent21 r12 fields',
-      bundle.schemaVersion === '10.14.agent10.r24' &&
+      bundle.schemaVersion === '10.14.agent10.r25' &&
         bundle.terminalRecreationLeisurePressure !== undefined &&
         bundle.terminalProfessionalServicesFee !== undefined,
     );
@@ -9514,7 +9768,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r13_10',
       'agent21 r13 fields',
-      bundle.schemaVersion === '10.14.agent10.r24' &&
+      bundle.schemaVersion === '10.14.agent10.r25' &&
         bundle.terminalChildcareServicesPressure !== undefined &&
         bundle.terminalGovernmentChargesPressure !== undefined,
     );
@@ -9604,7 +9858,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r14_10',
       'agent21 r14 fields',
-      bundle.schemaVersion === '10.14.agent10.r24' &&
+      bundle.schemaVersion === '10.14.agent10.r25' &&
         bundle.terminalWaterUtilitiesPressure !== undefined &&
         bundle.terminalDomesticTravelPressure !== undefined,
     );
@@ -9694,7 +9948,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r15_10',
       'agent21 r15 fields',
-      bundle.schemaVersion === '10.14.agent10.r24' &&
+      bundle.schemaVersion === '10.14.agent10.r25' &&
         bundle.terminalConstructionMaterialsPressure !== undefined &&
         bundle.terminalRetailTradeMargin !== undefined,
     );
@@ -9786,7 +10040,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r16_10',
       'agent21 r16 fields',
-      bundle.schemaVersion === '10.14.agent10.r24' &&
+      bundle.schemaVersion === '10.14.agent10.r25' &&
         bundle.terminalFinancialServicesFee !== undefined &&
         bundle.terminalAgriculturalFarmgatePressure !== undefined,
     );
@@ -9882,7 +10136,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r17_10',
       'agent21 r17 fields',
-      bundle.schemaVersion === '10.14.agent10.r24' &&
+      bundle.schemaVersion === '10.14.agent10.r25' &&
         bundle.terminalPublicUtilitiesGridTariff !== undefined &&
         bundle.terminalUiInflationSalience !== undefined,
     );
@@ -9986,7 +10240,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r18_10',
       'agent21 r18 fields',
-      bundle.schemaVersion === '10.14.agent10.r24' &&
+      bundle.schemaVersion === '10.14.agent10.r25' &&
         bundle.terminalHousingMortgageEssential !== undefined &&
         bundle.terminalMacroTransmissionMerge !== undefined,
     );
@@ -10091,7 +10345,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r19_10',
       'agent21 r19 fields',
-      bundle.schemaVersion === '10.14.agent10.r24' &&
+      bundle.schemaVersion === '10.14.agent10.r25' &&
         bundle.terminalDynamicEventsInflationSpillover !== undefined &&
         bundle.terminalDashboardMapInflationOverlay !== undefined,
     );
@@ -10196,7 +10450,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r20_10',
       'agent21 r20 fields',
-      bundle.schemaVersion === '10.14.agent10.r24' &&
+      bundle.schemaVersion === '10.14.agent10.r25' &&
         bundle.terminalPublicFinanceDebtService !== undefined &&
         bundle.terminalPopulationLaborWage !== undefined,
     );
@@ -10306,7 +10560,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r21_10',
       'agent21 r21 fields',
-      bundle.schemaVersion === '10.14.agent10.r24' &&
+      bundle.schemaVersion === '10.14.agent10.r25' &&
         bundle.terminalWholesaleEnergyTransition !== undefined &&
         bundle.terminalUrbanRentDispersion !== undefined,
     );
@@ -10408,7 +10662,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r22_10',
       'agent21 r22 fields',
-      bundle.schemaVersion === '10.14.agent10.r24' &&
+      bundle.schemaVersion === '10.14.agent10.r25' &&
         bundle.terminalCorporatePricingPassThrough !== undefined &&
         bundle.terminalTradeExchangeImport !== undefined,
     );
@@ -10514,7 +10768,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r23_10',
       'agent21 r23 fields',
-      bundle.schemaVersion === '10.14.agent10.r24' &&
+      bundle.schemaVersion === '10.14.agent10.r25' &&
         bundle.terminalGuardianInflationIntervention !== undefined &&
         bundle.terminalTeamIntelligenceConsensus !== undefined,
     );
@@ -10620,7 +10874,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r24_10',
       'agent21 r24 fields',
-      bundle.schemaVersion === '10.14.agent10.r24' &&
+      bundle.schemaVersion === '10.14.agent10.r25' &&
         bundle.terminalStrategicGeopoliticalPremium !== undefined &&
         bundle.terminalAiMemoryInflationRecall !== undefined,
     );
@@ -10647,6 +10901,112 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'strategic_memory_fusion_stress');
       return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.34;
+    })(),
+  );
+
+  // --- Round 25 scale wave ---
+  {
+    const calendar = assessCalendarSeasonInflationCarryover({
+      calendarSeasonBand: 'peak_demand',
+      policyReviewWindowOpen: true,
+      multiTurnInflationCarryover: 0.35,
+      fiscalCalendarInflationLatch: true,
+      multiTurnCarryoverBand: 'persistent',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r25_01',
+      'calendar peak or shock',
+      calendar.carryoverBand === 'peak' || calendar.carryoverBand === 'carryover_shock',
+    );
+    check('a10_r25_02', 'calendar score adj', calendarSeasonInflationCarryoverScoreAdjustment(calendar.carryoverBand) >= 3);
+  }
+  {
+    const autopilot = assessAutomationAutopilotInflationDrift({
+      macroAutopilotInflationBias: 'inflate',
+      unattendedShockDriftActive: true,
+      automationConfidenceScore: 0.35,
+      idleMacroInflationEscalation: true,
+      autopilotDriftCascadeBand: 'runaway',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r25_03',
+      'autopilot elevated or runaway',
+      autopilot.driftBand === 'elevated' || autopilot.driftBand === 'autopilot_runaway',
+    );
+    check('a10_r25_04', 'autopilot score adj', automationAutopilotInflationDriftScoreAdjustment(autopilot.driftBand) >= 3);
+  }
+  {
+    const merged02 = mergeAgent02IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      calendarSeasonBand: 'peak_demand',
+      policyReviewWindowOpen: true,
+      multiTurnInflationCarryover: 0.3,
+      fiscalCalendarInflationLatch: true,
+      multiTurnCarryoverBand: 'persistent',
+    });
+    check('a10_r25_05', 'agent02 turns merge', merged02.highInflationScenario === true);
+    check('a10_r25_06', 'agent02 bridge note', agent02TurnsBridgeIntegrationNote().includes('Agent 02'));
+  }
+  {
+    const merged20 = mergeAgent20IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      macroAutopilotInflationBias: 'inflate',
+      unattendedShockDriftActive: true,
+      automationConfidenceScore: 0.4,
+      idleMacroInflationEscalation: true,
+      autopilotDriftCascadeBand: 'runaway',
+    });
+    check('a10_r25_07', 'agent20 automation merge', merged20.highInflationScenario === true);
+    check('a10_r25_08', 'agent20 bridge note', agent20AutomationBridgeIntegrationNote().includes('Agent 20'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r25_09',
+      'forecast calendar carryover and automation drift fields',
+      path.points.every((p) => !!p.calendarSeasonInflationCarryoverBand && !!p.automationAutopilotInflationDriftBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r25_10',
+      'agent21 r25 fields',
+      bundle.schemaVersion === '10.14.agent10.r25' &&
+        bundle.terminalCalendarSeasonInflationCarryover !== undefined &&
+        bundle.terminalAutomationAutopilotInflationDrift !== undefined,
+    );
+  }
+  check(
+    'a10_r25_11',
+    'round25 preset calendar carryover stack',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'calendar_season_carryover_stack');
+      return inp?.highInflationScenario === true && inp.creditShockActive === true;
+    })(),
+  );
+  check(
+    'a10_r25_12',
+    'round25 preset automation drift stress',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'automation_autopilot_drift_stress');
+      return inp?.fiscalPressure === 'critical' && inp.highInflationScenario === true;
+    })(),
+  );
+  check(
+    'a10_r25_13',
+    'round25 preset turns automation fusion',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'turns_automation_fusion_stress');
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.35;
     })(),
   );
 
@@ -12124,6 +12484,78 @@ export function StrategicMemoryInflationPanel(props: StrategicMemoryInflationPan
       </p>
       <p data-testid="strategic-memory-note">{premium.narrative}</p>
       <p>{recall.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/TurnsAutomationInflationPanel.tsx ---
+  assessCalendarSeasonInflationCarryover,
+  calendarSeasonInflationCarryoverScoreAdjustment,
+} from '../inflation/calendar-season-inflation-carryover.js';
+  assessAutomationAutopilotInflationDrift,
+  automationAutopilotInflationDriftScoreAdjustment,
+} from '../inflation/automation-autopilot-inflation-drift.js';
+
+export interface TurnsAutomationInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent02?: Agent02TurnsSnapshot | null;
+  agent20?: Agent20AutomationSnapshot | null;
+}
+
+export function TurnsAutomationInflationPanel(props: TurnsAutomationInflationPanelProps) {
+  const turns = props.agent02 ?? {
+    turn: props.inputs.turn,
+    calendarSeasonBand: props.inputs.highInflationScenario ? ('peak_demand' as const) : ('normal' as const),
+    policyReviewWindowOpen: props.inputs.fiscalPressure === 'critical',
+    multiTurnInflationCarryover: props.inputs.householdInflationScenarioActive ? 0.32 : 0.12,
+    fiscalCalendarInflationLatch: props.inputs.creditShockActive,
+    multiTurnCarryoverBand: props.inputs.highInflationScenario ? ('persistent' as const) : ('building' as const),
+  };
+
+  const automation = props.agent20 ?? {
+    turn: props.inputs.turn,
+    macroAutopilotInflationBias: props.inputs.highInflationScenario ? ('inflate' as const) : ('neutral' as const),
+    unattendedShockDriftActive: props.inputs.creditShockActive,
+    automationConfidenceScore: props.inputs.publicStability < 45 ? 0.38 : 0.62,
+    idleMacroInflationEscalation: props.inputs.householdInflationScenarioActive,
+    autopilotDriftCascadeBand: props.inputs.fiscalPressure === 'critical' ? ('runaway' as const) : ('drifting' as const),
+  };
+
+  const calendar = assessCalendarSeasonInflationCarryover({
+    calendarSeasonBand: turns.calendarSeasonBand,
+    policyReviewWindowOpen: turns.policyReviewWindowOpen,
+    multiTurnInflationCarryover: turns.multiTurnInflationCarryover,
+    fiscalCalendarInflationLatch: turns.fiscalCalendarInflationLatch === true,
+    multiTurnCarryoverBand: turns.multiTurnCarryoverBand ?? 'muted',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const drift = assessAutomationAutopilotInflationDrift({
+    macroAutopilotInflationBias: automation.macroAutopilotInflationBias,
+    unattendedShockDriftActive: automation.unattendedShockDriftActive,
+    automationConfidenceScore: automation.automationConfidenceScore,
+    idleMacroInflationEscalation: automation.idleMacroInflationEscalation === true,
+    autopilotDriftCascadeBand: automation.autopilotDriftCascadeBand ?? 'none',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-turns-automation-inflation" data-testid="turns-automation-inflation-panel">
+      <h4>Calendar carryover & automation drift (round 25)</h4>
+      <p>
+        Calendar {calendar.carryoverBand} · index {calendar.calendarIndex.toFixed(0)} · score adj{' '}
+        {calendarSeasonInflationCarryoverScoreAdjustment(calendar.carryoverBand)}
+      </p>
+      <p>
+        Autopilot {drift.driftBand} · index {drift.autopilotIndex.toFixed(0)} · score adj{' '}
+        {automationAutopilotInflationDriftScoreAdjustment(drift.driftBand)}
+      </p>
+      <p data-testid="turns-automation-note">{calendar.narrative}</p>
+      <p>{drift.narrative}</p>
     </div>
   );
 }

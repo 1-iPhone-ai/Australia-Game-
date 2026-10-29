@@ -42,11 +42,13 @@ import type { GuardianInflationInterventionBand } from '../inflation/guardian-in
 import type { TeamIntelligenceConsensusBand } from '../inflation/team-intelligence-consensus-inflation.js';
 import type { StrategicGeopoliticalPremiumBand } from '../inflation/strategic-geopolitical-inflation-premium.js';
 import type { AiMemoryInflationRecallBand } from '../inflation/ai-memory-inflation-recall-inflation.js';
+import type { CalendarSeasonInflationCarryoverBand } from '../inflation/calendar-season-inflation-carryover.js';
+import type { AutomationAutopilotInflationDriftBand } from '../inflation/automation-autopilot-inflation-drift.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r24';
+  schemaVersion: '10.14.agent10.r25';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -90,6 +92,8 @@ export interface Agent21InflationForecastBundle {
   terminalTeamIntelligenceConsensus: TeamIntelligenceConsensusBand;
   terminalStrategicGeopoliticalPremium: StrategicGeopoliticalPremiumBand;
   terminalAiMemoryInflationRecall: AiMemoryInflationRecallBand;
+  terminalCalendarSeasonInflationCarryover: CalendarSeasonInflationCarryoverBand;
+  terminalAutomationAutopilotInflationDrift: AutomationAutopilotInflationDriftBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -118,7 +122,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r24',
+    schemaVersion: '10.14.agent10.r25',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -162,6 +166,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalTeamIntelligenceConsensus: lastPoint?.teamIntelligenceConsensusBand ?? 'anchored',
     terminalStrategicGeopoliticalPremium: lastPoint?.strategicGeopoliticalPremiumBand ?? 'contained',
     terminalAiMemoryInflationRecall: lastPoint?.aiMemoryInflationRecallBand ?? 'anchored',
+    terminalCalendarSeasonInflationCarryover: lastPoint?.calendarSeasonInflationCarryoverBand ?? 'off_season',
+    terminalAutomationAutopilotInflationDrift: lastPoint?.automationAutopilotInflationDriftBand ?? 'neutral',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

@@ -7,6 +7,10 @@ export interface Agent02TurnsSnapshot {
   calendarSeasonBand: 'off_peak' | 'normal' | 'peak_demand';
   policyReviewWindowOpen: boolean;
   multiTurnInflationCarryover: number;
+  /** Round 25: fiscal calendar inflation latch across turns. */
+  fiscalCalendarInflationLatch?: boolean;
+  /** Round 25: multi-turn carryover persistence band. */
+  multiTurnCarryoverBand?: 'muted' | 'building' | 'persistent';
 }
 
 export function mergeAgent02IntoMacroFinancialInputs(
@@ -32,10 +36,17 @@ export function mergeAgent02IntoMacroFinancialInputs(
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
+  let highInflationScenario = base.highInflationScenario;
+  if (snapshot.fiscalCalendarInflationLatch && snapshot.multiTurnCarryoverBand === 'persistent') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
   return {
     ...base,
     turn: Math.max(base.turn, snapshot.turn),
     inflationSettingMultiplier,
+    highInflationScenario,
   };
 }
 
