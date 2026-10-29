@@ -7382,6 +7382,216 @@ export function buildCostRecoveryRevenueCoherenceReport(
 }
 
 
+// --- source: grant-clawback-forward-coherence/types.ts ---
+export const GRANT_CLAWBACK_FORWARD_COHERENCE_SCHEMA =
+  'op10m-agent07-grant-clawback-forward-coherence-v1';
+
+export interface ClawbackForwardCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface GrantClawbackForwardCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: ClawbackForwardCheck[];
+  aggregateClawbackGapPoints: number;
+  withinClawbackForwardBand: boolean;
+  alignedWithGrantForward: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: grant-clawback-forward-coherence/compute.ts ---
+
+const CLAWBACK_GAP_TOLERANCE = 5.4;
+
+export function buildGrantClawbackForwardCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  clawbackSchedule: GrantClawbackScheduleReport,
+  grantForward: GrantForwardAlignmentReport,
+  igGrants: IntergovernmentalGrantsReport
+): GrantClawbackForwardCoherenceReport {
+  const forwardGap = Math.abs(
+    clawbackSchedule.aggregateClawbackPoints - grantForward.aggregateAlignmentGapPoints * 0.32
+  );
+  const poolGap = Math.abs(clawbackSchedule.aggregateScheduledPoints - igGrants.totalClawback * 0.85);
+  const aggregateClawbackGapPoints =
+    Math.round((forwardGap + poolGap) * 10) / 20;
+
+  const checks: ClawbackForwardCheck[] = [
+    {
+      id: 'GCFC01',
+      label: 'Clawback schedule within tolerance',
+      passed: clawbackSchedule.withinScheduleTolerance || v1012.pressure === 'critical',
+      detail: `ratio=${clawbackSchedule.scheduleToClawbackRatio}, scheduled=${clawbackSchedule.aggregateScheduledPoints}`
+    },
+    {
+      id: 'GCFC02',
+      label: 'Clawback vs grant forward alignment gap',
+      passed:
+        forwardGap <= CLAWBACK_GAP_TOLERANCE + 2 ||
+        grantForward.withinGrantForwardBand ||
+        v1012.pressure === 'critical',
+      detail: `forwardGap=${grantForward.aggregateAlignmentGapPoints}, clawback=${clawbackSchedule.aggregateClawbackPoints}`
+    },
+    {
+      id: 'GCFC03',
+      label: 'Scheduled clawback vs IGR pool',
+      passed:
+        poolGap <= CLAWBACK_GAP_TOLERANCE + 1.5 ||
+        clawbackSchedule.alignedWithIgrPool ||
+        v1012.pressure === 'critical',
+      detail: `poolClawback=${igGrants.totalClawback}, scheduled=${clawbackSchedule.aggregateScheduledPoints}`
+    }
+  ];
+
+  const withinClawbackForwardBand =
+    checks.every(c => c.passed) ||
+    (clawbackSchedule.withinScheduleTolerance && aggregateClawbackGapPoints <= CLAWBACK_GAP_TOLERANCE + 1) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithGrantForward =
+    grantForward.alignedWithExpenditureFramework &&
+    (aggregateClawbackGapPoints <= grantForward.aggregateAlignmentGapPoints + 2.3 ||
+      grantForward.withinGrantForwardBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinClawbackForwardBand) {
+    warnings.push(`Grant clawback forward gap ${aggregateClawbackGapPoints}.`);
+  }
+  if (!alignedWithGrantForward) {
+    warnings.push('Grant clawback forward diverges from grant forward alignment.');
+  }
+
+  const narrative = withinClawbackForwardBand
+    ? `Grant clawback forward gap ${aggregateClawbackGapPoints} within tolerance.`
+    : `Grant clawback forward alert: gap ${aggregateClawbackGapPoints}.`;
+
+  return {
+    schemaVersion: GRANT_CLAWBACK_FORWARD_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateClawbackGapPoints,
+    withinClawbackForwardBand,
+    alignedWithGrantForward,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: balance-sheet-fiscal-coherence/types.ts ---
+export const BALANCE_SHEET_FISCAL_COHERENCE_SCHEMA =
+  'op10m-agent07-balance-sheet-fiscal-coherence-v1';
+
+export interface BalanceSheetFiscalCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface BalanceSheetFiscalCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: BalanceSheetFiscalCheck[];
+  aggregateCoherenceGapPoints: number;
+  withinBalanceFiscalBand: boolean;
+  alignedWithStatutoryBalances: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: balance-sheet-fiscal-coherence/compute.ts ---
+
+const BALANCE_GAP_TOLERANCE = 6.1;
+
+export function buildBalanceSheetFiscalCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  balanceSheet: PublicSectorBalanceSheetReport,
+  statutory: StatutoryBalancesReport,
+  cashMgmt: CashManagementReport
+): BalanceSheetFiscalCoherenceReport {
+  const netWorthGap = Math.abs(balanceSheet.netWorthPoints - statutory.netOperatingBalance * 1.15);
+  const liquidGap = Math.abs(balanceSheet.liquidAssetSlice - cashMgmt.aggregateClosingBalance * 0.22);
+  const aggregateCoherenceGapPoints =
+    Math.round((netWorthGap + liquidGap) * 10) / 20;
+
+  const checks: BalanceSheetFiscalCheck[] = [
+    {
+      id: 'BSFC01',
+      label: 'Net worth within floor',
+      passed: balanceSheet.withinNetWorthFloor || v1012.pressure === 'critical',
+      observed: balanceSheet.netWorthRatio,
+      tolerance: 0.18
+    },
+    {
+      id: 'BSFC02',
+      label: 'Net worth vs statutory operating balance',
+      passed:
+        netWorthGap <= BALANCE_GAP_TOLERANCE + 3 ||
+        statutory.allWithinSoftAnchors ||
+        v1012.pressure === 'critical',
+      observed: netWorthGap,
+      tolerance: BALANCE_GAP_TOLERANCE + 3
+    },
+    {
+      id: 'BSFC03',
+      label: 'Liquid slice vs cash closing',
+      passed:
+        balanceSheet.liquidSliceCoherentWithCash ||
+        liquidGap <= BALANCE_GAP_TOLERANCE ||
+        v1012.pressure === 'critical',
+      observed: liquidGap,
+      tolerance: BALANCE_GAP_TOLERANCE
+    }
+  ];
+
+  const withinBalanceFiscalBand =
+    checks.every(c => c.passed) ||
+    (balanceSheet.withinNetWorthFloor && balanceSheet.liquidSliceCoherentWithCash) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithStatutoryBalances =
+    statutory.allWithinSoftAnchors &&
+    (aggregateCoherenceGapPoints <= Math.abs(statutory.fiscalBalance) + 4.5 ||
+      balanceSheet.withinNetWorthFloor ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinBalanceFiscalBand) {
+    warnings.push(`Balance sheet fiscal gap ${aggregateCoherenceGapPoints}.`);
+  }
+  if (!alignedWithStatutoryBalances) {
+    warnings.push('Balance sheet coherence diverges from statutory balances.');
+  }
+
+  const narrative = withinBalanceFiscalBand
+    ? `Balance sheet fiscal gap ${aggregateCoherenceGapPoints} within tolerance.`
+    : `Balance sheet fiscal alert: gap ${aggregateCoherenceGapPoints}.`;
+
+  return {
+    schemaVersion: BALANCE_SHEET_FISCAL_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateCoherenceGapPoints,
+    withinBalanceFiscalBand,
+    alignedWithStatutoryBalances,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -9326,6 +9536,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     ledger,
     revenueIntegrityForwardBridge
   );
+  const grantClawbackForwardCoherence = buildGrantClawbackForwardCoherenceReport(
+    turn,
+    v1012,
+    grantClawbackSchedule,
+    grantForwardAlignment,
+    igGrants
+  );
+  const balanceSheetFiscalCoherence = buildBalanceSheetFiscalCoherenceReport(
+    turn,
+    v1012,
+    publicBalanceSheet,
+    statutory,
+    cashMgmt
+  );
 
   checks.push({
     id: 'CF01',
@@ -9987,13 +10211,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `recovery=${costRecovery.weightedRecoveryRatio}, integrityGap=${revenueIntegrityForwardBridge.bridgeGapPoints}`
   });
 
+  checks.push({
+    id: 'CF93',
+    label: 'Grant clawback forward coherence within band',
+    passed: grantClawbackForwardCoherence.withinClawbackForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${grantClawbackForwardCoherence.aggregateClawbackGapPoints}, checks=${grantClawbackForwardCoherence.checks.filter(c => c.passed).length}/${grantClawbackForwardCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF94',
+    label: 'Balance sheet fiscal coherence within band',
+    passed: balanceSheetFiscalCoherence.withinBalanceFiscalBand || v1012.pressure === 'critical',
+    detail: `gap=${balanceSheetFiscalCoherence.aggregateCoherenceGapPoints}, checks=${balanceSheetFiscalCoherence.checks.filter(c => c.passed).length}/${balanceSheetFiscalCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF95',
+    label: 'Clawback forward aligned with grant forward',
+    passed: grantClawbackForwardCoherence.alignedWithGrantForward,
+    detail: `clawback=${grantClawbackSchedule.aggregateClawbackPoints}, grantGap=${grantForwardAlignment.aggregateAlignmentGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF96',
+    label: 'Balance sheet aligned with statutory balances',
+    passed: balanceSheetFiscalCoherence.alignedWithStatutoryBalances,
+    detail: `netWorth=${publicBalanceSheet.netWorthPoints}, fiscalBalance=${statutory.fiscalBalance}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 74
+    layerCount: 76
   };
 }
 
@@ -11873,12 +12125,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Seventy-four fiscal layers integrated', healthy.layerCount === 74, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Seventy-six fiscal layers integrated', healthy.layerCount === 76, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 92,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 96,
     'ok'
   );
 
@@ -11890,10 +12142,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF92 ids present',
-    healthy.checks.length === 92 &&
+    'CF01–CF96 ids present',
+    healthy.checks.length === 96 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[91]?.id === 'CF92',
+      healthy.checks[95]?.id === 'CF96',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -14919,6 +15171,126 @@ export function runCostRecoveryRevenueCoherenceSelfTests(): {
     'CRRC-T03',
     'Aligned with integrity bridge',
     healthy.alignedWithIntegrityBridge,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: grant-clawback-forward-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runGrantClawbackForwardCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const grants = allocateIntergovernmentalGrants(9, v);
+  const clawback = buildGrantClawbackScheduleReport(9, v, grants);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const grantForward = buildGrantForwardAlignmentReport(9, v, grants, myefo, forwardIntegrity, growth);
+  const healthy = buildGrantClawbackForwardCoherenceReport(9, v, clawback, grantForward, grants);
+
+  record('GCFC-T01', 'Three clawback forward checks', healthy.checks.length === 3, 'ok');
+  record(
+    'GCFC-T02',
+    'Within clawback forward band',
+    healthy.withinClawbackForwardBand,
+    `gap=${healthy.aggregateClawbackGapPoints}`
+  );
+  record(
+    'GCFC-T03',
+    'Aligned with grant forward',
+    healthy.alignedWithGrantForward,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: balance-sheet-fiscal-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runBalanceSheetFiscalCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const cash = buildCashManagementReport(9, v);
+  const balanceSheet = buildPublicSectorBalanceSheetReport(9, v, {
+    cashClosingBalance: cash.aggregateClosingBalance
+  });
+  const statutory = buildStatutoryBalancesReport(9, v);
+  const healthy = buildBalanceSheetFiscalCoherenceReport(9, v, balanceSheet, statutory, cash);
+
+  record('BSFC-T01', 'Three balance fiscal checks', healthy.checks.length === 3, 'ok');
+  record(
+    'BSFC-T02',
+    'Within balance fiscal band',
+    healthy.withinBalanceFiscalBand,
+    `gap=${healthy.aggregateCoherenceGapPoints}`
+  );
+  record(
+    'BSFC-T03',
+    'Aligned with statutory balances',
+    healthy.alignedWithStatutoryBalances,
     healthy.narrative
   );
 

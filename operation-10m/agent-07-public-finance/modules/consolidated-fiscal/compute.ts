@@ -49,6 +49,8 @@ import { buildProgramPerformanceFiscalBridgeReport } from '../program-performanc
 import { buildTransparencyForwardCoherenceReport } from '../transparency-forward-coherence/compute';
 import { buildContingentLiabilityForwardBridgeReport } from '../contingent-liability-forward-bridge/compute';
 import { buildCostRecoveryRevenueCoherenceReport } from '../cost-recovery-revenue-coherence/compute';
+import { buildGrantClawbackForwardCoherenceReport } from '../grant-clawback-forward-coherence/compute';
+import { buildBalanceSheetFiscalCoherenceReport } from '../balance-sheet-fiscal-coherence/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -304,6 +306,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     costRecovery,
     ledger,
     revenueIntegrityForwardBridge
+  );
+  const grantClawbackForwardCoherence = buildGrantClawbackForwardCoherenceReport(
+    turn,
+    v1012,
+    grantClawbackSchedule,
+    grantForwardAlignment,
+    igGrants
+  );
+  const balanceSheetFiscalCoherence = buildBalanceSheetFiscalCoherenceReport(
+    turn,
+    v1012,
+    publicBalanceSheet,
+    statutory,
+    cashMgmt
   );
 
   checks.push({
@@ -966,12 +982,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `recovery=${costRecovery.weightedRecoveryRatio}, integrityGap=${revenueIntegrityForwardBridge.bridgeGapPoints}`
   });
 
+  checks.push({
+    id: 'CF93',
+    label: 'Grant clawback forward coherence within band',
+    passed: grantClawbackForwardCoherence.withinClawbackForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${grantClawbackForwardCoherence.aggregateClawbackGapPoints}, checks=${grantClawbackForwardCoherence.checks.filter(c => c.passed).length}/${grantClawbackForwardCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF94',
+    label: 'Balance sheet fiscal coherence within band',
+    passed: balanceSheetFiscalCoherence.withinBalanceFiscalBand || v1012.pressure === 'critical',
+    detail: `gap=${balanceSheetFiscalCoherence.aggregateCoherenceGapPoints}, checks=${balanceSheetFiscalCoherence.checks.filter(c => c.passed).length}/${balanceSheetFiscalCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF95',
+    label: 'Clawback forward aligned with grant forward',
+    passed: grantClawbackForwardCoherence.alignedWithGrantForward,
+    detail: `clawback=${grantClawbackSchedule.aggregateClawbackPoints}, grantGap=${grantForwardAlignment.aggregateAlignmentGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF96',
+    label: 'Balance sheet aligned with statutory balances',
+    passed: balanceSheetFiscalCoherence.alignedWithStatutoryBalances,
+    detail: `netWorth=${publicBalanceSheet.netWorthPoints}, fiscalBalance=${statutory.fiscalBalance}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 74
+    layerCount: 76
   };
 }
