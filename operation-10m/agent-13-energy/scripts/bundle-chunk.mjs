@@ -47,6 +47,7 @@ const FILES = [
   'nature-positive-siting-biodiversity-coexistence-ledger.ts',
   'climate-adaptation-flood-heat-resilience-ledger.ts',
   'industrial-symbiosis-waste-heat-recovery-ledger.ts',
+  'green-hydrogen-export-electrolyser-hub-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -101,6 +102,8 @@ const EXPORT_MANIFEST = [
   'V1014_FLOOD_HEAT_RESILIENCE_CATALOG',
   'V1014_INDUSTRIAL_SYMBIOSIS_CATALOG',
   'V1014_WASTE_HEAT_RECOVERY_CATALOG',
+  'V1014_GREEN_HYDROGEN_EXPORT_CATALOG',
+  'V1014_ELECTROLYSER_HUB_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -188,6 +191,9 @@ const EXPORT_MANIFEST = [
   'runAgent13SymbiosisWasteHeatScaleSelfTests',
   'runAgent13SymbiosisWasteHeatTurnScenario',
   'V1014_SYMBIOSIS_WASTE_HEAT_TURN_SCENARIOS',
+  'runAgent13H2ExportElectrolyserScaleSelfTests',
+  'runAgent13H2ExportElectrolyserTurnScenario',
+  'V1014_H2_EXPORT_ELECTROLYSER_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

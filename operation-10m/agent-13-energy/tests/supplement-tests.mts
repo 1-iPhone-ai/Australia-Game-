@@ -120,6 +120,11 @@ import {
   V1014_SYMBIOSIS_WASTE_HEAT_TURN_SCENARIOS,
 } from '../modules/industrial-symbiosis-waste-heat-recovery-ledger.ts';
 import {
+  runAgent13H2ExportElectrolyserScaleSelfTests,
+  runAgent13H2ExportElectrolyserTurnScenario,
+  V1014_H2_EXPORT_ELECTROLYSER_TURN_SCENARIOS,
+} from '../modules/green-hydrogen-export-electrolyser-hub-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -371,6 +376,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const swhTurn = runAgent13SymbiosisWasteHeatTurnScenario(V1014_SYMBIOSIS_WASTE_HEAT_TURN_SCENARIOS[0]);
   ok(swhTurn.passed);
+
+  const h2ExportElectrolyser = runAgent13H2ExportElectrolyserScaleSelfTests();
+  ok(h2ExportElectrolyser.failed === 0 && h2ExportElectrolyser.passed >= 7);
+
+  const heTurn = runAgent13H2ExportElectrolyserTurnScenario(V1014_H2_EXPORT_ELECTROLYSER_TURN_SCENARIOS[0]);
+  ok(heTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }
