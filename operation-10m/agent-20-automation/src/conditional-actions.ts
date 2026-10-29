@@ -20,6 +20,7 @@ export interface ConditionalActionContext {
   currentTurn: number;
   isNewDayForActor: boolean;
   extendedTriggersEnabled: boolean;
+  consecutiveIdleTurns?: number;
   settingsFlags: Record<string, boolean | undefined>;
 }
 
@@ -28,6 +29,10 @@ const TRIGGER_TYPES: HumanAutomationTriggerType[] = [
   'day_start',
   'cash_below_threshold',
   'cash_above_threshold',
+  'resource_quantity_at_least',
+  'resource_quantity_at_most',
+  'consecutive_idle_turns_at_or_above',
+  'level_at_or_above',
   'manual_test_only',
   'day_number_at_or_above',
   'turn_number_at_or_above',
@@ -52,6 +57,22 @@ export function evaluateAutomationTrigger(
       return actor.money < (trigger.thresholdAmount ?? 0);
     case 'cash_above_threshold':
       return actor.money > (trigger.thresholdAmount ?? 0);
+    case 'resource_quantity_at_least': {
+      const res = trigger.resource || '';
+      const count = actor.inventory.filter(r => r === res).length;
+      return count >= (trigger.thresholdAmount ?? 0);
+    }
+    case 'resource_quantity_at_most': {
+      const res = trigger.resource || '';
+      const count = actor.inventory.filter(r => r === res).length;
+      return count <= (trigger.thresholdAmount ?? 0);
+    }
+    case 'consecutive_idle_turns_at_or_above':
+      return extendedTriggersEnabled
+        ? (ctx.consecutiveIdleTurns ?? 0) >= (trigger.thresholdAmount ?? 1)
+        : false;
+    case 'level_at_or_above':
+      return extendedTriggersEnabled ? (actor.level ?? 1) >= (trigger.thresholdAmount ?? 1) : false;
     case 'day_number_at_or_above':
       return extendedTriggersEnabled ? currentDay >= (trigger.thresholdAmount ?? 0) : false;
     case 'turn_number_at_or_above':

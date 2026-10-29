@@ -5,11 +5,13 @@ export * from './logs.js';
 export * from './safe-time-advance.js';
 export * from './national-steward.js';
 export * from './bridge-hooks.js';
+export * from './idle-automation-depth.js';
 
 import type { O10SelfTestResult } from './types.js';
 import { runO10Agent20NationalStewardSelfTests } from './national-steward.js';
 import { createDefaultNationalStewardBridgeHooks } from './bridge-hooks.js';
 import { createDefaultAutonomousIdleNationalPersisted } from './national-steward.js';
+import { runO10Agent20IdleDepthSelfTests } from './idle-automation-depth.js';
 
 /** Full module self-test bundle for Agent 25 dev lab registration. */
 export function runO10Agent20ModuleSelfTests(): {
@@ -45,6 +47,7 @@ export function runO10Agent20ModuleSelfTests(): {
     name: 'interrupt latches manual override',
     passed: interrupted?.playerOverride.latched === true,
   });
+  results.push(...runO10Agent20IdleDepthSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }

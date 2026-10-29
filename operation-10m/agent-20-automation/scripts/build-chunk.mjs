@@ -20,6 +20,7 @@ const FILES = [
   'safe-time-advance.ts',
   'national-steward.ts',
   'bridge-hooks.ts',
+  'idle-automation-depth.ts',
   'index.ts',
 ];
 

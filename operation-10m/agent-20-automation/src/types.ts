@@ -1,6 +1,6 @@
 /** Operation 10M Agent 20 — shared types (mirror V9.4 SECTION 20AN + HA2). */
 
-export const O10_AGENT20_MODULE_VERSION = '10m.1.0.0-agent20';
+export const O10_AGENT20_MODULE_VERSION = '10m.1.1.0-agent20';
 export const O10_AGENT20_SCHEMA_VERSION = '10.14.0-agent20';
 
 export const O10_AUTOMATION_PATH_IDS = [
@@ -124,6 +124,10 @@ export type HumanAutomationTriggerType =
   | 'day_start'
   | 'cash_below_threshold'
   | 'cash_above_threshold'
+  | 'resource_quantity_at_least'
+  | 'resource_quantity_at_most'
+  | 'consecutive_idle_turns_at_or_above'
+  | 'level_at_or_above'
   | 'manual_test_only'
   | 'day_number_at_or_above'
   | 'turn_number_at_or_above';
@@ -222,6 +226,39 @@ export interface SafeTimeAdvanceVerdict {
 }
 
 export type O10SelfTestResult = { id: string; name: string; passed: boolean; detail?: string };
+
+export type IdleAutomationBand = 'active' | 'drifting' | 'idle' | 'deep_idle' | 'steward_tick';
+
+export interface PortableHumanAutomationRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  authorityDisabled: boolean;
+  priority: number;
+  activeFromDay: number;
+  activeUntilDay: number;
+  trigger: HumanAutomationTrigger;
+  conditions: PortableRequirementGroup | null;
+  limits: HumanAutomationExecutionLimits;
+  safety: HumanAutomationSafetyLimits;
+  stats: HumanAutomationExecutionStats;
+  actionType: string;
+  resolvedCost: number;
+  spendableCash: number;
+}
+
+export interface HumanAutomationSelectionResult {
+  selected: PortableHumanAutomationRule | null;
+  skipped: Array<{ ruleId: string; reason: string }>;
+  requiresConfirmation: boolean;
+}
+
+export interface AutomationRuleConflict {
+  ruleId: string;
+  otherRuleId: string;
+  kind: 'priority_collision' | 'trigger_overlap';
+  message: string;
+}
 
 export interface NationalStewardPlanStep {
   stepId: string;

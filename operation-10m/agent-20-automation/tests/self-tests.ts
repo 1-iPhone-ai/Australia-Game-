@@ -13,6 +13,9 @@ import {
   createDefaultAutonomousIdleNationalPersisted,
   buildNationalStewardEvaluationContext,
   evaluateNationalStewardSafeguards,
+  runO10Agent20IdleDepthSelfTests,
+  classifyIdleAutomationBand,
+  selectHumanAutomationCandidate,
 } from '../src/index.js';
 import type { SafeTimeAdvanceContext } from '../src/types.js';
 
@@ -152,11 +155,60 @@ function testSafeTimeAdvance() {
   );
 }
 
+function testIdleDepth() {
+  const depth = runO10Agent20IdleDepthSelfTests();
+  const failed = depth.filter(r => !r.passed);
+  assert.equal(failed.length, 0, failed.map(f => f.id).join(', '));
+  assert.equal(classifyIdleAutomationBand({ idleMs: 200_000, consecutiveIdleTurns: 4, stewardEnabled: true, playerPaused: false }), 'steward_tick');
+  const sel = selectHumanAutomationCandidate(
+    [
+      {
+        id: 'x',
+        name: 'X',
+        enabled: true,
+        authorityDisabled: false,
+        priority: 1,
+        activeFromDay: 0,
+        activeUntilDay: 999,
+        trigger: { type: 'turn_start' },
+        conditions: null,
+        limits: { maxRunsPerDay: 1, maxRunsTotal: null, cooldownTurns: 0 },
+        safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 3 },
+        stats: {
+          totalRuns: 0,
+          totalSuccesses: 0,
+          totalSkipped: 0,
+          totalFailed: 0,
+          lastRunDay: null,
+          lastRunTurn: null,
+          runsToday: 0,
+          runsTodayDay: -1,
+          consecutiveNoChangeCount: 0,
+          lastResultSummary: '',
+        },
+        actionType: 'wait',
+        resolvedCost: 0,
+        spendableCash: 500,
+      },
+    ],
+    {
+      actor: { money: 500, inventory: [], currentRegion: 'NSW' },
+      currentDay: 1,
+      currentTurn: 1,
+      isNewDayForActor: false,
+      extendedTriggersEnabled: true,
+      settingsFlags: {},
+    }
+  );
+  assert.equal(sel.selected?.id, 'x');
+}
+
 function main() {
   testConditionalActions();
   testLimits();
   testLogs();
   testSafeTimeAdvance();
+  testIdleDepth();
   const suite = runO10Agent20ModuleSelfTests();
   if (!suite.allPassed) {
     console.error('Module self-tests failed:', suite.results.filter(r => !r.passed));
