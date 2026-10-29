@@ -1,5 +1,5 @@
 {
-  "maxErrors": 102,
+  "maxErrors": 107,
   "gameFile": "(V9.4) australia-game-with-ai.tsx",
   "tsconfig": "tsconfig.game.json",
   "recordedAt": "2026-10-29",

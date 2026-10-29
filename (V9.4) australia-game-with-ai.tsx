@@ -136236,6 +136236,137 @@ export function runV94InteractionFeedbackSelfTests(): V9SelfTestResult[] {
 
 // ============================================================================
 
+export function runO111IntegrationSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  const settings = createDefaultGameSettings();
+  const runtimeFromSave = (save: SaveGameData): any => ({
+    ...JSON.parse(JSON.stringify(save.gameState)),
+    gameSettings: save.gameSettings,
+    player: save.player,
+    aiPlayer: save.aiPlayer,
+    actorsById: { player: save.player, ai: save.aiPlayer },
+    teamsById: {
+      [TEAM_PLAYER_ID]: createDefaultTeamState(TEAM_PLAYER_ID, 'Blue Team', ['player'], '#3b82f6'),
+      [TEAM_OPPONENT_ID]: createDefaultTeamState(TEAM_OPPONENT_ID, 'Rose Team', ['ai'], '#ec4899'),
+    },
+  });
+
+  check('o111_int_r5_save_load_reducer', 'Save round-trip → LOAD_STATE restores match day and treasury (R5)', () => {
+    const fixture = createV95SaveFixture({ day: 7, money: 4321 });
+    const tx = prepareSaveLoadTransaction(JSON.stringify(fixture));
+    if (!tx.ok || !tx.data) return tx.report.fatalErrors.join('|') || 'load failed';
+    const loaded = gameStateReducer(initialGameState, { type: 'LOAD_STATE', payload: tx.data.gameState });
+    return (loaded.day === 7 && tx.data.player.money === 4321) || `day=${loaded.day} money=${tx.data.player.money}`;
+  });
+
+  check('o111_int_r6_settings_chain', 'Match-scoped settings survive load and remain on runtime (R6)', () => {
+    const f: any = createV95SaveFixture();
+    f.gameSettings.v93CrisisIntensity = 'high';
+    f.gameSettings.autoModeSettings = { ...f.gameSettings.autoModeSettings, primaryGoal: 'regional_control' };
+    const tx = prepareSaveLoadTransaction(JSON.stringify(f));
+    if (!tx.ok || !tx.data) return 'load failed';
+    const rt = runtimeFromSave(tx.data);
+    return (rt.gameSettings.v93CrisisIntensity === 'high' && rt.gameSettings.autoModeSettings.primaryGoal === 'regional_control') || JSON.stringify(rt.gameSettings).slice(0, 120);
+  });
+
+  check('o111_int_r7_migration_smoke', 'Legacy gameVersion migrates through v95MigrateSaveForLoad (R7)', () => {
+    const f: any = createV95SaveFixture();
+    f.metadata.gameVersion = '7.0.0';
+    const validated = validateSaveDataCore(f);
+    const m = v95MigrateSaveForLoad(validated);
+    return (m.migrated && m.data.metadata.gameVersion === VERSION_CONSTANTS.GAME_VERSION) || `${m.migrated}/${m.data.metadata.gameVersion}`;
+  });
+
+  check('o111_int_r8_turn_order', 'ADVANCE_ACTOR_TURN cycles player → ai on loaded fixture (R8)', () => {
+    const rt = runtimeFromSave(createV95SaveFixture({ day: 3 }));
+    const st = { ...rt, currentActorId: 'player', turnOrder: ['player', 'ai'], turnCounter: 4 };
+    const after = gameStateReducer(st, { type: 'ADVANCE_ACTOR_TURN', payload: { turnOrder: ['player', 'ai'], fromCoPilotExecutor: true } });
+    return (after.currentActorId === 'ai' && after.turnCounter >= 4) || `${after.currentActorId}/${after.turnCounter}`;
+  });
+
+  check('o111_int_r8b_turn_counter', 'Two actor advances bump turnCounter without skipping human claim semantics (R8)', () => {
+    const rt = runtimeFromSave(createV95SaveFixture({ day: 2 }));
+    let st: any = { ...rt, currentActorId: 'player', turnOrder: ['player', 'ai'], turnCounter: 2 };
+    st = gameStateReducer(st, { type: 'ADVANCE_ACTOR_TURN', payload: { turnOrder: ['player', 'ai'], fromCoPilotExecutor: true } });
+    const tcAfterAi = st.turnCounter;
+    st = gameStateReducer(st, { type: 'ADVANCE_ACTOR_TURN', payload: { turnOrder: ['player', 'ai'] } });
+    return (st.currentActorId === 'player' && st.turnCounter > tcAfterAi) || `${st.currentActorId}/${st.turnCounter}/${tcAfterAi}`;
+  });
+
+  check('o111_int_r9_partial_load', 'Partial LOAD_STATE preserves AI thinking; full payload clears it (R9 / undo-safe load)', () => {
+    const partial = gameStateReducer({ isAiThinking: true, currentTurn: 'ai' }, { type: 'LOAD_STATE', payload: { aiMemoriesByActor: {} } });
+    const full = gameStateReducer({ isAiThinking: true, currentTurn: 'ai' }, { type: 'LOAD_STATE', payload: { currentTurn: 'player', day: 3 } });
+    return (partial.isAiThinking === true && full.isAiThinking === false) || `${partial.isAiThinking}/${full.isAiThinking}`;
+  });
+
+  check('o111_int_r12_region_travel', 'Travel action updates region on canonical runtime (R12 smoke)', () => {
+    const rt = runtimeFromSave(createV95SaveFixture({ money: 5000 }));
+    const before = rt.player.currentRegion;
+    const r = reduceGameAction(rt, { type: 'travel', actorId: 'player', parameters: { region: 'WA' } } as any, { active: true, actorId: 'player' } as any);
+    const after = (r.nextState as any).actorsById.player.currentRegion;
+    return (before !== 'WA' && after === 'WA' && r.success !== false) || `${before}→${after} success=${r.success}`;
+  });
+
+  check('o111_int_r13_market_work', 'Work action mutates treasury on canonical runtime (R13 production smoke)', () => {
+    const rt = runtimeFromSave(createV95SaveFixture({ money: 1000 }));
+    const r = reduceGameAction(rt, { type: 'work', actorId: 'player', parameters: {} } as any, { active: true, actorId: 'player' } as any);
+    const money = (r.nextState as any).actorsById.player.money;
+    return (money === 1050) || `money=${money}`;
+  });
+
+  check('o111_int_r16_guardian_notify', 'Guardian notify-only mode allows risky action without blocking (R16 advisory)', () => {
+    const base = { ...createDefaultGuardianAiSettings(), enabled: true, protectionLevel: 'major_mistakes' as any };
+    const ctx: any = {
+      gameState: { day: 5, turn: 5 }, settings: { ...base, responseMode: 'notify_only' }, actorId: 'player',
+      actionType: 'launch_expedition', actionPayload: { cost: 5000 }, source: 'co_pilot', day: 5, turn: 5,
+      currentActionTokens: 3, currentCash: 1000, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false,
+    };
+    const verdict = evaluateGuardianRiskPipeline(ctx);
+    return (verdict.allowedToProceed === true && verdict.confirmationRequired === false) || JSON.stringify(verdict).slice(0, 120);
+  });
+
+  check('o111_int_canonical_reducer_chain', 'Save → runtime → reduceGameAction keeps injected actor money (cross-layer)', () => {
+    const tx = prepareSaveLoadTransaction(JSON.stringify(createV95SaveFixture({ money: 2000 })));
+    if (!tx.ok || !tx.data) return 'load failed';
+    const rt = runtimeFromSave(tx.data);
+    rt.player.money = 2000;
+    rt.actorsById.player.money = 2000;
+    const r = reduceGameAction(rt, { type: 'work', actorId: 'player', parameters: {} } as any, { active: true, actorId: 'player' } as any);
+    const money = (r.nextState as any).actorsById.player.money;
+    return money === 2050 || `money=${money}`;
+  });
+
+  check('o111_int_build_save_roundtrip', 'buildSaveData → prepareSaveLoadTransaction accepts fresh snapshot (R5 helper path)', () => {
+    const base = createV95SaveFixture();
+    const gs = JSON.parse(JSON.stringify(base.gameState));
+    gs.day = 2;
+    const built = buildSaveData(gs, settings, undefined, { saveDescription: 'o111-int', timestamp: base.metadata.timestamp, gameVersion: base.metadata.gameVersion });
+    const raw = { ...base, ...built, gameState: gs, metadata: { ...base.metadata, ...built.metadata, saveDescription: 'o111-int' } };
+    const tx = prepareSaveLoadTransaction(JSON.stringify(raw));
+    return (tx.ok && tx.data?.gameState?.day === 2) || tx.report.fatalErrors.join('|');
+  });
+
+  check('o111_int_isolated_globals', 'Integration checks do not advance global RNG counters when isolated', () => {
+    const before = JSON.stringify(globalDeterministicCounters);
+    const inner = v95WithIsolatedGlobals(() => {
+      const rt = runtimeFromSave(createV95SaveFixture({ money: 1000 }));
+      return reduceGameAction(rt, { type: 'work', actorId: 'player', parameters: {} } as any, { active: true, actorId: 'player' } as any);
+    });
+    const after = JSON.stringify(globalDeterministicCounters);
+    const money = (inner.nextState as any).actorsById.player.money;
+    return (money === 1050 && before === after) || `money=${money} drift=${before !== after}`;
+  });
+
+  return results;
+}
 // SECTION 20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
 // ============================================================================
 // Local-only diagnostics. No network, workers, telemetry or storage writes happen in this section; every
@@ -138785,6 +138916,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
+  { id: 'o111-int', label: 'O111 Cross-System Integration', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runO111IntegrationSelfTests() },
   { id: 'v94_a70', label: 'V9.4 Interaction Feedback (Agent 70)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94InteractionFeedbackSelfTests() },
   { id: 'o111_a68', label: 'O111 Accessibility (Agent 68)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111AccessibilitySelfTests() },
   { id: 'o111_a67', label: 'O111 Agent 67 Contextual Information', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111ContextualInformationSelfTests() },
