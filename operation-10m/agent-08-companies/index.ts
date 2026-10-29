@@ -404,6 +404,23 @@ export type {
   TransitionSustainmentBand,
 } from './production-transition-sustainment';
 
+export {
+  AGENT08_TRANSITION_RESILIENCE_SCHEMA_VERSION,
+  buildFirmProductionTransitionResilience,
+  classifyNationalResilienceBand,
+  computeNationalResiliencePressure,
+  computeNationalProductionTransitionResilience,
+  summarizeRegionalTransitionResilience,
+  runAgent08TransitionResilienceSelfTests,
+} from './production-transition-resilience';
+
+export type {
+  FirmProductionTransitionResilience,
+  NationalProductionTransitionResilience,
+  RegionalTransitionResilienceSummary,
+  TransitionResilienceBand,
+} from './production-transition-resilience';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -428,6 +445,7 @@ import { runAgent08TransitionDeploymentSelfTests } from './production-transition
 import { runAgent08TransitionValidationSelfTests } from './production-transition-validation';
 import { runAgent08TransitionConsolidationSelfTests } from './production-transition-consolidation';
 import { runAgent08TransitionSustainmentSelfTests } from './production-transition-sustainment';
+import { runAgent08TransitionResilienceSelfTests } from './production-transition-resilience';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -552,6 +570,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionResilience = runAgent08TransitionResilienceSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -577,5 +600,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...transitionValidation,
     ...transitionConsolidation,
     ...transitionSustainment,
+    ...transitionResilience,
   ];
 }
