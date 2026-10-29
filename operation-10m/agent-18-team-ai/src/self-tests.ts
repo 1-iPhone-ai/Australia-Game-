@@ -82,6 +82,9 @@ import { computeHandoffLeaseOverlapIndex } from './handoff-lease-overlap-index.t
 import { computeSaturationDeadlockCouplingIndex } from './saturation-deadlock-coupling-index.ts';
 import { computeCascadeLeaseConvergenceIndex } from './cascade-lease-convergence-index.ts';
 import { computeGradientAuditTensionIndex } from './gradient-audit-tension-index.ts';
+import { computeEscalationSaturationStackIndex } from './escalation-saturation-stack-index.ts';
+import { computeRecoveryCascadeMismatchIndex } from './recovery-cascade-mismatch-index.ts';
+import { computePersistenceGradientFrictionIndex } from './persistence-gradient-friction-index.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -2319,6 +2322,56 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.saturationDeadlockCouplingCombined === 'number' &&
       typeof dual.cascadeLeaseConvergenceCombined === 'number' &&
       typeof dual.gradientAuditTensionCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_escalation_saturation_stack', 'Escalation–saturation stack: tier plus coupling scores high', () => {
+    const report = computeEscalationSaturationStackIndex(3, 50, 55);
+    return report.stackIndex >= 48;
+  });
+
+  check(results, 'a18_recovery_cascade_mismatch', 'Recovery–cascade mismatch: breadth gap plus convergence scores high', () => {
+    const report = computeRecoveryCascadeMismatchIndex(45, 48, 3);
+    return report.mismatchIndex >= 47;
+  });
+
+  check(results, 'a18_persistence_gradient_friction', 'Persistence–gradient friction: churn under tension scores high', () => {
+    const report = computePersistenceGradientFrictionIndex(44, 46, 'declining');
+    return report.frictionIndex >= 46;
+  });
+
+  check(results, 'a18_eval_round19_meta', 'Layer: round-19 meta exposes escalation stack, recovery mismatch, persistence friction', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.escalationSaturationStackIndex === 'number' &&
+      typeof m.recoveryCascadeMismatchIndex === 'number' &&
+      typeof m.persistenceGradientFrictionIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_escalation_saturation_stack', 'Audit: escalation–saturation stack surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, escalationSaturationStackIndex: 72 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /Escalation–saturation stack/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round19_combined', 'Dual team: round-19 combined stack, mismatch, friction exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.escalationSaturationStackCombined === 'number' &&
+      typeof dual.recoveryCascadeMismatchCombined === 'number' &&
+      typeof dual.persistenceGradientFrictionCombined === 'number'
     );
   });
 

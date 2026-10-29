@@ -74,6 +74,9 @@ import { computeHandoffLeaseOverlapIndex } from './handoff-lease-overlap-index.t
 import { computeSaturationDeadlockCouplingIndex } from './saturation-deadlock-coupling-index.ts';
 import { computeCascadeLeaseConvergenceIndex } from './cascade-lease-convergence-index.ts';
 import { computeGradientAuditTensionIndex } from './gradient-audit-tension-index.ts';
+import { computeEscalationSaturationStackIndex } from './escalation-saturation-stack-index.ts';
+import { computeRecoveryCascadeMismatchIndex } from './recovery-cascade-mismatch-index.ts';
+import { computePersistenceGradientFrictionIndex } from './persistence-gradient-friction-index.ts';
 import {
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
@@ -402,6 +405,18 @@ export function sanitizeTeamMultiAgentCoordinationState(
       gradientAuditTensionIndex:
         typeof metaRaw.gradientAuditTensionIndex === 'number'
           ? metaRaw.gradientAuditTensionIndex
+          : undefined,
+      escalationSaturationStackIndex:
+        typeof metaRaw.escalationSaturationStackIndex === 'number'
+          ? metaRaw.escalationSaturationStackIndex
+          : undefined,
+      recoveryCascadeMismatchIndex:
+        typeof metaRaw.recoveryCascadeMismatchIndex === 'number'
+          ? metaRaw.recoveryCascadeMismatchIndex
+          : undefined,
+      persistenceGradientFrictionIndex:
+        typeof metaRaw.persistenceGradientFrictionIndex === 'number'
+          ? metaRaw.persistenceGradientFrictionIndex
           : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
@@ -812,11 +827,25 @@ export function evaluateTeamMultiAgentLayer(
     state.meta.auditPressureIndex ?? 0,
   );
   gradientAuditTension.notes.forEach(n => diagnostics.push(n));
+  const escalationSaturationStack = computeEscalationSaturationStackIndex(
+    state.meta.coordinationEscalationTier ?? 0,
+    state.meta.saturationDeadlockCouplingIndex ?? 0,
+    state.meta.coordinationSaturationIndex ?? 0,
+  );
+  escalationSaturationStack.notes.forEach(n => diagnostics.push(n));
+  const recoveryCascadeMismatch = computeRecoveryCascadeMismatchIndex(
+    state.meta.recoveryActionBreadthIndex ?? 0,
+    state.meta.cascadeLeaseConvergenceIndex ?? 0,
+    state.meta.coordinationRecoveryUrgency ?? 0,
+  );
+  recoveryCascadeMismatch.notes.forEach(n => diagnostics.push(n));
   state = {
     ...state,
     meta: {
       ...state.meta,
       gradientAuditTensionIndex: gradientAuditTension.tensionIndex,
+      escalationSaturationStackIndex: escalationSaturationStack.stackIndex,
+      recoveryCascadeMismatchIndex: recoveryCascadeMismatch.mismatchIndex,
     },
   };
   state = { ...state, diagnostics };
@@ -839,6 +868,20 @@ export function evaluateTeamMultiAgentLayer(
     ...state,
     diagnostics,
     meta: { ...state.meta, persistenceChurnIndex: persistenceChurn.churnIndex },
+  };
+  const persistenceGradientFriction = computePersistenceGradientFrictionIndex(
+    persistenceChurn.churnIndex,
+    state.meta.gradientAuditTensionIndex ?? 0,
+    state.meta.compositeHealthTrend,
+  );
+  persistenceGradientFriction.notes.forEach(n => diagnostics.push(n));
+  state = {
+    ...state,
+    diagnostics,
+    meta: {
+      ...state.meta,
+      persistenceGradientFrictionIndex: persistenceGradientFriction.frictionIndex,
+    },
   };
 
   return {
