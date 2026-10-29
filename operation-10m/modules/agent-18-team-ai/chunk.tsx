@@ -352,6 +352,9 @@ export interface TeamMultiAgentCoordinationMeta {
   resonanceConvergenceFusionIndex?: number;
   pressureSynthesisCascadeIndex?: number;
   synthesisResonanceStackIndex?: number;
+  convergenceFusionPressureIndex?: number;
+  synthesisCascadeStackIndex?: number;
+  resonanceStackFusionIndex?: number;
 }
 
 export const AGENT18_LIMITS = {
@@ -5943,6 +5946,131 @@ export function combineDualTeamSynthesisResonanceStack(friendly: number, enemy: 
 }
 
 
+// --- source: convergence-fusion-pressure-index.ts ---
+export interface ConvergenceFusionPressureReport {
+  pressureIndex: number;
+  notes: string[];
+}
+
+/**
+ * Resonance–convergence fusion pressuring pressure–synthesis cascade under escalation.
+ */
+export function computeConvergenceFusionPressureIndex(
+  resonanceConvergenceFusionIndex: number,
+  pressureSynthesisCascadeIndex: number,
+  coordinationEscalationTier: number,
+): ConvergenceFusionPressureReport {
+  const notes: string[] = [];
+  if (resonanceConvergenceFusionIndex >= 44 && pressureSynthesisCascadeIndex >= 44) {
+    notes.push('Convergence fusion and synthesis cascade both elevated');
+  }
+  if (coordinationEscalationTier >= 2 && resonanceConvergenceFusionIndex >= 46) {
+    notes.push('Convergence–fusion pressure under active escalation');
+  }
+
+  const pressureIndex = Math.round(
+    Math.min(
+      100,
+      resonanceConvergenceFusionIndex * 0.38 +
+        pressureSynthesisCascadeIndex * 0.38 +
+        coordinationEscalationTier * 5 +
+        (resonanceConvergenceFusionIndex >= 48 && pressureSynthesisCascadeIndex >= 46 ? 14 : 0),
+    ),
+  );
+
+  return { pressureIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamConvergenceFusionPressure(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: synthesis-cascade-stack-index.ts ---
+export interface SynthesisCascadeStackReport {
+  stackIndex: number;
+  notes: string[];
+}
+
+/**
+ * Pressure–synthesis cascade stacking with synthesis–resonance stack under audit load.
+ */
+export function computeSynthesisCascadeStackIndex(
+  pressureSynthesisCascadeIndex: number,
+  synthesisResonanceStackIndex: number,
+  auditPressureIndex: number,
+): SynthesisCascadeStackReport {
+  const notes: string[] = [];
+  if (pressureSynthesisCascadeIndex >= 44 && synthesisResonanceStackIndex >= 44) {
+    notes.push('Synthesis cascade and resonance stack both elevated');
+  }
+  if (auditPressureIndex >= 40 && pressureSynthesisCascadeIndex >= 46) {
+    notes.push('Audit pressure driving synthesis–cascade stack');
+  }
+
+  const stackIndex = Math.round(
+    Math.min(
+      100,
+      pressureSynthesisCascadeIndex * 0.37 +
+        synthesisResonanceStackIndex * 0.37 +
+        auditPressureIndex * 0.2 +
+        (pressureSynthesisCascadeIndex >= 48 && synthesisResonanceStackIndex >= 46 ? 15 : 0),
+    ),
+  );
+
+  return { stackIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamSynthesisCascadeStack(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: resonance-stack-fusion-index.ts ---
+export interface ResonanceStackFusionReport {
+  fusionIndex: number;
+  notes: string[];
+}
+
+/**
+ * Synthesis–resonance stack fusing with resonance–convergence fusion under composite health.
+ */
+export function computeResonanceStackFusionIndex(
+  synthesisResonanceStackIndex: number,
+  resonanceConvergenceFusionIndex: number,
+  coordinationCompositeScore: number,
+): ResonanceStackFusionReport {
+  const notes: string[] = [];
+  const weakComposite = coordinationCompositeScore < 55;
+  if (synthesisResonanceStackIndex >= 44 && resonanceConvergenceFusionIndex >= 44) {
+    notes.push('Resonance stack and convergence fusion both elevated');
+  }
+  if (weakComposite && synthesisResonanceStackIndex >= 46) {
+    notes.push('Resonance–stack fusion under depressed composite');
+  }
+
+  const compositePenalty = weakComposite ? Math.max(0, 58 - coordinationCompositeScore) * 0.3 : 0;
+  const fusionIndex = Math.round(
+    Math.min(
+      100,
+      synthesisResonanceStackIndex * 0.37 +
+        resonanceConvergenceFusionIndex * 0.37 +
+        compositePenalty +
+        (weakComposite && resonanceConvergenceFusionIndex >= 48 ? 14 : 0),
+    ),
+  );
+
+  return { fusionIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamResonanceStackFusion(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
 // --- source: coordination-audit.ts ---
   AGENT18_LIMITS,
   CoordinationAuditFinding,
@@ -7101,6 +7229,42 @@ export function auditTeamMultiAgentLayer(
     });
   }
 
+  if (
+    typeof state.meta.convergenceFusionPressureIndex === 'number' &&
+    state.meta.convergenceFusionPressureIndex >= 48
+  ) {
+    push({
+      severity: 'warning',
+      message: `Convergence–fusion pressure (${state.meta.convergenceFusionPressureIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.synthesisCascadeStackIndex === 'number' &&
+    state.meta.synthesisCascadeStackIndex >= 47
+  ) {
+    push({
+      severity: 'warning',
+      message: `Synthesis–cascade stack (${state.meta.synthesisCascadeStackIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.resonanceStackFusionIndex === 'number' &&
+    state.meta.resonanceStackFusionIndex >= 46
+  ) {
+    push({
+      severity: 'warning',
+      message: `Resonance–stack fusion (${state.meta.resonanceStackFusionIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
   state.coordination.leases.forEach(lease => {
     if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
       push({
@@ -7799,6 +7963,18 @@ export function sanitizeTeamMultiAgentCoordinationState(
       synthesisResonanceStackIndex:
         typeof metaRaw.synthesisResonanceStackIndex === 'number'
           ? metaRaw.synthesisResonanceStackIndex
+          : undefined,
+      convergenceFusionPressureIndex:
+        typeof metaRaw.convergenceFusionPressureIndex === 'number'
+          ? metaRaw.convergenceFusionPressureIndex
+          : undefined,
+      synthesisCascadeStackIndex:
+        typeof metaRaw.synthesisCascadeStackIndex === 'number'
+          ? metaRaw.synthesisCascadeStackIndex
+          : undefined,
+      resonanceStackFusionIndex:
+        typeof metaRaw.resonanceStackFusionIndex === 'number'
+          ? metaRaw.resonanceStackFusionIndex
           : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
@@ -8520,6 +8696,24 @@ export function evaluateTeamMultiAgentLayer(
     state.meta.coordinationCompositeScore ?? 100,
   );
   synthesisResonanceStack.notes.forEach(n => diagnostics.push(n));
+  const convergenceFusionPressure = computeConvergenceFusionPressureIndex(
+    resonanceConvergenceFusion.fusionIndex,
+    pressureSynthesisCascade.cascadeIndex,
+    state.meta.coordinationEscalationTier ?? 0,
+  );
+  convergenceFusionPressure.notes.forEach(n => diagnostics.push(n));
+  const synthesisCascadeStack = computeSynthesisCascadeStackIndex(
+    pressureSynthesisCascade.cascadeIndex,
+    synthesisResonanceStack.stackIndex,
+    state.meta.auditPressureIndex ?? 0,
+  );
+  synthesisCascadeStack.notes.forEach(n => diagnostics.push(n));
+  const resonanceStackFusion = computeResonanceStackFusionIndex(
+    synthesisResonanceStack.stackIndex,
+    resonanceConvergenceFusion.fusionIndex,
+    state.meta.coordinationCompositeScore ?? 100,
+  );
+  resonanceStackFusion.notes.forEach(n => diagnostics.push(n));
   state = {
     ...state,
     diagnostics,
@@ -8564,6 +8758,9 @@ export function evaluateTeamMultiAgentLayer(
       resonanceConvergenceFusionIndex: resonanceConvergenceFusion.fusionIndex,
       pressureSynthesisCascadeIndex: pressureSynthesisCascade.cascadeIndex,
       synthesisResonanceStackIndex: synthesisResonanceStack.stackIndex,
+      convergenceFusionPressureIndex: convergenceFusionPressure.pressureIndex,
+      synthesisCascadeStackIndex: synthesisCascadeStack.stackIndex,
+      resonanceStackFusionIndex: resonanceStackFusion.fusionIndex,
     },
   };
 
@@ -8687,6 +8884,9 @@ export interface DualTeamMultiAgentResult {
   resonanceConvergenceFusionCombined: number;
   pressureSynthesisCascadeCombined: number;
   synthesisResonanceStackCombined: number;
+  convergenceFusionPressureCombined: number;
+  synthesisCascadeStackCombined: number;
+  resonanceStackFusionCombined: number;
 }
 
 /**
@@ -8806,6 +9006,9 @@ export function evaluateDualTeamMultiAgentLayers(
       resonanceConvergenceFusionCombined: friendly.state.meta.resonanceConvergenceFusionIndex ?? 0,
       pressureSynthesisCascadeCombined: friendly.state.meta.pressureSynthesisCascadeIndex ?? 0,
       synthesisResonanceStackCombined: friendly.state.meta.synthesisResonanceStackIndex ?? 0,
+      convergenceFusionPressureCombined: friendly.state.meta.convergenceFusionPressureIndex ?? 0,
+      synthesisCascadeStackCombined: friendly.state.meta.synthesisCascadeStackIndex ?? 0,
+      resonanceStackFusionCombined: friendly.state.meta.resonanceStackFusionIndex ?? 0,
     };
   }
 
@@ -9233,6 +9436,18 @@ export function evaluateDualTeamMultiAgentLayers(
     synthesisResonanceStackCombined: combineDualTeamSynthesisResonanceStack(
       friendly.state.meta.synthesisResonanceStackIndex ?? 0,
       enemy.state.meta.synthesisResonanceStackIndex ?? 0,
+    ),
+    convergenceFusionPressureCombined: combineDualTeamConvergenceFusionPressure(
+      friendly.state.meta.convergenceFusionPressureIndex ?? 0,
+      enemy.state.meta.convergenceFusionPressureIndex ?? 0,
+    ),
+    synthesisCascadeStackCombined: combineDualTeamSynthesisCascadeStack(
+      friendly.state.meta.synthesisCascadeStackIndex ?? 0,
+      enemy.state.meta.synthesisCascadeStackIndex ?? 0,
+    ),
+    resonanceStackFusionCombined: combineDualTeamResonanceStackFusion(
+      friendly.state.meta.resonanceStackFusionIndex ?? 0,
+      enemy.state.meta.resonanceStackFusionIndex ?? 0,
     ),
   };
 }
@@ -12253,6 +12468,56 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.resonanceConvergenceFusionCombined === 'number' &&
       typeof dual.pressureSynthesisCascadeCombined === 'number' &&
       typeof dual.synthesisResonanceStackCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_convergence_fusion_pressure', 'Convergence–fusion pressure: convergence fusion plus synthesis cascade scores high', () => {
+    const report = computeConvergenceFusionPressureIndex(50, 48, 3);
+    return report.pressureIndex >= 48;
+  });
+
+  check(results, 'a18_synthesis_cascade_stack', 'Synthesis–cascade stack: synthesis cascade plus resonance stack scores high', () => {
+    const report = computeSynthesisCascadeStackIndex(48, 50, 42);
+    return report.stackIndex >= 47;
+  });
+
+  check(results, 'a18_resonance_stack_fusion', 'Resonance–stack fusion: resonance stack plus convergence fusion scores high', () => {
+    const report = computeResonanceStackFusionIndex(48, 50, 48);
+    return report.fusionIndex >= 46;
+  });
+
+  check(results, 'a18_eval_round34_meta', 'Layer: round-34 meta exposes fusion pressure, cascade stack, stack fusion', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.convergenceFusionPressureIndex === 'number' &&
+      typeof m.synthesisCascadeStackIndex === 'number' &&
+      typeof m.resonanceStackFusionIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_convergence_fusion_pressure', 'Audit: convergence–fusion pressure surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, convergenceFusionPressureIndex: 72 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /Convergence–fusion pressure/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round34_combined', 'Dual team: round-34 combined pressure, stack, fusion exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.convergenceFusionPressureCombined === 'number' &&
+      typeof dual.synthesisCascadeStackCombined === 'number' &&
+      typeof dual.resonanceStackFusionCombined === 'number'
     );
   });
 
