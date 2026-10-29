@@ -143,6 +143,7 @@ export function attachGauntletSessionToState(
     subjectSession: null,
     witnessSession: null,
     tribunalSession: null,
+    indictmentSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,

@@ -376,6 +376,7 @@ export type O10mExtractionPhase = 'intel' | 'rescue' | 'exfil';
 export type O10mSubjectPhase = 'intake' | 'probe' | 'verdict';
 export type O10mWitnessPhase = 'brief' | 'testimony' | 'affirm';
 export type O10mTribunalPhase = 'docket' | 'hearing' | 'seal';
+export type O10mIndictmentPhase = 'charge' | 'arraign' | 'bind';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -520,6 +521,17 @@ export interface O10mTribunalSession {
   phaseTag: O10mTribunalPhase;
 }
 
+/** Schema v21 — indictment arc with case-weight accrual between phases. */
+export interface O10mIndictmentSession {
+  indictmentId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  caseWeightScore: number;
+  phaseTag: O10mIndictmentPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -544,6 +556,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'indictment_step'
     | 'tribunal_step'
     | 'witness_step'
     | 'subject_step'
@@ -627,6 +640,10 @@ export interface O10mCampaignPlan {
   tribunalCursor: number | null;
   tribunalPhase: O10mTribunalPhase | null;
   tribunalGravitas: number | null;
+  indictmentId: string | null;
+  indictmentCursor: number | null;
+  indictmentPhase: O10mIndictmentPhase | null;
+  indictmentCaseWeight: number | null;
   reason: string;
 }
 
@@ -690,6 +707,8 @@ export interface O10mModesPersistedState {
   witnessSession?: O10mWitnessSession | null;
   /** Schema v20 — active tribunal arc (mutually exclusive with witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   tribunalSession?: O10mTribunalSession | null;
+  /** Schema v21 — active indictment arc (mutually exclusive with tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  indictmentSession?: O10mIndictmentSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -3177,6 +3196,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Tribunal finales', 'Gravitas ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_indictment_charge_docket',
+    title: 'Indictment Charge Docket',
+    description: 'Open an indictment arc with low-pressure case-weight pacing before arraign.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100472,
+    startingMoney: 2850,
+    startingRegions: ['ACT', 'QLD'],
+    badgeId: 'badge_o10m_indictment_charge_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100472),
+      o10mIndictmentChargeDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_icd_obj_day',
+        label: 'Charge Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Indictment arcs', 'Case-weight pacing', 'Charge phase'],
+  },
+  {
+    id: 'o10m_indictment_arraign_bench',
+    title: 'Indictment Arraign Bench',
+    description: 'Mid-indictment arraign with accrued case-weight bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100473,
+    startingMoney: 3400,
+    startingRegions: ['NSW', 'VIC'],
+    startingStanding: { NSW: 54, VIC: 52 },
+    badgeId: 'badge_o10m_indictment_arraign_bench',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100473),
+      regionalStandingEnabled: true,
+      o10mIndictmentArraignBench: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_iab_obj_avg',
+        label: 'Arraign Threshold',
+        description: 'Average standing of 60',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 60,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Arraign bench', 'Case-weight carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_indictment_bind_finale',
+    title: 'Indictment Bind Finale',
+    description: 'Finale bind stage — net worth gate with full case-weight bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100474,
+    startingMoney: 3850,
+    startingRegions: ['WA', 'NT', 'SA'],
+    badgeId: 'badge_o10m_indictment_bind_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100474),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mIndictmentBindFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_ibf_obj_net',
+        label: 'Bind Net Worth',
+        description: 'Reach $17,400 net worth',
+        targetType: 'netWorth',
+        targetValue: 17400,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Indictment finales', 'Case-weight ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -4339,6 +4455,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_indictment_route',
+    title: 'Indictment Route',
+    description:
+      'Three-phase indictment arc with case-weight accrual between legs — round-21 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_indictment_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_indictment_charge_docket',
+        title: 'Charge Docket',
+        narrativeBridge: 'File charges before the arraign bench.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 310 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_indictment_arraign_bench',
+        title: 'Arraign Bench',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { QLD: 6, WA: 5 },
+          forcedSettingsPatch: { o10mIndictmentMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_indictment_bind_finale',
+        title: 'Bind Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainIndictmentRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -5165,7 +5315,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 20;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 21;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -5284,6 +5434,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     subjectSession: null,
     witnessSession: null,
     tribunalSession: null,
+    indictmentSession: null,
   };
 }
 
@@ -5323,6 +5474,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       subjectSession: merged.subjectSession ?? null,
       witnessSession: merged.witnessSession ?? null,
       tribunalSession: merged.tribunalSession ?? null,
+      indictmentSession: merged.indictmentSession ?? null,
     };
     return upgraded;
   }
@@ -5386,6 +5538,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     subjectSession: sanitizeSubjectSession(o.subjectSession),
     witnessSession: sanitizeWitnessSession(o.witnessSession),
     tribunalSession: sanitizeTribunalSession(o.tribunalSession),
+    indictmentSession: sanitizeIndictmentSession(o.indictmentSession),
   };
 }
 
@@ -5534,6 +5687,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Tribunal cursor out of range; clamp on next sanitize.');
   }
 
+  const indictment = sanitizeIndictmentSession(state.indictmentSession);
+  if (state.indictmentSession && !indictment) {
+    warnings.push('Indictment session failed sanitization; planner will ignore it.');
+  } else if (indictment && indictment.cursor >= indictment.scenarioIds.length) {
+    warnings.push('Indictment cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -5657,6 +5817,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'subjectSession',
   'witnessSession',
   'tribunalSession',
+  'indictmentSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -6175,6 +6336,7 @@ export function attachMarathonQueueToState(
     subjectSession: null,
     witnessSession: null,
     tribunalSession: null,
+    indictmentSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -6292,6 +6454,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceIndictmentSessionAfterRun(next, run);
   next = advanceTribunalSessionAfterRun(next, run);
   next = advanceWitnessSessionAfterRun(next, run);
   next = advanceSubjectSessionAfterRun(next, run);
@@ -6448,6 +6611,7 @@ export function attachGauntletSessionToState(
     subjectSession: null,
     witnessSession: null,
     tribunalSession: null,
+    indictmentSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -6690,6 +6854,7 @@ export function attachRelaySessionToState(
     subjectSession: null,
     witnessSession: null,
     tribunalSession: null,
+    indictmentSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -6892,6 +7057,7 @@ export function attachCircuitSessionToState(
     subjectSession: null,
     witnessSession: null,
     tribunalSession: null,
+    indictmentSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -7112,6 +7278,7 @@ export function attachExpeditionSessionToState(
     subjectSession: null,
     witnessSession: null,
     tribunalSession: null,
+    indictmentSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -7330,6 +7497,7 @@ export function attachOdysseySessionToState(
     subjectSession: null,
     witnessSession: null,
     tribunalSession: null,
+    indictmentSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -7547,6 +7715,7 @@ export function attachPilgrimageSessionToState(
     subjectSession: null,
     witnessSession: null,
     tribunalSession: null,
+    indictmentSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -7765,6 +7934,7 @@ export function attachCaravanSessionToState(
     subjectSession: null,
     witnessSession: null,
     tribunalSession: null,
+    indictmentSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -7977,6 +8147,7 @@ export function attachVoyageSessionToState(
     subjectSession: null,
     witnessSession: null,
     tribunalSession: null,
+    indictmentSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -8189,6 +8360,7 @@ export function attachSiegeSessionToState(
     subjectSession: null,
     witnessSession: null,
     tribunalSession: null,
+    indictmentSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -8401,6 +8573,7 @@ export function attachConvoySessionToState(
     subjectSession: null,
     witnessSession: null,
     tribunalSession: null,
+    indictmentSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -8613,6 +8786,7 @@ export function attachEscortSessionToState(
     subjectSession: null,
     witnessSession: null,
     tribunalSession: null,
+    indictmentSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -8834,6 +9008,7 @@ export function attachExtractionSessionToState(
     subjectSession: null,
     witnessSession: null,
     tribunalSession: null,
+    indictmentSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -9063,6 +9238,7 @@ export function attachSubjectSessionToState(
     subjectSession: sanitized,
     witnessSession: null,
     tribunalSession: null,
+    indictmentSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -9292,6 +9468,7 @@ export function attachWitnessSessionToState(
     ...state,
     witnessSession: sanitized,
     tribunalSession: null,
+    indictmentSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -9521,6 +9698,7 @@ export function attachTribunalSessionToState(
   return {
     ...state,
     tribunalSession: sanitized,
+    indictmentSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -9632,6 +9810,237 @@ export function tribunalSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-indictment.ts ---
+export const O10M_INDICTMENT_SCENARIO_CAP = 6;
+export const O10M_INDICTMENT_CASE_WEIGHT_CAP = 760;
+export const O10M_INDICTMENT_CASE_WEIGHT_MONEY_CAP = 840;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mIndictmentPhase>(['charge', 'arraign', 'bind']);
+
+export function unlockTokenForIndictmentId(indictmentId: string): string | null {
+  if (!indictmentId.startsWith('o10m_indictment_')) return null;
+  return `o10m_unlock_${indictmentId.slice('o10m_indictment_'.length)}`;
+}
+
+export function indictmentPhaseForCursor(cursor: number, scenarioCount: number): O10mIndictmentPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'bind';
+  if (clamped >= Math.floor(total / 2)) return 'arraign';
+  return 'charge';
+}
+
+export function indictmentCaseWeightFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(104, Math.max(15, Math.floor(run.playerNetWorth / 179) + standingSlice));
+}
+
+export function sanitizeIndictmentSession(raw: unknown): O10mIndictmentSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const indictmentId =
+    typeof o.indictmentId === 'string' && o.indictmentId.startsWith('o10m_indictment_') ? o.indictmentId : null;
+  if (!indictmentId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : indictmentId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_INDICTMENT_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const caseWeightScore = Math.min(
+    O10M_INDICTMENT_CASE_WEIGHT_CAP,
+    Math.max(0, Math.floor(num(o.caseWeightScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mIndictmentPhase)
+      ? (phaseRaw as O10mIndictmentPhase)
+      : indictmentPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    indictmentId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    caseWeightScore,
+    phaseTag,
+  };
+}
+
+export function createIndictmentSession(params: {
+  indictmentId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mIndictmentSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.indictmentId.startsWith('o10m_indictment_')) {
+    return { session: null, warnings: ['Indictment ids must start with o10m_indictment_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_INDICTMENT_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Indictment arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      indictmentId: params.indictmentId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      caseWeightScore: 0,
+      phaseTag: indictmentPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachIndictmentSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mIndictmentSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeIndictmentSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    indictmentSession: sanitized,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearIndictmentSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, indictmentSession: null };
+}
+
+export function getIndictmentScenarioAtCursor(
+  session: O10mIndictmentSession | null | undefined,
+): string | null {
+  const indictment = sanitizeIndictmentSession(session);
+  if (!indictment || !indictment.active) return null;
+  return indictment.scenarioIds[indictment.cursor] ?? null;
+}
+
+export function buildIndictmentScenarioStartOverrides(
+  session: O10mIndictmentSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const indictment = sanitizeIndictmentSession(session);
+  if (!indictment) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_INDICTMENT_CASE_WEIGHT_MONEY_CAP,
+    Math.floor(indictment.caseWeightScore * 0.85),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveIndictmentId: indictment.indictmentId,
+      o10mActiveIndictmentStep: indictment.cursor,
+      o10mActiveIndictmentPhase: indictment.phaseTag,
+      o10mIndictmentCaseWeight: indictment.caseWeightScore,
+    },
+  };
+}
+
+export function advanceIndictmentSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeIndictmentSession(state.indictmentSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const caseWeightScore = Math.min(
+    O10M_INDICTMENT_CASE_WEIGHT_CAP,
+    session.caseWeightScore + indictmentCaseWeightFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      indictmentSession: {
+        ...session,
+        cursor,
+        caseWeightScore,
+        phaseTag: indictmentPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForIndictmentId(session.indictmentId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    indictmentSession: { ...session, active: false, caseWeightScore, phaseTag: 'bind' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function indictmentSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  caseWeight: number;
+  phase: O10mIndictmentPhase | null;
+} {
+  const session = sanitizeIndictmentSession(state.indictmentSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    caseWeight: session?.caseWeightScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -9694,9 +10103,31 @@ const emptyQueuePlan = {
   tribunalCursor: null as number | null,
   tribunalPhase: null as O10mTribunalPhase | null,
   tribunalGravitas: null as number | null,
+  indictmentId: null as string | null,
+  indictmentCursor: null as number | null,
+  indictmentPhase: null as O10mIndictmentPhase | null,
+  indictmentCaseWeight: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const indictment = sanitizeIndictmentSession(state.indictmentSession);
+  const indictmentScenario = getIndictmentScenarioAtCursor(indictment);
+  if (indictment && indictment.active && indictmentScenario) {
+    return {
+      kind: 'indictment_step',
+      scenarioId: indictmentScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      indictmentId: indictment.indictmentId,
+      indictmentCursor: indictment.cursor,
+      indictmentPhase: indictment.phaseTag,
+      indictmentCaseWeight: indictment.caseWeightScore,
+      reason: `Indictment "${indictment.label}" ${indictment.phaseTag} phase ${indictment.cursor + 1}/${indictment.scenarioIds.length} (case weight ${indictment.caseWeightScore}).`,
+    };
+  }
+
   const tribunal = sanitizeTribunalSession(state.tribunalSession);
   const tribunalScenario = getTribunalScenarioAtCursor(tribunal);
   if (tribunal && tribunal.active && tribunalScenario) {
@@ -10066,6 +10497,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   subjectActive: boolean;
   witnessActive: boolean;
   tribunalActive: boolean;
+  indictmentActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -10089,6 +10521,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const subject = subjectSessionSummary(state);
   const witness = witnessSessionSummary(state);
   const tribunal = tribunalSessionSummary(state);
+  const indictment = indictmentSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -10110,6 +10543,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     subjectActive: subject.active,
     witnessActive: witness.active,
     tribunalActive: tribunal.active,
+    indictmentActive: indictment.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -10128,7 +10562,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 21, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 22, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -10284,16 +10718,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const tribunalState = tribunal ? attachTribunalSessionToState(createEmptyO10mModesPersistedState(), tribunal) : null;
   push('agent04_chunk_28', tribunalState !== null && planNextCampaignAction(tribunalState!).kind === 'tribunal_step');
 
+  const indictment = createIndictmentSession({
+    indictmentId: 'o10m_indictment_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_indictment_charge_docket'],
+  }).session;
+  const indictmentState = indictment ? attachIndictmentSessionToState(createEmptyO10mModesPersistedState(), indictment) : null;
+  push('agent04_chunk_29', indictmentState !== null && planNextCampaignAction(indictmentState!).kind === 'indictment_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v21',
+  schemaVersion: 'op10m-agent04-v22',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 20,
+  saveSchemaVersion: 21,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

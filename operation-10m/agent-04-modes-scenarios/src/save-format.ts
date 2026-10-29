@@ -20,6 +20,7 @@ import { sanitizeExtractionSession } from './save-format-extraction.js';
 import { sanitizeSubjectSession } from './save-format-subject.js';
 import { sanitizeWitnessSession } from './save-format-witness.js';
 import { sanitizeTribunalSession } from './save-format-tribunal.js';
+import { sanitizeIndictmentSession } from './save-format-indictment.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -38,7 +39,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 20;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 21;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -157,6 +158,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     subjectSession: null,
     witnessSession: null,
     tribunalSession: null,
+    indictmentSession: null,
   };
 }
 
@@ -196,6 +198,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       subjectSession: merged.subjectSession ?? null,
       witnessSession: merged.witnessSession ?? null,
       tribunalSession: merged.tribunalSession ?? null,
+      indictmentSession: merged.indictmentSession ?? null,
     };
     return upgraded;
   }
@@ -259,6 +262,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     subjectSession: sanitizeSubjectSession(o.subjectSession),
     witnessSession: sanitizeWitnessSession(o.witnessSession),
     tribunalSession: sanitizeTribunalSession(o.tribunalSession),
+    indictmentSession: sanitizeIndictmentSession(o.indictmentSession),
   };
 }
 
@@ -405,6 +409,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Tribunal session failed sanitization; planner will ignore it.');
   } else if (tribunal && tribunal.cursor >= tribunal.scenarioIds.length) {
     warnings.push('Tribunal cursor out of range; clamp on next sanitize.');
+  }
+
+  const indictment = sanitizeIndictmentSession(state.indictmentSession);
+  if (state.indictmentSession && !indictment) {
+    warnings.push('Indictment session failed sanitization; planner will ignore it.');
+  } else if (indictment && indictment.cursor >= indictment.scenarioIds.length) {
+    warnings.push('Indictment cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

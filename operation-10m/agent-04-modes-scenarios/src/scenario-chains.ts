@@ -722,6 +722,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_indictment_route',
+    title: 'Indictment Route',
+    description:
+      'Three-phase indictment arc with case-weight accrual between legs — round-21 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_indictment_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_indictment_charge_docket',
+        title: 'Charge Docket',
+        narrativeBridge: 'File charges before the arraign bench.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 310 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_indictment_arraign_bench',
+        title: 'Arraign Bench',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { QLD: 6, WA: 5 },
+          forcedSettingsPatch: { o10mIndictmentMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_indictment_bind_finale',
+        title: 'Bind Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainIndictmentRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

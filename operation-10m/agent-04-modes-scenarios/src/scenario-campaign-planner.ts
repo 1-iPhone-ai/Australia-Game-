@@ -72,6 +72,11 @@ import {
   sanitizeTribunalSession,
 } from './save-format-tribunal.js';
 import {
+  getIndictmentScenarioAtCursor,
+  indictmentSessionSummary,
+  sanitizeIndictmentSession,
+} from './save-format-indictment.js';
+import {
   getSiegeScenarioAtCursor,
   siegeSessionSummary,
   sanitizeSiegeSession,
@@ -95,6 +100,7 @@ import type {
   O10mSubjectPhase,
   O10mWitnessPhase,
   O10mTribunalPhase,
+  O10mIndictmentPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -161,9 +167,31 @@ const emptyQueuePlan = {
   tribunalCursor: null as number | null,
   tribunalPhase: null as O10mTribunalPhase | null,
   tribunalGravitas: null as number | null,
+  indictmentId: null as string | null,
+  indictmentCursor: null as number | null,
+  indictmentPhase: null as O10mIndictmentPhase | null,
+  indictmentCaseWeight: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const indictment = sanitizeIndictmentSession(state.indictmentSession);
+  const indictmentScenario = getIndictmentScenarioAtCursor(indictment);
+  if (indictment && indictment.active && indictmentScenario) {
+    return {
+      kind: 'indictment_step',
+      scenarioId: indictmentScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      indictmentId: indictment.indictmentId,
+      indictmentCursor: indictment.cursor,
+      indictmentPhase: indictment.phaseTag,
+      indictmentCaseWeight: indictment.caseWeightScore,
+      reason: `Indictment "${indictment.label}" ${indictment.phaseTag} phase ${indictment.cursor + 1}/${indictment.scenarioIds.length} (case weight ${indictment.caseWeightScore}).`,
+    };
+  }
+
   const tribunal = sanitizeTribunalSession(state.tribunalSession);
   const tribunalScenario = getTribunalScenarioAtCursor(tribunal);
   if (tribunal && tribunal.active && tribunalScenario) {
@@ -533,6 +561,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   subjectActive: boolean;
   witnessActive: boolean;
   tribunalActive: boolean;
+  indictmentActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -556,6 +585,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const subject = subjectSessionSummary(state);
   const witness = witnessSessionSummary(state);
   const tribunal = tribunalSessionSummary(state);
+  const indictment = indictmentSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -577,6 +607,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     subjectActive: subject.active,
     witnessActive: witness.active,
     tribunalActive: tribunal.active,
+    indictmentActive: indictment.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
