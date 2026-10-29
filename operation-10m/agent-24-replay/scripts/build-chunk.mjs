@@ -175,6 +175,9 @@ const FILES = [
   'replay-scale-wave-wave53-integration-verification.ts',
   'archive-scale-wave-wave54-export-gate.ts',
   'replay-scale-wave-wave54-integration-handoff.ts',
+  'archive-scale-wave-wave64-export-gate.ts',
+  'replay-scale-wave-wave64-integration-handoff.ts',
+
   'archive-scale-wave-wave63-export-gate.ts',
   'replay-scale-wave-wave63-integration-handoff.ts',
 
