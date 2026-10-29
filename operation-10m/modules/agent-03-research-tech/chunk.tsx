@@ -293,10 +293,13 @@ export interface ResearchBranchEmphasisState {
   setTurn: number;
 }
 
-export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v3' as const;
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v4' as const;
+
+export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
 export type ResearchProgressSchemaVersion =
   | typeof RESEARCH_PROGRESS_SCHEMA_VERSION
+  | 'op10m-agent03-v3'
   | 'op10m-agent03-v2'
   | 'op10m-agent03-v1';
 
@@ -304,6 +307,21 @@ export interface ResearchSaveMigrationEntry {
   fromVersion: ResearchProgressSchemaVersion | 'array-legacy';
   toVersion: ResearchProgressSchemaVersion;
   turn: number;
+}
+
+export interface ResearchCommercializationHint {
+  branchId: ResearchBranchId;
+  emphasis: ResearchProgramEmphasis;
+  readinessFloor: number;
+  exportPriority: 'low' | 'medium' | 'high';
+  linkedCapabilityId: V94EmergingCapabilityId;
+  rationale: string;
+}
+
+export interface ResearchCommercializationReport {
+  active: boolean;
+  hints: ResearchCommercializationHint[];
+  nationalExportScore: number;
 }
 
 export interface ResearchProgressState {
@@ -319,10 +337,15 @@ export interface ResearchProgressState {
   institutionUpgrades: InstitutionUpgradeState[];
   lateGameDiffusion: LateGameDiffusionReport | null;
   scaleWave: ResearchScaleWaveReport | null;
+  commercialization?: ResearchCommercializationReport | null;
   unlockSeq: number;
   branchEmphasis?: ResearchBranchEmphasisState[];
   emphasisRevision?: number;
   migrationLog?: ResearchSaveMigrationEntry[];
+  saveKind?: ResearchSaveKind;
+  updatedAtTurn?: number;
+  sessionId?: string;
+  persistRevision?: number;
 }
 
 export interface StrategyHookDefinition {
@@ -1912,6 +1935,94 @@ export function scaleWaveDiffusionBonus(report: ResearchScaleWaveReport | null):
   return Math.min(0.06, report.tier5UnlockCount * 0.008 + report.technologyTransferLinks.length * 0.003);
 }
 
+// --- bundled from src/commercialization-bridge.ts ---
+function maxTierByBranch(unlocked: UnlockedResearchNode[]): Record<ResearchBranchId, number> {
+  const tiers = Object.fromEntries(RESEARCH_BRANCHES.map(b => [b.id, 0])) as Record<ResearchBranchId, number>;
+  for (const u of unlocked) {
+    const tier = RESEARCH_NODE_BY_ID[u.nodeId]?.tier ?? 0;
+    tiers[u.branchId] = Math.max(tiers[u.branchId], tier);
+  }
+  return tiers;
+}
+
+function exportPriorityFor(
+  emphasis: ResearchBranchEmphasisState['emphasis'],
+  tier: number,
+  readiness: number
+): ResearchCommercializationReport['hints'][number]['exportPriority'] {
+  if (tier >= 4 && (emphasis === 'commercial' || emphasis === 'applied') && readiness >= 45) return 'high';
+  if (tier >= 3 && readiness >= 35) return 'medium';
+  return 'low';
+}
+
+/** Read-only V10.5 commercialization hints for copilot / national strategy panels. */
+export function computeResearchCommercializationReport(
+  inputs: ResearchProgressInputs,
+  state: Pick<
+    ResearchProgressState,
+    'unlockedNodes' | 'readinessByBranch' | 'branchEmphasis' | 'scaleWave'
+  >
+): ResearchCommercializationReport {
+  const tiers = maxTierByBranch(state.unlockedNodes);
+  const emphasis = state.branchEmphasis ?? [];
+  const hints: ResearchCommercializationReport['hints'] = [];
+
+  for (const branch of RESEARCH_BRANCHES) {
+    const tier = tiers[branch.id];
+    if (tier < 1) continue;
+    const emph = emphasis.find(e => e.branchId === branch.id)?.emphasis ?? 'fundamental';
+    const readiness = state.readinessByBranch[branch.id] ?? 0;
+    const cap = inputs.capabilities[branch.primaryCapability];
+    hints.push({
+      branchId: branch.id,
+      emphasis: emph,
+      readinessFloor: Math.max(20, readiness - 5),
+      exportPriority: exportPriorityFor(emph, tier, readiness),
+      linkedCapabilityId: branch.primaryCapability,
+      rationale:
+        cap?.maturity === 'nationally_integrated'
+          ? `${branch.label}: integrated capability — prioritize export contracts`
+          : `${branch.label}: tier ${tier} unlocks with ${emph} emphasis`,
+    });
+  }
+
+  hints.sort((a, b) => {
+    const rank = { high: 3, medium: 2, low: 1 };
+    return rank[b.exportPriority] - rank[a.exportPriority] || b.readinessFloor - a.readinessFloor;
+  });
+
+  const synergy = state.scaleWave?.crossBranchSynergyScore ?? 0;
+  const nationalExportScore = Math.min(
+    100,
+    Math.round(hints.filter(h => h.exportPriority !== 'low').length * 11 + synergy * 0.35 + tier5Count(state) * 4)
+  );
+
+  return {
+    active: hints.some(h => h.exportPriority !== 'low') || (state.scaleWave?.active ?? false),
+    hints: hints.slice(0, 8),
+    nationalExportScore,
+  };
+}
+
+function tier5Count(state: Pick<ResearchProgressState, 'unlockedNodes'>): number {
+  return state.unlockedNodes.filter(u => RESEARCH_NODE_BY_ID[u.nodeId]?.tier === 5).length;
+}
+
+/** Bounded readiness nudge when commercial emphasis aligns with tier-3+ progress. */
+export function applyCommercializationReadinessNudge(
+  readinessByBranch: Record<ResearchBranchId, number>,
+  report: ResearchCommercializationReport
+): Record<ResearchBranchId, number> {
+  if (!report.active) return readinessByBranch;
+  const out = { ...readinessByBranch };
+  for (const hint of report.hints) {
+    if (hint.exportPriority === 'low') continue;
+    const bump = hint.exportPriority === 'high' ? 3 : 1;
+    out[hint.branchId] = Math.min(100, (out[hint.branchId] ?? 0) + bump);
+  }
+  return out;
+}
+
 // --- bundled from src/save-migration.ts ---
 export function defaultBranchEmphasis(): ResearchBranchEmphasisState[] {
   return RESEARCH_BRANCHES.map(b => ({
@@ -1943,11 +2054,17 @@ export interface ResearchProgressPersistedCore {
   emphasisRevision: number;
   /** Audit trail of schema hops applied to this blob. */
   migrationLog: ResearchSaveMigrationEntry[];
+  saveKind: ResearchSaveKind;
+  updatedAtTurn: number;
+  sessionId: string;
+  /** Monotonic counter incremented on each sealed write (round 4). */
+  persistRevision: number;
 }
 
 
 const LEGACY_V1 = 'op10m-agent03-v1' as const;
 const LEGACY_V2 = 'op10m-agent03-v2' as const;
+const LEGACY_V3 = 'op10m-agent03-v3' as const;
 
 /** Keys that must never appear on persisted save blobs (Agent 25 guard). */
 export const RESEARCH_SAVE_DERIVED_KEYS = [
@@ -1957,6 +2074,7 @@ export const RESEARCH_SAVE_DERIVED_KEYS = [
   'inputHash',
   'lateGameDiffusion',
   'scaleWave',
+  'commercialization',
 ] as const;
 
 function finalizeCoreForPersist(
@@ -1973,9 +2091,16 @@ function finalizeCoreForPersist(
     branchEmphasis: partial.branchEmphasis,
     emphasisRevision: partial.emphasisRevision ?? 0,
     migrationLog: partial.migrationLog ?? [],
+    saveKind: partial.saveKind ?? 'manual',
+    updatedAtTurn: partial.updatedAtTurn ?? partial.turn,
+    sessionId: partial.sessionId ?? `o10m_r03_${partial.turn}_${partial.revision}`,
+    persistRevision: partial.persistRevision ?? 0,
   };
   return { ...draft, coreFingerprint: computePersistedCoreFingerprint(draft) };
 }
+
+/** Public alias for lifecycle merge/seal helpers. */
+export const finalizePersistedCoreDraft = finalizeCoreForPersist;
 
 export function computePersistedCoreFingerprint(
   core: Omit<ResearchProgressPersistedCore, 'coreFingerprint'>
@@ -1992,6 +2117,10 @@ export function computePersistedCoreFingerprint(
     institutionUpgrades: core.institutionUpgrades,
     branchEmphasis: core.branchEmphasis,
     migrationLog: core.migrationLog,
+    saveKind: core.saveKind,
+    updatedAtTurn: core.updatedAtTurn,
+    sessionId: core.sessionId,
+    persistRevision: core.persistRevision,
   });
   for (let i = 0; i < payload.length; i++) {
     h ^= payload.charCodeAt(i);
@@ -2035,6 +2164,10 @@ function emptyCore(turn = 0): ResearchProgressPersistedCore {
     branchEmphasis: defaultBranchEmphasis(),
     emphasisRevision: 0,
     migrationLog: [],
+    saveKind: 'manual',
+    updatedAtTurn: turn,
+    sessionId: `o10m_r03_${turn}_0`,
+    persistRevision: 0,
   });
 }
 
@@ -2133,11 +2266,38 @@ export function migrateResearchProgressSave(raw: unknown): ResearchProgressPersi
       branchEmphasis: sanitizeBranchEmphasis(o.branchEmphasis),
       emphasisRevision: Number(o.emphasisRevision) || 0,
       migrationLog: Array.isArray(o.migrationLog) ? (o.migrationLog as ResearchSaveMigrationEntry[]) : [],
+      saveKind: (o.saveKind as ResearchSaveKind) || 'manual',
+      updatedAtTurn: Number(o.updatedAtTurn) || Number(o.turn) || 0,
+      sessionId: typeof o.sessionId === 'string' ? o.sessionId : `o10m_r03_${Number(o.turn) || 0}`,
+      persistRevision: Number(o.persistRevision) || 0,
     });
     if (typeof o.coreFingerprint === 'string' && o.coreFingerprint !== draft.coreFingerprint) {
       return draft;
     }
     return draft;
+  }
+
+  if (ver === LEGACY_V3) {
+    const nodes = sanitizeUnlockedNodes(o.unlockedNodes);
+    return upgradeToCurrentCore(
+      {
+        schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+        revision: Number(o.revision) || 0,
+        turn: Number(o.turn) || 0,
+        unlockedNodes: nodes,
+        institutionUpgrades: sanitizeInstitutionUpgrades(o.institutionUpgrades),
+        leadingResearchRegion: (o.leadingResearchRegion as ResearchProgressPersistedCore['leadingResearchRegion']) ?? null,
+        unlockSeq: Number(o.unlockSeq) || computeUnlockSeq(nodes),
+        branchEmphasis: sanitizeBranchEmphasis(o.branchEmphasis),
+        emphasisRevision: Number(o.emphasisRevision) || 0,
+        migrationLog: Array.isArray(o.migrationLog) ? (o.migrationLog as ResearchSaveMigrationEntry[]) : [],
+        saveKind: 'manual',
+        updatedAtTurn: Number(o.turn) || 0,
+        sessionId: typeof o.sessionId === 'string' ? o.sessionId : `o10m_r03_${Number(o.turn) || 0}`,
+        persistRevision: 0,
+      },
+      LEGACY_V3
+    );
   }
 
   if (ver === LEGACY_V2) {
@@ -2197,6 +2357,10 @@ export function extractPersistedCore(state: ResearchProgressState): ResearchProg
     branchEmphasis: state.branchEmphasis ?? defaultBranchEmphasis(),
     emphasisRevision: state.emphasisRevision ?? 0,
     migrationLog: state.migrationLog ?? [],
+    saveKind: state.saveKind ?? 'manual',
+    updatedAtTurn: state.updatedAtTurn ?? state.turn,
+    sessionId: state.sessionId ?? `o10m_r03_${state.turn}_${state.revision ?? 0}`,
+    persistRevision: state.persistRevision ?? 0,
   });
 }
 
@@ -2221,6 +2385,10 @@ export function hydrateResearchProgressCore(core: ResearchProgressPersistedCore 
     branchEmphasis: core.branchEmphasis,
     emphasisRevision: core.emphasisRevision,
     migrationLog: core.migrationLog,
+    saveKind: core.saveKind,
+    updatedAtTurn: core.updatedAtTurn,
+    sessionId: core.sessionId,
+    persistRevision: core.persistRevision,
     diffusion: V94_REGION_CODES.map(regionId => ({
       regionId,
       score: 0,
@@ -2260,6 +2428,10 @@ export function mergeComputedResearchState(
     branchEmphasis: core.branchEmphasis,
     emphasisRevision: core.emphasisRevision,
     migrationLog: core.migrationLog,
+    saveKind: core.saveKind,
+    updatedAtTurn: core.updatedAtTurn,
+    sessionId: core.sessionId,
+    persistRevision: core.persistRevision,
   };
 }
 
@@ -2310,6 +2482,7 @@ export function assertResearchProgressSaveIntegrity(state: ResearchProgressState
   const issues: string[] = [];
   if (
     state.schemaVersion !== RESEARCH_PROGRESS_SCHEMA_VERSION &&
+    state.schemaVersion !== LEGACY_V3 &&
     state.schemaVersion !== LEGACY_V1 &&
     state.schemaVersion !== LEGACY_V2
   ) {
@@ -2340,6 +2513,209 @@ export function applyBranchEmphasisReadinessBonus(
     out[e.branchId] = Math.min(100, (out[e.branchId] ?? 0) + (e.emphasis === 'sovereign' ? 2 : 1));
   }
   return out;
+}
+
+// --- bundled from src/save-lifecycle.ts ---
+export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
+
+export interface ResearchPersistedCoreDiff {
+  path: string;
+  before: unknown;
+  after: unknown;
+}
+
+export interface ResearchReconcileContext {
+  turn: number;
+  /** When loading autosave behind manual checkpoint, prefer higher persistRevision. */
+  preferHigherPersistRevision?: boolean;
+}
+
+function stableCoreSnapshot(core: ResearchProgressPersistedCore): Record<string, unknown> {
+  const { coreFingerprint, ...rest } = core;
+  void coreFingerprint;
+  return rest as Record<string, unknown>;
+}
+
+export function diffResearchPersistedCore(
+  before: ResearchProgressPersistedCore,
+  after: ResearchProgressPersistedCore
+): ResearchPersistedCoreDiff[] {
+  const diffs: ResearchPersistedCoreDiff[] = [];
+  const keys = new Set([...Object.keys(stableCoreSnapshot(before)), ...Object.keys(stableCoreSnapshot(after))]);
+  for (const key of [...keys].sort()) {
+    const a = (stableCoreSnapshot(before) as Record<string, unknown>)[key];
+    const b = (stableCoreSnapshot(after) as Record<string, unknown>)[key];
+    if (JSON.stringify(a) !== JSON.stringify(b)) {
+      diffs.push({ path: key, before: a, after: b });
+    }
+  }
+  return diffs;
+}
+
+export function sealResearchProgressForSave(
+  core: ResearchProgressPersistedCore,
+  opts: { saveKind?: ResearchSaveKind; turn?: number; sessionId?: string } = {}
+): ResearchProgressPersistedCore {
+  const turn = opts.turn ?? core.turn;
+  const saveKind = opts.saveKind ?? core.saveKind ?? 'manual';
+  const sessionId =
+    opts.sessionId ??
+    core.sessionId ??
+    `o10m_r03_${turn}_${core.revision}_${core.emphasisRevision}`;
+  return finalizePersistedCoreDraft({
+    ...core,
+    saveKind,
+    updatedAtTurn: turn,
+    sessionId,
+    persistRevision: (core.persistRevision ?? 0) + 1,
+    turn: Math.max(core.turn, turn),
+  });
+}
+
+export function mergeResearchPersistedCores(
+  local: ResearchProgressPersistedCore,
+  remote: ResearchProgressPersistedCore
+): ResearchProgressPersistedCore {
+  const pick =
+    (remote.persistRevision ?? 0) > (local.persistRevision ?? 0)
+      ? remote
+      : (local.persistRevision ?? 0) > (remote.persistRevision ?? 0)
+        ? local
+        : remote.updatedAtTurn >= local.updatedAtTurn
+          ? remote
+          : local;
+
+  const unlockById = new Map<string, (typeof local.unlockedNodes)[number]>();
+  for (const u of [...local.unlockedNodes, ...remote.unlockedNodes]) {
+    const prev = unlockById.get(u.nodeId);
+    if (!prev || u.unlockedTurn >= prev.unlockedTurn) unlockById.set(u.nodeId, u);
+  }
+  const unlockedNodes = [...unlockById.values()].sort(
+    (a, b) => a.unlockedTurn - b.unlockedTurn || a.nodeId.localeCompare(b.nodeId)
+  );
+
+  const instById = new Map<string, (typeof local.institutionUpgrades)[number]>();
+  for (const u of [...local.institutionUpgrades, ...remote.institutionUpgrades]) {
+    instById.set(u.institutionId, u);
+  }
+
+  return finalizePersistedCoreDraft({
+    ...pick,
+    unlockedNodes,
+    institutionUpgrades: [...instById.values()],
+    unlockSeq: Math.max(local.unlockSeq, remote.unlockSeq, unlockedNodes.length),
+    revision: Math.max(local.revision, remote.revision),
+    emphasisRevision: Math.max(local.emphasisRevision, remote.emphasisRevision),
+    migrationLog: [...(local.migrationLog ?? []), ...(remote.migrationLog ?? [])].slice(-32),
+  });
+}
+
+export function reconcileResearchProgressOnLoad(
+  ctx: ResearchReconcileContext,
+  diskRaw: unknown,
+  computed: ResearchProgressState
+): { state: ResearchProgressState; persist: ResearchProgressPersistedCore } {
+  const diskCore = migrateResearchProgressSave(diskRaw);
+  const computedCore = extractPersistedCore(computed);
+  if (!diskCore) {
+    const persist = sealResearchProgressForSave(prepareResearchProgressForSave(computed), {
+      turn: ctx.turn,
+      saveKind: 'manual',
+    });
+    return { state: { ...computed, migrationLog: persist.migrationLog }, persist };
+  }
+
+  const mergedCore = mergeResearchPersistedCores(diskCore, computedCore);
+  const mergedState: ResearchProgressState = {
+    ...computed,
+    revision: mergedCore.revision,
+    turn: Math.max(computed.turn, mergedCore.turn, ctx.turn),
+    unlockedNodes: mergedCore.unlockedNodes,
+    institutionUpgrades: mergedCore.institutionUpgrades,
+    unlockSeq: mergedCore.unlockSeq,
+    branchEmphasis: mergedCore.branchEmphasis,
+    emphasisRevision: mergedCore.emphasisRevision,
+    migrationLog: mergedCore.migrationLog,
+    schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+  };
+
+  const persist = sealResearchProgressForSave(extractPersistedCore(mergedState), {
+    turn: ctx.turn,
+    saveKind: mergedCore.saveKind,
+    sessionId: mergedCore.sessionId,
+  });
+  return { state: mergedState, persist };
+}
+
+export function exportResearchProgressCheckpointJson(core: ResearchProgressPersistedCore): string {
+  const sealed = sealResearchProgressForSave(core, { saveKind: 'checkpoint' });
+  const { coreFingerprint, ...rest } = sealed;
+  return JSON.stringify(
+    {
+      module: 'agent-03-research-tech',
+      schemaVersion: sealed.schemaVersion,
+      exportedTurn: sealed.updatedAtTurn,
+      core: sealed,
+      fingerprint: computePersistedCoreFingerprint(rest),
+    },
+    null,
+    2
+  );
+}
+
+export function importResearchProgressCheckpointJson(raw: string): ResearchProgressPersistedCore | null {
+  try {
+    const parsed = JSON.parse(raw) as { core?: unknown };
+    return migrateResearchProgressSave(parsed.core ?? parsed);
+  } catch {
+    return null;
+  }
+}
+
+// --- bundled from src/regression-harness.ts ---
+export interface ResearchRegressionStep {
+  turn: number;
+  unlockedCount: number;
+  synergyScore: number;
+  persistRevision: number;
+}
+
+export interface ResearchRegressionResult {
+  steps: ResearchRegressionStep[];
+  monotonicUnlocks: boolean;
+  monotonicPersistRevision: boolean;
+}
+
+/** Multi-turn deterministic harness for Agent 25 integration smoke. */
+export function runResearchProgressRegressionHarness(
+  baseInputs: ResearchProgressInputs,
+  turns: number[]
+): ResearchRegressionResult {
+  let state: ResearchProgressState | null = null;
+  const steps: ResearchRegressionStep[] = [];
+  let prevUnlocks = 0;
+  let prevPersist = 0;
+  let monotonicUnlocks = true;
+  let monotonicPersistRevision = true;
+
+  for (const turn of turns) {
+    const inputs = { ...baseInputs, turn };
+    state = computeResearchProgress(inputs, state ?? createEmptyResearchProgressState(turn));
+    const unlocks = state.unlockedNodes.length;
+    if (unlocks < prevUnlocks) monotonicUnlocks = false;
+    prevUnlocks = unlocks;
+    const persistRev = state.persistRevision ?? 0;
+    if (persistRev < prevPersist) monotonicPersistRevision = false;
+    prevPersist = persistRev;
+    steps.push({
+      turn,
+      unlockedCount: unlocks,
+      synergyScore: state.scaleWave?.crossBranchSynergyScore ?? 0,
+      persistRevision: persistRev,
+    });
+  }
+
+  return { steps, monotonicUnlocks, monotonicPersistRevision };
 }
 
 // --- bundled from src/compute.ts ---
@@ -2458,6 +2834,10 @@ export function createEmptyResearchProgressState(turn = 0): ResearchProgressStat
     branchEmphasis: defaultBranchEmphasis(),
     emphasisRevision: 0,
     migrationLog: [],
+    saveKind: 'manual',
+    updatedAtTurn: turn,
+    sessionId: `o10m_r03_${turn}_0`,
+    persistRevision: 0,
   };
 }
 
@@ -2518,6 +2898,14 @@ export function computeResearchProgress(
   readinessByBranch = applyScaleWaveReadinessBonus(readinessByBranch, scaleWave);
   readinessByBranch = applyBranchEmphasisReadinessBonus(readinessByBranch, coreBase.branchEmphasis);
 
+  const commercialization = computeResearchCommercializationReport(inputs, {
+    unlockedNodes,
+    readinessByBranch,
+    branchEmphasis: coreBase.branchEmphasis,
+    scaleWave,
+  });
+  readinessByBranch = applyCommercializationReadinessNudge(readinessByBranch, commercialization);
+
   const computed: ResearchProgressState = {
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: coreBase.revision,
@@ -2531,6 +2919,7 @@ export function computeResearchProgress(
     institutionUpgrades,
     lateGameDiffusion,
     scaleWave,
+    commercialization,
     unlockSeq: coreBase.unlockSeq,
     branchEmphasis: coreBase.branchEmphasis,
   };
@@ -2551,8 +2940,12 @@ export function applyResearchProgressSavePipeline(
   persistedRaw: unknown
 ): { state: ResearchProgressState; persist: ReturnType<typeof prepareResearchProgressForSave> } {
   const state = computeResearchProgressFromSave(inputs, persistedRaw);
-  const persist = prepareResearchProgressForSave(state);
-  return { state, persist };
+  const persist = sealResearchProgressForSave(prepareResearchProgressForSave(state), {
+    turn: inputs.turn,
+    saveKind: state.saveKind,
+    sessionId: state.sessionId,
+  });
+  return { state: { ...state, persistRevision: persist.persistRevision, saveKind: persist.saveKind }, persist };
 }
 
 function mergeMonotonicInstitutionUpgrades(
@@ -2624,7 +3017,7 @@ export function runAgent03ResearchTechSelfTests(): {
   const state = computeResearchProgress(inputs, createEmptyResearchProgressState());
   push('agent03_chunk_04', state.unlockedNodes.some(u => u.nodeId === 'df_t1_campus_foundation'));
   push('agent03_chunk_05', (state.institutionUpgrades?.length ?? 0) >= 6, String(state.institutionUpgrades?.length));
-  push('agent03_chunk_06', OP10M_AGENT03_MODULE_META.schemaVersion === 'op10m-agent03-v3');
+  push('agent03_chunk_06', OP10M_AGENT03_MODULE_META.schemaVersion === 'op10m-agent03-v4');
   const saved = prepareResearchProgressForSave(state);
   push('agent03_chunk_07', validatePersistedCoreForWrite(saved).length === 0);
 
@@ -2640,7 +3033,9 @@ export function runAgent03ResearchSaveFormatSelfTests(): {
   const results: Array<{ id: string; passed: boolean; detail?: string }> = [];
   const push = (id: string, passed: boolean, detail?: string) => results.push({ id, passed, detail });
   const v2 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v2', turn: 1, revision: 0, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [] });
-  push('savefmt_v2_to_v3', v2?.schemaVersion === 'op10m-agent03-v3');
+  push('savefmt_v2_to_v3', v2?.schemaVersion === 'op10m-agent03-v4');
+  const v3 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v3', turn: 2, revision: 1, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [], emphasisRevision: 0, migrationLog: [], coreFingerprint: 'x' });
+  push('savefmt_v3_to_v4', v3?.schemaVersion === 'op10m-agent03-v4' && (v3?.persistRevision ?? 0) === 0);
   push('savefmt_foreign', detectForeignSaveFields({ diffusion: [] }).includes('diffusion'));
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
@@ -2648,8 +3043,8 @@ export function runAgent03ResearchSaveFormatSelfTests(): {
 
 export const OP10M_AGENT03_MODULE_META = {
   moduleId: 'agent-03-research-tech',
-  schemaVersion: 'op10m-agent03-v3',
-  saveFormatVersion: 3,
+  schemaVersion: 'op10m-agent03-v4',
+  saveFormatVersion: 4,
   touchesSaveFormat: true,
   proposedGameStateField: 'researchProgress',
   integrationDoc: 'operation-10m/agent-03-research-tech/INTEGRATION.md',

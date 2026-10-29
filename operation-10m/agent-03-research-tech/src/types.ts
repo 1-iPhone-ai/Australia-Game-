@@ -162,10 +162,13 @@ export interface ResearchBranchEmphasisState {
   setTurn: number;
 }
 
-export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v3' as const;
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v4' as const;
+
+export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
 export type ResearchProgressSchemaVersion =
   | typeof RESEARCH_PROGRESS_SCHEMA_VERSION
+  | 'op10m-agent03-v3'
   | 'op10m-agent03-v2'
   | 'op10m-agent03-v1';
 
@@ -173,6 +176,21 @@ export interface ResearchSaveMigrationEntry {
   fromVersion: ResearchProgressSchemaVersion | 'array-legacy';
   toVersion: ResearchProgressSchemaVersion;
   turn: number;
+}
+
+export interface ResearchCommercializationHint {
+  branchId: ResearchBranchId;
+  emphasis: ResearchProgramEmphasis;
+  readinessFloor: number;
+  exportPriority: 'low' | 'medium' | 'high';
+  linkedCapabilityId: V94EmergingCapabilityId;
+  rationale: string;
+}
+
+export interface ResearchCommercializationReport {
+  active: boolean;
+  hints: ResearchCommercializationHint[];
+  nationalExportScore: number;
 }
 
 export interface ResearchProgressState {
@@ -188,10 +206,15 @@ export interface ResearchProgressState {
   institutionUpgrades: InstitutionUpgradeState[];
   lateGameDiffusion: LateGameDiffusionReport | null;
   scaleWave: ResearchScaleWaveReport | null;
+  commercialization?: ResearchCommercializationReport | null;
   unlockSeq: number;
   branchEmphasis?: ResearchBranchEmphasisState[];
   emphasisRevision?: number;
   migrationLog?: ResearchSaveMigrationEntry[];
+  saveKind?: ResearchSaveKind;
+  updatedAtTurn?: number;
+  sessionId?: string;
+  persistRevision?: number;
 }
 
 export interface StrategyHookDefinition {

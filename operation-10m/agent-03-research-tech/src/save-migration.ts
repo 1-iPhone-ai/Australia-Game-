@@ -10,6 +10,7 @@ import type {
   ResearchProgressState,
   ResearchSaveMigrationEntry,
   UnlockedResearchNode,
+  ResearchSaveKind,
 } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { INSTITUTION_UPGRADE_TIER_RANK } from './institution-upgrades.ts';
@@ -47,12 +48,18 @@ export interface ResearchProgressPersistedCore {
   emphasisRevision: number;
   /** Audit trail of schema hops applied to this blob. */
   migrationLog: ResearchSaveMigrationEntry[];
+  saveKind: ResearchSaveKind;
+  updatedAtTurn: number;
+  sessionId: string;
+  /** Monotonic counter incremented on each sealed write (round 4). */
+  persistRevision: number;
 }
 
 export type { ResearchSaveMigrationEntry } from './types.ts';
 
 const LEGACY_V1 = 'op10m-agent03-v1' as const;
 const LEGACY_V2 = 'op10m-agent03-v2' as const;
+const LEGACY_V3 = 'op10m-agent03-v3' as const;
 
 /** Keys that must never appear on persisted save blobs (Agent 25 guard). */
 export const RESEARCH_SAVE_DERIVED_KEYS = [
@@ -62,6 +69,7 @@ export const RESEARCH_SAVE_DERIVED_KEYS = [
   'inputHash',
   'lateGameDiffusion',
   'scaleWave',
+  'commercialization',
 ] as const;
 
 function finalizeCoreForPersist(
@@ -78,9 +86,16 @@ function finalizeCoreForPersist(
     branchEmphasis: partial.branchEmphasis,
     emphasisRevision: partial.emphasisRevision ?? 0,
     migrationLog: partial.migrationLog ?? [],
+    saveKind: partial.saveKind ?? 'manual',
+    updatedAtTurn: partial.updatedAtTurn ?? partial.turn,
+    sessionId: partial.sessionId ?? `o10m_r03_${partial.turn}_${partial.revision}`,
+    persistRevision: partial.persistRevision ?? 0,
   };
   return { ...draft, coreFingerprint: computePersistedCoreFingerprint(draft) };
 }
+
+/** Public alias for lifecycle merge/seal helpers. */
+export const finalizePersistedCoreDraft = finalizeCoreForPersist;
 
 export function computePersistedCoreFingerprint(
   core: Omit<ResearchProgressPersistedCore, 'coreFingerprint'>
@@ -97,6 +112,10 @@ export function computePersistedCoreFingerprint(
     institutionUpgrades: core.institutionUpgrades,
     branchEmphasis: core.branchEmphasis,
     migrationLog: core.migrationLog,
+    saveKind: core.saveKind,
+    updatedAtTurn: core.updatedAtTurn,
+    sessionId: core.sessionId,
+    persistRevision: core.persistRevision,
   });
   for (let i = 0; i < payload.length; i++) {
     h ^= payload.charCodeAt(i);
@@ -140,6 +159,10 @@ function emptyCore(turn = 0): ResearchProgressPersistedCore {
     branchEmphasis: defaultBranchEmphasis(),
     emphasisRevision: 0,
     migrationLog: [],
+    saveKind: 'manual',
+    updatedAtTurn: turn,
+    sessionId: `o10m_r03_${turn}_0`,
+    persistRevision: 0,
   });
 }
 
@@ -238,11 +261,38 @@ export function migrateResearchProgressSave(raw: unknown): ResearchProgressPersi
       branchEmphasis: sanitizeBranchEmphasis(o.branchEmphasis),
       emphasisRevision: Number(o.emphasisRevision) || 0,
       migrationLog: Array.isArray(o.migrationLog) ? (o.migrationLog as ResearchSaveMigrationEntry[]) : [],
+      saveKind: (o.saveKind as ResearchSaveKind) || 'manual',
+      updatedAtTurn: Number(o.updatedAtTurn) || Number(o.turn) || 0,
+      sessionId: typeof o.sessionId === 'string' ? o.sessionId : `o10m_r03_${Number(o.turn) || 0}`,
+      persistRevision: Number(o.persistRevision) || 0,
     });
     if (typeof o.coreFingerprint === 'string' && o.coreFingerprint !== draft.coreFingerprint) {
       return draft;
     }
     return draft;
+  }
+
+  if (ver === LEGACY_V3) {
+    const nodes = sanitizeUnlockedNodes(o.unlockedNodes);
+    return upgradeToCurrentCore(
+      {
+        schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+        revision: Number(o.revision) || 0,
+        turn: Number(o.turn) || 0,
+        unlockedNodes: nodes,
+        institutionUpgrades: sanitizeInstitutionUpgrades(o.institutionUpgrades),
+        leadingResearchRegion: (o.leadingResearchRegion as ResearchProgressPersistedCore['leadingResearchRegion']) ?? null,
+        unlockSeq: Number(o.unlockSeq) || computeUnlockSeq(nodes),
+        branchEmphasis: sanitizeBranchEmphasis(o.branchEmphasis),
+        emphasisRevision: Number(o.emphasisRevision) || 0,
+        migrationLog: Array.isArray(o.migrationLog) ? (o.migrationLog as ResearchSaveMigrationEntry[]) : [],
+        saveKind: 'manual',
+        updatedAtTurn: Number(o.turn) || 0,
+        sessionId: typeof o.sessionId === 'string' ? o.sessionId : `o10m_r03_${Number(o.turn) || 0}`,
+        persistRevision: 0,
+      },
+      LEGACY_V3
+    );
   }
 
   if (ver === LEGACY_V2) {
@@ -302,6 +352,10 @@ export function extractPersistedCore(state: ResearchProgressState): ResearchProg
     branchEmphasis: state.branchEmphasis ?? defaultBranchEmphasis(),
     emphasisRevision: state.emphasisRevision ?? 0,
     migrationLog: state.migrationLog ?? [],
+    saveKind: state.saveKind ?? 'manual',
+    updatedAtTurn: state.updatedAtTurn ?? state.turn,
+    sessionId: state.sessionId ?? `o10m_r03_${state.turn}_${state.revision ?? 0}`,
+    persistRevision: state.persistRevision ?? 0,
   });
 }
 
@@ -326,6 +380,10 @@ export function hydrateResearchProgressCore(core: ResearchProgressPersistedCore 
     branchEmphasis: core.branchEmphasis,
     emphasisRevision: core.emphasisRevision,
     migrationLog: core.migrationLog,
+    saveKind: core.saveKind,
+    updatedAtTurn: core.updatedAtTurn,
+    sessionId: core.sessionId,
+    persistRevision: core.persistRevision,
     diffusion: V94_REGION_CODES.map(regionId => ({
       regionId,
       score: 0,
@@ -365,6 +423,10 @@ export function mergeComputedResearchState(
     branchEmphasis: core.branchEmphasis,
     emphasisRevision: core.emphasisRevision,
     migrationLog: core.migrationLog,
+    saveKind: core.saveKind,
+    updatedAtTurn: core.updatedAtTurn,
+    sessionId: core.sessionId,
+    persistRevision: core.persistRevision,
   };
 }
 
@@ -415,6 +477,7 @@ export function assertResearchProgressSaveIntegrity(state: ResearchProgressState
   const issues: string[] = [];
   if (
     state.schemaVersion !== RESEARCH_PROGRESS_SCHEMA_VERSION &&
+    state.schemaVersion !== LEGACY_V3 &&
     state.schemaVersion !== LEGACY_V1 &&
     state.schemaVersion !== LEGACY_V2
   ) {

@@ -9,4 +9,7 @@ export * from './scale-wave.ts';
 export * from './institution-upgrades.ts';
 export * from './late-game-diffusion.ts';
 export * from './save-migration.ts';
+export * from './save-lifecycle.ts';
+export * from './commercialization-bridge.ts';
+export * from './regression-harness.ts';
 export * from './compute.ts';

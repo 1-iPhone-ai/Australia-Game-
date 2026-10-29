@@ -29,6 +29,13 @@ import {
   emptyResearchProgressCore,
   validatePersistedCoreForWrite,
   setResearchBranchEmphasisOnCore,
+  reconcileResearchProgressOnLoad,
+  sealResearchProgressForSave,
+  diffResearchPersistedCore,
+  exportResearchProgressCheckpointJson,
+  importResearchProgressCheckpointJson,
+  computeResearchCommercializationReport,
+  runResearchProgressRegressionHarness,
   type Agent03SelfTestResult,
   type ResearchProgressInputs,
 } from '../src/index.ts';
@@ -420,6 +427,109 @@ tests.push(
     assert(s2.unlockedNodes.some(u => u.nodeId === 'df_t1_campus_foundation'));
     assert(s2.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
     assert((s2.diffusion?.[0]?.score ?? 0) >= 0);
+  })
+);
+
+tests.push(
+  test('save_v3_migrates_to_v4_with_lifecycle_fields', () => {
+    const v3 = {
+      schemaVersion: 'op10m-agent03-v3',
+      turn: 12,
+      revision: 3,
+      unlockedNodes: [],
+      institutionUpgrades: [],
+      unlockSeq: 0,
+      branchEmphasis: [],
+      emphasisRevision: 1,
+      migrationLog: [{ fromVersion: 'op10m-agent03-v2', toVersion: 'op10m-agent03-v3', turn: 5 }],
+      coreFingerprint: 'legacy',
+    };
+    const core = migrateResearchProgressSave(v3);
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert(core?.saveKind === 'manual');
+    assert(typeof core?.sessionId === 'string');
+    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v3'));
+  })
+);
+
+tests.push(
+  test('seal_increments_persist_revision', () => {
+    const core = emptyResearchProgressCore(4);
+    const sealed = sealResearchProgressForSave(core, { turn: 4, saveKind: 'autosave' });
+    assert(sealed.persistRevision === 1);
+    assert(sealed.saveKind === 'autosave');
+    assert(sealed.updatedAtTurn === 4);
+  })
+);
+
+tests.push(
+  test('reconcile_merges_disk_unlocks', () => {
+    const inputs = baseInputs({
+      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
+    });
+    const computed = computeResearchProgress(inputs, null);
+    const disk = {
+      schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+      turn: 10,
+      revision: 0,
+      unlockedNodes: [],
+      institutionUpgrades: [],
+      unlockSeq: 0,
+      branchEmphasis: [],
+      emphasisRevision: 0,
+      migrationLog: [],
+      saveKind: 'manual',
+      updatedAtTurn: 10,
+      sessionId: 'disk',
+      persistRevision: 0,
+      coreFingerprint: '',
+    };
+    const { state } = reconcileResearchProgressOnLoad({ turn: 10 }, disk, computed);
+    assert(state.unlockedNodes.length >= 1);
+  })
+);
+
+tests.push(
+  test('commercialization_hints_when_tier2', () => {
+    const inputs = baseInputs({
+      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
+    });
+    const state = computeResearchProgress(inputs, null);
+    assert(state.commercialization?.hints.length >= 1);
+  })
+);
+
+tests.push(
+  test('regression_harness_monotonic_unlocks', () => {
+    const inputs = baseInputs({
+      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
+    });
+    const result = runResearchProgressRegressionHarness(inputs, [10, 11, 12, 13]);
+    assert(result.monotonicUnlocks);
+    assert(result.steps.length === 4);
+  })
+);
+
+tests.push(
+  test('checkpoint_json_roundtrip', () => {
+    const core = emptyResearchProgressCore(7);
+    const json = exportResearchProgressCheckpointJson(core);
+    const imported = importResearchProgressCheckpointJson(json);
+    assert(imported?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert(imported?.saveKind === 'checkpoint');
+    const diff = diffResearchPersistedCore(core, imported!);
+    assert(diff.some(d => d.path === 'persistRevision' || d.path === 'saveKind'));
+  })
+);
+
+tests.push(
+  test('save_pipeline_seals_persist_revision', () => {
+    const inputs = baseInputs({
+      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
+    });
+    const { persist } = applyResearchProgressSavePipeline(inputs, null);
+    assert(persist.persistRevision >= 1);
+    assert(persist.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
   })
 );
 

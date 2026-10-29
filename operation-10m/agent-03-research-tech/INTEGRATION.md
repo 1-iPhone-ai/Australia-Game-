@@ -1,7 +1,7 @@
 # Agent 03 — Integration Contract (Research / Technology / Progression)
 
 **Module root:** `operation-10m/agent-03-research-tech/`  
-**Schema version:** `op10m-agent03-v3` (persisted core + `coreFingerprint`, `migrationLog`, `emphasisRevision`)  
+**Schema version:** `op10m-agent03-v4` (persisted core + lifecycle seal, `persistRevision`, v3 migration)  
 **Owner:** Agent 03 (content + pure engine). **Assembly:** Agent 25 only.
 
 ## Purpose
@@ -35,9 +35,9 @@ gameState.researchProgress: ResearchProgressPersistedCore | null;
 
 Use `prepareResearchProgressForSave(state)` before write; on load `applyResearchProgressSavePipeline(inputs, raw)` or `computeResearchProgressFromSave`.
 
-**v3 persisted core** adds `coreFingerprint`, `emphasisRevision`, `migrationLog`. Validates via `validatePersistedCoreForWrite`; guard derived keys with `detectForeignSaveFields`.
+**v4 persisted core** adds `saveKind`, `updatedAtTurn`, `sessionId`, `persistRevision` plus v3 fingerprint/migration fields. Use `sealResearchProgressForSave`, `reconcileResearchProgressOnLoad`, checkpoint JSON import/export.
 
-Legacy `op10m-agent03-v2` and `op10m-agent03-v1` migrate via `migrateResearchProgressSave()`.
+Legacy `op10m-agent03-v3`, `op10m-agent03-v2`, and `op10m-agent03-v1` migrate via `migrateResearchProgressSave()`.
 
 ### Input wiring
 

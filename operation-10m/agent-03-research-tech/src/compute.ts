@@ -7,6 +7,10 @@ import {
   computeResearchScaleWaveReport,
   scaleWaveDiffusionBonus,
 } from './scale-wave.ts';
+import {
+  applyCommercializationReadinessNudge,
+  computeResearchCommercializationReport,
+} from './commercialization-bridge.ts';
 import { branchNodeTopologicalOrder, evaluateNodePrerequisites } from './prerequisites.ts';
 import { resolveActiveStrategyHooks, STRATEGY_HOOK_BY_ID } from './strategy-hooks.ts';
 import {
@@ -18,6 +22,7 @@ import {
   prepareResearchProgressForSave,
   sanitizeResearchProgressPersisted,
 } from './save-migration.ts';
+import { sealResearchProgressForSave } from './save-lifecycle.ts';
 import { RESEARCH_INSTITUTIONS } from './institutions.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import type {
@@ -144,6 +149,10 @@ export function createEmptyResearchProgressState(turn = 0): ResearchProgressStat
     branchEmphasis: defaultBranchEmphasis(),
     emphasisRevision: 0,
     migrationLog: [],
+    saveKind: 'manual',
+    updatedAtTurn: turn,
+    sessionId: `o10m_r03_${turn}_0`,
+    persistRevision: 0,
   };
 }
 
@@ -204,6 +213,14 @@ export function computeResearchProgress(
   readinessByBranch = applyScaleWaveReadinessBonus(readinessByBranch, scaleWave);
   readinessByBranch = applyBranchEmphasisReadinessBonus(readinessByBranch, coreBase.branchEmphasis);
 
+  const commercialization = computeResearchCommercializationReport(inputs, {
+    unlockedNodes,
+    readinessByBranch,
+    branchEmphasis: coreBase.branchEmphasis,
+    scaleWave,
+  });
+  readinessByBranch = applyCommercializationReadinessNudge(readinessByBranch, commercialization);
+
   const computed: ResearchProgressState = {
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: coreBase.revision,
@@ -217,6 +234,7 @@ export function computeResearchProgress(
     institutionUpgrades,
     lateGameDiffusion,
     scaleWave,
+    commercialization,
     unlockSeq: coreBase.unlockSeq,
     branchEmphasis: coreBase.branchEmphasis,
   };
@@ -237,8 +255,12 @@ export function applyResearchProgressSavePipeline(
   persistedRaw: unknown
 ): { state: ResearchProgressState; persist: ReturnType<typeof prepareResearchProgressForSave> } {
   const state = computeResearchProgressFromSave(inputs, persistedRaw);
-  const persist = prepareResearchProgressForSave(state);
-  return { state, persist };
+  const persist = sealResearchProgressForSave(prepareResearchProgressForSave(state), {
+    turn: inputs.turn,
+    saveKind: state.saveKind,
+    sessionId: state.sessionId,
+  });
+  return { state: { ...state, persistRevision: persist.persistRevision, saveKind: persist.saveKind }, persist };
 }
 
 function mergeMonotonicInstitutionUpgrades(
