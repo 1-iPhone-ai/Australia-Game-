@@ -1,17 +1,17 @@
 {
-  "analyzedAt": "2026-10-29T07:01:16.682Z",
+  "analyzedAt": "2026-10-29T07:04:40.529Z",
   "gateAuditedFunctional": 10000000,
   "baselineCommit": "bc1adf3",
   "baselineAuditedFunctional": 389566,
-  "fullChunksProjectedAudited": 957106,
-  "netAuditedFunctionalToGate": 9042894,
-  "workerWaveDeltaAudited": 567540,
+  "fullChunksProjectedAudited": 995291,
+  "netAuditedFunctionalToGate": 9004709,
+  "workerWaveDeltaAudited": 605725,
   "modulesInFullDryRun": 25,
   "assemblyReadyRemote": 24,
   "trancheEstimate": {
     "method": "equal worker-wave increments from full-chunks dry-run",
-    "auditedFunctionalPerWave": 567540,
-    "estimatedWavesToGate": 16,
+    "auditedFunctionalPerWave": 605725,
+    "estimatedWavesToGate": 15,
     "note": "Assumes each future wave adds ~same audited functional as current 24/25 module splice; real tranches vary."
   },
   "duplicationAuditRequirements": [
@@ -23,12 +23,12 @@
   "buildRuntimeRisks": [
     {
       "risk": "Single-file bundle size",
-      "signal": "Projected ~68,280,903 bytes / 1,005,207 lines after worker wave",
+      "signal": "Projected ~69,854,552 bytes / 1,044,381 lines after worker wave",
       "at10M": "Linear ~27× current projection bytes if structure unchanged (feasibility unknown for Vite/tsc)"
     },
     {
       "risk": "Typecheck / IDE parse",
-      "signal": "Export declarations ~13075 after wave",
+      "signal": "Export declarations ~13084 after wave",
       "at10M": "Editor and tsc memory limits likely binding before raw line count"
     },
     {
@@ -54,12 +54,12 @@
     },
     "fullChunksProjection": {
       "path": "build/tranche-full-chunks-projection.tsx",
-      "bytes": 68280903,
-      "lines": 1005207,
-      "exportLines": 13075,
+      "bytes": 69854552,
+      "lines": 1044381,
+      "exportLines": 13084,
       "readMs": 32,
-      "hashMs": 36,
-      "sha256": "34ccb169875e61d0"
+      "hashMs": 37,
+      "sha256": "e09fe0e612e2db65"
     },
     "extrapolatedScanMsAt10M": 429
   },
