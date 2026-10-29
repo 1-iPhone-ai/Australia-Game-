@@ -34,6 +34,8 @@ From `v10-14-labor-demographics/index.ts`:
 - Types: `NationalLaborDemographicsState`, `LaborDemographicsPersisted`, `LaborDemographicsInputs`, …
 - Core: `computeNationalLaborDemographics`, `buildLaborDemographicsInputs`, `sanitizeLaborDemographicsPersisted`, `validateLaborDemographicsState`, `laborDemographicsInputHash`
 - Automation: `computeLaborAutomationFeedback`, `mergeAutomationFeedbackIntoRegionalScores`
+- Household budget: `computeNationalHouseholdBudgetDetail`, `householdBudgetLaborAdjustments`
+- Migration shocks: `detectMigrationShocks`, `applyMigrationShocksToRegions`, persisted `activeMigrationShocks`
 - UI (optional inline): `LaborDemographicsCenterPanel`
 - Tests: `runV1014LaborDemographicsSelfTests`
 

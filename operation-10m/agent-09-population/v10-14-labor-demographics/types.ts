@@ -22,7 +22,9 @@ export const V1014_LABOR_LIMITS = {
   maxIndustryLinks: 8,
   maxEvidence: 8,
   hysteresisDeadband: 2.0,
-  maxEventsPerTurn: 6
+  maxEventsPerTurn: 6,
+  maxActiveMigrationShocks: 8,
+  migrationShockDefaultDuration: 3
 } as const;
 
 export type StrategicIndustryKind =
@@ -144,6 +146,8 @@ export interface LaborDemographicsRegionSnapshot {
   workforceStrainIndex: number;
   householdEmploymentFit: number;
   automationPressureIndex?: number;
+  householdBudgetPressureScore?: number;
+  householdEssentialsGapScore?: number;
 }
 
 export interface LaborDemographicsIndustryLink {
@@ -186,6 +190,52 @@ export interface NationalLaborDemographicsState {
   transitions: LaborDemographicsTransition[];
   evidence: string[];
   automationFeedbackSummary?: string;
+  householdBudgetSummary?: string;
+  activeMigrationShocks?: LaborMigrationShockView[];
+}
+
+export type MigrationShockKind =
+  | 'resource_boom_inflow'
+  | 'housing_affordability_outflow'
+  | 'essential_access_outflow'
+  | 'metro_talent_pull'
+  | 'frontier_recovery_inflow';
+
+export interface LaborMigrationShock {
+  id: string;
+  kind: MigrationShockKind;
+  regionId: string;
+  magnitude: number;
+  turnsRemaining: number;
+  startedTurn: number;
+  reason: string;
+}
+
+export interface LaborMigrationShockView {
+  id: string;
+  kind: MigrationShockKind;
+  regionId: string;
+  magnitude: number;
+  turnsRemaining: number;
+  label: string;
+}
+
+export interface RegionalHouseholdBudgetDetail {
+  regionId: string;
+  budgetPressureScore: number;
+  essentialsGapScore: number;
+  resilienceScore: number;
+  affordabilityBand: string;
+  essentialsBand: string;
+  narrative: string;
+}
+
+export interface NationalHouseholdBudgetDetail {
+  nationalBudgetPressureScore: number;
+  nationalEssentialsGapScore: number;
+  shockSensitivity: 'low' | 'moderate' | 'high' | 'critical';
+  regions: Record<string, RegionalHouseholdBudgetDetail>;
+  summary: string;
 }
 
 export interface LaborDemographicsPersisted {
@@ -215,6 +265,7 @@ export interface LaborDemographicsPersisted {
   >;
   transitions: LaborDemographicsTransition[];
   history: Array<{ turn: number; hash: string; summary: string }>;
+  activeMigrationShocks?: LaborMigrationShock[];
 }
 
 export interface LaborDemographicsInputs {
@@ -226,6 +277,8 @@ export interface LaborDemographicsInputs {
   livingRegions?: any;
   economicGeography?: any;
   capabilities?: Array<{ id: string; active?: boolean; automationShift?: number }>;
+  /** Test / scenario hook — inject shocks without mutating canonical crisis systems. */
+  migrationShockOverrides?: LaborMigrationShock[];
 }
 
 export interface LaborDemographicsWorldView {

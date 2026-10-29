@@ -6,6 +6,8 @@ export * from './wages';
 export * from './migration';
 export * from './employment-linkage';
 export * from './automation-feedback';
+export * from './household-budget-detail';
+export * from './migration-shocks';
 export * from './persistence';
 export * from './inputs';
 export * from './compute';

@@ -1,4 +1,6 @@
 import { computeLaborAutomationFeedback } from './automation-feedback';
+import { computeNationalHouseholdBudgetDetail } from './household-budget-detail';
+import { detectMigrationShocks } from './migration-shocks';
 import { computeNationalLaborDemographics } from './compute';
 import { buildLaborDemographicsInputs } from './inputs';
 import { createInitialLaborDemographicsPersisted, laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
@@ -31,6 +33,28 @@ export function v1014laborMakeTestIndustries(overrides?: Partial<Record<string, 
   });
   if (overrides) Object.assign(output, overrides);
   return { national: { output }, regions };
+}
+
+export function v1014laborMakeTestHouseholds(opts?: { severeRegion?: string; essentialsStrainRegion?: string }): any {
+  const regions: any = {};
+  V1014_LABOR_CORE_REGIONS.forEach(c => {
+    regions[c] = {
+      affordability: c === opts?.severeRegion ? 'severe_pressure' : 'healthy',
+      essentialAccess: c === opts?.essentialsStrainRegion ? 'critical' : 'adequate',
+      resilience: c === opts?.severeRegion ? 'fragile' : 'moderate',
+      employmentOpportunity: 'balanced',
+      housingPressure: c === opts?.severeRegion ? 'severe' : 'moderate'
+    };
+  });
+  return {
+    national: {
+      affordability: opts?.severeRegion ? 'strained' : 'healthy',
+      financialResilience: 'moderate',
+      housingPressure: 'moderate',
+      employmentOpportunity: 'balanced'
+    },
+    regions
+  };
 }
 
 export interface SelfTestResult {
@@ -123,6 +147,83 @@ export function runV1014LaborDemographicsSelfTests(): {
   });
   check('AF04', fb.nationalAutomationIndex >= 45 && fb.stewardHints.length > 0, 'automation index and hints');
   check('AF05', laborDemographicsInputHash({ ...baseInp, capabilities: autoCaps }) !== hashA, 'hash includes automation');
+
+  const hhInp = { ...baseInp, households: v1014laborMakeTestHouseholds() };
+  const rHh = computeNationalLaborDemographics(hhInp, createInitialLaborDemographicsPersisted(), null);
+  check('HB01', Boolean(rHh.state.householdBudgetSummary), 'household budget summary');
+  check('HB02', typeof rHh.state.regions.NSW?.householdBudgetPressureScore === 'number', 'regional budget pressure');
+
+  const hhSevere = { ...baseInp, households: v1014laborMakeTestHouseholds({ severeRegion: 'NSW' }) };
+  const rHhBad = computeNationalLaborDemographics(hhSevere, createInitialLaborDemographicsPersisted(), null);
+  check(
+    'HB03',
+    (rHhBad.state.regions.NSW?.wagePressureScore || 0) >= (rHh.state.regions.NSW?.wagePressureScore || 0) - 1,
+    'budget pressure lifts wage index'
+  );
+  check(
+    'HB04',
+    (rHhBad.state.regions.NSW?.householdBudgetPressureScore || 0) >
+      (rHh.state.regions.NSW?.householdBudgetPressureScore || 0),
+    'severe affordability raises pressure score'
+  );
+
+  const natBudget = computeNationalHouseholdBudgetDetail(v1014laborMakeTestHouseholds({ severeRegion: 'VIC' }));
+  check('HB05', natBudget.shockSensitivity !== 'low', 'severe region raises shock sensitivity');
+
+  check(
+    'MS01',
+    (r1.state.activeMigrationShocks || []).some(s => s.regionId === 'WA' && s.kind === 'resource_boom_inflow'),
+    'WA mining triggers inflow shock'
+  );
+
+  check(
+    'MS02',
+    (rHhBad.state.activeMigrationShocks || []).some(s => s.kind === 'housing_affordability_outflow'),
+    'affordability shock detected'
+  );
+
+  const migBefore = rHh.state.regions.NSW?.migrationFlowScore || 50;
+  const migAfter = rHhBad.state.regions.NSW?.migrationFlowScore || 50;
+  check('MS03', migAfter <= migBefore + 2, 'outflow shock pulls migration score down vs healthy baseline');
+
+  const pers = createInitialLaborDemographicsPersisted();
+  const first = computeNationalLaborDemographics(baseInp, pers, null);
+  const shockTurns = first.persisted.activeMigrationShocks?.[0]?.turnsRemaining;
+  const second = computeNationalLaborDemographics({ ...baseInp, turn: 4 }, first.persisted, first.state);
+  const shockTurnsLater = second.persisted.activeMigrationShocks?.find(
+    s => s.id === first.persisted.activeMigrationShocks?.[0]?.id
+  )?.turnsRemaining;
+  check(
+    'MS04',
+    shockTurns != null && shockTurnsLater != null && shockTurnsLater < shockTurns,
+    'shocks decay across turns'
+  );
+
+  const overrideShock = {
+    id: 'msh_test_NSW_t9',
+    kind: 'metro_talent_pull' as const,
+    regionId: 'NSW',
+    magnitude: 12,
+    turnsRemaining: 2,
+    startedTurn: 9,
+    reason: 'test override'
+  };
+  const rOv = computeNationalLaborDemographics(
+    { ...baseInp, turn: 9, migrationShockOverrides: [overrideShock] },
+    createInitialLaborDemographicsPersisted(),
+    null
+  );
+  check('MS05', (rOv.state.activeMigrationShocks || []).some(s => s.id === overrideShock.id), 'shock override applied');
+
+  check(
+    'MS06',
+    detectMigrationShocks({
+      turn: 2,
+      inputs: hhSevere,
+      householdBudget: computeNationalHouseholdBudgetDetail(hhSevere.households)
+    }).length > 0,
+    'detector emits under strain'
+  );
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

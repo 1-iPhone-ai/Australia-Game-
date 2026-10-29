@@ -13,6 +13,8 @@ Modular **V10.14 Labor Market, Demographics, Employment, Wages & Migration** lay
 - **Wage pressure** from workforce strain + output momentum
 - **Migration flow** bands from cross-regional employment attractiveness
 - **Automation feedback** from V10.10 workforce automation shift into bounded labor adjustments (presentation + index deltas only)
+- **Household budget detail** — affordability/resilience/essentials pressure indices (no currency) feeding wages and migration attractiveness
+- **Migration shocks** — persisted episodic regional flow shocks with turn decay
 
 ## Layout
 

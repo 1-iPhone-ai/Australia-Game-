@@ -33,7 +33,8 @@ export function createInitialLaborDemographicsPersisted(turn = 1): LaborDemograp
     },
     regionalHysteresis: {},
     transitions: [],
-    history: []
+    history: [],
+    activeMigrationShocks: []
   };
 }
 
@@ -60,7 +61,10 @@ export function sanitizeLaborDemographicsPersisted(raw: any, turn = 1): LaborDem
     },
     regionalHysteresis: typeof raw.regionalHysteresis === 'object' && raw.regionalHysteresis ? raw.regionalHysteresis : {},
     transitions: Array.isArray(raw.transitions) ? raw.transitions.slice(-V1014_LABOR_LIMITS.maxTransitions) : [],
-    history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LABOR_LIMITS.maxHistory) : []
+    history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LABOR_LIMITS.maxHistory) : [],
+    activeMigrationShocks: Array.isArray(raw.activeMigrationShocks)
+      ? raw.activeMigrationShocks.slice(-V1014_LABOR_LIMITS.maxActiveMigrationShocks)
+      : []
   };
 }
 
@@ -81,6 +85,7 @@ export function laborDemographicsInputHash(inputs: LaborDemographicsInputs): str
   parts.push(`wf:${Math.round(Number(wf || 0) * 100)}`);
   const hh = inputs.households?.national?.employmentOpportunity;
   parts.push(`hh:${hh || 'n'}`);
+  parts.push(`hhaff:${inputs.households?.national?.affordability || 'n'}`);
   const autoCaps = (inputs.capabilities || [])
     .filter(c => c.active !== false)
     .map(c => `${c.id}:${Math.round(Number(c.automationShift) || 0)}`)

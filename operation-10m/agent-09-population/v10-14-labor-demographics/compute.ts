@@ -1,4 +1,14 @@
+import {
+  computeNationalHouseholdBudgetDetail,
+  householdBudgetLaborAdjustments
+} from './household-budget-detail';
 import { computeLaborAutomationFeedback, mergeAutomationFeedbackIntoRegionalScores } from './automation-feedback';
+import {
+  applyMigrationShocksToRegions,
+  detectMigrationShocks,
+  mergeMigrationShocks,
+  toMigrationShockViews
+} from './migration-shocks';
 import {
   v1014laborApplyHysteresis,
   v1014laborBandDemographic,
@@ -79,6 +89,7 @@ export function computeNationalLaborDemographics(
   }
 
   const nh = persisted.nationalHysteresis;
+  const householdBudget = computeNationalHouseholdBudgetDetail(inputs.households);
   const regions: Record<string, LaborDemographicsRegionSnapshot> = {};
   const attractiveness: Record<string, number> = {};
 
@@ -101,15 +112,20 @@ export function computeNationalLaborDemographics(
     const hhFit = householdEmploymentFit(regionId, inputs.households);
     const momentumBoost = livingRegionsMomentumBoost(inputs.livingRegions, regionId);
 
+    const hhDetail = householdBudget.regions[regionId];
+    const budgetAdj = householdBudgetLaborAdjustments(hhDetail);
+
     let empLinkageRaw = computeRegionalEmploymentLinkageRaw({ outputIndex, hhFit, wfStrain });
+    empLinkageRaw = v1014laborClamp(empLinkageRaw + budgetAdj.employmentFitDelta);
     let wageRaw = computeRegionalWagePressureRaw({ wfStrain, outputIndex, momentumBoost });
+    wageRaw = v1014laborClamp(wageRaw + budgetAdj.wagePressureDelta);
     let demoRaw = computeRegionalDemographicRaw({ momentumBoost, dominant });
     ({ empLinkageRaw, wageRaw, demoRaw } = mergeAutomationFeedbackIntoRegionalScores(
       { empLinkageRaw, wageRaw, demoRaw },
       automationFeedback
     ));
 
-    attractiveness[regionId] = computeRegionalAttractiveness({ empLinkageRaw, wfStrain, hhFit });
+    attractiveness[regionId] = computeRegionalAttractiveness({ empLinkageRaw, wfStrain, hhFit }) + budgetAdj.attractivenessDelta;
 
     regions[regionId] = {
       regionId,
@@ -125,7 +141,9 @@ export function computeNationalLaborDemographics(
       industryOutputIndex: outputIndex,
       workforceStrainIndex: wfStrain,
       householdEmploymentFit: hhFit,
-      automationPressureIndex: automationFeedback.nationalAutomationIndex
+      automationPressureIndex: automationFeedback.nationalAutomationIndex,
+      householdBudgetPressureScore: hhDetail.budgetPressureScore,
+      householdEssentialsGapScore: hhDetail.essentialsGapScore
     };
     persisted.regionalHysteresis[regionId] = {
       demographicStructure: regions[regionId].demographicStructure,
@@ -136,6 +154,29 @@ export function computeNationalLaborDemographics(
   });
 
   applyMigrationScoresToRegions(regions, attractiveness);
+
+  const tickedShocks = (persisted.activeMigrationShocks || [])
+    .map(s => ({
+      ...s,
+      turnsRemaining:
+        turn > s.startedTurn ? Math.max(0, s.turnsRemaining - 1) : s.turnsRemaining
+    }))
+    .filter(s => s.turnsRemaining > 0);
+
+  const detectedShocks = detectMigrationShocks({ turn, inputs, householdBudget });
+  const activeShocks = mergeMigrationShocks(
+    tickedShocks,
+    detectedShocks,
+    inputs.migrationShockOverrides,
+    turn
+  );
+  const shockApply = applyMigrationShocksToRegions(regions, activeShocks);
+  if (shockApply.regionsTouched.length) {
+    events.push(
+      `Migration shocks active in ${shockApply.regionsTouched.join(', ')} (${activeShocks.length} shock(s)).`
+    );
+  }
+
   V1014_LABOR_CORE_REGIONS.forEach(regionId => {
     persisted.regionalHysteresis[regionId].migrationFlow = regions[regionId].migrationFlow;
   });
@@ -240,7 +281,8 @@ export function computeNationalLaborDemographics(
     history: [
       ...persisted.history,
       { turn, hash, summary: `emp=${empNat.band}, wage=${wageNat.band}, mig=${migNat.band}` }
-    ].slice(-V1014_LABOR_LIMITS.maxHistory)
+    ].slice(-V1014_LABOR_LIMITS.maxHistory),
+    activeMigrationShocks: activeShocks
   };
 
   const dominantLink = industryLinks[0];
@@ -268,8 +310,15 @@ export function computeNationalLaborDemographics(
     summary,
     outlook,
     transitions: nextPersisted.transitions,
-    evidence: formatIndustryEvidence(industryLinks),
-    automationFeedbackSummary: automationFeedback.playerFacingSummary
+    evidence: [
+      ...formatIndustryEvidence(industryLinks),
+      ...(householdBudget.nationalBudgetPressureScore >= 60
+        ? [`Household budget pressure elevated (${Math.round(householdBudget.nationalBudgetPressureScore)})`]
+        : [])
+    ],
+    automationFeedbackSummary: automationFeedback.playerFacingSummary,
+    householdBudgetSummary: householdBudget.summary,
+    activeMigrationShocks: toMigrationShockViews(activeShocks)
   };
 
   if (automationFeedback.stewardHints.length) {
