@@ -7,6 +7,7 @@
 | Branch | `op10m/agent-09-population` |
 | Base commit | `a1db005` — wave **46** / round 46 care stack |
 | Merge baseline | **`456efb9`** — O10-224 integration @ **2,637,258** projected |
+| Origin (round 47 feat) | **`a5a531dc`** — pushed first |
 | Round **47** / wave **47** | Care-tenacity coupling, tenacity resilience, subject tenacity, tenacity depth |
 | Self-tests | **794** cases (`npm run test:agent09`) |
 | Chunk lines | **24573** (`operation-10m/modules/agent-09-population/chunk.tsx`) |
