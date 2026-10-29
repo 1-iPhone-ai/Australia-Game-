@@ -10856,6 +10856,7 @@ export function canonicalStateFromLiveRuntime(
     stateCapacity: sanitizeStateCapacityPersisted((liveState as any).stateCapacity || (gameState as any)?.stateCapacity),
     publicFinance: sanitizePublicFinancePersisted((liveState as any).publicFinance || (gameState as any)?.publicFinance),
     householdEconomy: ((liveState as any).householdEconomy || (gameState as any)?.householdEconomy) ? sanitizeHouseholdEconomyPersisted((liveState as any).householdEconomy || (gameState as any)?.householdEconomy) : null,
+    nationalWellbeing: ((liveState as any).nationalWellbeing || (gameState as any)?.nationalWellbeing) ? sanitizeNationalWellbeingPersisted((liveState as any).nationalWellbeing || (gameState as any)?.nationalWellbeing) : null,
     contentState: sanitizeMatchContentState((liveState as any).contentState || (gameState as any)?.contentState),
     lastMigrationResult: liveState.lastMigrationResult || null,
     determinismReports: liveState.determinismReports || null,
@@ -14139,6 +14140,8 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   stateCapacityEnabled: true,
   publicFinanceEnabled: true,
   householdsEnabled: true,
+  /** V10.14 National Wellbeing Index (needs V10.13 + National Systems; off = no composite wellbeing layer). */
+  nationalWellbeingEnabled: true,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -26517,6 +26520,8 @@ export type GameSettingsState = {
   publicFinanceEnabled?: boolean;
   /** V10.13 Households, Living Standards & Domestic Demand (needs National Systems; off = no households layer, V10.0–V10.12 unchanged). */
   householdsEnabled?: boolean;
+  /** V10.14 National Wellbeing Index (needs V10.13; off = no composite wellbeing layer). */
+  nationalWellbeingEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -36313,6 +36318,8 @@ export const initialGameState = {
   publicFinance: null as any,
   /** V10.13: household-economy lifecycle memory (band hysteresis, pinned concerns, transitions, history). Living standards and demand are derived. */
   householdEconomy: null as any,
+  /** V10.14: national wellbeing band hysteresis only — composite score is derived from V10.13 + stability reads. */
+  nationalWellbeing: null as any,
   /** V9.3 per-match content state (profile, budgets, cooldowns, bounded history). Not AI memory. */
   contentState: null as MatchContentState | null,
   // Regional Factions initialise from Living Regions / contracts / standing on the first live pass.
@@ -80358,7 +80365,9 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   // V10.12: pre-V10.12 saves carry NO public-finance memory (null) — current fiscal position and commitments are derived on load.
   if (migrated.gameState) migrated.gameState.publicFinance = sanitizePublicFinancePersisted(migrated.gameState.publicFinance);
   // V10.13: pre-V10.13 saves carry NO household-economy memory (null) — current living standards and domestic demand are derived on load.
+  // V10.14: pre-V10.14 saves carry NO wellbeing memory (null) — composite wellbeing is derived on load.
   if (migrated.gameState) migrated.gameState.householdEconomy = migrated.gameState.householdEconomy ? sanitizeHouseholdEconomyPersisted(migrated.gameState.householdEconomy) : null;
+  if (migrated.gameState) migrated.gameState.nationalWellbeing = migrated.gameState.nationalWellbeing ? sanitizeNationalWellbeingPersisted(migrated.gameState.nationalWellbeing) : null;
   if (migrated.gameState) migrated.gameState.diplomacyState = sanitizeDiplomacyState(migrated.gameState.diplomacyState || migrated.diplomacyState, migrated.gameState.diplomacy || migrated.diplomacy, Number(migrated.gameState.turnCounter || 0));
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
@@ -133366,7 +133375,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'nationalWellbeingEnabled'
 ] as const;
 
 /**
@@ -133730,6 +133739,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         stateCapacity: sanitizeStateCapacityPersisted(stateData.stateCapacity || raw.gameState?.stateCapacity),
         publicFinance: sanitizePublicFinancePersisted(stateData.publicFinance || raw.gameState?.publicFinance),
         householdEconomy: (stateData.householdEconomy || raw.gameState?.householdEconomy) ? sanitizeHouseholdEconomyPersisted(stateData.householdEconomy || raw.gameState?.householdEconomy) : null,
+        nationalWellbeing: (stateData.nationalWellbeing || raw.gameState?.nationalWellbeing) ? sanitizeNationalWellbeingPersisted(stateData.nationalWellbeing || raw.gameState?.nationalWellbeing) : null,
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -135788,6 +135798,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1011', label: 'V10.11 Adaptive Governance & State Capacity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1011AdaptiveGovernanceSelfTests() },
   { id: 'v1012', label: 'V10.12 Public Finance & Fiscal Capacity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1012PublicFinanceSelfTests() },
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
+  { id: 'v1014', label: 'V10.14 National Wellbeing Index', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014NationalWellbeingSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
@@ -137879,6 +137890,8 @@ export interface NationalSystemsWorldView {
   publicFinance?: PublicFinanceWorldView | null;
   /** V10.13 Households, Living Standards & Domestic Demand (null when off). */
   households?: HouseholdEconomyWorldView | null;
+  /** V10.14 composite wellbeing (derived; null when feature off). */
+  wellbeing?: NationalWellbeingWorldView | null;
 }
 export type NationalQueryTopic = 'overview' | 'bottlenecks' | 'region_network' | 'dependency' | 'resilience' | 'what_if';
 export interface NationalQuery { topic: NationalQueryTopic; regionId: string | null; network: NationalNetworkKind | null; projectType: string | null }
@@ -180300,6 +180313,460 @@ export function runV1013HouseholdsLivingStandardsSelfTests(): {
     results
   };
 }
+// ============================================================================
+// SECTION 20AG: V10.14 NATIONAL WELLBEING INDEX (O111 Agent 109)
+// ============================================================================
+// Derived interpretation layer only — composes V10.13 living standards with optional
+// Public Stability scores. Never mutates households, stability, Living Regions, or fiscal state.
+// Invariants W1–W6:
+//   W1 — V10.13 remains authoritative for material living standards and domestic demand.
+//   W2 — Public Stability remains authoritative for societal stability; V10.14 reads scores only.
+//   W3 — No wellbeing mana, no household actors, no direct economy or AP effects.
+//   W4 — Feature off when nationalSystemsEnabled, householdsEnabled, or nationalWellbeingEnabled is false.
+//   W5 — Bands use hysteresis on the composite score (no raw-formula flicker).
+//   W6 — Pre-V10.14 saves load with null persisted memory; derived bands only.
+
+export const V1014_SCHEMA_VERSION = '10.14.0';
+
+export type NationalWellbeingBand = 'critical' | 'strained' | 'mixed' | 'positive' | 'flourishing';
+
+export const NATIONAL_WELLBEING_LABEL: Record<NationalWellbeingBand, string> = {
+  critical: 'Critical wellbeing',
+  strained: 'Strained wellbeing',
+  mixed: 'Mixed wellbeing',
+  positive: 'Positive wellbeing',
+  flourishing: 'Flourishing wellbeing'
+};
+
+export const NATIONAL_WELLBEING_ICON: Record<NationalWellbeingBand, string> = {
+  critical: '⛔',
+  strained: '●',
+  mixed: '◐',
+  positive: '✓',
+  flourishing: '★'
+};
+
+const V1014_BAND_BOUNDS: Array<[NationalWellbeingBand, number]> = [
+  ['critical', 0],
+  ['strained', 28],
+  ['mixed', 45],
+  ['positive', 58],
+  ['flourishing', 75]
+];
+
+const v1014Clamp = (n: number, lo = 0, hi = 100) => Math.min(hi, Math.max(lo, n));
+const v1014C = (n: number) => Math.round(v1014Clamp(n) * 10) / 10;
+
+function v1014BandForScore(score: number): NationalWellbeingBand {
+  let band: NationalWellbeingBand = 'critical';
+  for (const [b, min] of V1014_BAND_BOUNDS) {
+    if (score >= min) band = b;
+  }
+  return band;
+}
+
+function v1014BandWithHysteresis(score: number, prev: { score: number; band: NationalWellbeingBand } | null): NationalWellbeingBand {
+  const raw = v1014BandForScore(score);
+  if (!prev) return raw;
+  const dead = V1013_LIMITS.hysteresisDeadband;
+  const prevIdx = V1014_BAND_BOUNDS.findIndex(([b]) => b === prev.band);
+  const rawIdx = V1014_BAND_BOUNDS.findIndex(([b]) => b === raw);
+  if (rawIdx === prevIdx) return prev.band;
+  if (rawIdx > prevIdx && score < V1014_BAND_BOUNDS[rawIdx][1] + dead) return prev.band;
+  if (rawIdx < prevIdx && score > V1014_BAND_BOUNDS[prevIdx][1] - dead) return prev.band;
+  return raw;
+}
+
+function v1014NormRank(rank: number, max: number): number {
+  return max <= 0 ? 50 : v1014C((rank / max) * 100);
+}
+
+function v1014InverseRank(rank: number, max: number): number {
+  return v1014NormRank(max - rank, max);
+}
+
+export interface NationalWellbeingDimensions {
+  material: number;
+  security: number;
+  opportunity: number;
+  housing: number;
+  cohesion: number | null;
+}
+
+export interface NationalWellbeingState {
+  schemaVersion: string;
+  revision: number;
+  enabled: boolean;
+  score: number;
+  band: NationalWellbeingBand;
+  dimensions: NationalWellbeingDimensions;
+  trajectory: LivingStandardsTrajectory;
+  worstRegionId: string | null;
+  bestRegionId: string | null;
+  divergenceBand: 'low' | 'moderate' | 'high';
+  concerns: string[];
+  strengths: string[];
+  summary: string;
+  inputHash: string;
+  lastUpdatedTurn: number;
+  sources: { households: boolean; publicStability: boolean };
+}
+
+export interface NationalWellbeingPersisted {
+  schemaVersion: string;
+  revision: number;
+  initializedTurn: number | null;
+  lastUpdatedTurn: number;
+  lastInputHash: string;
+  bandHysteresis: { score: number; band: NationalWellbeingBand };
+}
+
+export interface NationalWellbeingInputs {
+  turn: number;
+  enabled: boolean;
+  households: NationalHouseholdEconomyState | null;
+  publicStabilityScore: number | null;
+}
+
+export interface NationalWellbeingComputeResult {
+  state: NationalWellbeingState | null;
+  persisted: NationalWellbeingPersisted;
+}
+
+export interface NationalWellbeingWorldView {
+  enabled: boolean;
+  state: NationalWellbeingState;
+  persisted: NationalWellbeingPersisted;
+}
+
+export function createInitialNationalWellbeingPersisted(): NationalWellbeingPersisted {
+  return {
+    schemaVersion: V1014_SCHEMA_VERSION,
+    revision: 0,
+    initializedTurn: null,
+    lastUpdatedTurn: 0,
+    lastInputHash: '',
+    bandHysteresis: { score: 50, band: 'mixed' }
+  };
+}
+
+export function sanitizeNationalWellbeingPersisted(raw: unknown, turn = 0): NationalWellbeingPersisted {
+  const base = createInitialNationalWellbeingPersisted();
+  if (!raw || typeof raw !== 'object') return base;
+  const o = raw as Record<string, unknown>;
+  const band = (o.bandHysteresis && typeof o.bandHysteresis === 'object' ? o.bandHysteresis : null) as Record<string, unknown> | null;
+  const bandName = band && typeof band.band === 'string' && band.band in NATIONAL_WELLBEING_LABEL ? (band.band as NationalWellbeingBand) : base.bandHysteresis.band;
+  const score = band && typeof band.score === 'number' ? v1014C(band.score) : base.bandHysteresis.score;
+  return {
+    schemaVersion: typeof o.schemaVersion === 'string' ? o.schemaVersion : V1014_SCHEMA_VERSION,
+    revision: typeof o.revision === 'number' ? o.revision : 0,
+    initializedTurn: typeof o.initializedTurn === 'number' ? o.initializedTurn : null,
+    lastUpdatedTurn: typeof o.lastUpdatedTurn === 'number' ? o.lastUpdatedTurn : turn,
+    lastInputHash: typeof o.lastInputHash === 'string' ? o.lastInputHash : '',
+    bandHysteresis: { score, band: bandName }
+  };
+}
+
+export function nationalWellbeingInputHash(inputs: NationalWellbeingInputs): string {
+  const hh = inputs.households;
+  const snap = hh
+    ? `${hh.inputHash}|${hh.national.prosperity}|${hh.national.affordability}|${hh.national.trajectory}|${Object.keys(hh.regions).length}`
+    : 'none';
+  const stab = inputs.publicStabilityScore == null ? 'na' : String(Math.round(inputs.publicStabilityScore));
+  return `v1014:${inputs.turn}:${inputs.enabled ? 1 : 0}:${snap}:${stab}`;
+}
+
+export function buildNationalWellbeingInputs(args: {
+  turn: number;
+  enabled: boolean;
+  householdState: NationalHouseholdEconomyState | null;
+  publicStabilityState?: PublicStabilityState | null;
+  publicStabilityEnabled?: boolean;
+}): NationalWellbeingInputs {
+  const stabilityOn = args.publicStabilityEnabled !== false;
+  const score =
+    stabilityOn && args.publicStabilityState && typeof args.publicStabilityState.nationalStability === 'number'
+      ? v1014C(args.publicStabilityState.nationalStability)
+      : null;
+  return {
+    turn: args.turn,
+    enabled: args.enabled,
+    households: args.householdState,
+    publicStabilityScore: score
+  };
+}
+
+function v1014RegionalProsperityScore(reg: RegionalLivingStandardsState): number {
+  const pr = V1013_PROSPERITY_RANK[reg.prosperity] ?? 2;
+  const af = V1013_AFFORDABILITY_RANK[reg.affordability] ?? 2;
+  const hp = V1013_HOUSING_PRESSURE_RANK[reg.housingPressure] ?? 2;
+  return v1014C(pr * 8 + af * 6 + v1014InverseRank(hp, 4) * 4);
+}
+
+export function computeNationalWellbeing(
+  inputs: NationalWellbeingInputs,
+  persistedIn: NationalWellbeingPersisted | null,
+  _prevState: NationalWellbeingState | null
+): NationalWellbeingComputeResult {
+  let persisted = persistedIn ? sanitizeNationalWellbeingPersisted(persistedIn, inputs.turn) : createInitialNationalWellbeingPersisted();
+  const inputHash = nationalWellbeingInputHash(inputs);
+  if (!inputs.enabled || !inputs.households) {
+    return { state: null, persisted: { ...persisted, lastInputHash: inputHash, lastUpdatedTurn: inputs.turn } };
+  }
+  if (persisted.lastInputHash === inputHash && persisted.revision > 0) {
+    const band = persisted.bandHysteresis.band;
+    const score = persisted.bandHysteresis.score;
+    return {
+      state: {
+        schemaVersion: V1014_SCHEMA_VERSION,
+        revision: persisted.revision,
+        enabled: true,
+        score,
+        band,
+        dimensions: {
+          material: score,
+          security: score,
+          opportunity: score,
+          housing: score,
+          cohesion: inputs.publicStabilityScore
+        },
+        trajectory: inputs.households.national.trajectory,
+        worstRegionId: null,
+        bestRegionId: null,
+        divergenceBand: 'low',
+        concerns: [],
+        strengths: [],
+        summary: NATIONAL_WELLBEING_LABEL[band],
+        inputHash,
+        lastUpdatedTurn: inputs.turn,
+        sources: { households: true, publicStability: inputs.publicStabilityScore != null }
+      },
+      persisted
+    };
+  }
+
+  const nat = inputs.households.national;
+  const material = v1014C(
+    (v1014NormRank(V1013_PROSPERITY_RANK[nat.prosperity], 4) * 0.34 +
+      v1014NormRank(V1013_AFFORDABILITY_RANK[nat.affordability], 4) * 0.33 +
+      v1014NormRank(V1013_ESSENTIAL_ACCESS_RANK[nat.essentialAccess], 4) * 0.33)
+  );
+  const secRank = Math.max(0, V1013_SECURITY_ORDER.indexOf(nat.economicSecurity));
+  const security = v1014C(v1014NormRank(secRank, V1013_SECURITY_ORDER.length - 1) * 0.5 + v1014NormRank(V1013_RESILIENCE_RANK[nat.financialResilience], 4) * 0.5);
+  const opportunity = v1014NormRank(V1013_EMPLOYMENT_RANK[nat.employmentOpportunity], 4);
+  const housing = v1014InverseRank(V1013_HOUSING_PRESSURE_RANK[nat.housingPressure], 4);
+  const cohesion = inputs.publicStabilityScore == null ? null : v1014C(inputs.publicStabilityScore);
+
+  let composite = material * 0.28 + security * 0.2 + opportunity * 0.18 + housing * 0.14;
+  if (cohesion != null) composite += cohesion * 0.2;
+  else composite /= 0.8;
+  const score = v1014C(composite);
+  const band = v1014BandWithHysteresis(score, persisted.bandHysteresis);
+
+  const regionalScores = Object.entries(inputs.households.regions).map(([id, reg]) => ({ id, s: v1014RegionalProsperityScore(reg) }));
+  regionalScores.sort((a, b) => a.s - b.s);
+  const worstRegionId = regionalScores[0]?.id || null;
+  const bestRegionId = regionalScores[regionalScores.length - 1]?.id || null;
+  const spread = regionalScores.length ? regionalScores[regionalScores.length - 1].s - regionalScores[0].s : 0;
+  const divergenceBand: NationalWellbeingState['divergenceBand'] = spread >= 28 ? 'high' : spread >= 14 ? 'moderate' : 'low';
+
+  const concerns: string[] = [];
+  if (nat.prosperity === 'stressed' || nat.prosperity === 'weak') concerns.push('Material living standards are under pressure nationally.');
+  if (nat.affordability === 'severe_pressure' || nat.affordability === 'strained') concerns.push('Affordability strain is weighing on households.');
+  if (nat.housingPressure === 'severe' || nat.housingPressure === 'high') concerns.push('Housing pressure is elevated in key regions.');
+  if (cohesion != null && cohesion < 45) concerns.push('Public stability is weak, dragging social cohesion.');
+  if (divergenceBand === 'high' && worstRegionId) concerns.push(`Wellbeing diverges sharply — ${worstRegionId} lags the national average.`);
+
+  const strengths: string[] = [];
+  if (nat.prosperity === 'strong' || nat.prosperity === 'prosperous') strengths.push('Broad-based prosperity supports wellbeing.');
+  if (nat.employmentOpportunity === 'strong' || nat.employmentOpportunity === 'abundant') strengths.push('Employment opportunity is supportive.');
+  if (cohesion != null && cohesion >= 75) strengths.push('Social cohesion from stability is a buffer.');
+  if (nat.trajectory === 'improving') strengths.push('Living standards trajectory is improving.');
+
+  const summary = `${NATIONAL_WELLBEING_LABEL[band]} (${Math.round(score)}/100) — ${concerns[0] || strengths[0] || 'Conditions are broadly balanced.'}`;
+
+  persisted = {
+    ...persisted,
+    revision: persisted.revision + 1,
+    initializedTurn: persisted.initializedTurn ?? inputs.turn,
+    lastUpdatedTurn: inputs.turn,
+    lastInputHash: inputHash,
+    bandHysteresis: { score, band }
+  };
+
+  const state: NationalWellbeingState = {
+    schemaVersion: V1014_SCHEMA_VERSION,
+    revision: persisted.revision,
+    enabled: true,
+    score,
+    band,
+    dimensions: { material, security, opportunity, housing, cohesion },
+    trajectory: nat.trajectory,
+    worstRegionId,
+    bestRegionId,
+    divergenceBand,
+    concerns: concerns.slice(0, 4),
+    strengths: strengths.slice(0, 4),
+    summary,
+    inputHash,
+    lastUpdatedTurn: inputs.turn,
+    sources: { households: true, publicStability: cohesion != null }
+  };
+
+  return { state, persisted };
+}
+
+export function validateNationalWellbeingState(state: NationalWellbeingState | null): { valid: boolean; issues: string[] } {
+  if (!state) return { valid: true, issues: [] };
+  const issues: string[] = [];
+  if (state.schemaVersion !== V1014_SCHEMA_VERSION) issues.push('schemaVersion mismatch');
+  if (state.score < 0 || state.score > 100) issues.push('score out of range');
+  if (!(state.band in NATIONAL_WELLBEING_LABEL)) issues.push('invalid band');
+  return { valid: issues.length === 0, issues };
+}
+
+export function makeDefaultV1014TestHouseholdInputs(
+  overrides: Partial<V1013HouseholdEconomyInputs> = {},
+  regionOverrides: Record<string, Partial<V1013RegionInput>> = {}
+): V1013HouseholdEconomyInputs {
+  return makeDefaultV1013TestInputs(overrides, regionOverrides);
+}
+
+export function runV1014NationalWellbeingSelfTests(): {
+  passed: number;
+  failed: number;
+  total: number;
+  results: Array<{ name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ name: string; passed: boolean; detail: string }> = [];
+  const check = (name: string, condition: boolean, detail: string) => {
+    results.push({ name, passed: Boolean(condition), detail });
+  };
+
+  check('TEST 1 — FEATURE OFF', (() => {
+    const r = computeNationalWellbeing({ turn: 1, enabled: false, households: null, publicStabilityScore: null }, createInitialNationalWellbeingPersisted(), null);
+    return r.state === null;
+  })(), 'disabled → null state');
+
+  check('TEST 2 — HEALTHY BASELINE', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs(), createInitialHouseholdEconomyPersisted(), null).state;
+    const r = computeNationalWellbeing({ turn: 3, enabled: true, households: hh, publicStabilityScore: 78 }, createInitialNationalWellbeingPersisted(), null);
+    return r.state != null && (r.state.band === 'positive' || r.state.band === 'flourishing');
+  })(), 'strong inputs → positive band');
+
+  check('TEST 3 — STRESSED MATERIAL', (() => {
+    const hh = computeNationalHouseholdEconomy(
+      makeDefaultV1014TestHouseholdInputs({ highInflationScenarioActive: true }, { NSW: { economyBand: 'weak', housingNeedSeverity: 'critical', investmentPressure: 'overheated' } }),
+      createInitialHouseholdEconomyPersisted(),
+      null
+    ).state;
+    const r = computeNationalWellbeing({ turn: 4, enabled: true, households: hh, publicStabilityScore: 70 }, createInitialNationalWellbeingPersisted(), null);
+    return r.state != null && (r.state.band === 'strained' || r.state.band === 'critical' || r.state.band === 'mixed');
+  })(), `band=${(() => {
+    const hh = computeNationalHouseholdEconomy(
+      makeDefaultV1014TestHouseholdInputs({ highInflationScenarioActive: true }, { NSW: { economyBand: 'weak', housingNeedSeverity: 'critical' } }),
+      createInitialHouseholdEconomyPersisted(),
+      null
+    ).state;
+    return computeNationalWellbeing({ turn: 4, enabled: true, households: hh, publicStabilityScore: 70 }, createInitialNationalWellbeingPersisted(), null).state?.band;
+  })()}`);
+
+  check('TEST 4 — COHESION READ ONLY', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs(), createInitialHouseholdEconomyPersisted(), null).state;
+    const before = hh.national.prosperity;
+    computeNationalWellbeing({ turn: 2, enabled: true, households: hh, publicStabilityScore: 22 }, createInitialNationalWellbeingPersisted(), null);
+    return hh.national.prosperity === before;
+  })(), 'household state unchanged');
+
+  check('TEST 5 — NO STABILITY DATA', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs(), createInitialHouseholdEconomyPersisted(), null).state;
+    const r = computeNationalWellbeing({ turn: 2, enabled: true, households: hh, publicStabilityScore: null }, createInitialNationalWellbeingPersisted(), null);
+    return r.state != null && r.state.dimensions.cohesion === null && r.state.sources.publicStability === false;
+  })(), 'cohesion null without stability');
+
+  check('TEST 6 — LOW STABILITY DRAG', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs(), createInitialHouseholdEconomyPersisted(), null).state;
+    const high = computeNationalWellbeing({ turn: 2, enabled: true, households: hh, publicStabilityScore: 85 }, createInitialNationalWellbeingPersisted(), null).state!;
+    const low = computeNationalWellbeing({ turn: 2, enabled: true, households: hh, publicStabilityScore: 25 }, createInitialNationalWellbeingPersisted(), null).state!;
+    return high.score > low.score;
+  })(), 'lower stability lowers composite');
+
+  check('TEST 7 — REGIONAL DIVERGENCE', (() => {
+    const hh = computeNationalHouseholdEconomy(
+      makeDefaultV1014TestHouseholdInputs({}, { NSW: { economyBand: 'strong', essentialInfraScore: 90 }, WA: { economyBand: 'weak', essentialInfraScore: 35, housingNeedSeverity: 'critical' } }),
+      createInitialHouseholdEconomyPersisted(),
+      null
+    ).state;
+    const r = computeNationalWellbeing({ turn: 5, enabled: true, households: hh, publicStabilityScore: 60 }, createInitialNationalWellbeingPersisted(), null);
+    return r.state != null && r.state.worstRegionId != null && r.state.bestRegionId != null && r.state.worstRegionId !== r.state.bestRegionId;
+  })(), 'best/worst regions differ');
+
+  check('TEST 8 — DETERMINISM', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs({ turn: 6 }), createInitialHouseholdEconomyPersisted(), null).state;
+    const a = computeNationalWellbeing({ turn: 6, enabled: true, households: hh, publicStabilityScore: 64 }, createInitialNationalWellbeingPersisted(), null).state;
+    const b = computeNationalWellbeing({ turn: 6, enabled: true, households: hh, publicStabilityScore: 64 }, createInitialNationalWellbeingPersisted(), null).state;
+    return JSON.stringify(a) === JSON.stringify(b);
+  })(), 'identical outputs');
+
+  check('TEST 9 — SAVE LOAD', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs({ turn: 7 }), createInitialHouseholdEconomyPersisted(), null).state;
+    const run1 = computeNationalWellbeing({ turn: 7, enabled: true, households: hh, publicStabilityScore: 66 }, createInitialNationalWellbeingPersisted(), null);
+    const restored = sanitizeNationalWellbeingPersisted(JSON.parse(JSON.stringify(run1.persisted)));
+    const run2 = computeNationalWellbeing({ turn: 7, enabled: true, households: hh, publicStabilityScore: 66 }, restored, null);
+    return run1.state?.band === run2.state?.band && run1.state?.score === run2.state?.score;
+  })(), 'persisted round-trip');
+
+  check('TEST 10 — OLD SAVE', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs({ turn: 8 }), createInitialHouseholdEconomyPersisted(), null).state;
+    const r = computeNationalWellbeing({ turn: 8, enabled: true, households: hh, publicStabilityScore: 55 }, sanitizeNationalWellbeingPersisted(undefined), null);
+    return r.state != null && r.persisted.initializedTurn === 8;
+  })(), 'null persisted derives cleanly');
+
+  check('TEST 11 — VALIDATION', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs(), createInitialHouseholdEconomyPersisted(), null).state;
+    const r = computeNationalWellbeing({ turn: 1, enabled: true, households: hh, publicStabilityScore: 50 }, createInitialNationalWellbeingPersisted(), null);
+    return validateNationalWellbeingState(r.state).valid;
+  })(), 'validateNationalWellbeingState');
+
+  check('TEST 12 — INPUT HASH CACHE', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs({ turn: 9 }), createInitialHouseholdEconomyPersisted(), null).state;
+    const first = computeNationalWellbeing({ turn: 9, enabled: true, households: hh, publicStabilityScore: 72 }, createInitialNationalWellbeingPersisted(), null);
+    const second = computeNationalWellbeing({ turn: 9, enabled: true, households: hh, publicStabilityScore: 72 }, first.persisted, first.state);
+    return second.persisted.revision === first.persisted.revision;
+  })(), 'same hash does not bump revision');
+
+  check('TEST 13 — HYSTERESIS', (() => {
+    const hh = computeNationalHouseholdEconomy(
+      makeDefaultV1014TestHouseholdInputs({ highInflationScenarioActive: true }, { NSW: { economyBand: 'weak', housingNeedSeverity: 'critical' } }),
+      createInitialHouseholdEconomyPersisted(),
+      null
+    ).state;
+    let p = createInitialNationalWellbeingPersisted();
+    p.bandHysteresis = { score: 60, band: 'positive' };
+    const r = computeNationalWellbeing({ turn: 3, enabled: true, households: hh, publicStabilityScore: 50 }, p, null);
+    return r.state != null && r.state.score < 58 && r.state.band === 'positive';
+  })(), 'band holds on downgrade inside deadband');
+
+  check('TEST 14 — BUILD INPUTS HELPER', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs(), createInitialHouseholdEconomyPersisted(), null).state;
+    const inp = buildNationalWellbeingInputs({ turn: 2, enabled: true, householdState: hh, publicStabilityState: createDefaultPublicStabilityState(), publicStabilityEnabled: true });
+    return inp.publicStabilityScore === 80;
+  })(), 'reads default stability');
+
+  check('TEST 15 — CONCERNS WHEN STRAINED', (() => {
+    const hh = computeNationalHouseholdEconomy(
+      makeDefaultV1014TestHouseholdInputs({ highInflationScenarioActive: true }, { VIC: { housingNeedSeverity: 'critical', investmentPressure: 'overheated' } }),
+      createInitialHouseholdEconomyPersisted(),
+      null
+    ).state;
+    const r = computeNationalWellbeing({ turn: 4, enabled: true, households: hh, publicStabilityScore: 40 }, createInitialNationalWellbeingPersisted(), null);
+    return (r.state?.concerns.length || 0) > 0;
+  })(), 'concerns populated under strain');
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, failed: results.length - passed, total: results.length, results };
+}
+
 
 /**
  * Downloads `data` as a JSON file. Never throws: sandboxed embeds and some browsers block downloads or lack
@@ -212979,6 +213446,43 @@ function dispatchGameSettingsChange(
   }, [hh13State, hh13Persisted, hh13Inputs]);
   if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, households: hh13Enabled ? hh13View : null };
 
+  const wb14Enabled = Boolean(nsEnabled && gameSettings.householdsEnabled !== false && gameSettings.nationalWellbeingEnabled !== false);
+  const wb14StoredRaw = (gameState as any).nationalWellbeing;
+  const wb14Persisted = useMemo(() => sanitizeNationalWellbeingPersisted(wb14StoredRaw, lrInputs.turn), [wb14StoredRaw, lrInputs.turn]);
+  const wb14PersistedRef = useRef<NationalWellbeingPersisted>(wb14Persisted); wb14PersistedRef.current = wb14Persisted;
+  const wb14Inputs = useMemo<NationalWellbeingInputs | null>(() => {
+    if (!wb14Enabled || !hh13State) return null;
+    return buildNationalWellbeingInputs({
+      turn: lrInputs.turn,
+      enabled: true,
+      householdState: hh13State,
+      publicStabilityState: gameState.publicStabilityState,
+      publicStabilityEnabled: gameSettings.publicStabilityEnabled !== false
+    });
+  }, [wb14Enabled, hh13State, lrInputs.turn, gameState.publicStabilityState?.nationalStability, gameSettings.publicStabilityEnabled]);
+  const wb14Hash = useMemo(() => (wb14Inputs ? nationalWellbeingInputHash(wb14Inputs) : ''), [wb14Inputs]);
+  const wb14StateRef = useRef<NationalWellbeingState | null>(null);
+  const wb14State = useMemo<NationalWellbeingState | null>(() => {
+    if (!wb14Inputs) return null;
+    return computeNationalWellbeing(wb14Inputs, wb14PersistedRef.current, wb14StateRef.current).state;
+  }, [wb14Hash, wb14Inputs, wb14Persisted?.revision]);
+  wb14StateRef.current = wb14State;
+  useEffect(() => {
+    if (!wb14Enabled || !wb14Inputs || gameState.gameMode !== 'game') return;
+    const prev = wb14PersistedRef.current;
+    if (prev && prev.lastInputHash === wb14Hash) return;
+    const res = computeNationalWellbeing(wb14Inputs, prev, wb14StateRef.current);
+    wb14PersistedRef.current = res.persisted;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { nationalWellbeing: res.persisted, nationalWellbeingState: res.state } as any });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wb14Hash, wb14Enabled, gameState.gameMode]);
+  const wb14View = useMemo<NationalWellbeingWorldView | null>(() => {
+    if (!wb14State) return null;
+    return { enabled: wb14Enabled, state: wb14State, persisted: wb14Persisted };
+  }, [wb14Enabled, wb14State, wb14Persisted]);
+  if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, wellbeing: wb14Enabled ? wb14View : null };
+
+
   const swrViewerId = String(player?.id || 'player');
   const swrViewerTeamId = player?.teamId ? String(player.teamId) : null;
 
@@ -217867,6 +218371,7 @@ function dispatchGameSettingsChange(
                   </label>
                   <label className="flex items-center gap-2 text-sm mt-2" data-testid="v1013-setting-households">
                     <input type="checkbox" checked={gameSettings.householdsEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🏠 Households & Living Standards', prev => ({ ...prev, householdsEnabled: e.target.checked }))} />
+                    <input type="checkbox" checked={gameSettings.nationalWellbeingEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false || gameSettings.householdsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '☀️ National Wellbeing Index', prev => ({ ...prev, nationalWellbeingEnabled: e.target.checked }))} />
                     Households, Living Standards &amp; Domestic Demand (V10.13): household prosperity, affordability, housing pressure, essential access and domestic demand feedback (needs National Systems)
                   </label>
                   {([
