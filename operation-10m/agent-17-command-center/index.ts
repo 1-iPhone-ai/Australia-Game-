@@ -75,6 +75,8 @@ export * from './planning/ledger-index.ts';
 export * from './planning/endorsement-accord.ts';
 export * from './planning/custody-index.ts';
 export * from './planning/release-accord.ts';
+export * from './planning/vault-index.ts';
+export * from './planning/transfer-accord.ts';
 export * from './planning/planning-orchestrator.ts';
 export * from './planning/ops-state.ts';
 export * from './evaluation/operations-evaluator.ts';

@@ -261,7 +261,16 @@ import {
 import {
   buildAgent17ReleaseAccord,
   releaseAccordBlocksCustody,
+  releaseAccordBlocksVault,
 } from '../planning/release-accord.ts';
+import {
+  buildAgent17VaultIndex,
+  vaultIndexBlocksTransfer,
+} from '../planning/vault-index.ts';
+import {
+  buildAgent17TransferAccord,
+  transferAccordBlocksVault,
+} from '../planning/transfer-accord.ts';
 import {
   Agent17RollbackController,
   createAgent17RollbackController,
@@ -2043,6 +2052,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const vaultIndex = depthEval.snapshot.planningDepth?.vaultIndex;
+  goalResults.push(
+    result(
+      'G17-118',
+      !!vaultIndex &&
+        vaultIndex.slots.length >= 5 &&
+        vaultIndex.vaultScore >= 0 &&
+        vaultIndex.vaultScore <= 100 &&
+        (vaultIndex.band === 'sealed' ||
+          vaultIndex.band === 'staging' ||
+          vaultIndex.band === 'compromised'),
+      `slots=${vaultIndex?.slots.length} score=${vaultIndex?.vaultScore}`
+    )
+  );
+
+  const transferAccord = depthEval.snapshot.planningDepth?.transferAccord;
+  goalResults.push(
+    result(
+      'G17-119',
+      !!transferAccord &&
+        transferAccord.legs.length >= 5 &&
+        transferAccord.transferScore >= 0 &&
+        transferAccord.transferScore <= 100,
+      `legs=${transferAccord?.legs.length} score=${transferAccord?.transferScore}`
+    )
+  );
+
+  const compromisedVault = buildAgent17VaultIndex({
+    releaseAccord: blockedRelease,
+    custodyIndex: breachedCustody,
+    endorsementAccord: withdrawnEndorsement,
+  });
+  const haltedTransfer = buildAgent17TransferAccord({
+    vaultIndex: compromisedVault,
+    releaseAccord: blockedRelease,
+    custodyIndex: breachedCustody,
+  });
+  goalResults.push(
+    result(
+      'G17-120',
+      releaseAccordBlocksVault(blockedRelease) ||
+        vaultIndexBlocksTransfer(compromisedVault) ||
+        transferAccordBlocksVault(haltedTransfer),
+      `${compromisedVault.band}/${haltedTransfer.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -2190,6 +2246,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-115',
     'G17-116',
     'G17-117',
+    'G17-118',
+    'G17-119',
+    'G17-120',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

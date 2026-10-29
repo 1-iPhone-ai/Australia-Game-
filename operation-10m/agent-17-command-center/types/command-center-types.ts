@@ -245,6 +245,8 @@ export interface Agent17PlanningDepthSnapshot {
   endorsementAccord: Agent17EndorsementAccordSnapshot;
   custodyIndex: Agent17CustodyIndexSnapshot;
   releaseAccord: Agent17ReleaseAccordSnapshot;
+  vaultIndex: Agent17VaultIndexSnapshot;
+  transferAccord: Agent17TransferAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1291,6 +1293,40 @@ export interface Agent17ReleaseAccordSnapshot {
   custodyBand: Agent17CustodyIndexSnapshot['band'];
   endorsementBand: Agent17EndorsementAccordSnapshot['band'];
   releaseCleared: boolean;
+  headline: string;
+}
+
+export interface Agent17VaultSlot {
+  id: string;
+  label: string;
+  locked: boolean;
+  weight: number;
+}
+
+export interface Agent17VaultIndexSnapshot {
+  vaultScore: number;
+  band: 'sealed' | 'staging' | 'compromised';
+  slots: Agent17VaultSlot[];
+  releaseBand: Agent17ReleaseAccordSnapshot['band'];
+  custodyBand: Agent17CustodyIndexSnapshot['band'];
+  vaultSealed: boolean;
+  headline: string;
+}
+
+export interface Agent17TransferLeg {
+  id: string;
+  label: string;
+  completed: boolean;
+  weight: number;
+}
+
+export interface Agent17TransferAccordSnapshot {
+  transferScore: number;
+  band: 'settled' | 'inflight' | 'halted';
+  legs: Agent17TransferLeg[];
+  vaultBand: Agent17VaultIndexSnapshot['band'];
+  releaseBand: Agent17ReleaseAccordSnapshot['band'];
+  transferSettled: boolean;
   headline: string;
 }
 

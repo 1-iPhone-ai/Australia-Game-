@@ -100,3 +100,7 @@ export function buildAgent17ReleaseAccord(
 export function releaseAccordBlocksCustody(snapshot: Agent17ReleaseAccordSnapshot): boolean {
   return snapshot.band === 'blocked' || !snapshot.releaseCleared;
 }
+
+export function releaseAccordBlocksVault(snapshot: Agent17ReleaseAccordSnapshot): boolean {
+  return snapshot.band === 'blocked' || !snapshot.releaseCleared;
+}

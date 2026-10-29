@@ -35,6 +35,7 @@ import { runAgent17AuditDepthTests } from '../harness/run-audit-depth-tests.ts';
 import { runAgent17RegistryDepthTests } from '../harness/run-registry-depth-tests.ts';
 import { runAgent17LedgerDepthTests } from '../harness/run-ledger-depth-tests.ts';
 import { runAgent17CustodyDepthTests } from '../harness/run-custody-depth-tests.ts';
+import { runAgent17VaultDepthTests } from '../harness/run-vault-depth-tests.ts';
 import { verifyAgent17Goals, validateGoalRegistryCoverage } from '../validation/goal-verification.ts';
 import { createAgent17RollbackController } from '../rollback/rollback-controller.ts';
 

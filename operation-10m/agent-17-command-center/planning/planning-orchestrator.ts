@@ -85,6 +85,8 @@ import { buildAgent17LedgerIndex } from './ledger-index.ts';
 import { buildAgent17EndorsementAccord } from './endorsement-accord.ts';
 import { buildAgent17CustodyIndex } from './custody-index.ts';
 import { buildAgent17ReleaseAccord } from './release-accord.ts';
+import { buildAgent17VaultIndex } from './vault-index.ts';
+import { buildAgent17TransferAccord } from './transfer-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -499,6 +501,16 @@ export function buildAgent17PlanningDepthSnapshot(
     endorsementAccord,
     ledgerIndex,
   });
+  const vaultIndex = buildAgent17VaultIndex({
+    releaseAccord,
+    custodyIndex,
+    endorsementAccord,
+  });
+  const transferAccord = buildAgent17TransferAccord({
+    vaultIndex,
+    releaseAccord,
+    custodyIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -566,6 +578,8 @@ export function buildAgent17PlanningDepthSnapshot(
     endorsementAccord,
     custodyIndex,
     releaseAccord,
+    vaultIndex,
+    transferAccord,
   };
 }
 

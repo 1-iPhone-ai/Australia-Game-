@@ -821,6 +821,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Breached custody or withdrawn endorsement yields releaseAccordBlocksCustody.',
     severity: 'major',
   },
+  {
+    id: 'G17-118',
+    title: 'Vault index on planning depth',
+    category: 'telemetry',
+    acceptance: 'vaultIndex reports vaultScore 0–100 with sealed/staging/compromised band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-119',
+    title: 'Transfer accord legs complete',
+    category: 'telemetry',
+    acceptance: 'transferAccord exposes ≥5 legs and transferScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-120',
+    title: 'Compromised vault halts transfer accord',
+    category: 'integration',
+    acceptance: 'Compromised vault or blocked release yields transferAccordBlocksVault.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

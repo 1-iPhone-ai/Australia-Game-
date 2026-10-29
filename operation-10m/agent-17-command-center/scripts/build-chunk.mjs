@@ -91,6 +91,8 @@ const FILES = [
   'planning/endorsement-accord.ts',
   'planning/custody-index.ts',
   'planning/release-accord.ts',
+  'planning/vault-index.ts',
+  'planning/transfer-accord.ts',
   'planning/planning-orchestrator.ts',
   'evaluation/operations-evaluator.ts',
   'rollback/rollback-controller.ts',
