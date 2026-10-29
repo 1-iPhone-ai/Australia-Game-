@@ -270,8 +270,14 @@ import {
   runAgent13PlanetarySovereignNetZeroExportContinuityTurnScenario,
   V1014_PLANETARY_SOVEREIGN_NET_ZERO_EXPORT_CONTINUITY_GLOBAL_MESH_TURN_SCENARIOS,
 } from '../modules/planetary-sovereign-net-zero-export-continuity-global-mesh-orchestration-ledger.ts';
+import {
+  runAgent13HeliosphericSovereignNetZeroExportContinuityScaleSelfTests,
+  runAgent13HeliosphericSovereignNetZeroExportContinuityTurnScenario,
+  V1014_HELIOSPHERIC_SOVEREIGN_NET_ZERO_EXPORT_CONTINUITY_STELLAR_MESH_TURN_SCENARIOS,
+} from '../modules/heliospheric-sovereign-net-zero-export-continuity-stellar-mesh-orchestration-ledger.ts';
 import { runAgent13Agent25Wave56ProjectionHandoffBriefSelfTests } from '../modules/agent25-wave56-projection-handoff-brief.ts';
 import { runAgent13Agent25Wave57ProjectionHandoffBriefSelfTests } from '../modules/agent25-wave57-projection-handoff-brief.ts';
+import { runAgent13Agent25Wave58ProjectionHandoffBriefSelfTests } from '../modules/agent25-wave58-projection-handoff-brief.ts';
 import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
@@ -722,6 +728,14 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
   ok(planetaryTurn.passed);
   const wave57Handoff = runAgent13Agent25Wave57ProjectionHandoffBriefSelfTests();
   ok(wave57Handoff.failed === 0 && wave57Handoff.passed >= 4);
+  const heliospheric = runAgent13HeliosphericSovereignNetZeroExportContinuityScaleSelfTests();
+  ok(heliospheric.failed === 0 && heliospheric.passed >= 4);
+  const heliosphericTurn = runAgent13HeliosphericSovereignNetZeroExportContinuityTurnScenario(
+    V1014_HELIOSPHERIC_SOVEREIGN_NET_ZERO_EXPORT_CONTINUITY_STELLAR_MESH_TURN_SCENARIOS[0],
+  );
+  ok(heliosphericTurn.passed);
+  const wave58Handoff = runAgent13Agent25Wave58ProjectionHandoffBriefSelfTests();
+  ok(wave58Handoff.failed === 0 && wave58Handoff.passed >= 4);
 
   return { passed, failed, total: passed + failed };
 }
