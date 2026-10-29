@@ -120,6 +120,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Logistics & negotiation stress',
     shockIds: ['global_slowdown', 'terms_of_trade_squeeze'],
     description: 'Gridlocked trade logistics with entrenched negotiation deadlock (harness overlay).'
+  },
+  {
+    id: 'confidence_capex_stress',
+    label: 'Confidence & capex stress',
+    shockIds: ['credit_contraction', 'housing_correction'],
+    description: 'Collapsed consumer confidence with frozen private capex pipeline (harness overlay).'
   }
 ];
 

@@ -31,6 +31,8 @@ import { applyMacroUiSpillover, readMacroUiSpilloverFromV1022 } from './bridge-v
 import { applyMacroUtilitiesSpillover, readMacroUtilitiesSpilloverFromV1012Utilities } from './bridge-v1012-utilities.ts';
 import { applyMacroTradeLogisticsSpillover, readMacroTradeLogisticsSpilloverFromV1015 } from './bridge-v1015-logistics.ts';
 import { applyMacroNegotiationSpillover, readMacroNegotiationSpilloverFromV1005 } from './bridge-v1005-negotiation.ts';
+import { applyMacroHouseholdConfidenceSpillover, readMacroHouseholdConfidenceSpilloverFromV1013 } from './bridge-v1013-confidence.ts';
+import { applyMacroCapexSpillover, readMacroCapexSpilloverFromV1008 } from './bridge-v1008-capex.ts';
 import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
 import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { buildMacroTransmissionReport } from './macro-transmission.ts';
@@ -49,6 +51,7 @@ import { buildMacroTransmissionTensionSnapshot } from './macro-transmission-tens
 import { buildMacroTransmissionDivergenceSnapshot } from './macro-transmission-divergence.ts';
 import { buildMacroTransmissionStabilitySnapshot } from './macro-transmission-stability.ts';
 import { buildMacroTransmissionAlignmentSnapshot } from './macro-transmission-alignment.ts';
+import { buildMacroTransmissionSynchronizationSnapshot } from './macro-transmission-synchronization.ts';
 import { appendMacroCycleTransitionMemory } from './cycle-memory.ts';
 import { V1014_MACRO_LIMITS } from './constants.ts';
 import { resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
@@ -144,6 +147,8 @@ export function computeNationalMacroEconomy(
   const utilitiesSpillover = readMacroUtilitiesSpilloverFromV1012Utilities(inputs);
   const logisticsSpillover = readMacroTradeLogisticsSpilloverFromV1015(inputs);
   const negotiationSpillover = readMacroNegotiationSpilloverFromV1005(inputs);
+  const confidenceSpillover = readMacroHouseholdConfidenceSpilloverFromV1013(inputs);
+  const capexSpillover = readMacroCapexSpilloverFromV1008(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -176,7 +181,9 @@ export function computeNationalMacroEconomy(
   const withUtilities = applyMacroUtilitiesSpillover(withUi, utilitiesSpillover);
   const withLogistics = applyMacroTradeLogisticsSpillover(withUtilities, logisticsSpillover);
   const withNegotiation = applyMacroNegotiationSpillover(withLogistics, negotiationSpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withNegotiation, pushEv);
+  const withConfidence = applyMacroHouseholdConfidenceSpillover(withNegotiation, confidenceSpillover);
+  const withCapex = applyMacroCapexSpillover(withConfidence, capexSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withCapex, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -236,7 +243,9 @@ export function computeNationalMacroEconomy(
     ui: uiSpillover,
     utilities: utilitiesSpillover,
     logistics: logisticsSpillover,
-    negotiation: negotiationSpillover
+    negotiation: negotiationSpillover,
+    confidence: confidenceSpillover,
+    capex: capexSpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
@@ -251,6 +260,7 @@ export function computeNationalMacroEconomy(
   const transmissionDivergence = buildMacroTransmissionDivergenceSnapshot(transmissionReport);
   const transmissionStability = buildMacroTransmissionStabilitySnapshot(transmissionReport);
   const transmissionAlignment = buildMacroTransmissionAlignmentSnapshot(transmissionReport);
+  const transmissionSynchronization = buildMacroTransmissionSynchronizationSnapshot(transmissionReport);
 
   const capacitySnapshot = buildMacroCapacitySnapshot({
     state: {
@@ -333,6 +343,8 @@ export function computeNationalMacroEconomy(
     utilitiesSpilloverSummary: utilitiesSpillover.summary,
     logisticsSpilloverSummary: logisticsSpillover.summary,
     negotiationSpilloverSummary: negotiationSpillover.summary,
+    confidenceSpilloverSummary: confidenceSpillover.summary,
+    capexSpilloverSummary: capexSpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,
@@ -346,6 +358,7 @@ export function computeNationalMacroEconomy(
     transmissionDivergence,
     transmissionStability,
     transmissionAlignment,
+    transmissionSynchronization,
     transmissionReport,
     stressIndex: {
       score: 0,

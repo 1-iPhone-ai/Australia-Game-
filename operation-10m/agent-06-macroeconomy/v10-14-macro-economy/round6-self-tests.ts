@@ -39,7 +39,7 @@ export function runAgent06Round6SelfTests(): {
   );
   record('R6-03', 'State exposes innovation summary', integrated.state.innovationSpilloverSummary != null, 'ok');
   record('R6-04', 'State exposes workforce summary', integrated.state.workforceSpilloverSummary != null, 'ok');
-  record('R6-05', 'Thirty-two transmission layers', integrated.state.transmissionReport.layers.length === 32, String(integrated.state.transmissionReport.layers.length));
+  record('R6-05', 'Thirty-four transmission layers', integrated.state.transmissionReport.layers.length === 34, String(integrated.state.transmissionReport.layers.length));
 
   const capacity = buildMacroCapacitySnapshot({
     state: integrated.state,

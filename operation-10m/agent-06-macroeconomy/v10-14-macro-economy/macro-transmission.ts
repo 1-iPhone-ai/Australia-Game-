@@ -30,6 +30,8 @@ import type { MacroUiSpillover } from './bridge-v1022-ui.ts';
 import type { MacroUtilitiesSpillover } from './bridge-v1012-utilities.ts';
 import type { MacroTradeLogisticsSpillover } from './bridge-v1015-logistics.ts';
 import type { MacroNegotiationSpillover } from './bridge-v1005-negotiation.ts';
+import type { MacroHouseholdConfidenceSpillover } from './bridge-v1013-confidence.ts';
+import type { MacroCapexSpillover } from './bridge-v1008-capex.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -68,6 +70,8 @@ export function buildMacroTransmissionReport(params: {
   utilities?: MacroUtilitiesSpillover;
   logistics?: MacroTradeLogisticsSpillover;
   negotiation?: MacroNegotiationSpillover;
+  confidence?: MacroHouseholdConfidenceSpillover;
+  capex?: MacroCapexSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -91,6 +95,8 @@ export function buildMacroTransmissionReport(params: {
   const utilities = params.utilities ?? ZERO_SPILLOVER;
   const logistics = params.logistics ?? ZERO_SPILLOVER;
   const negotiation = params.negotiation ?? ZERO_SPILLOVER;
+  const confidence = params.confidence ?? ZERO_SPILLOVER;
+  const capex = params.capex ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -319,6 +325,22 @@ export function buildMacroTransmissionReport(params: {
       negotiation.investmentNudge,
       negotiation.productivityNudge,
       negotiation.summary
+    ),
+    layer(
+      'v10.13_confidence',
+      'Household confidence',
+      confidence.cycleNudge,
+      confidence.investmentNudge,
+      confidence.productivityNudge,
+      confidence.summary
+    ),
+    layer(
+      'v10.8_capex',
+      'Private capex cycle',
+      capex.cycleNudge,
+      capex.investmentNudge,
+      capex.productivityNudge,
+      capex.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

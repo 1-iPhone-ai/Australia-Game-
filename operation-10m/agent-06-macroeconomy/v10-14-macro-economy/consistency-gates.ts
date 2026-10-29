@@ -568,5 +568,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Strained investment vs productivity transmission alignment — layer reads may conflict.'
     });
   }
+  const hhConf: any = inputs.households?.consumerConfidence ?? inputs.consumerConfidence;
+  const confBand = String(hhConf?.band ?? hhConf?.level ?? inputs.households?.confidenceBand ?? '');
+  if (
+    (confBand === 'collapsed' || confBand === 'critical') &&
+    (state.cyclePhase === 'contraction' || state.investmentClimate === 'frozen')
+  ) {
+    gates.push({
+      id: 'consumer_confidence_collapse',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Collapsed consumer confidence aligns with contractionary macro read.'
+    });
+  }
+  const capex: any = inputs.privateCapex ?? inputs.companies?.capexCycle ?? inputs.privateSector?.capitalExpenditure;
+  const capexPipe = String(capex?.pipelineBand ?? capex?.backlogBand ?? inputs.companies?.capexPipelineBand ?? '');
+  if (
+    (capexPipe === 'frozen' || capexPipe === 'collapsed') &&
+    state.transmissionSynchronization?.band === 'fractured'
+  ) {
+    gates.push({
+      id: 'capex_freeze_desync',
+      triggered: true,
+      severity: 'info',
+      summary: 'Frozen private capex pipeline coincides with fractured transmission synchronization.'
+    });
+  }
+  if (state.transmissionSynchronization?.band === 'fractured') {
+    gates.push({
+      id: 'transmission_synchronization_fractured',
+      triggered: true,
+      severity: 'info',
+      summary: 'Fractured cross-layer transmission synchronization — interpret composite scores cautiously.'
+    });
+  }
   return gates;
 }
