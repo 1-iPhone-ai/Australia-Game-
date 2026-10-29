@@ -169,6 +169,10 @@ import { buildEighthUnlockHeadlineDayCoach } from '../engine/eighth-unlock-headl
 import { buildHexDeferredQueueDayCoach } from '../engine/hex-deferred-queue-day-coach.js';
 import { buildHiddenPanelBreadthDayCoach } from '../engine/hidden-panel-breadth-day-coach.js';
 import { buildPacingDeferredTripleDayCoach } from '../engine/pacing-deferred-triple-day-coach.js';
+import { buildNinthUnlockHeadlineDayCoach } from '../engine/ninth-unlock-headline-day-coach.js';
+import { buildHeptDeferredQueueDayCoach } from '../engine/hept-deferred-queue-day-coach.js';
+import { buildTotalPanelBreadthDayCoach } from '../engine/total-panel-breadth-day-coach.js';
+import { buildPacingDeferredQuadDayCoach } from '../engine/pacing-deferred-quad-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -346,6 +350,10 @@ export interface DayAdvanceUiEvolutionResult {
   hexDeferredQueueDayCoachCopy: string | null;
   hiddenPanelBreadthDayCoachCopy: string | null;
   pacingDeferredTripleDayCoachCopy: string | null;
+  ninthUnlockHeadlineDayCoachCopy: string | null;
+  heptDeferredQueueDayCoachCopy: string | null;
+  totalPanelBreadthDayCoachCopy: string | null;
+  pacingDeferredQuadDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1307,6 +1315,27 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const ninthUnlockHeadlineDayCoach = buildNinthUnlockHeadlineDayCoach({
+    newlyUnlockedPanelIds,
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const heptDeferredQueueDayCoach = buildHeptDeferredQueueDayCoach({
+    combinedQueueDepth: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const totalPanelBreadthDayCoach = buildTotalPanelBreadthDayCoach({
+    snapshot: coverage,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const pacingDeferredQuadDayCoach = buildPacingDeferredQuadDayCoach({
+    pacingDeferredCount: pacing.deferredCount,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1485,6 +1514,10 @@ export function tickEvolvingUiOnDayAdvance(
     hexDeferredQueueDayCoachCopy: hexDeferredQueueDayCoach.coachCopy,
     hiddenPanelBreadthDayCoachCopy: hiddenPanelBreadthDayCoach.coachCopy,
     pacingDeferredTripleDayCoachCopy: pacingDeferredTripleDayCoach.coachCopy,
+    ninthUnlockHeadlineDayCoachCopy: ninthUnlockHeadlineDayCoach.coachCopy,
+    heptDeferredQueueDayCoachCopy: heptDeferredQueueDayCoach.coachCopy,
+    totalPanelBreadthDayCoachCopy: totalPanelBreadthDayCoach.coachCopy,
+    pacingDeferredQuadDayCoachCopy: pacingDeferredQuadDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

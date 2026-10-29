@@ -203,6 +203,11 @@ const FILES = [
   'engine/hex-deferred-queue-day-coach.ts',
   'engine/hidden-panel-breadth-day-coach.ts',
   'engine/pacing-deferred-triple-day-coach.ts',
+  'engine/ninth-unlock-headline-day-coach.ts',
+  'engine/hept-deferred-queue-day-coach.ts',
+  'engine/total-panel-breadth-day-coach.ts',
+  'engine/pacing-deferred-quad-day-coach.ts',
+  'engine/round48-self-tests.ts',
   'engine/round47-self-tests.ts',
   'engine/round46-self-tests.ts',
   'engine/round45-self-tests.ts',
@@ -361,6 +366,10 @@ const FILES = [
   'react/HexDeferredQueueDayCoachStrip.tsx',
   'react/HiddenPanelBreadthDayCoachStrip.tsx',
   'react/PacingDeferredTripleDayCoachStrip.tsx',
+  'react/NinthUnlockHeadlineDayCoachStrip.tsx',
+  'react/HeptDeferredQueueDayCoachStrip.tsx',
+  'react/TotalPanelBreadthDayCoachStrip.tsx',
+  'react/PacingDeferredQuadDayCoachStrip.tsx',
 ];
 
 function stripModulePreamble(source) {
@@ -402,7 +411,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.47.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.48.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -553,6 +562,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(\`agent22_round22_\${r.id}\`, r.name, r.passed, r.detail);
+  }
+
+  const round48 = runAgent22Round48SelfTests();
+  for (const r of round48.results) {
+    check(\`agent22_round48_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
   const round47 = runAgent22Round47SelfTests();
@@ -706,7 +720,7 @@ const manifest = {
   contentSha256,
   chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
   selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
-  moduleVersion: '1.47.0',
+  moduleVersion: '1.48.0',
 };
 fs.writeFileSync(
   path.join(outDir, 'module.manifest.json'),
