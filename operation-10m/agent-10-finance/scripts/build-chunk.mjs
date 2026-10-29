@@ -89,6 +89,8 @@ const FILES = [
   'inflation/household-wage-inflation-deanchoring.ts',
   'inflation/corporate-markup-inflation-cascade.ts',
   'inflation/trade-tariff-import-inflation-pipeline.ts',
+  'inflation/metro-urban-rent-inflation-surge.ts',
+  'inflation/wholesale-grid-energy-inflation-cascade.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
@@ -154,6 +156,7 @@ const FILES = [
   'react/CommandUiInflationPanel.tsx',
   'react/FiscalHouseholdInflationPanel.tsx',
   'react/MarkupTariffInflationPanel.tsx',
+  'react/MetroGridInflationPanel.tsx',
 ];
 
 function stripModulePreamble(source) {

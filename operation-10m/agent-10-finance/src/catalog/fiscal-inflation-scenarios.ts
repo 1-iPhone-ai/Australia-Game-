@@ -1092,6 +1092,45 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'corporate', 'trade', 'round31'],
   },
+  {
+    id: 'metro_urban_rent_surge_stack',
+    label: 'Metro urban rent surge stack',
+    description: 'Critical vacancy with surging rent and metro dispersion latch.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.36,
+      publicStability: 39,
+    },
+    tags: ['inflation', 'cities', 'round32'],
+  },
+  {
+    id: 'wholesale_grid_tariff_cascade_stress',
+    label: 'Wholesale grid tariff cascade stress',
+    description: 'Energy crisis with grid tariff latch and cascade band.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.33,
+    },
+    tags: ['inflation', 'energy', 'round32'],
+  },
+  {
+    id: 'metro_grid_fusion_stress',
+    label: 'Metro & grid fusion stress',
+    description: 'Critical metro rent surge colliding with wholesale grid crisis.',
+    patch: {
+      inflationSettingMultiplier: 1.43,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 29,
+    },
+    tags: ['inflation', 'cities', 'energy', 'round32'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

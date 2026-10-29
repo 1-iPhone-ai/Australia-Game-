@@ -5439,6 +5439,131 @@ export function tradeTariffImportInflationPipelineScoreAdjustment(
 }
 
 
+// --- source: inflation/metro-urban-rent-inflation-surge.ts ---
+
+export type MetroUrbanRentInflationSurgeBand = 'subdued' | 'building' | 'surging' | 'critical';
+
+export interface MetroUrbanRentInflationSurgeAssessment {
+  surgeBand: MetroUrbanRentInflationSurgeBand;
+  metroIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Metro urban rent and vacancy inflation surge (Agent 11). */
+export function assessMetroUrbanRentInflationSurge(input: {
+  vacancyBand: 'loose' | 'balanced' | 'tight' | 'critical';
+  rentGrowthBand: 'subdued' | 'moderate' | 'strong' | 'surging';
+  urbanizationPressure: 'low' | 'medium' | 'high';
+  urbanRentInflationLatch: boolean;
+  metroDispersionStressBand: 'aligned' | 'widening' | 'critical';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): MetroUrbanRentInflationSurgeAssessment {
+  let pressure = 0;
+  if (input.vacancyBand === 'critical') pressure += 0.22;
+  else if (input.vacancyBand === 'tight') pressure += 0.11;
+  if (input.rentGrowthBand === 'surging') pressure += 0.24;
+  else if (input.rentGrowthBand === 'strong') pressure += 0.12;
+  if (input.urbanizationPressure === 'high') pressure += 0.1;
+  if (input.urbanRentInflationLatch) pressure += 0.13;
+  if (input.metroDispersionStressBand === 'critical') pressure += 0.2;
+  else if (input.metroDispersionStressBand === 'widening') pressure += 0.1;
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') pressure += 0.05;
+
+  pressure = finClamp(pressure + input.turn * 0.0036, 0, 1.05);
+  const metroIndex = finRound(100 + pressure * 16, 1);
+
+  let surgeBand: MetroUrbanRentInflationSurgeBand = 'subdued';
+  if (pressure >= 0.55) surgeBand = 'critical';
+  else if (pressure >= 0.35) surgeBand = 'surging';
+  else if (pressure >= 0.15) surgeBand = 'building';
+
+  const inflationScoreNudge =
+    surgeBand === 'critical' ? 0.09 : surgeBand === 'surging' ? 0.057 : surgeBand === 'building' ? 0.027 : 0;
+
+  const narrative =
+    surgeBand === 'critical' || surgeBand === 'surging'
+      ? 'Metro urban rent surge lifting shelter-side CPI metadata.'
+      : surgeBand === 'building'
+        ? 'Urban rent inflation latch building across vacancy bands.'
+        : 'Metro rent surge subdued versus headline CPI.';
+
+  return { surgeBand, metroIndex, inflationScoreNudge, narrative };
+}
+
+export function metroUrbanRentInflationSurgeScoreAdjustment(band: MetroUrbanRentInflationSurgeBand): number {
+  if (band === 'critical') return 4;
+  if (band === 'surging') return 3;
+  if (band === 'building') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/wholesale-grid-energy-inflation-cascade.ts ---
+
+export type WholesaleGridEnergyInflationCascadeBand = 'stable' | 'stressed' | 'fragile' | 'crisis';
+
+export interface WholesaleGridEnergyInflationCascadeAssessment {
+  cascadeBand: WholesaleGridEnergyInflationCascadeBand;
+  energyIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Wholesale grid and tariff energy inflation cascade (Agent 13). */
+export function assessWholesaleGridEnergyInflationCascade(input: {
+  wholesaleEnergyStress: 'calm' | 'elevated' | 'severe' | 'crisis';
+  retailTariffShock: boolean;
+  gridReliabilityBand: 'stable' | 'strained' | 'fragile';
+  gridTariffInflationLatch: boolean;
+  wholesaleStressCascadeBand: 'stable' | 'stressed' | 'cascade';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): WholesaleGridEnergyInflationCascadeAssessment {
+  let pressure = 0;
+  if (input.wholesaleEnergyStress === 'crisis') pressure += 0.24;
+  else if (input.wholesaleEnergyStress === 'severe') pressure += 0.14;
+  else if (input.wholesaleEnergyStress === 'elevated') pressure += 0.07;
+  if (input.retailTariffShock) pressure += 0.14;
+  if (input.gridReliabilityBand === 'fragile') pressure += 0.12;
+  else if (input.gridReliabilityBand === 'strained') pressure += 0.06;
+  if (input.gridTariffInflationLatch) pressure += 0.13;
+  if (input.wholesaleStressCascadeBand === 'cascade') pressure += 0.21;
+  else if (input.wholesaleStressCascadeBand === 'stressed') pressure += 0.1;
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') pressure += 0.05;
+
+  pressure = finClamp(pressure + input.turn * 0.0037, 0, 1.05);
+  const energyIndex = finRound(100 + pressure * 15, 1);
+
+  let cascadeBand: WholesaleGridEnergyInflationCascadeBand = 'stable';
+  if (pressure >= 0.54) cascadeBand = 'crisis';
+  else if (pressure >= 0.34) cascadeBand = 'fragile';
+  else if (pressure >= 0.15) cascadeBand = 'stressed';
+
+  const inflationScoreNudge =
+    cascadeBand === 'crisis' ? 0.088 : cascadeBand === 'fragile' ? 0.055 : cascadeBand === 'stressed' ? 0.026 : 0;
+
+  const narrative =
+    cascadeBand === 'crisis' || cascadeBand === 'fragile'
+      ? 'Wholesale grid energy cascade passing into utility CPI metadata.'
+      : cascadeBand === 'stressed'
+        ? 'Grid tariff inflation latch building under wholesale stress.'
+        : 'Wholesale grid cascade stable versus headline CPI.';
+
+  return { cascadeBand, energyIndex, inflationScoreNudge, narrative };
+}
+
+export function wholesaleGridEnergyInflationCascadeScoreAdjustment(band: WholesaleGridEnergyInflationCascadeBand): number {
+  if (band === 'crisis') return 4;
+  if (band === 'fragile') return 3;
+  if (band === 'stressed') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -6769,6 +6894,45 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'corporate', 'trade', 'round31'],
   },
+  {
+    id: 'metro_urban_rent_surge_stack',
+    label: 'Metro urban rent surge stack',
+    description: 'Critical vacancy with surging rent and metro dispersion latch.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.36,
+      publicStability: 39,
+    },
+    tags: ['inflation', 'cities', 'round32'],
+  },
+  {
+    id: 'wholesale_grid_tariff_cascade_stress',
+    label: 'Wholesale grid tariff cascade stress',
+    description: 'Energy crisis with grid tariff latch and cascade band.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.33,
+    },
+    tags: ['inflation', 'energy', 'round32'],
+  },
+  {
+    id: 'metro_grid_fusion_stress',
+    label: 'Metro & grid fusion stress',
+    description: 'Critical metro rent surge colliding with wholesale grid crisis.',
+    patch: {
+      inflationSettingMultiplier: 1.43,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 29,
+    },
+    tags: ['inflation', 'cities', 'energy', 'round32'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
@@ -7898,6 +8062,10 @@ export interface Agent11CitiesSnapshot {
   metroRentDispersionCritical?: boolean;
   /** Round 21: regional markets syncing housing inflation. */
   regionalHousingInflationSync?: boolean;
+  /** Round 32: urban rent inflation latch. */
+  urbanRentInflationLatch?: boolean;
+  /** Round 32: metro dispersion stress band. */
+  metroDispersionStressBand?: 'aligned' | 'widening' | 'critical';
 }
 
 export function mergeAgent11IntoMacroFinancialInputs(
@@ -7928,6 +8096,13 @@ export function mergeAgent11IntoMacroFinancialInputs(
   if (snapshot.metroRentDispersionCritical && snapshot.regionalHousingInflationSync) {
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
+  if (snapshot.urbanRentInflationLatch && snapshot.metroDispersionStressBand === 'critical') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.metroDispersionStressBand === 'widening' && snapshot.rentGrowthBand === 'surging') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
   return {
@@ -7961,6 +8136,10 @@ export interface Agent13EnergySnapshot {
   renewableShortfallInflationFlag?: boolean;
   /** Round 21: wholesale price cascade band. */
   wholesaleCascadeBand?: 'none' | 'stressed' | 'cascade';
+  /** Round 32: grid tariff inflation latch. */
+  gridTariffInflationLatch?: boolean;
+  /** Round 32: wholesale stress cascade band. */
+  wholesaleStressCascadeBand?: 'stable' | 'stressed' | 'cascade';
 }
 
 export function mergeAgent13IntoMacroFinancialInputs(
@@ -7998,6 +8177,13 @@ export function mergeAgent13IntoMacroFinancialInputs(
   }
   if (snapshot.wholesaleCascadeBand === 'cascade') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  }
+
+  if (snapshot.gridTariffInflationLatch && snapshot.wholesaleStressCascadeBand === 'cascade') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  } else if (snapshot.wholesaleStressCascadeBand === 'stressed' && snapshot.retailTariffShock) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
   return {
@@ -9070,6 +9256,12 @@ export function agent23DashboardsBridgeIntegrationNote(): string {
   assessTradeTariffImportInflationPipeline,
   type TradeTariffImportInflationPipelineBand,
 } from '../inflation/trade-tariff-import-inflation-pipeline.js';
+  assessMetroUrbanRentInflationSurge,
+  type MetroUrbanRentInflationSurgeBand,
+} from '../inflation/metro-urban-rent-inflation-surge.js';
+  assessWholesaleGridEnergyInflationCascade,
+  type WholesaleGridEnergyInflationCascadeBand,
+} from '../inflation/wholesale-grid-energy-inflation-cascade.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -9132,6 +9324,8 @@ export interface InflationForecastPoint {
   householdWageInflationDeanchoringBand: HouseholdWageInflationDeanchoringBand;
   corporateMarkupInflationCascadeBand: CorporateMarkupInflationCascadeBand;
   tradeTariffImportInflationPipelineBand: TradeTariffImportInflationPipelineBand;
+  metroUrbanRentInflationSurgeBand: MetroUrbanRentInflationSurgeBand;
+  wholesaleGridEnergyInflationCascadeBand: WholesaleGridEnergyInflationCascadeBand;
 }
 
 export interface InflationForecastPath {
@@ -9648,6 +9842,25 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const metroSurge = assessMetroUrbanRentInflationSurge({
+      vacancyBand: inputs.highInflationScenario ? 'critical' : inputs.creditShockActive ? 'tight' : 'balanced',
+      rentGrowthBand: inputs.householdInflationScenarioActive ? 'surging' : inputs.highInflationScenario ? 'strong' : 'moderate',
+      urbanizationPressure: inputs.fiscalPressure === 'critical' ? 'high' : 'medium',
+      urbanRentInflationLatch: inputs.creditShockActive,
+      metroDispersionStressBand:
+        inputs.publicStability < 42 ? 'critical' : inputs.householdInflationScenarioActive ? 'widening' : 'aligned',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const gridCascade = assessWholesaleGridEnergyInflationCascade({
+      wholesaleEnergyStress: inputs.highInflationScenario ? 'crisis' : inputs.creditShockActive ? 'severe' : 'elevated',
+      retailTariffShock: inputs.creditShockActive,
+      gridReliabilityBand: inputs.systemicLiquidityBand === 'critical' ? 'fragile' : 'stable',
+      gridTariffInflationLatch: inputs.householdInflationScenarioActive,
+      wholesaleStressCascadeBand: inputs.fiscalPressure === 'critical' ? 'cascade' : inputs.creditShockActive ? 'stressed' : 'stable',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -9710,6 +9923,8 @@ export function projectInflationForecastPath(
       householdWageInflationDeanchoringBand: householdDeanchoring.deanchoringBand,
       corporateMarkupInflationCascadeBand: markupCascade.cascadeBand,
       tradeTariffImportInflationPipelineBand: tariffPipeline.pipelineBand,
+      metroUrbanRentInflationSurgeBand: metroSurge.surgeBand,
+      wholesaleGridEnergyInflationCascadeBand: gridCascade.cascadeBand,
     });
   }
 
@@ -9815,7 +10030,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r31';
+  schemaVersion: '10.14.agent10.r32';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -9873,6 +10088,8 @@ export interface Agent21InflationForecastBundle {
   terminalHouseholdWageInflationDeanchoring: HouseholdWageInflationDeanchoringBand;
   terminalCorporateMarkupInflationCascade: CorporateMarkupInflationCascadeBand;
   terminalTradeTariffImportInflationPipeline: TradeTariffImportInflationPipelineBand;
+  terminalMetroUrbanRentInflationSurge: MetroUrbanRentInflationSurgeBand;
+  terminalWholesaleGridEnergyInflationCascade: WholesaleGridEnergyInflationCascadeBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -9901,7 +10118,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r31',
+    schemaVersion: '10.14.agent10.r32',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -9959,6 +10176,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalHouseholdWageInflationDeanchoring: lastPoint?.householdWageInflationDeanchoringBand ?? 'anchored',
     terminalCorporateMarkupInflationCascade: lastPoint?.corporateMarkupInflationCascadeBand ?? 'absorbed',
     terminalTradeTariffImportInflationPipeline: lastPoint?.tradeTariffImportInflationPipelineBand ?? 'anchored',
+    terminalMetroUrbanRentInflationSurge: lastPoint?.metroUrbanRentInflationSurgeBand ?? 'subdued',
+    terminalWholesaleGridEnergyInflationCascade: lastPoint?.wholesaleGridEnergyInflationCascadeBand ?? 'stable',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -10242,6 +10461,12 @@ export function effectiveTierLoanRate(
   assessTradeTariffImportInflationPipeline,
   tradeTariffImportInflationPipelineScoreAdjustment,
 } from './inflation/trade-tariff-import-inflation-pipeline.js';
+  assessMetroUrbanRentInflationSurge,
+  metroUrbanRentInflationSurgeScoreAdjustment,
+} from './inflation/metro-urban-rent-inflation-surge.js';
+  assessWholesaleGridEnergyInflationCascade,
+  wholesaleGridEnergyInflationCascadeScoreAdjustment,
+} from './inflation/wholesale-grid-energy-inflation-cascade.js';
   mergeAgent22IntoMacroFinancialInputs,
   agent22UiBridgeIntegrationNote,
 } from './integration/agent22-ui-bridge.js';
@@ -10646,7 +10871,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r31');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r32');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -10793,7 +11018,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -10885,7 +11110,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -10984,7 +11209,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -11082,7 +11307,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -11180,7 +11405,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -11270,7 +11495,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r12_10',
       'agent21 r12 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalRecreationLeisurePressure !== undefined &&
         bundle.terminalProfessionalServicesFee !== undefined,
     );
@@ -11360,7 +11585,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r13_10',
       'agent21 r13 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalChildcareServicesPressure !== undefined &&
         bundle.terminalGovernmentChargesPressure !== undefined,
     );
@@ -11450,7 +11675,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r14_10',
       'agent21 r14 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalWaterUtilitiesPressure !== undefined &&
         bundle.terminalDomesticTravelPressure !== undefined,
     );
@@ -11540,7 +11765,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r15_10',
       'agent21 r15 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalConstructionMaterialsPressure !== undefined &&
         bundle.terminalRetailTradeMargin !== undefined,
     );
@@ -11632,7 +11857,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r16_10',
       'agent21 r16 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalFinancialServicesFee !== undefined &&
         bundle.terminalAgriculturalFarmgatePressure !== undefined,
     );
@@ -11728,7 +11953,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r17_10',
       'agent21 r17 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalPublicUtilitiesGridTariff !== undefined &&
         bundle.terminalUiInflationSalience !== undefined,
     );
@@ -11832,7 +12057,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r18_10',
       'agent21 r18 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalHousingMortgageEssential !== undefined &&
         bundle.terminalMacroTransmissionMerge !== undefined,
     );
@@ -11937,7 +12162,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r19_10',
       'agent21 r19 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalDynamicEventsInflationSpillover !== undefined &&
         bundle.terminalDashboardMapInflationOverlay !== undefined,
     );
@@ -12042,7 +12267,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r20_10',
       'agent21 r20 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalPublicFinanceDebtService !== undefined &&
         bundle.terminalPopulationLaborWage !== undefined,
     );
@@ -12152,7 +12377,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r21_10',
       'agent21 r21 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalWholesaleEnergyTransition !== undefined &&
         bundle.terminalUrbanRentDispersion !== undefined,
     );
@@ -12254,7 +12479,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r22_10',
       'agent21 r22 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalCorporatePricingPassThrough !== undefined &&
         bundle.terminalTradeExchangeImport !== undefined,
     );
@@ -12360,7 +12585,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r23_10',
       'agent21 r23 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalGuardianInflationIntervention !== undefined &&
         bundle.terminalTeamIntelligenceConsensus !== undefined,
     );
@@ -12466,7 +12691,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r24_10',
       'agent21 r24 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalStrategicGeopoliticalPremium !== undefined &&
         bundle.terminalAiMemoryInflationRecall !== undefined,
     );
@@ -12572,7 +12797,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r25_10',
       'agent21 r25 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalCalendarSeasonInflationCarryover !== undefined &&
         bundle.terminalAutomationAutopilotInflationDrift !== undefined,
     );
@@ -12688,7 +12913,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r26_10',
       'agent21 r26 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalResearchProductivityInflationOffset !== undefined &&
         bundle.terminalScenarioSandboxInflationBias !== undefined,
     );
@@ -12801,7 +13026,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r27_10',
       'agent21 r27 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalEventsNarrativeInflationPersistence !== undefined &&
         bundle.terminalMacroDemandOverheatInflationSlippage !== undefined,
     );
@@ -12910,7 +13135,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r28_10',
       'agent21 r28 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalFreightLogisticsInflationCongestion !== undefined &&
         bundle.terminalHousingWellbeingInflationEssentialStress !== undefined,
     );
@@ -13014,7 +13239,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r29_10',
       'agent21 r29 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalCommandCenterInflationFusionEscalation !== undefined &&
         bundle.terminalUiPlayerInflationSalienceNudge !== undefined,
     );
@@ -13122,7 +13347,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r30_10',
       'agent21 r30 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalFiscalIndexationInflationAnchorBreach !== undefined &&
         bundle.terminalHouseholdWageInflationDeanchoring !== undefined,
     );
@@ -13230,7 +13455,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r31_10',
       'agent21 r31 fields',
-      bundle.schemaVersion === '10.14.agent10.r31' &&
+      bundle.schemaVersion === '10.14.agent10.r32' &&
         bundle.terminalCorporateMarkupInflationCascade !== undefined &&
         bundle.terminalTradeTariffImportInflationPipeline !== undefined,
     );
@@ -13239,7 +13464,7 @@ export function runAgent10FinanceSelfTests(): {
     'a10_r31_11',
     'round31 preset corporate markup stack',
     (() => {
-      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'corporate_markup_cascade_stack');
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'corporate_markup_pass_through_stack');
       return inp?.highInflationScenario === true && inp.householdInflationScenarioActive === true;
     })(),
   );
@@ -13257,6 +13482,116 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'markup_tariff_fusion_stress');
       return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.41;
+    })(),
+  );
+
+  // --- Round 32 scale wave ---
+  {
+    const surge = assessMetroUrbanRentInflationSurge({
+      vacancyBand: 'critical',
+      rentGrowthBand: 'surging',
+      urbanizationPressure: 'high',
+      urbanRentInflationLatch: true,
+      metroDispersionStressBand: 'critical',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r32_01',
+      'metro surging or critical',
+      surge.surgeBand === 'surging' || surge.surgeBand === 'critical',
+    );
+    check('a10_r32_02', 'metro score adj', metroUrbanRentInflationSurgeScoreAdjustment(surge.surgeBand) >= 3);
+  }
+  {
+    const grid = assessWholesaleGridEnergyInflationCascade({
+      wholesaleEnergyStress: 'crisis',
+      retailTariffShock: true,
+      gridReliabilityBand: 'fragile',
+      gridTariffInflationLatch: true,
+      wholesaleStressCascadeBand: 'cascade',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r32_03',
+      'grid fragile or crisis',
+      grid.cascadeBand === 'fragile' || grid.cascadeBand === 'crisis',
+    );
+    check('a10_r32_04', 'grid score adj', wholesaleGridEnergyInflationCascadeScoreAdjustment(grid.cascadeBand) >= 3);
+  }
+  {
+    const merged11 = mergeAgent11IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      vacancyBand: 'tight',
+      rentGrowthBand: 'moderate',
+      urbanizationPressure: 'medium',
+      regionalDispersionScore: 0.4,
+      urbanRentInflationLatch: true,
+      metroDispersionStressBand: 'critical',
+    });
+    check('a10_r32_05', 'agent11 critical merge', merged11.highInflationScenario === true);
+    check('a10_r32_06', 'agent11 bridge note', agent11CitiesBridgeIntegrationNote().includes('Agent 11'));
+  }
+  {
+    const merged13 = mergeAgent13IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      wholesaleEnergyStress: 'elevated',
+      retailTariffShock: false,
+      gridReliabilityBand: 'stable',
+      emissionsTransitionCostBand: 'low',
+      gridTariffInflationLatch: true,
+      wholesaleStressCascadeBand: 'cascade',
+    });
+    check('a10_r32_07', 'agent13 cascade merge', merged13.highInflationScenario === true);
+    check('a10_r32_08', 'agent13 bridge note', agent13EnergyBridgeIntegrationNote().includes('Agent 13'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r32_09',
+      'forecast metro surge and grid cascade fields',
+      path.points.every(
+        (p) => !!p.metroUrbanRentInflationSurgeBand && !!p.wholesaleGridEnergyInflationCascadeBand,
+      ),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r32_10',
+      'agent21 r32 fields',
+      bundle.schemaVersion === '10.14.agent10.r32' &&
+        bundle.terminalMetroUrbanRentInflationSurge !== undefined &&
+        bundle.terminalWholesaleGridEnergyInflationCascade !== undefined,
+    );
+  }
+  check(
+    'a10_r32_11',
+    'round32 preset metro rent surge stack',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'metro_urban_rent_surge_stack');
+      return inp?.highInflationScenario === true && inp.householdInflationScenarioActive === true;
+    })(),
+  );
+  check(
+    'a10_r32_12',
+    'round32 preset grid cascade stress',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'wholesale_grid_tariff_cascade_stress');
+      return inp?.creditShockActive === true && inp.systemicLiquidityBand === 'critical';
+    })(),
+  );
+  check(
+    'a10_r32_13',
+    'round32 preset metro grid fusion',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'metro_grid_fusion_stress');
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.42;
     })(),
   );
 
@@ -15245,6 +15580,80 @@ export function MarkupTariffInflationPanel(props: MarkupTariffInflationPanelProp
       </p>
       <p data-testid="markup-tariff-note">{markup.narrative}</p>
       <p>{pipeline.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/MetroGridInflationPanel.tsx ---
+  assessMetroUrbanRentInflationSurge,
+  metroUrbanRentInflationSurgeScoreAdjustment,
+} from '../inflation/metro-urban-rent-inflation-surge.js';
+  assessWholesaleGridEnergyInflationCascade,
+  wholesaleGridEnergyInflationCascadeScoreAdjustment,
+} from '../inflation/wholesale-grid-energy-inflation-cascade.js';
+
+export interface MetroGridInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent11?: Agent11CitiesSnapshot | null;
+  agent13?: Agent13EnergySnapshot | null;
+}
+
+export function MetroGridInflationPanel(props: MetroGridInflationPanelProps) {
+  const cities = props.agent11 ?? {
+    turn: props.inputs.turn,
+    vacancyBand: props.inputs.highInflationScenario ? ('critical' as const) : ('tight' as const),
+    rentGrowthBand: props.inputs.householdInflationScenarioActive ? ('surging' as const) : ('strong' as const),
+    urbanizationPressure: 'high' as const,
+    regionalDispersionScore: 0.62,
+    urbanRentInflationLatch: props.inputs.creditShockActive,
+    metroDispersionStressBand: props.inputs.fiscalPressure === 'critical' ? ('critical' as const) : ('widening' as const),
+  };
+
+  const energy = props.agent13 ?? {
+    turn: props.inputs.turn,
+    wholesaleEnergyStress: props.inputs.highInflationScenario ? ('crisis' as const) : ('severe' as const),
+    retailTariffShock: props.inputs.creditShockActive,
+    gridReliabilityBand: props.inputs.systemicLiquidityBand === 'critical' ? ('fragile' as const) : ('strained' as const),
+    emissionsTransitionCostBand: 'medium' as const,
+    gridTariffInflationLatch: props.inputs.householdInflationScenarioActive,
+    wholesaleStressCascadeBand: props.inputs.fiscalPressure === 'critical' ? ('cascade' as const) : ('stressed' as const),
+  };
+
+  const surge = assessMetroUrbanRentInflationSurge({
+    vacancyBand: cities.vacancyBand,
+    rentGrowthBand: cities.rentGrowthBand,
+    urbanizationPressure: cities.urbanizationPressure,
+    urbanRentInflationLatch: cities.urbanRentInflationLatch === true,
+    metroDispersionStressBand: cities.metroDispersionStressBand ?? 'aligned',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const cascade = assessWholesaleGridEnergyInflationCascade({
+    wholesaleEnergyStress: energy.wholesaleEnergyStress,
+    retailTariffShock: energy.retailTariffShock,
+    gridReliabilityBand: energy.gridReliabilityBand,
+    gridTariffInflationLatch: energy.gridTariffInflationLatch === true,
+    wholesaleStressCascadeBand: energy.wholesaleStressCascadeBand ?? 'stable',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-metro-grid-inflation" data-testid="metro-grid-inflation-panel">
+      <h4>Metro rent surge & grid energy cascade (round 32)</h4>
+      <p>
+        Metro {surge.surgeBand} · index {surge.metroIndex.toFixed(0)} · score adj{' '}
+        {metroUrbanRentInflationSurgeScoreAdjustment(surge.surgeBand)}
+      </p>
+      <p>
+        Grid {cascade.cascadeBand} · index {cascade.energyIndex.toFixed(0)} · score adj{' '}
+        {wholesaleGridEnergyInflationCascadeScoreAdjustment(cascade.cascadeBand)}
+      </p>
+      <p data-testid="metro-grid-note">{surge.narrative}</p>
+      <p>{cascade.narrative}</p>
     </div>
   );
 }

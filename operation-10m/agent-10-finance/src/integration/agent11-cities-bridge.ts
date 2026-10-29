@@ -12,6 +12,10 @@ export interface Agent11CitiesSnapshot {
   metroRentDispersionCritical?: boolean;
   /** Round 21: regional markets syncing housing inflation. */
   regionalHousingInflationSync?: boolean;
+  /** Round 32: urban rent inflation latch. */
+  urbanRentInflationLatch?: boolean;
+  /** Round 32: metro dispersion stress band. */
+  metroDispersionStressBand?: 'aligned' | 'widening' | 'critical';
 }
 
 export function mergeAgent11IntoMacroFinancialInputs(
@@ -42,6 +46,13 @@ export function mergeAgent11IntoMacroFinancialInputs(
   if (snapshot.metroRentDispersionCritical && snapshot.regionalHousingInflationSync) {
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
+  if (snapshot.urbanRentInflationLatch && snapshot.metroDispersionStressBand === 'critical') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.metroDispersionStressBand === 'widening' && snapshot.rentGrowthBand === 'surging') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
   return {

@@ -56,11 +56,13 @@ import type { FiscalIndexationInflationAnchorBreachBand } from '../inflation/fis
 import type { HouseholdWageInflationDeanchoringBand } from '../inflation/household-wage-inflation-deanchoring.js';
 import type { CorporateMarkupInflationCascadeBand } from '../inflation/corporate-markup-inflation-cascade.js';
 import type { TradeTariffImportInflationPipelineBand } from '../inflation/trade-tariff-import-inflation-pipeline.js';
+import type { MetroUrbanRentInflationSurgeBand } from '../inflation/metro-urban-rent-inflation-surge.js';
+import type { WholesaleGridEnergyInflationCascadeBand } from '../inflation/wholesale-grid-energy-inflation-cascade.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r31';
+  schemaVersion: '10.14.agent10.r32';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -118,6 +120,8 @@ export interface Agent21InflationForecastBundle {
   terminalHouseholdWageInflationDeanchoring: HouseholdWageInflationDeanchoringBand;
   terminalCorporateMarkupInflationCascade: CorporateMarkupInflationCascadeBand;
   terminalTradeTariffImportInflationPipeline: TradeTariffImportInflationPipelineBand;
+  terminalMetroUrbanRentInflationSurge: MetroUrbanRentInflationSurgeBand;
+  terminalWholesaleGridEnergyInflationCascade: WholesaleGridEnergyInflationCascadeBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -146,7 +150,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r31',
+    schemaVersion: '10.14.agent10.r32',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -204,6 +208,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalHouseholdWageInflationDeanchoring: lastPoint?.householdWageInflationDeanchoringBand ?? 'anchored',
     terminalCorporateMarkupInflationCascade: lastPoint?.corporateMarkupInflationCascadeBand ?? 'absorbed',
     terminalTradeTariffImportInflationPipeline: lastPoint?.tradeTariffImportInflationPipelineBand ?? 'anchored',
+    terminalMetroUrbanRentInflationSurge: lastPoint?.metroUrbanRentInflationSurgeBand ?? 'subdued',
+    terminalWholesaleGridEnergyInflationCascade: lastPoint?.wholesaleGridEnergyInflationCascadeBand ?? 'stable',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

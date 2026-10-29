@@ -216,6 +216,14 @@ import {
   assessTradeTariffImportInflationPipeline,
   type TradeTariffImportInflationPipelineBand,
 } from '../inflation/trade-tariff-import-inflation-pipeline.js';
+import {
+  assessMetroUrbanRentInflationSurge,
+  type MetroUrbanRentInflationSurgeBand,
+} from '../inflation/metro-urban-rent-inflation-surge.js';
+import {
+  assessWholesaleGridEnergyInflationCascade,
+  type WholesaleGridEnergyInflationCascadeBand,
+} from '../inflation/wholesale-grid-energy-inflation-cascade.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -278,6 +286,8 @@ export interface InflationForecastPoint {
   householdWageInflationDeanchoringBand: HouseholdWageInflationDeanchoringBand;
   corporateMarkupInflationCascadeBand: CorporateMarkupInflationCascadeBand;
   tradeTariffImportInflationPipelineBand: TradeTariffImportInflationPipelineBand;
+  metroUrbanRentInflationSurgeBand: MetroUrbanRentInflationSurgeBand;
+  wholesaleGridEnergyInflationCascadeBand: WholesaleGridEnergyInflationCascadeBand;
 }
 
 export interface InflationForecastPath {
@@ -794,6 +804,25 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const metroSurge = assessMetroUrbanRentInflationSurge({
+      vacancyBand: inputs.highInflationScenario ? 'critical' : inputs.creditShockActive ? 'tight' : 'balanced',
+      rentGrowthBand: inputs.householdInflationScenarioActive ? 'surging' : inputs.highInflationScenario ? 'strong' : 'moderate',
+      urbanizationPressure: inputs.fiscalPressure === 'critical' ? 'high' : 'medium',
+      urbanRentInflationLatch: inputs.creditShockActive,
+      metroDispersionStressBand:
+        inputs.publicStability < 42 ? 'critical' : inputs.householdInflationScenarioActive ? 'widening' : 'aligned',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const gridCascade = assessWholesaleGridEnergyInflationCascade({
+      wholesaleEnergyStress: inputs.highInflationScenario ? 'crisis' : inputs.creditShockActive ? 'severe' : 'elevated',
+      retailTariffShock: inputs.creditShockActive,
+      gridReliabilityBand: inputs.systemicLiquidityBand === 'critical' ? 'fragile' : 'stable',
+      gridTariffInflationLatch: inputs.householdInflationScenarioActive,
+      wholesaleStressCascadeBand: inputs.fiscalPressure === 'critical' ? 'cascade' : inputs.creditShockActive ? 'stressed' : 'stable',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -856,6 +885,8 @@ export function projectInflationForecastPath(
       householdWageInflationDeanchoringBand: householdDeanchoring.deanchoringBand,
       corporateMarkupInflationCascadeBand: markupCascade.cascadeBand,
       tradeTariffImportInflationPipelineBand: tariffPipeline.pipelineBand,
+      metroUrbanRentInflationSurgeBand: metroSurge.surgeBand,
+      wholesaleGridEnergyInflationCascadeBand: gridCascade.cascadeBand,
     });
   }
 

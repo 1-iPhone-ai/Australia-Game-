@@ -12,6 +12,10 @@ export interface Agent13EnergySnapshot {
   renewableShortfallInflationFlag?: boolean;
   /** Round 21: wholesale price cascade band. */
   wholesaleCascadeBand?: 'none' | 'stressed' | 'cascade';
+  /** Round 32: grid tariff inflation latch. */
+  gridTariffInflationLatch?: boolean;
+  /** Round 32: wholesale stress cascade band. */
+  wholesaleStressCascadeBand?: 'stable' | 'stressed' | 'cascade';
 }
 
 export function mergeAgent13IntoMacroFinancialInputs(
@@ -49,6 +53,13 @@ export function mergeAgent13IntoMacroFinancialInputs(
   }
   if (snapshot.wholesaleCascadeBand === 'cascade') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  }
+
+  if (snapshot.gridTariffInflationLatch && snapshot.wholesaleStressCascadeBand === 'cascade') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  } else if (snapshot.wholesaleStressCascadeBand === 'stressed' && snapshot.retailTariffShock) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
   return {
