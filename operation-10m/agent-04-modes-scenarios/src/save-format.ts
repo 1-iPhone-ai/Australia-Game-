@@ -1,4 +1,10 @@
 import { listO10mChallengeModeIds } from './challenge-modes.js';
+import {
+  sanitizeCampaignSlots,
+  sanitizeChallengeStreak,
+  createEmptyChallengeStreak,
+} from './save-format-campaign.js';
+import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
 import { resolveSandboxKnobValues } from './sandbox-knobs.js';
@@ -16,7 +22,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 3;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 4;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -113,6 +119,10 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     milestones: [],
     completedChainIds: [],
     recentRuns: [],
+    objectiveProgress: [],
+    campaignSlots: [],
+    activeCampaignSlotId: null,
+    challengeStreak: createEmptyChallengeStreak(),
   };
 }
 
@@ -130,6 +140,10 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       completedChainIds: merged.completedChainIds ?? [],
       saveKind: merged.saveKind ?? 'manual',
       updatedAtDay: merged.updatedAtDay ?? 0,
+      objectiveProgress: merged.objectiveProgress ?? [],
+      campaignSlots: merged.campaignSlots ?? [],
+      activeCampaignSlotId: merged.activeCampaignSlotId ?? null,
+      challengeStreak: merged.challengeStreak ?? createEmptyChallengeStreak(),
     };
     return upgraded;
   }
@@ -168,6 +182,13 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
       ? o.completedChainIds.filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_chain_'))
       : [],
     recentRuns: sanitizeRunLog(o.recentRuns),
+    objectiveProgress: sanitizeObjectiveProgress(o.objectiveProgress),
+    campaignSlots: sanitizeCampaignSlots(o.campaignSlots),
+    activeCampaignSlotId:
+      typeof o.activeCampaignSlotId === 'string' && o.activeCampaignSlotId.startsWith('o10m_slot_')
+        ? o.activeCampaignSlotId
+        : null,
+    challengeStreak: sanitizeChallengeStreak(o.challengeStreak),
   };
 }
 

@@ -143,6 +143,41 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_continuity_arc',
+    title: 'Continuity Arc',
+    description:
+      'Validate save checkpoints, federation standing, then rebound trust after compound crises — round-4 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_continuity_arc',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_continuity_drill',
+        title: 'Checkpoint Discipline',
+        narrativeBridge: 'Prove mid-campaign saves preserve chain and milestone state.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 350 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_federation_standing',
+        title: 'Federation Mandate',
+        requiresPrimaryVictory: true,
+        requiresOptionalCount: 1,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 4, VIC: 4, SA: 4 },
+          forcedSettingsPatch: { o10mChainContinuityFederationComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_standing_rebound',
+        title: 'Trust Rebound',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainContinuityArcComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

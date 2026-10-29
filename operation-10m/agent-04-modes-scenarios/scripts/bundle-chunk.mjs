@@ -27,6 +27,9 @@ const SOURCE_FILES = [
   'operation-10m/agent-04-modes-scenarios/src/scenario-content-audit.ts',
   'operation-10m/agent-04-modes-scenarios/src/save-format.ts',
   'operation-10m/agent-04-modes-scenarios/src/save-format-lifecycle.ts',
+  'operation-10m/agent-04-modes-scenarios/src/save-format-objective-sync.ts',
+  'operation-10m/agent-04-modes-scenarios/src/save-format-campaign.ts',
+  'operation-10m/agent-04-modes-scenarios/src/scenario-campaign-planner.ts',
 ];
 
 function stripModuleImports(src) {
@@ -61,7 +64,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 14, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 4, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 5, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -87,6 +90,8 @@ export function runAgent04ModesScenariosSelfTests(): {
   push('agent04_chunk_10', saveRoundTrip !== null && saveRoundTrip.schemaVersion === O10M_MODES_SAVE_SCHEMA_VERSION);
   const sealed = sealO10mModesPersistedState(createEmptyO10mModesPersistedState());
   push('agent04_chunk_11', verifyO10mModesIntegrity(sealed));
+  const plan = planNextCampaignAction(createEmptyO10mModesPersistedState());
+  push('agent04_chunk_12', plan.kind === 'free_play' && plan.reason.length > 0);
 
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
@@ -94,10 +99,10 @@ export function runAgent04ModesScenariosSelfTests(): {
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: '${MODULE_ID}',
-  schemaVersion: 'op10m-agent04-v4',
+  schemaVersion: 'op10m-agent04-v5',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 3,
+  saveSchemaVersion: 4,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;
@@ -138,9 +143,9 @@ const manifest = {
   touchesSaveFormat: true,
   proposedGameStateFields: ['o10mModesProgress'],
   saveFormat: {
-    schemaVersion: 3,
+    schemaVersion: 4,
     gameStateKey: 'o10mModesProgress',
-    nestedFields: ['chainProgress', 'milestones', 'challengeModeIds', 'sandboxProfileId', 'recentRuns', 'integrityFingerprint', 'saveKind'],
+    nestedFields: ['chainProgress', 'milestones', 'challengeModeIds', 'sandboxProfileId', 'recentRuns', 'integrityFingerprint', 'saveKind', 'objectiveProgress', 'campaignSlots', 'challengeStreak'],
   },
   contentSha256: hash,
   chunkPath: 'operation-10m/modules/agent-04-modes-scenarios/chunk.tsx',

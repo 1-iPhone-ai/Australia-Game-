@@ -310,6 +310,38 @@ export interface O10mChainAdvanceResult {
   unlockedNextScenarioId: string | null;
 }
 
+export interface O10mPersistedObjectiveRow {
+  objectiveId: string;
+  currentValue: number;
+  targetValue: number;
+  completed: boolean;
+  lastUpdatedTurn: number;
+}
+
+export interface O10mCampaignSlot {
+  slotId: string;
+  label: string;
+  baseMode: GameModeSelection;
+  scenarioId: string | null;
+  chainId: string | null;
+  pinnedAtTurn: number;
+}
+
+export interface O10mChallengeStreak {
+  current: number;
+  best: number;
+  lastScenarioId: string | null;
+}
+
+export interface O10mCampaignPlan {
+  kind: 'chain_step' | 'slot_resume' | 'free_play';
+  scenarioId: string | null;
+  chainId: string | null;
+  chainStepIndex: number | null;
+  slotId: string | null;
+  reason: string;
+}
+
 /** Persisted under `gameState.o10mModesProgress` after assembly. */
 export interface O10mModesPersistedState {
   schemaVersion: number;
@@ -327,6 +359,13 @@ export interface O10mModesPersistedState {
   milestones: O10mMilestoneProgress[];
   completedChainIds: string[];
   recentRuns: O10mPersistedRunRecord[];
+  /** Schema v4 — mid-run objective checkpoints for save/resume. */
+  objectiveProgress?: O10mPersistedObjectiveRow[];
+  /** Schema v4 — bookmarked mode/scenario combinations (max 4). */
+  campaignSlots?: O10mCampaignSlot[];
+  activeCampaignSlotId?: string | null;
+  /** Schema v4 — consecutive primary-victory streak on challenge overlays. */
+  challengeStreak?: O10mChallengeStreak;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

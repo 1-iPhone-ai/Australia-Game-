@@ -13,3 +13,6 @@ export * from './mode-mission-registry.js';
 export * from './scenario-content-audit.js';
 export * from './save-format.js';
 export * from './save-format-lifecycle.js';
+export * from './save-format-objective-sync.js';
+export * from './save-format-campaign.js';
+export * from './scenario-campaign-planner.js';

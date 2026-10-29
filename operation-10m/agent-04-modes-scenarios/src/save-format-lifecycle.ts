@@ -12,6 +12,8 @@ import type {
   O10mModesReconcileContext,
   O10mModesSaveKind,
 } from './types.js';
+import { sanitizeCampaignSlots } from './save-format-campaign.js';
+import { mergeObjectiveProgressOnImport } from './save-format-objective-sync.js';
 
 const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'baseMode',
@@ -21,6 +23,10 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'sandboxProfileId',
   'milestones',
   'completedChainIds',
+  'objectiveProgress',
+  'campaignSlots',
+  'activeCampaignSlotId',
+  'challengeStreak',
 ];
 
 function stableStringify(value: unknown): string {
@@ -105,6 +111,11 @@ export function mergeO10mModesPersistedStates(
       milestones: mergeMilestones(primary.milestones, secondary.milestones),
       completedChainIds: [...new Set([...primary.completedChainIds, ...secondary.completedChainIds])].sort(),
       recentRuns: [...primary.recentRuns, ...secondary.recentRuns].slice(-24),
+      objectiveProgress: mergeObjectiveProgressOnImport(
+        primary.objectiveProgress ?? [],
+        secondary.objectiveProgress ?? [],
+      ),
+      campaignSlots: sanitizeCampaignSlots([...(primary.campaignSlots ?? []), ...(secondary.campaignSlots ?? [])]),
     };
   }
 
