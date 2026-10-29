@@ -431,6 +431,23 @@ import {
   nationalRailPassengerFreightPathThroughputIndex,
   railPassengerFreightPathProductivityMultiplier,
 } from './rail-passenger-freight-path-index.ts';
+import {
+  computeAluminaRefineryExportByRegion,
+  aluminaRefineryExportProductivityMultiplier,
+  nationalAluminaRefineryExportIndex,
+} from '../network/alumina-refinery-export-index.ts';
+import {
+  computeDisasterReliefAirBridgeByRegion,
+  computeDisasterReliefAirBridgeShare,
+  disasterReliefAirBridgeProductivityMultiplier,
+  nationalDisasterReliefAirBridgeIndex,
+} from '../operations/disaster-relief-air-bridge-index.ts';
+import {
+  computeContainerYardAutomationShare,
+  computeContainerYardAutomationThroughputByRegion,
+  containerYardAutomationProductivityMultiplier,
+  nationalContainerYardAutomationThroughputIndex,
+} from './container-yard-automation-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1414,6 +1431,34 @@ export function computeTransportInfrastructureState(
     railPassengerFreightPathShare,
     options?.railPassengerFreightPathPolicy ?? 'baseline',
   );
+  const aluminaRefineryExportByRegion = computeAluminaRefineryExportByRegion(ops);
+  const nationalAluminaRefinery = nationalAluminaRefineryExportIndex(aluminaRefineryExportByRegion);
+  const aluminaMult = aluminaRefineryExportProductivityMultiplier(
+    nationalAluminaRefinery,
+    options?.aluminaRefineryExportPolicy ?? 'baseline',
+  );
+  const disasterReliefAirBridgeByRegion = computeDisasterReliefAirBridgeByRegion(ops, networkStress);
+  const nationalDisasterReliefAir = nationalDisasterReliefAirBridgeIndex(disasterReliefAirBridgeByRegion);
+  const disasterReliefAirBridgeShare = computeDisasterReliefAirBridgeShare(
+    ops,
+    options?.disasterReliefAirBridgePolicy ?? 'baseline',
+  );
+  const reliefAirMult = disasterReliefAirBridgeProductivityMultiplier(
+    disasterReliefAirBridgeShare,
+    options?.disasterReliefAirBridgePolicy ?? 'baseline',
+  );
+  const containerYardAutomationThroughputByRegion = computeContainerYardAutomationThroughputByRegion(ops);
+  const nationalContainerYardAuto = nationalContainerYardAutomationThroughputIndex(
+    containerYardAutomationThroughputByRegion,
+  );
+  const containerYardAutomationShare = computeContainerYardAutomationShare(
+    ops,
+    options?.containerYardAutomationPolicy ?? 'baseline',
+  );
+  const yardAutoMult = containerYardAutomationProductivityMultiplier(
+    containerYardAutomationShare,
+    options?.containerYardAutomationPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -1455,6 +1500,9 @@ export function computeTransportInfrastructureState(
     const copperBoost = (copperConcentrateExportByRegion[code] - 5) * 0.004;
     const pharmaColdChainBoost = (pharmaceuticalColdChainByRegion[code] - 6) * 0.0036;
     const paxFreightPathBoost = (railPassengerFreightPathThroughputByRegion[code] - 1.7) * 0.0032;
+    const aluminaBoost = (aluminaRefineryExportByRegion[code] - 5) * 0.0039;
+    const reliefAirBoost = (disasterReliefAirBridgeByRegion[code] - 6) * 0.0035;
+    const yardAutoBoost = (containerYardAutomationThroughputByRegion[code] - 2) * 0.0031;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -1495,7 +1543,10 @@ export function computeTransportInfrastructureState(
         courierMicrohubBoost +
         copperBoost +
         pharmaColdChainBoost +
-        paxFreightPathBoost) *
+        paxFreightPathBoost +
+        aluminaBoost +
+        reliefAirBoost +
+        yardAutoBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -1534,7 +1585,10 @@ export function computeTransportInfrastructureState(
       courierMicrohubMult *
       copperMult *
       pharmaColdChainMult *
-      paxFreightPathMult;
+      paxFreightPathMult *
+      aluminaMult *
+      reliefAirMult *
+      yardAutoMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -1596,7 +1650,10 @@ export function computeTransportInfrastructureState(
     nationalUrbanCourierMicrohub * 0.003 +
     nationalCopperConcentrate * 0.003 +
     nationalPharmaColdChain * 0.003 +
-    nationalPaxFreightPath * 0.003;
+    nationalPaxFreightPath * 0.003 +
+    nationalAluminaRefinery * 0.003 +
+    nationalDisasterReliefAir * 0.003 +
+    nationalContainerYardAuto * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -1611,7 +1668,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/29',
+    schemaVersion: 'agent12/30',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -1809,6 +1866,14 @@ export function computeTransportInfrastructureState(
     railPassengerFreightPathShare,
     nationalRailPassengerFreightPathThroughputIndex: nationalPaxFreightPath,
     railPassengerFreightPathThroughputByRegion,
+    nationalAluminaRefineryExportIndex: nationalAluminaRefinery,
+    aluminaRefineryExportByRegion,
+    disasterReliefAirBridgeShare,
+    nationalDisasterReliefAirBridgeIndex: nationalDisasterReliefAir,
+    disasterReliefAirBridgeByRegion,
+    containerYardAutomationShare,
+    nationalContainerYardAutomationThroughputIndex: nationalContainerYardAuto,
+    containerYardAutomationThroughputByRegion,
     computeMs,
   };
 }

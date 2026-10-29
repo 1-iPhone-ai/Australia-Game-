@@ -321,8 +321,14 @@ export type PharmaceuticalColdChainPolicy = 'baseline' | 'surge';
 
 export type RailPassengerFreightPathPolicy = 'baseline' | 'expand';
 
+export type AluminaRefineryExportPolicy = 'baseline' | 'accelerate';
+
+export type DisasterReliefAirBridgePolicy = 'baseline' | 'surge';
+
+export type ContainerYardAutomationPolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/29';
+  schemaVersion: 'agent12/30';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -520,6 +526,14 @@ export interface TransportInfrastructureState {
   railPassengerFreightPathShare: number;
   nationalRailPassengerFreightPathThroughputIndex: number;
   railPassengerFreightPathThroughputByRegion: Record<AuRegionCode, number>;
+  nationalAluminaRefineryExportIndex: number;
+  aluminaRefineryExportByRegion: Record<AuRegionCode, number>;
+  disasterReliefAirBridgeShare: number;
+  nationalDisasterReliefAirBridgeIndex: number;
+  disasterReliefAirBridgeByRegion: Record<AuRegionCode, number>;
+  containerYardAutomationShare: number;
+  nationalContainerYardAutomationThroughputIndex: number;
+  containerYardAutomationThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -597,6 +611,9 @@ export interface TransportInfrastructureOptions {
   copperConcentrateExportPolicy?: CopperConcentrateExportPolicy;
   pharmaceuticalColdChainPolicy?: PharmaceuticalColdChainPolicy;
   railPassengerFreightPathPolicy?: RailPassengerFreightPathPolicy;
+  aluminaRefineryExportPolicy?: AluminaRefineryExportPolicy;
+  disasterReliefAirBridgePolicy?: DisasterReliefAirBridgePolicy;
+  containerYardAutomationPolicy?: ContainerYardAutomationPolicy;
 }
 
 export interface V94ProjectSnapshot {

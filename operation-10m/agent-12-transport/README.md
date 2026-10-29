@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 29
+
+- Schema **`agent12/30`**: alumina refinery export throughput, disaster relief air-bridge readiness, container yard automation share (`aluminaRefineryExportPolicy`, `disasterReliefAirBridgePolicy`, `containerYardAutomationPolicy`)
+- Catalog: **406** assets, **101** corridors, **163** scenarios
+- Systems: `network/alumina-refinery-export-index.ts`, `operations/disaster-relief-air-bridge-index.ts`, `productivity/container-yard-automation-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 28
 
 - Schema **`agent12/29`**: copper concentrate export throughput, pharmaceutical cold-chain readiness, rail passenger–freight path share (`copperConcentrateExportPolicy`, `pharmaceuticalColdChainPolicy`, `railPassengerFreightPathPolicy`)

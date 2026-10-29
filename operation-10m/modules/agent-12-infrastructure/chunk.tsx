@@ -325,8 +325,14 @@ export type PharmaceuticalColdChainPolicy = 'baseline' | 'surge';
 
 export type RailPassengerFreightPathPolicy = 'baseline' | 'expand';
 
+export type AluminaRefineryExportPolicy = 'baseline' | 'accelerate';
+
+export type DisasterReliefAirBridgePolicy = 'baseline' | 'surge';
+
+export type ContainerYardAutomationPolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/29';
+  schemaVersion: 'agent12/30';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -524,6 +530,14 @@ export interface TransportInfrastructureState {
   railPassengerFreightPathShare: number;
   nationalRailPassengerFreightPathThroughputIndex: number;
   railPassengerFreightPathThroughputByRegion: Record<AuRegionCode, number>;
+  nationalAluminaRefineryExportIndex: number;
+  aluminaRefineryExportByRegion: Record<AuRegionCode, number>;
+  disasterReliefAirBridgeShare: number;
+  nationalDisasterReliefAirBridgeIndex: number;
+  disasterReliefAirBridgeByRegion: Record<AuRegionCode, number>;
+  containerYardAutomationShare: number;
+  nationalContainerYardAutomationThroughputIndex: number;
+  containerYardAutomationThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -601,6 +615,9 @@ export interface TransportInfrastructureOptions {
   copperConcentrateExportPolicy?: CopperConcentrateExportPolicy;
   pharmaceuticalColdChainPolicy?: PharmaceuticalColdChainPolicy;
   railPassengerFreightPathPolicy?: RailPassengerFreightPathPolicy;
+  aluminaRefineryExportPolicy?: AluminaRefineryExportPolicy;
+  disasterReliefAirBridgePolicy?: DisasterReliefAirBridgePolicy;
+  containerYardAutomationPolicy?: ContainerYardAutomationPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -1836,6 +1853,48 @@ export const TRANSPORT_CORRIDORS_ROUND28: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round29.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND29: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_qld_alumina_export',
+    name: 'WA–QLD Alumina Export',
+    networkKind: 'trade',
+    regionSequence: ['WA', 'QLD'],
+    requiredTagsByRegion: {
+      WA: ['alumina_refining', 'bauxite_export', 'smelter_input'],
+      QLD: ['alumina_refining', 'bauxite_export', 'smelter_input'],
+    },
+    productivitySynergyPoints: 6.1,
+    logisticsRelief: 0.037,
+  },
+  {
+    id: 'corr_qld_nsw_disaster_relief_air',
+    name: 'QLD–NSW Disaster Relief Air',
+    networkKind: 'mobility',
+    regionSequence: ['QLD', 'NSW'],
+    requiredTagsByRegion: {
+      QLD: ['disaster_relief_air', 'emergency_air_bridge', 'humanitarian_lift'],
+      NSW: ['disaster_relief_air', 'emergency_air_bridge', 'humanitarian_lift'],
+    },
+    productivitySynergyPoints: 5.6,
+    logisticsRelief: 0.03,
+  },
+  {
+    id: 'corr_nsw_vic_yard_automation',
+    name: 'NSW–VIC Yard Automation',
+    networkKind: 'trade',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['yard_automation', 'straddle_crane_auto', 'terminal_throughput'],
+      VIC: ['yard_automation', 'straddle_crane_auto', 'terminal_throughput'],
+    },
+    productivitySynergyPoints: 6.0,
+    logisticsRelief: 0.034,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -2011,6 +2070,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND26,
   ...TRANSPORT_CORRIDORS_ROUND27,
   ...TRANSPORT_CORRIDORS_ROUND28,
+  ...TRANSPORT_CORRIDORS_ROUND29,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -3611,6 +3671,62 @@ export const TRANSPORT_SCENARIOS_ROUND28: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round29.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND29: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_alumina_export_rush',
+    label: 'WA Alumina Export Rush',
+    description: 'Smelter demand surge overloads Bunbury alumina berths.',
+    targetRegions: ['WA', 'QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_qld_bauxite_rail_delay',
+    label: 'Queensland Bauxite Rail Delay',
+    description: 'Feed delay backs up Gladstone alumina wharf.',
+    targetRegions: ['QLD', 'WA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail', 'port'],
+  },
+  {
+    id: 'scn_qld_cyclone_relief_surge',
+    label: 'Queensland Cyclone Relief Surge',
+    description: 'Cyclone response strains Cairns humanitarian air staging.',
+    targetRegions: ['QLD', 'NSW'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics', 'road'],
+  },
+  {
+    id: 'scn_nsw_emergency_lift_peak',
+    label: 'NSW Emergency Lift Peak',
+    description: 'Flood relief peaks Richmond air-bridge slots.',
+    targetRegions: ['NSW', 'QLD'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.21,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['road', 'logistics'],
+  },
+  {
+    id: 'scn_vic_yard_automation_outage',
+    label: 'Victoria Yard Automation Outage',
+    description: 'Straddle-crane fault cuts West Melbourne throughput.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -3800,6 +3916,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND26,
   ...TRANSPORT_SCENARIOS_ROUND27,
   ...TRANSPORT_SCENARIOS_ROUND28,
+  ...TRANSPORT_SCENARIOS_ROUND29,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -10912,6 +11029,233 @@ export const SCALE_WAVE_ROUND28_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round29-assets.ts ---
+
+export const ROUND29_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_pinjarra_alumina_haul',
+    category: 'road',
+    name: 'Pinjarra Alumina Haul',
+    description: 'Bauxite and alumina feed road to export ports.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['alumina_refining', 'bauxite_export', 'smelter_input'],
+    laneKilometres: 46,
+    designSpeedKmh: 87,
+    freightShare: 0.4,
+    urbanShare: 0.05,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_gladstone_alumina',
+    category: 'road',
+    name: 'Gladstone Alumina Access',
+    description: 'Queensland smelter-input alumina road link.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['trade'],
+    tags: ['alumina_refining', 'bauxite_export', 'smelter_input'],
+    laneKilometres: 34,
+    designSpeedKmh: 85,
+    freightShare: 0.37,
+    urbanShare: 0.09,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_cairns_relief_air',
+    category: 'road',
+    name: 'Cairns Relief Air Feed',
+    description: 'Disaster relief air-bridge road to humanitarian lift.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['disaster_relief_air', 'emergency_air_bridge', 'humanitarian_lift'],
+    laneKilometres: 30,
+    designSpeedKmh: 82,
+    freightShare: 0.2,
+    urbanShare: 0.22,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_richmond_relief_air',
+    category: 'road',
+    name: 'Richmond Relief Air Link',
+    description: 'NSW emergency air-bridge humanitarian staging.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['mobility'],
+    tags: ['disaster_relief_air', 'emergency_air_bridge', 'humanitarian_lift'],
+    laneKilometres: 22,
+    designSpeedKmh: 80,
+    freightShare: 0.18,
+    urbanShare: 0.28,
+    tollRoad: false,
+  },
+];
+
+export const ROUND29_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_southwest_alumina',
+    category: 'rail',
+    name: 'Southwest Alumina Rail',
+    description: 'WA bauxite and alumina export rail corridor.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['alumina_refining', 'bauxite_export', 'smelter_input'],
+    trackKilometres: 102,
+    dualTrackShare: 0.47,
+    electrifiedShare: 0.16,
+    designFreightTonnesPerYear: 8_100_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_qld_central_alumina_link',
+    category: 'rail',
+    name: 'Central QLD Alumina Link',
+    description: 'Gladstone alumina smelter-input rail.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['trade'],
+    tags: ['alumina_refining', 'bauxite_export', 'smelter_input'],
+    trackKilometres: 64,
+    dualTrackShare: 0.4,
+    electrifiedShare: 0.21,
+    designFreightTonnesPerYear: 4_900_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_nsw_botany_yard_auto',
+    category: 'rail',
+    name: 'Botany Yard Automation Rail',
+    description: 'Automated container yard rail handoff.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['yard_automation', 'straddle_crane_auto', 'terminal_throughput'],
+    trackKilometres: 20,
+    dualTrackShare: 0.59,
+    electrifiedShare: 0.74,
+    designFreightTonnesPerYear: 3_600_000,
+    passengerCapable: true,
+  },
+];
+
+export const ROUND29_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_bunbury_alumina',
+    category: 'port',
+    name: 'Bunbury Alumina Export',
+    description: 'WA alumina refining bulk export berths.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 5.7,
+    strategicNetworks: ['trade'],
+    tags: ['alumina_refining', 'bauxite_export', 'smelter_input', 'bulk'],
+    berthCount: 3,
+    maxDraftMetres: 13.8,
+    teuCapacityPerYear: 130_000,
+    automationLevel: 1,
+    bulkShare: 0.66,
+  },
+  {
+    id: 'port_qld_gladstone_alumina_wharf',
+    category: 'port',
+    name: 'Gladstone Alumina Wharf',
+    description: 'QLD smelter-input alumina export terminal.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade'],
+    tags: ['alumina_refining', 'bauxite_export', 'smelter_input'],
+    berthCount: 3,
+    maxDraftMetres: 14.2,
+    teuCapacityPerYear: 190_000,
+    automationLevel: 2,
+    bulkShare: 0.48,
+  },
+  {
+    id: 'port_nsw_port_botany_auto_yard',
+    category: 'port',
+    name: 'Botany Automated Container Yard',
+    description: 'Straddle-crane automated terminal throughput.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['yard_automation', 'straddle_crane_auto', 'terminal_throughput', 'container'],
+    berthCount: 4,
+    maxDraftMetres: 14.5,
+    teuCapacityPerYear: 550_000,
+    automationLevel: 2,
+    bulkShare: 0.07,
+  },
+];
+
+export const ROUND29_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_qld_cairns_humanitarian_staging',
+    category: 'logistics',
+    name: 'Cairns Humanitarian Staging',
+    description: 'QLD disaster relief air-bridge consolidation.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['disaster_relief_air', 'emergency_air_bridge', 'humanitarian_lift'],
+    warehouseSqm: 52_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 48,
+  },
+  {
+    id: 'log_nsw_banksmeadow_relief_air',
+    category: 'logistics',
+    name: 'Banksmeadow Relief Air Hub',
+    description: 'NSW emergency humanitarian lift staging.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['mobility'],
+    tags: ['disaster_relief_air', 'emergency_air_bridge', 'humanitarian_lift'],
+    warehouseSqm: 46_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 55,
+  },
+  {
+    id: 'log_vic_west_melbourne_yard_auto',
+    category: 'logistics',
+    name: 'West Melbourne Yard Automation DC',
+    description: 'Victorian automated container yard staging.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['yard_automation', 'straddle_crane_auto', 'terminal_throughput'],
+    warehouseSqm: 63_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 67,
+  },
+];
+
+export const SCALE_WAVE_ROUND29_ASSETS = [
+  ...ROUND29_ROADS,
+  ...ROUND29_RAIL,
+  ...ROUND29_PORTS,
+  ...ROUND29_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -10948,6 +11292,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND26_ASSETS,
     ...SCALE_WAVE_ROUND27_ASSETS,
     ...SCALE_WAVE_ROUND28_ASSETS,
+    ...SCALE_WAVE_ROUND29_ASSETS,
   ];
 }
 
@@ -12515,6 +12860,64 @@ export function copperConcentrateExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.039 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.044 + policyBoost, 0.93, 1.1);
+}
+
+
+// --- source: network/alumina-refinery-export-index.ts ---
+  AU_REGION_CODES,
+  type AluminaRefineryExportPolicy,
+  type AuRegionCode,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 alumina refining and bauxite export throughput by region. */
+export function computeAluminaRefineryExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) => t === 'alumina_refining' || t === 'bauxite_export' || t === 'smelter_input',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.3 + asset.bulkShare * 5.2;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 86_000 + asset.intermodalLinks.length * 0.79;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 570;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 10_200_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalAluminaRefineryExportIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.49 + max * 0.51, 5, 77) * 10) / 10;
+}
+
+export function aluminaRefineryExportProductivityMultiplier(
+  index: number,
+  policy: AluminaRefineryExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.038 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.043 + policyBoost, 0.93, 1.1);
 }
 
 
@@ -14429,6 +14832,93 @@ export function pharmaceuticalColdChainProductivityMultiplier(
 ): number {
   const bias = policy === 'surge' ? 1.022 : 1;
   return (1 + (share - 0.052) * 0.03) * bias;
+}
+
+
+// --- source: operations/disaster-relief-air-bridge-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type DisasterReliefAirBridgePolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 disaster relief air-bridge and humanitarian lift readiness by region. */
+export function computeDisasterReliefAirBridgeByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'disaster_relief_air' || t === 'emergency_air_bridge' || t === 'humanitarian_lift',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 88_000 + (asset.coldChainCapable ? 1.1 : 0.8);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 590;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.4 + asset.teuCapacityPerYear / 360_000;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 15_500_000;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.037 - stress * 0.027), 5, 81) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalDisasterReliefAirBridgeIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 6, 79) * 10) / 10;
+}
+
+export function computeDisasterReliefAirBridgeShare(
+  operationalAssets: TransportAsset[],
+  policy: DisasterReliefAirBridgePolicy = 'baseline',
+): number {
+  let liftUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('disaster_relief_air') || asset.tags.includes('humanitarian_lift')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 78_000;
+        liftUnits += asset.warehouseSqm / 78_000 * 0.63;
+      }
+      if (asset.category === 'road') {
+        totalUnits += asset.laneKilometres / 450;
+        liftUnits += asset.laneKilometres / 450 * 0.5;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.034;
+  const policyBoost = policy === 'surge' ? 0.031 : 0;
+  return Math.round(clamp(liftUnits / totalUnits + policyBoost, 0.033, 0.28) * 1000) / 1000;
+}
+
+export function disasterReliefAirBridgeProductivityMultiplier(
+  share: number,
+  policy: DisasterReliefAirBridgePolicy,
+): number {
+  const bias = policy === 'surge' ? 1.021 : 1;
+  return (1 + (share - 0.05) * 0.029) * bias;
 }
 
 
@@ -16578,6 +17068,92 @@ export function nationalRailPassengerFreightPathThroughputIndex(
 }
 
 
+// --- source: productivity/container-yard-automation-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type ContainerYardAutomationPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of container terminal throughput using yard automation. */
+export function computeContainerYardAutomationShare(
+  operationalAssets: TransportAsset[],
+  policy: ContainerYardAutomationPolicy = 'baseline',
+): number {
+  let autoUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) => t === 'yard_automation' || t === 'straddle_crane_auto' || t === 'terminal_throughput',
+      )
+    ) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.5 + asset.teuCapacityPerYear / 290_000;
+        autoUnits += (asset.berthCount * 1.5 + asset.teuCapacityPerYear / 290_000) * (asset.automationLevel >= 2 ? 0.66 : 0.4);
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 58_000;
+        autoUnits += (asset.warehouseSqm / 58_000) * 0.58;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.036;
+  const policyBoost = policy === 'deploy' ? 0.032 : 0;
+  return Math.round(clamp(autoUnits / totalUnits + policyBoost, 0.035, 0.32) * 1000) / 1000;
+}
+
+export function containerYardAutomationProductivityMultiplier(
+  share: number,
+  policy: ContainerYardAutomationPolicy,
+): number {
+  const bias = policy === 'deploy' ? 1.024 : 1;
+  return (1 + (share - 0.057) * 0.029) * bias;
+}
+
+export function computeContainerYardAutomationThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'yard_automation' || t === 'straddle_crane_auto' || t === 'terminal_throughput',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.9 + asset.teuCapacityPerYear / 270_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 66_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 410;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalContainerYardAutomationThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 2, 56) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -17095,6 +17671,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalRailPassengerFreightPathThroughputIndex,
   railPassengerFreightPathProductivityMultiplier,
 } from './rail-passenger-freight-path-index.ts';
+  computeAluminaRefineryExportByRegion,
+  aluminaRefineryExportProductivityMultiplier,
+  nationalAluminaRefineryExportIndex,
+} from '../network/alumina-refinery-export-index.ts';
+  computeDisasterReliefAirBridgeByRegion,
+  computeDisasterReliefAirBridgeShare,
+  disasterReliefAirBridgeProductivityMultiplier,
+  nationalDisasterReliefAirBridgeIndex,
+} from '../operations/disaster-relief-air-bridge-index.ts';
+  computeContainerYardAutomationShare,
+  computeContainerYardAutomationThroughputByRegion,
+  containerYardAutomationProductivityMultiplier,
+  nationalContainerYardAutomationThroughputIndex,
+} from './container-yard-automation-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -18077,6 +18667,34 @@ export function computeTransportInfrastructureState(
     railPassengerFreightPathShare,
     options?.railPassengerFreightPathPolicy ?? 'baseline',
   );
+  const aluminaRefineryExportByRegion = computeAluminaRefineryExportByRegion(ops);
+  const nationalAluminaRefinery = nationalAluminaRefineryExportIndex(aluminaRefineryExportByRegion);
+  const aluminaMult = aluminaRefineryExportProductivityMultiplier(
+    nationalAluminaRefinery,
+    options?.aluminaRefineryExportPolicy ?? 'baseline',
+  );
+  const disasterReliefAirBridgeByRegion = computeDisasterReliefAirBridgeByRegion(ops, networkStress);
+  const nationalDisasterReliefAir = nationalDisasterReliefAirBridgeIndex(disasterReliefAirBridgeByRegion);
+  const disasterReliefAirBridgeShare = computeDisasterReliefAirBridgeShare(
+    ops,
+    options?.disasterReliefAirBridgePolicy ?? 'baseline',
+  );
+  const reliefAirMult = disasterReliefAirBridgeProductivityMultiplier(
+    disasterReliefAirBridgeShare,
+    options?.disasterReliefAirBridgePolicy ?? 'baseline',
+  );
+  const containerYardAutomationThroughputByRegion = computeContainerYardAutomationThroughputByRegion(ops);
+  const nationalContainerYardAuto = nationalContainerYardAutomationThroughputIndex(
+    containerYardAutomationThroughputByRegion,
+  );
+  const containerYardAutomationShare = computeContainerYardAutomationShare(
+    ops,
+    options?.containerYardAutomationPolicy ?? 'baseline',
+  );
+  const yardAutoMult = containerYardAutomationProductivityMultiplier(
+    containerYardAutomationShare,
+    options?.containerYardAutomationPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -18118,6 +18736,9 @@ export function computeTransportInfrastructureState(
     const copperBoost = (copperConcentrateExportByRegion[code] - 5) * 0.004;
     const pharmaColdChainBoost = (pharmaceuticalColdChainByRegion[code] - 6) * 0.0036;
     const paxFreightPathBoost = (railPassengerFreightPathThroughputByRegion[code] - 1.7) * 0.0032;
+    const aluminaBoost = (aluminaRefineryExportByRegion[code] - 5) * 0.0039;
+    const reliefAirBoost = (disasterReliefAirBridgeByRegion[code] - 6) * 0.0035;
+    const yardAutoBoost = (containerYardAutomationThroughputByRegion[code] - 2) * 0.0031;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -18158,7 +18779,10 @@ export function computeTransportInfrastructureState(
         courierMicrohubBoost +
         copperBoost +
         pharmaColdChainBoost +
-        paxFreightPathBoost) *
+        paxFreightPathBoost +
+        aluminaBoost +
+        reliefAirBoost +
+        yardAutoBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -18197,7 +18821,10 @@ export function computeTransportInfrastructureState(
       courierMicrohubMult *
       copperMult *
       pharmaColdChainMult *
-      paxFreightPathMult;
+      paxFreightPathMult *
+      aluminaMult *
+      reliefAirMult *
+      yardAutoMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -18259,7 +18886,10 @@ export function computeTransportInfrastructureState(
     nationalUrbanCourierMicrohub * 0.003 +
     nationalCopperConcentrate * 0.003 +
     nationalPharmaColdChain * 0.003 +
-    nationalPaxFreightPath * 0.003;
+    nationalPaxFreightPath * 0.003 +
+    nationalAluminaRefinery * 0.003 +
+    nationalDisasterReliefAir * 0.003 +
+    nationalContainerYardAuto * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -18274,7 +18904,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/29',
+    schemaVersion: 'agent12/30',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -18472,6 +19102,14 @@ export function computeTransportInfrastructureState(
     railPassengerFreightPathShare,
     nationalRailPassengerFreightPathThroughputIndex: nationalPaxFreightPath,
     railPassengerFreightPathThroughputByRegion,
+    nationalAluminaRefineryExportIndex: nationalAluminaRefinery,
+    aluminaRefineryExportByRegion,
+    disasterReliefAirBridgeShare,
+    nationalDisasterReliefAirBridgeIndex: nationalDisasterReliefAir,
+    disasterReliefAirBridgeByRegion,
+    containerYardAutomationShare,
+    nationalContainerYardAutomationThroughputIndex: nationalContainerYardAuto,
+    containerYardAutomationThroughputByRegion,
     computeMs,
   };
 }
@@ -18554,7 +19192,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/29' &&
+      infra.schemaVersion === 'agent12/30' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -18652,8 +19290,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalCopperConcentrateExportIndex >= 5 &&
       infra.nationalPharmaceuticalColdChainIndex >= 6 &&
       infra.railPassengerFreightPathShare >= 0.03 &&
-      infra.nationalRailPassengerFreightPathThroughputIndex >= 1.7,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} copper=${infra.nationalCopperConcentrateExportIndex.toFixed(1)} pharma=${infra.nationalPharmaceuticalColdChainIndex.toFixed(1)} paxfreight=${infra.nationalRailPassengerFreightPathThroughputIndex.toFixed(1)}`,
+      infra.nationalRailPassengerFreightPathThroughputIndex >= 1.7 &&
+      infra.nationalAluminaRefineryExportIndex >= 5 &&
+      infra.nationalDisasterReliefAirBridgeIndex >= 6 &&
+      infra.containerYardAutomationShare >= 0.03 &&
+      infra.nationalContainerYardAutomationThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} alumina=${infra.nationalAluminaRefineryExportIndex.toFixed(1)} relief=${infra.nationalDisasterReliefAirBridgeIndex.toFixed(1)} yard=${infra.nationalContainerYardAutomationThroughputIndex.toFixed(1)}`,
   });
 
   return results;
