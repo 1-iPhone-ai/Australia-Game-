@@ -26379,11 +26379,7 @@ export function AiEffectivenessScorecard({
   gameSettings?: any;
   events?: GameActivityLedgerEvent[];
 }) {
-  const isEnabled = gameSettings?.aiDecisionTransparencyEnabled !== undefined
-    ? Boolean(gameSettings.aiDecisionTransparencyEnabled)
-    : (gameSettings?.decisionTransparencyEnabled ?? true);
-
-  if (!isEnabled) return null;
+  if (!resolveDecisionTransparencyEnabled(gameSettings)) return null;
 
   const safeEvents = Array.isArray(events) ? events : [];
   const aiEvents = safeEvents.filter(e => (e.category as string) === 'ai_decision' || (e.category as string) === 'ai_execution' || (e.category as string) === 'decision' || (e.actorId && e.actorId.startsWith('ai_')));
@@ -67115,6 +67111,17 @@ export function classifyNotificationPriority(n: any): NotificationPriority {
   if (isRoutineActivityNotification(n)) return 'activity';
   if (text.includes('recommended') || text.includes('price') || text.includes('completed')) return 'update';
   return 'update';
+}
+
+/** Canonical gate for Decision Transparency UI (settings hub uses decisionTransparencyEnabled; legacy alias aiDecisionTransparencyEnabled). */
+export function resolveDecisionTransparencyEnabled(gameSettings: any): boolean {
+  if (gameSettings?.aiDecisionTransparencyEnabled !== undefined) {
+    return Boolean(gameSettings.aiDecisionTransparencyEnabled);
+  }
+  if (gameSettings?.decisionTransparencyEnabled !== undefined) {
+    return Boolean(gameSettings.decisionTransparencyEnabled);
+  }
+  return false;
 }
 
 export function shouldExplainCoPilotAction(settings: any, candidate?: any): boolean {
@@ -136532,6 +136539,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'replay', label: 'Replay Studio', tier: 'quick', section: 'Replay Integrity', severity: 'CRITICAL', run: () => runReplayStudioSelfTests() },
   { id: 'intent', label: 'Player Intent', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runPlayerIntentLayerSelfTests() },
   { id: 'copilot', label: 'Co-Pilot', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runCoPilotDevSelfTests() },
+  { id: 'xai', label: 'Explainable AI (Division E)', tier: 'quick', section: 'AI Turn Reliability', severity: 'MAJOR', run: () => runExplainableAiSelfTests() },
   { id: 'reliability', label: 'Reliability upgrade regressions', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runReliabilityUpgradeSelfTests() },
   { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
@@ -181922,6 +181930,91 @@ export function triggerJsonFileDownload(filename: string, data: unknown): boolea
     console.warn('[download] blocked or unavailable:', error);
     return false;
   }
+}
+
+// ============================================================================
+// SECTION 21A: EXPLAINABLE AI — INTEGRATION SELF-TESTS (Operation 111 / Agent 49)
+// ----------------------------------------------------------------------------
+// Locks public explainability contracts: factor attribution, Ask Game tools, Co-Pilot modes,
+// and the canonical Decision Transparency settings resolver.
+// ============================================================================
+export function runExplainableAiSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  check('xai_transparency_resolver', 'resolveDecisionTransparencyEnabled honors canonical and legacy keys', () => {
+    const defaults = createDefaultGameSettings();
+    if (resolveDecisionTransparencyEnabled(defaults) !== false) return 'default should be off';
+    if (resolveDecisionTransparencyEnabled({ decisionTransparencyEnabled: true }) !== true) return 'decisionTransparencyEnabled';
+    if (resolveDecisionTransparencyEnabled({ decisionTransparencyEnabled: false, aiDecisionTransparencyEnabled: true }) !== true) return 'legacy alias wins when set';
+    if (resolveDecisionTransparencyEnabled({}) !== false) return 'empty settings';
+    return true;
+  });
+
+  check('xai_v104_factor_shape', 'scoreNationalDirections emits labeled factors with source systems', () => {
+    const inputs = createNationalDevelopmentFixtureInputs({ turn: 6, sectors: { WA: { mining: 80 }, QLD: { mining: 70 } } });
+    const scores = scoreNationalDirections(inputs);
+    if (scores.length !== NATIONAL_DIRECTIONS.length) return `expected ${NATIONAL_DIRECTIONS.length} scores`;
+    for (const row of scores) {
+      if (!row.factors.length) return `${row.directionId} has no factors`;
+      for (const f of row.factors) {
+        if (!f.label || !f.source || !f.sourceId) return `bad factor on ${row.directionId}`;
+      }
+    }
+    return true;
+  });
+
+  check('xai_v104_contribution_sum', 'Direction score matches summed factor contributions (rounded)', () => {
+    const inputs = createNationalDevelopmentFixtureInputs({ turn: 8, sectors: { VIC: { manufacturing: 85 }, NSW: { manufacturing: 75 } } });
+    const top = scoreNationalDirections(inputs)[0];
+    const sum = top.factors.reduce((a, f) => a + f.contribution, 0);
+    return Math.abs(top.score - sum) <= 0.6 || `score ${top.score} vs sum ${sum}`;
+  });
+
+  check('xai_ask_tool_shape', 'askGameToolExplainAiDecision returns the public ExplainAiDecisionResult shape', () => {
+    const out = askGameToolExplainAiDecision({ players: [{ id: 'rival_1', aiProfile: { focus: 'trading' } }] }, 'rival_1');
+    const keys: Array<keyof ExplainAiDecisionResult> = ['actorId', 'strategyFocus', 'adaptivePhase', 'recentTravel', 'utilityWeights', 'activeDirectives', 'decisionExplanation'];
+    for (const k of keys) {
+      if (out[k] === undefined) return `missing ${k}`;
+    }
+    if (out.decisionExplanation.length < 20) return 'decisionExplanation too short';
+    return true;
+  });
+
+  check('xai_ask_intent_ai_behavior', 'Ask Game classifies rival AI behavior questions', () => {
+    const c = classifyAskGameIntent('Why did the AI move to NSW?');
+    return c.intent === 'AI_BEHAVIOR_EXPLAIN' || `got ${c.intent}`;
+  });
+
+  check('xai_ask_intent_automode', 'Ask Game classifies Auto Mode reasoning questions', () => {
+    const c = classifyAskGameIntent('Explain auto mode reasoning for the last action');
+    return c.intent === 'AUTOMODE_EXPLAIN' || `got ${c.intent}`;
+  });
+
+  check('xai_copilot_explain_modes', 'shouldExplainCoPilotAction respects routine_off vs high_impact', () => {
+    const routineOff = { playerIntentExplainMode: 'routine_off' as CoPilotExplainMode };
+    const sell = { actionType: 'sell_market', category: 'market', title: 'Sell wool on market' };
+    if (shouldExplainCoPilotAction(routineOff, sell)) return 'routine sell should stay quiet';
+    const high = { playerIntentExplainMode: 'high_impact' as CoPilotExplainMode };
+    const costly = { costEstimate: 800, category: 'contracts' };
+    if (!shouldExplainCoPilotAction(high, costly)) return 'high_impact contract should explain';
+    return true;
+  });
+
+  check('xai_game_explanation_shape', 'GameExplanation contract fields are non-empty in attachExplanationToLedgerPayload', () => {
+    const ex: GameExplanation = { whatHappened: 'Queued build', why: 'Matches strategy', whatChanged: 'AP -1', next: 'Confirm on map', sourceSystem: 'co_pilot' };
+    const payload = attachExplanationToLedgerPayload({ kind: 'test' }, ex);
+    return payload.explanation?.why === ex.why || 'explanation not attached';
+  });
+
+  return results;
 }
 
 // ============================================================================
