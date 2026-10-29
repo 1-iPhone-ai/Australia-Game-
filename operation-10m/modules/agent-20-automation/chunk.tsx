@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-20-automation
-// OP10M_MANIFEST_SHA256: 444a0ef2cfd509872920d7434c0c66760d7992e0391aee26a7d6cb6828c69bce
-// OP10M_MODULE_VERSION: 10m.1.11.0-agent20
+// OP10M_MANIFEST_SHA256: afe13f7a4efe04c895c13424146688930c8939919eae67f01247dc1b21a5596d
+// OP10M_MODULE_VERSION: 10m.1.12.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
@@ -6232,6 +6232,378 @@ export function runO10Agent20IdleGovernanceAssurancePassSelfTests(): O10SelfTest
 }
 
 
+// --- source: automation-idle-governance-assurance-journal.ts ---
+
+export interface O10IdleGovernanceAssuranceJournalEntry {
+  schema: '10m.agent20.idle-governance-assurance-journal-entry.v1';
+  turn: number;
+  attestationFingerprint: string;
+  reconcileStatus: string;
+  trendDirection: string;
+  watchUrgency: string;
+  attestValid: boolean;
+}
+
+export interface O10IdleGovernanceAssuranceJournal {
+  schema: '10m.agent20.idle-governance-assurance-journal.v1';
+  entries: O10IdleGovernanceAssuranceJournalEntry[];
+}
+
+export function createEmptyIdleGovernanceAssuranceJournal(): O10IdleGovernanceAssuranceJournal {
+  return { schema: '10m.agent20.idle-governance-assurance-journal.v1', entries: [] };
+}
+
+export function appendIdleGovernanceAssuranceJournalEntry(
+  journal: O10IdleGovernanceAssuranceJournal,
+  pass: O10IdleGovernanceAssurancePassResult,
+  turn: number,
+  attestValid: boolean
+): O10IdleGovernanceAssuranceJournal {
+  const entry: O10IdleGovernanceAssuranceJournalEntry = {
+    schema: '10m.agent20.idle-governance-assurance-journal-entry.v1',
+    turn,
+    attestationFingerprint: pass.attestationFingerprint,
+    reconcileStatus: pass.cycle.reconciliation.status,
+    trendDirection: pass.trendDirection,
+    watchUrgency: pass.watch.urgency,
+    attestValid,
+  };
+  return { schema: journal.schema, entries: [...journal.entries, entry].slice(-48) };
+}
+
+export function formatIdleGovernanceAssuranceJournalDigest(journal: O10IdleGovernanceAssuranceJournal): string {
+  if (journal.entries.length === 0) return 'gov_assurance_journal entries=0';
+  const last = journal.entries[journal.entries.length - 1];
+  return `gov_assurance_journal entries=${journal.entries.length} last_urgency=${last.watchUrgency} valid=${last.attestValid}`;
+}
+
+export function runO10Agent20IdleGovernanceAssuranceJournalSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  let journal = createEmptyIdleGovernanceAssuranceJournal();
+  push('gov_journal_empty', 'empty journal digest', formatIdleGovernanceAssuranceJournalDigest(journal).includes('entries=0'));
+
+  const mockPass: O10IdleGovernanceAssurancePassResult = {
+    schema: '10m.agent20.idle-governance-assurance-pass.v1',
+    attestationFingerprint: 'fnv1a_abc',
+    trendDirection: 'stable',
+    briefMarkdown: '',
+    summaryLine: 'gov_assurance',
+    watch: {
+      schema: '10m.agent20.idle-governance-watch-schedule.v1',
+      turnsUntilNextCycle: 3,
+      urgency: 'medium',
+      reason: 'test',
+    },
+    cycle: {
+      schema: '10m.agent20.idle-governance-compliance-cycle.v1',
+      auditDigest: 'd',
+      governance: {} as never,
+      pass: {} as never,
+      reconciliation: {
+        schema: '10m.agent20.idle-governance-reconciliation.v1',
+        status: 'aligned',
+        priorAlertLevel: null,
+        deltaPeakTier: 0,
+        auditMatchesPass: true,
+        summaryLine: 'ok',
+      },
+    },
+  };
+
+  journal = appendIdleGovernanceAssuranceJournalEntry(journal, mockPass, 2, true);
+  push('gov_journal_append', 'append records urgency and fingerprint', journal.entries.length === 1 && journal.entries[0].attestationFingerprint === 'fnv1a_abc');
+
+  journal = appendIdleGovernanceAssuranceJournalEntry(journal, { ...mockPass, watch: { ...mockPass.watch, urgency: 'high' } }, 3, false);
+  push('gov_journal_digest', 'digest reflects last entry', formatIdleGovernanceAssuranceJournalDigest(journal).includes('last_urgency=high'));
+
+  push('gov_journal_schema', 'journal schema marker', journal.schema === '10m.agent20.idle-governance-assurance-journal.v1');
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-assurance-rollup.ts ---
+
+export interface O10IdleGovernanceAssuranceRollupResult {
+  schema: '10m.agent20.idle-governance-assurance-rollup.v1';
+  entryCount: number;
+  validRatio: number;
+  highUrgencyCount: number;
+  dominantTrend: string;
+  recommendation: string;
+  summaryLine: string;
+}
+
+/** Roll up assurance journal entries for executive / replay dashboards. */
+export function rollupIdleGovernanceAssuranceJournal(
+  journal: O10IdleGovernanceAssuranceJournal
+): O10IdleGovernanceAssuranceRollupResult {
+  const entries = journal.entries;
+  if (entries.length === 0) {
+    return {
+      schema: '10m.agent20.idle-governance-assurance-rollup.v1',
+      entryCount: 0,
+      validRatio: 0,
+      highUrgencyCount: 0,
+      dominantTrend: 'none',
+      recommendation: 'run_initial_assurance_pass',
+      summaryLine: 'gov_assurance_rollup entries=0',
+    };
+  }
+
+  const validRatio = entries.filter(e => e.attestValid).length / entries.length;
+  const highUrgencyCount = entries.filter(e => e.watchUrgency === 'high').length;
+
+  const trendCounts = new Map<string, number>();
+  for (const e of entries) {
+    trendCounts.set(e.trendDirection, (trendCounts.get(e.trendDirection) ?? 0) + 1);
+  }
+  let dominantTrend = 'stable';
+  let max = 0;
+  for (const [trend, count] of trendCounts) {
+    if (count > max) {
+      max = count;
+      dominantTrend = trend;
+    }
+  }
+
+  let recommendation = 'continue_scheduled_watch';
+  if (validRatio < 0.5 || highUrgencyCount >= Math.ceil(entries.length / 2)) {
+    recommendation = 'escalate_to_human_takeover';
+  } else if (dominantTrend === 'degrading') {
+    recommendation = 'tighten_watch_cadence';
+  } else if (validRatio >= 0.9 && dominantTrend === 'improving') {
+    recommendation = 'relax_watch_cadence';
+  }
+
+  const summaryLine = [
+    'gov_assurance_rollup',
+    `entries=${entries.length}`,
+    `valid_ratio=${validRatio.toFixed(2)}`,
+    `high_urgency=${highUrgencyCount}`,
+    `trend=${dominantTrend}`,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-assurance-rollup.v1',
+    entryCount: entries.length,
+    validRatio,
+    highUrgencyCount,
+    dominantTrend,
+    recommendation,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceAssuranceRollupSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const empty = rollupIdleGovernanceAssuranceJournal({
+    schema: '10m.agent20.idle-governance-assurance-journal.v1',
+    entries: [],
+  });
+  push('gov_rollup_empty', 'empty journal recommends initial pass', empty.recommendation === 'run_initial_assurance_pass');
+
+  const mk = (trend: string, urgency: string, valid: boolean, turn: number) => ({
+    schema: '10m.agent20.idle-governance-assurance-journal-entry.v1' as const,
+    turn,
+    attestationFingerprint: `f${turn}`,
+    reconcileStatus: 'aligned',
+    trendDirection: trend,
+    watchUrgency: urgency,
+    attestValid: valid,
+  });
+
+  const healthy = rollupIdleGovernanceAssuranceJournal({
+    schema: '10m.agent20.idle-governance-assurance-journal.v1',
+    entries: [mk('improving', 'low', true, 1), mk('improving', 'low', true, 2)],
+  });
+  push('gov_rollup_relax', 'healthy journal may relax cadence', healthy.recommendation === 'relax_watch_cadence');
+
+  const stressed = rollupIdleGovernanceAssuranceJournal({
+    schema: '10m.agent20.idle-governance-assurance-journal.v1',
+    entries: [mk('degrading', 'high', false, 1), mk('degrading', 'high', false, 2)],
+  });
+  push('gov_rollup_escalate', 'stressed journal escalates takeover', stressed.recommendation === 'escalate_to_human_takeover');
+
+  push('gov_rollup_schema', 'rollup schema marker', stressed.schema === '10m.agent20.idle-governance-assurance-rollup.v1');
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-sustained-watch.ts ---
+  appendIdleGovernanceAssuranceJournalEntry,
+  createEmptyIdleGovernanceAssuranceJournal,
+  formatIdleGovernanceAssuranceJournalDigest,
+  type O10IdleGovernanceAssuranceJournal,
+} from './automation-idle-governance-assurance-journal.js';
+  planIdleGovernanceWatchSchedule,
+  type O10IdleGovernanceAssurancePassResult,
+} from './automation-idle-governance-assurance-pass.js';
+  createEmptyIdleGovernanceAuditTrail,
+  type O10IdleGovernanceAuditTrail,
+} from './automation-idle-governance-audit-trail.js';
+
+export interface O10IdleGovernanceSustainedWatchResult {
+  schema: '10m.agent20.idle-governance-sustained-watch.v1';
+  cyclesRun: number;
+  journal: O10IdleGovernanceAssuranceJournal;
+  rollup: ReturnType<typeof rollupIdleGovernanceAssuranceJournal>;
+  finalTrail: O10IdleGovernanceAuditTrail;
+  lastPass: O10IdleGovernanceAssurancePassResult;
+  summaryLine: string;
+}
+
+function buildAssurancePassFromCycle(
+  cycle: ReturnType<typeof runIdleGovernanceComplianceCycle>,
+  turn: number
+): O10IdleGovernanceAssurancePassResult {
+  const brief = buildIdleGovernanceCopilotBriefFromCycle(cycle);
+  const attestation = attestIdleGovernanceComplianceCycle(cycle, turn);
+  const trend = analyzeIdleGovernanceAuditTrend(cycle.pass.auditTrail);
+  const ladder = evaluateIdleGovernanceEscalationLadder(cycle.pass.auditTrail);
+  const watch = planIdleGovernanceWatchSchedule(ladder.level, trend.direction);
+  return {
+    schema: '10m.agent20.idle-governance-assurance-pass.v1',
+    cycle,
+    briefMarkdown: brief.markdown,
+    attestationFingerprint: attestation.fingerprint,
+    trendDirection: trend.direction,
+    watch,
+    summaryLine: [
+      'gov_assurance',
+      `attest=${attestation.valid}`,
+      trend.summaryLine,
+      `watch_in=${watch.turnsUntilNextCycle}`,
+    ].join(' '),
+  };
+}
+
+/** Multi-cycle sustained watch with accumulating audit trail and assurance journal. */
+export function runIdleGovernanceSustainedWatch(
+  spec: O10IdleOpsWindowSpec,
+  rule: PortableHumanAutomationRule,
+  startTurn: number,
+  cycleCount: number
+): O10IdleGovernanceSustainedWatchResult {
+  let trail = createEmptyIdleGovernanceAuditTrail();
+  let journal = createEmptyIdleGovernanceAssuranceJournal();
+  let lastPass!: O10IdleGovernanceAssurancePassResult;
+  const runs = Math.max(1, Math.min(cycleCount, 8));
+
+  for (let i = 0; i < runs; i++) {
+    const turn = startTurn + i;
+    const cycle = runIdleGovernanceComplianceCycle(spec, rule, turn, trail);
+    trail = cycle.pass.auditTrail;
+    lastPass = buildAssurancePassFromCycle(cycle, turn);
+    const attestation = attestIdleGovernanceComplianceCycle(cycle, turn);
+    journal = appendIdleGovernanceAssuranceJournalEntry(journal, lastPass, turn, attestation.valid);
+  }
+
+  const rollup = rollupIdleGovernanceAssuranceJournal(journal);
+  const summaryLine = [
+    'gov_sustained_watch',
+    `cycles=${runs}`,
+    formatIdleGovernanceAssuranceJournalDigest(journal),
+    rollup.summaryLine,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-sustained-watch.v1',
+    cyclesRun: runs,
+    journal,
+    rollup,
+    finalTrail: trail,
+    lastPass,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceSustainedWatchSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const sampleRule: PortableHumanAutomationRule = {
+    id: 'sw1',
+    name: 'Sustained watch',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 5,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 10, maxRunsTotal: null, cooldownTurns: 0 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: null,
+      lastRunTurn: null,
+      runsToday: 0,
+      runsTodayDay: -1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+  };
+
+  const calmSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 2,
+    humanCommittedEvery: 1,
+    idleMsStart: 0,
+    idleMsStep: 0,
+    consecutiveIdleStart: 0,
+  };
+
+  const watch = runIdleGovernanceSustainedWatch(calmSpec, sampleRule, 1, 3);
+  push(
+    'gov_sustained_calm',
+    'multi-cycle calm watch fills journal',
+    watch.cyclesRun === 3 && watch.journal.entries.length === 3 && watch.finalTrail.entries.length === 3
+  );
+
+  const stressSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 5,
+    humanCommittedEvery: 0,
+    idleMsStart: 180_000,
+    idleMsStep: 120_000,
+    consecutiveIdleStart: 6,
+  };
+  const stressWatch = runIdleGovernanceSustainedWatch(stressSpec, sampleRule, 10, 2);
+  push(
+    'gov_sustained_stress',
+    'stressed sustained watch produces rollup recommendation',
+    stressWatch.rollup.entryCount === 2 && stressWatch.summaryLine.includes('gov_sustained_watch')
+  );
+
+  push('gov_sustained_schema', 'sustained watch schema marker', watch.schema === '10m.agent20.idle-governance-sustained-watch.v1');
+
+  push(
+    'gov_sustained_last',
+    'last pass carries attestation fingerprint',
+    watch.lastPass.attestationFingerprint.startsWith('fnv1a_')
+  );
+
+  return results;
+}
+
+
 // --- source: index.ts ---
 
 
@@ -6300,6 +6672,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceAuditTrendSelfTests());
   results.push(...runO10Agent20IdleGovernanceCycleAttestationSelfTests());
   results.push(...runO10Agent20IdleGovernanceAssurancePassSelfTests());
+  results.push(...runO10Agent20IdleGovernanceAssuranceJournalSelfTests());
+  results.push(...runO10Agent20IdleGovernanceAssuranceRollupSelfTests());
+  results.push(...runO10Agent20IdleGovernanceSustainedWatchSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }

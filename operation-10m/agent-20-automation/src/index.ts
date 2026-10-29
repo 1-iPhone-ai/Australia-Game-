@@ -36,6 +36,9 @@ export * from './automation-idle-governance-copilot-brief.js';
 export * from './automation-idle-governance-audit-trend.js';
 export * from './automation-idle-governance-cycle-attestation.js';
 export * from './automation-idle-governance-assurance-pass.js';
+export * from './automation-idle-governance-assurance-journal.js';
+export * from './automation-idle-governance-assurance-rollup.js';
+export * from './automation-idle-governance-sustained-watch.js';
 
 import type { O10SelfTestResult } from './types.js';
 import { runO10Agent20NationalStewardSelfTests } from './national-steward.js';
@@ -72,6 +75,9 @@ import { runO10Agent20IdleGovernanceCopilotBriefSelfTests } from './automation-i
 import { runO10Agent20IdleGovernanceAuditTrendSelfTests } from './automation-idle-governance-audit-trend.js';
 import { runO10Agent20IdleGovernanceCycleAttestationSelfTests } from './automation-idle-governance-cycle-attestation.js';
 import { runO10Agent20IdleGovernanceAssurancePassSelfTests } from './automation-idle-governance-assurance-pass.js';
+import { runO10Agent20IdleGovernanceAssuranceJournalSelfTests } from './automation-idle-governance-assurance-journal.js';
+import { runO10Agent20IdleGovernanceAssuranceRollupSelfTests } from './automation-idle-governance-assurance-rollup.js';
+import { runO10Agent20IdleGovernanceSustainedWatchSelfTests } from './automation-idle-governance-sustained-watch.js';
 
 /** Full module self-test bundle for Agent 25 dev lab registration. */
 export function runO10Agent20ModuleSelfTests(): {
@@ -138,6 +144,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceAuditTrendSelfTests());
   results.push(...runO10Agent20IdleGovernanceCycleAttestationSelfTests());
   results.push(...runO10Agent20IdleGovernanceAssurancePassSelfTests());
+  results.push(...runO10Agent20IdleGovernanceAssuranceJournalSelfTests());
+  results.push(...runO10Agent20IdleGovernanceAssuranceRollupSelfTests());
+  results.push(...runO10Agent20IdleGovernanceSustainedWatchSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }
