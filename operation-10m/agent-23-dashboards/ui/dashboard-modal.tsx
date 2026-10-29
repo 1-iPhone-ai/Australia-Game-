@@ -216,6 +216,12 @@ import { nrDashBuildAdjacencyLinkSaturationShare } from '../core/adjacency-link-
 import { nrDashBuildCombinedSnippetSourceGap } from '../core/combined-snippet-source-gap.ts';
 import { nrDashBuildHubRimPulseAsymmetry } from '../core/hub-rim-pulse-asymmetry.ts';
 import { nrDashBuildMajorDerivedHistoryOverlapGap } from '../core/major-derived-history-overlap-gap.ts';
+import { nrDashBuildRivalOpenNeedsPeakSpread } from '../core/rival-open-needs-peak-spread.ts';
+import { nrDashBuildNationalSeverityPeakConcentration } from '../core/national-severity-peak-concentration.ts';
+import { nrDashBuildBorderLinkSaturationShare } from '../core/border-link-saturation-share.ts';
+import { nrDashBuildLrMajorSnippetSourceGap } from '../core/lr-major-snippet-source-gap.ts';
+import { nrDashBuildMergedRimPulseAsymmetry } from '../core/merged-rim-pulse-asymmetry.ts';
+import { nrDashBuildMeaningfulDerivedHistoryOverlapGap } from '../core/meaningful-derived-history-overlap-gap.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -383,6 +389,15 @@ export const NrDashOverviewTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-rival-open-needs-skew-gap">
           Rival open-needs skew gap {rivalNeedsSkew.openNeedsSkewGap} · ownership skew {rivalNeedsSkew.ownershipSkew} · rival μ{' '}
           {rivalNeedsSkew.rivalMeanOpenNeeds} vs national μ {rivalNeedsSkew.nationalMeanOpenNeeds}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const rivalNeedsPeak = nrDashBuildRivalOpenNeedsPeakSpread(snap);
+      return rivalNeedsPeak && rivalNeedsPeak.peakSpread > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-rival-open-needs-peak-spread">
+          Rival open-needs peak spread {rivalNeedsPeak.peakSpread} · {rivalNeedsPeak.minOpenNeeds}–{rivalNeedsPeak.maxOpenNeeds}{' '}
+          across {rivalNeedsPeak.rivalRegionCount} rival regions
         </div>
       ) : null;
     })()}
@@ -807,6 +822,15 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const nationalPeakConc = nrDashBuildNationalSeverityPeakConcentration(lrView);
+      return nationalPeakConc && nationalPeakConc.concentrationIndex > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-severity-peak-concentration">
+          National severity peak concentration {nationalPeakConc.concentrationIndex} · peak weight{' '}
+          {nationalPeakConc.peakSeverityTotal}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const peakTierSpread = nrDashBuildNationalPeakTierSpread(lrView);
       return peakTierSpread && peakTierSpread.tierSpread > 0 ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-peak-tier-spread">
@@ -924,6 +948,15 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const lrMajorSourceGap = nrDashBuildLrMajorSnippetSourceGap(lrView, snap);
+      return lrMajorSourceGap && lrMajorSourceGap.sourceGap > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-lr-major-snippet-source-gap">
+          LR major snippet source gap {lrMajorSourceGap.sourceGap} · majors {lrMajorSourceGap.majorSourceCount} · matched{' '}
+          {lrMajorSourceGap.matchedSnippetCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const lrDerivedGap = nrDashBuildLrDerivedSnippetTurnGap(lrView, snap);
       return lrDerivedGap && lrDerivedGap.turnGap > 0 ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-lr-derived-snippet-turn-gap">
@@ -965,6 +998,16 @@ export const NrDashOverviewTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-meaningful-history-overlap-gap">
           Meaningful-history overlap gap {meaningfulHistGap.overlapGap} · shared {meaningfulHistGap.sharedTurnCount} · NS{' '}
           {meaningfulHistGap.nsEntryCount} · meaningful {meaningfulHistGap.meaningfulEntryCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const meaningfulDerivedHistGap = nrDashBuildMeaningfulDerivedHistoryOverlapGap(lrView, nsState);
+      return meaningfulDerivedHistGap && meaningfulDerivedHistGap.overlapGap > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-meaningful-derived-history-overlap-gap">
+          Meaningful-derived history overlap gap {meaningfulDerivedHistGap.overlapGap} · shared{' '}
+          {meaningfulDerivedHistGap.sharedTurnCount} · NS {meaningfulDerivedHistGap.nsEntryCount} · derived{' '}
+          {meaningfulDerivedHistGap.meaningfulDerivedCount}
         </div>
       ) : null;
     })()}
@@ -1963,6 +2006,15 @@ export const NrDashMapTab: React.FC<{
         ) : null;
       })()}
       {(() => {
+        const borderLinkSat = nrDashBuildBorderLinkSaturationShare(nsState, baseNodes);
+        return borderLinkSat && borderLinkSat.saturationShare > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-border-link-saturation-share">
+            Border link saturation share {borderLinkSat.saturationShare} · border {borderLinkSat.borderRegionId ?? '—'} · μ{' '}
+            {borderLinkSat.meanBlend} · peak {borderLinkSat.peakBlend}
+          </p>
+        ) : null;
+      })()}
+      {(() => {
         const hubCorridorSat = nrDashBuildHubCorridorSaturationShare(nsState);
         return hubCorridorSat && hubCorridorSat.saturationShare > 0 ? (
           <p className="text-[10px] opacity-75" data-testid="nr-dash-hub-corridor-saturation-share">
@@ -2031,6 +2083,15 @@ export const NrDashMapTab: React.FC<{
           <p className="text-[10px] opacity-75" data-testid="nr-dash-peripheral-pulse-asymmetry">
             Peripheral pulse asymmetry μΔ {peripheralAsym.meanEndpointDelta} · peak {peripheralAsym.maxEndpointDelta} ·{' '}
             {peripheralAsym.peripheralLinkCount} links
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const mergedRimAsym = nrDashBuildMergedRimPulseAsymmetry(nsState, baseNodes);
+        return mergedRimAsym && mergedRimAsym.maxEndpointDelta > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-merged-rim-pulse-asymmetry">
+            Merged rim pulse asymmetry μΔ {mergedRimAsym.meanEndpointDelta} · peak {mergedRimAsym.maxEndpointDelta} ·{' '}
+            {mergedRimAsym.rimLinkCount} links
           </p>
         ) : null;
       })()}
