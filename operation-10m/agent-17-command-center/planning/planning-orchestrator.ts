@@ -77,6 +77,8 @@ import { buildAgent17CharterIndex } from './charter-index.ts';
 import { buildAgent17SanctionAccord } from './sanction-accord.ts';
 import { buildAgent17StatuteIndex } from './statute-index.ts';
 import { buildAgent17ComplianceAccord } from './compliance-accord.ts';
+import { buildAgent17AuditIndex } from './audit-index.ts';
+import { buildAgent17AttestationAccord } from './attestation-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -451,6 +453,16 @@ export function buildAgent17PlanningDepthSnapshot(
     sanctionAccord,
     charterIndex,
   });
+  const auditIndex = buildAgent17AuditIndex({
+    complianceAccord,
+    statuteIndex,
+    sanctionAccord,
+  });
+  const attestationAccord = buildAgent17AttestationAccord({
+    auditIndex,
+    complianceAccord,
+    statuteIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -510,6 +522,8 @@ export function buildAgent17PlanningDepthSnapshot(
     sanctionAccord,
     statuteIndex,
     complianceAccord,
+    auditIndex,
+    attestationAccord,
   };
 }
 

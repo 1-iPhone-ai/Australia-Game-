@@ -237,6 +237,8 @@ export interface Agent17PlanningDepthSnapshot {
   sanctionAccord: Agent17SanctionAccordSnapshot;
   statuteIndex: Agent17StatuteIndexSnapshot;
   complianceAccord: Agent17ComplianceAccordSnapshot;
+  auditIndex: Agent17AuditIndexSnapshot;
+  attestationAccord: Agent17AttestationAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1147,6 +1149,40 @@ export interface Agent17ComplianceAccordSnapshot {
   statuteBand: Agent17StatuteIndexSnapshot['band'];
   sanctionBand: Agent17SanctionAccordSnapshot['band'];
   complianceVerified: boolean;
+  headline: string;
+}
+
+export interface Agent17AuditFinding {
+  id: string;
+  label: string;
+  cleared: boolean;
+  weight: number;
+}
+
+export interface Agent17AuditIndexSnapshot {
+  auditScore: number;
+  band: 'passed' | 'open' | 'failed';
+  findings: Agent17AuditFinding[];
+  complianceBand: Agent17ComplianceAccordSnapshot['band'];
+  statuteBand: Agent17StatuteIndexSnapshot['band'];
+  auditPassed: boolean;
+  headline: string;
+}
+
+export interface Agent17AttestationSeal {
+  id: string;
+  label: string;
+  attested: boolean;
+  weight: number;
+}
+
+export interface Agent17AttestationAccordSnapshot {
+  attestationScore: number;
+  band: 'sealed' | 'provisional' | 'revoked';
+  seals: Agent17AttestationSeal[];
+  auditBand: Agent17AuditIndexSnapshot['band'];
+  complianceBand: Agent17ComplianceAccordSnapshot['band'];
+  attestationSealed: boolean;
   headline: string;
 }
 

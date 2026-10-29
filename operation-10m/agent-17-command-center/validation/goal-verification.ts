@@ -225,7 +225,16 @@ import {
 import {
   buildAgent17ComplianceAccord,
   complianceAccordBlocksStatute,
+  complianceAccordBlocksAudit,
 } from '../planning/compliance-accord.ts';
+import {
+  buildAgent17AuditIndex,
+  auditIndexBlocksAttestation,
+} from '../planning/audit-index.ts';
+import {
+  buildAgent17AttestationAccord,
+  attestationAccordBlocksAudit,
+} from '../planning/attestation-accord.ts';
 import {
   Agent17RollbackController,
   createAgent17RollbackController,
@@ -1819,6 +1828,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const auditIndex = depthEval.snapshot.planningDepth?.auditIndex;
+  goalResults.push(
+    result(
+      'G17-106',
+      !!auditIndex &&
+        auditIndex.findings.length >= 5 &&
+        auditIndex.auditScore >= 0 &&
+        auditIndex.auditScore <= 100 &&
+        (auditIndex.band === 'passed' ||
+          auditIndex.band === 'open' ||
+          auditIndex.band === 'failed'),
+      `findings=${auditIndex?.findings.length} score=${auditIndex?.auditScore}`
+    )
+  );
+
+  const attestationAccord = depthEval.snapshot.planningDepth?.attestationAccord;
+  goalResults.push(
+    result(
+      'G17-107',
+      !!attestationAccord &&
+        attestationAccord.seals.length >= 5 &&
+        attestationAccord.attestationScore >= 0 &&
+        attestationAccord.attestationScore <= 100,
+      `seals=${attestationAccord?.seals.length} score=${attestationAccord?.attestationScore}`
+    )
+  );
+
+  const failedAudit = buildAgent17AuditIndex({
+    complianceAccord: breachedCompliance,
+    statuteIndex: struckStatute,
+    sanctionAccord: liftedSanction,
+  });
+  const revokedAttestation = buildAgent17AttestationAccord({
+    auditIndex: failedAudit,
+    complianceAccord: breachedCompliance,
+    statuteIndex: struckStatute,
+  });
+  goalResults.push(
+    result(
+      'G17-108',
+      complianceAccordBlocksAudit(breachedCompliance) ||
+        auditIndexBlocksAttestation(failedAudit) ||
+        attestationAccordBlocksAudit(revokedAttestation),
+      `${failedAudit.band}/${revokedAttestation.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -1954,6 +2010,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-103',
     'G17-104',
     'G17-105',
+    'G17-106',
+    'G17-107',
+    'G17-108',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

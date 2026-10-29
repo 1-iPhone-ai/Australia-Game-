@@ -101,3 +101,7 @@ export function buildAgent17ComplianceAccord(
 export function complianceAccordBlocksStatute(snapshot: Agent17ComplianceAccordSnapshot): boolean {
   return snapshot.band === 'breached' || !snapshot.complianceVerified;
 }
+
+export function complianceAccordBlocksAudit(snapshot: Agent17ComplianceAccordSnapshot): boolean {
+  return snapshot.band === 'breached' || !snapshot.complianceVerified;
+}

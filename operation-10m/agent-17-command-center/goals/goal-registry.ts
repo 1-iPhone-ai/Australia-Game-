@@ -737,6 +737,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Struck statute or lifted sanction yields complianceAccordBlocksStatute.',
     severity: 'major',
   },
+  {
+    id: 'G17-106',
+    title: 'Audit index on planning depth',
+    category: 'telemetry',
+    acceptance: 'auditIndex reports auditScore 0–100 with passed/open/failed band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-107',
+    title: 'Attestation accord seals complete',
+    category: 'telemetry',
+    acceptance: 'attestationAccord exposes ≥5 seals and attestationScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-108',
+    title: 'Failed audit revokes attestation accord',
+    category: 'integration',
+    acceptance: 'Failed audit or breached compliance yields attestationAccordBlocksAudit.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
