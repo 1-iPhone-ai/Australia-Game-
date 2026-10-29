@@ -2,35 +2,9 @@
 
 **Canonical artifact:** `(V9.4) australia-game-with-ai.tsx` on branch `australia-game-upgrade`.
 
-<<<<<<< HEAD
-**Only Agent 25** may modify the canonical TSX via the controlled assembly pipeline. Module workers must not edit the canonical file.
-
-See Agent 06: [`agent-06-macroeconomy/INTEGRATION.md`](agent-06-macroeconomy/INTEGRATION.md).
-
-## Worker module layout
-
-```
-operation-10m/modules/agent-NN-<slug>/
-  module.manifest.json
-  chunk.tsx               # OP10M_MODULE_BEGIN … END
-```
-
-## Module file rules
-
-1. No top-level `import` from npm or local paths in `chunk.tsx` (single React import lives in canonical SECTION 1).
-2. Wrap contributed code:
-
-```tsx
-// OP10M_MODULE_BEGIN agent-06-macroeconomy
-// …
-// OP10M_MODULE_END agent-06-macroeconomy
-```
-
-3. Export names must be globally unique in the assembled file.
-
-Full hub text: integration branch `operation-10m/INTEGRATION.md` on `op10m/agent-25-integration`.
-=======
 **Only Agent 25** (Build Integration / Release) may modify the canonical TSX, and only via the controlled assembly pipeline on integration branches (`op10m/agent-25-integration`, `op10m/integration/*`). Module workers must not edit the canonical file.
+
+See Agent 06 module notes: [`agent-06-macroeconomy/INTEGRATION.md`](agent-06-macroeconomy/INTEGRATION.md).
 
 ## Audited functional LOC
 
@@ -133,4 +107,3 @@ No worker or coordinator **closes or triages** PRs. Agent 25 opens integration P
 | `operation-10m/assembly/assemble.mjs` | deterministic merge |
 | `operation-10m/assembly/audit-duplication.mjs` | baseline / CI duplication audit |
 | Project store `internal/source-map/` | section map and ownership (Agent 25) |
->>>>>>> origin/op10m/agent-25-integration
