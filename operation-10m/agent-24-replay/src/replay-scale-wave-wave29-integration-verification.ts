@@ -112,7 +112,7 @@ export function runAgent24ReplayScaleWaveWave29IntegrationVerificationSelfTests(
   const wave28IntegrationVerification = {
     reportId: 'w28iv',
     matchId: 'self',
-    waveRound: 30,
+    waveRound: 31,
     integrationBaselineSha: 'b9e129bd',
     verified: true,
     issueCount: 0,
@@ -124,7 +124,7 @@ export function runAgent24ReplayScaleWaveWave29IntegrationVerificationSelfTests(
   const exportGate = {
     reportId: 'eg29',
     matchId: 'self',
-    waveRound: 30,
+    waveRound: 31,
     exportAllowed: true,
     blockerCount: 0,
     blockers: [],
@@ -134,7 +134,7 @@ export function runAgent24ReplayScaleWaveWave29IntegrationVerificationSelfTests(
   const integrationHandoff = {
     reportId: 'ih29',
     matchId: 'self',
-    waveRound: 30,
+    waveRound: 31,
     integrationBaselineSha: O6K_AGENT24_WAVE29_INTEGRATION_BASELINE_SHA,
     handoffComplete: true,
     checkpointCount: 3,
@@ -158,7 +158,7 @@ export function runAgent24ReplayScaleWaveWave29IntegrationVerificationSelfTests(
         report.verified &&
         report.integrationBaselineSha === O6K_AGENT24_WAVE29_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: report.waveRound === 30 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 31 },
     {
       name: 'deterministic_fingerprint',
       passed:
