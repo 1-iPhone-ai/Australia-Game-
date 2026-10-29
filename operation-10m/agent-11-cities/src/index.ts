@@ -28,5 +28,8 @@ export * from './climate-settlement-displacement-risk.ts';
 export * from './regional-amenity-cost-pressure.ts';
 export * from './digital-connectivity-decentralization-shift.ts';
 export * from './settlement-relocation-burden.ts';
+export * from './regional-employment-anchor-stress.ts';
+export * from './interregional-commute-affordability-wedge.ts';
+export * from './settlement-reception-capacity-strain.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';

@@ -215,7 +215,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.7' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.8' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -242,7 +242,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'climate_displacement_exposure'
   | 'amenity_cost_spiral'
   | 'digital_decentralization_pulse'
-  | 'settlement_relocation_burden';
+  | 'settlement_relocation_burden'
+  | 'employment_anchor_fragility'
+  | 'commute_affordability_wedge'
+  | 'settlement_reception_strain';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -365,6 +368,36 @@ export interface OP10M_A11_RelocationBurdenRow {
   regionId: OP10M_A11_RegionId;
   burdenScore: number;
   band: OP10M_A11_RelocationBurdenBand;
+  factors: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_EmploymentAnchorBand = 'anchored' | 'softening' | 'fragile' | 'collapsing';
+
+export interface OP10M_A11_EmploymentAnchorRow {
+  regionId: OP10M_A11_RegionId;
+  stressScore: number;
+  band: OP10M_A11_EmploymentAnchorBand;
+  drivers: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_CommuteWedgeBand = 'balanced' | 'widening' | 'severe' | 'unsustainable';
+
+export interface OP10M_A11_CommuteWedgeRow {
+  regionId: OP10M_A11_RegionId;
+  wedgeScore: number;
+  band: OP10M_A11_CommuteWedgeBand;
+  pressures: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_ReceptionStrainBand = 'absorptive' | 'tight' | 'strained' | 'saturated';
+
+export interface OP10M_A11_ReceptionStrainRow {
+  regionId: OP10M_A11_RegionId;
+  strainScore: number;
+  band: OP10M_A11_ReceptionStrainBand;
   factors: string[];
   narrative: string;
 }
@@ -503,6 +536,12 @@ export interface OP10M_A11_CompositeState {
   nationalDecentralizationIndex: number;
   relocationBurden: OP10M_A11_RelocationBurdenRow[];
   nationalRelocationBurdenIndex: number;
+  employmentAnchor: OP10M_A11_EmploymentAnchorRow[];
+  nationalEmploymentAnchorIndex: number;
+  commuteWedge: OP10M_A11_CommuteWedgeRow[];
+  nationalCommuteWedgeIndex: number;
+  receptionStrain: OP10M_A11_ReceptionStrainRow[];
+  nationalReceptionStrainIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -524,5 +563,8 @@ export interface OP10M_A11_CompositePersisted {
   lastClimateDisplacementIndex: number;
   lastAmenityCostIndex: number;
   lastRelocationBurdenIndex: number;
+  lastEmploymentAnchorIndex: number;
+  lastCommuteWedgeIndex: number;
+  lastReceptionStrainIndex: number;
   inputHash: string;
 }

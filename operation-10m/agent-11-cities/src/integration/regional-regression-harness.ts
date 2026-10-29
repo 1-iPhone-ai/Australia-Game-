@@ -18,6 +18,9 @@ export type OP10M_A11_RegressionTurnSnapshot = {
   climateDisplacementIndex: number;
   amenityCostIndex: number;
   relocationBurdenIndex: number;
+  employmentAnchorIndex: number;
+  commuteWedgeIndex: number;
+  receptionStrainIndex: number;
   validationErrors: number;
 };
 
@@ -62,6 +65,9 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
       climateDisplacementIndex: out.state.nationalClimateDisplacementIndex,
       amenityCostIndex: out.state.nationalAmenityCostIndex,
       relocationBurdenIndex: out.state.nationalRelocationBurdenIndex,
+      employmentAnchorIndex: out.state.nationalEmploymentAnchorIndex,
+      commuteWedgeIndex: out.state.nationalCommuteWedgeIndex,
+      receptionStrainIndex: out.state.nationalReceptionStrainIndex,
       validationErrors,
     });
   }
@@ -77,6 +83,9 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
   const climateStable = snapshots.every((s) => s.climateDisplacementIndex >= 8 && s.climateDisplacementIndex <= 100);
   const amenityStable = snapshots.every((s) => s.amenityCostIndex >= 8 && s.amenityCostIndex <= 100);
   const relocationStable = snapshots.every((s) => s.relocationBurdenIndex >= 8 && s.relocationBurdenIndex <= 100);
+  const employmentAnchorStable = snapshots.every((s) => s.employmentAnchorIndex >= 8 && s.employmentAnchorIndex <= 100);
+  const commuteWedgeStable = snapshots.every((s) => s.commuteWedgeIndex >= 8 && s.commuteWedgeIndex <= 100);
+  const receptionStrainStable = snapshots.every((s) => s.receptionStrainIndex >= 8 && s.receptionStrainIndex <= 100);
 
   const ok =
     monotonicRevision &&
@@ -89,10 +98,13 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
     housingStable &&
     climateStable &&
     amenityStable &&
-    relocationStable;
+    relocationStable &&
+    employmentAnchorStable &&
+    commuteWedgeStable &&
+    receptionStrainStable;
   const detail = ok
-    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, amenity ${snapshots[snapshots.length - 1].amenityCostIndex}`
-    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable}`;
+    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, reception ${snapshots[snapshots.length - 1].receptionStrainIndex}`
+    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable}`;
 
   return { ok, snapshots, detail };
 }
