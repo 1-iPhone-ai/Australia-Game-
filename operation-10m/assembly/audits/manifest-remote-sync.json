@@ -1,5 +1,5 @@
 {
-  "scannedAt": "2026-10-29T14:07:32.647Z",
+  "scannedAt": "2026-10-29T14:22:58.832Z",
   "canonicalBase": "origin/australia-game-upgrade",
   "baselineCommit": "bc1adf3",
   "originOp10mHeadCount": 33,
@@ -55,7 +55,7 @@
       "chunkPath": "operation-10m/agent-05-events/chunk.tsx",
       "markerModuleId": "agent-05-events",
       "assemblyReady": true,
-      "contentSha256": "b7bf4085cc3a37ffdb4c20e689bed9c15a5ade7bc7edfc5f441fd2652cffc0ca",
+      "contentSha256": "50a1e3a05e6b17633d3e5a8a29f9fc3d27233bde7563441494df7a9110a4deff",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -179,7 +179,7 @@
       "chunkPath": "operation-10m/agent-13-energy/chunk.tsx",
       "markerModuleId": "agent-13-energy",
       "assemblyReady": false,
-      "contentSha256": "bcac0db224780585bf479bbc7d6fa353045957b196f0cbf4f1097970d48d9c8d",
+      "contentSha256": "e5c95ea228d63ba8ef2d755d0002e1090fc5d93c38857dbb5568351dfd05e55d",
       "defaultSlot": "pre-final-export",
       "duplicateModuleIdOf": "origin/op10m/agent-13-energy",
       "skipReason": "duplicate moduleId (branch not primary)"
@@ -275,7 +275,7 @@
       "chunkPath": "operation-10m/modules/agent-20-automation/chunk.tsx",
       "markerModuleId": "agent-20-automation",
       "assemblyReady": true,
-      "contentSha256": "7d686090b3f2a0bacc287c0f11f2aa9d5d1ddd4c5a2be0f13cbac58338f6f0f4",
+      "contentSha256": "6390c9506e1b399eb315316e521b5274509aa3aa412e05243e8fc590f371d3a0",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -285,7 +285,7 @@
       "chunkPath": "operation-10m/modules/agent-21-forecasting/chunk.tsx",
       "markerModuleId": "agent-21-forecasting",
       "assemblyReady": true,
-      "contentSha256": "bae2caad06437131e13098f5b9fe242cae67936f915c91833dcc4a11dc7e41bd",
+      "contentSha256": "8ad2759e6749db1f50cd07e64f105a5aa9962c60a2bd3f9085c3d2986cd2723e",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -305,7 +305,7 @@
       "chunkPath": "operation-10m/modules/agent-23-dashboards/chunk.tsx",
       "markerModuleId": "agent-23-dashboards",
       "assemblyReady": true,
-      "contentSha256": "c0140f5d3ddc7c3da53b363839a3c37ef5ab5fff297e8bef14226f25b43e700f",
+      "contentSha256": "ad7da9c79db882be2fef38012afd1ba283ce025080f39785bb97235eb08d853a",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -325,7 +325,7 @@
       "chunkPath": "operation-10m/modules/agent-24-history/chunk.tsx",
       "markerModuleId": "agent-24-history",
       "assemblyReady": false,
-      "contentSha256": "841cd8240fc22aab1830ecd97f2ce56c97bfe360449c70a9aab059fc876afac0",
+      "contentSha256": "cc82a02b9327e4d2c56f70892aa80954f4f0c56e9b6adad6c11b500111e980a7",
       "defaultSlot": "pre-final-export",
       "duplicateModuleIdOf": "origin/op10m/agent-24-history",
       "skipReason": "duplicate moduleId (branch not primary)"
