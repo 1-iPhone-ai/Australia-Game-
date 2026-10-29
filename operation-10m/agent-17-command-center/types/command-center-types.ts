@@ -277,6 +277,8 @@ export interface Agent17PlanningDepthSnapshot {
   curatorAccord: Agent17CuratorAccordSnapshot;
   superintendenceIndex: Agent17SuperintendenceIndexSnapshot;
   superintendentAccord: Agent17SuperintendentAccordSnapshot;
+  oversightIndex: Agent17OversightIndexSnapshot;
+  overseerAccord: Agent17OverseerAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1867,6 +1869,40 @@ export interface Agent17SuperintendentAccordSnapshot {
   superintendenceBand: Agent17SuperintendenceIndexSnapshot['band'];
   curatorBand: Agent17CuratorAccordSnapshot['band'];
   superintendentChartered: boolean;
+  headline: string;
+}
+
+export interface Agent17OversightMandate {
+  id: string;
+  label: string;
+  engaged: boolean;
+  weight: number;
+}
+
+export interface Agent17OversightIndexSnapshot {
+  oversightScore: number;
+  band: 'engaged' | 'tentative' | 'revoked';
+  mandates: Agent17OversightMandate[];
+  superintendentBand: Agent17SuperintendentAccordSnapshot['band'];
+  superintendenceBand: Agent17SuperintendenceIndexSnapshot['band'];
+  oversightEngaged: boolean;
+  headline: string;
+}
+
+export interface Agent17OverseerDirective {
+  id: string;
+  label: string;
+  seated: boolean;
+  weight: number;
+}
+
+export interface Agent17OverseerAccordSnapshot {
+  overseerScore: number;
+  band: 'seated' | 'interim' | 'vacated';
+  directives: Agent17OverseerDirective[];
+  oversightBand: Agent17OversightIndexSnapshot['band'];
+  superintendentBand: Agent17SuperintendentAccordSnapshot['band'];
+  overseerSeated: boolean;
   headline: string;
 }
 

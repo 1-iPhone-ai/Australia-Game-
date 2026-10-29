@@ -117,6 +117,8 @@ import { buildAgent17CuratorshipIndex } from './curatorship-index.ts';
 import { buildAgent17CuratorAccord } from './curator-accord.ts';
 import { buildAgent17SuperintendenceIndex } from './superintendence-index.ts';
 import { buildAgent17SuperintendentAccord } from './superintendent-accord.ts';
+import { buildAgent17OversightIndex } from './oversight-index.ts';
+import { buildAgent17OverseerAccord } from './overseer-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -691,6 +693,16 @@ export function buildAgent17PlanningDepthSnapshot(
     curatorAccord,
     curatorshipIndex,
   });
+  const oversightIndex = buildAgent17OversightIndex({
+    superintendentAccord,
+    superintendenceIndex,
+    curatorAccord,
+  });
+  const overseerAccord = buildAgent17OverseerAccord({
+    oversightIndex,
+    superintendentAccord,
+    superintendenceIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -790,6 +802,8 @@ export function buildAgent17PlanningDepthSnapshot(
     curatorAccord,
     superintendenceIndex,
     superintendentAccord,
+    oversightIndex,
+    overseerAccord,
   };
 }
 

@@ -393,6 +393,14 @@ import {
   superintendentAccordBlocksCurator,
 } from '../planning/superintendent-accord.ts';
 import {
+  buildAgent17OversightIndex,
+  oversightIndexBlocksOverseer,
+} from '../planning/oversight-index.ts';
+import {
+  buildAgent17OverseerAccord,
+  overseerAccordBlocksSuperintendent,
+} from '../planning/overseer-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -2925,6 +2933,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const oversightIndex = depthEval.snapshot.planningDepth?.oversightIndex;
+  goalResults.push(
+    result(
+      'G17-166',
+      !!oversightIndex &&
+        oversightIndex.mandates.length >= 5 &&
+        oversightIndex.oversightScore >= 0 &&
+        oversightIndex.oversightScore <= 100 &&
+        (oversightIndex.band === 'engaged' ||
+          oversightIndex.band === 'tentative' ||
+          oversightIndex.band === 'revoked'),
+      `mandates=${oversightIndex?.mandates.length} score=${oversightIndex?.oversightScore}`
+    )
+  );
+
+  const overseerAccord = depthEval.snapshot.planningDepth?.overseerAccord;
+  goalResults.push(
+    result(
+      'G17-167',
+      !!overseerAccord &&
+        overseerAccord.directives.length >= 5 &&
+        overseerAccord.overseerScore >= 0 &&
+        overseerAccord.overseerScore <= 100,
+      `directives=${overseerAccord?.directives.length} score=${overseerAccord?.overseerScore}`
+    )
+  );
+
+  const revokedOversight = buildAgent17OversightIndex({
+    superintendentAccord: suspendedSuperintendent,
+    superintendenceIndex: dissolvedSuperintendence,
+    curatorAccord: recusedCurator,
+  });
+  const vacatedOverseer = buildAgent17OverseerAccord({
+    oversightIndex: revokedOversight,
+    superintendentAccord: suspendedSuperintendent,
+    superintendenceIndex: dissolvedSuperintendence,
+  });
+  goalResults.push(
+    result(
+      'G17-168',
+      superintendentAccordBlocksCurator(suspendedSuperintendent) ||
+        oversightIndexBlocksOverseer(revokedOversight) ||
+        overseerAccordBlocksSuperintendent(vacatedOverseer),
+      `${revokedOversight.band}/${vacatedOverseer.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -3120,6 +3175,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-163',
     'G17-164',
     'G17-165',
+    'G17-166',
+    'G17-167',
+    'G17-168',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

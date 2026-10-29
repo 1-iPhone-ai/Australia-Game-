@@ -1178,6 +1178,29 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Recused curator or dissolved superintendence yields superintendentAccordBlocksCurator.',
     severity: 'major',
   },
+  {
+    id: 'G17-166',
+    title: 'Oversight index on planning depth',
+    category: 'telemetry',
+    acceptance:
+      'oversightIndex reports oversightScore 0–100 with engaged/tentative/revoked band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-167',
+    title: 'Overseer accord directives complete',
+    category: 'telemetry',
+    acceptance: 'overseerAccord exposes ≥5 directives and overseerScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-168',
+    title: 'Suspended superintendent vacates overseer accord',
+    category: 'integration',
+    acceptance:
+      'Suspended superintendent or revoked oversight yields overseerAccordBlocksSuperintendent.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

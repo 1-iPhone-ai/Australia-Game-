@@ -107,6 +107,8 @@ export * from './planning/curatorship-index.ts';
 export * from './planning/curator-accord.ts';
 export * from './planning/superintendence-index.ts';
 export * from './planning/superintendent-accord.ts';
+export * from './planning/oversight-index.ts';
+export * from './planning/overseer-accord.ts';
 export * from './planning/planning-orchestrator.ts';
 export * from './planning/ops-state.ts';
 export * from './evaluation/operations-evaluator.ts';
