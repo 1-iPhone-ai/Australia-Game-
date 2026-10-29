@@ -20,6 +20,6 @@ O10-187: full-chunks sync commit lattice + integration baseline merge. Wave **28
 
 ## Base / commit
 
-Round 27 base: **`dbf9a5fb`**. Round 28 HEAD: *(after push)*.
+Round 27 base: **`dbf9a5fb`**. Round 28 HEAD: **`5a9d5fd6`**. Push-first on origin.
 
 No V9.4. No promote.
