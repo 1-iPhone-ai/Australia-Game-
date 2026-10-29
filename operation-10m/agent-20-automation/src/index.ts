@@ -78,6 +78,9 @@ export * from './automation-idle-governance-program-wave-scale-wave-seal.js';
 export * from './automation-idle-governance-program-wave-scale-wave-seal-compare.js';
 export * from './automation-idle-governance-program-wave-scale-wave-seal-export.js';
 export * from './automation-idle-governance-program-wave-epoch-closeout.js';
+export * from './automation-idle-governance-program-wave-epoch-closeout-compare.js';
+export * from './automation-idle-governance-program-wave-epoch-export.js';
+export * from './automation-idle-governance-program-wave-round26-capstone.js';
 
 import type { O10SelfTestResult } from './types.js';
 import { runO10Agent20NationalStewardSelfTests } from './national-steward.js';
@@ -156,6 +159,9 @@ import { runO10Agent20IdleGovernanceProgramWaveScaleWaveSealSelfTests } from './
 import { runO10Agent20IdleGovernanceProgramWaveScaleWaveSealCompareSelfTests } from './automation-idle-governance-program-wave-scale-wave-seal-compare.js';
 import { runO10Agent20IdleGovernanceProgramWaveScaleWaveSealExportSelfTests } from './automation-idle-governance-program-wave-scale-wave-seal-export.js';
 import { runO10Agent20IdleGovernanceProgramWaveEpochCloseoutSelfTests } from './automation-idle-governance-program-wave-epoch-closeout.js';
+import { runO10Agent20IdleGovernanceProgramWaveEpochCloseoutCompareSelfTests } from './automation-idle-governance-program-wave-epoch-closeout-compare.js';
+import { runO10Agent20IdleGovernanceProgramWaveEpochExportSelfTests } from './automation-idle-governance-program-wave-epoch-export.js';
+import { runO10Agent20IdleGovernanceProgramWaveRound26CapstoneSelfTests } from './automation-idle-governance-program-wave-round26-capstone.js';
 
 /** Full module self-test bundle for Agent 25 dev lab registration. */
 export function runO10Agent20ModuleSelfTests(): {
@@ -264,6 +270,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceProgramWaveScaleWaveSealCompareSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveScaleWaveSealExportSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveEpochCloseoutSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveEpochCloseoutCompareSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveEpochExportSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveRound26CapstoneSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }
