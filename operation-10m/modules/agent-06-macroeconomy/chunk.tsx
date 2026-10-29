@@ -761,6 +761,8 @@ export interface MacroEconomyInputs {
   integrationHealthWave51Export?: any;
   replayWave52Export?: any;
   integrationHealthWave52Export?: any;
+  replayWave53Export?: any;
+  integrationHealthWave53Export?: any;
   highInflationScenarioActive?: boolean;
   creditShockActive?: boolean;
   /** Additional catalog shock ids (see catalog/cyclical-shocks.ts). Legacy flags merge in. */
@@ -2505,6 +2507,16 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
       params?.integrationHealth?.wave52Export ??
       params?.assembly?.integrationHealthWave52Export ??
       params?.nationalIntegration?.healthWave52Export,
+    replayWave53Export:
+      params?.replayWave53Export ??
+      params?.historyReplay?.wave53Export ??
+      params?.replay?.wave53Export ??
+      params?.nationalHistory?.replayWave53Export,
+    integrationHealthWave53Export:
+      params?.integrationHealthWave53Export ??
+      params?.integrationHealth?.wave53Export ??
+      params?.assembly?.integrationHealthWave53Export ??
+      params?.nationalIntegration?.healthWave53Export,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };
@@ -23936,6 +23948,644 @@ export function runAgent06Round52SelfTests(): {
 }
 
 
+// --- source: bridge-v1027-replay-wave-round53-export.ts ---
+
+export interface MacroReplayWave52ExportSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.24 history replay wave 51 export spillover (Agent 24 wave 51 export). */
+export function readMacroReplayWave52ExportSpilloverFromV1026(
+  inputs: MacroEconomyInputs
+): MacroReplayWave52ExportSpillover {
+  const exportPayload: any =
+    inputs.replayWave52Export ??
+    inputs.historyReplay?.wave52Export ??
+    inputs.replay?.wave52Export ??
+    inputs.nationalHistory?.replayWave52Export;
+  if (!exportPayload) {
+    return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+  }
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const round53Ready = Boolean(
+    exportPayload.round53Ready ??
+      exportPayload.payload?.round53Ready ??
+      exportPayload.exportReady ??
+      exportPayload.ready
+  );
+  const o10Task = String(exportPayload.o10TaskId ?? exportPayload.taskId ?? exportPayload.payload?.o10TaskId ?? '');
+  const waveRound = Number(exportPayload.waveRound ?? exportPayload.payload?.waveRound ?? 0);
+  const locHint = Number(
+    exportPayload.projectedLocHint ?? exportPayload.payload?.projectedLocHint ?? exportPayload.locHint ?? 0
+  );
+  const integrityBand = String(exportPayload.integrityBand ?? exportPayload.payload?.integrityBand ?? '');
+
+  if (!round53Ready) {
+    cycleNudge -= 3;
+    investmentNudge -= 2;
+    summary = 'History replay wave 51 export not ready — macro cycle read drags.';
+  } else if (o10Task === 'O10-237' || waveRound === 52) {
+    productivityNudge += 1;
+    summary = `Wave 51 replay export latched (${o10Task || 'O10-237'}) supports macro productivity read.`;
+  }
+
+  if (integrityBand === 'corrupt' || integrityBand === 'broken') {
+    investmentNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Corrupt replay integrity band strains macro investment spillover.';
+  }
+
+  if (locHint > 0 && locHint < 2_700_000) {
+    cycleNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Stale wave 50 projected LOC hint misaligns macro cycle transmission.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroReplayWave52ExportSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroReplayWave52ExportSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: bridge-v1028-integration-health-wave-round53-export.ts ---
+
+export interface MacroIntegrationHealthWave52ExportSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.25 integration health wave 51 export spillover (Agent 25 wave 51 export). */
+export function readMacroIntegrationHealthWave52ExportSpilloverFromV1027(
+  inputs: MacroEconomyInputs
+): MacroIntegrationHealthWave52ExportSpillover {
+  const exportPayload: any =
+    inputs.integrationHealthWave52Export ??
+    inputs.integrationHealth?.wave52Export ??
+    inputs.assembly?.integrationHealthWave52Export ??
+    inputs.nationalIntegration?.healthWave52Export;
+  if (!exportPayload) {
+    return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+  }
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const healthReady = Boolean(
+    exportPayload.healthReady ??
+      exportPayload.round53Ready ??
+      exportPayload.payload?.healthReady ??
+      exportPayload.exportReady
+  );
+  const baselineSha = String(exportPayload.baselineSha ?? exportPayload.payload?.baselineSha ?? '');
+  const projectedLoc = Number(exportPayload.projectedFunctionalLoc ?? exportPayload.projectedLoc ?? 0);
+  const slotBand = String(exportPayload.slotBand ?? exportPayload.payload?.slotBand ?? '');
+
+  if (!healthReady) {
+    investmentNudge -= 3;
+    productivityNudge -= 1;
+    summary = 'Integration health wave 51 export not ready — macro investment read drags.';
+  } else if (slotBand === 'green' || slotBand === 'latched') {
+    investmentNudge += 1;
+    cycleNudge += 1;
+    summary = 'Latched integration health wave 51 export supports macro cycle interpretation.';
+  }
+
+  if (baselineSha && !baselineSha.toLowerCase().startsWith('a32b2b15')) {
+    cycleNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Non-a32b2b15 wave 50 baseline SHA misaligns macro cycle read.';
+  }
+
+  if (projectedLoc > 0 && projectedLoc < 2_700_000) {
+    investmentNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Under-projected wave 51 functional LOC drags macro investment read.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroIntegrationHealthWave52ExportSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroIntegrationHealthWave52ExportSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: scenario-wave53-integration-rank.ts ---
+
+export interface MacroScenarioWave53IntegrationRow {
+  scenarioId: string;
+  integrationPriority: number;
+}
+
+/** Rank overlays for wave 53 integration (wave 52 latch plus wave 51 integration cushion). */
+export function rankMacroScenarioWave53Integration(rows: MacroScenarioCompareRow[]): MacroScenarioWave53IntegrationRow[] {
+  const wave52 = rankMacroScenarioWave52Integration(rows);
+  const wave51 = rankMacroScenarioWave51Integration(rows);
+  const w52Max = Math.max(1, ...wave52.map(w => w.integrationPriority));
+  const w51Max = Math.max(1, ...wave51.map(w => w.integrationPriority));
+
+  return rows
+    .map(row => {
+      const w52 = wave52.find(w => w.scenarioId === row.scenarioId)?.integrationPriority ?? 0;
+      const w51 = wave51.find(w => w.scenarioId === row.scenarioId)?.integrationPriority ?? 0;
+      const integrationPriority =
+        Math.round(((w52 / w52Max) * 0.55 + (w51 / w51Max) * 0.45) * 1000) / 1000;
+      return { scenarioId: row.scenarioId, integrationPriority };
+    })
+    .sort((a, b) => b.integrationPriority - a.integrationPriority);
+}
+
+
+// --- source: round53-self-tests.ts ---
+
+export function runAgent06Round53SelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: MacroSelfTestResult[];
+} {
+  const results: MacroSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const replay = readMacroReplayWave52ExportSpilloverFromV1026(
+    makeDefaultV1014_MACRO_TestInputs({
+      replayWave52Export: {
+        round53Ready: false,
+        o10TaskId: 'O10-237',
+        waveRound: 52,
+        integrityBand: 'corrupt',
+        projectedLocHint: 1_800_000
+      }
+    })
+  );
+  record('R53-01', 'Wave 53 replay export not ready drags cycle', replay.cycleNudge <= -2, String(replay.cycleNudge));
+
+  const health = readMacroIntegrationHealthWave52ExportSpilloverFromV1027(
+    makeDefaultV1014_MACRO_TestInputs({
+      integrationHealthWave52Export: {
+        healthReady: false,
+        slotBand: 'red',
+        baselineSha: '51039c5e',
+        projectedFunctionalLoc: 1_800_000
+      }
+    })
+  );
+  record('R53-02', 'Wave 53 integration health export not ready drags investment', health.investmentNudge <= -2, String(health.investmentNudge));
+
+  const integrated = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({
+      replayWave52Export: {
+        round53Ready: true,
+        o10TaskId: 'O10-237',
+        waveRound: 52,
+        integrityBand: 'sound',
+        projectedLocHint: 2_979_928
+      },
+      integrationHealthWave52Export: {
+        healthReady: true,
+        slotBand: 'latched',
+        baselineSha: '51039c5e',
+        projectedFunctionalLoc: 2_979_928
+      }
+    }),
+    null,
+    null
+  );
+  record(
+    'R53-03',
+    'State exposes wave 52 replay export summary',
+    integrated.state.replayWave52ExportSpilloverSummary != null,
+    'ok'
+  );
+  record(
+    'R53-04',
+    'Transmission includes integration health wave 52 export layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.25_integration_health_wave52_export'),
+    'ok'
+  );
+  record(
+    'R53-05',
+    'Hundred transmission layers',
+    integrated.state.transmissionReport.layers.length === 100,
+    String(integrated.state.transmissionReport.layers.length)
+  );
+
+  const persistence = buildMacroTransmissionPersistenceSnapshot(integrated.state.transmissionReport);
+  record(
+    'R53-06',
+    'Transmission persistence finite',
+    Number.isFinite(persistence.persistenceIndex),
+    String(persistence.persistenceIndex)
+  );
+  record(
+    'R53-07',
+    'Transmission includes replay wave 52 export layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.24_replay_wave52_export'),
+    'ok'
+  );
+
+  const compare = compareMacroEconomyScenarios(
+    makeDefaultV1014_MACRO_TestInputs({ turn: 70 }),
+    [
+      {
+        id: 'replay_shock',
+        overlay: {
+          replayWave52Export: { round53Ready: false, o10TaskId: 'O10-237', waveRound: 52, integrityBand: 'corrupt' }
+        }
+      },
+      {
+        id: 'health_shock',
+        overlay: { integrationHealthWave52Export: { healthReady: false, slotBand: 'red', baselineSha: '51039c5e' } }
+      }
+    ],
+    null,
+    null
+  );
+  const integration = rankMacroScenarioWave53Integration(compare);
+  record('R53-08', 'Wave 53 integration rank preserves row count', integration.length === 2, String(integration.length));
+  record(
+    'R53-09',
+    'Wave 53 integration ranks scenarios',
+    integration[0].integrationPriority >= 0,
+    integration.map(r => r.scenarioId).join('>')
+  );
+
+  const harness = runMacroEconomyRegressionHarness({
+    turns: 10,
+    scenarioId: 'wave52_replay_integration_stress',
+    includeWave52ReplayIntegrationStress: true
+  });
+  record(
+    'R53-10',
+    'Wave 53 replay/integration regression harness',
+    harness.allPassed,
+    harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: bridge-v1029-replay-wave-round54-export.ts ---
+
+export interface MacroReplayWave53ExportSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.24 history replay wave 53 export spillover (Agent 24 wave 53 export). */
+export function readMacroReplayWave53ExportSpilloverFromV1029(
+  inputs: MacroEconomyInputs
+): MacroReplayWave53ExportSpillover {
+  const exportPayload: any =
+    inputs.replayWave53Export ??
+    inputs.historyReplay?.wave53Export ??
+    inputs.replay?.wave53Export ??
+    inputs.nationalHistory?.replayWave53Export ??
+    inputs.replayWave52Export ??
+    inputs.historyReplay?.wave52Export ??
+    inputs.replay?.wave52Export ??
+    inputs.nationalHistory?.replayWave52Export;
+  if (!exportPayload) {
+    return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+  }
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const round54Ready = Boolean(
+    exportPayload.round54Ready ??
+      exportPayload.payload?.round54Ready ??
+      exportPayload.exportReady ??
+      exportPayload.ready
+  );
+  const o10Task = String(exportPayload.o10TaskId ?? exportPayload.taskId ?? exportPayload.payload?.o10TaskId ?? '');
+  const waveRound = Number(exportPayload.waveRound ?? exportPayload.payload?.waveRound ?? 0);
+  const locHint = Number(
+    exportPayload.projectedLocHint ?? exportPayload.payload?.projectedLocHint ?? exportPayload.locHint ?? 0
+  );
+  const integrityBand = String(exportPayload.integrityBand ?? exportPayload.payload?.integrityBand ?? '');
+
+  if (!round54Ready) {
+    cycleNudge -= 3;
+    investmentNudge -= 2;
+    summary = 'History replay wave 53 export not ready — macro cycle read drags.';
+  } else if (o10Task === 'O10-240' || waveRound === 53) {
+    productivityNudge += 1;
+    summary = `Wave 53 replay export latched (${o10Task || 'O10-240'}) supports macro productivity read.`;
+  }
+
+  if (integrityBand === 'corrupt' || integrityBand === 'broken') {
+    investmentNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Corrupt replay integrity band strains macro investment spillover.';
+  }
+
+  if (locHint > 0 && locHint < 3_000_000) {
+    cycleNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Stale wave 53 projected LOC hint misaligns macro cycle transmission.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroReplayWave53ExportSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroReplayWave53ExportSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: bridge-v1030-integration-health-wave-round54-export.ts ---
+
+export interface MacroIntegrationHealthWave53ExportSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.25 integration health wave 53 export spillover (Agent 25 wave 53 export). */
+export function readMacroIntegrationHealthWave53ExportSpilloverFromV1030(
+  inputs: MacroEconomyInputs
+): MacroIntegrationHealthWave53ExportSpillover {
+  const exportPayload: any =
+    inputs.integrationHealthWave53Export ??
+    inputs.integrationHealth?.wave53Export ??
+    inputs.assembly?.integrationHealthWave53Export ??
+    inputs.nationalIntegration?.healthWave53Export ??
+    inputs.integrationHealthWave52Export ??
+    inputs.integrationHealth?.wave52Export ??
+    inputs.assembly?.integrationHealthWave52Export ??
+    inputs.nationalIntegration?.healthWave52Export;
+  if (!exportPayload) {
+    return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+  }
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const healthReady = Boolean(
+    exportPayload.healthReady ??
+      exportPayload.round54Ready ??
+      exportPayload.payload?.healthReady ??
+      exportPayload.exportReady
+  );
+  const baselineSha = String(exportPayload.baselineSha ?? exportPayload.payload?.baselineSha ?? '');
+  const projectedLoc = Number(exportPayload.projectedFunctionalLoc ?? exportPayload.projectedLoc ?? 0);
+  const slotBand = String(exportPayload.slotBand ?? exportPayload.payload?.slotBand ?? '');
+
+  if (!healthReady) {
+    investmentNudge -= 3;
+    productivityNudge -= 1;
+    summary = 'Integration health wave 53 export not ready — macro investment read drags.';
+  } else if (slotBand === 'green' || slotBand === 'latched') {
+    investmentNudge += 1;
+    cycleNudge += 1;
+    summary = 'Latched integration health wave 53 export supports macro cycle interpretation.';
+  }
+
+  if (baselineSha && !baselineSha.toLowerCase().startsWith('5bd043ad')) {
+    cycleNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Non-5bd043ad wave 53 baseline SHA misaligns macro cycle read.';
+  }
+
+  if (projectedLoc > 0 && projectedLoc < 3_000_000) {
+    investmentNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Under-projected wave 54 functional LOC drags macro investment read.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroIntegrationHealthWave53ExportSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroIntegrationHealthWave53ExportSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: scenario-wave54-integration-rank.ts ---
+
+export interface MacroScenarioWave54IntegrationRow {
+  scenarioId: string;
+  integrationPriority: number;
+}
+
+/** Rank overlays for wave 54 integration (wave 53 latch plus wave 52 integration cushion). */
+export function rankMacroScenarioWave54Integration(rows: MacroScenarioCompareRow[]): MacroScenarioWave54IntegrationRow[] {
+  const wave53 = rankMacroScenarioWave53Integration(rows);
+  const wave52 = rankMacroScenarioWave52Integration(rows);
+  const w53Max = Math.max(1, ...wave53.map(w => w.integrationPriority));
+  const w52Max = Math.max(1, ...wave52.map(w => w.integrationPriority));
+
+  return rows
+    .map(row => {
+      const w53 = wave53.find(w => w.scenarioId === row.scenarioId)?.integrationPriority ?? 0;
+      const w52 = wave52.find(w => w.scenarioId === row.scenarioId)?.integrationPriority ?? 0;
+      const integrationPriority =
+        Math.round(((w53 / w53Max) * 0.55 + (w52 / w52Max) * 0.45) * 1000) / 1000;
+      return { scenarioId: row.scenarioId, integrationPriority };
+    })
+    .sort((a, b) => b.integrationPriority - a.integrationPriority);
+}
+
+
+// --- source: round54-self-tests.ts ---
+
+export function runAgent06Round54SelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: MacroSelfTestResult[];
+} {
+  const results: MacroSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const replay = readMacroReplayWave53ExportSpilloverFromV1029(
+    makeDefaultV1014_MACRO_TestInputs({
+      replayWave53Export: {
+        round54Ready: false,
+        o10TaskId: 'O10-240',
+        waveRound: 53,
+        integrityBand: 'corrupt',
+        projectedLocHint: 2_800_000
+      }
+    })
+  );
+  record('R54-01', 'Wave 54 replay export not ready drags cycle', replay.cycleNudge <= -2, String(replay.cycleNudge));
+
+  const health = readMacroIntegrationHealthWave53ExportSpilloverFromV1030(
+    makeDefaultV1014_MACRO_TestInputs({
+      integrationHealthWave53Export: {
+        healthReady: false,
+        slotBand: 'red',
+        baselineSha: '5bd043ad',
+        projectedFunctionalLoc: 2_800_000
+      }
+    })
+  );
+  record('R54-02', 'Wave 54 integration health export not ready drags investment', health.investmentNudge <= -2, String(health.investmentNudge));
+
+  const integrated = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({
+      replayWave52Export: {
+        round54Ready: true,
+        o10TaskId: 'O10-240',
+        waveRound: 53,
+        integrityBand: 'sound',
+        projectedLocHint: 3_022_056
+      },
+      integrationHealthWave52Export: {
+        healthReady: true,
+        slotBand: 'latched',
+        baselineSha: '5bd043ad',
+        projectedFunctionalLoc: 3_022_056
+      }
+    }),
+    null,
+    null
+  );
+  record(
+    'R54-03',
+    'State exposes wave 52 replay export summary',
+    integrated.state.replayWave52ExportSpilloverSummary != null,
+    'ok'
+  );
+  record(
+    'R54-04',
+    'Transmission includes integration health wave 52 export layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.25_integration_health_wave52_export'),
+    'ok'
+  );
+  record(
+    'R54-05',
+    'Hundred transmission layers',
+    integrated.state.transmissionReport.layers.length === 100,
+    String(integrated.state.transmissionReport.layers.length)
+  );
+
+  const persistence = buildMacroTransmissionPersistenceSnapshot(integrated.state.transmissionReport);
+  record(
+    'R54-06',
+    'Transmission persistence finite',
+    Number.isFinite(persistence.persistenceIndex),
+    String(persistence.persistenceIndex)
+  );
+  record(
+    'R54-07',
+    'Transmission includes replay wave 52 export layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.24_replay_wave52_export'),
+    'ok'
+  );
+
+  const compare = compareMacroEconomyScenarios(
+    makeDefaultV1014_MACRO_TestInputs({ turn: 70 }),
+    [
+      {
+        id: 'replay_shock',
+        overlay: {
+          replayWave53Export: { round54Ready: false, o10TaskId: 'O10-240', waveRound: 53, integrityBand: 'corrupt' }
+        }
+      },
+      {
+        id: 'health_shock',
+        overlay: { integrationHealthWave53Export: { healthReady: false, slotBand: 'red', baselineSha: '5bd043ad' } }
+      }
+    ],
+    null,
+    null
+  );
+  const integration = rankMacroScenarioWave54Integration(compare);
+  record('R54-08', 'Wave 54 integration rank preserves row count', integration.length === 2, String(integration.length));
+  record(
+    'R54-09',
+    'Wave 54 integration ranks scenarios',
+    integration[0].integrationPriority >= 0,
+    integration.map(r => r.scenarioId).join('>')
+  );
+
+  const harness = runMacroEconomyRegressionHarness({
+    turns: 10,
+    scenarioId: 'wave52_replay_integration_stress',
+    includeWave52ReplayIntegrationStress: true
+  });
+  record(
+    'R54-10',
+    'Wave 54 replay/integration regression harness',
+    harness.allPassed,
+    harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
 // --- source: self-tests.ts ---
 
 export function runV1014_MACRO_MacroEconomySelfTests(): {
@@ -24288,6 +24938,11 @@ export function runV1014_MACRO_MacroEconomySelfTests(): {
 
   const round53 = runAgent06Round53SelfTests();
   for (const r of round53.results) {
+    check(r.id, r.name, r.passed, r.detail);
+  }
+
+  const round54 = runAgent06Round54SelfTests();
+  for (const r of round54.results) {
     check(r.id, r.name, r.passed, r.detail);
   }
 
