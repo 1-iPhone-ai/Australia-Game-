@@ -3534,6 +3534,183 @@ export function nrDashBuildBorderStressConcentration(
   };
 }
 
+// --- bundled from core/constraint-profile-spread.ts ---
+export interface NrDashConstraintProfileSpread {
+  networkKinds: number;
+  meanRegionsPerConstraint: number;
+  stdDev: number;
+}
+
+/** Dispersion of primary-constraint region counts across NS network kinds. */
+export function nrDashBuildConstraintProfileSpread(
+  ns: NationalSystemsState | null
+): NrDashConstraintProfileSpread | null {
+  const profile = nrDashBuildConstraintProfile(ns);
+  if (!profile.length) return null;
+  const counts = profile.map(p => p.regionCount);
+  const meanRegionsPerConstraint = counts.reduce((s, n) => s + n, 0) / counts.length;
+  const variance =
+    counts.reduce((s, n) => s + (n - meanRegionsPerConstraint) ** 2, 0) / Math.max(counts.length, 1);
+  return {
+    networkKinds: profile.length,
+    meanRegionsPerConstraint: Math.round(meanRegionsPerConstraint * 1000) / 1000,
+    stdDev: Math.round(Math.sqrt(variance) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/bottleneck-network-share.ts ---
+export interface NrDashBottleneckNetworkShare {
+  activeCount: number;
+  topNetwork: NationalNetworkKind | null;
+  topNetworkShare: number;
+  concentrationIndex: number;
+}
+
+/** Herfindahl clustering of active NS bottlenecks by network kind. */
+export function nrDashBuildBottleneckNetworkShare(
+  ns: NationalSystemsState | null
+): NrDashBottleneckNetworkShare | null {
+  if (!ns?.bottlenecks?.length) return null;
+  const counts = new Map<NationalNetworkKind | 'unknown', number>();
+  ns.bottlenecks.forEach(b => {
+    const key = b.network ?? 'unknown';
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  });
+  const activeCount = ns.bottlenecks.length;
+  let topNetwork: NationalNetworkKind | null = null;
+  let topCount = 0;
+  let concentrationIndex = 0;
+  counts.forEach((n, network) => {
+    if (network !== 'unknown' && n > topCount) {
+      topCount = n;
+      topNetwork = network;
+    }
+    const share = n / activeCount;
+    concentrationIndex += share * share;
+  });
+  return {
+    activeCount,
+    topNetwork,
+    topNetworkShare: Math.round((topCount / activeCount) * 1000) / 1000,
+    concentrationIndex: Math.round(concentrationIndex * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/dependency-critical-share.ts ---
+export interface NrDashDependencyCriticalShare {
+  edgeCount: number;
+  criticalCount: number;
+  criticalShare: number;
+}
+
+/** Share of NS dependency edges marked critical importance. */
+export function nrDashBuildDependencyCriticalShare(
+  ns: NationalSystemsState | null
+): NrDashDependencyCriticalShare | null {
+  if (!ns?.dependencies?.length) return null;
+  const criticalCount = ns.dependencies.filter(d => d.importance === 'critical').length;
+  return {
+    edgeCount: ns.dependencies.length,
+    criticalCount,
+    criticalShare: Math.round((criticalCount / ns.dependencies.length) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/momentum-leader-gap.ts ---
+export interface NrDashMomentumLeaderGap {
+  leaderRegionId: string;
+  laggardRegionId: string;
+  leaderRank: number;
+  laggardRank: number;
+  rankGap: number;
+}
+
+/** Momentum rank spread between compare-tab leader and laggard (snapshot rows only). */
+export function nrDashBuildMomentumLeaderGap(
+  snap: NrDashAuthSnapshot | null,
+  ns: NationalSystemsState | null
+): NrDashMomentumLeaderGap | null {
+  if (!snap?.regions.length) return null;
+  const insights = nrDashBuildCompareInsights(snap, ns);
+  const leader = insights.momentumLeaders[0];
+  const laggard = insights.momentumLaggards[0];
+  if (!leader || !laggard) return null;
+  return {
+    leaderRegionId: leader.regionId,
+    laggardRegionId: laggard.regionId,
+    leaderRank: leader.rank,
+    laggardRank: laggard.rank,
+    rankGap: leader.rank - laggard.rank,
+  };
+}
+
+// --- bundled from core/derived-event-load.ts ---
+export interface NrDashDerivedEventLoad {
+  eventCount: number;
+  majorCount: number;
+  latestTurn: number | null;
+  majorShare: number;
+}
+
+/** Load of LR derived narrative events (authoritative list only). */
+export function nrDashBuildDerivedEventLoad(
+  lr: LivingRegionsWorldView | null
+): NrDashDerivedEventLoad | null {
+  if (!lr?.state.derived.length) return null;
+  const events = lr.state.derived;
+  const majorCount = events.filter(e => e.significance === 'major').length;
+  const latestTurn = Math.max(...events.map(e => e.turn));
+  return {
+    eventCount: events.length,
+    majorCount,
+    latestTurn,
+    majorShare: Math.round((majorCount / events.length) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/owner-concentration-index.ts ---
+export interface NrDashOwnerConcentrationIndex {
+  regionCount: number;
+  concentrationIndex: number;
+  dominantOwner: NrDashAuthSnapshot['regions'][number]['owner'];
+  dominantShare: number;
+}
+
+/** Herfindahl clustering of region ownership labels on the snapshot. */
+export function nrDashBuildOwnerConcentrationIndex(
+  snap: NrDashAuthSnapshot | null
+): NrDashOwnerConcentrationIndex | null {
+  if (!snap?.regions.length) return null;
+  const counts: Record<NrDashAuthSnapshot['regions'][number]['owner'], number> = {
+    you: 0,
+    rival: 0,
+    neutral: 0,
+    unknown: 0,
+  };
+  snap.regions.forEach(r => {
+    counts[r.owner] += 1;
+  });
+  const regionCount = snap.regions.length;
+  let dominantOwner: NrDashAuthSnapshot['regions'][number]['owner'] = 'unknown';
+  let topCount = 0;
+  let concentrationIndex = 0;
+  (Object.keys(counts) as Array<keyof typeof counts>).forEach(owner => {
+    const c = counts[owner];
+    if (c > topCount) {
+      topCount = c;
+      dominantOwner = owner;
+    }
+    const share = c / regionCount;
+    concentrationIndex += share * share;
+  });
+  return {
+    regionCount,
+    concentrationIndex: Math.round(concentrationIndex * 1000) / 1000,
+    dominantOwner,
+    dominantShare: Math.round((topCount / regionCount) * 1000) / 1000,
+  };
+}
+
 // --- bundled from tests/fixtures.ts ---
 function emptyNetworks(): Record<NationalNetworkKind, NationalRegionSystemsState['networks']['freight']> {
   const base = { utilization: 0.4, condition: 'healthy' as const };
@@ -4257,8 +4434,9 @@ const NrDashProvenanceStrip: React.FC<{ items: NrDashProvenance[] }> = ({ items 
 export const NrDashOverviewTab: React.FC<{
   snap: NrDashAuthSnapshot;
   nsState: NationalSystemsState | null;
+  lrView: LivingRegionsWorldView | null;
   onAsk?: (q: string) => void;
-}> = ({ snap, nsState, onAsk }) => (
+}> = ({ snap, nsState, lrView, onAsk }) => (
   <div className="space-y-4" data-testid="nr-dash-tab-overview">
     <NrDashProvenanceStrip items={snap.provenance} />
     <NrDashCompareInsightsPanel
@@ -4344,6 +4522,23 @@ export const NrDashOverviewTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-neutral-risk-share">
           Neutral risk exposure share {neutralShare.neutralShare} · {neutralShare.neutralExposure}/{neutralShare.totalExposure}{' '}
           index
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const ownerConc = nrDashBuildOwnerConcentrationIndex(snap);
+      return ownerConc ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-owner-concentration">
+          Owner concentration {ownerConc.concentrationIndex} · dominant {nrDashOwnerLabel(ownerConc.dominantOwner)} (
+          {Math.round(ownerConc.dominantShare * 100)}%)
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const derivedLoad = nrDashBuildDerivedEventLoad(lrView);
+      return derivedLoad ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-derived-event-load">
+          Derived event load {derivedLoad.eventCount} · {derivedLoad.majorCount} major · latest R{derivedLoad.latestTurn ?? '—'}
         </div>
       ) : null;
     })()}
@@ -4480,6 +4675,22 @@ export const NrDashRegionsTab: React.FC<{
       return span ? (
         <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dep-network-span">
           Dependency network span {span.distinctNetworks}/{span.edgeCount} · {span.networks.join(', ')}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const spread = nrDashBuildConstraintProfileSpread(nsState);
+      return spread ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-constraint-profile-spread">
+          Constraint profile spread σ {spread.stdDev} · μ {spread.meanRegionsPerConstraint} across {spread.networkKinds} kinds
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const gap = nrDashBuildMomentumLeaderGap(snap, nsState);
+      return gap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-momentum-leader-gap">
+          Momentum leader gap {gap.rankGap} · {gap.leaderRegionId} vs {gap.laggardRegionId}
         </div>
       ) : null;
     })()}
@@ -4704,6 +4915,23 @@ export const NrDashNetworksTab: React.FC<{
           {utilHeadroomDiv.headroomSpread}
         </div>
       )}
+      {(() => {
+        const share = nrDashBuildBottleneckNetworkShare(ns);
+        return share ? (
+          <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-bottleneck-network-share">
+            Bottleneck network share {share.concentrationIndex} · top {share.topNetwork ?? '—'} (
+            {Math.round(share.topNetworkShare * 100)}%)
+          </div>
+        ) : null;
+      })()}
+      {(() => {
+        const critical = nrDashBuildDependencyCriticalShare(ns);
+        return critical ? (
+          <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-dep-critical-share">
+            Dependency critical share {critical.criticalShare} · {critical.criticalCount}/{critical.edgeCount} edges
+          </div>
+        ) : null;
+      })()}
       {bottleneckConc && (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-bottleneck-concentration">
           Bottleneck concentration {bottleneckConc.concentrationIndex} · top {bottleneckConc.topRegionId ?? '—'} (
@@ -5046,7 +5274,7 @@ export const NationalRegionalDashboardModal: React.FC<NationalRegionalDashboardM
           {!snap ? (
             <p className="text-sm opacity-80">Enable Living Regions or National Systems to populate this dashboard.</p>
           ) : tab === 'overview' ? (
-            <NrDashOverviewTab snap={snap} nsState={nsState} onAsk={onAsk} />
+            <NrDashOverviewTab snap={snap} nsState={nsState} lrView={lrView} onAsk={onAsk} />
           ) : tab === 'regions' ? (
             <NrDashRegionsTab
               snap={snap}
@@ -5709,6 +5937,38 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   check('a23_border_stress_conc', 'Border stress concentration peaks on NSW fixture', () => {
     const conc = nrDashBuildBorderStressConcentration(createAgent23NsFixture())!;
     return conc.topRegionId === 'NSW' && conc.concentrationIndex > 0.1;
+  });
+
+  check('a23_constraint_profile_spread', 'Constraint profile spread is zero on uniform freight fixture', () => {
+    const spread = nrDashBuildConstraintProfileSpread(createAgent23NsFixture())!;
+    return spread.networkKinds === 1 && spread.stdDev === 0;
+  });
+
+  check('a23_bottleneck_network_share', 'Bottleneck network share is all freight on fixture', () => {
+    const share = nrDashBuildBottleneckNetworkShare(createAgent23NsFixture())!;
+    return share.topNetwork === 'freight' && share.concentrationIndex === 1;
+  });
+
+  check('a23_dep_critical_share', 'Dependency critical share counts one of three edges', () => {
+    const share = nrDashBuildDependencyCriticalShare(createAgent23NsFixture())!;
+    return share.edgeCount === 3 && share.criticalCount === 1 && share.criticalShare > 0.3;
+  });
+
+  check('a23_momentum_leader_gap', 'Momentum leader gap is zero when all bands stable', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const gap = nrDashBuildMomentumLeaderGap(snap, createAgent23NsFixture())!;
+    return gap.rankGap === 0 && gap.leaderRegionId.length > 0;
+  });
+
+  check('a23_derived_event_load', 'Derived event load counts one major LR event', () => {
+    const load = nrDashBuildDerivedEventLoad(createAgent23LrFixture())!;
+    return load.eventCount === 1 && load.majorCount === 1 && load.latestTurn === 4;
+  });
+
+  check('a23_owner_concentration', 'Owner concentration tracks rival portfolio on fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { NSW: 'rival' })!;
+    const idx = nrDashBuildOwnerConcentrationIndex(snap)!;
+    return idx.dominantOwner === 'unknown' && idx.concentrationIndex > 0.75;
   });
 
   return results;

@@ -90,6 +90,12 @@ import { nrDashBuildNationalBottleneckDensity } from '../core/national-bottlenec
 import { nrDashBuildNeutralRiskExposureShare } from '../core/neutral-risk-exposure-share.ts';
 import { nrDashBuildUtilHeadroomDivergence } from '../core/util-headroom-divergence.ts';
 import { nrDashBuildBorderStressConcentration } from '../core/border-stress-concentration.ts';
+import { nrDashBuildConstraintProfileSpread } from '../core/constraint-profile-spread.ts';
+import { nrDashBuildBottleneckNetworkShare } from '../core/bottleneck-network-share.ts';
+import { nrDashBuildDependencyCriticalShare } from '../core/dependency-critical-share.ts';
+import { nrDashBuildMomentumLeaderGap } from '../core/momentum-leader-gap.ts';
+import { nrDashBuildDerivedEventLoad } from '../core/derived-event-load.ts';
+import { nrDashBuildOwnerConcentrationIndex } from '../core/owner-concentration-index.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -143,8 +149,9 @@ const NrDashProvenanceStrip: React.FC<{ items: NrDashProvenance[] }> = ({ items 
 export const NrDashOverviewTab: React.FC<{
   snap: NrDashAuthSnapshot;
   nsState: NationalSystemsState | null;
+  lrView: LivingRegionsWorldView | null;
   onAsk?: (q: string) => void;
-}> = ({ snap, nsState, onAsk }) => (
+}> = ({ snap, nsState, lrView, onAsk }) => (
   <div className="space-y-4" data-testid="nr-dash-tab-overview">
     <NrDashProvenanceStrip items={snap.provenance} />
     <NrDashCompareInsightsPanel
@@ -230,6 +237,23 @@ export const NrDashOverviewTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-neutral-risk-share">
           Neutral risk exposure share {neutralShare.neutralShare} · {neutralShare.neutralExposure}/{neutralShare.totalExposure}{' '}
           index
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const ownerConc = nrDashBuildOwnerConcentrationIndex(snap);
+      return ownerConc ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-owner-concentration">
+          Owner concentration {ownerConc.concentrationIndex} · dominant {nrDashOwnerLabel(ownerConc.dominantOwner)} (
+          {Math.round(ownerConc.dominantShare * 100)}%)
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const derivedLoad = nrDashBuildDerivedEventLoad(lrView);
+      return derivedLoad ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-derived-event-load">
+          Derived event load {derivedLoad.eventCount} · {derivedLoad.majorCount} major · latest R{derivedLoad.latestTurn ?? '—'}
         </div>
       ) : null;
     })()}
@@ -366,6 +390,22 @@ export const NrDashRegionsTab: React.FC<{
       return span ? (
         <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dep-network-span">
           Dependency network span {span.distinctNetworks}/{span.edgeCount} · {span.networks.join(', ')}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const spread = nrDashBuildConstraintProfileSpread(nsState);
+      return spread ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-constraint-profile-spread">
+          Constraint profile spread σ {spread.stdDev} · μ {spread.meanRegionsPerConstraint} across {spread.networkKinds} kinds
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const gap = nrDashBuildMomentumLeaderGap(snap, nsState);
+      return gap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-momentum-leader-gap">
+          Momentum leader gap {gap.rankGap} · {gap.leaderRegionId} vs {gap.laggardRegionId}
         </div>
       ) : null;
     })()}
@@ -590,6 +630,23 @@ export const NrDashNetworksTab: React.FC<{
           {utilHeadroomDiv.headroomSpread}
         </div>
       )}
+      {(() => {
+        const share = nrDashBuildBottleneckNetworkShare(ns);
+        return share ? (
+          <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-bottleneck-network-share">
+            Bottleneck network share {share.concentrationIndex} · top {share.topNetwork ?? '—'} (
+            {Math.round(share.topNetworkShare * 100)}%)
+          </div>
+        ) : null;
+      })()}
+      {(() => {
+        const critical = nrDashBuildDependencyCriticalShare(ns);
+        return critical ? (
+          <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-dep-critical-share">
+            Dependency critical share {critical.criticalShare} · {critical.criticalCount}/{critical.edgeCount} edges
+          </div>
+        ) : null;
+      })()}
       {bottleneckConc && (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-bottleneck-concentration">
           Bottleneck concentration {bottleneckConc.concentrationIndex} · top {bottleneckConc.topRegionId ?? '—'} (
@@ -932,7 +989,7 @@ export const NationalRegionalDashboardModal: React.FC<NationalRegionalDashboardM
           {!snap ? (
             <p className="text-sm opacity-80">Enable Living Regions or National Systems to populate this dashboard.</p>
           ) : tab === 'overview' ? (
-            <NrDashOverviewTab snap={snap} nsState={nsState} onAsk={onAsk} />
+            <NrDashOverviewTab snap={snap} nsState={nsState} lrView={lrView} onAsk={onAsk} />
           ) : tab === 'regions' ? (
             <NrDashRegionsTab
               snap={snap}

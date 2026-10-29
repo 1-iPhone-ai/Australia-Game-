@@ -86,6 +86,12 @@ import { nrDashBuildNationalBottleneckDensity } from '../core/national-bottlenec
 import { nrDashBuildNeutralRiskExposureShare } from '../core/neutral-risk-exposure-share.ts';
 import { nrDashBuildUtilHeadroomDivergence } from '../core/util-headroom-divergence.ts';
 import { nrDashBuildBorderStressConcentration } from '../core/border-stress-concentration.ts';
+import { nrDashBuildConstraintProfileSpread } from '../core/constraint-profile-spread.ts';
+import { nrDashBuildBottleneckNetworkShare } from '../core/bottleneck-network-share.ts';
+import { nrDashBuildDependencyCriticalShare } from '../core/dependency-critical-share.ts';
+import { nrDashBuildMomentumLeaderGap } from '../core/momentum-leader-gap.ts';
+import { nrDashBuildDerivedEventLoad } from '../core/derived-event-load.ts';
+import { nrDashBuildOwnerConcentrationIndex } from '../core/owner-concentration-index.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -738,6 +744,38 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   check('a23_border_stress_conc', 'Border stress concentration peaks on NSW fixture', () => {
     const conc = nrDashBuildBorderStressConcentration(createAgent23NsFixture())!;
     return conc.topRegionId === 'NSW' && conc.concentrationIndex > 0.1;
+  });
+
+  check('a23_constraint_profile_spread', 'Constraint profile spread is zero on uniform freight fixture', () => {
+    const spread = nrDashBuildConstraintProfileSpread(createAgent23NsFixture())!;
+    return spread.networkKinds === 1 && spread.stdDev === 0;
+  });
+
+  check('a23_bottleneck_network_share', 'Bottleneck network share is all freight on fixture', () => {
+    const share = nrDashBuildBottleneckNetworkShare(createAgent23NsFixture())!;
+    return share.topNetwork === 'freight' && share.concentrationIndex === 1;
+  });
+
+  check('a23_dep_critical_share', 'Dependency critical share counts one of three edges', () => {
+    const share = nrDashBuildDependencyCriticalShare(createAgent23NsFixture())!;
+    return share.edgeCount === 3 && share.criticalCount === 1 && share.criticalShare > 0.3;
+  });
+
+  check('a23_momentum_leader_gap', 'Momentum leader gap is zero when all bands stable', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const gap = nrDashBuildMomentumLeaderGap(snap, createAgent23NsFixture())!;
+    return gap.rankGap === 0 && gap.leaderRegionId.length > 0;
+  });
+
+  check('a23_derived_event_load', 'Derived event load counts one major LR event', () => {
+    const load = nrDashBuildDerivedEventLoad(createAgent23LrFixture())!;
+    return load.eventCount === 1 && load.majorCount === 1 && load.latestTurn === 4;
+  });
+
+  check('a23_owner_concentration', 'Owner concentration tracks rival portfolio on fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { NSW: 'rival' })!;
+    const idx = nrDashBuildOwnerConcentrationIndex(snap)!;
+    return idx.dominantOwner === 'unknown' && idx.concentrationIndex > 0.75;
   });
 
   return results;
