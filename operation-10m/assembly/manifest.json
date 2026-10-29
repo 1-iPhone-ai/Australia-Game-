@@ -9,148 +9,148 @@
       "moduleId": "agent-01-strategic-gameplay",
       "path": "operation-10m/modules/agent-01-strategic-gameplay/chunk.tsx",
       "slot": "pre-final-export",
-      "contentSha256": "44d3eeb619f2e818918dde9dcfe60599b1904326690da7bee5dd2701f120dfcd"
+      "contentSha256": "27fd108f354ed9dfc9406bccdb5f99a6341b2ac21a3057994561a47200f91924"
     },
     {
       "moduleId": "agent-02-turns-time",
       "path": "operation-10m/modules/agent-02-turns-time/chunk.tsx",
       "slot": "pre-final-export",
-      "contentSha256": "35d930574abaf11ff540f56f3724ade9d91a58bf5be6423561bb27beb6880cd8"
+      "contentSha256": "9b13be194dbd7de7d390f22b55d1474f0b60b17062a77a964eb46ff8f34dbcb2"
     },
     {
       "moduleId": "agent-03-research-tech",
       "path": "operation-10m/modules/agent-03-research-tech/chunk.tsx",
       "slot": "post-v10z",
-      "contentSha256": "59a278efe753f0c293f2b35d26d5ca217988cae50e179698958f121c19b7f85a",
+      "contentSha256": "281f07a74c9b8cc1157f77495225655559db28a60ffd293a8346f0c8387466fd",
       "touchesSaveFormat": true
     },
     {
       "moduleId": "agent-04-modes-scenarios",
       "path": "operation-10m/modules/agent-04-modes-scenarios/chunk.tsx",
       "slot": "scenario-engine-extension",
-      "contentSha256": "b168206a4eee9fc0cd13a1ebc6428c6ac4cfd6a499d8ee94c04e7af8614cfe6d",
+      "contentSha256": "f2dbb81e924f221a1ea00d967bf46c1dcbcf29e08be5468daf9e19fd117baa33",
       "touchesSaveFormat": true
     },
     {
       "moduleId": "agent-05-events",
       "path": "operation-10m/modules/agent-05-events/chunk.tsx",
       "slot": "pre-final-export",
-      "contentSha256": "6ceb95946ddeb3572a2328a0e71b43272094ac14fb9efccd6a8725f6e7623569"
+      "contentSha256": "f7f91a0c6cf88b1692aec0a4aeecadd3e3911216d45e5923844941c3685311df"
     },
     {
       "moduleId": "agent-06-macroeconomy",
       "path": "operation-10m/modules/agent-06-macroeconomy/chunk.tsx",
       "slot": "append-only-self-tests",
-      "contentSha256": "a6b98ab3f800adfd82726e77b7ba18eeff8d67ac4c87e2b70b3cd353f899ccef"
+      "contentSha256": "e13f4b81d3b23211e06ba8e84b8a55843f5e6e350175f9eca212b9d4784b172a"
     },
     {
       "moduleId": "agent-07-public-finance",
       "path": "operation-10m/modules/agent-07-public-finance/chunk.tsx",
       "slot": "pre-final-export",
-      "contentSha256": "a948ddfc85b5a70216dcbbd304956269d9e0b97493c4ca9f52dcbb78eb8d6a60"
+      "contentSha256": "6b34535873f1582d1b164b3176064995c5567712dffcec02002d2c826a1ed9b5"
     },
     {
       "moduleId": "agent-08-companies",
       "path": "operation-10m/modules/agent-08-companies/chunk.tsx",
       "slot": "append-only-self-tests",
-      "contentSha256": "743138f6ca7f374c185bb3f68d7492d377ccd951cb0eff4ac91a56d48a194ede"
+      "contentSha256": "07bb9a5fc06cfa453f306e017d5583c58328bee610e4e52f04073af01281607a"
     },
     {
       "moduleId": "agent-09-population",
       "path": "operation-10m/modules/agent-09-population/chunk.tsx",
       "slot": "pre-final-export",
-      "contentSha256": "dbfeae6d4edb519dfbba06d27b37c40741eb53740ee4be6a0f3335e451dbb45b"
+      "contentSha256": "3121602b98e46355d6ee5a9d18bb78f4fa9d657154bc64de0fe54bafd5ade5ff"
     },
     {
       "moduleId": "agent-10-finance",
       "path": "operation-10m/modules/agent-10-finance/chunk.tsx",
       "slot": "append-only-self-tests",
-      "contentSha256": "16fb5868f367adbefd9dae1a4d21ab168b2c7cd138a123bead51576ff2bc4be8"
+      "contentSha256": "4e0a932ca6aea14727ae301930107b8eb1c124d722960bfa4279dbbeb3b7901c"
     },
     {
       "moduleId": "agent-11-cities",
       "path": "operation-10m/modules/agent-11-cities/chunk.tsx",
       "slot": "pre-final-export",
-      "contentSha256": "bd3b75cffd2c9392bc239c95e605c303b3c17e0bfd4919c1cb43b8fd98d04a9c"
+      "contentSha256": "ee766706b39ec89e2195697fbbc328e65b86f811563425bddbabc17b86b60684"
     },
     {
       "moduleId": "agent-12-infrastructure",
       "path": "operation-10m/modules/agent-12-infrastructure/chunk.tsx",
       "slot": "pre-final-export",
-      "contentSha256": "ac690bc103f866667588ee7bc05af5665b725b5022a482b62bee48e11c051ead"
+      "contentSha256": "c40c4b27eb7e9a34604ac17369923f08abbfaa76727a34de39ed6d785ff47378"
     },
     {
       "moduleId": "agent-13-energy",
       "path": "operation-10m/modules/agent-13-energy/chunk.tsx",
       "slot": "pre-final-export",
-      "contentSha256": "a590b316717711c635a239c26529ec494987eefdbe9488a6ea7ed12c9601cb6e"
+      "contentSha256": "e783ab31f352e5f0670bff6fa6b34027afffc97672931ac455a8fcf8fe31c779"
     },
     {
       "moduleId": "agent-14-housing",
       "path": "operation-10m/modules/agent-14-housing/chunk.tsx",
       "slot": "pre-final-export",
-      "contentSha256": "681e7b1b72dfc56861ce1079e3df54725e05ff2f63c6d5af79c95ed49df836cb"
+      "contentSha256": "bf4e6c45f6f92708b2b0db2ee8241adf560f5bbf30071a7a018979755cb35c60"
     },
     {
       "moduleId": "agent-15-trade",
       "path": "operation-10m/modules/agent-15-trade/chunk.tsx",
       "slot": "pre-final-export",
-      "contentSha256": "cf7d2821babcd4c182de1a7d5fb1d626a4895da93b2d0f7a5f61c5b0768f4a0c"
+      "contentSha256": "7c522c4c27a288aca35fdc643c2d067b2b2d98703a6d03c6d153fcc4ae8c4dbd"
     },
     {
       "moduleId": "agent-16-guardian",
       "path": "operation-10m/modules/agent-16-guardian/chunk.tsx",
       "slot": "pre-final-export",
-      "contentSha256": "9db064c05926b9167716341729a50c04396a111d21e2ecba782e2b53a569b1dd"
+      "contentSha256": "688d2c8a07d2da2e442a53d88f2a36b0d96c361cd5eaba35d31b3f4ca62b2127"
     },
     {
       "moduleId": "agent-17-command-center",
       "path": "operation-10m/modules/agent-17-command-center/chunk.tsx",
       "slot": "pre-final-export",
-      "contentSha256": "b71da368dc3b89f83acaa240409d7255c68a120ccfcade9f71d8bb7546c1b37c"
+      "contentSha256": "c68467d25a6155d801e32fa37ea484305ee69121865fb534a31b82babe1b5e37"
     },
     {
       "moduleId": "agent-18-team-ai",
       "path": "operation-10m/modules/agent-18-team-ai/chunk.tsx",
       "slot": "pre-final-export",
-      "contentSha256": "68c6ecba6247b2d7fefd027a1eb4e9b67867d7a1d8a08bcd123cd9113684d276"
+      "contentSha256": "21d2420a71ba799d3a5e5ca52e1cb369c2131ca874afb176824c7f892c50c3d3"
     },
     {
       "moduleId": "agent-19-ai-memory",
       "path": "operation-10m/modules/agent-19-ai-memory/chunk.tsx",
       "slot": "pre-final-export",
-      "contentSha256": "101991bf75c0a8efb777012977e175715bb8905adf8117d1a52682dd7c3ff801"
+      "contentSha256": "a5b32ad36bdb5b0930b6bb4d63fafef5f9d32b3085845098884f5ca226d43108"
     },
     {
       "moduleId": "agent-20-automation",
       "path": "operation-10m/modules/agent-20-automation/chunk.tsx",
       "slot": "append-only-self-tests",
-      "contentSha256": "579fcc27e94689ba1be71aa8ffcea051840a4adbbd0f9a5b6e09cd4d629d272b",
+      "contentSha256": "a463bb9bb1deae696b094380f1befa8117bd5b642d8db4d1c962961b05222dfd",
       "touchesSaveFormat": true
     },
     {
       "moduleId": "agent-21-forecasting",
       "path": "operation-10m/modules/agent-21-forecasting/chunk.tsx",
       "slot": "O10M_AGENT21_INTEGRATION_ANCHOR",
-      "contentSha256": "a61af28dde5289e9ee6e16961429e471e2266d417ee98ddd0c8d84e5732a1d55"
+      "contentSha256": "6efa30b026cddd724548006874b771aca5e5693418b0607c3ff1cd50dcc73dc4"
     },
     {
       "moduleId": "agent-22-ui",
       "path": "operation-10m/modules/agent-22-ui/chunk.tsx",
       "slot": "post-v10z",
-      "contentSha256": "5f6e91497797578bcbd7af387830c0dbca9b29ef2e94a85c94168799ef8213a4"
+      "contentSha256": "94b2957b8506e6f9a530e122a822a33f8389dd181d9a675100435b034be29d7b"
     },
     {
       "moduleId": "agent-23-dashboards",
       "path": "operation-10m/modules/agent-23-dashboards/chunk.tsx",
       "slot": "post-living-regions-national-systems",
-      "contentSha256": "f3d6e7f653321ed5e276b510f541d0863cd34626e8996b1439ed92489889964f"
+      "contentSha256": "d1f0a6478541654d8b970244ab6ff1b6a1e379692b1a13366fe673a14b2b68f3"
     },
     {
       "moduleId": "agent-24-history",
       "path": "operation-10m/modules/agent-24-history/chunk.tsx",
       "slot": "pre-final-export",
-      "contentSha256": "5839158d7dcc904a00bfcdda6a648cf3867b2b0b24e815befd75293986c064b6"
+      "contentSha256": "c50baf38b249e02683acf3ebf71df56bfa07e096be600ebc717bcbc52f582278"
     },
     {
       "moduleId": "agent-25-op10m-registry",
