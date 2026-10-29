@@ -1915,6 +1915,229 @@ export function explainabilityConfidenceAtLeast(
 }
 
 
+// --- source: composite-recovery-bridge.ts ---
+
+export const AGENT19_COMPOSITE_RECOVERY_HINT_CAP = 5;
+
+/** Maps composite turn-pack audit failures to player-facing recovery hints. */
+export function buildCompositeRecoveryHints(report: TurnPackCompositeAuditReport): string[] {
+  const hints: string[] = [];
+  if (!report.sliceOk) {
+    hints.push('Reconcile memoryInfluence with slice deltas before publishing turn explainability.');
+  }
+  if (!report.giRedactionOk) {
+    hints.push('Align Ask-the-Game claims with redacted inspection view for this turn.');
+  }
+  if (!report.driftOk) {
+    hints.push('Review influence spike vs prior turn — disclose drift in session rollup.');
+  }
+  report.findings
+    .filter(f => f.severity === 'fail')
+    .slice(0, 2)
+    .forEach(f => hints.push(`Fix ${f.code}: ${f.message}`));
+  if (!hints.length) {
+    hints.push('Composite audit passed — turn pack ready for session rollup.');
+  }
+  return hints.slice(0, AGENT19_COMPOSITE_RECOVERY_HINT_CAP);
+}
+
+export function compositeRecoveryNeeded(report: TurnPackCompositeAuditReport): boolean {
+  return !report.sliceOk || !report.giRedactionOk || !report.driftOk;
+}
+
+
+// --- source: session-confidence-rollup.ts ---
+  computeExplainabilityConfidence,
+  type ExplainabilityConfidenceBand,
+} from './explainability-confidence-band.ts';
+
+export interface SessionConfidenceRollup {
+  turnCount: number;
+  minBand: ExplainabilityConfidenceBand;
+  averageScore: number;
+  narrativeLines: string[];
+}
+
+/** Rolls up per-turn confidence (integrity + optional composite) across a session. */
+export function buildSessionConfidenceRollup(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+  },
+): SessionConfidenceRollup {
+  const bands: ExplainabilityConfidenceBand[] = ['low', 'medium', 'high'];
+  let scoreSum = 0;
+  let minIdx = bands.length - 1;
+  packs.forEach((pack, i) => {
+    const integrity = auditExplainabilityIntegrity(params.memory, pack.turn);
+    const composite = auditTurnPackComposite(pack, {
+      decisionsBefore: params.decisionsByTurn[i]?.before ?? [],
+      decisionsAfter: params.decisionsByTurn[i]?.after ?? [],
+    });
+    const conf = computeExplainabilityConfidence({ integrity, composite });
+    scoreSum += conf.score;
+    const idx = bands.indexOf(conf.band);
+    if (idx >= 0 && idx < minIdx) minIdx = idx;
+  });
+  const turnCount = packs.length;
+  const averageScore = turnCount ? Math.round(scoreSum / turnCount) : 100;
+  const minBand = bands[minIdx] ?? 'high';
+  const narrativeLines = [
+    `Session confidence rollup (${turnCount} turn(s)): min band ${minBand}, avg score ${averageScore}/100.`,
+  ];
+  return { turnCount, minBand, averageScore, narrativeLines };
+}
+
+export function sessionConfidenceAtLeast(rollup: SessionConfidenceRollup, minBand: ExplainabilityConfidenceBand): boolean {
+  const order: ExplainabilityConfidenceBand[] = ['low', 'medium', 'high'];
+  return order.indexOf(rollup.minBand) >= order.indexOf(minBand);
+}
+
+
+// --- source: horizon-slice-alignment-audit.ts ---
+  AiMemoryHorizonSnapshot,
+  AiMemoryInfluenceSlice,
+  MemoryInfluenceAuditFinding,
+  MemoryInfluenceDecisionLike,
+} from './types.ts';
+
+export interface HorizonSliceAlignmentReport {
+  alignmentOk: boolean;
+  findings: MemoryInfluenceAuditFinding[];
+  narrativeLines: string[];
+}
+
+/** Flags slices that cite horizons inactive in the current snapshot. */
+export function auditHorizonSliceAlignment(
+  snapshot: AiMemoryHorizonSnapshot,
+  decisions: MemoryInfluenceDecisionLike[],
+): HorizonSliceAlignmentReport {
+  const slices: AiMemoryInfluenceSlice[] = decisions.flatMap(d => d.memoryInfluenceSlices || []);
+  const findings: MemoryInfluenceAuditFinding[] = [];
+  slices.forEach(s => {
+    if (s.horizon === 'long_term_prior' && !snapshot.longTermPriorActive) {
+      findings.push({
+        code: 'horizon_slice_inactive',
+        severity: 'fail',
+        message: `long_term_prior slice (${s.delta}) but prior horizon inactive in snapshot.`,
+      });
+    }
+    if (s.horizon === 'long_term_prior' && snapshot.longTermPriorBeliefCount === 0) {
+      findings.push({
+        code: 'horizon_slice_empty_prior',
+        severity: 'warn',
+        message: 'long_term_prior slice with zero prior beliefs in snapshot.',
+      });
+    }
+  });
+  const alignmentOk = !findings.some(f => f.severity === 'fail');
+  const narrativeLines = [
+    alignmentOk
+      ? `Horizon slice alignment ok (${slices.length} slice(s) checked).`
+      : `Horizon slice alignment FAIL — ${findings.filter(f => f.severity === 'fail').length} inactive horizon cite(s).`,
+  ];
+  return { alignmentOk, findings, narrativeLines };
+}
+
+export function horizonSliceAlignmentOk(report: HorizonSliceAlignmentReport): boolean {
+  return report.alignmentOk;
+}
+
+
+// --- source: match-explainability-gate.ts ---
+  buildSessionConfidenceRollup,
+  sessionConfidenceAtLeast,
+} from './session-confidence-rollup.ts';
+
+export interface MatchExplainabilityGateReport {
+  gateOpen: boolean;
+  giWithinCap: boolean;
+  sessionRollupTurns: number;
+  narrativeLines: string[];
+}
+
+/** Match-level gate: session rollup present, GI cap respected, min confidence band. */
+export function auditMatchExplainabilityGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityGateReport {
+  const minBand = params.minConfidenceBand ?? 'medium';
+  const session = buildSessionExplainabilityRollup(packs);
+  const gi = buildSessionGiClaimsRollup(packs, { memoryInfluenceEnabled: params.memoryInfluenceEnabled });
+  const confidence = buildSessionConfidenceRollup(packs, {
+    memory: params.memory,
+    decisionsByTurn: params.decisionsByTurn,
+  });
+  const giWithinCap = sessionGiRollupWithinCap(gi);
+  const confidenceOk = sessionConfidenceAtLeast(confidence, minBand);
+  const gateOpen = packs.length > 0 && giWithinCap && confidenceOk;
+  const narrativeLines = [
+    `Match explainability gate: ${gateOpen ? 'OPEN' : 'CLOSED'} (${packs.length} pack(s), GI cap ${giWithinCap ? 'ok' : 'FAIL'}, confidence ${confidence.minBand}).`,
+    ...session.narrativeLines.slice(0, 1),
+    ...confidence.narrativeLines,
+  ];
+  return {
+    gateOpen,
+    giWithinCap,
+    sessionRollupTurns: session.turnCount,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityGateOpen(report: MatchExplainabilityGateReport): boolean {
+  return report.gateOpen;
+}
+
+
+// --- source: trace-composite-bridge.ts ---
+
+export interface TraceCompositeBridgeReport {
+  compositeOk: boolean;
+  traceOk: boolean;
+  combinedOk: boolean;
+  composite: TurnPackCompositeAuditReport;
+  trace: DecisionTraceContinuityReport;
+  narrativeLines: string[];
+}
+
+/** Runs composite audit and trace continuity as one player-facing gate. */
+export function auditTraceCompositeBridge(
+  pack: TurnExplainabilityPack,
+  params: {
+    decisionsBefore: MemoryInfluenceDecisionLike[];
+    decisionsAfter: MemoryInfluenceDecisionLike[];
+  },
+): TraceCompositeBridgeReport {
+  const composite = auditTurnPackComposite(pack, params);
+  const trace = auditDecisionTraceContinuity(params.decisionsBefore, params.decisionsAfter);
+  const compositeOk = turnPackCompositeOk(composite);
+  const traceOk = decisionTraceContinuityOk(trace);
+  const combinedOk = compositeOk && traceOk;
+  const narrativeLines = [
+    `Trace+composite bridge @ turn ${pack.turn}: ${combinedOk ? 'PASS' : 'FAIL'} (composite ${compositeOk ? 'ok' : 'fail'}, trace ${traceOk ? 'ok' : 'fail'}).`,
+    ...composite.narrativeLines.slice(0, 1),
+    ...trace.narrativeLines,
+  ];
+  return { compositeOk, traceOk, combinedOk, composite, trace, narrativeLines };
+}
+
+export function traceCompositeBridgeOk(report: TraceCompositeBridgeReport): boolean {
+  return report.combinedOk;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -2066,6 +2289,19 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   computeExplainabilityConfidence,
   explainabilityConfidenceAtLeast,
 } from '../explainability-confidence-band.ts';
+  buildCompositeRecoveryHints,
+  compositeRecoveryNeeded,
+  AGENT19_COMPOSITE_RECOVERY_HINT_CAP,
+} from '../composite-recovery-bridge.ts';
+  buildSessionConfidenceRollup,
+  sessionConfidenceAtLeast,
+} from '../session-confidence-rollup.ts';
+  auditHorizonSliceAlignment,
+  horizonSliceAlignmentOk,
+} from '../horizon-slice-alignment-audit.ts';
+  auditMatchExplainabilityGate,
+  matchExplainabilityGateOpen,
+} from '../match-explainability-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -3093,6 +3329,190 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             confidence.band === 'low' &&
             !explainabilityConfidenceAtLeast(confidence, 'medium')
           ) || JSON.stringify({ integrity, confidence });
+        },
+      ],
+      [
+        'a19_r9_composite_recovery',
+        'Composite recovery hints when slice audit fails',
+        () => {
+          const pack = buildTurnExplainabilityPack({
+            turn: 3,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'x', score: 1 }],
+            decisionsAfter: [
+              {
+                type: 'x',
+                score: 9,
+                memoryInfluence: 4,
+                memoryInfluenceSlices: [{ horizon: 'team_directive', delta: 1, reason: 'plan' }],
+              },
+            ],
+          });
+          const report = auditTurnPackComposite(pack, {
+            decisionsBefore: [{ type: 'x', score: 1 }],
+            decisionsAfter: [
+              {
+                type: 'x',
+                score: 9,
+                memoryInfluence: 4,
+                memoryInfluenceSlices: [{ horizon: 'team_directive', delta: 1, reason: 'plan' }],
+              },
+            ],
+          });
+          const hints = buildCompositeRecoveryHints(report);
+          return (
+            compositeRecoveryNeeded(report) &&
+            hints.some(h => h.includes('slice')) &&
+            hints.length <= AGENT19_COMPOSITE_RECOVERY_HINT_CAP
+          ) || hints.join('|');
+        },
+      ],
+      [
+        'a19_r9_composite_recovery_pass',
+        'Composite recovery hints praise clean audit',
+        () => {
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 5 }],
+            decisionsAfter: [
+              {
+                type: 'a',
+                score: 10,
+                memoryInfluence: 5,
+                memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 'trust' }],
+              },
+            ],
+          });
+          const report = auditTurnPackComposite(pack, {
+            decisionsBefore: [{ type: 'a', score: 5 }],
+            decisionsAfter: [
+              {
+                type: 'a',
+                score: 10,
+                memoryInfluence: 5,
+                memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 'trust' }],
+              },
+            ],
+          });
+          const hints = buildCompositeRecoveryHints(report);
+          return !compositeRecoveryNeeded(report) && hints[0].includes('passed') || hints.join('|');
+        },
+      ],
+      [
+        'a19_r9_session_confidence',
+        'Session confidence rollup tracks min band across turns',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'a', score: 5 }];
+          const decisionsAfter = [
+            {
+              type: 'a',
+              score: 10,
+              memoryInfluence: 5,
+              memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 't' }],
+            },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const rollup = buildSessionConfidenceRollup([pack], {
+            memory: mem,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+          });
+          return (
+            rollup.turnCount === 1 &&
+            sessionConfidenceAtLeast(rollup, 'medium') &&
+            rollup.averageScore >= 55
+          ) || JSON.stringify(rollup);
+        },
+      ],
+      [
+        'a19_r9_horizon_slice_ok',
+        'Horizon slice alignment ok for short-term slices',
+        () => {
+          const snap = buildAiMemoryHorizonSnapshot(null);
+          const report = auditHorizonSliceAlignment(snap, [
+            {
+              type: 'sell',
+              score: 10,
+              memoryInfluence: 2,
+              memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'event' }],
+            },
+          ]);
+          return horizonSliceAlignmentOk(report) || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r9_horizon_slice_fail',
+        'Horizon slice alignment fails on inactive long-term prior',
+        () => {
+          const snap = buildAiMemoryHorizonSnapshot(null, { persistentMemoryEnabled: false });
+          const report = auditHorizonSliceAlignment(snap, [
+            {
+              type: 'sell',
+              score: 10,
+              memoryInfluence: 3,
+              memoryInfluenceSlices: [{ horizon: 'long_term_prior', delta: 3, reason: 'prior' }],
+            },
+          ]);
+          return !horizonSliceAlignmentOk(report) && report.findings.some(f => f.code === 'horizon_slice_inactive') || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r9_match_gate',
+        'Match gate opens for healthy single-turn session',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'a', score: 5 }];
+          const decisionsAfter = [
+            {
+              type: 'a',
+              score: 10,
+              memoryInfluence: 5,
+              memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 't' }],
+            },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const gate = auditMatchExplainabilityGate([pack], {
+            memory: mem,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityGateOpen(gate) && gate.sessionRollupTurns === 1 || JSON.stringify(gate);
+        },
+      ],
+      [
+        'a19_r9_trace_composite',
+        'Trace composite bridge requires slice + continuity',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'm' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 4,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const report = auditTraceCompositeBridge(pack, { decisionsBefore, decisionsAfter });
+          return traceCompositeBridgeOk(report) && report.traceOk && report.compositeOk || JSON.stringify(report);
         },
       ],
     ]),
