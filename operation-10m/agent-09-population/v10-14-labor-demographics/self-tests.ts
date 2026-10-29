@@ -265,6 +265,10 @@ import { computeNationalWorkforceSteadfastDepthIndex } from './national-workforc
 import { gritEaseForRegion } from './catalog/workforce-grit-levers';
 import { resolveEaseForRegion } from './catalog/workforce-resolve-levers';
 import { steadfastEaseForRegion } from './catalog/workforce-steadfast-levers';
+import { computeNationalSteadfastAdvocacyCouplingBrief } from './steadfast-advocacy-coupling-brief';
+import { computeNationalAdvocacyResilienceOutlook } from './advocacy-resilience-outlook';
+import { computeNationalSubjectAdvocacySteadfastReadinessBrief } from './subject-advocacy-steadfast-readiness-brief';
+import { computeNationalWorkforceAdvocacyDepthIndex } from './national-workforce-advocacy-depth-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -3317,7 +3321,83 @@ export function runV1014LaborDemographicsSelfTests(): {
   );
   check('R5116', steadfastEaseForRegion('NSW', 'technology') > 0, 'steadfast ease for region');
 
-  for (let i = 19; i <= 51; i++) {
+  check('R5201', Boolean(r1.state.steadfastAdvocacyCouplingBrief?.band), 'steadfast advocacy on state');
+  check(
+    'R5202',
+    (r1.state.steadfastAdvocacyCouplingBrief?.steadfastDrag ?? 0) >= 0,
+    'steadfast advocacy drag'
+  );
+  check('R5203', Boolean(r1.state.advocacyResilienceOutlook?.band), 'advocacy resilience on state');
+  check(
+    'R5204',
+    (r1.state.advocacyResilienceOutlook?.steadfastDrag ?? 0) >= 0,
+    'advocacy resilience steadfast drag'
+  );
+  check(
+    'R5205',
+    Boolean(r1.state.subjectAdvocacySteadfastReadinessBrief?.band),
+    'subject advocacy steadfast on state'
+  );
+  check(
+    'R5206',
+    Boolean(r1.state.nationalWorkforceAdvocacyDepthIndex?.band),
+    'workforce advocacy depth on state'
+  );
+  check(
+    'R5207',
+    detectLaborDemographicsQuery('steadfast advocacy coupling') === 'steadfast_advocacy_coupling',
+    'GI steadfast advocacy detect'
+  );
+  check(
+    'R5208',
+    detectLaborDemographicsQuery('advocacy resilience') === 'advocacy_resilience',
+    'GI advocacy resilience detect'
+  );
+  check(
+    'R5209',
+    detectLaborDemographicsQuery('subject advocacy steadfast readiness') === 'subject_advocacy_steadfast_readiness',
+    'GI subject advocacy steadfast detect'
+  );
+  check(
+    'R5210',
+    detectLaborDemographicsQuery('workforce advocacy depth') === 'workforce_advocacy_depth',
+    'GI workforce advocacy depth detect'
+  );
+  check(
+    'R5211',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_advocacy_depth').headline.length > 5,
+    'GI workforce advocacy depth answer'
+  );
+  const steadfastAdvocacyOnly = computeNationalSteadfastAdvocacyCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceSteadfastDepthIndex
+  );
+  check('R5212', steadfastAdvocacyOnly.summary.length > 10, 'steadfast advocacy standalone summary');
+  const advocacyResilienceOnly = computeNationalAdvocacyResilienceOutlook(
+    r1.state,
+    r1.state.steadfastResilienceOutlook
+  );
+  check('R5213', advocacyResilienceOnly.band.length > 3, 'advocacy resilience band string');
+  const subjectAdvocacySteadfastOnly = computeNationalSubjectAdvocacySteadfastReadinessBrief(
+    r1.state,
+    r1.state.subjectSteadfastReadinessBrief,
+    r1.state.nationalWorkforceSteadfastDepthIndex
+  );
+  check('R5214', subjectAdvocacySteadfastOnly.advocacyDrag >= 0, 'subject advocacy steadfast drag');
+  check(
+    'R5215',
+    computeNationalWorkforceAdvocacyDepthIndex(
+      rHhBad.state,
+      rHhBad.state.steadfastAdvocacyCouplingBrief,
+      rHhBad.state.advocacyResilienceOutlook,
+      rHhBad.state.subjectAdvocacySteadfastReadinessBrief
+    ).stewardNote.length > 8,
+    'advocacy depth steward note'
+  );
+  check('R5216', advocacyEaseForRegion('NSW', 'technology') > 0, 'advocacy ease for region');
+
+
+  for (let i = 19; i <= 52; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
     check(`LD${String(i).padStart(2, '0')}`, ok, `invariant bundle ${i}`);
   }

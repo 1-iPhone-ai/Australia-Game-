@@ -191,7 +191,11 @@ export type LaborGiQueryTopic =
   | 'resolve_steadfast_coupling'
   | 'steadfast_resilience'
   | 'subject_steadfast_readiness'
-  | 'workforce_steadfast_depth';
+  | 'workforce_steadfast_depth'
+  | 'steadfast_advocacy_coupling'
+  | 'advocacy_resilience'
+  | 'subject_advocacy_steadfast_readiness'
+  | 'workforce_advocacy_depth';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -262,6 +266,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(workforce grit depth|grit depth index labor)/.test(q)) return 'workforce_grit_depth';
   if (/\b(workforce resolve depth|resolve depth index labor)/.test(q)) return 'workforce_resolve_depth';
   if (/\b(workforce steadfast depth|steadfast depth index labor)/.test(q)) return 'workforce_steadfast_depth';
+  if (/\b(steadfast advocacy|steadfast-advocacy coupling)/.test(q)) return 'steadfast_advocacy_coupling';
+  if (/\b(advocacy resilience)/.test(q)) return 'advocacy_resilience';
+  if (/\b(subject advocacy steadfast readiness|subject advocacy readiness steadfast)/.test(q)) return 'subject_advocacy_steadfast_readiness';
+  if (/\b(workforce advocacy depth|advocacy depth index labor)/.test(q)) return 'workforce_advocacy_depth';
   if (/\b(workforce perseverance depth|perseverance depth index labor)/.test(q)) return 'workforce_perseverance_depth';
   if (/\b(workforce tenacity depth|tenacity depth index labor)/.test(q)) return 'workforce_tenacity_depth';
   if (/\b(workforce tenacity|tenacity index labor)/.test(q)) return 'workforce_tenacity';
@@ -1930,6 +1938,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Steadfast band ${state.nationalWorkforceSteadfastDepthIndex?.band ?? 'unknown'}; steadfast drag ${Math.round(state.nationalWorkforceSteadfastDepthIndex?.steadfastDrag ?? 0)}.`,
         inference: state.nationalWorkforceSteadfastDepthIndex?.stewardNote || state.summary,
         projection: 'Steadfast depth synthesizes resolve-steadfast coupling, resilience, and subject steadfast.'
+      };
+    case 'steadfast_advocacy_coupling':
+      return {
+        topic,
+        headline: state.steadfastAdvocacyCouplingBrief?.summary || 'Steadfast-advocacy coupling unavailable.',
+        fact: `Coupling band ${state.steadfastAdvocacyCouplingBrief?.band ?? 'unknown'}; steadfast drag ${Math.round(state.steadfastAdvocacyCouplingBrief?.steadfastDrag ?? 0)}.`,
+        inference: state.steadfastAdvocacyCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce steadfast depth with advocacy levers — bounded indices only.'
+      };
+    case 'advocacy_resilience':
+      return {
+        topic,
+        headline: state.advocacyResilienceOutlook?.summary || 'Advocacy resilience unavailable.',
+        fact: `Resilience band ${state.advocacyResilienceOutlook?.band ?? 'unknown'}; steadfast drag ${Math.round(state.advocacyResilienceOutlook?.steadfastDrag ?? 0)}.`,
+        inference: state.advocacyResilienceOutlook?.stewardNote || state.outlook,
+        projection: 'Resilience outlook tracks steadfast resilience against advocacy levers for wave 52 depth.'
+      };
+    case 'subject_advocacy_steadfast_readiness':
+      return {
+        topic,
+        headline: state.subjectAdvocacySteadfastReadinessBrief?.summary || 'Subject advocacy readiness unavailable.',
+        fact: `Advocacy band ${state.subjectAdvocacySteadfastReadinessBrief?.band ?? 'unknown'}; advocacy drag ${Math.round(state.subjectAdvocacySteadfastReadinessBrief?.advocacyDrag ?? 0)}.`,
+        inference: state.subjectAdvocacySteadfastReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject advocacy readiness gates subject steadfast against steadfast depth for O10-235 wave 52.'
+      };
+    case 'workforce_advocacy_depth':
+      return {
+        topic,
+        headline: state.nationalWorkforceAdvocacyDepthIndex?.summary || 'Workforce advocacy depth unavailable.',
+        fact: `Advocacy band ${state.nationalWorkforceAdvocacyDepthIndex?.band ?? 'unknown'}; advocacy drag ${Math.round(state.nationalWorkforceAdvocacyDepthIndex?.advocacyDrag ?? 0)}.`,
+        inference: state.nationalWorkforceAdvocacyDepthIndex?.stewardNote || state.summary,
+        projection: 'Advocacy depth synthesizes steadfast-advocacy coupling, resilience, and subject advocacy.'
       };
     default:
       return {

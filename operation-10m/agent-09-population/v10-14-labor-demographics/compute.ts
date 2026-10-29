@@ -214,6 +214,10 @@ import { computeNationalResolveSteadfastCouplingBrief } from './resolve-steadfas
 import { computeNationalSteadfastResilienceOutlook } from './steadfast-resilience-outlook';
 import { computeNationalSubjectSteadfastReadinessBrief } from './subject-steadfast-readiness-brief';
 import { computeNationalWorkforceSteadfastDepthIndex } from './national-workforce-steadfast-depth-index';
+import { computeNationalSteadfastAdvocacyCouplingBrief } from './steadfast-advocacy-coupling-brief';
+import { computeNationalAdvocacyResilienceOutlook } from './advocacy-resilience-outlook';
+import { computeNationalSubjectAdvocacySteadfastReadinessBrief } from './subject-advocacy-steadfast-readiness-brief';
+import { computeNationalWorkforceAdvocacyDepthIndex } from './national-workforce-advocacy-depth-index';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -1378,6 +1382,25 @@ export function computeNationalLaborDemographics(
     state.resolveSteadfastCouplingBrief,
     state.steadfastResilienceOutlook,
     state.subjectSteadfastReadinessBrief
+  );
+  state.steadfastAdvocacyCouplingBrief = computeNationalSteadfastAdvocacyCouplingBrief(
+    state,
+    state.nationalWorkforceSteadfastDepthIndex
+  );
+  state.advocacyResilienceOutlook = computeNationalAdvocacyResilienceOutlook(
+    state,
+    state.steadfastResilienceOutlook
+  );
+  state.subjectAdvocacySteadfastReadinessBrief = computeNationalSubjectAdvocacySteadfastReadinessBrief(
+    state,
+    state.subjectSteadfastReadinessBrief,
+    state.nationalWorkforceSteadfastDepthIndex
+  );
+  state.nationalWorkforceAdvocacyDepthIndex = computeNationalWorkforceAdvocacyDepthIndex(
+    state,
+    state.steadfastAdvocacyCouplingBrief,
+    state.advocacyResilienceOutlook,
+    state.subjectAdvocacySteadfastReadinessBrief
   );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
@@ -2589,6 +2612,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceSteadfastDepthIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.steadfastAdvocacyCouplingBrief?.band === 'decoupled' ||
+      state.steadfastAdvocacyCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.steadfastAdvocacyCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.advocacyResilienceOutlook?.band === 'ebbing' ||
+      state.advocacyResilienceOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.advocacyResilienceOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectAdvocacySteadfastReadinessBrief?.band === 'below_advocacy' ||
+      state.subjectAdvocacySteadfastReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectAdvocacySteadfastReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceAdvocacyDepthIndex?.band === 'fragile' ||
+      state.nationalWorkforceAdvocacyDepthIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceAdvocacyDepthIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);

@@ -373,6 +373,10 @@ export interface NationalLaborDemographicsState {
   steadfastResilienceOutlook?: NationalSteadfastResilienceOutlook;
   subjectSteadfastReadinessBrief?: NationalSubjectSteadfastReadinessBrief;
   nationalWorkforceSteadfastDepthIndex?: NationalWorkforceSteadfastDepthIndex;
+  steadfastAdvocacyCouplingBrief?: NationalSteadfastAdvocacyCouplingBrief;
+  advocacyResilienceOutlook?: NationalAdvocacyResilienceOutlook;
+  subjectAdvocacySteadfastReadinessBrief?: NationalSubjectAdvocacySteadfastReadinessBrief;
+  nationalWorkforceAdvocacyDepthIndex?: NationalWorkforceAdvocacyDepthIndex;
 }
 
 export type MigrationShockKind =
@@ -2521,6 +2525,55 @@ export interface NationalWorkforceSteadfastDepthIndex {
   steadfastIndex: number;
   band: WorkforceSteadfastDepthBand;
   steadfastDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+
+export type SteadfastAdvocacyCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalSteadfastAdvocacyCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: SteadfastAdvocacyCouplingBand;
+  steadfastDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type AdvocacyResilienceBand = 'ebbing' | 'patchy' | 'rising' | 'fortified';
+
+export interface NationalAdvocacyResilienceOutlook {
+  turn: number;
+  resilienceIndex: number;
+  band: AdvocacyResilienceBand;
+  steadfastDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectAdvocacySteadfastReadinessBand =
+  | 'below_advocacy'
+  | 'approaching'
+  | 'advocacy_ready'
+  | 'steadfast_locked';
+
+export interface NationalSubjectAdvocacySteadfastReadinessBrief {
+  turn: number;
+  advocacyIndex: number;
+  band: SubjectAdvocacySteadfastReadinessBand;
+  advocacyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceAdvocacyDepthBand = 'fragile' | 'thin' | 'elevated' | 'advocacy';
+
+export interface NationalWorkforceAdvocacyDepthIndex {
+  turn: number;
+  advocacyIndex: number;
+  band: WorkforceAdvocacyDepthBand;
+  advocacyDrag: number;
   summary: string;
   stewardNote: string;
 }
