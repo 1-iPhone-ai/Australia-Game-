@@ -9,7 +9,7 @@ import shutil
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 RENAME_DIRS = [
-    ("hub-nodes", "logistics-hubs"),
+    ("logistics-hubs", "logistics-hubs"),
     ("corridor-graph", "corridor-graph"),
 ]
 
@@ -73,7 +73,7 @@ TEXT_REPLACEMENTS = [
     ("readV1017IclogEnergy20bcBridge", "readV1017IclogCities20akBridge"),
     ("readV1017IclogWorkforce20bfBridge", "readV1017IclogResilience20bgBridge"),
     ("V1017_ICLOG_HUB_NODE", "V1017_ICLOG_HUB_NODE"),
-    ("hub-nodes/node", "logistics-hubs/hub"),
+    ("logistics-hubs/node", "logistics-hubs/hub"),
     ("hub-", "hub-"),
     ("hub_", "hub_"),
     ("route-", "route-"),
@@ -109,7 +109,7 @@ def main() -> None:
             shutil.move(str(src), str(dst))
 
     # Remove stale dirs
-    for stale in ["hub-nodes", "corridor-graph"]:
+    for stale in ["logistics-hubs", "corridor-graph"]:
         p = ROOT / stale
         if p.exists() and not any(p.iterdir()):
             p.rmdir()

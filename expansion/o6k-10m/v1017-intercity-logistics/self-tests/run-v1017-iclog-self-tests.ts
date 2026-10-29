@@ -27,7 +27,7 @@ import {
   V1017_ICLOG_runRouteScenarioRegressionSweep,
 } from '../generated/freight-route-registry';
 import { V1017_ICLOG_ROUTE_SCENARIO_000_evaluate, V1017_ICLOG_ROUTE_SCENARIO_000_META } from '../generated/freight-route-scenarios/route-000';
-import { V1017_ICLOG_HUB_NODE_00_buffer } from '../hub-nodes/hub-00';
+import { V1017_ICLOG_HUB_NODE_00_buffer } from '../logistics-hubs/hub-00';
 import { V1017_ICLOG_LAB_SUITE_ID } from '../persistence/keys';
 
 function baseInput(overrides: Partial<V1017IclogTurnInput> = {}): V1017IclogTurnInput {
