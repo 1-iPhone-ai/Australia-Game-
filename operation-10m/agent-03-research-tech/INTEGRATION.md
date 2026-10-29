@@ -84,6 +84,21 @@ npm run test:agent-03
 
 Exit code 0 required in CI for Operation 10M worker gates.
 
+## Agent 25 assembly chunk
+
+| Path | Role |
+|------|------|
+| `operation-10m/modules/agent-03-research-tech/chunk.tsx` | `OP10M_MODULE_BEGIN/END agent-03-research-tech` bundled body |
+| `operation-10m/modules/agent-03-research-tech/module.manifest.json` | Slot `post-v10z`, `contentSha256`, save-field hint |
+
+Regenerate after `src/` changes:
+
+```bash
+npm run bundle:agent-03-chunk
+```
+
+Assembly entrypoints in chunk: `computeResearchProgress`, `buildResearchProgressInputs`, `sanitizeResearchProgressPersisted`, `runAgent03ResearchTechSelfTests`, `OP10M_AGENT03_MODULE_META`.
+
 ## Files
 
 | Path | Role |

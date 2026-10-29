@@ -6,6 +6,7 @@ import type {
   ResearchProgressInputs,
   UnlockedResearchNode,
 } from './types.ts';
+import { AGENT03_ACTIVE_PROJECT } from './internal-constants.ts';
 import { RESEARCH_NODE_BY_ID } from './branches.ts';
 import { RESEARCH_INSTITUTIONS } from './institutions.ts';
 
@@ -41,8 +42,6 @@ export const DEFAULT_INSTITUTION_UPGRADE_THRESHOLDS: InstitutionUpgradeThreshold
 
 export type { InstitutionUpgradeState } from './types.ts';
 
-const ACTIVE_PROJECT = /^(active|upgraded|partial|operational|completed)/i;
-
 function standing(inputs: ResearchProgressInputs, inst: ResearchInstitutionDefinition): number {
   return inputs.factionStanding[inst.id as keyof typeof inputs.factionStanding] ?? 0;
 }
@@ -50,7 +49,7 @@ function standing(inputs: ResearchProgressInputs, inst: ResearchInstitutionDefin
 function hasPreferredProject(inputs: ResearchProgressInputs, inst: ResearchInstitutionDefinition): boolean {
   return inputs.projects.some(
     p =>
-      ACTIVE_PROJECT.test(p.status) &&
+      AGENT03_ACTIVE_PROJECT.test(p.status) &&
       inst.preferredProjectTypes.includes(p.projectType as (typeof inst.preferredProjectTypes)[number])
   );
 }

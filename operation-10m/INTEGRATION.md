@@ -4,7 +4,7 @@ Cross-agent assembly is owned by **Agent 25** into `(V9.4) australia-game-with-a
 
 | Agent | Module root | Contract |
 |-------|-------------|----------|
-| 03 | `operation-10m/agent-03-research-tech/` | [agent-03-research-tech/INTEGRATION.md](./agent-03-research-tech/INTEGRATION.md) |
+| 03 | `operation-10m/agent-03-research-tech/` | [agent-03-research-tech/INTEGRATION.md](./agent-03-research-tech/INTEGRATION.md) — assembly chunk: [modules/agent-03-research-tech/chunk.tsx](./modules/agent-03-research-tech/chunk.tsx) |
 
 ## Shared rules
 

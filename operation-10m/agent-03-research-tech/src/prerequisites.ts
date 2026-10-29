@@ -1,8 +1,7 @@
-import { V94_CAPABILITY_MATURITY_RANK } from './v94-ids.ts';
-import type { ResearchExternalPrerequisite, ResearchProgressInputs } from './types.ts';
+import { AGENT03_ACTIVE_PROJECT } from './internal-constants.ts';
 import { RESEARCH_NODE_BY_ID } from './branches.ts';
-
-const ACTIVE_PROJECT = /^(active|upgraded|partial|operational|completed)/i;
+import type { ResearchExternalPrerequisite, ResearchProgressInputs } from './types.ts';
+import { V94_CAPABILITY_MATURITY_RANK } from './v94-ids.ts';
 
 export interface PrerequisiteEvaluation {
   nodeId: string;
@@ -24,7 +23,7 @@ function projectActive(
   return inputs.projects.some(
     p =>
       p.projectType === projectType &&
-      ACTIVE_PROJECT.test(p.status) &&
+      AGENT03_ACTIVE_PROJECT.test(p.status) &&
       (regionId == null || p.regionId === regionId)
   );
 }

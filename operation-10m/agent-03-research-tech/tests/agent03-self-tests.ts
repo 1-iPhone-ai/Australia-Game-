@@ -2,6 +2,9 @@
  * Agent 03 self-tests + integration contract validation.
  * Run: npm run test:agent-03
  */
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { resolve } from 'node:path';
 import {
   AGENT03_CATALOG,
   RESEARCH_BRANCH_NODES,
@@ -297,6 +300,25 @@ tests.push(
     const nat = endgame.institutionUpgrades.find(u => u.institutionId === 'csiro_ai_directorate');
     assert((nat?.readinessMultiplier ?? 0) > (aff?.readinessMultiplier ?? 0));
     assert(endgame.readinessByBranch.digital_frontier >= affiliate.readinessByBranch.digital_frontier);
+  })
+);
+
+tests.push(
+  test('agent25_chunk_markers_and_hash', () => {
+    const moduleId = 'agent-03-research-tech';
+    const chunkPath = resolve(process.cwd(), 'operation-10m/modules/agent-03-research-tech/chunk.tsx');
+    const manifestPath = resolve(process.cwd(), 'operation-10m/modules/agent-03-research-tech/module.manifest.json');
+    const chunk = readFileSync(chunkPath, 'utf8');
+    const begin = `// OP10M_MODULE_BEGIN ${moduleId}`;
+    const end = `// OP10M_MODULE_END ${moduleId}`;
+    assert(chunk.includes(begin) && chunk.includes(end));
+    const bi = chunk.indexOf(begin);
+    const ei = chunk.indexOf(end);
+    const body = chunk.slice(bi + begin.length, ei).trim();
+    const hash = createHash('sha256').update(body, 'utf8').digest('hex');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    assert(hash === manifest.contentSha256, `${hash} vs ${manifest.contentSha256}`);
+    assert(manifest.slot === 'post-v10z');
   })
 );
 
