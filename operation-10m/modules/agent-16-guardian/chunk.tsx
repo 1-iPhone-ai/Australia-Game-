@@ -190,6 +190,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   vindicationStrainIndex: number;
   vindicationIntegrityScore: number;
   governanceDashScore: number;
+  justificationStrainIndex: number;
+  justificationIntegrityScore: number;
+  governanceBrioScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -2728,6 +2731,62 @@ export function buildGuardianDepthVindicationReport(snapshot: GuardianCoPilotMon
   return lines.slice(0, 3);
 }
 
+export function computeJustificationStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceDashScore < 50) load += Math.min(25, 50 - snapshot.governanceDashScore);
+  if (snapshot.governanceDashScore < 35) load += 10;
+  if (snapshot.vindicationIntegrityScore < 45) load += 20;
+  if (snapshot.vindicationIntegrityScore < 35) load += 10;
+  if (snapshot.vindicationStrainIndex >= 55) load += 20;
+  if (snapshot.vindicationStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeJustificationIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.justificationStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.justificationStrainIndex * 0.35));
+  if (snapshot.vindicationIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.vindicationIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceDashScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceBrioScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.justificationStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.justificationStrainIndex * 0.32));
+  if (snapshot.justificationIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.justificationIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceDashScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthJustificationReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.justificationStrainIndex >= 55) {
+    lines.push(
+      `Justification strain ${snapshot.justificationStrainIndex} — stacked justification review may exceed operator justification capacity`
+    );
+  }
+  if (snapshot.justificationIntegrityScore < 45) {
+    lines.push(
+      `Justification integrity ${snapshot.justificationIntegrityScore} — align Co-Pilot justifications with Guardian justification posture`
+    );
+  }
+  if (snapshot.governanceBrioScore < 40) {
+    lines.push(
+      `Governance brio ${snapshot.governanceBrioScore} — little brio to sustain justification oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -3153,9 +3212,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withVindicationStrain: GuardianCoPilotMonitorSnapshot = { ...withSpunk, vindicationStrainIndex };
   const vindicationIntegrityScore = computeVindicationIntegrityScore(withVindicationStrain);
   const withVindication: GuardianCoPilotMonitorSnapshot = { ...withVindicationStrain, vindicationIntegrityScore };
-  return {
+  const withDash: GuardianCoPilotMonitorSnapshot = {
     ...withVindication,
     governanceDashScore: computeGovernanceDashScore(withVindication),
+    justificationStrainIndex: 0,
+    justificationIntegrityScore: 100,
+    governanceBrioScore: 100,
+  };
+  const justificationStrainIndex = computeJustificationStrainIndex(withDash);
+  const withJustificationStrain: GuardianCoPilotMonitorSnapshot = { ...withDash, justificationStrainIndex };
+  const justificationIntegrityScore = computeJustificationIntegrityScore(withJustificationStrain);
+  const withJustification: GuardianCoPilotMonitorSnapshot = { ...withJustificationStrain, justificationIntegrityScore };
+  return {
+    ...withJustification,
+    governanceBrioScore: computeGovernanceBrioScore(withJustification),
   };
 }
 
@@ -4498,6 +4568,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceDashScore(snap) < 35;
+  });
+  ok('gd_justification_strain', () => {
+    const snap = {
+      governanceDashScore: 30,
+      vindicationIntegrityScore: 32,
+      vindicationStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeJustificationStrainIndex(snap) >= 70;
+  });
+  ok('gd_justification_integrity', () => {
+    const snap = {
+      justificationStrainIndex: 72,
+      vindicationIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governanceDashScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeJustificationIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_brio', () => {
+    const snap = {
+      justificationStrainIndex: 78,
+      justificationIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceDashScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceBrioScore(snap) < 35;
   });
   return out;
 }
@@ -9996,6 +10100,139 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_40: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_40_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_40.length;
 
 
+// --- source: monitor-rules-scale-wave-41.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_41: AdvisoryMonitorRule[] = [
+  {
+    id: 'justification_strain_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Justification Strain High',
+    detailTemplate: 'Justification strain is in the high band — reduce overlapping warn-only justification review demands',
+    evidenceFields: ['justificationStrainIndex', 'governanceDashScore', 'justificationIntegrityScore'],
+    evaluate: s => s.justificationStrainIndex >= 70,
+  },
+  {
+    id: 'justification_strain_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Justification Strain Elevated',
+    detailTemplate: 'Justification strain is elevated — expect slower justification review across turns',
+    evidenceFields: ['justificationStrainIndex', 'vindicationStrainIndex'],
+    evaluate: s => s.justificationStrainIndex >= 45 && s.justificationStrainIndex < 70,
+  },
+  {
+    id: 'justification_integrity_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Justification Integrity Low',
+    detailTemplate: 'Justification integrity is critically low — defer stacked autonomous actions',
+    evidenceFields: ['justificationIntegrityScore', 'justificationStrainIndex', 'vindicationIntegrityScore'],
+    evaluate: s => s.justificationIntegrityScore < 35,
+  },
+  {
+    id: 'justification_integrity_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Justification While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate justification integrity',
+    evidenceFields: ['justificationIntegrityScore', 'copilotAutonomousActive', 'justificationStrainIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.justificationIntegrityScore >= 35 && s.justificationIntegrityScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'governance_brio_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Brio Low',
+    detailTemplate: 'Little governance brio remains for warn-only justification oversight across turns',
+    evidenceFields: ['governanceBrioScore', 'justificationStrainIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.governanceBrioScore < 35,
+  },
+  {
+    id: 'governance_brio_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Brio While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance brio',
+    evidenceFields: ['governanceBrioScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.governanceBrioScore >= 35 && s.governanceBrioScore < 55,
+  },
+  {
+    id: 'justification_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Justification Envelope Pressured',
+    detailTemplate: 'Justification strain and low justification integrity align in the pressured envelope band',
+    evidenceFields: ['justificationStrainIndex', 'justificationIntegrityScore', 'governanceBrioScore'],
+    evaluate: s => s.justificationStrainIndex >= 55 && s.justificationIntegrityScore < 50,
+  },
+  {
+    id: 'rival_justification_strain',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Justification Strain',
+    detailTemplate: 'Rival victory progress plus elevated justification strain',
+    evidenceFields: ['rivalVictoryProgressPct', 'justificationStrainIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.victoryThresholdPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.85 &&
+      s.justificationStrainIndex >= 50,
+  },
+  {
+    id: 'team_plan_justification_strain',
+    category: 'team',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Team Plan Under Justification Strain',
+    detailTemplate: 'Pending team plan while justification strain is elevated',
+    evidenceFields: ['teamPlanPending', 'justificationStrainIndex', 'governanceBrioScore'],
+    evaluate: s => s.teamPlanPending && s.justificationStrainIndex >= 55,
+  },
+  {
+    id: 'guardian_justification_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Justification Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low governance brio',
+    evidenceFields: ['guardianRiskBand', 'governanceBrioScore', 'justificationStrainIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governanceBrioScore < 40,
+  },
+  {
+    id: 'copilot_justification_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Justification Strain',
+    detailTemplate: 'Autonomous Co-Pilot while justification strain is high',
+    evidenceFields: ['copilotAutonomousActive', 'justificationStrainIndex', 'justificationIntegrityScore'],
+    evaluate: s => s.copilotAutonomousActive && s.justificationStrainIndex >= 55,
+  },
+  {
+    id: 'contracts_governance_brio',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Governance Brio',
+    detailTemplate: 'Expiring contracts while governance brio is low',
+    evidenceFields: ['expiringContractCount', 'governanceBrioScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.governanceBrioScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_41_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_41.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -10265,6 +10502,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_38,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_39,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_40,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_41,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -10701,6 +10939,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     vindicationStrainIndex: 0,
     vindicationIntegrityScore: 100,
     governanceDashScore: 100,
+    justificationStrainIndex: 0,
+    justificationIntegrityScore: 100,
+    governanceBrioScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -13681,6 +13922,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['vindication_envelope_pressured', 'guardian_vindication_envelope_critical'],
     notes: 'Pressured vindication envelope with critical Guardian band',
   },
+  {
+    id: 'sc_justification_strain_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2260,
+      maxSpendPerAction: 10580,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['justification_strain_high', 'justification_integrity_low'],
+    notes: 'High justification strain with critical justification integrity',
+  },
+  {
+    id: 'sc_governance_brio_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 4,
+      minCashReserve: 500,
+      debt: 1380,
+      maxSpendPerAction: 8080,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_brio_low', 'contracts_governance_brio'],
+    notes: 'Low governance brio with expiring contracts',
+  },
+  {
+    id: 'sc_justification_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 1300,
+      maxSpendPerAction: 8280,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['justification_envelope_pressured', 'guardian_justification_envelope_critical'],
+    notes: 'Pressured justification envelope with critical Guardian band',
+  },
 ];
 
 
@@ -13856,8 +14165,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 40 scale wave brings monitor catalog to 514+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 514;
+  check(results, 'a16_expansion_count', 'Round 41 scale wave brings monitor catalog to 526+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 526;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -15354,6 +15663,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthVindicationReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round41_metrics', 'Round 41 justification envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.justificationStrainIndex >= 40 &&
+      snap.justificationIntegrityScore <= 100 &&
+      snap.governanceBrioScore <= 100
+    );
+  });
+
+  check(results, 'a16_justification_report', 'Guardian depth justification report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthJustificationReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 

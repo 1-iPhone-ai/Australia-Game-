@@ -186,6 +186,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   vindicationStrainIndex: number;
   vindicationIntegrityScore: number;
   governanceDashScore: number;
+  justificationStrainIndex: number;
+  justificationIntegrityScore: number;
+  governanceBrioScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
