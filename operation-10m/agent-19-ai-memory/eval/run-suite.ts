@@ -354,6 +354,23 @@ import {
   auditMatchExplainabilityAckGate,
   matchExplainabilityAckAllowed,
 } from '../match-explainability-ack-gate.ts';
+import {
+  buildMatchExplainabilityAckBundle,
+  matchExplainabilityAckReady,
+} from '../match-explainability-ack-bundle.ts';
+import {
+  buildSessionAckExportBundle,
+  sessionAckExportShipped,
+} from '../session-ack-export-bundle.ts';
+import { auditHandshakeAckBridge, handshakeAckBridgeHealthy } from '../handshake-ack-bridge.ts';
+import {
+  buildAckRecoveryOrchestrator,
+  ackRecoveryOrchestratorWithinCap,
+} from '../ack-recovery-orchestrator.ts';
+import {
+  auditMatchExplainabilityConfirmGate,
+  matchExplainabilityConfirmAllowed,
+} from '../match-explainability-confirm-gate.ts';
 import type { MemoryEvalResult } from '../types.ts';
 
 type Case = [string, string, () => boolean | string];

@@ -5681,6 +5681,289 @@ export function handshakeRecoveryOrchestratorWithinCap(report: HandshakeRecovery
 }
 
 
+// --- source: match-explainability-ack-bundle.ts ---
+  auditMatchExplainabilityAckGate,
+  matchExplainabilityAckAllowed,
+} from './match-explainability-ack-gate.ts';
+  buildMatchExplainabilityHandshakeBundle,
+  matchExplainabilityHandshakeReady,
+} from './match-explainability-handshake-bundle.ts';
+  buildSessionHandshakeExportBundle,
+  sessionHandshakeExportShipped,
+} from './session-handshake-export-bundle.ts';
+
+export const AGENT19_ACK_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityAckBundle {
+  ackReady: boolean;
+  ackAllowed: boolean;
+  handshakeReady: boolean;
+  handshakeExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type AckParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Ack bundle: ack gate and handshake export must both be green. */
+export function buildMatchExplainabilityAckBundle(
+  packs: TurnExplainabilityPack[],
+  params: AckParams,
+): MatchExplainabilityAckBundle {
+  const ack = auditMatchExplainabilityAckGate(packs, params);
+  const handshake = buildMatchExplainabilityHandshakeBundle(packs, params);
+  const handshakeExport = buildSessionHandshakeExportBundle(packs, params);
+  const ackAllowed = matchExplainabilityAckAllowed(ack);
+  const handshakeReady = matchExplainabilityHandshakeReady(handshake);
+  const handshakeExportShipped = sessionHandshakeExportShipped(handshakeExport);
+  const ackReady = ackAllowed && handshakeReady && handshakeExportShipped;
+  const narrativeLines = [
+    `Match explainability ack bundle: ${ackReady ? 'READY' : 'PENDING'} (gate ${ackAllowed ? 'ok' : 'fail'}, handshake ${handshakeReady ? 'ok' : 'fail'}).`,
+    ...ack.narrativeLines.slice(0, 2),
+    ...handshake.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_ACK_NARRATIVE_CAP);
+  return {
+    ackReady,
+    ackAllowed,
+    handshakeReady,
+    handshakeExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityAckReady(bundle: MatchExplainabilityAckBundle): boolean {
+  return bundle.ackReady;
+}
+
+
+// --- source: session-ack-export-bundle.ts ---
+  buildSessionHandshakeExportBundle,
+  type SessionHandshakeExportBundle,
+} from './session-handshake-export-bundle.ts';
+  buildMatchExplainabilityAckBundle,
+  matchExplainabilityAckReady,
+} from './match-explainability-ack-bundle.ts';
+
+export interface SessionAckExportBundle extends SessionHandshakeExportBundle {
+  ackReady: boolean;
+  ackSchema: string;
+}
+
+/** Ack export wraps handshake export when ack bundle is ready. */
+export function buildSessionAckExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionAckExportBundle {
+  const base = buildSessionHandshakeExportBundle(packs, params);
+  const ack = buildMatchExplainabilityAckBundle(packs, params);
+  const ackReady = matchExplainabilityAckReady(ack);
+  const exports = ackReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    ackReady,
+    ackSchema: 'agent19.ack.v1',
+    releaseReady: ackReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Ack export: ${ackReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionAckExportShipped(bundle: SessionAckExportBundle): boolean {
+  return bundle.ackReady && bundle.exports.length > 0 && bundle.ackSchema === 'agent19.ack.v1';
+}
+
+
+// --- source: handshake-ack-bridge.ts ---
+  buildMatchExplainabilityAckBundle,
+  matchExplainabilityAckReady,
+} from './match-explainability-ack-bundle.ts';
+  buildMatchExplainabilityHandshakeBundle,
+  matchExplainabilityHandshakeReady,
+} from './match-explainability-handshake-bundle.ts';
+
+export interface HandshakeAckBridgeReport {
+  aligned: boolean;
+  ackReady: boolean;
+  handshakeReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Ack-ready should match handshake-ready when handshake export stack passes. */
+export function auditHandshakeAckBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): HandshakeAckBridgeReport {
+  const ack = buildMatchExplainabilityAckBundle(packs, params);
+  const handshake = buildMatchExplainabilityHandshakeBundle(packs, params);
+  const ackReady = matchExplainabilityAckReady(ack);
+  const handshakeReady = matchExplainabilityHandshakeReady(handshake);
+  const aligned = ackReady === handshakeReady;
+  const narrativeLines = [
+    `Handshake/ack bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (ack ${ackReady ? 'ok' : 'fail'}, handshake ${handshakeReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, ackReady, handshakeReady, narrativeLines };
+}
+
+export function handshakeAckBridgeHealthy(report: HandshakeAckBridgeReport): boolean {
+  return report.ackReady && report.handshakeReady && report.aligned;
+}
+
+
+// --- source: match-explainability-confirm-gate.ts ---
+  buildMatchExplainabilityAckBundle,
+  matchExplainabilityAckReady,
+} from './match-explainability-ack-bundle.ts';
+  buildSessionAckExportBundle,
+  sessionAckExportShipped,
+} from './session-ack-export-bundle.ts';
+
+export interface MatchExplainabilityConfirmGateReport {
+  confirmAllowed: boolean;
+  ackReady: boolean;
+  ackExportShipped: boolean;
+  handshakeAckHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Confirm gate: ack bundle + ack export + handshake/ack bridge. */
+export function auditMatchExplainabilityConfirmGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityConfirmGateReport {
+  const ack = buildMatchExplainabilityAckBundle(packs, params);
+  const ackExport = buildSessionAckExportBundle(packs, params);
+  const bridge = auditHandshakeAckBridge(packs, params);
+  const ackReady = matchExplainabilityAckReady(ack);
+  const ackExportShipped = sessionAckExportShipped(ackExport);
+  const handshakeAckHealthy = handshakeAckBridgeHealthy(bridge);
+  const confirmAllowed = ackReady && ackExportShipped && handshakeAckHealthy;
+  const narrativeLines = [
+    `Match explainability confirm: ${confirmAllowed ? 'ALLOWED' : 'DENIED'} (ack ${ackReady ? 'ok' : 'fail'}, export ${ackExportShipped ? 'ok' : 'fail'}).`,
+    ...ack.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    confirmAllowed,
+    ackReady,
+    ackExportShipped,
+    handshakeAckHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityConfirmAllowed(report: MatchExplainabilityConfirmGateReport): boolean {
+  return report.confirmAllowed;
+}
+
+
+// --- source: ack-recovery-orchestrator.ts ---
+  auditMatchExplainabilityAckGate,
+  matchExplainabilityAckAllowed,
+} from './match-explainability-ack-gate.ts';
+
+export const AGENT19_ACK_RECOVERY_CAP = 10;
+
+export interface AckRecoveryOrchestratorReport {
+  ackBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when ack gate blocks confirm rollout. */
+export function buildAckRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): AckRecoveryOrchestratorReport {
+  const ack = auditMatchExplainabilityAckGate(packs, params);
+  const ackBlocked = !matchExplainabilityAckAllowed(ack);
+  const steps: string[] = [];
+  if (ackBlocked) {
+    if (!ack.handshakeReady) {
+      steps.push('Restore handshake bundle: uplink and handshake export must pass.');
+    }
+    if (!ack.handshakeExportShipped) {
+      steps.push('Emit session handshake export before ack clearance.');
+    }
+    if (!ack.uplinkHandshakeHealthy) {
+      steps.push('Reconcile uplink/handshake bridge before ack.');
+    }
+    steps.push(...buildHandshakeRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const handshake = buildMatchExplainabilityHandshakeBundle(packs, params);
+    if (!handshake.handshakeReady) {
+      steps.push('Re-run handshake readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Ack gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_ACK_RECOVERY_CAP);
+  return {
+    ackBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Ack recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function ackRecoveryOrchestratorWithinCap(report: AckRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_ACK_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -6021,6 +6304,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilityAckGate,
   matchExplainabilityAckAllowed,
 } from '../match-explainability-ack-gate.ts';
+  buildMatchExplainabilityAckBundle,
+  matchExplainabilityAckReady,
+} from '../match-explainability-ack-bundle.ts';
+  buildSessionAckExportBundle,
+  sessionAckExportShipped,
+} from '../session-ack-export-bundle.ts';
+  buildAckRecoveryOrchestrator,
+  ackRecoveryOrchestratorWithinCap,
+} from '../ack-recovery-orchestrator.ts';
+  auditMatchExplainabilityConfirmGate,
+  matchExplainabilityConfirmAllowed,
+} from '../match-explainability-confirm-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -9170,6 +9465,138 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilityHandshakeAllowed(report) && !report.uplinkReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r22_handshake_ready',
+        'Handshake bundle ready when handshake gate and uplink export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilityHandshakeBundle([pack], params);
+          return matchExplainabilityHandshakeReady(bundle) && bundle.handshakeAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r22_handshake_held',
+        'Handshake bundle pending when handshake gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 19, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityHandshakeBundle([pack], {
+            memory: null,
+            currentTurn: 19,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityHandshakeReady(bundle) && !bundle.handshakeAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r22_handshake_recovery',
+        'Handshake recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 8, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 8, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildHandshakeRecoveryOrchestrator([pack], params);
+          return report.handshakeBlocked && handshakeRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r22_uplink_handshake_bridge',
+        'Uplink handshake bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditUplinkHandshakeBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return uplinkHandshakeBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r22_handshake_export',
+        'Handshake export shipped when handshake ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionHandshakeExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionHandshakeExportShipped(bundle) && bundle.handshakeSchema === 'agent19.handshake.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r22_ack_gate_ok',
+        'Ack gate allowed on healthy handshake stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityAckGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityAckAllowed(report) && report.handshakeExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r22_ack_gate_block',
+        'Ack gate denied when handshake pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 20, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityAckGate([pack], {
+            memory: null,
+            currentTurn: 20,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityAckAllowed(report) && !report.handshakeReady || JSON.stringify(report);
         },
       ],
     ]),
