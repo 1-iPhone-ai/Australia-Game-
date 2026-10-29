@@ -1,0 +1,469 @@
+
+export function acc17ComputeRelevantStateFingerprint(state: any, actorId: string): string {
+  const actor = state?.actorsById?.[actorId] || (actorId === 'player' ? state?.player : state?.aiPlayer) || {};
+  const turn = state?.turnCounter || state?.day || 1;
+  const day = state?.day || 1;
+  const parts = [
+    actorId,
+    String(turn),
+    String(day),
+    String(actor?.money ?? 0),
+    String(actor?.netWorth ?? actor?.money ?? 0),
+    String(actor?.currentRegion || actor?.currentLocation || ''),
+    String(actor?.actionsUsedThisTurn ?? 0),
+    String((actor?.inventory || []).length),
+    String(state?.lastExecutedAction?.type || state?.lastAction?.type || ''),
+    String(state?.playerTrackedObjective?.sourceId || ''),
+    String(state?.strategyPlannerState?.activePlan?.id || ''),
+  ];
+  return fnv1aHashString('acc17:' + parts.join('|'));
+}
+
+function acc17DelegateFallbackId(kind: Acc17DelegateTargetKind): string {
+  if (kind === 'team_os') return 'team_os';
+  if (kind === 'strategy_planner') return 'strategy_planner';
+  return 'copilot';
+}
+
+export function sanitizeAcc17CommandCenterOpsState(input: unknown): Acc17CommandCenterOpsState {
+  const defaults = createDefaultAcc17CommandCenterOpsState();
+  if (!input || typeof input !== 'object') return defaults;
+  const obj = input as Record<string, unknown>;
+  const enabled = typeof obj.enabled === 'boolean' ? obj.enabled : defaults.enabled;
+  const lastContextFingerprint = typeof obj.lastContextFingerprint === 'string' ? obj.lastContextFingerprint : '';
+  let activePlan: Acc17MultiStepPlan | null = null;
+  if (obj.activePlan && typeof obj.activePlan === 'object') {
+    const p = obj.activePlan as any;
+    const steps: Acc17MultiStepPlanStep[] = Array.isArray(p.steps)
+      ? p.steps.map((s: any, idx: number) => ({
+          id: String(s?.id || `step_${idx}`),
+          index: typeof s?.index === 'number' ? s.index : idx,
+          title: String(s?.title || 'Step'),
+          summary: String(s?.summary || ''),
+          actionType: String(s?.actionType || 'wait'),
+          requirements: (s?.requirements && typeof s.requirements === 'object') ? s.requirements : {},
+          status: (['pending', 'in_progress', 'verified_complete', 'failed', 'skipped', 'blocked'] as Acc17PlanStepStatus[]).includes(s?.status)
+            ? s.status : 'pending',
+          verifiedOnTurn: typeof s?.verifiedOnTurn === 'number' ? s.verifiedOnTurn : undefined,
+          verifiedOnDay: typeof s?.verifiedOnDay === 'number' ? s.verifiedOnDay : undefined,
+          verifiedStateFingerprint: typeof s?.verifiedStateFingerprint === 'string' ? s.verifiedStateFingerprint : undefined,
+          lastEvaluationFingerprint: typeof s?.lastEvaluationFingerprint === 'string' ? s.lastEvaluationFingerprint : undefined,
+          blockerReason: typeof s?.blockerReason === 'string' ? s.blockerReason : undefined,
+        }))
+      : [];
+    activePlan = {
+      id: String(p.id || 'plan'),
+      title: String(p.title || 'Plan'),
+      objectiveSource: typeof p.objectiveSource === 'string' ? p.objectiveSource : undefined,
+      createdTurn: typeof p.createdTurn === 'number' ? p.createdTurn : 1,
+      createdDay: typeof p.createdDay === 'number' ? p.createdDay : 1,
+      steps,
+      activeStepIndex: typeof p.activeStepIndex === 'number' ? Math.max(0, Math.min(steps.length, p.activeStepIndex)) : 0,
+      completionPercent: typeof p.completionPercent === 'number' ? p.completionPercent : 0,
+      isOnTrack: p.isOnTrack !== false,
+      replanCount: typeof p.replanCount === 'number' ? p.replanCount : 0,
+    };
+  }
+  const delegatedProjects: Acc17DelegatedProject[] = Array.isArray(obj.delegatedProjects)
+    ? (obj.delegatedProjects as any[]).slice(0, 32).map((d, i) => ({
+        id: String(d?.id || `proj_${i}`),
+        planId: String(d?.planId || ''),
+        title: String(d?.title || 'Project'),
+        delegateKind: (['copilot', 'team_os', 'teammate', 'strategy_planner', 'manual'] as Acc17DelegateTargetKind[]).includes(d?.delegateKind)
+          ? d.delegateKind : 'copilot',
+        delegateTargetId: String(d?.delegateTargetId || acc17DelegateFallbackId(d?.delegateKind)),
+        status: (['draft', 'delegated', 'executing', 'awaiting_verification', 'completed', 'cancelled', 'blocked'] as Acc17ProjectDelegationStatus[]).includes(d?.status)
+          ? d.status : 'draft',
+        authorityCeiling: (['advisory', 'assisted', 'delegated'] as const).includes(d?.authorityCeiling) ? d.authorityCeiling : 'assisted',
+        assignedTurn: typeof d?.assignedTurn === 'number' ? d.assignedTurn : 1,
+        assignedDay: typeof d?.assignedDay === 'number' ? d.assignedDay : 1,
+        lastVerifiedFingerprint: typeof d?.lastVerifiedFingerprint === 'string' ? d.lastVerifiedFingerprint : '',
+        pendingVerificationStepId: typeof d?.pendingVerificationStepId === 'string' ? d.pendingVerificationStepId : undefined,
+        notes: String(d?.notes || ''),
+      }))
+    : [];
+  const verificationLog: Acc17VerifiedExecutionLogEntry[] = Array.isArray(obj.verificationLog)
+    ? (obj.verificationLog as any[]).slice(-120).map((e, i) => ({
+        id: String(e?.id || `vlog_${i}`),
+        turn: typeof e?.turn === 'number' ? e.turn : 1,
+        day: typeof e?.day === 'number' ? e.day : 1,
+        stepId: String(e?.stepId || ''),
+        projectId: String(e?.projectId || ''),
+        fingerprintBefore: String(e?.fingerprintBefore || ''),
+        fingerprintAfter: String(e?.fingerprintAfter || ''),
+        verified: e?.verified === true,
+        reason: String(e?.reason || ''),
+      }))
+    : [];
+  const lastContextBundle = obj.lastContextBundle && typeof obj.lastContextBundle === 'object'
+    ? (obj.lastContextBundle as Acc17V94DeepContextBundle) : undefined;
+  return { version: 1, enabled, activePlan, delegatedProjects, verificationLog, lastContextFingerprint, lastContextBundle };
+}
+
+export function buildAcc17V94DeepContextBundle(state: any, settings: any, actorId: string): Acc17V94DeepContextBundle {
+  const turn = state?.turnCounter || state?.day || 1;
+  const day = state?.day || 1;
+  const fingerprint = acc17ComputeRelevantStateFingerprint(state, actorId);
+  const actor = state?.actorsById?.[actorId] || (actorId === 'player' ? state?.player : null) || { id: actorId };
+  const slices: Acc17V94DeepContextSlice[] = [];
+  const pushSlice = (key: string, label: string, summary: string, weight: number, tags: string[] = []) => {
+    if (summary) slices.push({ key, label, summary, weight, tags });
+  };
+  try {
+    const objective = typeof resolveCurrentObjective === 'function'
+      ? resolveCurrentObjective(state, settings, actor, state?.playerTrackedObjective)
+      : null;
+    if (objective?.title) {
+      pushSlice('objective', 'Current objective', `${objective.title} — ${objective.description || ''}`, 10, ['intent']);
+    }
+  } catch { /* noop */ }
+  try {
+    const attention = typeof classifyPlayerAttentionState === 'function'
+      ? classifyPlayerAttentionState(state, settings, actor, null)
+      : null;
+    if (attention?.label) pushSlice('attention', 'Attention', `${attention.label}: ${attention.detail || ''}`, 9, ['risk']);
+  } catch { /* noop */ }
+  const gi3 = state?.gi3Strategy;
+  if (gi3?.headline) pushSlice('gi3', 'Strategy', String(gi3.headline), 8, ['gi3']);
+  const planner = state?.strategyPlannerState?.activePlan;
+  if (planner?.title) pushSlice('planner', 'Planner', `Blueprint: ${planner.title}`, 7, ['planner']);
+  pushSlice('economy', 'Economy', `Cash $${Number(actor?.money || 0).toLocaleString()}`, 5, ['economy']);
+  slices.sort((a, b) => b.weight - a.weight);
+  return {
+    actorId,
+    turn,
+    day,
+    fingerprint,
+    headline: slices[0]?.summary || 'Deep context ready.',
+    slices: slices.slice(0, 12),
+    objectiveTitle: slices.find(s => s.key === 'objective')?.summary.split(' — ')[0],
+    attentionLabel: slices.find(s => s.key === 'attention')?.label,
+    strategyHeadline: slices.find(s => s.key === 'gi3')?.summary,
+  };
+}
+
+export function acc17InstantiatePlanFromTemplate(templateId: string, state: any, _actorId: string): Acc17MultiStepPlan | null {
+  const tpl = ACC17_PROJECT_TEMPLATE_CATALOG.find(t => t.id === templateId);
+  if (!tpl) return null;
+  const turn = state?.turnCounter || state?.day || 1;
+  const day = state?.day || 1;
+  const planId = `acc17_plan_${templateId}_${turn}`;
+  const steps: Acc17MultiStepPlanStep[] = tpl.stepBlueprints.map((bp, idx) => ({
+    id: `${planId}_step_${idx}`,
+    index: idx,
+    title: bp.title,
+    summary: bp.summary,
+    actionType: bp.actionType,
+    requirements: { ...(bp.requirements || {}) },
+    status: idx === 0 ? 'in_progress' : 'pending',
+  }));
+  return {
+    id: planId,
+    title: tpl.title,
+    objectiveSource: templateId,
+    createdTurn: turn,
+    createdDay: day,
+    steps,
+    activeStepIndex: 0,
+    completionPercent: 0,
+    isOnTrack: true,
+    replanCount: 0,
+  };
+}
+
+export function acc17CreateMultiStepPlanFromObjective(state: any, settings: any, actorId: string): Acc17MultiStepPlan | null {
+  try {
+    const actor = state?.actorsById?.[actorId] || state?.player;
+    const objective = resolveCurrentObjective(state, settings, actor, state?.playerTrackedObjective);
+    if (!objective?.title) return null;
+    const turn = state?.turnCounter || state?.day || 1;
+    const day = state?.day || 1;
+    const planId = `acc17_obj_${objective.sourceType || 'goal'}_${turn}`;
+    const next = objective.recommendedNextStep;
+    const steps: Acc17MultiStepPlanStep[] = [
+      {
+        id: `${planId}_s0`, index: 0, title: 'Align with tracked objective',
+        summary: objective.description || objective.title,
+        actionType: next?.actionType || 'wait', requirements: {}, status: 'in_progress',
+      },
+      {
+        id: `${planId}_s1`, index: 1, title: next?.label || 'Execute recommended move',
+        summary: 'Complete the recommended next step from the intent layer.',
+        actionType: next?.actionType || 'wait', requirements: {}, status: 'pending',
+      },
+      {
+        id: `${planId}_s2`, index: 2, title: 'Verify objective progress',
+        summary: 'Confirm goal progress after a verified state change.',
+        actionType: 'verify_objective', requirements: {}, status: 'pending',
+      },
+    ];
+    return {
+      id: planId, title: `Plan: ${objective.title}`, objectiveSource: objective.sourceId,
+      createdTurn: turn, createdDay: day, steps, activeStepIndex: 0, completionPercent: 0, isOnTrack: true, replanCount: 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function acc17DelegateProject(
+  ops: Acc17CommandCenterOpsState,
+  plan: Acc17MultiStepPlan,
+  delegateKind: Acc17DelegateTargetKind,
+  delegateTargetId: string,
+  authorityCeiling: Acc17DelegatedProject['authorityCeiling'] = 'assisted'
+): Acc17DelegatedProject {
+  return {
+    id: `acc17_proj_${plan.id}_${ops.delegatedProjects.length}`,
+    planId: plan.id,
+    title: plan.title,
+    delegateKind,
+    delegateTargetId,
+    status: 'delegated',
+    authorityCeiling,
+    assignedTurn: plan.createdTurn,
+    assignedDay: plan.createdDay,
+    lastVerifiedFingerprint: '',
+    notes: `Delegated to ${delegateKind}:${delegateTargetId}`,
+  };
+}
+
+function acc17StepRequirementsMet(step: Acc17MultiStepPlanStep, state: any, actorId: string, completedIds: Set<string>): boolean {
+  const req = step.requirements || {};
+  const actor = state?.actorsById?.[actorId] || (actorId === 'player' ? state?.player : null) || {};
+  if (typeof req.minCash === 'number' && (actor.money || 0) < req.minCash) return false;
+  if (typeof req.minNetWorth === 'number' && (actor.netWorth || actor.money || 0) < req.minNetWorth) return false;
+  const region = actor.currentRegion || actor.currentLocation || '';
+  if (req.requiredRegion && region !== req.requiredRegion) return false;
+  if (Array.isArray(req.prerequisiteStepIds)) {
+    for (const pid of req.prerequisiteStepIds) {
+      if (!completedIds.has(pid)) return false;
+    }
+  }
+  return true;
+}
+
+function acc17DetectActionMatch(step: Acc17MultiStepPlanStep, state: any): boolean {
+  const last = state?.lastExecutedAction || state?.lastAction;
+  const lastType = typeof last === 'string' ? last : (last?.type || last?.actionType || '');
+  if (!lastType) return false;
+  if (step.actionType === 'verify_objective') {
+    return String(lastType).includes('objective') || String(lastType).includes('contract') || String(lastType).includes('track');
+  }
+  return String(lastType) === step.actionType || String(lastType).includes(step.actionType);
+}
+
+export function acc17AdvanceVerifiedPlanProgress(
+  plan: Acc17MultiStepPlan,
+  state: any,
+  actorId: string,
+  previousFingerprint: string
+): { plan: Acc17MultiStepPlan; logEntries: Acc17VerifiedExecutionLogEntry[]; fingerprint: string } {
+  const fingerprint = acc17ComputeRelevantStateFingerprint(state, actorId);
+  const logEntries: Acc17VerifiedExecutionLogEntry[] = [];
+  const turn = state?.turnCounter || state?.day || 1;
+  const day = state?.day || 1;
+  const stateChanged = fingerprint !== previousFingerprint && previousFingerprint !== '';
+  const completedIds = new Set(plan.steps.filter(s => s.status === 'verified_complete').map(s => s.id));
+  const steps = plan.steps.map(s => ({ ...s }));
+  let activeStepIndex = plan.activeStepIndex;
+
+  if (stateChanged) {
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      if (step.status === 'verified_complete' || step.status === 'skipped') continue;
+      step.lastEvaluationFingerprint = fingerprint;
+      if (!acc17StepRequirementsMet(step, state, actorId, completedIds)) {
+        step.status = 'blocked';
+        step.blockerReason = 'Requirements not satisfied after state change.';
+        continue;
+      }
+      if (step.status === 'pending' && i === activeStepIndex) step.status = 'in_progress';
+      if (step.status === 'in_progress' && acc17DetectActionMatch(step, state)) {
+        step.status = 'verified_complete';
+        step.verifiedOnTurn = turn;
+        step.verifiedOnDay = day;
+        step.verifiedStateFingerprint = fingerprint;
+        completedIds.add(step.id);
+        logEntries.push({
+          id: `acc17_v_${step.id}_${turn}`, turn, day, stepId: step.id, projectId: plan.id,
+          fingerprintBefore: previousFingerprint, fingerprintAfter: fingerprint, verified: true,
+          reason: 'Verified after canonical state change matched step.',
+        });
+      }
+    }
+  }
+
+  while (activeStepIndex < steps.length && steps[activeStepIndex]?.status === 'verified_complete') activeStepIndex++;
+  if (activeStepIndex < steps.length && steps[activeStepIndex]?.status === 'pending') {
+    steps[activeStepIndex].status = 'in_progress';
+  }
+  const done = steps.filter(s => s.status === 'verified_complete').length;
+  const completionPercent = steps.length ? Math.round((done / steps.length) * 100) : 100;
+  const blocked = steps.some(s => s.status === 'blocked');
+  return {
+    plan: { ...plan, steps, activeStepIndex, completionPercent, isOnTrack: !blocked && completionPercent < 100 },
+    logEntries,
+    fingerprint,
+  };
+}
+
+export function evaluateAcc17CommandCenterOperations(
+  state: any,
+  settings: any,
+  actorId: string,
+  persisted: Acc17CommandCenterOpsState
+): { ops: Acc17CommandCenterOpsState; snapshot: Acc17OperationsSnapshot } {
+  const enabled = persisted.enabled !== false && (settings?.commandCenterSettings?.enabled !== false);
+  const deepContext = buildAcc17V94DeepContextBundle(state, settings, actorId);
+  let ops = sanitizeAcc17CommandCenterOpsState(persisted);
+  if (!enabled) {
+    return {
+      ops,
+      snapshot: {
+        deepContext, activePlan: null, delegatedProjects: [], pendingVerificationCount: 0,
+        verifiedStepsThisTurn: 0, blockedSteps: [], recommendedDelegateKind: 'copilot',
+      },
+    };
+  }
+  if (!ops.activePlan) {
+    const fromObjective = acc17CreateMultiStepPlanFromObjective(state, settings, actorId);
+    if (fromObjective) ops = { ...ops, activePlan: fromObjective };
+  }
+  const prevFp = ops.lastContextFingerprint || '';
+  if (ops.activePlan) {
+    const { plan, logEntries, fingerprint } = acc17AdvanceVerifiedPlanProgress(ops.activePlan, state, actorId, prevFp);
+    ops = {
+      ...ops,
+      activePlan: plan,
+      lastContextFingerprint: fingerprint,
+      lastContextBundle: deepContext,
+      verificationLog: [...ops.verificationLog, ...logEntries].slice(-200),
+    };
+    if (ops.delegatedProjects.length === 0 && plan.completionPercent < 100) {
+      ops = { ...ops, delegatedProjects: [acc17DelegateProject(ops, plan, 'copilot', 'copilot_session', 'assisted')] };
+    }
+  } else {
+    ops = { ...ops, lastContextFingerprint: deepContext.fingerprint, lastContextBundle: deepContext };
+  }
+  const blockedSteps = ops.activePlan?.steps.filter(s => s.status === 'blocked' || s.status === 'failed') || [];
+  const pendingVerificationCount = ops.activePlan?.steps.filter(s => s.status === 'in_progress').length || 0;
+  const verifiedStepsThisTurn = ops.verificationLog.filter(e => e.turn === (state?.turnCounter || 1) && e.verified).length;
+  const autonomy = settings?.aiCommunicationAutonomyLevel;
+  const recommendedDelegateKind: Acc17DelegateTargetKind =
+    autonomy === 'delegated' ? 'team_os' : autonomy === 'assisted' ? 'copilot' : 'strategy_planner';
+  return {
+    ops,
+    snapshot: {
+      deepContext,
+      activePlan: ops.activePlan,
+      delegatedProjects: ops.delegatedProjects,
+      pendingVerificationCount,
+      verifiedStepsThisTurn,
+      blockedSteps,
+      recommendedDelegateKind,
+    },
+  };
+}
+
+export interface AiCommandCenterAcc17DevTestReport {
+  timestamp: number;
+  totalTests: number;
+  passedCount: number;
+  failedCount: number;
+  executionTimeMs: number;
+  overallStatus: 'passed' | 'failed';
+  success: boolean;
+  testResults: { id: string; name: string; status: 'passed' | 'failed'; durationMs: number; errorMessage?: string }[];
+  summary: string;
+}
+
+export function runAiCommandCenterAcc17DevTests(customState?: any, customSettings?: any): AiCommandCenterAcc17DevTestReport {
+  const start = Date.now();
+  const testResults: AiCommandCenterAcc17DevTestReport['testResults'] = [];
+  const push = (id: string, name: string, ok: boolean, detail?: string) => {
+    testResults.push({ id, name, status: ok ? 'passed' : 'failed', durationMs: 0, errorMessage: ok ? undefined : detail });
+  };
+  try {
+    const actor = { id: 'player', money: 5000, netWorth: 8000, currentRegion: 'NSW', teamId: TEAM_PLAYER_ID };
+    const baseState: any = customState || {
+      turnCounter: 3, day: 3, player: actor, actorsById: { player: actor },
+      playerTrackedObjective: { id: 'c1', sourceType: 'contract', sourceId: 'c1', title: 'Test Contract' },
+      lastExecutedAction: { type: 'wait' },
+    };
+    const settings = customSettings || { aiCommunicationAutonomyLevel: 'assisted', commandCenterSettings: { enabled: true } };
+    const fp1 = acc17ComputeRelevantStateFingerprint(baseState, 'player');
+    baseState.player.money = 5100;
+    baseState.lastExecutedAction = { type: 'travel' };
+    const fp3 = acc17ComputeRelevantStateFingerprint(baseState, 'player');
+    push('acc17_fp_delta', 'Fingerprint reacts to state delta', fp1 !== fp3, `${fp1}/${fp3}`);
+    const plan = acc17CreateMultiStepPlanFromObjective(baseState, settings, 'player');
+    push('acc17_plan', 'Objective spawns multi-step plan', !!plan && plan!.steps.length >= 3);
+    let ops = createDefaultAcc17CommandCenterOpsState();
+    ops = { ...ops, activePlan: plan, lastContextFingerprint: fp1 };
+    const noAdvance = acc17AdvanceVerifiedPlanProgress(plan!, baseState, 'player', fp1);
+    push('acc17_gate_same_fp', 'No verification log when fingerprint unchanged', noAdvance.logEntries.length === 0);
+    ops = { ...ops, lastContextFingerprint: fp3 };
+    const evalRes = evaluateAcc17CommandCenterOperations(baseState, settings, 'player', ops);
+    push('acc17_context', 'Deep context slices populated', evalRes.snapshot.deepContext.slices.length >= 1);
+    push('acc17_delegate', 'Delegated project created', evalRes.snapshot.delegatedProjects.length >= 1);
+    push('acc17_sanitize', 'Sanitizer returns v1', sanitizeAcc17CommandCenterOpsState({ version: 2 }).version === 1);
+  } catch (e: any) {
+    push('acc17_throw', 'Harness did not throw', false, String(e?.message || e));
+  }
+  const passedCount = testResults.filter(t => t.status === 'passed').length;
+  const failedCount = testResults.filter(t => t.status === 'failed').length;
+  const overallStatus: 'passed' | 'failed' = failedCount === 0 ? 'passed' : 'failed';
+  return {
+    timestamp: Date.now(),
+    totalTests: testResults.length,
+    passedCount,
+    failedCount,
+    executionTimeMs: Date.now() - start,
+    overallStatus,
+    success: overallStatus === 'passed',
+    testResults,
+    summary: `AI Command Center ACC17 Dev Tests: ${passedCount}/${testResults.length} Passed`,
+  };
+}
+
+export const Acc17CommandCenterOperationsPanel: React.FC<{
+  snapshot: Acc17OperationsSnapshot;
+  viewMode: CommandCenterViewMode;
+}> = ({ snapshot, viewMode }) => {
+  const plan = snapshot.activePlan;
+  const ctx = snapshot.deepContext;
+  return (
+    <div className="space-y-4 text-sm text-slate-200">
+      <div className="p-3 rounded-lg bg-slate-900/80 border border-cyan-900/40">
+        <div className="font-bold text-cyan-300 mb-1">V9.4 Deep Context</div>
+        <div className="text-xs text-slate-400 mb-2">{ctx.headline}</div>
+        <ul className="space-y-1 text-xs">
+          {ctx.slices.slice(0, viewMode === 'simple' ? 4 : 10).map(slice => (
+            <li key={slice.key}><span className="text-cyan-500">{slice.label}:</span> {slice.summary}</li>
+          ))}
+        </ul>
+      </div>
+      <div className="p-3 rounded-lg bg-slate-900/80 border border-indigo-900/40">
+        <div className="font-bold text-indigo-300 mb-2">Multi-step plan</div>
+        {!plan ? <p className="text-xs text-slate-400">No active plan.</p> : (
+          <ol className="space-y-2 text-xs">
+            {plan.steps.map(step => (
+              <li key={step.id} className="p-2 rounded border border-slate-700">
+                {step.index + 1}. {step.title} — <span className="text-slate-400">{step.status}</span>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+      <div className="p-3 rounded-lg bg-slate-900/80 border border-purple-900/40">
+        <div className="font-bold text-purple-300 mb-2">Delegated projects ({snapshot.delegatedProjects.length})</div>
+        <p className="text-xs text-slate-400">Verified this turn: {snapshot.verifiedStepsThisTurn}. Recommended delegate: {snapshot.recommendedDelegateKind}.</p>
+      </div>
+    </div>
+  );
+};
+
+if (typeof window !== 'undefined') {
+  (window as any).runAiCommandCenterAcc17DevTests = runAiCommandCenterAcc17DevTests;
+}
