@@ -149,6 +149,10 @@ import { buildThirdUnlockHeadlineDayCoach } from '../engine/third-unlock-headlin
 import { buildTurnPaceMomentumDayCoach } from '../engine/turn-pace-momentum-day-coach.js';
 import { buildLiveRegionAssertiveBatchDayCoach } from '../engine/live-region-assertive-batch-day-coach.js';
 import { buildLegacyNavPatchCoverageDayCoach } from '../engine/legacy-nav-patch-coverage-day-coach.js';
+import { buildFourthUnlockHeadlineDayCoach } from '../engine/fourth-unlock-headline-day-coach.js';
+import { buildDualDeferredQueueDayCoach } from '../engine/dual-deferred-queue-day-coach.js';
+import { buildInterfaceLevelStableDayCoach } from '../engine/interface-level-stable-day-coach.js';
+import { buildPreviewPanelSnapshotDayCoach } from '../engine/preview-panel-snapshot-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -306,6 +310,10 @@ export interface DayAdvanceUiEvolutionResult {
   turnPaceMomentumDayCoachCopy: string | null;
   liveRegionAssertiveBatchDayCoachCopy: string | null;
   legacyNavPatchCoverageDayCoachCopy: string | null;
+  fourthUnlockHeadlineDayCoachCopy: string | null;
+  dualDeferredQueueDayCoachCopy: string | null;
+  interfaceLevelStableDayCoachCopy: string | null;
+  previewPanelSnapshotDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1161,6 +1169,28 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const fourthUnlockHeadlineDayCoach = buildFourthUnlockHeadlineDayCoach({
+    newlyUnlockedPanelIds,
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const dualDeferredQueueDayCoach = buildDualDeferredQueueDayCoach({
+    combinedQueueDepth: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const interfaceLevelStableDayCoach = buildInterfaceLevelStableDayCoach({
+    priorLevel: priorSignals.interfaceLevel,
+    nextLevel: nextSignals.interfaceLevel,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const previewPanelSnapshotDayCoach = buildPreviewPanelSnapshotDayCoach({
+    snapshot: coverage,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1319,6 +1349,10 @@ export function tickEvolvingUiOnDayAdvance(
     turnPaceMomentumDayCoachCopy: turnPaceMomentumDayCoach.coachCopy,
     liveRegionAssertiveBatchDayCoachCopy: liveRegionAssertiveBatchDayCoach.coachCopy,
     legacyNavPatchCoverageDayCoachCopy: legacyNavPatchCoverageDayCoach.coachCopy,
+    fourthUnlockHeadlineDayCoachCopy: fourthUnlockHeadlineDayCoach.coachCopy,
+    dualDeferredQueueDayCoachCopy: dualDeferredQueueDayCoach.coachCopy,
+    interfaceLevelStableDayCoachCopy: interfaceLevelStableDayCoach.coachCopy,
+    previewPanelSnapshotDayCoachCopy: previewPanelSnapshotDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
