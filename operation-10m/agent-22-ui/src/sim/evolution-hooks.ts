@@ -73,6 +73,10 @@ import { buildAttentionSurfaceDayCoach } from '../engine/attention-surface-day-c
 import { buildGuidedLearningDayCoach } from '../engine/guided-learning-day-coach.js';
 import { buildKeyboardShortcutConflictDayCoach } from '../engine/keyboard-shortcut-conflict-day-coach.js';
 import { buildContextualWidgetDayCoach } from '../engine/contextual-widget-day-coach.js';
+import { buildLegacyNavAuditDayCoach } from '../engine/legacy-nav-audit-day-coach.js';
+import { buildProgressionCoverageDayCoach } from '../engine/progression-coverage-day-coach.js';
+import { buildAnnouncementPacingDayHint } from '../engine/announcement-pacing-day-hint.js';
+import { buildPhaseShellPlanDayCoach } from '../engine/phase-shell-plan-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -154,6 +158,10 @@ export interface DayAdvanceUiEvolutionResult {
   guidedLearningDayCoachCopy: string | null;
   keyboardShortcutConflictDayCoachCopy: string | null;
   contextualWidgetDayCoachCopy: string | null;
+  legacyNavAuditDayCoachCopy: string | null;
+  progressionCoverageDayCoachCopy: string | null;
+  announcementPacingDayHintCopy: string | null;
+  phaseShellPlanDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -527,6 +535,31 @@ export function tickEvolvingUiOnDayAdvance(
     contextualShouldShowByWidget: context.contextualShouldShowByWidget,
   });
 
+  const legacyNavAuditDayCoach = buildLegacyNavAuditDayCoach({
+    signals: nextSignals,
+    policy,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const progressionCoverageDayCoach = buildProgressionCoverageDayCoach({
+    signals: nextSignals,
+    policy,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const announcementPacingDayHint = buildAnnouncementPacingDayHint({
+    deferredCount: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const phaseShellPlanDayCoach =
+    context.phase != null
+      ? buildPhaseShellPlanDayCoach({
+          phase: context.phase,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { visibleShellRegionCount: 0, shellSummary: '', coachCopy: null };
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   if (context.phase) {
@@ -599,6 +632,10 @@ export function tickEvolvingUiOnDayAdvance(
     guidedLearningDayCoachCopy: guidedLearningDayCoach.coachCopy,
     keyboardShortcutConflictDayCoachCopy: keyboardShortcutConflictDayCoach.coachCopy,
     contextualWidgetDayCoachCopy: contextualWidgetDayCoach.coachCopy,
+    legacyNavAuditDayCoachCopy: legacyNavAuditDayCoach.coachCopy,
+    progressionCoverageDayCoachCopy: progressionCoverageDayCoach.coachCopy,
+    announcementPacingDayHintCopy: announcementPacingDayHint.coachCopy,
+    phaseShellPlanDayCoachCopy: phaseShellPlanDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

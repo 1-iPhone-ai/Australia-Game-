@@ -69,3 +69,7 @@ export { AttentionSurfaceDayCoachStrip } from './AttentionSurfaceDayCoachStrip.j
 export { GuidedLearningDayCoachStrip } from './GuidedLearningDayCoachStrip.js';
 export { KeyboardShortcutConflictDayCoachStrip } from './KeyboardShortcutConflictDayCoachStrip.js';
 export { ContextualWidgetDayCoachStrip } from './ContextualWidgetDayCoachStrip.js';
+export { LegacyNavAuditDayCoachStrip } from './LegacyNavAuditDayCoachStrip.js';
+export { ProgressionCoverageDayCoachStrip } from './ProgressionCoverageDayCoachStrip.js';
+export { AnnouncementPacingDayHintStrip } from './AnnouncementPacingDayHintStrip.js';
+export { PhaseShellPlanDayCoachStrip } from './PhaseShellPlanDayCoachStrip.js';

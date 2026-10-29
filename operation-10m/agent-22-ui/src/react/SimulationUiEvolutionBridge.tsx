@@ -156,6 +156,18 @@ export function SimulationUiEvolutionBridge({
       {result.contextualWidgetDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-widget-day">{result.contextualWidgetDayCoachCopy}</div>
       ) : null}
+      {result.legacyNavAuditDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-legacy-audit-day">{result.legacyNavAuditDayCoachCopy}</div>
+      ) : null}
+      {result.progressionCoverageDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-coverage-day">{result.progressionCoverageDayCoachCopy}</div>
+      ) : null}
+      {result.announcementPacingDayHintCopy ? (
+        <div data-testid="sim-ui-evolution-pacing-day">{result.announcementPacingDayHintCopy}</div>
+      ) : null}
+      {result.phaseShellPlanDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-shell-plan-day">{result.phaseShellPlanDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets

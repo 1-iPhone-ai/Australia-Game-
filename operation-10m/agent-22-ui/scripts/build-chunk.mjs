@@ -107,6 +107,11 @@ const FILES = [
   'engine/guided-learning-day-coach.ts',
   'engine/keyboard-shortcut-conflict-day-coach.ts',
   'engine/contextual-widget-day-coach.ts',
+  'engine/legacy-nav-audit-day-coach.ts',
+  'engine/progression-coverage-day-coach.ts',
+  'engine/announcement-pacing-day-hint.ts',
+  'engine/phase-shell-plan-day-coach.ts',
+  'engine/round24-self-tests.ts',
   'engine/round23-self-tests.ts',
   'engine/round22-self-tests.ts',
   'engine/round21-self-tests.ts',
@@ -250,7 +255,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.23.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.24.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -403,6 +408,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
     check(\`agent22_round22_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
+  const round24 = runAgent22Round24SelfTests();
+  for (const r of round24.results) {
+    check(\`agent22_round24_\${r.id}\`, r.name, r.passed, r.detail);
+  }
+
   const round23 = runAgent22Round23SelfTests();
   for (const r of round23.results) {
     check(\`agent22_round23_\${r.id}\`, r.name, r.passed, r.detail);
@@ -434,7 +444,7 @@ const manifest = {
   contentSha256,
   chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
   selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
-  moduleVersion: '1.23.0',
+  moduleVersion: '1.24.0',
 };
 fs.writeFileSync(
   path.join(outDir, 'module.manifest.json'),
