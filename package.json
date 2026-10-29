@@ -7,7 +7,7 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 5173",
     "test:agent05": "tsx --test operation-10m/agent-05-events/tests/**/*.test.ts",
-    "generate:agent05": "python3 operation-10m/agent-05-events/scripts/generate-catalog.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche2.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche3.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche4.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche5.py",
+    "generate:agent05": "python3 operation-10m/agent-05-events/scripts/generate-catalog.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche2.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche3.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche4.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche5.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche6.py",
     "generate:agent05-regional": "python3 operation-10m/agent-05-events/scripts/generate-regional-hooks.py",
     "bundle:agent05": "tsx operation-10m/agent-05-events/scripts/bundle-chunk-for-agent25.ts"
   },

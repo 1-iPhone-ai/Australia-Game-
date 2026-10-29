@@ -12,6 +12,7 @@ import { getNationalEscalationTier, countRegionsWithContagionAtLeast } from './n
 import { hasArmedBypass } from './deep-chain-orchestrator.ts';
 import { getContagionLevel } from './regional-graph.ts';
 import { getDeferredQueueDepth, getTurnComputePassCount } from './deferred-queue.ts';
+import { OP10M_TURN_COMPUTE_DIGEST_FLAG } from './types.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -151,6 +152,22 @@ export function evaluateRequirements(
         const depth = getDeferredQueueDepth(narrative);
         if (depth < req.min) {
           return { ok: false, reason: `deferred queue ${depth}<${req.min}` };
+        }
+        break;
+      }
+      case 'min_compute_turn': {
+        const narrative = context?.narrative;
+        if (!narrative) return { ok: false, reason: 'missing narrative' };
+        const lastTurn = narrative.turnCompute?.lastTurn ?? 0;
+        if (lastTurn < req.min) {
+          return { ok: false, reason: `compute turn ${lastTurn}<${req.min}` };
+        }
+        break;
+      }
+      case 'turn_compute_digest_set': {
+        const digest = sim.flags[OP10M_TURN_COMPUTE_DIGEST_FLAG];
+        if (typeof digest !== 'string' || digest.length < 4) {
+          return { ok: false, reason: 'digest unset' };
         }
         break;
       }

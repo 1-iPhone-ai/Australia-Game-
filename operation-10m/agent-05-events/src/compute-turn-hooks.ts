@@ -1,5 +1,9 @@
 import { evaluateComputeTurnDepth } from './compute-turn-orchestrator.ts';
 import {
+  primeComputeTurnNarrativeEligibility,
+  reconcileOp10mTurnComputeLedger,
+} from './compute-turn-reconcile.ts';
+import {
   drainDeferredNarrativeMutationsForTurn,
   getDeferredQueueDepth,
   sanitizeOp10mTurnComputeLedger,
@@ -17,6 +21,7 @@ import type {
   Op10mRegionalNarrativeHook,
   Op10mSimulationSlice,
 } from './types.ts';
+import { OP10M_TURN_COMPUTE_DIGEST_FLAG } from './types.ts';
 
 export {
   createDefaultOp10mTurnComputeLedger,
@@ -27,7 +32,7 @@ export {
   sanitizeOp10mTurnComputeLedger,
 } from './deferred-queue.ts';
 
-export const OP10M_TURN_COMPUTE_DIGEST_FLAG = 'op10m_turn_compute_digest';
+export { OP10M_TURN_COMPUTE_DIGEST_FLAG } from './types.ts';
 
 export function buildTurnComputeDigest(
   turn: number,
@@ -94,6 +99,11 @@ export function executeOp10mNarrativeComputeTurnHook(
     return { ok: false, turn: params.turn, simulation, narrative, log, turnComputeDigest: digest, stagesRun };
   }
 
+  const reconcile = reconcileOp10mTurnComputeLedger(simulation, narrative, params.turn, params.day);
+  simulation = reconcile.simulation;
+  narrative = reconcile.narrative;
+  log.push(...reconcile.log);
+
   const pre = drainDeferredNarrativeMutationsForTurn(simulation, narrative, params.turn);
   simulation = pre.simulation;
   narrative = pre.narrative;
@@ -105,6 +115,11 @@ export function executeOp10mNarrativeComputeTurnHook(
   narrative = depth.narrative;
   log.push(...depth.log);
   stagesRun.push('post_simulation');
+
+  const primed = primeComputeTurnNarrativeEligibility(simulation, narrative);
+  simulation = primed.simulation;
+  narrative = primed.narrative;
+  log.push(...primed.log);
 
   const tick = evaluateOp10mNarrativeTick(simulation, narrative, params.catalog, {
     regionalHooks: params.regionalHooks,

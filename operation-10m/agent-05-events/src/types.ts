@@ -1,7 +1,8 @@
 /** Operation 10M · Agent 05 — dynamic events & narrative (standalone contract). */
 
 export const OP10M_AGENT05_MODULE_ID = 'op10m_agent05_dynamic_events';
-export const OP10M_AGENT05_MODULE_VERSION = '1.4.0';
+export const OP10M_AGENT05_MODULE_VERSION = '1.5.0';
+export const OP10M_TURN_COMPUTE_DIGEST_FLAG = 'op10m_turn_compute_digest';
 
 export type Op10mChainPhase = 'signal' | 'pressure' | 'rupture' | 'recovery';
 
@@ -198,6 +199,15 @@ export interface Op10mTriggerRequireMinDeferredQueue {
   min: number;
 }
 
+export interface Op10mTriggerRequireMinComputeTurn {
+  k: 'min_compute_turn';
+  min: number;
+}
+
+export interface Op10mTriggerRequireTurnComputeDigestSet {
+  k: 'turn_compute_digest_set';
+}
+
 export type Op10mComputeTurnStage =
   | 'pre_simulation'
   | 'post_simulation'
@@ -240,7 +250,9 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequireMinResolvedChains
   | Op10mTriggerRequireMultiRegionContagion
   | Op10mTriggerRequireMinTurnComputePasses
-  | Op10mTriggerRequireMinDeferredQueue;
+  | Op10mTriggerRequireMinDeferredQueue
+  | Op10mTriggerRequireMinComputeTurn
+  | Op10mTriggerRequireTurnComputeDigestSet;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;

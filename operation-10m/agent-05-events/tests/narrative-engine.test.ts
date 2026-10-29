@@ -16,14 +16,15 @@ import {
 } from '../src/index.ts';
 
 describe('Agent 05 catalog integrity', () => {
-  it('has 1800 chains across five tranches', () => {
+  it('has 2120 chains across six tranches', () => {
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche1Chains, 600);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche2Chains, 240);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche3Chains, 360);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche4Chains, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche5Chains, 280);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 1800);
-    assert.equal(new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId)).size, 1800);
+    assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche6Chains, 320);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 2120);
+    assert.equal(new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId)).size, 2120);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.regions, 8);
   });
 
