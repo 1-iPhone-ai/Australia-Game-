@@ -206,6 +206,12 @@ import { nrDashBuildDependencyLinkSaturationShare } from '../core/dependency-lin
 import { nrDashBuildNsDerivedSnippetSourceGap } from '../core/ns-derived-snippet-source-gap.ts';
 import { nrDashBuildRimCorridorSaturationShare } from '../core/rim-corridor-saturation-share.ts';
 import { nrDashBuildCriticalHistoryOverlapGap } from '../core/critical-history-overlap-gap.ts';
+import { nrDashBuildUnknownOpenNeedsSkewGap } from '../core/unknown-open-needs-skew-gap.ts';
+import { nrDashBuildRegionalPeakSeveritySpread } from '../core/regional-peak-severity-spread.ts';
+import { nrDashBuildAdjacencyLinkSaturationShare } from '../core/adjacency-link-saturation-share.ts';
+import { nrDashBuildCombinedSnippetSourceGap } from '../core/combined-snippet-source-gap.ts';
+import { nrDashBuildHubRimPulseAsymmetry } from '../core/hub-rim-pulse-asymmetry.ts';
+import { nrDashBuildMajorDerivedHistoryOverlapGap } from '../core/major-derived-history-overlap-gap.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -1631,6 +1637,52 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     lr.state.regions.NSW!.needs.push({ category: 'security', status: 'open', severity: 'critical' });
     const gap = nrDashBuildCriticalHistoryOverlapGap(lr, createAgent23NsFixture())!;
     return gap.criticalEntryCount === 1 && gap.sharedTurnCount === 1 && gap.overlapGap === 1;
+  });
+
+  check('a23_unknown_open_needs_skew_gap', 'Unknown open-needs skew gap is zero on default unknown fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const gap = nrDashBuildUnknownOpenNeedsSkewGap(snap)!;
+    return gap.unknownRegionCount === 8 && gap.ownershipSkew === 0 && gap.openNeedsSkewGap === 0;
+  });
+
+  check('a23_regional_peak_severity_spread', 'Regional peak severity spread splits critical NSW fixture', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.regions.NSW!.needs[0]!.severity = 'critical';
+    lr.state.regions.VIC!.needs[0]!.severity = 'low';
+    const spread = nrDashBuildRegionalPeakSeveritySpread(lr)!;
+    return spread.peakSpread === 2 && spread.maxPeakRank === 3;
+  });
+
+  check('a23_adjacency_link_saturation_share', 'Adjacency link saturation share is below one on fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const nodes = nrDashBuildRegionMapNodes(snap);
+    const links = nrDashMergeMapLinks(
+      nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
+      nrDashBuildDependencyLinks(createAgent23NsFixture(), AGENT23_REGION_MAP_LAYOUT)
+    );
+    const sat = nrDashBuildAdjacencyLinkSaturationShare(links, nodes)!;
+    return sat.linkCount > 3 && sat.saturationShare > 0 && sat.saturationShare < 1;
+  });
+
+  check('a23_combined_snippet_source_gap', 'Combined snippet source gap counts extra derived event', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.derived.push({ turn: 2, text: 'Early', significance: 'meaningful' });
+    const snap = nrDashBuildAuthSnapshot(5, lr, createAgent23NsFixture(), null)!;
+    const gap = nrDashBuildCombinedSnippetSourceGap(lr, createAgent23NsFixture(), snap)!;
+    return gap.combinedSourceCount === 3 && gap.matchedSnippetCount === 2 && gap.sourceGap === 1;
+  });
+
+  check('a23_hub_rim_pulse_asymmetry', 'Hub rim pulse asymmetry is positive on hub-touching links', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const asym = nrDashBuildHubRimPulseAsymmetry(createAgent23NsFixture(), nrDashBuildRegionMapNodes(snap))!;
+    return asym.hubRimLinkCount > 0 && asym.maxEndpointDelta > 0.01;
+  });
+
+  check('a23_major_derived_history_overlap_gap', 'Major-derived history overlap gap counts duplicate NS turn', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.derived.push({ turn: 5, text: 'Echo', significance: 'meaningful' });
+    const gap = nrDashBuildMajorDerivedHistoryOverlapGap(lr, createAgent23NsFixture())!;
+    return gap.derivedEntryCount === 2 && gap.sharedTurnCount === 1 && gap.overlapGap === 1;
   });
 
   return results;

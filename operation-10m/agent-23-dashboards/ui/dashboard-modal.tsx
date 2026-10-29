@@ -210,6 +210,12 @@ import { nrDashBuildDependencyLinkSaturationShare } from '../core/dependency-lin
 import { nrDashBuildNsDerivedSnippetSourceGap } from '../core/ns-derived-snippet-source-gap.ts';
 import { nrDashBuildRimCorridorSaturationShare } from '../core/rim-corridor-saturation-share.ts';
 import { nrDashBuildCriticalHistoryOverlapGap } from '../core/critical-history-overlap-gap.ts';
+import { nrDashBuildUnknownOpenNeedsSkewGap } from '../core/unknown-open-needs-skew-gap.ts';
+import { nrDashBuildRegionalPeakSeveritySpread } from '../core/regional-peak-severity-spread.ts';
+import { nrDashBuildAdjacencyLinkSaturationShare } from '../core/adjacency-link-saturation-share.ts';
+import { nrDashBuildCombinedSnippetSourceGap } from '../core/combined-snippet-source-gap.ts';
+import { nrDashBuildHubRimPulseAsymmetry } from '../core/hub-rim-pulse-asymmetry.ts';
+import { nrDashBuildMajorDerivedHistoryOverlapGap } from '../core/major-derived-history-overlap-gap.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -669,6 +675,15 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const unknownNeedsSkew = nrDashBuildUnknownOpenNeedsSkewGap(snap);
+      return unknownNeedsSkew ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-unknown-open-needs-skew-gap">
+          Unknown open-needs skew gap {unknownNeedsSkew.openNeedsSkewGap} · ownership skew {unknownNeedsSkew.ownershipSkew}{' '}
+          · unknown μ {unknownNeedsSkew.unknownMeanOpenNeeds}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const highConc = nrDashBuildHighTierNeedsConcentration(lrView);
       return highConc ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-high-tier-needs-concentration">
@@ -753,6 +768,15 @@ export const NrDashOverviewTab: React.FC<{
       return sevSpan && sevSpan.severitySpread > 0 ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-open-needs-severity-span">
           Open needs severity span {sevSpan.severitySpread} · rank {sevSpan.minSeverityRank}–{sevSpan.maxSeverityRank}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const regionalPeakSpread = nrDashBuildRegionalPeakSeveritySpread(lrView);
+      return regionalPeakSpread && regionalPeakSpread.peakSpread > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-regional-peak-severity-spread">
+          Regional peak severity spread {regionalPeakSpread.peakSpread} · peak rank {regionalPeakSpread.minPeakRank}–
+          {regionalPeakSpread.maxPeakRank}
         </div>
       ) : null;
     })()}
@@ -855,6 +879,15 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const combinedSourceGap = nrDashBuildCombinedSnippetSourceGap(lrView, nsState, snap);
+      return combinedSourceGap && combinedSourceGap.sourceGap > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-combined-snippet-source-gap">
+          Combined snippet source gap {combinedSourceGap.sourceGap} · sources {combinedSourceGap.combinedSourceCount} · matched{' '}
+          {combinedSourceGap.matchedSnippetCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const nsSourceGap = nrDashBuildNsSnippetSourceGap(nsState, snap);
       return nsSourceGap ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-ns-snippet-source-gap">
@@ -941,6 +974,15 @@ export const NrDashOverviewTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-critical-history-overlap-gap">
           Critical-history overlap gap {criticalHistGap.overlapGap} · shared {criticalHistGap.sharedTurnCount} · NS{' '}
           {criticalHistGap.nsEntryCount} · critical {criticalHistGap.criticalEntryCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const majorDerivedHistGap = nrDashBuildMajorDerivedHistoryOverlapGap(lrView, nsState);
+      return majorDerivedHistGap && majorDerivedHistGap.overlapGap > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-major-derived-history-overlap-gap">
+          Major-derived history overlap gap {majorDerivedHistGap.overlapGap} · shared {majorDerivedHistGap.sharedTurnCount} · NS{' '}
+          {majorDerivedHistGap.nsEntryCount} · derived {majorDerivedHistGap.derivedEntryCount}
         </div>
       ) : null;
     })()}
@@ -1957,6 +1999,15 @@ export const NrDashMapTab: React.FC<{
         ) : null;
       })()}
       {(() => {
+        const hubRimAsym = nrDashBuildHubRimPulseAsymmetry(nsState, baseNodes);
+        return hubRimAsym && hubRimAsym.maxEndpointDelta > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-hub-rim-pulse-asymmetry">
+            Hub rim pulse asymmetry μΔ {hubRimAsym.meanEndpointDelta} · peak {hubRimAsym.maxEndpointDelta} ·{' '}
+            {hubRimAsym.hubRimLinkCount} links
+          </p>
+        ) : null;
+      })()}
+      {(() => {
         const hubPeripheralSat = nrDashBuildHubPeripheralSaturationShare(nsState);
         return hubPeripheralSat && hubPeripheralSat.saturationShare > 0 ? (
           <p className="text-[10px] opacity-75" data-testid="nr-dash-hub-peripheral-saturation-share">
@@ -2007,6 +2058,14 @@ export const NrDashMapTab: React.FC<{
           <p className="text-[10px] opacity-75" data-testid="nr-dash-adjacency-corridor-saturation-share">
             Adjacency corridor saturation share {adjCorridorSat.saturationShare} · μ {adjCorridorSat.meanBlend} · peak{' '}
             {adjCorridorSat.peakBlend}
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const adjLinkSat = nrDashBuildAdjacencyLinkSaturationShare(stressedLinks, baseNodes);
+        return adjLinkSat && adjLinkSat.saturationShare > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-adjacency-link-saturation-share">
+            Adjacency link saturation share {adjLinkSat.saturationShare} · μ {adjLinkSat.meanBlend} · peak {adjLinkSat.peakBlend}
           </p>
         ) : null;
       })()}
