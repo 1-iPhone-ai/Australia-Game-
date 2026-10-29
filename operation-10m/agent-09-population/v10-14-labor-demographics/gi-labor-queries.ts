@@ -33,7 +33,10 @@ export type LaborGiQueryTopic =
   | 'participation_equity'
   | 'credential_mobility'
   | 'household_participation_coupling'
-  | 'rebalancing_stress';
+  | 'rebalancing_stress'
+  | 'automation_participation_resilience'
+  | 'wage_participation_spillover'
+  | 'migration_participation_buffer';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -52,6 +55,13 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(credential mobility|portable credential|skills portability)/.test(q)) return 'credential_mobility';
   if (/\b(household participation coupling|budget participation link)/.test(q)) return 'household_participation_coupling';
   if (/\b(rebalancing stress|corridor stress|interregional stress)/.test(q)) return 'rebalancing_stress';
+  if (/\b(automation participation resilience|automation resilience participation)/.test(q)) {
+    return 'automation_participation_resilience';
+  }
+  if (/\b(wage participation spillover|wage spillover participation)/.test(q)) return 'wage_participation_spillover';
+  if (/\b(migration shock buffer|migration participation buffer|shock buffer)/.test(q)) {
+    return 'migration_participation_buffer';
+  }
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -305,6 +315,34 @@ export function answerLaborDemographicsQuestion(
         fact: `Stress band ${state.laborRebalancingStressBrief?.band ?? 'unknown'}; high-priority moves ${state.laborRebalancingStressBrief?.highPriorityMoves ?? 0}.`,
         inference: state.laborRebalancingStressBrief?.stewardNote || state.outlook,
         projection: 'Stress blends corridor moves, absorption, and tightness — not literal relocation counts.'
+      };
+    case 'automation_participation_resilience':
+      return {
+        topic,
+        headline:
+          state.automationParticipationResilienceOutlook?.summary ||
+          'Automation-participation resilience unavailable.',
+        fact: `Resilience band ${state.automationParticipationResilienceOutlook?.band ?? 'unknown'}; automation drag ${Math.round(state.automationParticipationResilienceOutlook?.automationPressureDrag ?? 0)}.`,
+        inference: state.automationParticipationResilienceOutlook?.stewardNote || state.summary,
+        projection: 'Resilience blends automation pressure, participation, and transition — bounded indices only.'
+      };
+    case 'wage_participation_spillover':
+      return {
+        topic,
+        headline: state.wageParticipationSpilloverBrief?.summary || 'Wage-participation spillover unavailable.',
+        fact: `Spillover band ${state.wageParticipationSpilloverBrief?.band ?? 'unknown'}; wage drag ${Math.round(state.wageParticipationSpilloverBrief?.wagePressureDrag ?? 0)}.`,
+        inference: state.wageParticipationSpilloverBrief?.stewardNote || state.outlook,
+        projection: 'Spillover blends competitiveness, wage pressure, and household coupling — not literal payroll data.'
+      };
+    case 'migration_participation_buffer':
+      return {
+        topic,
+        headline:
+          state.migrationShockParticipationBufferOutlook?.summary ||
+          'Migration-shock participation buffer unavailable.',
+        fact: `Buffer band ${state.migrationShockParticipationBufferOutlook?.band ?? 'unknown'}; shock drag ${Math.round(state.migrationShockParticipationBufferOutlook?.activeShockDrag ?? 0)}.`,
+        inference: state.migrationShockParticipationBufferOutlook?.stewardNote || state.outlook,
+        projection: 'Buffer blends shocks, absorption, onboarding, and participation — not literal migrant counts.'
       };
     default:
       return {

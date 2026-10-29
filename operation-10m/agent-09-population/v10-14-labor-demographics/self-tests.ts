@@ -64,6 +64,15 @@ import {
 import { computeNationalCredentialMobilityOutlook } from './credential-mobility-outlook';
 import { computeNationalHouseholdParticipationCouplingBrief } from './household-participation-coupling-brief';
 import { computeNationalLaborRebalancingStressBrief } from './labor-rebalancing-stress-brief';
+import {
+  WORKFORCE_ONBOARDING_LEVERS,
+  lookupWorkforceOnboardingLever,
+  onboardingEaseForRegion,
+  onboardingLeversForIndustry
+} from './catalog/workforce-onboarding-levers';
+import { computeNationalAutomationParticipationResilienceOutlook } from './automation-participation-resilience-outlook';
+import { computeNationalWageParticipationSpilloverBrief } from './wage-participation-spillover-brief';
+import { computeNationalMigrationShockParticipationBufferOutlook } from './migration-shock-participation-buffer-outlook';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -611,6 +620,62 @@ export function runV1014LaborDemographicsSelfTests(): {
       rHhBad.state.laborMarketTightnessBrief
     ).stewardNote.length > 8,
     'rebalancing stress steward note'
+  );
+
+  check('R1101', WORKFORCE_ONBOARDING_LEVERS.length >= 8, 'onboarding lever catalog');
+  check('R1102', Boolean(lookupWorkforceOnboardingLever('onboard_tech_nsw_vic')?.narrative), 'onboarding lever lookup');
+  check('R1103', onboardingLeversForIndustry('technology').length >= 1, 'technology onboarding levers');
+  check('R1104', onboardingEaseForRegion('NSW', 'technology') > 0, 'regional onboarding ease');
+  check('R1105', Boolean(r1.state.automationParticipationResilienceOutlook?.band), 'automation resilience on state');
+  check('R1106', (r1.state.automationParticipationResilienceOutlook?.automationPressureDrag ?? 0) >= 0, 'automation drag');
+  check('R1107', Boolean(r1.state.wageParticipationSpilloverBrief?.band), 'wage spillover on state');
+  check('R1108', Boolean(r1.state.migrationShockParticipationBufferOutlook?.band), 'migration buffer on state');
+  check(
+    'R1109',
+    detectLaborDemographicsQuery('automation participation resilience') === 'automation_participation_resilience',
+    'GI automation resilience detect'
+  );
+  check(
+    'R1110',
+    detectLaborDemographicsQuery('wage participation spillover') === 'wage_participation_spillover',
+    'GI spillover detect'
+  );
+  check(
+    'R1111',
+    detectLaborDemographicsQuery('migration shock buffer') === 'migration_participation_buffer',
+    'GI migration buffer detect'
+  );
+  check(
+    'R1112',
+    answerLaborDemographicsQuestion(r1.state, 'automation_participation_resilience').headline.length > 5,
+    'GI automation resilience answer'
+  );
+  const automationResOnly = computeNationalAutomationParticipationResilienceOutlook(
+    r1.state,
+    r1.state.participationPressureBrief,
+    r1.state.workforceTransitionFrictionOutlook
+  );
+  check('R1113', automationResOnly.summary.length > 10, 'automation resilience standalone summary');
+  const spilloverOnly = computeNationalWageParticipationSpilloverBrief(
+    r1.state,
+    r1.state.wageCompetitivenessIndex,
+    r1.state.householdParticipationCouplingBrief
+  );
+  check('R1114', spilloverOnly.band.length > 3, 'spillover band string');
+  const bufferOnly = computeNationalMigrationShockParticipationBufferOutlook(
+    r1.state,
+    r1.state.participationPressureBrief,
+    r1.state.regionalLaborAbsorptionBrief
+  );
+  check('R1115', bufferOnly.activeShockDrag >= 0, 'migration buffer shock drag');
+  check(
+    'R1116',
+    computeNationalWageParticipationSpilloverBrief(
+      rHhBad.state,
+      rHhBad.state.wageCompetitivenessIndex,
+      rHhBad.state.householdParticipationCouplingBrief
+    ).stewardNote.length > 8,
+    'wage spillover steward note'
   );
 
   for (let i = 19; i <= 50; i++) {

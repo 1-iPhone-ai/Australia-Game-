@@ -113,6 +113,24 @@ export function buildStewardLaborBrief(
   ) {
     hints.push(state.laborRebalancingStressBrief.stewardNote);
   }
+  if (
+    state.automationParticipationResilienceOutlook?.band === 'fragile' ||
+    state.automationParticipationResilienceOutlook?.band === 'strained'
+  ) {
+    hints.push(state.automationParticipationResilienceOutlook.stewardNote);
+  }
+  if (
+    state.wageParticipationSpilloverBrief?.band === 'suppressive' ||
+    state.wageParticipationSpilloverBrief?.band === 'mixed'
+  ) {
+    hints.push(state.wageParticipationSpilloverBrief.stewardNote);
+  }
+  if (
+    state.migrationShockParticipationBufferOutlook?.band === 'depleted' ||
+    state.migrationShockParticipationBufferOutlook?.band === 'thin'
+  ) {
+    hints.push(state.migrationShockParticipationBufferOutlook.stewardNote);
+  }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
   }

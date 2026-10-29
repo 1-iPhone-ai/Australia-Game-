@@ -215,6 +215,9 @@ export interface NationalLaborDemographicsState {
   credentialMobilityOutlook?: NationalCredentialMobilityOutlook;
   householdParticipationCouplingBrief?: NationalHouseholdParticipationCouplingBrief;
   laborRebalancingStressBrief?: NationalLaborRebalancingStressBrief;
+  automationParticipationResilienceOutlook?: NationalAutomationParticipationResilienceOutlook;
+  wageParticipationSpilloverBrief?: NationalWageParticipationSpilloverBrief;
+  migrationShockParticipationBufferOutlook?: NationalMigrationShockParticipationBufferOutlook;
 }
 
 export type MigrationShockKind =
@@ -557,6 +560,39 @@ export interface NationalLaborRebalancingStressBrief {
   stressIndex: number;
   band: RebalancingStressBand;
   highPriorityMoves: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type AutomationParticipationResilienceBand = 'fragile' | 'strained' | 'stable' | 'adaptive';
+
+export interface NationalAutomationParticipationResilienceOutlook {
+  turn: number;
+  resilienceIndex: number;
+  band: AutomationParticipationResilienceBand;
+  automationPressureDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WageParticipationSpilloverBand = 'suppressive' | 'mixed' | 'supportive' | 'amplifying';
+
+export interface NationalWageParticipationSpilloverBrief {
+  turn: number;
+  spilloverIndex: number;
+  band: WageParticipationSpilloverBand;
+  wagePressureDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type MigrationParticipationBufferBand = 'depleted' | 'thin' | 'adequate' | 'cushioned';
+
+export interface NationalMigrationShockParticipationBufferOutlook {
+  turn: number;
+  bufferIndex: number;
+  band: MigrationParticipationBufferBand;
+  activeShockDrag: number;
   summary: string;
   stewardNote: string;
 }

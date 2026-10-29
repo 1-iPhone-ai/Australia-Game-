@@ -219,6 +219,9 @@ export interface NationalLaborDemographicsState {
   credentialMobilityOutlook?: NationalCredentialMobilityOutlook;
   householdParticipationCouplingBrief?: NationalHouseholdParticipationCouplingBrief;
   laborRebalancingStressBrief?: NationalLaborRebalancingStressBrief;
+  automationParticipationResilienceOutlook?: NationalAutomationParticipationResilienceOutlook;
+  wageParticipationSpilloverBrief?: NationalWageParticipationSpilloverBrief;
+  migrationShockParticipationBufferOutlook?: NationalMigrationShockParticipationBufferOutlook;
 }
 
 export type MigrationShockKind =
@@ -561,6 +564,39 @@ export interface NationalLaborRebalancingStressBrief {
   stressIndex: number;
   band: RebalancingStressBand;
   highPriorityMoves: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type AutomationParticipationResilienceBand = 'fragile' | 'strained' | 'stable' | 'adaptive';
+
+export interface NationalAutomationParticipationResilienceOutlook {
+  turn: number;
+  resilienceIndex: number;
+  band: AutomationParticipationResilienceBand;
+  automationPressureDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WageParticipationSpilloverBand = 'suppressive' | 'mixed' | 'supportive' | 'amplifying';
+
+export interface NationalWageParticipationSpilloverBrief {
+  turn: number;
+  spilloverIndex: number;
+  band: WageParticipationSpilloverBand;
+  wagePressureDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type MigrationParticipationBufferBand = 'depleted' | 'thin' | 'adequate' | 'cushioned';
+
+export interface NationalMigrationShockParticipationBufferOutlook {
+  turn: number;
+  bufferIndex: number;
+  band: MigrationParticipationBufferBand;
+  activeShockDrag: number;
   summary: string;
   stewardNote: string;
 }
@@ -1661,7 +1697,10 @@ export type LaborGiQueryTopic =
   | 'participation_equity'
   | 'credential_mobility'
   | 'household_participation_coupling'
-  | 'rebalancing_stress';
+  | 'rebalancing_stress'
+  | 'automation_participation_resilience'
+  | 'wage_participation_spillover'
+  | 'migration_participation_buffer';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -1680,6 +1719,13 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(credential mobility|portable credential|skills portability)/.test(q)) return 'credential_mobility';
   if (/\b(household participation coupling|budget participation link)/.test(q)) return 'household_participation_coupling';
   if (/\b(rebalancing stress|corridor stress|interregional stress)/.test(q)) return 'rebalancing_stress';
+  if (/\b(automation participation resilience|automation resilience participation)/.test(q)) {
+    return 'automation_participation_resilience';
+  }
+  if (/\b(wage participation spillover|wage spillover participation)/.test(q)) return 'wage_participation_spillover';
+  if (/\b(migration shock buffer|migration participation buffer|shock buffer)/.test(q)) {
+    return 'migration_participation_buffer';
+  }
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1933,6 +1979,34 @@ export function answerLaborDemographicsQuestion(
         fact: `Stress band ${state.laborRebalancingStressBrief?.band ?? 'unknown'}; high-priority moves ${state.laborRebalancingStressBrief?.highPriorityMoves ?? 0}.`,
         inference: state.laborRebalancingStressBrief?.stewardNote || state.outlook,
         projection: 'Stress blends corridor moves, absorption, and tightness — not literal relocation counts.'
+      };
+    case 'automation_participation_resilience':
+      return {
+        topic,
+        headline:
+          state.automationParticipationResilienceOutlook?.summary ||
+          'Automation-participation resilience unavailable.',
+        fact: `Resilience band ${state.automationParticipationResilienceOutlook?.band ?? 'unknown'}; automation drag ${Math.round(state.automationParticipationResilienceOutlook?.automationPressureDrag ?? 0)}.`,
+        inference: state.automationParticipationResilienceOutlook?.stewardNote || state.summary,
+        projection: 'Resilience blends automation pressure, participation, and transition — bounded indices only.'
+      };
+    case 'wage_participation_spillover':
+      return {
+        topic,
+        headline: state.wageParticipationSpilloverBrief?.summary || 'Wage-participation spillover unavailable.',
+        fact: `Spillover band ${state.wageParticipationSpilloverBrief?.band ?? 'unknown'}; wage drag ${Math.round(state.wageParticipationSpilloverBrief?.wagePressureDrag ?? 0)}.`,
+        inference: state.wageParticipationSpilloverBrief?.stewardNote || state.outlook,
+        projection: 'Spillover blends competitiveness, wage pressure, and household coupling — not literal payroll data.'
+      };
+    case 'migration_participation_buffer':
+      return {
+        topic,
+        headline:
+          state.migrationShockParticipationBufferOutlook?.summary ||
+          'Migration-shock participation buffer unavailable.',
+        fact: `Buffer band ${state.migrationShockParticipationBufferOutlook?.band ?? 'unknown'}; shock drag ${Math.round(state.migrationShockParticipationBufferOutlook?.activeShockDrag ?? 0)}.`,
+        inference: state.migrationShockParticipationBufferOutlook?.stewardNote || state.outlook,
+        projection: 'Buffer blends shocks, absorption, onboarding, and participation — not literal migrant counts.'
       };
     default:
       return {
@@ -2358,6 +2432,24 @@ export function buildStewardLaborBrief(
     state.laborRebalancingStressBrief?.band === 'acute'
   ) {
     hints.push(state.laborRebalancingStressBrief.stewardNote);
+  }
+  if (
+    state.automationParticipationResilienceOutlook?.band === 'fragile' ||
+    state.automationParticipationResilienceOutlook?.band === 'strained'
+  ) {
+    hints.push(state.automationParticipationResilienceOutlook.stewardNote);
+  }
+  if (
+    state.wageParticipationSpilloverBrief?.band === 'suppressive' ||
+    state.wageParticipationSpilloverBrief?.band === 'mixed'
+  ) {
+    hints.push(state.wageParticipationSpilloverBrief.stewardNote);
+  }
+  if (
+    state.migrationShockParticipationBufferOutlook?.band === 'depleted' ||
+    state.migrationShockParticipationBufferOutlook?.band === 'thin'
+  ) {
+    hints.push(state.migrationShockParticipationBufferOutlook.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -3467,6 +3559,121 @@ export function reengagementPullForRegion(
   );
   if (!matches.length) return 0;
   return matches.reduce((a, l) => a + l.reengagementStrength, 0) / matches.length;
+}
+
+
+// --- source: catalog/workforce-onboarding-levers.ts ---
+
+export type WorkforceOnboardingLeverKind =
+  | 'buddy_lane'
+  | 'credential_fast_track'
+  | 'site_induction_pack'
+  | 'language_ramp'
+  | 'safety_orientation_band';
+
+export interface WorkforceOnboardingLever {
+  id: string;
+  kind: WorkforceOnboardingLeverKind;
+  targetIndustry: StrategicIndustryKind;
+  hostRegions: readonly string[];
+  onboardingStrength: number;
+  label: string;
+  narrative: string;
+}
+
+export const WORKFORCE_ONBOARDING_LEVERS: WorkforceOnboardingLever[] = [
+  {
+    id: 'onboard_manufacturing_vic',
+    kind: 'site_induction_pack',
+    targetIndustry: 'manufacturing',
+    hostRegions: ['VIC', 'SA'],
+    onboardingStrength: 0.7,
+    label: 'Manufacturing site induction pack',
+    narrative: 'Induction packs shorten time-to-productivity without literal training counts.'
+  },
+  {
+    id: 'onboard_health_nsw',
+    kind: 'credential_fast_track',
+    targetIndustry: 'research',
+    hostRegions: ['NSW', 'ACT'],
+    onboardingStrength: 0.73,
+    label: 'Capital health credential fast-track',
+    narrative: 'Fast-track bands align onboarding with credential mobility pathways.'
+  },
+  {
+    id: 'onboard_agri_tas',
+    kind: 'buddy_lane',
+    targetIndustry: 'agriculture',
+    hostRegions: ['TAS', 'SA', 'VIC'],
+    onboardingStrength: 0.62,
+    label: 'Regional agri buddy lane',
+    narrative: 'Buddy lanes ease seasonal onboarding in regional agri corridors.'
+  },
+  {
+    id: 'onboard_tourism_qld',
+    kind: 'language_ramp',
+    targetIndustry: 'tourism',
+    hostRegions: ['QLD', 'NSW'],
+    onboardingStrength: 0.65,
+    label: 'Coastal tourism language ramp',
+    narrative: 'Language ramps stabilize service-sector onboarding in coastal hubs.'
+  },
+  {
+    id: 'onboard_tech_nsw_vic',
+    kind: 'credential_fast_track',
+    targetIndustry: 'technology',
+    hostRegions: ['NSW', 'VIC'],
+    onboardingStrength: 0.76,
+    label: 'Tech onboarding fast-track',
+    narrative: 'Fast-track onboarding supports portable credential mobility bands.'
+  },
+  {
+    id: 'onboard_mining_wa',
+    kind: 'safety_orientation_band',
+    targetIndustry: 'mining',
+    hostRegions: ['WA', 'QLD', 'NT'],
+    onboardingStrength: 0.68,
+    label: 'Frontier mining safety orientation',
+    narrative: 'Safety orientation bands offset automation participation drag in resource regions.'
+  },
+  {
+    id: 'onboard_energy_nt',
+    kind: 'site_induction_pack',
+    targetIndustry: 'energy',
+    hostRegions: ['NT', 'QLD'],
+    onboardingStrength: 0.64,
+    label: 'Energy corridor induction pack',
+    narrative: 'Induction packs align onboarding with corridor absorption headroom.'
+  },
+  {
+    id: 'onboard_trade_sa',
+    kind: 'buddy_lane',
+    targetIndustry: 'trade',
+    hostRegions: ['SA', 'WA'],
+    onboardingStrength: 0.6,
+    label: 'Trade logistics buddy lane',
+    narrative: 'Buddy lanes smooth migration-shock participation buffers in logistics hubs.'
+  }
+];
+
+export function lookupWorkforceOnboardingLever(id: string): WorkforceOnboardingLever | undefined {
+  return WORKFORCE_ONBOARDING_LEVERS.find(l => l.id === id);
+}
+
+export function onboardingLeversForIndustry(industry: StrategicIndustryKind): WorkforceOnboardingLever[] {
+  return WORKFORCE_ONBOARDING_LEVERS.filter(l => l.targetIndustry === industry);
+}
+
+export function onboardingEaseForRegion(
+  regionId: string,
+  dominantIndustry: StrategicIndustryKind | null | undefined
+): number {
+  if (!dominantIndustry) return 0;
+  const matches = WORKFORCE_ONBOARDING_LEVERS.filter(
+    l => l.targetIndustry === dominantIndustry && l.hostRegions.includes(regionId)
+  );
+  if (!matches.length) return 0;
+  return matches.reduce((a, l) => a + l.onboardingStrength, 0) / matches.length;
 }
 
 
@@ -4760,6 +4967,211 @@ export function computeNationalLaborRebalancingStressBrief(
 }
 
 
+// --- source: automation-participation-resilience-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type AutomationParticipationResilienceBand,
+  type NationalAutomationParticipationResilienceOutlook,
+  type NationalLaborDemographicsState,
+  type NationalParticipationPressureBrief,
+  type NationalWorkforceTransitionFrictionOutlook
+} from './types';
+
+function resilienceBand(index: number): AutomationParticipationResilienceBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'stable';
+  return 'adaptive';
+}
+
+export function computeNationalAutomationParticipationResilienceOutlook(
+  state: NationalLaborDemographicsState,
+  participation: NationalParticipationPressureBrief | null | undefined,
+  transition: NationalWorkforceTransitionFrictionOutlook | null | undefined
+): NationalAutomationParticipationResilienceOutlook {
+  if (!state.enabled || !participation || !transition) {
+    return {
+      turn: state.turn,
+      resilienceIndex: 50,
+      band: 'strained',
+      automationPressureDrag: 0,
+      summary: 'Automation-participation resilience idle — participation or transition unavailable.',
+      stewardNote: 'Compute participation and transition friction before automation resilience guidance.'
+    };
+  }
+
+  let automationPressure = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    automationPressure += state.regions[regionId]?.automationPressureIndex ?? 50;
+  });
+  automationPressure /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+  const automationPressureDrag = v1014laborClamp(automationPressure * 0.42);
+
+  const transitionDrag =
+    transition.band === 'bottleneck' ? 14 : transition.band === 'sticky' ? 9 : transition.frictionIndex * 0.18;
+  const participationLift = participation.participationIndex * 0.3;
+  const linkageLift = state.employmentLinkageScore * 0.16;
+
+  const resilienceIndex = v1014laborClamp(
+    34 + participationLift + linkageLift - automationPressureDrag - transitionDrag
+  );
+  const band = resilienceBand(resilienceIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'strained'
+      ? 'Strained automation-participation resilience — slow automation stacks until onboarding levers land.'
+      : band === 'adaptive'
+        ? 'Adaptive resilience — avoid wage surges that erase participation cushions.'
+        : 'Stable resilience — monitor transition friction in high-automation regions.';
+
+  return {
+    turn: state.turn,
+    resilienceIndex,
+    band,
+    automationPressureDrag,
+    summary: `Automation-participation resilience ${band} (index ${Math.round(resilienceIndex)}); automation drag ${Math.round(automationPressureDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: wage-participation-spillover-brief.ts ---
+  NationalHouseholdParticipationCouplingBrief,
+  NationalLaborDemographicsState,
+  NationalWageCompetitivenessIndex,
+  NationalWageParticipationSpilloverBrief,
+  WageParticipationSpilloverBand
+} from './types';
+
+function spilloverBand(index: number): WageParticipationSpilloverBand {
+  if (index <= 34) return 'suppressive';
+  if (index <= 48) return 'mixed';
+  if (index <= 62) return 'supportive';
+  return 'amplifying';
+}
+
+export function computeNationalWageParticipationSpilloverBrief(
+  state: NationalLaborDemographicsState,
+  competitiveness: NationalWageCompetitivenessIndex | null | undefined,
+  coupling: NationalHouseholdParticipationCouplingBrief | null | undefined
+): NationalWageParticipationSpilloverBrief {
+  if (!state.enabled || !competitiveness || !coupling) {
+    return {
+      turn: state.turn,
+      spilloverIndex: 50,
+      band: 'mixed',
+      wagePressureDrag: 0,
+      summary: 'Wage-participation spillover idle — competitiveness or coupling unavailable.',
+      stewardNote: 'Compute wage competitiveness and household coupling before spillover guidance.'
+    };
+  }
+
+  const wagePressureDrag = v1014laborClamp(competitiveness.wagePressureDrag * 0.65 + state.wagePressureScore * 0.12);
+  const competitivenessEase =
+    competitiveness.band === 'premium' || competitiveness.band === 'balanced'
+      ? competitiveness.competitivenessIndex * 0.28
+      : 0;
+  const couplingLift =
+    coupling.band === 'aligned' || coupling.band === 'reinforcing' ? coupling.couplingIndex * 0.22 : 0;
+  const couplingDrag =
+    coupling.band === 'decoupled' ? 12 : coupling.band === 'strained' ? 7 : 0;
+
+  const spilloverIndex = v1014laborClamp(
+    32 + competitivenessEase + couplingLift - wagePressureDrag - couplingDrag
+  );
+  const band = spilloverBand(spilloverIndex);
+
+  const stewardNote =
+    band === 'suppressive' || band === 'mixed'
+      ? 'Mixed wage-participation spillover — ease household coupling before competitiveness pushes.'
+      : band === 'amplifying'
+        ? 'Amplifying spillover — avoid stacked wage surges in tight absorption regions.'
+        : 'Supportive spillover — align onboarding with participation expansion bands.';
+
+  return {
+    turn: state.turn,
+    spilloverIndex,
+    band,
+    wagePressureDrag,
+    summary: `Wage-participation spillover ${band} (index ${Math.round(spilloverIndex)}); wage drag ${Math.round(wagePressureDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: migration-shock-participation-buffer-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type MigrationParticipationBufferBand,
+  type NationalLaborDemographicsState,
+  type NationalMigrationShockParticipationBufferOutlook,
+  type NationalParticipationPressureBrief,
+  type NationalRegionalLaborAbsorptionBrief
+} from './types';
+
+function bufferBand(index: number): MigrationParticipationBufferBand {
+  if (index <= 34) return 'depleted';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'adequate';
+  return 'cushioned';
+}
+
+export function computeNationalMigrationShockParticipationBufferOutlook(
+  state: NationalLaborDemographicsState,
+  participation: NationalParticipationPressureBrief | null | undefined,
+  absorption: NationalRegionalLaborAbsorptionBrief | null | undefined
+): NationalMigrationShockParticipationBufferOutlook {
+  if (!state.enabled || !participation || !absorption) {
+    return {
+      turn: state.turn,
+      bufferIndex: 50,
+      band: 'thin',
+      activeShockDrag: 0,
+      summary: 'Migration-shock participation buffer idle — participation or absorption unavailable.',
+      stewardNote: 'Compute participation and absorption before migration buffer guidance.'
+    };
+  }
+
+  const shockCount = state.activeMigrationShocks?.length ?? 0;
+  const activeShockDrag = v1014laborClamp(shockCount * 7 + (shockCount >= 2 ? 6 : 0));
+
+  let onboardingEase = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    onboardingEase += onboardingEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  onboardingEase /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const absorptionEase =
+    absorption.band === 'headroom'
+      ? 14
+      : absorption.band === 'absorbing'
+        ? 8
+        : absorption.band === 'constrained'
+          ? 2
+          : 0;
+  const participationLift = participation.participationIndex * 0.26;
+
+  const bufferIndex = v1014laborClamp(
+    30 + participationLift + absorptionEase + onboardingEase * 18 - activeShockDrag
+  );
+  const band = bufferBand(bufferIndex);
+
+  const stewardNote =
+    band === 'depleted' || band === 'thin'
+      ? 'Thin migration-shock buffer — deploy onboarding levers before stacking corridor shocks.'
+      : band === 'cushioned'
+        ? 'Cushioned buffer — avoid hyper-mobility that drains anchor participation.'
+        : 'Adequate buffer — monitor absorption in inbound shock regions.';
+
+  return {
+    turn: state.turn,
+    bufferIndex,
+    band,
+    activeShockDrag,
+    summary: `Migration-shock participation buffer ${band} (index ${Math.round(bufferIndex)}); shock drag ${Math.round(activeShockDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -5339,6 +5751,21 @@ export function computeNationalLaborDemographics(
     state.regionalLaborAbsorptionBrief,
     state.laborMarketTightnessBrief
   );
+  state.automationParticipationResilienceOutlook = computeNationalAutomationParticipationResilienceOutlook(
+    state,
+    state.participationPressureBrief,
+    state.workforceTransitionFrictionOutlook
+  );
+  state.wageParticipationSpilloverBrief = computeNationalWageParticipationSpilloverBrief(
+    state,
+    state.wageCompetitivenessIndex,
+    state.householdParticipationCouplingBrief
+  );
+  state.migrationShockParticipationBufferOutlook = computeNationalMigrationShockParticipationBufferOutlook(
+    state,
+    state.participationPressureBrief,
+    state.regionalLaborAbsorptionBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -5448,6 +5875,27 @@ export function computeNationalLaborDemographics(
   ) {
     state.evidence.push(state.laborRebalancingStressBrief.summary.slice(0, 120));
   }
+  if (
+    (state.automationParticipationResilienceOutlook?.band === 'fragile' ||
+      state.automationParticipationResilienceOutlook?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.automationParticipationResilienceOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.wageParticipationSpilloverBrief?.band === 'suppressive' ||
+      state.wageParticipationSpilloverBrief?.band === 'mixed') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.wageParticipationSpilloverBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.migrationShockParticipationBufferOutlook?.band === 'depleted' ||
+      state.migrationShockParticipationBufferOutlook?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.migrationShockParticipationBufferOutlook.summary.slice(0, 120));
+  }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
   }
@@ -5496,6 +5944,11 @@ export function computeNationalLaborDemographics(
   reengagementLeversForIndustry,
   reengagementPullForRegion
 } from './catalog/workforce-reengagement-levers';
+  WORKFORCE_ONBOARDING_LEVERS,
+  lookupWorkforceOnboardingLever,
+  onboardingEaseForRegion,
+  onboardingLeversForIndustry
+} from './catalog/workforce-onboarding-levers';
   STRATEGIC_INDUSTRIES,
   V1014_LABOR_CORE_REGIONS,
   V1014_LABOR_INDUSTRY_LABOR_WEIGHT,
@@ -6033,6 +6486,62 @@ export function runV1014LaborDemographicsSelfTests(): {
       rHhBad.state.laborMarketTightnessBrief
     ).stewardNote.length > 8,
     'rebalancing stress steward note'
+  );
+
+  check('R1101', WORKFORCE_ONBOARDING_LEVERS.length >= 8, 'onboarding lever catalog');
+  check('R1102', Boolean(lookupWorkforceOnboardingLever('onboard_tech_nsw_vic')?.narrative), 'onboarding lever lookup');
+  check('R1103', onboardingLeversForIndustry('technology').length >= 1, 'technology onboarding levers');
+  check('R1104', onboardingEaseForRegion('NSW', 'technology') > 0, 'regional onboarding ease');
+  check('R1105', Boolean(r1.state.automationParticipationResilienceOutlook?.band), 'automation resilience on state');
+  check('R1106', (r1.state.automationParticipationResilienceOutlook?.automationPressureDrag ?? 0) >= 0, 'automation drag');
+  check('R1107', Boolean(r1.state.wageParticipationSpilloverBrief?.band), 'wage spillover on state');
+  check('R1108', Boolean(r1.state.migrationShockParticipationBufferOutlook?.band), 'migration buffer on state');
+  check(
+    'R1109',
+    detectLaborDemographicsQuery('automation participation resilience') === 'automation_participation_resilience',
+    'GI automation resilience detect'
+  );
+  check(
+    'R1110',
+    detectLaborDemographicsQuery('wage participation spillover') === 'wage_participation_spillover',
+    'GI spillover detect'
+  );
+  check(
+    'R1111',
+    detectLaborDemographicsQuery('migration shock buffer') === 'migration_participation_buffer',
+    'GI migration buffer detect'
+  );
+  check(
+    'R1112',
+    answerLaborDemographicsQuestion(r1.state, 'automation_participation_resilience').headline.length > 5,
+    'GI automation resilience answer'
+  );
+  const automationResOnly = computeNationalAutomationParticipationResilienceOutlook(
+    r1.state,
+    r1.state.participationPressureBrief,
+    r1.state.workforceTransitionFrictionOutlook
+  );
+  check('R1113', automationResOnly.summary.length > 10, 'automation resilience standalone summary');
+  const spilloverOnly = computeNationalWageParticipationSpilloverBrief(
+    r1.state,
+    r1.state.wageCompetitivenessIndex,
+    r1.state.householdParticipationCouplingBrief
+  );
+  check('R1114', spilloverOnly.band.length > 3, 'spillover band string');
+  const bufferOnly = computeNationalMigrationShockParticipationBufferOutlook(
+    r1.state,
+    r1.state.participationPressureBrief,
+    r1.state.regionalLaborAbsorptionBrief
+  );
+  check('R1115', bufferOnly.activeShockDrag >= 0, 'migration buffer shock drag');
+  check(
+    'R1116',
+    computeNationalWageParticipationSpilloverBrief(
+      rHhBad.state,
+      rHhBad.state.wageCompetitivenessIndex,
+      rHhBad.state.householdParticipationCouplingBrief
+    ).stewardNote.length > 8,
+    'wage spillover steward note'
   );
 
   for (let i = 19; i <= 50; i++) {
