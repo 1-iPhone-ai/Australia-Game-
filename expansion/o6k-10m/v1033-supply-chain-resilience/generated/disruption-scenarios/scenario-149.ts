@@ -1,0 +1,130 @@
+import { V1033_SCRES_clamp, V1033_SCRES_supplyChainResilienceBandFromScore } from '../../engine/supply-chain-resilience-utils.ts';
+import type {
+  V1033ScresSupplyChainResilienceBand,
+  V1033ScresRegionId,
+  V1033ScresDisruptionSnapshot,
+  V1033ScresSupplyChainResilienceChannel,
+} from '../../types/core.ts';
+
+/** Generated disruption scenario 149 — extreme_heat/drought/dust handoff matrix. */
+export const V1033_SCRES_DISRUPTION_SCENARIO_149_META = {
+  id: 'disruption_149',
+  regionId: 'TAS' as V1033ScresRegionId,
+  primaryChannel: 'remote' as V1033ScresSupplyChainResilienceChannel,
+  supplyChainResilienceBand: 'recovering' as V1033ScresSupplyChainResilienceBand,
+  seed: 136260,
+} as const;
+
+const V1033_SCRES_DISRUPTION_SCENARIO_149_COEF = {
+  k0: 36.9000,
+  k1: 4.0000,
+  k2: 70.8000,
+  k3: 37.9000,
+  k4: 5.0000,
+  k5: 71.8000,
+  k6: 38.9000,
+  k7: 6.0000,
+  k8: 72.8000,
+  k9: 39.9000,
+  k10: 7.0000,
+  k11: 73.8000,
+  k12: 40.9000,
+  k13: 8.0000,
+  k14: 74.8000,
+  k15: 41.9000,
+  k16: 9.0000,
+  k17: 75.8000,
+  k18: 42.9000,
+  k19: 10.0000,
+  k20: 76.8000,
+  k21: 43.9000,
+  k22: 11.0000,
+  k23: 77.8000,
+  k24: 44.9000,
+  k25: 12.0000,
+  k26: 78.8000,
+  k27: 45.9000,
+  k28: 13.0000,
+  k29: 79.8000,
+  k30: 46.9000,
+  k31: 14.0000,
+  k32: 80.8000,
+  k33: 47.9000,
+  k34: 15.0000,
+  k35: 81.8000,
+  k36: 48.9000,
+  k37: 16.0000,
+  k38: 82.8000,
+  k39: 49.9000,
+  k40: 17.0000,
+  k41: 83.8000,
+  k42: 50.9000,
+  k43: 18.0000,
+  k44: 84.8000,
+  k45: 51.9000,
+  k46: 19.0000,
+  k47: 85.8000,
+  k48: 52.9000,
+  k49: 20.0000,
+  k50: 86.8000,
+  k51: 53.9000,
+  k52: 21.0000,
+  k53: 87.8000,
+  k54: 54.9000,
+  k55: 22.0000,
+  k56: 88.8000,
+  k57: 55.9000,
+  k58: 23.0000,
+  k59: 89.8000,
+  k60: 56.9000,
+  k61: 24.0000,
+  k62: 90.8000,
+  k63: 57.9000,
+  k64: 25.0000,
+  k65: 91.8000,
+  k66: 58.9000,
+  k67: 26.0000,
+  k68: 92.8000,
+  k69: 59.9000,
+  k70: 27.0000,
+  k71: 93.8000,
+} as const;
+
+export function V1033_SCRES_DISRUPTION_SCENARIO_149_evaluate(turn: number): {
+  logisticsStressExposureIndex: number;
+  corridorBufferDelayTurns: number;
+  supplyChainResilienceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1033_SCRES_DISRUPTION_SCENARIO_149_COEF) as Array<
+    keyof typeof V1033_SCRES_DISRUPTION_SCENARIO_149_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1033_SCRES_DISRUPTION_SCENARIO_149_COEF[keys[j]] * ((turn + j) % 17);
+  }
+  const logisticsStressExposureIndex = V1033_SCRES_clamp(16 + (acc % 58) + turn * 0.06, 0, 100);
+  const corridorBufferDelayTurns = V1033_SCRES_clamp(2 + (acc % 11), 1, 18);
+  const supplyChainResilienceScore = V1033_SCRES_clamp(90 - logisticsStressExposureIndex * 0.58 + (turn % 9) * 0.35, 0, 100);
+  const stable = V1033_SCRES_supplyChainResilienceBandFromScore(supplyChainResilienceScore) !== 'depleted';
+  return { logisticsStressExposureIndex, corridorBufferDelayTurns, supplyChainResilienceScore, stable };
+}
+
+export function V1033_SCRES_DISRUPTION_SCENARIO_149_snapshot(turn: number): V1033ScresDisruptionSnapshot {
+  const r = V1033_SCRES_DISRUPTION_SCENARIO_149_evaluate(turn);
+  return {
+    scenarioId: V1033_SCRES_DISRUPTION_SCENARIO_149_META.id,
+    regionId: V1033_SCRES_DISRUPTION_SCENARIO_149_META.regionId,
+    supplyChainResilienceChannel: V1033_SCRES_DISRUPTION_SCENARIO_149_META.primaryChannel,
+    supplyChainResilienceBand: V1033_SCRES_DISRUPTION_SCENARIO_149_META.supplyChainResilienceBand,
+    logisticsStressExposureIndex: r.logisticsStressExposureIndex,
+    corridorBufferDelayTurns: r.corridorBufferDelayTurns,
+    supplyChainResilienceScore: r.supplyChainResilienceScore,
+    supplyChainResilienceBand: V1033_SCRES_supplyChainResilienceBandFromScore(r.supplyChainResilienceScore),
+  };
+}
+
+export function V1033_SCRES_DISRUPTION_SCENARIO_149_regressionAssert(turn: number): boolean {
+  const r = V1033_SCRES_DISRUPTION_SCENARIO_149_evaluate(turn);
+  return typeof r.logisticsStressExposureIndex === 'number' && r.supplyChainResilienceScore <= 100;
+}

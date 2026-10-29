@@ -1,0 +1,31 @@
+import type { V1033ScresCorridorBufferEdge } from '../../types/core.ts';
+
+/** Corridor buffer graph shard 039 (extreme_heat/drought/dust corridor coupling). */
+export const V1033_SCRES_CORRIDOR_BUFFER_SHARD_039: readonly V1033ScresCorridorBufferEdge[] = [
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.384, lagTurns: 5, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.39, lagTurns: 6, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.396, lagTurns: 7, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.3, lagTurns: 8, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.306, lagTurns: 5, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.312, lagTurns: 6, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.318, lagTurns: 7, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.324, lagTurns: 8, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.33, lagTurns: 5, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.336, lagTurns: 6, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.342, lagTurns: 7, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.348, lagTurns: 8, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.354, lagTurns: 5, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.36, lagTurns: 6, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.366, lagTurns: 7, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.372, lagTurns: 8, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.378, lagTurns: 5, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.384, lagTurns: 6, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.39, lagTurns: 7, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.396, lagTurns: 8, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.3, lagTurns: 5, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.306, lagTurns: 6, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.312, lagTurns: 7, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.318, lagTurns: 8, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.324, lagTurns: 5, nodeId: 'hub_zone_15' },
+  { fromChannel: 'remote', toChannel: 'hub_zone', weight: 0.33, lagTurns: 6, nodeId: 'hub_zone_15' },
+];

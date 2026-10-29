@@ -1,0 +1,31 @@
+import type { V1033ScresCorridorBufferEdge } from '../../types/core.ts';
+
+/** Corridor buffer graph shard 003 (extreme_heat/drought/dust corridor coupling). */
+export const V1033_SCRES_CORRIDOR_BUFFER_SHARD_003: readonly V1033ScresCorridorBufferEdge[] = [
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.266, lagTurns: 5, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.272, lagTurns: 6, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.278, lagTurns: 7, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.284, lagTurns: 8, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.29, lagTurns: 5, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.296, lagTurns: 6, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.302, lagTurns: 7, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.308, lagTurns: 8, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.314, lagTurns: 5, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.32, lagTurns: 6, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.326, lagTurns: 7, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.332, lagTurns: 8, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.236, lagTurns: 5, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.242, lagTurns: 6, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.248, lagTurns: 7, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.254, lagTurns: 8, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.26, lagTurns: 5, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.266, lagTurns: 6, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.272, lagTurns: 7, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.278, lagTurns: 8, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.284, lagTurns: 5, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.29, lagTurns: 6, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.296, lagTurns: 7, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.302, lagTurns: 8, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.308, lagTurns: 5, nodeId: 'hub_zone_03' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.314, lagTurns: 6, nodeId: 'hub_zone_03' },
+];
