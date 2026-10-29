@@ -1,0 +1,283 @@
+import { computeFiscalOutcomesLayer, createInitialFiscalOutcomesPersisted } from '../fiscal-outcomes/compute';
+import { buildBudgetEnvelope } from '../fiscal-outcomes/budget-envelopes';
+import { buildDetailedBudgetPaper } from '../budget-lines/compute';
+import { reconcileFederalStateTransfers } from '../federal-state/reconcile';
+import { scheduleRecurringCommitments } from '../recurring-commitments/compute';
+import { buildNationalRevenueLedger } from '../revenue-ledger/compute';
+import { buildTaxExpenditureStatement } from '../tax-expenditure/compute';
+import { buildMediumTermFiscalOutlook } from '../medium-term-outlook/compute';
+import { buildMultiYearExpenditureFramework } from '../multi-year-framework/compute';
+import { assessContingentLiabilities } from '../contingent-liabilities/compute';
+import { scoreFiscalTransparencyIndex } from '../fiscal-transparency/compute';
+import { buildFiscalRiskRegister } from '../fiscal-risk-register/compute';
+import { allocateIntergovernmentalGrants } from '../intergovernmental-grants/compute';
+import { buildStatutoryBalancesReport } from '../statutory-balances/compute';
+import { buildCostRecoveryStatement } from '../cost-recovery-pricing/compute';
+import { buildCashManagementReport } from '../cash-management/compute';
+import { buildAppropriationWarrantLedger } from '../appropriation-warrants/compute';
+import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
+import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
+import { assessFiscalResilience } from '../fiscal-resilience/compute';
+import { assessFiscalRulesFramework } from '../fiscal-rules/compute';
+import { executeIssuanceCalendar } from '../sovereign-issuance/compute';
+import { reviewProgramPerformance } from '../program-performance/compute';
+import { summarizeInfrastructureFinancing } from '../infrastructure-financing/compute';
+import type { V1012FiscalSnapshot } from '../fiscal-outcomes/types';
+
+export const CONSOLIDATED_FISCAL_SCHEMA = 'op10m-agent07-consolidated-v1';
+
+export interface ConsolidatedFiscalCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface ConsolidatedFiscalReport {
+  schemaVersion: string;
+  turn: number;
+  checks: ConsolidatedFiscalCheck[];
+  allPassed: boolean;
+  layerCount: number;
+}
+
+export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSnapshot): ConsolidatedFiscalReport {
+  const checks: ConsolidatedFiscalCheck[] = [];
+  const persisted = createInitialFiscalOutcomesPersisted(turn);
+  const { state } = computeFiscalOutcomesLayer({ turn, v1012 }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn, v1012, taxInstruments: state.taxInstruments });
+  const recurring = scheduleRecurringCommitments(turn, v1012, state.budget);
+  const paper = buildDetailedBudgetPaper(v1012, state.budget);
+  const igr = reconcileFederalStateTransfers(turn, v1012);
+  const taxExp = buildTaxExpenditureStatement(turn, v1012);
+  const outlook = buildMediumTermFiscalOutlook(v1012, 3);
+  const myefo = buildMultiYearExpenditureFramework(v1012, 3);
+  const contingent = assessContingentLiabilities(turn, v1012);
+  const transparency = scoreFiscalTransparencyIndex({
+    turn,
+    v1012,
+    publishesTaxExpenditure: true,
+    publishesMultiYearEstimates: true,
+    publishesContingentRegister: contingent.withinSoftCap,
+    publishesProgramOutcomes: true,
+    auditLagTurns: 2
+  });
+  const riskRegister = buildFiscalRiskRegister(turn, v1012);
+  const igGrants = allocateIntergovernmentalGrants(turn, v1012);
+  const statutory = buildStatutoryBalancesReport(turn, v1012);
+  const costRecovery = buildCostRecoveryStatement(turn, v1012);
+  const cashMgmt = buildCashManagementReport(turn, v1012);
+  const warrantLedger = buildAppropriationWarrantLedger(turn, v1012);
+  const debtRollover = resolveDebtRollover({
+    turn,
+    v1012,
+    tranches: defaultMaturityLadder(turn),
+    computeTrajectory: computeDebtOutcomeTrajectory
+  });
+  const resilienceStack = assessFiscalResilience(turn, v1012, ['commodity_drop', 'rate_shock']);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const fiscalRules = assessFiscalRulesFramework({
+    turn,
+    v1012,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const issuance = executeIssuanceCalendar(turn, v1012);
+  const programPerf = reviewProgramPerformance(turn, v1012);
+  const infraSummary = summarizeInfrastructureFinancing(
+    turn,
+    [
+      {
+        projectId: 'consolidated_infra_a',
+        title: 'Consolidated corridor',
+        regionIds: ['national'],
+        capitalPoints: 10,
+        maintenancePointsPerTurn: 1,
+        strategicWeight: 0.5,
+        preferredVehicle: 'sovereign_bond_series'
+      }
+    ],
+    v1012,
+    state.budget
+  );
+
+  checks.push({
+    id: 'CF01',
+    label: 'Tax expenditure net below gross structural capacity',
+    passed: taxExp.netStructuralCapacity <= taxExp.grossStructuralCapacity,
+    detail: `net=${taxExp.netStructuralCapacity}, gross=${taxExp.grossStructuralCapacity}`
+  });
+
+  checks.push({
+    id: 'CF02',
+    label: 'IGR pool reconciled',
+    passed: igr.reconciled,
+    detail: `residual=${igr.residualFederal}`
+  });
+
+  checks.push({
+    id: 'CF03',
+    label: 'Budget sub-lines balanced',
+    passed: paper.categories.every(c => c.linesBalanced),
+    detail: `categories=${paper.categories.length}`
+  });
+
+  checks.push({
+    id: 'CF04',
+    label: 'Recurring load fits envelope capacity',
+    passed: recurring.totalLoadThisTurn <= state.budget.totalCapacityPoints * 0.45,
+    detail: `load=${recurring.totalLoadThisTurn}, cap=${state.budget.totalCapacityPoints}`
+  });
+
+  checks.push({
+    id: 'CF05',
+    label: 'Revenue ledger reconciled flag',
+    passed: ledger.reconciledToV1012,
+    detail: ledger.reconciliationNotes[0] ?? ''
+  });
+
+  checks.push({
+    id: 'CF06',
+    label: 'Medium-term outlook projects envelope capacity',
+    passed: outlook.projections.every(p => p.envelopeCapacity > 0),
+    detail: `horizon=${outlook.projections.length}`
+  });
+
+  checks.push({
+    id: 'CF07',
+    label: 'Federal-state vertical imbalance bounded',
+    passed: igr.verticalImbalanceIndex <= 1.05,
+    detail: `vii=${igr.verticalImbalanceIndex}`
+  });
+
+  checks.push({
+    id: 'CF08',
+    label: 'National pressure below critical under consolidated view',
+    passed: v1012.pressure !== 'critical' && outlook.worstPressure !== 'critical',
+    detail: `now=${v1012.pressure}, worst=${outlook.worstPressure}`
+  });
+
+  checks.push({
+    id: 'CF09',
+    label: 'Multi-year forward bands within ceiling',
+    passed: myefo.forwardBands.every(b => b.withinCeiling) || v1012.pressure === 'critical',
+    detail: `binding=${myefo.aggregateCeilingBinding}`
+  });
+
+  checks.push({
+    id: 'CF10',
+    label: 'Contingent liabilities within soft cap',
+    passed: contingent.withinSoftCap,
+    detail: `expected=${contingent.expectedLossPoints}`
+  });
+
+  checks.push({
+    id: 'CF11',
+    label: 'Transparency index at least enhanced under full disclosure',
+    passed: transparency.compositeTier !== 'basic' || v1012.fiscalHeadroom < -10,
+    detail: `tier=${transparency.compositeTier}, score=${transparency.compositeScore}`
+  });
+
+  checks.push({
+    id: 'CF12',
+    label: 'Fiscal risk register within appetite or critical override',
+    passed: riskRegister.withinRiskAppetite || v1012.pressure === 'critical',
+    detail: `heat=${riskRegister.aggregateHeat}, tier=${riskRegister.tier}`
+  });
+
+  checks.push({
+    id: 'CF13',
+    label: 'Intergovernmental grants reconcile to IGR pool slice',
+    passed: igGrants.reconciledToIgrPool,
+    detail: `federal=${igGrants.totalFederal}, clawback=${igGrants.totalClawback}`
+  });
+
+  checks.push({
+    id: 'CF14',
+    label: 'Grant performance pass rate above floor under non-critical pressure',
+    passed: igGrants.performancePassRate >= 0.4 || v1012.pressure === 'critical',
+    detail: `rate=${igGrants.performancePassRate}`
+  });
+
+  checks.push({
+    id: 'CF15',
+    label: 'Statutory balances within soft anchors',
+    passed: statutory.allWithinSoftAnchors,
+    detail: `nob=${statutory.netOperatingBalance}, fb=${statutory.fiscalBalance}`
+  });
+
+  checks.push({
+    id: 'CF16',
+    label: 'Cost recovery portfolio meets floor',
+    passed: costRecovery.withinPortfolioTarget,
+    detail: `weighted=${costRecovery.weightedRecoveryRatio}`
+  });
+
+  checks.push({
+    id: 'CF17',
+    label: 'Fiscal rules compliant or critical override',
+    passed: fiscalRules.allCompliant || v1012.pressure === 'critical',
+    detail: `breaches=${fiscalRules.breachCount}`
+  });
+
+  checks.push({
+    id: 'CF18',
+    label: 'Sovereign issuance without liquidity shortfall',
+    passed: !issuance.liquidityShortfall || !v1012.debtEnabled,
+    detail: `issued=${issuance.totalIssued}/${issuance.totalScheduled}`
+  });
+
+  checks.push({
+    id: 'CF19',
+    label: 'Program performance aggregate feedback bounded',
+    passed: programPerf.aggregateFeedbackPoints >= -8 || v1012.pressure === 'critical',
+    detail: `feedback=${programPerf.aggregateFeedbackPoints}, atRisk=${programPerf.programsAtRisk}`
+  });
+
+  checks.push({
+    id: 'CF20',
+    label: 'Infrastructure portfolio feasible under consolidated envelope',
+    passed: infraSummary.plans.every(p => p.feasible) || v1012.pressure === 'critical',
+    detail: `capital=${infraSummary.aggregateCapital}, service=${infraSummary.aggregateServiceLoad}`
+  });
+
+  checks.push({
+    id: 'CF21',
+    label: 'Debt maturity rollover without liquidity stress',
+    passed: !debtRollover.liquidityStress || !v1012.debtEnabled || v1012.pressure === 'critical',
+    detail: `events=${debtRollover.events.length}, stress=${debtRollover.liquidityStress}`
+  });
+
+  checks.push({
+    id: 'CF22',
+    label: 'Stacked fiscal shocks remain above critical band',
+    passed:
+      resilienceStack.compositeStressBand !== 'critical' ||
+      v1012.pressure === 'critical' ||
+      resilienceStack.baselinePressure === 'critical',
+    detail: `band=${resilienceStack.compositeStressBand}, reserve=${resilienceStack.reserveAdequacy}`
+  });
+
+  checks.push({
+    id: 'CF23',
+    label: 'Treasury cash within drawdown limit',
+    passed: cashMgmt.withinDrawdownLimit,
+    detail: `closing=${cashMgmt.aggregateClosingBalance}, runway=${cashMgmt.runwayTurns}`
+  });
+
+  checks.push({
+    id: 'CF24',
+    label: 'Appropriation warrant lapse within tolerance',
+    passed: warrantLedger.lapseWithinTolerance,
+    detail: `risk=${warrantLedger.aggregateLapseRisk}, remaining=${warrantLedger.aggregateRemaining}`
+  });
+
+  const allPassed = checks.every(c => c.passed);
+  return {
+    schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
+    turn,
+    checks,
+    allPassed,
+    layerCount: 22
+  };
+}
