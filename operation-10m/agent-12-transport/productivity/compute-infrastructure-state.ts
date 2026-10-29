@@ -18,7 +18,21 @@ import {
   evaluateAllCorridors,
   totalCorridorSynergy,
 } from '../network/evaluate-corridors.ts';
-import { enrichInputsWithScenarios } from '../scenarios/apply-transport-scenarios.ts';
+import { enrichInputsWithScenarios, resolveActiveScenarios } from '../scenarios/apply-transport-scenarios.ts';
+import {
+  applyScenarioStackToUtilization,
+  computeScenarioStackFactor,
+} from '../scenarios/scenario-stack-policy.ts';
+import { computePortRailCouplingByRegion } from '../network/port-rail-coupling.ts';
+import { computeResilienceScoreByRegion } from '../network/resilience-score.ts';
+import {
+  aggregateNetworkStress,
+  projectMaintenanceBacklogNextTurn,
+} from '../operations/maintenance-decay.ts';
+import {
+  computeInvestmentTierByRegion,
+  tierProductivityMultiplier,
+} from './regional-investment-tiers.ts';
 import { computeIntermodalSynergyByRegion } from './intermodal-synergy.ts';
 import { computeNationalTransportProductivity } from './compute-national-productivity.ts';
 import { clamp } from './formulas.ts';
@@ -90,26 +104,40 @@ export function computeTransportInfrastructureState(
     inputs,
     options?.activeScenarioIds,
   );
-  inputs = scenarioInputs;
+  const activeScenarios = resolveActiveScenarios(options?.activeScenarioIds);
+  const scenarioStackFactor = computeScenarioStackFactor(activeScenarios);
+  inputs = {
+    ...scenarioInputs,
+    networkUtilization: applyScenarioStackToUtilization(scenarioInputs.networkUtilization, scenarioStackFactor),
+  };
 
   let productivity = computeNationalTransportProductivity(inputs);
   const ops = operationalAssets(inputs);
+
+  const portRailCouplingByRegion = computePortRailCouplingByRegion(ops);
+  const investmentTierByRegion = computeInvestmentTierByRegion(ops, portRailCouplingByRegion);
 
   const corridorActivations = evaluateAllCorridors(ops);
   const corridorSynergyPoints = totalCorridorSynergy(corridorActivations);
   const logisticsRelief = corridorLogisticsRelief(corridorActivations);
 
   const intermodalSynergyByRegion = computeIntermodalSynergyByRegion(ops);
+  const resilienceScoreByRegion = computeResilienceScoreByRegion(ops, corridorActivations);
 
   for (const code of AU_REGION_CODES) {
     const synergy = intermodalSynergyByRegion[code];
+    const tierMul = tierProductivityMultiplier(investmentTierByRegion[code]);
+    const couplingBoost = (portRailCouplingByRegion[code] ?? 0) * 0.04;
+    const resilienceBoost = (resilienceScoreByRegion[code] ?? 0) * 0.05;
     const corridorShare =
       corridorActivations
         .filter((c) => c.active)
         .reduce((s, c) => s + c.synergyPoints, 0) / Math.max(1, AU_REGION_CODES.length);
-    productivity.byRegion[code].productivityIndexBonus += synergy + corridorShare * 0.15;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + synergy + corridorShare * 0.15 + couplingBoost + resilienceBoost) *
+      tierMul;
     productivity.byRegion[code].logisticsCostMultiplier = clamp(
-      productivity.byRegion[code].logisticsCostMultiplier - logisticsRelief * 0.2,
+      productivity.byRegion[code].logisticsCostMultiplier - logisticsRelief * 0.2 - couplingBoost * 0.002,
       0.5,
       1.05,
     );
@@ -127,12 +155,20 @@ export function computeTransportInfrastructureState(
 
   const maintenanceWarnings = maintenanceWarningsFromBacklog(options?.maintenanceBacklogByAssetId);
   const bottleneckAssetIds = detectBottlenecks(productivity, ops, inputs);
+  const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
+    options?.maintenanceBacklogByAssetId,
+    baseInputs.operationalAssetIds,
+    {
+      networkStress: aggregateNetworkStress(inputs.networkUtilization),
+      maintenanceSpendIndex: options?.maintenanceSpendIndex,
+    },
+  );
 
   const computeMs =
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/2',
+    schemaVersion: 'agent12/3',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -141,6 +177,11 @@ export function computeTransportInfrastructureState(
     appliedScenarioIds,
     bottleneckAssetIds,
     maintenanceWarnings,
+    resilienceScoreByRegion,
+    portRailCouplingByRegion,
+    investmentTierByRegion,
+    scenarioStackFactor,
+    projectedBacklogNextTurn,
     computeMs,
   };
 }

@@ -180,7 +180,7 @@ export interface CorridorActivation {
 }
 
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/2';
+  schemaVersion: 'agent12/3';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -189,13 +189,24 @@ export interface TransportInfrastructureState {
   appliedScenarioIds: string[];
   bottleneckAssetIds: string[];
   maintenanceWarnings: string[];
+  /** 0–100 composite resilience from redundancy + corridor coverage. */
+  resilienceScoreByRegion: Record<AuRegionCode, number>;
+  /** 0–100 port↔rail coupling strength (export efficiency proxy). */
+  portRailCouplingByRegion: Record<AuRegionCode, number>;
+  investmentTierByRegion: Record<AuRegionCode, TransportInvestmentTier>;
+  scenarioStackFactor: number;
+  projectedBacklogNextTurn: Record<string, number>;
   computeMs: number;
 }
+
+export type TransportInvestmentTier = 'emerging' | 'regional' | 'integrated' | 'national_gateway';
 
 export interface TransportInfrastructureOptions {
   activeScenarioIds?: ReadonlySet<string>;
   /** 0–100 deferred maintenance score per asset id. */
   maintenanceBacklogByAssetId?: ReadonlyMap<string, number>;
+  /** Annualised maintenance spend index 0–100 (lowers backlog drift). */
+  maintenanceSpendIndex?: number;
 }
 
 export interface V94ProjectSnapshot {

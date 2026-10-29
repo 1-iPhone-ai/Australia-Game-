@@ -14,7 +14,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   const integrity = getCatalogIntegrityReport();
   results.push({
     id: 'catalog_integrity',
-    ok: integrity.duplicateIds.length === 0 && integrity.invalidRegions.length === 0 && integrity.totalAssets >= 50,
+    ok: integrity.duplicateIds.length === 0 && integrity.invalidRegions.length === 0 && integrity.totalAssets >= 61,
     detail: JSON.stringify(integrity),
   });
 
@@ -68,10 +68,11 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v2',
     ok:
-      infra.schemaVersion === 'agent12/2' &&
+      infra.schemaVersion === 'agent12/3' &&
       infra.corridorSynergyPoints > 0 &&
-      infra.activeCorridors.some((c) => c.active),
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} scenarios=${infra.appliedScenarioIds.length}`,
+      infra.activeCorridors.some((c) => c.active) &&
+      infra.scenarioStackFactor >= 1,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} resilience=${Object.values(infra.resilienceScoreByRegion).reduce((a, b) => a + b, 0).toFixed(0)}`,
   });
 
   return results;

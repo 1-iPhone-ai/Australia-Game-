@@ -16,7 +16,7 @@ import { computeIntermodalSynergyByRegion } from '../productivity/intermodal-syn
 describe('Agent 12 scale wave catalogs', () => {
   it('expands asset catalog beyond baseline 37', () => {
     const report = getCatalogIntegrityReport();
-    assert.ok(report.totalAssets >= 50);
+    assert.ok(report.totalAssets >= 61);
     assert.equal(report.duplicateIds.length, 0);
   });
 
@@ -70,7 +70,7 @@ describe('Agent 12 corridors and intermodal synergy', () => {
 
   it('returns infrastructure state schema agent12/2 with corridor synergy', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(3));
-    assert.equal(state.schemaVersion, 'agent12/2');
+    assert.equal(state.schemaVersion, 'agent12/3');
     assert.ok(state.corridorSynergyPoints > 0);
     assert.ok(state.activeCorridors.some((c) => c.active));
     assert.ok(state.productivity.nationalProductivityIndexBonus > 100);

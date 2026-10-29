@@ -3,10 +3,18 @@ import { PORT_CATALOG } from './ports-catalog.ts';
 import { RAIL_CATALOG } from './rail-catalog.ts';
 import { ROAD_CATALOG } from './roads-catalog.ts';
 import { SCALE_WAVE_ASSETS } from './scale-wave-assets.ts';
+import { SCALE_WAVE_ROUND2_ASSETS } from './scale-wave-round2-assets.ts';
 import type { TransportAsset } from '../types.ts';
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
-  return [...ROAD_CATALOG, ...RAIL_CATALOG, ...PORT_CATALOG, ...LOGISTICS_CATALOG, ...SCALE_WAVE_ASSETS];
+  return [
+    ...ROAD_CATALOG,
+    ...RAIL_CATALOG,
+    ...PORT_CATALOG,
+    ...LOGISTICS_CATALOG,
+    ...SCALE_WAVE_ASSETS,
+    ...SCALE_WAVE_ROUND2_ASSETS,
+  ];
 }
 
 export function getDefaultOperationalAssetIds(): ReadonlySet<string> {

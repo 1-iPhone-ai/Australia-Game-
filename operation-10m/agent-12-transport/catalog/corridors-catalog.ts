@@ -1,4 +1,5 @@
 import type { AuRegionCode, StrategicNetworkKind, TransportCorridorDefinition } from '../types.ts';
+import { TRANSPORT_CORRIDORS_ROUND2 } from './corridors-round2.ts';
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   {
@@ -146,6 +147,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
     productivitySynergyPoints: 5,
     logisticsRelief: 0.04,
   },
+  ...TRANSPORT_CORRIDORS_ROUND2,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {

@@ -1,4 +1,5 @@
 import type { TransportStressScenario } from '../types.ts';
+import { TRANSPORT_SCENARIOS_ROUND2 } from './scenarios-round2.ts';
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
 export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
@@ -160,6 +161,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
     utilizationAdd: 0.08,
     conditionPenaltySteps: 1,
   },
+  ...TRANSPORT_SCENARIOS_ROUND2,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
