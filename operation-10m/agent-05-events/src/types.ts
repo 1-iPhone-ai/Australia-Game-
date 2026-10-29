@@ -593,6 +593,14 @@ export interface Op10mTriggerRequireAgent25FullChunksHandoffClosureFinalizeSealS
   k: 'agent25_full_chunks_handoff_closure_finalize_seal_sync_latch_wave_ready_commit';
 }
 
+export interface Op10mTriggerRequireScaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSeal {
+  k: 'scale_wave_full_chunks_handoff_closure_finalize_seal_sync_latch_wave_ready_commit_seal';
+}
+
+export interface Op10mTriggerRequireAgent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSeal {
+  k: 'agent25_full_chunks_handoff_closure_finalize_seal_sync_latch_wave_ready_commit_seal';
+}
+
 export type Op10mComputeTurnStage =
   | 'pre_simulation'
   | 'post_simulation'
@@ -733,7 +741,9 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequireScaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReady
   | Op10mTriggerRequireAgent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReady
   | Op10mTriggerRequireScaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommit
-  | Op10mTriggerRequireAgent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommit;
+  | Op10mTriggerRequireAgent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommit
+  | Op10mTriggerRequireScaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSeal
+  | Op10mTriggerRequireAgent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSeal;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
@@ -911,6 +921,8 @@ export interface Op10mNarrativeEngineState {
     agent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyPasses: number;
     scaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommits: number;
     agent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitPasses: number;
+    scaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSeals: number;
+    agent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealPasses: number;
   };
   regional?: Op10mRegionalContagionLedger;
   turnCompute?: Op10mTurnComputeLedger;
