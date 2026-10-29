@@ -37,13 +37,13 @@ describe('Agent 12 round 19 catalog', () => {
 });
 
 describe('Agent 12 round 19 systems', () => {
-  it('returns agent12/28 with rare earth, trans-Tasman reefer, zero-emission truck', () => {
+  it('returns agent12/29 with rare earth, trans-Tasman reefer, zero-emission truck', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(160), {
       rareEarthMagnetExportPolicy: 'accelerate',
       transTasmanReeferExpressPolicy: 'surge',
       zeroEmissionTruckCorridorPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/28');
+    assert.equal(state.schemaVersion, 'agent12/29');
     assert.ok(state.nationalRareEarthMagnetExportIndex >= 6);
     assert.ok(state.nationalTransTasmanReeferExpressIndex >= 8);
     assert.ok(state.zeroEmissionTruckCorridorShare >= 0.034);

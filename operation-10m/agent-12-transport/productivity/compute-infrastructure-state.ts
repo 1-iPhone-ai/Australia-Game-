@@ -414,6 +414,23 @@ import {
   nationalUrbanCourierMicrohubThroughputIndex,
   urbanCourierMicrohubProductivityMultiplier,
 } from './urban-courier-microhub-index.ts';
+import {
+  computeCopperConcentrateExportByRegion,
+  copperConcentrateExportProductivityMultiplier,
+  nationalCopperConcentrateExportIndex,
+} from '../network/copper-concentrate-export-index.ts';
+import {
+  computePharmaceuticalColdChainByRegion,
+  computePharmaceuticalColdChainShare,
+  nationalPharmaceuticalColdChainIndex,
+  pharmaceuticalColdChainProductivityMultiplier,
+} from '../operations/pharmaceutical-cold-chain-index.ts';
+import {
+  computeRailPassengerFreightPathShare,
+  computeRailPassengerFreightPathThroughputByRegion,
+  nationalRailPassengerFreightPathThroughputIndex,
+  railPassengerFreightPathProductivityMultiplier,
+} from './rail-passenger-freight-path-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1369,6 +1386,34 @@ export function computeTransportInfrastructureState(
     urbanCourierMicrohubShare,
     options?.urbanCourierMicrohubPolicy ?? 'baseline',
   );
+  const copperConcentrateExportByRegion = computeCopperConcentrateExportByRegion(ops);
+  const nationalCopperConcentrate = nationalCopperConcentrateExportIndex(copperConcentrateExportByRegion);
+  const copperMult = copperConcentrateExportProductivityMultiplier(
+    nationalCopperConcentrate,
+    options?.copperConcentrateExportPolicy ?? 'baseline',
+  );
+  const pharmaceuticalColdChainByRegion = computePharmaceuticalColdChainByRegion(ops, networkStress);
+  const nationalPharmaColdChain = nationalPharmaceuticalColdChainIndex(pharmaceuticalColdChainByRegion);
+  const pharmaceuticalColdChainShare = computePharmaceuticalColdChainShare(
+    ops,
+    options?.pharmaceuticalColdChainPolicy ?? 'baseline',
+  );
+  const pharmaColdChainMult = pharmaceuticalColdChainProductivityMultiplier(
+    pharmaceuticalColdChainShare,
+    options?.pharmaceuticalColdChainPolicy ?? 'baseline',
+  );
+  const railPassengerFreightPathThroughputByRegion = computeRailPassengerFreightPathThroughputByRegion(ops);
+  const nationalPaxFreightPath = nationalRailPassengerFreightPathThroughputIndex(
+    railPassengerFreightPathThroughputByRegion,
+  );
+  const railPassengerFreightPathShare = computeRailPassengerFreightPathShare(
+    ops,
+    options?.railPassengerFreightPathPolicy ?? 'baseline',
+  );
+  const paxFreightPathMult = railPassengerFreightPathProductivityMultiplier(
+    railPassengerFreightPathShare,
+    options?.railPassengerFreightPathPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -1407,6 +1452,9 @@ export function computeTransportInfrastructureState(
     const windTowBoost = (offshoreWindTowInstallByRegion[code] - 5) * 0.0041;
     const evBatteryBoost = (evBatteryRecyclingLogisticsByRegion[code] - 5) * 0.0037;
     const courierMicrohubBoost = (urbanCourierMicrohubThroughputByRegion[code] - 1.6) * 0.0033;
+    const copperBoost = (copperConcentrateExportByRegion[code] - 5) * 0.004;
+    const pharmaColdChainBoost = (pharmaceuticalColdChainByRegion[code] - 6) * 0.0036;
+    const paxFreightPathBoost = (railPassengerFreightPathThroughputByRegion[code] - 1.7) * 0.0032;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -1444,7 +1492,10 @@ export function computeTransportInfrastructureState(
         berthSlotBoost +
         windTowBoost +
         evBatteryBoost +
-        courierMicrohubBoost) *
+        courierMicrohubBoost +
+        copperBoost +
+        pharmaColdChainBoost +
+        paxFreightPathBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -1480,7 +1531,10 @@ export function computeTransportInfrastructureState(
       berthSlotMult *
       windTowMult *
       evBatteryMult *
-      courierMicrohubMult;
+      courierMicrohubMult *
+      copperMult *
+      pharmaColdChainMult *
+      paxFreightPathMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -1539,7 +1593,10 @@ export function computeTransportInfrastructureState(
     nationalPortBerthSlot * 0.004 +
     nationalWindTow * 0.004 +
     nationalEvBatteryRecycle * 0.004 +
-    nationalUrbanCourierMicrohub * 0.003;
+    nationalUrbanCourierMicrohub * 0.003 +
+    nationalCopperConcentrate * 0.003 +
+    nationalPharmaColdChain * 0.003 +
+    nationalPaxFreightPath * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -1554,7 +1611,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/28',
+    schemaVersion: 'agent12/29',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -1744,6 +1801,14 @@ export function computeTransportInfrastructureState(
     urbanCourierMicrohubShare,
     nationalUrbanCourierMicrohubThroughputIndex: nationalUrbanCourierMicrohub,
     urbanCourierMicrohubThroughputByRegion,
+    nationalCopperConcentrateExportIndex: nationalCopperConcentrate,
+    copperConcentrateExportByRegion,
+    pharmaceuticalColdChainShare,
+    nationalPharmaceuticalColdChainIndex: nationalPharmaColdChain,
+    pharmaceuticalColdChainByRegion,
+    railPassengerFreightPathShare,
+    nationalRailPassengerFreightPathThroughputIndex: nationalPaxFreightPath,
+    railPassengerFreightPathThroughputByRegion,
     computeMs,
   };
 }

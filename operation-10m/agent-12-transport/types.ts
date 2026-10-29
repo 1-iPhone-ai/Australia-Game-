@@ -315,8 +315,14 @@ export type EvBatteryRecyclingLogisticsPolicy = 'baseline' | 'accelerate';
 
 export type UrbanCourierMicrohubPolicy = 'baseline' | 'expand';
 
+export type CopperConcentrateExportPolicy = 'baseline' | 'accelerate';
+
+export type PharmaceuticalColdChainPolicy = 'baseline' | 'surge';
+
+export type RailPassengerFreightPathPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/28';
+  schemaVersion: 'agent12/29';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -506,6 +512,14 @@ export interface TransportInfrastructureState {
   urbanCourierMicrohubShare: number;
   nationalUrbanCourierMicrohubThroughputIndex: number;
   urbanCourierMicrohubThroughputByRegion: Record<AuRegionCode, number>;
+  nationalCopperConcentrateExportIndex: number;
+  copperConcentrateExportByRegion: Record<AuRegionCode, number>;
+  pharmaceuticalColdChainShare: number;
+  nationalPharmaceuticalColdChainIndex: number;
+  pharmaceuticalColdChainByRegion: Record<AuRegionCode, number>;
+  railPassengerFreightPathShare: number;
+  nationalRailPassengerFreightPathThroughputIndex: number;
+  railPassengerFreightPathThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -580,6 +594,9 @@ export interface TransportInfrastructureOptions {
   offshoreWindTowInstallPolicy?: OffshoreWindTowInstallPolicy;
   evBatteryRecyclingLogisticsPolicy?: EvBatteryRecyclingLogisticsPolicy;
   urbanCourierMicrohubPolicy?: UrbanCourierMicrohubPolicy;
+  copperConcentrateExportPolicy?: CopperConcentrateExportPolicy;
+  pharmaceuticalColdChainPolicy?: PharmaceuticalColdChainPolicy;
+  railPassengerFreightPathPolicy?: RailPassengerFreightPathPolicy;
 }
 
 export interface V94ProjectSnapshot {

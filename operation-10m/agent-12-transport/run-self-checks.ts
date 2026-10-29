@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/28' &&
+      infra.schemaVersion === 'agent12/29' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -162,8 +162,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalOffshoreWindTowInstallIndex >= 5 &&
       infra.nationalEvBatteryRecyclingLogisticsIndex >= 5 &&
       infra.urbanCourierMicrohubShare >= 0.03 &&
-      infra.nationalUrbanCourierMicrohubThroughputIndex >= 1.6,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} tow=${infra.nationalOffshoreWindTowInstallIndex.toFixed(1)} recycle=${infra.nationalEvBatteryRecyclingLogisticsIndex.toFixed(1)} courier=${infra.nationalUrbanCourierMicrohubThroughputIndex.toFixed(1)}`,
+      infra.nationalUrbanCourierMicrohubThroughputIndex >= 1.6 &&
+      infra.nationalCopperConcentrateExportIndex >= 5 &&
+      infra.nationalPharmaceuticalColdChainIndex >= 6 &&
+      infra.railPassengerFreightPathShare >= 0.03 &&
+      infra.nationalRailPassengerFreightPathThroughputIndex >= 1.7,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} copper=${infra.nationalCopperConcentrateExportIndex.toFixed(1)} pharma=${infra.nationalPharmaceuticalColdChainIndex.toFixed(1)} paxfreight=${infra.nationalRailPassengerFreightPathThroughputIndex.toFixed(1)}`,
   });
 
   return results;

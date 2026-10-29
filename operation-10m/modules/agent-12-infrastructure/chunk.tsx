@@ -319,8 +319,14 @@ export type EvBatteryRecyclingLogisticsPolicy = 'baseline' | 'accelerate';
 
 export type UrbanCourierMicrohubPolicy = 'baseline' | 'expand';
 
+export type CopperConcentrateExportPolicy = 'baseline' | 'accelerate';
+
+export type PharmaceuticalColdChainPolicy = 'baseline' | 'surge';
+
+export type RailPassengerFreightPathPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/28';
+  schemaVersion: 'agent12/29';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -510,6 +516,14 @@ export interface TransportInfrastructureState {
   urbanCourierMicrohubShare: number;
   nationalUrbanCourierMicrohubThroughputIndex: number;
   urbanCourierMicrohubThroughputByRegion: Record<AuRegionCode, number>;
+  nationalCopperConcentrateExportIndex: number;
+  copperConcentrateExportByRegion: Record<AuRegionCode, number>;
+  pharmaceuticalColdChainShare: number;
+  nationalPharmaceuticalColdChainIndex: number;
+  pharmaceuticalColdChainByRegion: Record<AuRegionCode, number>;
+  railPassengerFreightPathShare: number;
+  nationalRailPassengerFreightPathThroughputIndex: number;
+  railPassengerFreightPathThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -584,6 +598,9 @@ export interface TransportInfrastructureOptions {
   offshoreWindTowInstallPolicy?: OffshoreWindTowInstallPolicy;
   evBatteryRecyclingLogisticsPolicy?: EvBatteryRecyclingLogisticsPolicy;
   urbanCourierMicrohubPolicy?: UrbanCourierMicrohubPolicy;
+  copperConcentrateExportPolicy?: CopperConcentrateExportPolicy;
+  pharmaceuticalColdChainPolicy?: PharmaceuticalColdChainPolicy;
+  railPassengerFreightPathPolicy?: RailPassengerFreightPathPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -1777,6 +1794,48 @@ export const TRANSPORT_CORRIDORS_ROUND27: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round28.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND28: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_qld_copper_concentrate',
+    name: 'WA–QLD Copper Concentrate',
+    networkKind: 'trade',
+    regionSequence: ['WA', 'QLD'],
+    requiredTagsByRegion: {
+      WA: ['copper_concentrate', 'smelter_feed', 'export_bulk'],
+      QLD: ['copper_concentrate', 'smelter_feed', 'export_bulk'],
+    },
+    productivitySynergyPoints: 6.3,
+    logisticsRelief: 0.038,
+  },
+  {
+    id: 'corr_nsw_vic_pharma_cold_chain',
+    name: 'NSW–VIC Pharma Cold Chain',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['pharma_cold_chain', 'vaccine_logistics', 'gmp_freight'],
+      VIC: ['pharma_cold_chain', 'vaccine_logistics', 'gmp_freight'],
+    },
+    productivitySynergyPoints: 5.8,
+    logisticsRelief: 0.031,
+  },
+  {
+    id: 'corr_nsw_vic_pax_freight_path',
+    name: 'NSW–VIC Pax–Freight Path',
+    networkKind: 'mobility',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['pax_freight_path', 'shared_corridor', 'off_peak_slot'],
+      VIC: ['pax_freight_path', 'shared_corridor', 'off_peak_slot'],
+    },
+    productivitySynergyPoints: 5.6,
+    logisticsRelief: 0.029,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -1951,6 +2010,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND25,
   ...TRANSPORT_CORRIDORS_ROUND26,
   ...TRANSPORT_CORRIDORS_ROUND27,
+  ...TRANSPORT_CORRIDORS_ROUND28,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -3495,6 +3555,62 @@ export const TRANSPORT_SCENARIOS_ROUND27: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round28.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND28: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_copper_export_surge',
+    label: 'WA Copper Export Surge',
+    description: 'Concentrate rush overloads Hedland bulk berths.',
+    targetRegions: ['WA', 'QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_qld_smelter_feed_delay',
+    label: 'Queensland Smelter Feed Delay',
+    description: 'Feed constraint backs up Mount Isa concentrate road.',
+    targetRegions: ['QLD', 'WA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['road', 'logistics'],
+  },
+  {
+    id: 'scn_nsw_vaccine_distribution_peak',
+    label: 'NSW Vaccine Distribution Peak',
+    description: 'Immunisation campaign strains Mascot pharma DC.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+  {
+    id: 'scn_vic_gmp_inspection_hold',
+    label: 'Victoria GMP Inspection Hold',
+    description: 'GMP audit hold delays Tullamarine cold-chain slots.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.19,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics', 'port'],
+  },
+  {
+    id: 'scn_nsw_off_peak_path_closure',
+    label: 'NSW Off-Peak Path Closure',
+    description: 'Possession removes Sydney pax–freight shared slots.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.2,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -3683,6 +3799,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND25,
   ...TRANSPORT_SCENARIOS_ROUND26,
   ...TRANSPORT_SCENARIOS_ROUND27,
+  ...TRANSPORT_SCENARIOS_ROUND28,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -10568,6 +10685,233 @@ export const SCALE_WAVE_ROUND27_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round28-assets.ts ---
+
+export const ROUND28_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_pilbara_copper_haul',
+    category: 'road',
+    name: 'Pilbara Copper Concentrate Haul',
+    description: 'Bulk copper concentrate road to export ports.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['copper_concentrate', 'smelter_feed', 'export_bulk'],
+    laneKilometres: 52,
+    designSpeedKmh: 90,
+    freightShare: 0.44,
+    urbanShare: 0.02,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_mt_isa_copper_feed',
+    category: 'road',
+    name: 'Mount Isa Copper Feed',
+    description: 'Queensland smelter-feed concentrate road link.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['trade'],
+    tags: ['copper_concentrate', 'smelter_feed', 'export_bulk'],
+    laneKilometres: 44,
+    designSpeedKmh: 88,
+    freightShare: 0.41,
+    urbanShare: 0.05,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_parramatta_pharma',
+    category: 'road',
+    name: 'Parramatta Pharma Cold Chain',
+    description: 'GMP vaccine logistics road spine.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['freight', 'mobility'],
+    tags: ['pharma_cold_chain', 'vaccine_logistics', 'gmp_freight'],
+    laneKilometres: 20,
+    designSpeedKmh: 78,
+    freightShare: 0.26,
+    urbanShare: 0.48,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_dandenong_pharma',
+    category: 'road',
+    name: 'Dandenong Pharma Freight',
+    description: 'Melbourne pharmaceutical cold-chain access.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 3.9,
+    strategicNetworks: ['freight'],
+    tags: ['pharma_cold_chain', 'vaccine_logistics', 'gmp_freight'],
+    laneKilometres: 16,
+    designSpeedKmh: 76,
+    freightShare: 0.24,
+    urbanShare: 0.55,
+    tollRoad: false,
+  },
+];
+
+export const ROUND28_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_pilbara_copper_rail',
+    category: 'rail',
+    name: 'Pilbara Copper Export Rail',
+    description: 'Heavy-haul copper concentrate export line.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['copper_concentrate', 'smelter_feed', 'export_bulk'],
+    trackKilometres: 132,
+    dualTrackShare: 0.51,
+    electrifiedShare: 0.14,
+    designFreightTonnesPerYear: 9_200_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_qld_coastal_copper_link',
+    category: 'rail',
+    name: 'Coastal QLD Copper Link',
+    description: 'East coast concentrate rail to smelter feed.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['trade'],
+    tags: ['copper_concentrate', 'smelter_feed', 'export_bulk'],
+    trackKilometres: 68,
+    dualTrackShare: 0.43,
+    electrifiedShare: 0.2,
+    designFreightTonnesPerYear: 5_400_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_nsw_sydney_pax_freight',
+    category: 'rail',
+    name: 'Sydney Pax–Freight Path Rail',
+    description: 'Off-peak passenger–freight shared corridor slots.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['freight', 'mobility'],
+    tags: ['pax_freight_path', 'shared_corridor', 'off_peak_slot'],
+    trackKilometres: 32,
+    dualTrackShare: 0.61,
+    electrifiedShare: 0.79,
+    designFreightTonnesPerYear: 3_400_000,
+    passengerCapable: true,
+  },
+];
+
+export const ROUND28_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_hedland_copper_bulk',
+    category: 'port',
+    name: 'Hedland Copper Bulk Terminal',
+    description: 'Pilbara copper concentrate export berths.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 5.9,
+    strategicNetworks: ['trade'],
+    tags: ['copper_concentrate', 'smelter_feed', 'export_bulk', 'bulk'],
+    berthCount: 4,
+    maxDraftMetres: 16.2,
+    teuCapacityPerYear: 140_000,
+    automationLevel: 2,
+    bulkShare: 0.74,
+  },
+  {
+    id: 'port_qld_townsville_copper',
+    category: 'port',
+    name: 'Townsville Copper Export',
+    description: 'QLD smelter-feed concentrate export handoff.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['trade'],
+    tags: ['copper_concentrate', 'smelter_feed', 'export_bulk'],
+    berthCount: 2,
+    maxDraftMetres: 13.5,
+    teuCapacityPerYear: 170_000,
+    automationLevel: 1,
+    bulkShare: 0.52,
+  },
+  {
+    id: 'port_nsw_port_botany_pharma',
+    category: 'port',
+    name: 'Botany Pharma Cold Chain Wharf',
+    description: 'GMP pharmaceutical import cold-chain berths.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['pharma_cold_chain', 'vaccine_logistics', 'gmp_freight'],
+    berthCount: 2,
+    maxDraftMetres: 13.0,
+    teuCapacityPerYear: 260_000,
+    automationLevel: 2,
+    bulkShare: 0.06,
+  },
+];
+
+export const ROUND28_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_nsw_mascot_pharma_dc',
+    category: 'logistics',
+    name: 'Mascot Pharma DC',
+    description: 'NSW vaccine and GMP cold-chain consolidation.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['freight', 'mobility'],
+    tags: ['pharma_cold_chain', 'vaccine_logistics', 'gmp_freight'],
+    warehouseSqm: 56_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 76,
+  },
+  {
+    id: 'log_vic_tullamarine_pharma',
+    category: 'logistics',
+    name: 'Tullamarine Pharma Hub',
+    description: 'Victorian pharmaceutical cold-chain staging.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['freight'],
+    tags: ['pharma_cold_chain', 'vaccine_logistics', 'gmp_freight'],
+    warehouseSqm: 50_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 71,
+  },
+  {
+    id: 'log_vic_somerton_pax_freight',
+    category: 'logistics',
+    name: 'Somerton Pax–Freight Yard',
+    description: 'Melbourne off-peak shared corridor freight staging.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['freight', 'mobility'],
+    tags: ['pax_freight_path', 'shared_corridor', 'off_peak_slot'],
+    warehouseSqm: 48_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 62,
+  },
+];
+
+export const SCALE_WAVE_ROUND28_ASSETS = [
+  ...ROUND28_ROADS,
+  ...ROUND28_RAIL,
+  ...ROUND28_PORTS,
+  ...ROUND28_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -10603,6 +10947,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND25_ASSETS,
     ...SCALE_WAVE_ROUND26_ASSETS,
     ...SCALE_WAVE_ROUND27_ASSETS,
+    ...SCALE_WAVE_ROUND28_ASSETS,
   ];
 }
 
@@ -12112,6 +12457,64 @@ export function offshoreWindTowInstallProductivityMultiplier(
   const policyBoost = policy === 'deploy' ? 0.041 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.045 + policyBoost, 0.93, 1.1);
+}
+
+
+// --- source: network/copper-concentrate-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type CopperConcentrateExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 copper concentrate smelter-feed export throughput by region. */
+export function computeCopperConcentrateExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) => t === 'copper_concentrate' || t === 'smelter_feed' || t === 'export_bulk',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.5 + asset.bulkShare * 5.4;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 84_000 + asset.intermodalLinks.length * 0.81;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 560;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 9_800_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalCopperConcentrateExportIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.48 + max * 0.52, 5, 78) * 10) / 10;
+}
+
+export function copperConcentrateExportProductivityMultiplier(
+  index: number,
+  policy: CopperConcentrateExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.039 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.044 + policyBoost, 0.93, 1.1);
 }
 
 
@@ -13939,6 +14342,93 @@ export function evBatteryRecyclingLogisticsProductivityMultiplier(
 ): number {
   const bias = policy === 'accelerate' ? 1.023 : 1;
   return (1 + (share - 0.051) * 0.031) * bias;
+}
+
+
+// --- source: operations/pharmaceutical-cold-chain-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type PharmaceuticalColdChainPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 pharmaceutical cold-chain and GMP freight readiness by region. */
+export function computePharmaceuticalColdChainByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'pharma_cold_chain' || t === 'vaccine_logistics' || t === 'gmp_freight',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 70_000 + (asset.coldChainCapable ? 2.2 : 0.6);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 500;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 14_800_000;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.3 + asset.teuCapacityPerYear / 320_000;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.034 - stress * 0.026), 5, 83) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalPharmaceuticalColdChainIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.49 + max * 0.51, 6, 80) * 10) / 10;
+}
+
+export function computePharmaceuticalColdChainShare(
+  operationalAssets: TransportAsset[],
+  policy: PharmaceuticalColdChainPolicy = 'baseline',
+): number {
+  let pharmaUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('pharma_cold_chain') || asset.tags.includes('vaccine_logistics')) {
+      if (asset.category === 'logistics' && asset.coldChainCapable) {
+        totalUnits += asset.warehouseSqm / 65_000;
+        pharmaUnits += asset.warehouseSqm / 65_000 * 0.68;
+      }
+      if (asset.category === 'road') {
+        totalUnits += asset.laneKilometres / 420;
+        pharmaUnits += asset.laneKilometres / 420 * 0.51;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.035;
+  const policyBoost = policy === 'surge' ? 0.03 : 0;
+  return Math.round(clamp(pharmaUnits / totalUnits + policyBoost, 0.034, 0.29) * 1000) / 1000;
+}
+
+export function pharmaceuticalColdChainProductivityMultiplier(
+  share: number,
+  policy: PharmaceuticalColdChainPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.022 : 1;
+  return (1 + (share - 0.052) * 0.03) * bias;
 }
 
 
@@ -16002,6 +16492,92 @@ export function nationalUrbanCourierMicrohubThroughputIndex(
 }
 
 
+// --- source: productivity/rail-passenger-freight-path-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RailPassengerFreightPathPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of rail corridor capacity using passenger–freight path sharing. */
+export function computeRailPassengerFreightPathShare(
+  operationalAssets: TransportAsset[],
+  policy: RailPassengerFreightPathPolicy = 'baseline',
+): number {
+  let sharedUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) => t === 'pax_freight_path' || t === 'shared_corridor' || t === 'off_peak_slot',
+      )
+    ) {
+      if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+        totalUnits += asset.designFreightTonnesPerYear / 7_800_000;
+        sharedUnits += (asset.designFreightTonnesPerYear / 7_800_000) * (asset.passengerCapable ? 0.64 : 0.2);
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 64_000;
+        sharedUnits += (asset.warehouseSqm / 64_000) * 0.57;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.037;
+  const policyBoost = policy === 'expand' ? 0.032 : 0;
+  return Math.round(clamp(sharedUnits / totalUnits + policyBoost, 0.036, 0.31) * 1000) / 1000;
+}
+
+export function railPassengerFreightPathProductivityMultiplier(
+  share: number,
+  policy: RailPassengerFreightPathPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.023 : 1;
+  return (1 + (share - 0.056) * 0.029) * bias;
+}
+
+export function computeRailPassengerFreightPathThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'pax_freight_path' || t === 'shared_corridor' || t === 'off_peak_slot',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 8_400_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 72_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 440;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRailPassengerFreightPathThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 1.7, 53) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -16505,6 +17081,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalUrbanCourierMicrohubThroughputIndex,
   urbanCourierMicrohubProductivityMultiplier,
 } from './urban-courier-microhub-index.ts';
+  computeCopperConcentrateExportByRegion,
+  copperConcentrateExportProductivityMultiplier,
+  nationalCopperConcentrateExportIndex,
+} from '../network/copper-concentrate-export-index.ts';
+  computePharmaceuticalColdChainByRegion,
+  computePharmaceuticalColdChainShare,
+  nationalPharmaceuticalColdChainIndex,
+  pharmaceuticalColdChainProductivityMultiplier,
+} from '../operations/pharmaceutical-cold-chain-index.ts';
+  computeRailPassengerFreightPathShare,
+  computeRailPassengerFreightPathThroughputByRegion,
+  nationalRailPassengerFreightPathThroughputIndex,
+  railPassengerFreightPathProductivityMultiplier,
+} from './rail-passenger-freight-path-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -17459,6 +18049,34 @@ export function computeTransportInfrastructureState(
     urbanCourierMicrohubShare,
     options?.urbanCourierMicrohubPolicy ?? 'baseline',
   );
+  const copperConcentrateExportByRegion = computeCopperConcentrateExportByRegion(ops);
+  const nationalCopperConcentrate = nationalCopperConcentrateExportIndex(copperConcentrateExportByRegion);
+  const copperMult = copperConcentrateExportProductivityMultiplier(
+    nationalCopperConcentrate,
+    options?.copperConcentrateExportPolicy ?? 'baseline',
+  );
+  const pharmaceuticalColdChainByRegion = computePharmaceuticalColdChainByRegion(ops, networkStress);
+  const nationalPharmaColdChain = nationalPharmaceuticalColdChainIndex(pharmaceuticalColdChainByRegion);
+  const pharmaceuticalColdChainShare = computePharmaceuticalColdChainShare(
+    ops,
+    options?.pharmaceuticalColdChainPolicy ?? 'baseline',
+  );
+  const pharmaColdChainMult = pharmaceuticalColdChainProductivityMultiplier(
+    pharmaceuticalColdChainShare,
+    options?.pharmaceuticalColdChainPolicy ?? 'baseline',
+  );
+  const railPassengerFreightPathThroughputByRegion = computeRailPassengerFreightPathThroughputByRegion(ops);
+  const nationalPaxFreightPath = nationalRailPassengerFreightPathThroughputIndex(
+    railPassengerFreightPathThroughputByRegion,
+  );
+  const railPassengerFreightPathShare = computeRailPassengerFreightPathShare(
+    ops,
+    options?.railPassengerFreightPathPolicy ?? 'baseline',
+  );
+  const paxFreightPathMult = railPassengerFreightPathProductivityMultiplier(
+    railPassengerFreightPathShare,
+    options?.railPassengerFreightPathPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -17497,6 +18115,9 @@ export function computeTransportInfrastructureState(
     const windTowBoost = (offshoreWindTowInstallByRegion[code] - 5) * 0.0041;
     const evBatteryBoost = (evBatteryRecyclingLogisticsByRegion[code] - 5) * 0.0037;
     const courierMicrohubBoost = (urbanCourierMicrohubThroughputByRegion[code] - 1.6) * 0.0033;
+    const copperBoost = (copperConcentrateExportByRegion[code] - 5) * 0.004;
+    const pharmaColdChainBoost = (pharmaceuticalColdChainByRegion[code] - 6) * 0.0036;
+    const paxFreightPathBoost = (railPassengerFreightPathThroughputByRegion[code] - 1.7) * 0.0032;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -17534,7 +18155,10 @@ export function computeTransportInfrastructureState(
         berthSlotBoost +
         windTowBoost +
         evBatteryBoost +
-        courierMicrohubBoost) *
+        courierMicrohubBoost +
+        copperBoost +
+        pharmaColdChainBoost +
+        paxFreightPathBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -17570,7 +18194,10 @@ export function computeTransportInfrastructureState(
       berthSlotMult *
       windTowMult *
       evBatteryMult *
-      courierMicrohubMult;
+      courierMicrohubMult *
+      copperMult *
+      pharmaColdChainMult *
+      paxFreightPathMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -17629,7 +18256,10 @@ export function computeTransportInfrastructureState(
     nationalPortBerthSlot * 0.004 +
     nationalWindTow * 0.004 +
     nationalEvBatteryRecycle * 0.004 +
-    nationalUrbanCourierMicrohub * 0.003;
+    nationalUrbanCourierMicrohub * 0.003 +
+    nationalCopperConcentrate * 0.003 +
+    nationalPharmaColdChain * 0.003 +
+    nationalPaxFreightPath * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -17644,7 +18274,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/28',
+    schemaVersion: 'agent12/29',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -17834,6 +18464,14 @@ export function computeTransportInfrastructureState(
     urbanCourierMicrohubShare,
     nationalUrbanCourierMicrohubThroughputIndex: nationalUrbanCourierMicrohub,
     urbanCourierMicrohubThroughputByRegion,
+    nationalCopperConcentrateExportIndex: nationalCopperConcentrate,
+    copperConcentrateExportByRegion,
+    pharmaceuticalColdChainShare,
+    nationalPharmaceuticalColdChainIndex: nationalPharmaColdChain,
+    pharmaceuticalColdChainByRegion,
+    railPassengerFreightPathShare,
+    nationalRailPassengerFreightPathThroughputIndex: nationalPaxFreightPath,
+    railPassengerFreightPathThroughputByRegion,
     computeMs,
   };
 }
@@ -17916,7 +18554,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/28' &&
+      infra.schemaVersion === 'agent12/29' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -18010,8 +18648,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalOffshoreWindTowInstallIndex >= 5 &&
       infra.nationalEvBatteryRecyclingLogisticsIndex >= 5 &&
       infra.urbanCourierMicrohubShare >= 0.03 &&
-      infra.nationalUrbanCourierMicrohubThroughputIndex >= 1.6,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} tow=${infra.nationalOffshoreWindTowInstallIndex.toFixed(1)} recycle=${infra.nationalEvBatteryRecyclingLogisticsIndex.toFixed(1)} courier=${infra.nationalUrbanCourierMicrohubThroughputIndex.toFixed(1)}`,
+      infra.nationalUrbanCourierMicrohubThroughputIndex >= 1.6 &&
+      infra.nationalCopperConcentrateExportIndex >= 5 &&
+      infra.nationalPharmaceuticalColdChainIndex >= 6 &&
+      infra.railPassengerFreightPathShare >= 0.03 &&
+      infra.nationalRailPassengerFreightPathThroughputIndex >= 1.7,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} copper=${infra.nationalCopperConcentrateExportIndex.toFixed(1)} pharma=${infra.nationalPharmaceuticalColdChainIndex.toFixed(1)} paxfreight=${infra.nationalRailPassengerFreightPathThroughputIndex.toFixed(1)}`,
   });
 
   return results;

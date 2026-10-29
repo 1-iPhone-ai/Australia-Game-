@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 28
+
+- Schema **`agent12/29`**: copper concentrate export throughput, pharmaceutical cold-chain readiness, rail passenger–freight path share (`copperConcentrateExportPolicy`, `pharmaceuticalColdChainPolicy`, `railPassengerFreightPathPolicy`)
+- Catalog: **393** assets, **98** corridors, **158** scenarios
+- Systems: `network/copper-concentrate-export-index.ts`, `operations/pharmaceutical-cold-chain-index.ts`, `productivity/rail-passenger-freight-path-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 27
 
 - Schema **`agent12/28`**: offshore wind tow install throughput, EV battery recycling logistics readiness, urban courier microhub share (`offshoreWindTowInstallPolicy`, `evBatteryRecyclingLogisticsPolicy`, `urbanCourierMicrohubPolicy`)
