@@ -133442,6 +133442,17 @@ export const UI_TONE: Record<UiTone, { icon: string; cls: string; label: string 
   completed: { icon: '✓', cls: 'text-emerald-400', label: 'complete' },
   inactive: { icon: '○', cls: 'opacity-60', label: 'inactive' }
 };
+/** Border classes paired with {@link UI_TONE} — one source for chips, feedback strips, and map emphasis. */
+export const UI_TONE_BORDER: Record<UiTone, string> = {
+  positive: 'border-emerald-500/60',
+  completed: 'border-emerald-500/70',
+  negative: 'border-rose-500/60',
+  critical: 'border-red-500/80',
+  warning: 'border-amber-500/70',
+  selected: 'border-sky-500/60',
+  neutral: 'border-slate-500/50',
+  inactive: 'border-slate-600/40'
+};
 /** One icon per concept across PLAY surfaces. */
 export const UI_ICON = { money: '💰', actions: '⚡', warning: '⚠', travel: '🧭', region: '📍', contract: '📜', infrastructure: '🏗', strategy: '🎯', diplomacy: '🤝', crisis: '🌪', faction: '🏛', rival: '◆', you: '▲', complete: '✓', decision: '⚖️', event: '📰' };
 
@@ -133710,11 +133721,10 @@ export function currentDeltaFor(queue: UiFeedbackEvent[], subject: 'cash' | 'ap'
 /** Completion / consequence card: one grouped moment, then it collapses into ordinary history. */
 export const FeedbackStrip: React.FC<{ theme: any; major: UiFeedbackEvent | null; minor: UiFeedbackEvent[]; onDismiss: (id: string) => void; onWhy?: (e: UiFeedbackEvent) => void }> = ({ theme, major, minor, onDismiss, onWhy }) => {
   if (!major && !minor.length) return null;
-  const toneBorder: Record<UiTone, string> = { positive: 'border-emerald-500/60', completed: 'border-emerald-500/70', negative: 'border-rose-500/60', critical: 'border-red-500/80', warning: 'border-amber-500/70', selected: 'border-sky-500/60', neutral: 'border-slate-500/50', inactive: 'border-slate-600/40' };
   return (
     <div className="space-y-2" data-testid="v94-feedback">
       {major && (
-        <section key={major.id} role={major.importance === 'critical' ? 'alert' : 'status'} aria-live={major.importance === 'critical' ? 'assertive' : 'polite'} className={`v94-pop ${theme.card} border-2 ${toneBorder[major.tone]} rounded-xl px-3 py-2 text-sm flex items-start gap-3`} data-testid="v94-major" data-kind={major.kind}>
+        <section key={major.id} role={major.importance === 'critical' ? 'alert' : 'status'} aria-live={major.importance === 'critical' ? 'assertive' : 'polite'} className={`v94-pop ${theme.card} border-2 ${UI_TONE_BORDER[major.tone]} rounded-xl px-3 py-2 text-sm flex items-start gap-3`} data-testid="v94-major" data-kind={major.kind}>
           <span className="text-xl leading-none mt-0.5" aria-hidden="true">{major.icon}</span>
           <div className="flex-1 min-w-0">
             <div className="font-extrabold tracking-wide">{major.tone === 'completed' && !major.title.startsWith('✓') ? '✓ ' : ''}{major.title}</div>
@@ -133729,7 +133739,7 @@ export const FeedbackStrip: React.FC<{ theme: any; major: UiFeedbackEvent | null
       {minor.length > 0 && (
         <ul className="flex flex-wrap gap-1.5 text-xs" aria-label="Recent changes" data-testid="v94-minor">
           {minor.map(e => (
-            <li key={e.id} className={`v94-fade px-2 py-0.5 rounded-full border ${toneBorder[e.tone]} ${theme.card}`} data-kind={e.kind}>
+            <li key={e.id} className={`v94-fade px-2 py-0.5 rounded-full border ${UI_TONE_BORDER[e.tone]} ${theme.card}`} data-kind={e.kind}>
               <span aria-hidden="true">{e.icon} </span><span className={`sr-only`}>{UI_TONE[e.tone].label} </span>{e.title}{e.lines[0] ? <span className="opacity-75"> · {e.lines[0]}</span> : null}
             </li>
           ))}
@@ -133962,6 +133972,132 @@ export function runV94GameFeelPolishSelfTests(): V9SelfTestResult[] {
   return results;
 }
 
+
+// ============================================================================
+// SECTION 20P-A61: OPERATION 111 — VISUAL DESIGN TOKEN REGISTRY (Agent 61)
+// ============================================================================
+// Canonical presentation vocabulary for Division G (Agents 62–70). Pure data + builders only —
+// no gameplay rules, no persistence, no network. Composes Section 17 themes with Section 20P motion/tone.
+
+export const O111_VISUAL_REGISTRY_VERSION = '1.0.0';
+
+/** Tailwind-aligned spacing rhythm for PLAY layout (class names + px reference). */
+export const O111_VISUAL_SPACING = {
+  px: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 },
+  stack: 'gap-2',
+  panel: 'p-4',
+  chip: 'px-2 py-0.5',
+  section: 'space-y-2'
+} as const;
+
+/** Typography roles reused across dashboards and evolutionary UI patches. */
+export const O111_VISUAL_TYPE = {
+  hero: 'text-3xl sm:text-4xl font-black tracking-tight',
+  title: 'text-lg font-bold',
+  body: 'text-sm',
+  caption: 'text-xs opacity-80',
+  monoLabel: 'text-xs font-mono font-semibold uppercase tracking-wider'
+} as const;
+
+/** Maps emphasis intent → existing V9.4 motion classes (never invent parallel animation names). */
+export const O111_VISUAL_EMPHASIS = {
+  primaryCta: 'v94-ring',
+  enter: 'v94-enter',
+  fade: 'v94-fade',
+  pop: 'v94-pop',
+  stagger: 'v94-stagger',
+  progress: 'v94-progress'
+} as const;
+
+const O111_THEME_SEMANTIC_KEYS = ['background', 'card', 'border', 'button', 'buttonSecondary', 'text', 'heading', 'successBorder', 'errorBorder', 'warningBorder'] as const;
+
+export interface O111VisualDesignContext {
+  registryVersion: string;
+  themeId: GameTheme;
+  resolvedDark: boolean;
+  motion: UiMotionMode;
+  focusStrong: boolean;
+  theme: V9Theme;
+  tone: typeof UI_TONE;
+  toneBorder: typeof UI_TONE_BORDER;
+  icons: typeof UI_ICON;
+  motionTokens: typeof UI_MOTION;
+  spacing: typeof O111_VISUAL_SPACING;
+  typography: typeof O111_VISUAL_TYPE;
+  emphasis: typeof O111_VISUAL_EMPHASIS;
+}
+
+/** Single entry point for UI agents: resolved theme + feel tokens + accessibility mode. */
+export function buildO111VisualDesignContext(theme: GameTheme, settings: any, systemPrefersDark = false): O111VisualDesignContext {
+  const resolvedDark = theme === 'dark' || (theme === 'system' && systemPrefersDark);
+  return {
+    registryVersion: O111_VISUAL_REGISTRY_VERSION,
+    themeId: theme,
+    resolvedDark,
+    motion: resolveUiMotionMode(settings),
+    focusStrong: Boolean(settings?.accessibilitySettings?.highContrastFocusRings),
+    theme: resolveThemeStyles(theme, systemPrefersDark),
+    tone: UI_TONE,
+    toneBorder: UI_TONE_BORDER,
+    icons: UI_ICON,
+    motionTokens: UI_MOTION,
+    spacing: O111_VISUAL_SPACING,
+    typography: O111_VISUAL_TYPE,
+    emphasis: O111_VISUAL_EMPHASIS
+  };
+}
+
+/** Optional CSS variables mirroring tone borders (for canvas/SVG surfaces that cannot use Tailwind classes). */
+export const O111_VISUAL_STYLESHEET = `
+[data-v94] {
+  --o111-tone-positive: rgba(16, 185, 129, 0.6);
+  --o111-tone-completed: rgba(16, 185, 129, 0.7);
+  --o111-tone-negative: rgba(244, 63, 94, 0.6);
+  --o111-tone-critical: rgba(239, 68, 68, 0.8);
+  --o111-tone-warning: rgba(245, 158, 11, 0.7);
+  --o111-tone-selected: rgba(14, 165, 233, 0.6);
+  --o111-tone-neutral: rgba(100, 116, 139, 0.5);
+  --o111-tone-inactive: rgba(71, 85, 105, 0.4);
+  --o111-space-xs: ${O111_VISUAL_SPACING.px.xs}px;
+  --o111-space-sm: ${O111_VISUAL_SPACING.px.sm}px;
+  --o111-space-md: ${O111_VISUAL_SPACING.px.md}px;
+  --o111-space-lg: ${O111_VISUAL_SPACING.px.lg}px;
+}
+`;
+
+export function runO111VisualDesignSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const toneKeys = Object.keys(UI_TONE) as UiTone[];
+  check('o111_a61_tone_border', 'UI_TONE_BORDER covers every UiTone with a non-empty border class', () => {
+    return toneKeys.every(k => typeof UI_TONE_BORDER[k] === 'string' && UI_TONE_BORDER[k].startsWith('border-')) || JSON.stringify(UI_TONE_BORDER);
+  });
+  check('o111_a61_context', 'buildO111VisualDesignContext resolves theme, motion, and focus from settings', () => {
+    const ctx = buildO111VisualDesignContext('dark', { accessibilitySettings: { reduceMotion: true, highContrastFocusRings: true } }, false);
+    return ctx.themeId === 'dark' && ctx.resolvedDark && ctx.motion === 'reduced' && ctx.focusStrong && ctx.theme.card.includes('bg-') && ctx.registryVersion === O111_VISUAL_REGISTRY_VERSION;
+  });
+  check('o111_a61_theme_semantics', 'Every GameTheme exposes core semantic surfaces for Division G', () => {
+    const themes: GameTheme[] = ['dark', 'light', 'retro', 'system'];
+    const missing: string[] = [];
+    themes.forEach(t => {
+      const ts = resolveThemeStyles(t, t === 'system');
+      O111_THEME_SEMANTIC_KEYS.forEach(k => { if (!(ts as any)[k]) missing.push(`${t}.${k}`); });
+    });
+    return missing.length === 0 || missing.join(', ');
+  });
+  check('o111_a61_offline_css', 'O111 visual stylesheet is self-contained (no remote assets)', () => {
+    const css = O111_VISUAL_STYLESHEET;
+    return !/url\(|https?:|@import/.test(css) && /--o111-tone-positive/.test(css) && /--o111-space-md/.test(css);
+  });
+  check('o111_a61_emphasis', 'Emphasis classes map only to existing v94 motion utilities', () => {
+    const vals = Object.values(O111_VISUAL_EMPHASIS);
+    return vals.every(v => v.startsWith('v94-')) && vals.includes('v94-ring');
+  });
+  return results;
+}
 
 // ============================================================================
 // SECTION 20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
@@ -136513,6 +136649,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
+  { id: 'o111_a61', label: 'O111 Visual Design (Agent 61)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111VisualDesignSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
   { id: 'v91', label: 'V9.1 Strategic Balance', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicDepthBalanceSelfTests() },
@@ -242641,6 +242778,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
   return (
     <div className="font-sans" data-v94="" data-motion={v94MotionMode} data-focus={v94FocusStrong ? 'strong' : 'normal'} style={v94DebugSlow ? ({ ['--v94-speed' as any]: 6 } as React.CSSProperties) : undefined}>
       <style>{V94_STYLESHEET}</style>
+      <style>{O111_VISUAL_STYLESHEET}</style>
       <style>{`
         @keyframes notificationSlideIn {
           from { opacity: 0; transform: translateY(-10px); }
