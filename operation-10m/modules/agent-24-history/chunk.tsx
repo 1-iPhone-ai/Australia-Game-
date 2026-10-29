@@ -6719,7 +6719,7 @@ export interface Agent24ReplayScaleWaveAcceptanceInput {
 export function buildAgent24ReplayScaleWaveAcceptanceReport(
   input: Agent24ReplayScaleWaveAcceptanceInput,
 ): Agent24ReplayScaleWaveAcceptanceReport {
-  const waveRound = input.waveRound ?? 22;
+  const waveRound = input.waveRound ?? 23;
   const minDepth = input.minDepthScore ?? 55;
   const blockers: Agent24ScaleWaveAcceptanceBlocker[] = [];
 
@@ -6808,7 +6808,7 @@ export function runAgent24ReplayScaleWaveAcceptanceSelfTests(): Array<{ name: st
 
   const report = buildAgent24ReplayScaleWaveAcceptanceReport({
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     archiveContinuityVerification: continuityVerification,
     exportReadiness,
     analyticsDepth,
@@ -6816,14 +6816,14 @@ export function runAgent24ReplayScaleWaveAcceptanceSelfTests(): Array<{ name: st
 
   return [
     { name: 'accepted_when_wave_gates_pass', passed: report.accepted && report.blockerCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 22 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 23 },
     {
       name: 'deterministic_fingerprint',
       passed:
         report.deterministicFingerprint ===
         buildAgent24ReplayScaleWaveAcceptanceReport({
           matchId: 'self',
-          waveRound: 22,
+          waveRound: 23,
           archiveContinuityVerification: continuityVerification,
           exportReadiness,
           analyticsDepth,
@@ -6922,7 +6922,7 @@ export function runAgent24ArchiveReleaseGateSelfTests(): Array<{ name: string; p
   const waveAcceptance = {
     reportId: 'wa',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     accepted: true,
     blockerCount: 0,
     blockers: [],
@@ -7226,7 +7226,7 @@ export function runAgent24ReplayScaleWaveHandoffSealSelfTests(): Array<{ name: s
   const waveAcceptance = {
     reportId: 'wa',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     accepted: true,
     blockerCount: 0,
     blockers: [],
@@ -7264,7 +7264,7 @@ export function runAgent24ReplayScaleWaveHandoffSealSelfTests(): Array<{ name: s
 
   return [
     { name: 'handoff_ready_when_wave_release_aligned', passed: seal.handoffReady && seal.readyLinkCount === 3 },
-    { name: 'wave_round_pinned', passed: seal.waveRound === 22 },
+    { name: 'wave_round_pinned', passed: seal.waveRound === 23 },
     {
       name: 'deterministic_fingerprint',
       passed:
@@ -7373,7 +7373,7 @@ export function runAgent24ReplayScaleWaveCloseoutSelfTests(): Array<{ name: stri
   const waveAcceptance = {
     reportId: 'wa',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     accepted: true,
     blockerCount: 0,
     blockers: [],
@@ -7393,7 +7393,7 @@ export function runAgent24ReplayScaleWaveCloseoutSelfTests(): Array<{ name: stri
   const handoffSeal = {
     sealId: 'sws',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     handoffReady: true,
     linkCount: 3,
     readyLinkCount: 3,
@@ -7410,7 +7410,7 @@ export function runAgent24ReplayScaleWaveCloseoutSelfTests(): Array<{ name: stri
   });
 
   return [
-    { name: 'closeout_complete_when_wave_pipeline_ready', passed: report.closeoutComplete && report.waveRound === 22 },
+    { name: 'closeout_complete_when_wave_pipeline_ready', passed: report.closeoutComplete && report.waveRound === 23 },
     {
       name: 'deterministic_fingerprint',
       passed:
@@ -7535,7 +7535,7 @@ export function runAgent24ReplayScaleWaveVerificationSelfTests(): Array<{ name: 
   const acceptance = {
     reportId: 'wa',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     accepted: true,
     blockerCount: 0,
     blockers: [],
@@ -7545,7 +7545,7 @@ export function runAgent24ReplayScaleWaveVerificationSelfTests(): Array<{ name: 
   const handoffSeal = {
     sealId: 'sws',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     handoffReady: true,
     linkCount: 3,
     readyLinkCount: 3,
@@ -7556,7 +7556,7 @@ export function runAgent24ReplayScaleWaveVerificationSelfTests(): Array<{ name: 
   const closeout = {
     reportId: 'co',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     closeoutComplete: true,
     checkpointCount: 3,
     satisfiedCheckpointCount: 3,
@@ -7574,7 +7574,7 @@ export function runAgent24ReplayScaleWaveVerificationSelfTests(): Array<{ name: 
 
   return [
     { name: 'verified_when_scale_wave_pipeline_ready', passed: report.verified && report.issueCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 22 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 23 },
     {
       name: 'deterministic_fingerprint',
       passed:
@@ -7696,7 +7696,7 @@ export function runAgent24ArchiveScaleWaveFinalizationSelfTests(): Array<{ name:
   const closeout = {
     reportId: 'co',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     closeoutComplete: true,
     checkpointCount: 3,
     satisfiedCheckpointCount: 3,
@@ -7707,7 +7707,7 @@ export function runAgent24ArchiveScaleWaveFinalizationSelfTests(): Array<{ name:
   const verification = {
     reportId: 'sv',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -7725,7 +7725,7 @@ export function runAgent24ArchiveScaleWaveFinalizationSelfTests(): Array<{ name:
 
   return [
     { name: 'finalized_when_scale_wave_stack_ready', passed: report.finalized && report.blockerCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 22 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 23 },
     {
       name: 'deterministic_fingerprint',
       passed:
@@ -7812,7 +7812,7 @@ export function runAgent24ReplayScaleWaveAttestationSelfTests(): Array<{ name: s
   const closeout = {
     reportId: 'co',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     closeoutComplete: true,
     checkpointCount: 3,
     satisfiedCheckpointCount: 3,
@@ -7823,7 +7823,7 @@ export function runAgent24ReplayScaleWaveAttestationSelfTests(): Array<{ name: s
   const verification = {
     reportId: 'sv',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -7834,7 +7834,7 @@ export function runAgent24ReplayScaleWaveAttestationSelfTests(): Array<{ name: s
   const finalization = {
     reportId: 'fin',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     finalized: true,
     blockerCount: 0,
     blockers: [],
@@ -7851,7 +7851,7 @@ export function runAgent24ReplayScaleWaveAttestationSelfTests(): Array<{ name: s
 
   return [
     { name: 'verified_when_scale_wave_attestation_ready', passed: attestation.status === 'verified' },
-    { name: 'wave_round_pinned', passed: attestation.waveRound === 22 },
+    { name: 'wave_round_pinned', passed: attestation.waveRound === 23 },
     {
       name: 'deterministic_fingerprint',
       passed:
@@ -7979,7 +7979,7 @@ export function runAgent24ReplayScaleWaveAttestationVerificationSelfTests(): Arr
   const finalization = {
     reportId: 'fin',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     finalized: true,
     blockerCount: 0,
     blockers: [],
@@ -7989,7 +7989,7 @@ export function runAgent24ReplayScaleWaveAttestationVerificationSelfTests(): Arr
   const waveVerification = {
     reportId: 'sv',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -8000,7 +8000,7 @@ export function runAgent24ReplayScaleWaveAttestationVerificationSelfTests(): Arr
   const attestation = {
     attestationId: 'att',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     status: 'verified' as const,
     verificationOk: true,
     finalizationOk: true,
@@ -8018,7 +8018,7 @@ export function runAgent24ReplayScaleWaveAttestationVerificationSelfTests(): Arr
 
   return [
     { name: 'verified_when_attestation_stack_ready', passed: report.verified && report.issueCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 22 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 23 },
     {
       name: 'deterministic_fingerprint',
       passed:
@@ -8133,7 +8133,7 @@ export function runAgent24ArchiveScaleWaveReleaseHandoffGateSelfTests(): Array<{
   const attestationVerification = {
     reportId: 'av',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -8154,7 +8154,7 @@ export function runAgent24ArchiveScaleWaveReleaseHandoffGateSelfTests(): Array<{
   const attestation = {
     attestationId: 'att',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     status: 'verified' as const,
     verificationOk: true,
     finalizationOk: true,
@@ -8172,7 +8172,7 @@ export function runAgent24ArchiveScaleWaveReleaseHandoffGateSelfTests(): Array<{
 
   return [
     { name: 'handoff_allowed_when_release_stack_ready', passed: report.handoffAllowed && report.blockerCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 22 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 23 },
     {
       name: 'deterministic_fingerprint',
       passed:
@@ -8201,6 +8201,9 @@ export const O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA = '99f2e72b';
 
 /** O10-174 integration baseline anchor (wave 22 roster). */
 export const O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA = '634656bb';
+
+/** O10-176 integration baseline anchor (wave 23 roster). */
+export const O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA = 'b23e1449';
 
 export interface Agent24ReplayScaleWaveIntegrationCloseoutCheckpoint {
   checkpointId: string;
@@ -8236,13 +8239,15 @@ export function buildAgent24ReplayScaleWaveIntegrationCloseoutReport(
   const waveRound = input.replayScaleWaveAttestationVerification.waveRound;
   const integrationBaselineSha =
     input.integrationBaselineSha ??
-    (waveRound >= 22
-      ? O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA
-      : waveRound >= 21
-        ? O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA
-        : waveRound >= 20
-          ? O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA
-          : O6K_AGENT24_WAVE19_INTEGRATION_BASELINE_SHA);
+    (waveRound >= 23
+      ? O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA
+      : waveRound >= 22
+        ? O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA
+        : waveRound >= 21
+          ? O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA
+          : waveRound >= 20
+            ? O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA
+            : O6K_AGENT24_WAVE19_INTEGRATION_BASELINE_SHA);
 
   const checkpoints: Agent24ReplayScaleWaveIntegrationCloseoutCheckpoint[] = [
     {
@@ -8320,7 +8325,7 @@ export function runAgent24ReplayScaleWaveIntegrationCloseoutSelfTests(): Array<{
   const closeout = {
     reportId: 'co',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     closeoutComplete: true,
     checkpointCount: 3,
     satisfiedCheckpointCount: 3,
@@ -8331,7 +8336,7 @@ export function runAgent24ReplayScaleWaveIntegrationCloseoutSelfTests(): Array<{
   const attestationVerification = {
     reportId: 'av',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -8342,7 +8347,7 @@ export function runAgent24ReplayScaleWaveIntegrationCloseoutSelfTests(): Array<{
   const handoffGate = {
     reportId: 'hg',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     handoffAllowed: true,
     blockerCount: 0,
     blockers: [],
@@ -8360,9 +8365,9 @@ export function runAgent24ReplayScaleWaveIntegrationCloseoutSelfTests(): Array<{
   return [
     {
       name: 'integration_closeout_complete_when_wave_stack_ready',
-      passed: report.closeoutComplete && report.integrationBaselineSha === O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA,
+      passed: report.closeoutComplete && report.integrationBaselineSha === O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: report.waveRound === 22 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 23 },
     {
       name: 'deterministic_fingerprint',
       passed:
@@ -8487,7 +8492,7 @@ export function runAgent24ReplayScaleWaveIntegrationVerificationSelfTests(): Arr
   const handoffGate = {
     reportId: 'hg',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     handoffAllowed: true,
     blockerCount: 0,
     blockers: [],
@@ -8497,7 +8502,7 @@ export function runAgent24ReplayScaleWaveIntegrationVerificationSelfTests(): Arr
   const attestationVerification = {
     reportId: 'av',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -8508,7 +8513,7 @@ export function runAgent24ReplayScaleWaveIntegrationVerificationSelfTests(): Arr
   const integrationCloseout = {
     reportId: 'ic',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     integrationBaselineSha: '680b9954',
     closeoutComplete: true,
     checkpointCount: 3,
@@ -8527,7 +8532,7 @@ export function runAgent24ReplayScaleWaveIntegrationVerificationSelfTests(): Arr
 
   return [
     { name: 'verified_when_integration_stack_ready', passed: report.verified && report.issueCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 22 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 23 },
     {
       name: 'deterministic_fingerprint',
       passed:
@@ -8639,7 +8644,7 @@ export function runAgent24ArchiveScaleWaveExportGateSelfTests(): Array<{ name: s
   const integrationCloseout = {
     reportId: 'ic',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     integrationBaselineSha: '680b9954',
     closeoutComplete: true,
     checkpointCount: 3,
@@ -8651,7 +8656,7 @@ export function runAgent24ArchiveScaleWaveExportGateSelfTests(): Array<{ name: s
   const integrationVerification = {
     reportId: 'iv',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     integrationBaselineSha: '680b9954',
     verified: true,
     issueCount: 0,
@@ -8679,7 +8684,7 @@ export function runAgent24ArchiveScaleWaveExportGateSelfTests(): Array<{ name: s
 
   return [
     { name: 'export_allowed_when_wave_export_stack_ready', passed: report.exportAllowed && report.blockerCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 22 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 23 },
     {
       name: 'deterministic_fingerprint',
       passed:
@@ -8700,6 +8705,7 @@ export function runAgent24ArchiveScaleWaveExportGateSelfTests(): Array<{ name: s
   O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
 } from './replay-scale-wave-integration-closeout.ts';
 
 export { O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA } from './replay-scale-wave-integration-closeout.ts';
@@ -8737,13 +8743,15 @@ export function buildAgent24ReplayScaleWaveProjectionHandoffSeal(
   const waveRound = input.replayScaleWaveIntegrationVerification.waveRound;
   const projectionBaselineSha =
     input.projectionBaselineSha ??
-    (waveRound >= 22
-      ? O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA
-      : waveRound >= 21
-        ? O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA
-        : waveRound >= 20
-          ? O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA
-          : O6K_AGENT24_WAVE19_INTEGRATION_BASELINE_SHA);
+    (waveRound >= 23
+      ? O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA
+      : waveRound >= 22
+        ? O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA
+        : waveRound >= 21
+          ? O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA
+          : waveRound >= 20
+            ? O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA
+            : O6K_AGENT24_WAVE19_INTEGRATION_BASELINE_SHA);
   const baselineMatches =
     input.replayScaleWaveIntegrationVerification.integrationBaselineSha === projectionBaselineSha;
 
@@ -8814,8 +8822,8 @@ export function runAgent24ReplayScaleWaveProjectionHandoffSealSelfTests(): Array
   const integrationVerification = {
     reportId: 'iv',
     matchId: 'self',
-    waveRound: 22,
-    integrationBaselineSha: O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA,
+    waveRound: 23,
+    integrationBaselineSha: O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -8826,7 +8834,7 @@ export function runAgent24ReplayScaleWaveProjectionHandoffSealSelfTests(): Array
   const exportGate = {
     reportId: 'eg',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     exportAllowed: true,
     blockerCount: 0,
     blockers: [],
@@ -8845,9 +8853,9 @@ export function runAgent24ReplayScaleWaveProjectionHandoffSealSelfTests(): Array
       name: 'handoff_ready_at_projection_baseline',
       passed:
         seal.handoffReady &&
-        seal.projectionBaselineSha === O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA,
+        seal.projectionBaselineSha === O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: seal.waveRound === 22 },
+    { name: 'wave_round_pinned', passed: seal.waveRound === 23 },
     {
       name: 'deterministic_fingerprint',
       passed:
@@ -8985,7 +8993,7 @@ export function runAgent24ReplayScaleWaveProjectionVerificationSelfTests(): Arra
   const exportGate = {
     reportId: 'eg',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     exportAllowed: true,
     blockerCount: 0,
     blockers: [],
@@ -8995,7 +9003,7 @@ export function runAgent24ReplayScaleWaveProjectionVerificationSelfTests(): Arra
   const integrationVerification = {
     reportId: 'iv',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     integrationBaselineSha: '99f2e72b',
     verified: true,
     issueCount: 0,
@@ -9007,7 +9015,7 @@ export function runAgent24ReplayScaleWaveProjectionVerificationSelfTests(): Arra
   const projectionHandoff = {
     sealId: 'ph',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     projectionBaselineSha: '99f2e72b',
     handoffReady: true,
     linkCount: 3,
@@ -9026,7 +9034,7 @@ export function runAgent24ReplayScaleWaveProjectionVerificationSelfTests(): Arra
 
   return [
     { name: 'verified_when_projection_stack_ready', passed: report.verified && report.issueCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 22 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 23 },
     {
       name: 'deterministic_fingerprint',
       passed:
@@ -9138,7 +9146,7 @@ export function runAgent24ArchiveScaleWavePostProjectionGateSelfTests(): Array<{
   const projectionVerification = {
     reportId: 'pv',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     projectionBaselineSha: '99f2e72b',
     verified: true,
     issueCount: 0,
@@ -9175,7 +9183,7 @@ export function runAgent24ArchiveScaleWavePostProjectionGateSelfTests(): Array<{
 
   return [
     { name: 'gate_open_when_post_projection_stack_ready', passed: report.gateOpen && report.blockerCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 22 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 23 },
     {
       name: 'deterministic_fingerprint',
       passed:
@@ -9193,6 +9201,8 @@ export function runAgent24ArchiveScaleWavePostProjectionGateSelfTests(): Array<{
 
 // --- source: replay-scale-wave-dryrun-handoff.ts ---
   O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
 } from './replay-scale-wave-integration-closeout.ts';
 
 /** @deprecated use integration-closeout WAVE21 constant */
@@ -9231,9 +9241,11 @@ export function buildAgent24ReplayScaleWaveDryrunHandoffReport(
   const waveRound = input.replayScaleWaveProjectionVerification.waveRound;
   const dryrunBaselineSha =
     input.dryrunBaselineSha ??
-    (waveRound >= 22
-      ? O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA
-      : O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA);
+    (waveRound >= 23
+      ? O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA
+      : waveRound >= 22
+        ? O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA
+        : O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA);
   const baselineAligned = input.replayScaleWaveProjectionVerification.projectionBaselineSha === dryrunBaselineSha;
 
   const checkpoints: Agent24ReplayScaleWaveDryrunHandoffCheckpoint[] = [
@@ -9303,8 +9315,8 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
   const projectionVerification = {
     reportId: 'pv',
     matchId: 'self',
-    waveRound: 22,
-    projectionBaselineSha: O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA,
+    waveRound: 23,
+    projectionBaselineSha: O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -9315,7 +9327,7 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
   const postProjectionGate = {
     reportId: 'ppg',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     gateOpen: true,
     blockerCount: 0,
     blockers: [],
@@ -9331,12 +9343,12 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
 
   return [
     {
-      name: 'dryrun_handoff_complete_at_wave22_baseline',
+      name: 'dryrun_handoff_complete_at_wave23_baseline',
       passed:
         report.handoffComplete &&
-        report.dryrunBaselineSha === O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA,
+        report.dryrunBaselineSha === O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: report.waveRound === 22 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 23 },
     {
       name: 'deterministic_fingerprint',
       passed:
@@ -9460,7 +9472,7 @@ export function runAgent24ReplayScaleWaveDryrunVerificationSelfTests(): Array<{ 
   const postProjectionGate = {
     reportId: 'ppg',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     gateOpen: true,
     blockerCount: 0,
     blockers: [],
@@ -9470,7 +9482,7 @@ export function runAgent24ReplayScaleWaveDryrunVerificationSelfTests(): Array<{ 
   const projectionVerification = {
     reportId: 'pv',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     projectionBaselineSha: '634656bb',
     verified: true,
     issueCount: 0,
@@ -9482,7 +9494,7 @@ export function runAgent24ReplayScaleWaveDryrunVerificationSelfTests(): Array<{ 
   const dryrunHandoff = {
     reportId: 'dh',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     dryrunBaselineSha: '634656bb',
     handoffComplete: true,
     checkpointCount: 3,
@@ -9501,7 +9513,7 @@ export function runAgent24ReplayScaleWaveDryrunVerificationSelfTests(): Array<{ 
 
   return [
     { name: 'verified_when_dryrun_stack_ready', passed: report.verified && report.issueCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 22 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 23 },
     {
       name: 'deterministic_fingerprint',
       passed:
@@ -9613,7 +9625,7 @@ export function runAgent24ArchiveScaleWaveFullChunksGateSelfTests(): Array<{ nam
   const dryrunVerification = {
     reportId: 'dv',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     dryrunBaselineSha: '634656bb',
     verified: true,
     issueCount: 0,
@@ -9651,7 +9663,7 @@ export function runAgent24ArchiveScaleWaveFullChunksGateSelfTests(): Array<{ nam
 
   return [
     { name: 'chunks_gate_open_when_full_chunks_stack_ready', passed: report.chunksGateOpen && report.blockerCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 22 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 23 },
     {
       name: 'deterministic_fingerprint',
       passed:
@@ -9668,9 +9680,11 @@ export function runAgent24ArchiveScaleWaveFullChunksGateSelfTests(): Array<{ nam
 
 
 // --- source: replay-scale-wave-full-chunks-handoff.ts ---
+  O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
+} from './replay-scale-wave-integration-closeout.ts';
 
-/** O10-174 integration baseline anchor (wave 22 roster / O10-176 dry-run). */
-export const O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA = '634656bb';
+export { O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA } from './replay-scale-wave-integration-closeout.ts';
 
 export interface Agent24ReplayScaleWaveFullChunksHandoffLink {
   linkId: string;
@@ -9703,7 +9717,11 @@ export function buildAgent24ReplayScaleWaveFullChunksHandoffSeal(
   input: Agent24ReplayScaleWaveFullChunksHandoffSealInput,
 ): Agent24ReplayScaleWaveFullChunksHandoffSeal {
   const waveRound = input.replayScaleWaveDryrunVerification.waveRound;
-  const fullChunksBaselineSha = input.fullChunksBaselineSha ?? O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA;
+  const fullChunksBaselineSha =
+    input.fullChunksBaselineSha ??
+    (waveRound >= 23
+      ? O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA
+      : O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA);
   const baselineAligned = input.replayScaleWaveDryrunVerification.dryrunBaselineSha === fullChunksBaselineSha;
 
   const links: Agent24ReplayScaleWaveFullChunksHandoffLink[] = [
@@ -9773,8 +9791,8 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
   const dryrunVerification = {
     reportId: 'dv',
     matchId: 'self',
-    waveRound: 22,
-    dryrunBaselineSha: O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA,
+    waveRound: 23,
+    dryrunBaselineSha: O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -9785,7 +9803,7 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
   const fullChunksGate = {
     reportId: 'fcg',
     matchId: 'self',
-    waveRound: 22,
+    waveRound: 23,
     chunksGateOpen: true,
     blockerCount: 0,
     blockers: [],
@@ -9804,9 +9822,9 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
       name: 'handoff_ready_at_full_chunks_baseline',
       passed:
         seal.handoffReady &&
-        seal.fullChunksBaselineSha === O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA,
+        seal.fullChunksBaselineSha === O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: seal.waveRound === 22 },
+    { name: 'wave_round_pinned', passed: seal.waveRound === 23 },
     {
       name: 'deterministic_fingerprint',
       passed:
@@ -9821,9 +9839,472 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
 }
 
 
+// --- source: replay-scale-wave-full-chunks-verification.ts ---
+
+export interface Agent24ReplayScaleWaveFullChunksVerificationIssue {
+  segment: string;
+  detail: string;
+  fingerprint: string;
+}
+
+export interface Agent24ReplayScaleWaveFullChunksVerificationReport {
+  reportId: string;
+  matchId: string;
+  waveRound: number;
+  fullChunksBaselineSha: string;
+  verified: boolean;
+  issueCount: number;
+  issues: Agent24ReplayScaleWaveFullChunksVerificationIssue[];
+  handoffScore: number;
+  verificationScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ReplayScaleWaveFullChunksVerificationInput {
+  matchId: string;
+  replayScaleWaveFullChunksHandoffSeal: Agent24ReplayScaleWaveFullChunksHandoffSeal;
+  archiveScaleWaveFullChunksGate: Agent24ArchiveScaleWaveFullChunksGateReport;
+  replayScaleWaveDryrunVerification: Agent24ReplayScaleWaveDryrunVerificationReport;
+}
+
+export function buildAgent24ReplayScaleWaveFullChunksVerificationReport(
+  input: Agent24ReplayScaleWaveFullChunksVerificationInput,
+): Agent24ReplayScaleWaveFullChunksVerificationReport {
+  const waveRound = input.replayScaleWaveFullChunksHandoffSeal.waveRound;
+  const fullChunksBaselineSha = input.replayScaleWaveFullChunksHandoffSeal.fullChunksBaselineSha;
+  const issues: Agent24ReplayScaleWaveFullChunksVerificationIssue[] = [];
+
+  if (!input.replayScaleWaveFullChunksHandoffSeal.handoffReady) {
+    issues.push({
+      segment: 'full_chunks_handoff',
+      detail: `Full-chunks handoff not ready (${input.replayScaleWaveFullChunksHandoffSeal.readyLinkCount}/${input.replayScaleWaveFullChunksHandoffSeal.linkCount})`,
+      fingerprint: o6kAgent24Fingerprint('rswfcv_handoff', {
+        ready: input.replayScaleWaveFullChunksHandoffSeal.readyLinkCount,
+        wave: waveRound,
+      }),
+    });
+  }
+  if (!input.archiveScaleWaveFullChunksGate.chunksGateOpen) {
+    issues.push({
+      segment: 'full_chunks_gate',
+      detail: `Full-chunks gate blocked (${input.archiveScaleWaveFullChunksGate.blockerCount} blockers)`,
+      fingerprint: o6kAgent24Fingerprint('rswfcv_gate', {
+        blockers: input.archiveScaleWaveFullChunksGate.blockerCount,
+        wave: waveRound,
+      }),
+    });
+  }
+  if (!input.replayScaleWaveDryrunVerification.verified) {
+    issues.push({
+      segment: 'dryrun_verification',
+      detail: `Dry-run verification open (${input.replayScaleWaveDryrunVerification.issueCount} issues)`,
+      fingerprint: o6kAgent24Fingerprint('rswfcv_dryrun', {
+        issues: input.replayScaleWaveDryrunVerification.issueCount,
+        wave: waveRound,
+      }),
+    });
+  }
+
+  const uniqueIssues = [...new Map(issues.map(i => [i.fingerprint, i])).values()].sort((a, b) =>
+    a.fingerprint.localeCompare(b.fingerprint),
+  );
+
+  let verificationScore = 100;
+  verificationScore -= uniqueIssues.length * 11;
+  verificationScore -= Math.max(0, 100 - input.replayScaleWaveFullChunksHandoffSeal.handoffScore) * 0.09;
+  verificationScore = Math.max(0, Math.min(100, Math.round(verificationScore)));
+
+  const verified =
+    uniqueIssues.length === 0 &&
+    input.replayScaleWaveFullChunksHandoffSeal.handoffReady &&
+    input.archiveScaleWaveFullChunksGate.chunksGateOpen &&
+    input.replayScaleWaveDryrunVerification.verified;
+
+  return {
+    reportId: o6kAgent24Fingerprint('replay_scale_wave_full_chunks_verification', {
+      matchId: input.matchId,
+      wave: waveRound,
+      baseline: fullChunksBaselineSha,
+    }),
+    matchId: input.matchId,
+    waveRound,
+    fullChunksBaselineSha,
+    verified,
+    issueCount: uniqueIssues.length,
+    issues: uniqueIssues,
+    handoffScore: input.replayScaleWaveFullChunksHandoffSeal.handoffScore,
+    verificationScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('replay_scale_wave_full_chunks_verification_body', {
+      waveRound,
+      baseline: fullChunksBaselineSha,
+      issues: uniqueIssues.map(i => i.fingerprint),
+      verified,
+      verificationScore,
+    }),
+  };
+}
+
+export function runAgent24ReplayScaleWaveFullChunksVerificationSelfTests(): Array<{ name: string; passed: boolean }> {
+  const dryrunVerification = {
+    reportId: 'dv',
+    matchId: 'self',
+    waveRound: 23,
+    dryrunBaselineSha: 'b23e1449',
+    verified: true,
+    issueCount: 0,
+    issues: [],
+    handoffScore: 100,
+    verificationScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('rswdv_t23', { v: 1 }),
+  };
+  const fullChunksGate = {
+    reportId: 'fcg',
+    matchId: 'self',
+    waveRound: 23,
+    chunksGateOpen: true,
+    blockerCount: 0,
+    blockers: [],
+    gateScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('aswfc_t23', { v: 1 }),
+  };
+  const handoffSeal = {
+    sealId: 'fch',
+    matchId: 'self',
+    waveRound: 23,
+    fullChunksBaselineSha: 'b23e1449',
+    handoffReady: true,
+    linkCount: 3,
+    readyLinkCount: 3,
+    links: [],
+    handoffScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('rswfch_t23', { v: 1 }),
+  };
+
+  const report = buildAgent24ReplayScaleWaveFullChunksVerificationReport({
+    matchId: 'self',
+    replayScaleWaveFullChunksHandoffSeal: handoffSeal,
+    archiveScaleWaveFullChunksGate: fullChunksGate,
+    replayScaleWaveDryrunVerification: dryrunVerification,
+  });
+
+  return [
+    { name: 'verified_when_full_chunks_stack_ready', passed: report.verified && report.issueCount === 0 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 23 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        report.deterministicFingerprint ===
+        buildAgent24ReplayScaleWaveFullChunksVerificationReport({
+          matchId: 'self',
+          replayScaleWaveFullChunksHandoffSeal: handoffSeal,
+          archiveScaleWaveFullChunksGate: fullChunksGate,
+          replayScaleWaveDryrunVerification: dryrunVerification,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
+// --- source: archive-scale-wave-wave23-export-gate.ts ---
+
+export type Agent24ArchiveScaleWaveWave23ExportBlockerKind =
+  | 'full_chunks_not_verified'
+  | 'snapshot_not_verified'
+  | 'seal_verification_failed';
+
+export interface Agent24ArchiveScaleWaveWave23ExportBlocker {
+  kind: Agent24ArchiveScaleWaveWave23ExportBlockerKind;
+  detail: string;
+  fingerprint: string;
+}
+
+export interface Agent24ArchiveScaleWaveWave23ExportGateReport {
+  reportId: string;
+  matchId: string;
+  waveRound: number;
+  exportAllowed: boolean;
+  blockerCount: number;
+  blockers: Agent24ArchiveScaleWaveWave23ExportBlocker[];
+  exportScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ArchiveScaleWaveWave23ExportGateInput {
+  matchId: string;
+  replayScaleWaveFullChunksVerification: Agent24ReplayScaleWaveFullChunksVerificationReport;
+  snapshotSeal: Agent24SnapshotSeal;
+  sealVerification: Agent24SealVerificationReport;
+}
+
+export function buildAgent24ArchiveScaleWaveWave23ExportGateReport(
+  input: Agent24ArchiveScaleWaveWave23ExportGateInput,
+): Agent24ArchiveScaleWaveWave23ExportGateReport {
+  const waveRound = input.replayScaleWaveFullChunksVerification.waveRound;
+  const blockers: Agent24ArchiveScaleWaveWave23ExportBlocker[] = [];
+
+  if (!input.replayScaleWaveFullChunksVerification.verified) {
+    blockers.push({
+      kind: 'full_chunks_not_verified',
+      detail: `Full-chunks verification open (${input.replayScaleWaveFullChunksVerification.issueCount} issues)`,
+      fingerprint: o6kAgent24Fingerprint('asww23_fc', {
+        issues: input.replayScaleWaveFullChunksVerification.issueCount,
+        wave: waveRound,
+      }),
+    });
+  }
+  if (!input.snapshotSeal.sealed) {
+    blockers.push({
+      kind: 'snapshot_not_verified',
+      detail: 'Snapshot seal not sealed',
+      fingerprint: o6kAgent24Fingerprint('asww23_snap', { sealed: false, wave: waveRound }),
+    });
+  }
+  if (!input.sealVerification.verified) {
+    blockers.push({
+      kind: 'seal_verification_failed',
+      detail: `Seal verification open (${input.sealVerification.issueCount} issues)`,
+      fingerprint: o6kAgent24Fingerprint('asww23_seal', {
+        issues: input.sealVerification.issueCount,
+        wave: waveRound,
+      }),
+    });
+  }
+
+  let exportScore = 100;
+  exportScore -= blockers.length * 17;
+  exportScore -= Math.max(0, 100 - input.replayScaleWaveFullChunksVerification.verificationScore) * 0.08;
+  exportScore = Math.max(0, Math.min(100, Math.round(exportScore)));
+
+  const exportAllowed = blockers.length === 0;
+
+  return {
+    reportId: o6kAgent24Fingerprint('archive_scale_wave_wave23_export_gate', { matchId: input.matchId, wave: waveRound }),
+    matchId: input.matchId,
+    waveRound,
+    exportAllowed,
+    blockerCount: blockers.length,
+    blockers,
+    exportScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('archive_scale_wave_wave23_export_gate_body', {
+      waveRound,
+      blockers: blockers.map(b => b.fingerprint),
+      exportAllowed,
+      exportScore,
+    }),
+  };
+}
+
+export function runAgent24ArchiveScaleWaveWave23ExportGateSelfTests(): Array<{ name: string; passed: boolean }> {
+  const fullChunksVerification = {
+    reportId: 'fcv',
+    matchId: 'self',
+    waveRound: 23,
+    fullChunksBaselineSha: 'b23e1449',
+    verified: true,
+    issueCount: 0,
+    issues: [],
+    handoffScore: 100,
+    verificationScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('rswfcv_t23', { v: 1 }),
+  };
+  const snapshotSeal = {
+    sealId: 'ss',
+    matchId: 'self',
+    turn: 40,
+    sealed: true,
+    sealScore: 100,
+    compositeBundleFingerprint: o6kAgent24Fingerprint('ss_t23', { v: 1 }),
+    deterministicFingerprint: o6kAgent24Fingerprint('ss_body_t23', { v: 1 }),
+  };
+  const sealVerification = {
+    reportId: 'sv',
+    matchId: 'self',
+    verified: true,
+    issueCount: 0,
+    issues: [],
+    verificationScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('sv_t23', { v: 1 }),
+  };
+
+  const report = buildAgent24ArchiveScaleWaveWave23ExportGateReport({
+    matchId: 'self',
+    replayScaleWaveFullChunksVerification: fullChunksVerification,
+    snapshotSeal,
+    sealVerification,
+  });
+
+  return [
+    { name: 'export_allowed_when_wave23_stack_ready', passed: report.exportAllowed && report.blockerCount === 0 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 23 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        report.deterministicFingerprint ===
+        buildAgent24ArchiveScaleWaveWave23ExportGateReport({
+          matchId: 'self',
+          replayScaleWaveFullChunksVerification: fullChunksVerification,
+          snapshotSeal,
+          sealVerification,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
+// --- source: replay-scale-wave-wave23-integration-handoff.ts ---
+
+export interface Agent24ReplayScaleWaveWave23IntegrationHandoffCheckpoint {
+  checkpointId: string;
+  label: string;
+  satisfied: boolean;
+  fingerprint: string;
+}
+
+export interface Agent24ReplayScaleWaveWave23IntegrationHandoffReport {
+  reportId: string;
+  matchId: string;
+  waveRound: number;
+  integrationBaselineSha: string;
+  handoffComplete: boolean;
+  checkpointCount: number;
+  satisfiedCheckpointCount: number;
+  checkpoints: Agent24ReplayScaleWaveWave23IntegrationHandoffCheckpoint[];
+  handoffScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ReplayScaleWaveWave23IntegrationHandoffInput {
+  matchId: string;
+  archiveScaleWaveWave23ExportGate: Agent24ArchiveScaleWaveWave23ExportGateReport;
+  replayScaleWaveFullChunksVerification: Agent24ReplayScaleWaveFullChunksVerificationReport;
+  integrationBaselineSha?: string;
+}
+
+export function buildAgent24ReplayScaleWaveWave23IntegrationHandoffReport(
+  input: Agent24ReplayScaleWaveWave23IntegrationHandoffInput,
+): Agent24ReplayScaleWaveWave23IntegrationHandoffReport {
+  const waveRound = input.replayScaleWaveFullChunksVerification.waveRound;
+  const integrationBaselineSha = input.integrationBaselineSha ?? O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA;
+  const baselineAligned = input.replayScaleWaveFullChunksVerification.fullChunksBaselineSha === integrationBaselineSha;
+
+  const checkpoints: Agent24ReplayScaleWaveWave23IntegrationHandoffCheckpoint[] = [
+    {
+      checkpointId: o6kAgent24Fingerprint('scale_wave_w23_cp', { id: 'full_chunks_verified', wave: waveRound }),
+      label: 'Full-chunks verification',
+      satisfied: input.replayScaleWaveFullChunksVerification.verified,
+      fingerprint: '',
+    },
+    {
+      checkpointId: o6kAgent24Fingerprint('scale_wave_w23_cp', { id: 'wave23_export', wave: waveRound }),
+      label: 'Wave 23 export gate',
+      satisfied: input.archiveScaleWaveWave23ExportGate.exportAllowed,
+      fingerprint: '',
+    },
+    {
+      checkpointId: o6kAgent24Fingerprint('scale_wave_w23_cp', { id: 'integration_baseline', wave: waveRound }),
+      label: 'Integration baseline alignment',
+      satisfied: baselineAligned,
+      fingerprint: '',
+    },
+  ];
+
+  for (const cp of checkpoints) {
+    cp.fingerprint = o6kAgent24Fingerprint('scale_wave_w23_cp_body', {
+      id: cp.checkpointId,
+      satisfied: cp.satisfied,
+      wave: waveRound,
+      baseline: integrationBaselineSha,
+    });
+  }
+
+  const satisfiedCheckpointCount = checkpoints.filter(c => c.satisfied).length;
+
+  let handoffScore = 100;
+  handoffScore -= (checkpoints.length - satisfiedCheckpointCount) * 18;
+  handoffScore -= Math.max(0, 100 - input.archiveScaleWaveWave23ExportGate.exportScore) * 0.08;
+  handoffScore = Math.max(0, Math.min(100, Math.round(handoffScore)));
+
+  const handoffComplete = satisfiedCheckpointCount === checkpoints.length;
+
+  return {
+    reportId: o6kAgent24Fingerprint('replay_scale_wave_wave23_integration_handoff', {
+      matchId: input.matchId,
+      wave: waveRound,
+      baseline: integrationBaselineSha,
+    }),
+    matchId: input.matchId,
+    waveRound,
+    integrationBaselineSha,
+    handoffComplete,
+    checkpointCount: checkpoints.length,
+    satisfiedCheckpointCount,
+    checkpoints,
+    handoffScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('replay_scale_wave_wave23_integration_handoff_body', {
+      waveRound,
+      baseline: integrationBaselineSha,
+      checkpoints: checkpoints.map(c => c.fingerprint),
+      handoffComplete,
+      handoffScore,
+    }),
+  };
+}
+
+export function runAgent24ReplayScaleWaveWave23IntegrationHandoffSelfTests(): Array<{ name: string; passed: boolean }> {
+  const fullChunksVerification = {
+    reportId: 'fcv',
+    matchId: 'self',
+    waveRound: 23,
+    fullChunksBaselineSha: O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
+    verified: true,
+    issueCount: 0,
+    issues: [],
+    handoffScore: 100,
+    verificationScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('rswfcv_t23', { v: 2 }),
+  };
+  const exportGate = {
+    reportId: 'eg',
+    matchId: 'self',
+    waveRound: 23,
+    exportAllowed: true,
+    blockerCount: 0,
+    blockers: [],
+    exportScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('asww23_t23', { v: 1 }),
+  };
+
+  const report = buildAgent24ReplayScaleWaveWave23IntegrationHandoffReport({
+    matchId: 'self',
+    archiveScaleWaveWave23ExportGate: exportGate,
+    replayScaleWaveFullChunksVerification: fullChunksVerification,
+  });
+
+  return [
+    {
+      name: 'integration_handoff_complete_at_wave23_baseline',
+      passed:
+        report.handoffComplete &&
+        report.integrationBaselineSha === O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
+    },
+    { name: 'wave_round_pinned', passed: report.waveRound === 23 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        report.deterministicFingerprint ===
+        buildAgent24ReplayScaleWaveWave23IntegrationHandoffReport({
+          matchId: 'self',
+          archiveScaleWaveWave23ExportGate: exportGate,
+          replayScaleWaveFullChunksVerification: fullChunksVerification,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
 // --- source: history-replay-analytics.ts ---
 
-export const O6K_AGENT24_MODULE_VERSION = '1.2.0-op10m-r22';
+export const O6K_AGENT24_MODULE_VERSION = '1.2.0-op10m-r23';
 export const O6K_AGENT24_MODULE_ID = 'history_replay_analytics';
 
 /** Stable FNV-1a 32-bit — replay-safe fingerprint primitive (no Math.random). */
@@ -29441,6 +29922,15 @@ export function applyO6kHistoricalAnalyticsCachePatch(state: Record<string, unkn
   buildAgent24ReplayScaleWaveFullChunksHandoffSeal,
   type Agent24ReplayScaleWaveFullChunksHandoffSeal,
 } from './replay-scale-wave-full-chunks-handoff.ts';
+  buildAgent24ReplayScaleWaveFullChunksVerificationReport,
+  type Agent24ReplayScaleWaveFullChunksVerificationReport,
+} from './replay-scale-wave-full-chunks-verification.ts';
+  buildAgent24ArchiveScaleWaveWave23ExportGateReport,
+  type Agent24ArchiveScaleWaveWave23ExportGateReport,
+} from './archive-scale-wave-wave23-export-gate.ts';
+  buildAgent24ReplayScaleWaveWave23IntegrationHandoffReport,
+  type Agent24ReplayScaleWaveWave23IntegrationHandoffReport,
+} from './replay-scale-wave-wave23-integration-handoff.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -29512,6 +30002,9 @@ export interface Agent24ReplayDeterminismBundle {
   replayScaleWaveDryrunVerification: Agent24ReplayScaleWaveDryrunVerificationReport;
   archiveScaleWaveFullChunksGate: Agent24ArchiveScaleWaveFullChunksGateReport;
   replayScaleWaveFullChunksHandoffSeal: Agent24ReplayScaleWaveFullChunksHandoffSeal;
+  replayScaleWaveFullChunksVerification: Agent24ReplayScaleWaveFullChunksVerificationReport;
+  archiveScaleWaveWave23ExportGate: Agent24ArchiveScaleWaveWave23ExportGateReport;
+  replayScaleWaveWave23IntegrationHandoff: Agent24ReplayScaleWaveWave23IntegrationHandoffReport;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -29926,7 +30419,7 @@ export function buildAgent24ReplayDeterminismBundle(
   });
   const replayScaleWaveAcceptance = buildAgent24ReplayScaleWaveAcceptanceReport({
     matchId: input.matchId,
-    waveRound: 22,
+    waveRound: 23,
     archiveContinuityVerification,
     exportReadiness: exportReadinessFinal,
     analyticsDepth,
@@ -30042,6 +30535,23 @@ export function buildAgent24ReplayDeterminismBundle(
     archiveScaleWaveFullChunksGate,
     replayScaleWaveDryrunVerification,
   });
+  const replayScaleWaveFullChunksVerification = buildAgent24ReplayScaleWaveFullChunksVerificationReport({
+    matchId: input.matchId,
+    replayScaleWaveFullChunksHandoffSeal,
+    archiveScaleWaveFullChunksGate,
+    replayScaleWaveDryrunVerification,
+  });
+  const archiveScaleWaveWave23ExportGate = buildAgent24ArchiveScaleWaveWave23ExportGateReport({
+    matchId: input.matchId,
+    replayScaleWaveFullChunksVerification,
+    snapshotSeal,
+    sealVerification,
+  });
+  const replayScaleWaveWave23IntegrationHandoff = buildAgent24ReplayScaleWaveWave23IntegrationHandoffReport({
+    matchId: input.matchId,
+    archiveScaleWaveWave23ExportGate,
+    replayScaleWaveFullChunksVerification,
+  });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
@@ -30111,6 +30621,9 @@ export function buildAgent24ReplayDeterminismBundle(
     replayScaleWaveDryrunVerification: replayScaleWaveDryrunVerification.deterministicFingerprint,
     archiveScaleWaveFullChunksGate: archiveScaleWaveFullChunksGate.deterministicFingerprint,
     replayScaleWaveFullChunksHandoffSeal: replayScaleWaveFullChunksHandoffSeal.deterministicFingerprint,
+    replayScaleWaveFullChunksVerification: replayScaleWaveFullChunksVerification.deterministicFingerprint,
+    archiveScaleWaveWave23ExportGate: archiveScaleWaveWave23ExportGate.deterministicFingerprint,
+    replayScaleWaveWave23IntegrationHandoff: replayScaleWaveWave23IntegrationHandoff.deterministicFingerprint,
   });
 
   return {
@@ -30175,6 +30688,9 @@ export function buildAgent24ReplayDeterminismBundle(
     replayScaleWaveDryrunVerification,
     archiveScaleWaveFullChunksGate,
     replayScaleWaveFullChunksHandoffSeal,
+    replayScaleWaveFullChunksVerification,
+    archiveScaleWaveWave23ExportGate,
+    replayScaleWaveWave23IntegrationHandoff,
     attestation: attestationFinal,
     compositeFingerprint,
   };
@@ -30561,6 +31077,27 @@ export function verifyAgent24ReplayDeterminism(
         a.replayScaleWaveFullChunksHandoffSeal.deterministicFingerprint ===
         b.replayScaleWaveFullChunksHandoffSeal.deterministicFingerprint,
       detail: 'Twin replay scale wave full chunks handoff fingerprints',
+    },
+    {
+      name: 'replay_scale_wave_full_chunks_verification_twin',
+      passed:
+        a.replayScaleWaveFullChunksVerification.deterministicFingerprint ===
+        b.replayScaleWaveFullChunksVerification.deterministicFingerprint,
+      detail: 'Twin replay scale wave full chunks verification fingerprints',
+    },
+    {
+      name: 'archive_scale_wave_wave23_export_gate_twin',
+      passed:
+        a.archiveScaleWaveWave23ExportGate.deterministicFingerprint ===
+        b.archiveScaleWaveWave23ExportGate.deterministicFingerprint,
+      detail: 'Twin archive scale wave wave23 export gate fingerprints',
+    },
+    {
+      name: 'replay_scale_wave_wave23_integration_handoff_twin',
+      passed:
+        a.replayScaleWaveWave23IntegrationHandoff.deterministicFingerprint ===
+        b.replayScaleWaveWave23IntegrationHandoff.deterministicFingerprint,
+      detail: 'Twin replay scale wave wave23 integration handoff fingerprints',
     },
     {
       name: 'composite_twin',
