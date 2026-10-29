@@ -45,6 +45,8 @@ export interface TurnStrategicBriefing {
   crossModuleSyncStreakDays: number;
   integratedCoalitionMaturity: boolean;
   integratedCoalitionMaturityStreakDays: number;
+  sustainedIntegratedCoalitionStewardship: boolean;
+  coalitionStewardshipStreakDays: number;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;

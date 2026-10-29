@@ -88,3 +88,13 @@ export function integratedMaturityRankingBonus(
   if (streak >= action.minIntegratedCoalitionMaturityStreakDays) return 6;
   return 2;
 }
+
+export function stewardshipRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionStewardshipStreakDays === undefined) return 0;
+  const streak = state.coalitionStewardshipStreakDays ?? 0;
+  if (streak >= action.minCoalitionStewardshipStreakDays) return 5;
+  return 2;
+}

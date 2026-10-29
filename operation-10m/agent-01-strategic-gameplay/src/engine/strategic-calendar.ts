@@ -14,6 +14,10 @@ import {
   advanceIntegratedCoalitionMaturityStreak,
   applyIntegratedCoalitionMandateBonus,
 } from './coalition-integrated-maturity.ts';
+import {
+  advanceCoalitionStewardshipStreak,
+  applyStewardshipStakeholderCalm,
+} from './coalition-stewardship.ts';
 import { advanceCoalitionRecoveryStreak } from './coalition-recovery.ts';
 import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
 import type { StakeholderGroupId, StakeholderSentiment } from '../types/coalition-mandate.ts';
@@ -75,6 +79,8 @@ export function advanceStrategicGameplayCalendar(
   next = advanceCrossModuleSyncStreak(next, daysAdvanced, crossModuleInbound);
   next = advanceIntegratedCoalitionMaturityStreak(next, daysAdvanced);
   next = applyIntegratedCoalitionMandateBonus(next, daysAdvanced);
+  next = advanceCoalitionStewardshipStreak(next, daysAdvanced);
+  next = applyStewardshipStakeholderCalm(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 

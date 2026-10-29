@@ -81,6 +81,8 @@ export interface StrategicActionDefinition {
   minCrossModuleSyncStreakDays?: number;
   /** Action requires integrated lock-in + cross-module maturity streak. */
   minIntegratedCoalitionMaturityStreakDays?: number;
+  /** Action requires sustained integrated-maturity stewardship streak. */
+  minCoalitionStewardshipStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -127,7 +129,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_coalition_lock_in_streak'; minDays: number }
   | { kind: 'max_coalition_volatility_events'; maxEvents: number }
   | { kind: 'min_cross_module_sync_streak'; minDays: number }
-  | { kind: 'min_integrated_coalition_maturity_streak'; minDays: number };
+  | { kind: 'min_integrated_coalition_maturity_streak'; minDays: number }
+  | { kind: 'min_coalition_stewardship_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -183,6 +186,8 @@ export interface StrategicGameplayState {
   crossModuleSyncStreakDays?: number;
   /** Days lock-in and cross-module sync both held with volatility cleared. */
   integratedCoalitionMaturityStreakDays?: number;
+  /** Days integrated maturity remained active with volatility cleared. */
+  coalitionStewardshipStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;

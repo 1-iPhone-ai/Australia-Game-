@@ -99,6 +99,7 @@ export {
   lockInRankingBonus,
   crossModuleSyncRankingBonus,
   integratedMaturityRankingBonus,
+  stewardshipRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -204,6 +205,16 @@ export {
   applyIntegratedCoalitionMandateBonus,
 } from './engine/coalition-integrated-maturity.ts';
 
+export { coalitionStewardshipStreakIssues } from './engine/coalition-stewardship-gates.ts';
+
+export {
+  SUSTAINED_INTEGRATED_STEWARDSHIP_THRESHOLD,
+  advanceCoalitionStewardshipStreak,
+  resetCoalitionStewardshipStreak,
+  isSustainedIntegratedCoalitionStewardship,
+  applyStewardshipStakeholderCalm,
+} from './engine/coalition-stewardship.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '2.1.0';
+export const AGENT_01_MODULE_VERSION = '2.2.0';
