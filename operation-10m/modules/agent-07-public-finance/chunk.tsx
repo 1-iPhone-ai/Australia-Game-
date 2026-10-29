@@ -6744,6 +6744,215 @@ export function buildFiscalStressResilienceBridgeReport(
 }
 
 
+// --- source: revenue-integrity-forward-bridge/types.ts ---
+export const REVENUE_INTEGRITY_FORWARD_BRIDGE_SCHEMA =
+  'op10m-agent07-revenue-integrity-forward-bridge-v1';
+
+export interface IntegrityForwardCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface RevenueIntegrityForwardBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: IntegrityForwardCheck[];
+  bridgeGapPoints: number;
+  withinIntegrityForwardBand: boolean;
+  alignedWithRevenueAnchor: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: revenue-integrity-forward-bridge/compute.ts ---
+
+const BRIDGE_GAP_TOLERANCE = 5.4;
+
+export function buildRevenueIntegrityForwardBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  integrityAudit: RevenueIntegrityAuditReport,
+  revenueForward: RevenueForwardReconciliationReport,
+  revenueAnchor: MediumTermRevenueAnchorReport
+): RevenueIntegrityForwardBridgeReport {
+  const auditForwardGap = Math.abs(integrityAudit.aggregateDeltaGap - revenueForward.aggregateGapPoints);
+  const anchorGap = Math.abs(revenueAnchor.anchorDriftPoints - revenueForward.aggregateGapPoints * 0.45);
+  const bridgeGapPoints = Math.round((auditForwardGap + anchorGap) * 10) / 20;
+
+  const checks: IntegrityForwardCheck[] = [
+    {
+      id: 'RIFB01',
+      label: 'Integrity audit vs forward reconciliation',
+      passed:
+        auditForwardGap <= BRIDGE_GAP_TOLERANCE + 2 ||
+        integrityAudit.allPassed ||
+        v1012.pressure === 'critical',
+      detail: `auditGap=${integrityAudit.aggregateDeltaGap}, forward=${revenueForward.aggregateGapPoints}`
+    },
+    {
+      id: 'RIFB02',
+      label: 'Forward reconciliation passes',
+      passed: revenueForward.allPassed || v1012.pressure === 'critical',
+      detail: `checks=${revenueForward.checks.filter(c => c.passed).length}/${revenueForward.checks.length}`
+    },
+    {
+      id: 'RIFB03',
+      label: 'Anchor drift vs integrity delta',
+      passed:
+        anchorGap <= BRIDGE_GAP_TOLERANCE + 1.5 ||
+        revenueAnchor.withinAnchorBand ||
+        v1012.pressure === 'critical',
+      detail: `drift=${revenueAnchor.anchorDriftPoints}, delta=${integrityAudit.aggregateDeltaGap}`
+    }
+  ];
+
+  const withinIntegrityForwardBand =
+    checks.every(c => c.passed) ||
+    (integrityAudit.allPassed && revenueForward.allPassed) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithRevenueAnchor =
+    revenueAnchor.alignedWithForwardReconciliation &&
+    (bridgeGapPoints <= revenueAnchor.anchorDriftPoints + 2.2 ||
+      revenueAnchor.withinAnchorBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinIntegrityForwardBand) {
+    warnings.push(`Revenue integrity forward bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithRevenueAnchor) {
+    warnings.push('Integrity forward bridge diverges from revenue anchor.');
+  }
+
+  const narrative = withinIntegrityForwardBand
+    ? `Revenue integrity forward bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Integrity forward alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: REVENUE_INTEGRITY_FORWARD_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinIntegrityForwardBand,
+    alignedWithRevenueAnchor,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: budget-neutral-forward-coherence/types.ts ---
+export const BUDGET_NEUTRAL_FORWARD_COHERENCE_SCHEMA =
+  'op10m-agent07-budget-neutral-forward-coherence-v1';
+
+export interface NeutralForwardCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface BudgetNeutralForwardCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: NeutralForwardCheck[];
+  aggregateNeutralGapPoints: number;
+  withinNeutralForwardBand: boolean;
+  alignedWithGrantForward: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: budget-neutral-forward-coherence/compute.ts ---
+
+const NEUTRAL_GAP_TOLERANCE = 5.1;
+
+export function buildBudgetNeutralForwardCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  neutralPackages: BudgetNeutralPackagesReport,
+  grantForward: GrantForwardAlignmentReport,
+  growthBenchmark: ExpenditureGrowthBenchmarkReport
+): BudgetNeutralForwardCoherenceReport {
+  const netToGrantGap = Math.abs(neutralPackages.aggregateNetPoints - grantForward.aggregateAlignmentGapPoints * 0.25);
+  const growthNeutralGap = Math.abs(
+    neutralPackages.aggregateNewSpending * 0.12 - growthBenchmark.aggregateGrowthRate
+  );
+  const aggregateNeutralGapPoints =
+    Math.round((netToGrantGap + growthNeutralGap) * 10) / 20;
+
+  const checks: NeutralForwardCheck[] = [
+    {
+      id: 'BNFC01',
+      label: 'Portfolio neutrality within band',
+      passed: neutralPackages.withinPortfolioNeutrality || v1012.pressure === 'critical',
+      observed: Math.abs(neutralPackages.aggregateNetPoints),
+      tolerance: 2.5
+    },
+    {
+      id: 'BNFC02',
+      label: 'Neutral net vs grant forward gap',
+      passed:
+        netToGrantGap <= NEUTRAL_GAP_TOLERANCE + 1.8 ||
+        grantForward.withinGrantForwardBand ||
+        v1012.pressure === 'critical',
+      observed: netToGrantGap,
+      tolerance: NEUTRAL_GAP_TOLERANCE + 1.8
+    },
+    {
+      id: 'BNFC03',
+      label: 'New spending vs growth benchmark',
+      passed:
+        growthNeutralGap <= NEUTRAL_GAP_TOLERANCE + growthBenchmark.revenueCapacityGrowthBand ||
+        growthBenchmark.withinAggregateBenchmark ||
+        v1012.pressure === 'critical',
+      observed: growthNeutralGap,
+      tolerance: NEUTRAL_GAP_TOLERANCE + growthBenchmark.revenueCapacityGrowthBand
+    }
+  ];
+
+  const withinNeutralForwardBand =
+    checks.every(c => c.passed) ||
+    (neutralPackages.withinPortfolioNeutrality && aggregateNeutralGapPoints <= NEUTRAL_GAP_TOLERANCE + 2) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithGrantForward =
+    grantForward.alignedWithExpenditureFramework &&
+    (aggregateNeutralGapPoints <= grantForward.aggregateAlignmentGapPoints + 2.4 ||
+      grantForward.withinGrantForwardBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinNeutralForwardBand) {
+    warnings.push(`Budget neutral forward gap ${aggregateNeutralGapPoints} outside band.`);
+  }
+  if (!alignedWithGrantForward) {
+    warnings.push('Budget neutral forward diverges from grant forward alignment.');
+  }
+
+  const narrative = withinNeutralForwardBand
+    ? `Budget neutral forward gap ${aggregateNeutralGapPoints} within tolerance.`
+    : `Budget neutral forward alert: gap ${aggregateNeutralGapPoints}.`;
+
+  return {
+    schemaVersion: BUDGET_NEUTRAL_FORWARD_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateNeutralGapPoints,
+    withinNeutralForwardBand,
+    alignedWithGrantForward,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -8646,6 +8855,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     debtFiscalCouplingRegister,
     fiscalBufferCoherence
   );
+  const revenueIntegrityForwardBridge = buildRevenueIntegrityForwardBridgeReport(
+    turn,
+    v1012,
+    revenueIntegrityAudit,
+    revenueForwardReconciliation,
+    mediumTermRevenueAnchor
+  );
+  const budgetNeutralForwardCoherence = buildBudgetNeutralForwardCoherenceReport(
+    turn,
+    v1012,
+    budgetNeutralPackages,
+    grantForwardAlignment,
+    expenditureGrowthBenchmark
+  );
 
   checks.push({
     id: 'CF01',
@@ -9223,13 +9446,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `coupling=${debtFiscalCouplingRegister.couplingStressPoints}, bridge=${fiscalStressResilienceBridge.bridgeStressPoints}`
   });
 
+  checks.push({
+    id: 'CF81',
+    label: 'Revenue integrity forward bridge within band',
+    passed: revenueIntegrityForwardBridge.withinIntegrityForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${revenueIntegrityForwardBridge.bridgeGapPoints}, checks=${revenueIntegrityForwardBridge.checks.filter(c => c.passed).length}/${revenueIntegrityForwardBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF82',
+    label: 'Budget neutral forward coherence within band',
+    passed: budgetNeutralForwardCoherence.withinNeutralForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${budgetNeutralForwardCoherence.aggregateNeutralGapPoints}, checks=${budgetNeutralForwardCoherence.checks.filter(c => c.passed).length}/${budgetNeutralForwardCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF83',
+    label: 'Integrity forward aligned with revenue anchor',
+    passed: revenueIntegrityForwardBridge.alignedWithRevenueAnchor,
+    detail: `drift=${mediumTermRevenueAnchor.anchorDriftPoints}, bridge=${revenueIntegrityForwardBridge.bridgeGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF84',
+    label: 'Budget neutral aligned with grant forward',
+    passed: budgetNeutralForwardCoherence.alignedWithGrantForward,
+    detail: `net=${budgetNeutralPackages.aggregateNetPoints}, grantGap=${grantForwardAlignment.aggregateAlignmentGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 68
+    layerCount: 70
   };
 }
 
@@ -11109,12 +11360,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Sixty-eight fiscal layers integrated', healthy.layerCount === 68, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Seventy fiscal layers integrated', healthy.layerCount === 70, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 80,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 84,
     'ok'
   );
 
@@ -11126,10 +11377,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF80 ids present',
-    healthy.checks.length === 80 &&
+    'CF01–CF84 ids present',
+    healthy.checks.length === 84 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[79]?.id === 'CF80',
+      healthy.checks[83]?.id === 'CF84',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -13739,6 +13990,135 @@ export function runFiscalStressResilienceBridgeSelfTests(): {
     'FSR-T03',
     'Aligned with debt coupling',
     healthy.alignedWithDebtCoupling,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: revenue-integrity-forward-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runRevenueIntegrityForwardBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const taxSensitivity = buildTaxPolicySensitivityReport(9, v, ledger);
+  const integrity = buildRevenueIntegrityAuditReport(9, v, ledger, taxSensitivity);
+  const anchor = buildMediumTermRevenueAnchorReport(9, v, outlook, revenueForward, growth);
+  const healthy = buildRevenueIntegrityForwardBridgeReport(9, v, integrity, revenueForward, anchor);
+
+  record('RIFB-T01', 'Three bridge checks', healthy.checks.length === 3, 'ok');
+  record(
+    'RIFB-T02',
+    'Within integrity forward band',
+    healthy.withinIntegrityForwardBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'RIFB-T03',
+    'Aligned with revenue anchor',
+    healthy.alignedWithRevenueAnchor,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: budget-neutral-forward-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runBudgetNeutralForwardCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const offsets = buildSpendingOffsetsReport(9, v);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const neutral = buildBudgetNeutralPackagesReport(9, v, offsets, supplementary);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const grants = allocateIntergovernmentalGrants(9, v);
+  const grantForward = buildGrantForwardAlignmentReport(9, v, grants, myefo, forwardIntegrity, growth);
+  const healthy = buildBudgetNeutralForwardCoherenceReport(9, v, neutral, grantForward, growth);
+
+  record('BNFC-T01', 'Three neutral forward checks', healthy.checks.length === 3, 'ok');
+  record(
+    'BNFC-T02',
+    'Within neutral forward band',
+    healthy.withinNeutralForwardBand,
+    `gap=${healthy.aggregateNeutralGapPoints}`
+  );
+  record(
+    'BNFC-T03',
+    'Aligned with grant forward',
+    healthy.alignedWithGrantForward,
     healthy.narrative
   );
 

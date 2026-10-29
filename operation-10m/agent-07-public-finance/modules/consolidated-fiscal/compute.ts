@@ -43,6 +43,8 @@ import { buildDebtFiscalCouplingRegisterReport } from '../debt-fiscal-coupling-r
 import { buildGrantForwardAlignmentReport } from '../grant-forward-alignment/compute';
 import { buildInfrastructureEnvelopeCoherenceReport } from '../infrastructure-envelope-coherence/compute';
 import { buildFiscalStressResilienceBridgeReport } from '../fiscal-stress-resilience-bridge/compute';
+import { buildRevenueIntegrityForwardBridgeReport } from '../revenue-integrity-forward-bridge/compute';
+import { buildBudgetNeutralForwardCoherenceReport } from '../budget-neutral-forward-coherence/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -256,6 +258,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     fiscalStress,
     debtFiscalCouplingRegister,
     fiscalBufferCoherence
+  );
+  const revenueIntegrityForwardBridge = buildRevenueIntegrityForwardBridgeReport(
+    turn,
+    v1012,
+    revenueIntegrityAudit,
+    revenueForwardReconciliation,
+    mediumTermRevenueAnchor
+  );
+  const budgetNeutralForwardCoherence = buildBudgetNeutralForwardCoherenceReport(
+    turn,
+    v1012,
+    budgetNeutralPackages,
+    grantForwardAlignment,
+    expenditureGrowthBenchmark
   );
 
   checks.push({
@@ -834,12 +850,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `coupling=${debtFiscalCouplingRegister.couplingStressPoints}, bridge=${fiscalStressResilienceBridge.bridgeStressPoints}`
   });
 
+  checks.push({
+    id: 'CF81',
+    label: 'Revenue integrity forward bridge within band',
+    passed: revenueIntegrityForwardBridge.withinIntegrityForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${revenueIntegrityForwardBridge.bridgeGapPoints}, checks=${revenueIntegrityForwardBridge.checks.filter(c => c.passed).length}/${revenueIntegrityForwardBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF82',
+    label: 'Budget neutral forward coherence within band',
+    passed: budgetNeutralForwardCoherence.withinNeutralForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${budgetNeutralForwardCoherence.aggregateNeutralGapPoints}, checks=${budgetNeutralForwardCoherence.checks.filter(c => c.passed).length}/${budgetNeutralForwardCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF83',
+    label: 'Integrity forward aligned with revenue anchor',
+    passed: revenueIntegrityForwardBridge.alignedWithRevenueAnchor,
+    detail: `drift=${mediumTermRevenueAnchor.anchorDriftPoints}, bridge=${revenueIntegrityForwardBridge.bridgeGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF84',
+    label: 'Budget neutral aligned with grant forward',
+    passed: budgetNeutralForwardCoherence.alignedWithGrantForward,
+    detail: `net=${budgetNeutralPackages.aggregateNetPoints}, grantGap=${grantForwardAlignment.aggregateAlignmentGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 68
+    layerCount: 70
   };
 }
