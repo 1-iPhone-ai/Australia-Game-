@@ -1,6 +1,6 @@
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.20-scale-wave-20' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.21-scale-wave-21' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -143,6 +143,9 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   wave20GateTrajectory?: Wave20GateTrajectorySnapshot;
   wave20IntegrationMonitor?: Wave20IntegrationMonitor;
   agent25Wave20ProjectionHandoffBrief?: Agent25Wave20ProjectionHandoffBrief;
+  wave21GateTrajectory?: Wave21GateTrajectorySnapshot;
+  wave21IntegrationMonitor?: Wave21IntegrationMonitor;
+  agent25Wave21ProjectionHandoffBrief?: Agent25Wave21ProjectionHandoffBrief;
 }
 
 export type CouplingTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
@@ -807,6 +810,41 @@ export interface Agent25Wave20ProjectionHandoffBrief {
   turn: number;
   shouldProjectWave20: boolean;
   shouldRunO10m171DryRun: boolean;
+  headlines: string[];
+  summary: string;
+}
+
+export type Wave21GateBand = 'ready' | 'pending' | 'blocked';
+
+export interface Wave21GateTrajectorySnapshot {
+  turn: number;
+  wave21GateEma: number;
+  instantaneousGate: number;
+  band: Wave21GateBand;
+  trajectory: CouplingTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface Wave21GateTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  wave21GateEma: number;
+  priorEma?: number;
+}
+
+export interface Wave21IntegrationMonitor {
+  turn: number;
+  shouldRunO10m174DryRun: boolean;
+  wave21GateBand: Wave21GateBand;
+  blockingReasons: string[];
+  summary: string;
+}
+
+export interface Agent25Wave21ProjectionHandoffBrief {
+  turn: number;
+  shouldProjectWave21: boolean;
+  shouldRunO10m174DryRun: boolean;
   headlines: string[];
   summary: string;
 }
