@@ -652,6 +652,23 @@ import {
   nationalRailAutonomousShuntingLogisticsThroughputIndex,
   railAutonomousShuntingLogisticsProductivityMultiplier,
 } from './rail-autonomous-shunting-logistics-index.ts';
+import {
+  computeBiomethaneGridExportByRegion,
+  biomethaneGridExportProductivityMultiplier,
+  nationalBiomethaneGridExportIndex,
+} from '../network/biomethane-grid-export-index.ts';
+import {
+  computeMiningCampResupplyStagingByRegion,
+  computeMiningCampResupplyStagingShare,
+  miningCampResupplyStagingProductivityMultiplier,
+  nationalMiningCampResupplyStagingIndex,
+} from '../operations/mining-camp-resupply-staging-index.ts';
+import {
+  computePortContainerReeferLogisticsShare,
+  computePortContainerReeferLogisticsThroughputByRegion,
+  nationalPortContainerReeferLogisticsThroughputIndex,
+  portContainerReeferLogisticsProductivityMultiplier,
+} from './port-container-reefer-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -2008,6 +2025,35 @@ export function computeTransportInfrastructureState(
     railAutonomousShuntingLogisticsShare,
     options?.railAutonomousShuntingLogisticsPolicy ?? 'baseline',
   );
+  const biomethaneGridExportByRegion = computeBiomethaneGridExportByRegion(ops);
+  const nationalBiomethane = nationalBiomethaneGridExportIndex(biomethaneGridExportByRegion);
+  const biomethaneMult = biomethaneGridExportProductivityMultiplier(
+    nationalBiomethane,
+    options?.biomethaneGridExportPolicy ?? 'baseline',
+  );
+  const miningCampResupplyStagingByRegion = computeMiningCampResupplyStagingByRegion(ops, networkStress);
+  const nationalMiningCamp = nationalMiningCampResupplyStagingIndex(miningCampResupplyStagingByRegion);
+  const miningCampResupplyStagingShare = computeMiningCampResupplyStagingShare(
+    ops,
+    options?.miningCampResupplyStagingPolicy ?? 'baseline',
+  );
+  const miningCampMult = miningCampResupplyStagingProductivityMultiplier(
+    miningCampResupplyStagingShare,
+    options?.miningCampResupplyStagingPolicy ?? 'baseline',
+  );
+  const portContainerReeferLogisticsThroughputByRegion =
+    computePortContainerReeferLogisticsThroughputByRegion(ops);
+  const nationalContainerReefer = nationalPortContainerReeferLogisticsThroughputIndex(
+    portContainerReeferLogisticsThroughputByRegion,
+  );
+  const portContainerReeferLogisticsShare = computePortContainerReeferLogisticsShare(
+    ops,
+    options?.portContainerReeferLogisticsPolicy ?? 'baseline',
+  );
+  const containerReeferMult = portContainerReeferLogisticsProductivityMultiplier(
+    portContainerReeferLogisticsShare,
+    options?.portContainerReeferLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -2088,6 +2134,9 @@ export function computeTransportInfrastructureState(
     const moltenSaltBoost = (moltenSaltSolarExportByRegion[code] - 5) * 0.0027;
     const alpineSkiBoost = (alpineSkiResortSupplyStagingByRegion[code] - 6) * 0.0023;
     const railShuntingBoost = (railAutonomousShuntingLogisticsThroughputByRegion[code] - 2) * 0.0019;
+    const biomethaneBoost = (biomethaneGridExportByRegion[code] - 5) * 0.0026;
+    const miningCampBoost = (miningCampResupplyStagingByRegion[code] - 6) * 0.0022;
+    const containerReeferBoost = (portContainerReeferLogisticsThroughputByRegion[code] - 2) * 0.0018;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -2167,7 +2216,10 @@ export function computeTransportInfrastructureState(
         evFreightChargingBoost +
         moltenSaltBoost +
         alpineSkiBoost +
-        railShuntingBoost) *
+        railShuntingBoost +
+        biomethaneBoost +
+        miningCampBoost +
+        containerReeferBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -2245,7 +2297,10 @@ export function computeTransportInfrastructureState(
       evFreightChargingMult *
       moltenSaltMult *
       alpineSkiMult *
-      railShuntingMult;
+      railShuntingMult *
+      biomethaneMult *
+      miningCampMult *
+      containerReeferMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -2346,7 +2401,10 @@ export function computeTransportInfrastructureState(
     nationalEvFreightCharging * 0.003 +
     nationalMoltenSalt * 0.003 +
     nationalAlpineSki * 0.003 +
-    nationalRailShunting * 0.003;
+    nationalRailShunting * 0.003 +
+    nationalBiomethane * 0.003 +
+    nationalMiningCamp * 0.003 +
+    nationalContainerReefer * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -2361,7 +2419,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/42',
+    schemaVersion: 'agent12/43',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -2663,6 +2721,14 @@ export function computeTransportInfrastructureState(
     railAutonomousShuntingLogisticsShare,
     nationalRailAutonomousShuntingLogisticsThroughputIndex: nationalRailShunting,
     railAutonomousShuntingLogisticsThroughputByRegion,
+    nationalBiomethaneGridExportIndex: nationalBiomethane,
+    biomethaneGridExportByRegion,
+    miningCampResupplyStagingShare,
+    nationalMiningCampResupplyStagingIndex: nationalMiningCamp,
+    miningCampResupplyStagingByRegion,
+    portContainerReeferLogisticsShare,
+    nationalPortContainerReeferLogisticsThroughputIndex: nationalContainerReefer,
+    portContainerReeferLogisticsThroughputByRegion,
     computeMs,
   };
 }

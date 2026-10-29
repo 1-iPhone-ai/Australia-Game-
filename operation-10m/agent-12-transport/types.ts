@@ -399,8 +399,14 @@ export type AlpineSkiResortSupplyStagingPolicy = 'baseline' | 'surge';
 
 export type RailAutonomousShuntingLogisticsPolicy = 'baseline' | 'expand';
 
+export type BiomethaneGridExportPolicy = 'baseline' | 'accelerate';
+
+export type MiningCampResupplyStagingPolicy = 'baseline' | 'surge';
+
+export type PortContainerReeferLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/42';
+  schemaVersion: 'agent12/43';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -702,6 +708,14 @@ export interface TransportInfrastructureState {
   railAutonomousShuntingLogisticsShare: number;
   nationalRailAutonomousShuntingLogisticsThroughputIndex: number;
   railAutonomousShuntingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalBiomethaneGridExportIndex: number;
+  biomethaneGridExportByRegion: Record<AuRegionCode, number>;
+  miningCampResupplyStagingShare: number;
+  nationalMiningCampResupplyStagingIndex: number;
+  miningCampResupplyStagingByRegion: Record<AuRegionCode, number>;
+  portContainerReeferLogisticsShare: number;
+  nationalPortContainerReeferLogisticsThroughputIndex: number;
+  portContainerReeferLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -818,6 +832,9 @@ export interface TransportInfrastructureOptions {
   moltenSaltSolarExportPolicy?: MoltenSaltSolarExportPolicy;
   alpineSkiResortSupplyStagingPolicy?: AlpineSkiResortSupplyStagingPolicy;
   railAutonomousShuntingLogisticsPolicy?: RailAutonomousShuntingLogisticsPolicy;
+  biomethaneGridExportPolicy?: BiomethaneGridExportPolicy;
+  miningCampResupplyStagingPolicy?: MiningCampResupplyStagingPolicy;
+  portContainerReeferLogisticsPolicy?: PortContainerReeferLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {

@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 42
+
+- Schema **`agent12/43`**: biomethane grid export throughput, mining camp resupply staging readiness, port container reefer logistics share (`biomethaneGridExportPolicy`, `miningCampResupplyStagingPolicy`, `portContainerReeferLogisticsPolicy`)
+- Catalog: **576** assets, **140** corridors, **228** scenarios
+- Systems: `network/biomethane-grid-export-index.ts`, `operations/mining-camp-resupply-staging-index.ts`, `productivity/port-container-reefer-logistics-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 41
 
 - Schema **`agent12/42`**: molten salt solar export throughput, alpine ski resort supply staging readiness, rail autonomous shunting logistics share (`moltenSaltSolarExportPolicy`, `alpineSkiResortSupplyStagingPolicy`, `railAutonomousShuntingLogisticsPolicy`)

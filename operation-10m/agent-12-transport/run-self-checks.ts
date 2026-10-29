@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/42' &&
+      infra.schemaVersion === 'agent12/43' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -218,8 +218,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalMoltenSaltSolarExportIndex >= 5 &&
       infra.nationalAlpineSkiResortSupplyStagingIndex >= 6 &&
       infra.railAutonomousShuntingLogisticsShare >= 0.03 &&
-      infra.nationalRailAutonomousShuntingLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} csp=${infra.nationalMoltenSaltSolarExportIndex.toFixed(1)} ski=${infra.nationalAlpineSkiResortSupplyStagingIndex.toFixed(1)} shunt=${infra.nationalRailAutonomousShuntingLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalRailAutonomousShuntingLogisticsThroughputIndex >= 2 &&
+      infra.nationalBiomethaneGridExportIndex >= 5 &&
+      infra.nationalMiningCampResupplyStagingIndex >= 6 &&
+      infra.portContainerReeferLogisticsShare >= 0.03 &&
+      infra.nationalPortContainerReeferLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} bio=${infra.nationalBiomethaneGridExportIndex.toFixed(1)} camp=${infra.nationalMiningCampResupplyStagingIndex.toFixed(1)} reefer=${infra.nationalPortContainerReeferLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;
