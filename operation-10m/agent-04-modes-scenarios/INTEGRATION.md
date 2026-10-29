@@ -26,6 +26,21 @@ Canonical merge path (Agent 25 only): append exports from `src/index.ts` into `(
 
 Uses the same shapes as `ScenarioDefinition`, `GameModeSelection`, and scenario objective evaluators. Standalone copies live in `src/types.ts` until assembly replaces imports with canonical types.
 
+## Assembly chunk (Agent 25)
+
+| Path | Purpose |
+|------|---------|
+| `operation-10m/modules/agent-04-modes-scenarios/chunk.tsx` | `OP10M_MODULE_BEGIN/END agent-04-modes-scenarios` bundled body |
+| `operation-10m/modules/agent-04-modes-scenarios/module.manifest.json` | Content hash + persist field hints |
+
+Regenerate after `src/` changes:
+
+```bash
+cd operation-10m/agent-04-modes-scenarios && npm run bundle:agent-04-chunk
+```
+
+Chunk exports `runAgent04ModesScenariosSelfTests()` and `OP10M_AGENT04_MODULE_META`.
+
 ## Verification
 
 From repo root:

@@ -1,0 +1,13 @@
+{
+  "moduleId": "agent-04-modes-scenarios",
+  "slot": "scenario-engine-extension",
+  "touchesSaveFormat": true,
+  "proposedGameStateFields": [
+    "o10mChainProgress",
+    "o10mMissionMilestones",
+    "o10mSandboxProfileId"
+  ],
+  "contentSha256": "b4d5ac5d8268ba53b39928a4a9ff608803e22c3123220002ddaaefa986d39d94",
+  "chunkPath": "operation-10m/modules/agent-04-modes-scenarios/chunk.tsx",
+  "regenerate": "cd operation-10m/agent-04-modes-scenarios && npm run bundle:agent-04-chunk"
+}
