@@ -702,6 +702,63 @@ tests.push(
 );
 
 tests.push(
+  test('save_v9_migrates_to_v10_with_commercialization_fields', () => {
+    const v9 = {
+      schemaVersion: 'op10m-agent03-v9',
+      turn: 16,
+      revision: 2,
+      unlockedNodes: [],
+      institutionUpgrades: [],
+      unlockSeq: 0,
+      branchEmphasis: [],
+      emphasisRevision: 1,
+      migrationLog: [{ fromVersion: 'op10m-agent03-v8', toVersion: 'op10m-agent03-v9', turn: 15 }],
+      saveKind: 'manual',
+      updatedAtTurn: 16,
+      sessionId: 'v9',
+      persistRevision: 7,
+      unlockEventLog: [],
+      lastReconciledAtTurn: 16,
+      emphasisChangeLog: [],
+      institutionTierSnapshot: { capturedAtTurn: 16, tiers: {}, digest: 'abc', nationalIntegrationCount: 0, strategicOrAboveCount: 0 },
+      readinessMilestoneLog: [],
+      readinessBranchSnapshot: null,
+      integrationRiskLog: [],
+      integrationRiskSnapshot: null,
+      scaleWaveSnapshot: null,
+      synergyThresholdLog: [],
+      synergySnapshot: null,
+      coreFingerprint: 'legacy',
+    };
+    const core = migrateResearchProgressSave(v9);
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v9'));
+    assert(Array.isArray(core?.commercializationMilestoneLog));
+    assert(core?.commercializationSnapshot === null);
+  })
+);
+
+tests.push(
+  test('commercialization_milestone_log_and_snapshot_on_compute', () => {
+    const inputs = baseInputs({ turn: 24 });
+    const state = computeResearchProgress(inputs, null);
+    assert(typeof state.commercializationSnapshot?.digest === 'string');
+    assert(Array.isArray(state.commercializationMilestoneLog));
+  })
+);
+
+tests.push(
+  test('export_continuity_outlook_derived', () => {
+    const inputs = baseInputs({ turn: 20 });
+    const state = computeResearchProgress(inputs, null);
+    const outlook = state.exportContinuityOutlook;
+    assert(outlook != null);
+    assert(typeof outlook?.nationalContinuityScore === 'number');
+    assert(detectForeignSaveFields({ exportContinuityOutlook: outlook }).includes('exportContinuityOutlook'));
+  })
+);
+
+tests.push(
   test('save_v8_migrates_to_v9_with_synergy_fields', () => {
     const v8 = {
       schemaVersion: 'op10m-agent03-v8',

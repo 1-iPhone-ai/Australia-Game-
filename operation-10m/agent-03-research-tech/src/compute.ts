@@ -20,6 +20,7 @@ import { computeResearchSynergyOutlook } from './synergy-outlook.ts';
 import { computeResearchIntegrationRiskOutlook } from './integration-risk-outlook.ts';
 import { computeResearchAdoptionHorizonOutlook } from './adoption-horizon-outlook.ts';
 import { computeResearchPortfolioStabilizationOutlook } from './portfolio-stabilization-outlook.ts';
+import { computeResearchExportContinuityOutlook } from './export-continuity-outlook.ts';
 import { branchNodeTopologicalOrder, evaluateNodePrerequisites } from './prerequisites.ts';
 import { resolveActiveStrategyHooks, STRATEGY_HOOK_BY_ID } from './strategy-hooks.ts';
 import {
@@ -278,6 +279,13 @@ export function computeResearchProgress(
     synergySnapshot: coreBase.synergySnapshot ?? null,
   });
 
+  const exportContinuityOutlook = computeResearchExportContinuityOutlook(inputs, {
+    commercialization,
+    portfolioStabilizationOutlook,
+    adoptionHorizonOutlook,
+    commercializationSnapshot: coreBase.commercializationSnapshot ?? null,
+  });
+
   const computed: ResearchProgressState = {
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: coreBase.revision,
@@ -298,6 +306,7 @@ export function computeResearchProgress(
     integrationRiskOutlook,
     adoptionHorizonOutlook,
     portfolioStabilizationOutlook,
+    exportContinuityOutlook,
     unlockSeq: coreBase.unlockSeq,
     branchEmphasis: coreBase.branchEmphasis,
   };

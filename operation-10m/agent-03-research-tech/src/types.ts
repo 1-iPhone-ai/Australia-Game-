@@ -162,12 +162,13 @@ export interface ResearchBranchEmphasisState {
   setTurn: number;
 }
 
-export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v9' as const;
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v10' as const;
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
 export type ResearchProgressSchemaVersion =
   | typeof RESEARCH_PROGRESS_SCHEMA_VERSION
+  | 'op10m-agent03-v9'
   | 'op10m-agent03-v8'
   | 'op10m-agent03-v7'
   | 'op10m-agent03-v6'
@@ -378,6 +379,43 @@ export interface ResearchPortfolioStabilizationOutlook {
   links: ResearchPortfolioStabilizationLink[];
 }
 
+export type ResearchCommercializationMilestone = 30 | 50 | 70 | 90;
+
+export interface ResearchCommercializationMilestoneEvent {
+  seq: number;
+  turn: number;
+  milestone: ResearchCommercializationMilestone;
+  nationalExportScore: number;
+  highPriorityBranchCount: number;
+  phase: 'escalation' | 'de-escalation';
+}
+
+export interface ResearchCommercializationSnapshot {
+  capturedAtTurn: number;
+  nationalExportScore: number;
+  highPriorityBranchCount: number;
+  mediumPriorityBranchCount: number;
+  peakMilestone: ResearchCommercializationMilestone | 0;
+  digest: string;
+}
+
+export interface ResearchExportContinuityLink {
+  branchId: ResearchBranchId;
+  exportPriority: 'medium' | 'high';
+  driver: 'commercial_emphasis' | 'readiness_floor';
+}
+
+export interface ResearchExportContinuityOutlook {
+  active: boolean;
+  baseTurn: number;
+  horizonTurns: number;
+  nationalContinuityScore: number;
+  projectedContinuityScore: number;
+  highPriorityExportCount: number;
+  exportMomentum: number;
+  links: ResearchExportContinuityLink[];
+}
+
 export interface ResearchProgressState {
   schemaVersion: ResearchProgressSchemaVersion;
   revision: number;
@@ -398,6 +436,7 @@ export interface ResearchProgressState {
   integrationRiskOutlook?: ResearchIntegrationRiskOutlook | null;
   adoptionHorizonOutlook?: ResearchAdoptionHorizonOutlook | null;
   portfolioStabilizationOutlook?: ResearchPortfolioStabilizationOutlook | null;
+  exportContinuityOutlook?: ResearchExportContinuityOutlook | null;
   unlockSeq: number;
   branchEmphasis?: ResearchBranchEmphasisState[];
   emphasisRevision?: number;
@@ -417,6 +456,8 @@ export interface ResearchProgressState {
   scaleWaveSnapshot?: ResearchScaleWaveSnapshot | null;
   synergyThresholdLog?: ResearchSynergyThresholdEvent[];
   synergySnapshot?: ResearchSynergySnapshot | null;
+  commercializationMilestoneLog?: ResearchCommercializationMilestoneEvent[];
+  commercializationSnapshot?: ResearchCommercializationSnapshot | null;
 }
 
 export interface StrategyHookDefinition {
