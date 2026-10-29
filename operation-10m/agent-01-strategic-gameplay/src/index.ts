@@ -109,6 +109,7 @@ export {
   eternalAscendanceRankingBonus,
   infinitePersistenceRankingBonus,
   primordialContinuityRankingBonus,
+  absoluteSanctityRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -314,6 +315,16 @@ export {
   applyPrimordialContinuityMandateBonus,
 } from './engine/coalition-primordial-continuity.ts';
 
+export { coalitionAbsoluteSanctityStreakIssues } from './engine/coalition-absolute-sanctity-gates.ts';
+
+export {
+  ABSOLUTE_COALITION_SANCTITY_THRESHOLD,
+  advanceCoalitionAbsoluteSanctityStreak,
+  resetCoalitionAbsoluteSanctityStreak,
+  isAbsoluteCoalitionSanctity,
+  applyAbsoluteSanctityMandateBonus,
+} from './engine/coalition-absolute-sanctity.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '3.1.0';
+export const AGENT_01_MODULE_VERSION = '3.2.0';

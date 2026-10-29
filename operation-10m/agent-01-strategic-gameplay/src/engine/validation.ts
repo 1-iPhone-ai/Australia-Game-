@@ -41,6 +41,7 @@ import { coalitionSovereignContinuumStreakIssues } from './coalition-sovereign-c
 import { coalitionEternalAscendanceStreakIssues } from './coalition-eternal-ascendance-gates.ts';
 import { coalitionInfinitePersistenceStreakIssues } from './coalition-infinite-persistence-gates.ts';
 import { coalitionPrimordialContinuityStreakIssues } from './coalition-primordial-continuity-gates.ts';
+import { coalitionAbsoluteSanctityStreakIssues } from './coalition-absolute-sanctity-gates.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -305,6 +306,7 @@ export function validateAction(
     issues.push(...coalitionEternalAscendanceStreakIssues(action, state));
     issues.push(...coalitionInfinitePersistenceStreakIssues(action, state));
     issues.push(...coalitionPrimordialContinuityStreakIssues(action, state));
+    issues.push(...coalitionAbsoluteSanctityStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({

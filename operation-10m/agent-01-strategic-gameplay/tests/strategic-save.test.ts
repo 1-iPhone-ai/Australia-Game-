@@ -20,7 +20,7 @@ describe('strategic save v1', () => {
       null,
     ).state;
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(19);
+    expect(save.version).toBe(20);
     const restored = deserializeStrategicGameplayState(save);
     expect(restored.completedActionIds).toEqual(state.completedActionIds);
     expect(restored.pendingDelayed.length).toBe(state.pendingDelayed.length);

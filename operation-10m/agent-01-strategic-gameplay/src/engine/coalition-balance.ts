@@ -188,3 +188,13 @@ export function primordialContinuityRankingBonus(
   if (streak >= action.minCoalitionPrimordialContinuityStreakDays) return 14;
   return 2;
 }
+
+export function absoluteSanctityRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionAbsoluteSanctityStreakDays === undefined) return 0;
+  const streak = state.coalitionAbsoluteSanctityStreakDays ?? 0;
+  if (streak >= action.minCoalitionAbsoluteSanctityStreakDays) return 15;
+  return 2;
+}
