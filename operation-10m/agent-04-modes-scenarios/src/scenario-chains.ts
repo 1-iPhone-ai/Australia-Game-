@@ -114,6 +114,35 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_capital_to_coast',
+    title: 'Capital to Coast',
+    description: 'Markets week in the capital, island supply stress, then an export sprint on the eastern seaboard.',
+    completionBadgeId: 'badge_o10m_chain_capital_to_coast',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_capital_markets_week',
+        title: 'Policy Sprint',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 500 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_island_supply_line',
+        title: 'Bass Strait Stress',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { standingDelta: { TAS: 10 } },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_export_clock',
+        title: 'Coastal Export Push',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainCapitalToCoastComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

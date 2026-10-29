@@ -158,7 +158,8 @@ export type O10mChallengeModeId =
   | 'o10m_ap_sprint'
   | 'o10m_ironman'
   | 'o10m_rival_intensity'
-  | 'o10m_contract_focus';
+  | 'o10m_contract_focus'
+  | 'o10m_stability_focus';
 
 export interface O10mChallengeMode {
   id: O10mChallengeModeId;
@@ -210,6 +211,7 @@ export interface O10mRunSummary {
   rivalNetWorth: number;
   optionalObjectivesCompleted: number;
   totalObjectives: number;
+  chainCompleted?: boolean;
 }
 
 export interface O10mMilestoneProgress {

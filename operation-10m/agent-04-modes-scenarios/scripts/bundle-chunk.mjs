@@ -23,6 +23,8 @@ const SOURCE_FILES = [
   'operation-10m/agent-04-modes-scenarios/src/scenario-chains.ts',
   'operation-10m/agent-04-modes-scenarios/src/sandbox-knobs.ts',
   'operation-10m/agent-04-modes-scenarios/src/mode-interactions.ts',
+  'operation-10m/agent-04-modes-scenarios/src/mode-mission-registry.ts',
+  'operation-10m/agent-04-modes-scenarios/src/scenario-content-audit.ts',
 ];
 
 function stripModuleImports(src) {
@@ -56,9 +58,12 @@ export function runAgent04ModesScenariosSelfTests(): {
   const push = (id: string, passed: boolean, detail?: string) => results.push({ id, passed, detail });
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
-  push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 8, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 3, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 12, String(O10M_OPERATION_SCENARIOS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 4, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
+  push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
+  const audit = runO10mContentAudit();
+  push('agent04_chunk_09', audit.isClean, summarizeContentAudit(audit));
 
   const modeOk = resolveModeInteraction({
     baseMode: 'scenario',
@@ -80,7 +85,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: '${MODULE_ID}',
-  schemaVersion: 'op10m-agent04-v1',
+  schemaVersion: 'op10m-agent04-v2',
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

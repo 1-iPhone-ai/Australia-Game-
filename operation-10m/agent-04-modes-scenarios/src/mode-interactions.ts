@@ -11,6 +11,7 @@ import {
   resolveSandboxKnobValues,
 } from './sandbox-knobs.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
+import { evaluateModeScenarioFit } from './mode-mission-registry.js';
 import type {
   GameModeSelection,
   ModeInteractionRequest,
@@ -76,6 +77,12 @@ export function resolveModeInteraction(request: ExtendedModeInteractionRequest):
 
   if (scenario) {
     forcedSettingsMerge = mergeSettings(forcedSettingsMerge, scenario.forcedSettings);
+    const fit = evaluateModeScenarioFit(request.baseMode, scenario.id);
+    if (!fit.ok) {
+      errors.push(...fit.warnings.filter(w => w.includes('restricted')));
+    } else {
+      warnings.push(...fit.warnings);
+    }
   }
 
   const seen = new Set<O10mChallengeModeId>();

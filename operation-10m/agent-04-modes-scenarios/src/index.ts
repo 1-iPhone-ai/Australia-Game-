@@ -9,3 +9,5 @@ export * from './objective-evaluator.js';
 export * from './scenarios/o10m-presets.js';
 export * from './scenario-chains.js';
 export * from './sandbox-knobs.js';
+export * from './mode-mission-registry.js';
+export * from './scenario-content-audit.js';

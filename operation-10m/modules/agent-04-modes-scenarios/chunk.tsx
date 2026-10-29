@@ -162,7 +162,8 @@ export type O10mChallengeModeId =
   | 'o10m_ap_sprint'
   | 'o10m_ironman'
   | 'o10m_rival_intensity'
-  | 'o10m_contract_focus';
+  | 'o10m_contract_focus'
+  | 'o10m_stability_focus';
 
 export interface O10mChallengeMode {
   id: O10mChallengeModeId;
@@ -214,6 +215,7 @@ export interface O10mRunSummary {
   rivalNetWorth: number;
   optionalObjectivesCompleted: number;
   totalObjectives: number;
+  chainCompleted?: boolean;
 }
 
 export interface O10mMilestoneProgress {
@@ -838,6 +840,185 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Trade windows', 'Time limits', 'Liquidity'],
   },
+  {
+    id: 'o10m_outback_relay',
+    title: 'Outback Relay',
+    description:
+      'Link NT and SA with freight contracts under extreme travel costs — mastery of logistics beats raw expansion.',
+    category: 'challenge',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100409,
+    startingMoney: 1900,
+    startingRegions: ['NT', 'SA'],
+    badgeId: 'badge_o10m_outback_relay',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100409),
+      regionalContractsEnabled: true,
+      equipmentShopEnabled: true,
+      actionLimitsEnabled: true,
+      v93ContentThemes: ['logistics', 'trade'],
+      totalDays: 22,
+    },
+    objectives: [
+      {
+        id: 'o10m_or_obj_challenges',
+        label: 'Relay Legs',
+        description: 'Complete 5 regional challenges',
+        targetType: 'challenges_completed',
+        targetValue: 5,
+        isPrimary: true,
+      },
+      {
+        id: 'o10m_or_obj_regions',
+        label: 'Red Center Link',
+        description: 'Control 3 regions',
+        targetType: 'regions',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Travel', 'Challenge chains', 'Outback logistics'],
+  },
+  {
+    id: 'o10m_capital_markets_week',
+    title: 'Capital Markets Week',
+    description:
+      'ACT policy window plus NSW liquidity — pass governance while growing investments before the week ends.',
+    category: 'experimental',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100410,
+    startingMoney: 3200,
+    startingRegions: ['ACT', 'NSW'],
+    badgeId: 'badge_o10m_capital_markets_week',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100410),
+      investmentsEnabled: true,
+      governanceControlSurfaceEnabled: true,
+      regionalContractsEnabled: true,
+      totalDays: 12,
+      v93ContentThemes: ['finance', 'governance'],
+    },
+    objectives: [
+      {
+        id: 'o10m_cmw_obj_invest',
+        label: 'Market Positions',
+        description: 'Hold 2 active investments',
+        targetType: 'investments_count',
+        targetValue: 2,
+        isPrimary: true,
+      },
+      {
+        id: 'o10m_cmw_obj_gov',
+        label: 'Policy Window',
+        description: 'Pass 1 governance proposal',
+        targetType: 'governance_proposals_passed',
+        targetValue: 1,
+        isPrimary: true,
+      },
+      {
+        id: 'o10m_cmw_obj_worth',
+        label: 'Capital Stack',
+        description: 'Reach $16,000 net worth',
+        targetType: 'netWorth',
+        targetValue: 16000,
+        isPrimary: false,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Investments', 'Governance windows', 'Short horizons'],
+  },
+  {
+    id: 'o10m_island_supply_line',
+    title: 'Island Supply Line',
+    description:
+      'Tasmania depends on fragile supply lines — stability and standing matter more than mainland map rush.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100411,
+    startingMoney: 2400,
+    startingRegions: ['TAS'],
+    badgeId: 'badge_o10m_island_supply_line',
+    unlockedByDefault: false,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100411),
+      publicStabilityEnabled: true,
+      regionalStandingEnabled: true,
+      dynamicCrisisChainsEnabled: true,
+      v93ContentThemes: ['logistics', 'governance'],
+    },
+    objectives: [
+      {
+        id: 'o10m_isl_obj_stability',
+        label: 'Island Calm',
+        description: 'Maintain public stability at or above 60',
+        targetType: 'public_stability',
+        targetValue: 60,
+        isPrimary: true,
+      },
+      {
+        id: 'o10m_isl_obj_standing',
+        label: 'Local Trust',
+        description: 'Reach regional standing of 65',
+        targetType: 'regionalStanding',
+        targetValue: 65,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Island logistics', 'Stability', 'Standing'],
+  },
+  {
+    id: 'o10m_autoplay_observatory',
+    title: 'Autoplay Observatory',
+    description:
+      'Structured scenario for team_ai_vs_ai observation: contracts and standing averages without human co-pilot actions.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100412,
+    startingMoney: 5000,
+    startingRegions: ['VIC'],
+    badgeId: 'badge_o10m_autoplay_observatory',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100412),
+      regionalContractsEnabled: true,
+      sabotageEnabled: false,
+      teamBrainEnabled: true,
+      o10mAutoplayObservatoryScenario: true,
+      totalDays: 15,
+    },
+    objectives: [
+      {
+        id: 'o10m_ao_obj_avg',
+        label: 'Observed Equilibrium',
+        description: 'Reach average regional standing of 50',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 50,
+        isPrimary: true,
+      },
+      {
+        id: 'o10m_ao_obj_survive',
+        label: 'Observation Window',
+        description: 'Survive to day 12',
+        targetType: 'daysPassed',
+        targetValue: 12,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['AI vs AI modes', 'Standing averages', 'Contract pacing'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -917,6 +1098,29 @@ export const O10M_CHALLENGE_MODES: O10mChallengeMode[] = [
     },
     modifiers: [],
   },
+  {
+    id: 'o10m_stability_focus',
+    title: 'Stability Focus',
+    description: 'Elevates public stability systems and dampens sabotage frequency in scenario matches.',
+    compatibleBaseModes: ['scenario', 'ai', 'team_human_ai_vs_ai_ai'],
+    incompatibleBaseModes: ['single'],
+    forcedSettingsPatch: {
+      publicStabilityEnabled: true,
+      sabotageEnabled: false,
+      o10mStabilityFocus: true,
+    },
+    modifiers: [
+      {
+        id: 'o10m_stability_decay_relief',
+        name: 'Stability Relief',
+        description: 'Slows stability decay during crisis spikes.',
+        domain: 'stability',
+        targetKey: 'publicStabilityDecayMultiplier',
+        value: 0.9,
+        isGlobal: true,
+      },
+    ],
+  },
 ];
 
 const CHALLENGE_BY_ID: Record<O10mChallengeModeId, O10mChallengeMode> = O10M_CHALLENGE_MODES.reduce(
@@ -973,11 +1177,18 @@ export const O10M_MISSION_MILESTONES: O10mMissionMilestone[] = [
     badgeId: 'badge_o10m_milestone_team_ledger',
   },
   {
-    id: 'o10m_milestone_silent_perfection',
-    title: 'Silent Perfection',
-    description: 'Complete Silent Diplomat with optional Clean Hands objective.',
+    id: 'o10m_milestone_chain_complete',
+    title: 'Chain Finisher',
+    description: 'Complete any O10M multi-step scenario chain.',
     category: 'scenario',
-    badgeId: 'badge_o10m_milestone_silent_perfection',
+    badgeId: 'badge_o10m_milestone_chain_complete',
+  },
+  {
+    id: 'o10m_milestone_autoplay_observatory',
+    title: 'Observatory Clear',
+    description: 'Primary-clear Autoplay Observatory in team_ai_vs_ai mode.',
+    category: 'mode',
+    badgeId: 'badge_o10m_milestone_autoplay_observatory',
   },
 ];
 
@@ -1003,6 +1214,14 @@ function checkMilestone(m: O10mMissionMilestone, run: O10mRunSummary): boolean {
       );
     case 'o10m_milestone_silent_perfection':
       return run.scenarioId === 'o10m_silent_diplomat' && run.optionalObjectivesCompleted >= 1 && run.primaryVictory;
+    case 'o10m_milestone_chain_complete':
+      return Boolean(run.scenarioId?.startsWith('o10m_')) && run.primaryVictory && run.chainCompleted === true;
+    case 'o10m_milestone_autoplay_observatory':
+      return (
+        run.scenarioId === 'o10m_autoplay_observatory' &&
+        run.baseMode === 'team_ai_vs_ai' &&
+        run.primaryVictory
+      );
     default:
       return false;
   }
@@ -1351,6 +1570,35 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
         title: 'Dual Stress Finale',
         requiresPrimaryVictory: true,
         carryBonusOnComplete: { forcedSettingsPatch: { o10mChainResourcePressureComplete: true } },
+      },
+    ],
+  },
+  {
+    id: 'o10m_chain_capital_to_coast',
+    title: 'Capital to Coast',
+    description: 'Markets week in the capital, island supply stress, then an export sprint on the eastern seaboard.',
+    completionBadgeId: 'badge_o10m_chain_capital_to_coast',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_capital_markets_week',
+        title: 'Policy Sprint',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 500 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_island_supply_line',
+        title: 'Bass Strait Stress',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { standingDelta: { TAS: 10 } },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_export_clock',
+        title: 'Coastal Export Push',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainCapitalToCoastComplete: true } },
       },
     ],
   },
@@ -1791,6 +2039,12 @@ export function resolveModeInteraction(request: ExtendedModeInteractionRequest):
 
   if (scenario) {
     forcedSettingsMerge = mergeSettings(forcedSettingsMerge, scenario.forcedSettings);
+    const fit = evaluateModeScenarioFit(request.baseMode, scenario.id);
+    if (!fit.ok) {
+      errors.push(...fit.warnings.filter(w => w.includes('restricted')));
+    } else {
+      warnings.push(...fit.warnings);
+    }
   }
 
   const seen = new Set<O10mChallengeModeId>();
@@ -1871,6 +2125,312 @@ export function computeEffectiveScenarioStartingMoney(
   return Math.round(scenarioBaseMoney * mult + bonus);
 }
 
+// --- bundled from src/mode-mission-registry.ts ---
+export type O10mMissionFocus =
+  | 'solo_rival'
+  | 'grand_tour_arc'
+  | 'team_coop'
+  | 'autoplay_lab'
+  | 'scenario_sandbox';
+
+export interface O10mModeMissionProfile {
+  baseMode: GameModeSelection;
+  missionFocus: O10mMissionFocus;
+  title: string;
+  description: string;
+  recommendedScenarioIds: string[];
+  /** Scenario ids that should warn when selected outside this mode. */
+  restrictedScenarioIds?: string[];
+}
+
+const DIFFICULTY_RANK: Record<ScenarioDifficulty, number> = {
+  Easy: 1,
+  Medium: 2,
+  Hard: 3,
+  Expert: 4,
+};
+
+export const O10M_MODE_MISSION_PROFILES: O10mModeMissionProfile[] = [
+  {
+    baseMode: 'ai',
+    missionFocus: 'solo_rival',
+    title: 'Solo Rival Missions',
+    description: 'Standard human vs AI scenario progression with optional challenge overlays.',
+    recommendedScenarioIds: [
+      'o10m_silent_diplomat',
+      'o10m_export_clock',
+      'o10m_cyclone_corridor',
+      'o10m_rival_elimination_classic',
+    ],
+  },
+  {
+    baseMode: 'grand_tour',
+    missionFocus: 'grand_tour_arc',
+    title: 'Grand Tour Bridge',
+    description: 'Challenge-heavy scenarios that complement regional tour pacing.',
+    recommendedScenarioIds: ['o10m_grand_tour_prologue', 'o10m_outback_relay', 'o10m_tas_battery_rush'],
+  },
+  {
+    baseMode: 'scenario',
+    missionFocus: 'scenario_sandbox',
+    title: 'Scenario Campaign',
+    description: 'Full scenario engine with chains, milestones, and sandbox knobs.',
+    recommendedScenarioIds: O10M_OPERATION_SCENARIOS.map(s => s.id),
+  },
+  {
+    baseMode: 'team_human_ai_vs_ai_ai',
+    missionFocus: 'team_coop',
+    title: 'Co-Pilot Coalition',
+    description: 'Standing-average and governance scenarios tuned for human+AI teams.',
+    recommendedScenarioIds: ['o10m_team_ledger', 'o10m_capital_markets_week', 'o10m_silent_diplomat'],
+  },
+  {
+    baseMode: 'team_ai_vs_ai',
+    missionFocus: 'autoplay_lab',
+    title: 'Autoplay Laboratory',
+    description: 'Observation scenarios for AI vs AI balance and contract pacing.',
+    recommendedScenarioIds: ['o10m_autoplay_observatory'],
+    restrictedScenarioIds: ['o10m_rival_elimination_classic'],
+  },
+  {
+    baseMode: 'single',
+    missionFocus: 'scenario_sandbox',
+    title: 'Sandbox (Unstructured)',
+    description: 'No structured scenario objectives — sandbox knobs only.',
+    recommendedScenarioIds: [],
+  },
+];
+
+export function getModeMissionProfile(mode: GameModeSelection): O10mModeMissionProfile | undefined {
+  return O10M_MODE_MISSION_PROFILES.find(p => p.baseMode === mode);
+}
+
+export function recommendScenariosForMode(mode: GameModeSelection): PresetScenario[] {
+  const profile = getModeMissionProfile(mode);
+  if (!profile) return [];
+  return profile.recommendedScenarioIds
+    .map(id => findO10mScenario(id))
+    .filter((s): s is PresetScenario => Boolean(s));
+}
+
+export function rankScenarioDifficulty(scenario: PresetScenario): number {
+  return DIFFICULTY_RANK[scenario.difficulty] ?? 2;
+}
+
+export function listScenariosByDifficulty(mode?: GameModeSelection): PresetScenario[] {
+  const pool = mode ? recommendScenariosForMode(mode) : [...O10M_OPERATION_SCENARIOS];
+  return [...pool].sort(
+    (a, b) => rankScenarioDifficulty(a) - rankScenarioDifficulty(b) || a.id.localeCompare(b.id),
+  );
+}
+
+export interface O10mModeScenarioFitResult {
+  ok: boolean;
+  warnings: string[];
+  missionFocus: O10mMissionFocus | null;
+}
+
+export function evaluateModeScenarioFit(baseMode: GameModeSelection, scenarioId: string): O10mModeScenarioFitResult {
+  const profile = getModeMissionProfile(baseMode);
+  const warnings: string[] = [];
+  if (!profile) return { ok: false, warnings: ['Unknown base mode'], missionFocus: null };
+
+  if (profile.restrictedScenarioIds?.includes(scenarioId)) {
+    warnings.push(`Scenario ${scenarioId} is restricted for mode ${baseMode}.`);
+  }
+
+  if (baseMode === 'single' && scenarioId.startsWith('o10m_')) {
+    warnings.push('Structured O10M scenarios require a rival or scenario base mode.');
+  }
+
+  if (baseMode === 'team_ai_vs_ai' && scenarioId !== 'o10m_autoplay_observatory' && scenarioId.startsWith('o10m_')) {
+    warnings.push('Only o10m_autoplay_observatory is tuned for team_ai_vs_ai structured play.');
+  }
+
+  if (isSoloRivalMode(baseMode) && !profile.recommendedScenarioIds.includes(scenarioId)) {
+    warnings.push(`Scenario ${scenarioId} is not in the recommended list for ${baseMode}.`);
+  }
+
+  const ok = !profile.restrictedScenarioIds?.includes(scenarioId) && baseMode !== 'single';
+  return { ok, warnings, missionFocus: profile.missionFocus };
+}
+
+export function scenariosReferencedByChains(): string[] {
+  const ids = new Set<string>();
+  for (const chain of O10M_SCENARIO_CHAINS) {
+    for (const step of chain.steps) ids.add(step.scenarioId);
+  }
+  return [...ids].sort();
+}
+
+export function chainCoverageReport(): Array<{ chainId: string; scenarioCount: number; uniqueRegions: string[] }> {
+  return O10M_SCENARIO_CHAINS.map(chain => {
+    const regions = new Set<string>();
+    for (const step of chain.steps) {
+      const sc = findO10mScenario(step.scenarioId);
+      sc?.startingRegions.forEach(r => regions.add(r));
+    }
+    return { chainId: chain.id, scenarioCount: chain.steps.length, uniqueRegions: [...regions].sort() };
+  });
+}
+
+// --- bundled from src/scenario-content-audit.ts ---
+const VALID_REGION_CODES = new Set(['NSW', 'QLD', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT']);
+
+export type O10mContentAuditSeverity = 'error' | 'warning';
+
+export interface O10mContentAuditIssue {
+  id: string;
+  severity: O10mContentAuditSeverity;
+  problem: string;
+  detail: string;
+}
+
+export interface O10mContentAuditReport {
+  issues: O10mContentAuditIssue[];
+  checked: {
+    scenarios: number;
+    chains: number;
+    challengeModes: number;
+  };
+  isClean: boolean;
+}
+
+function auditScenario(sc: PresetScenario): O10mContentAuditIssue[] {
+  const issues: O10mContentAuditIssue[] = [];
+  if (!sc.id.startsWith('o10m_')) {
+    issues.push({
+      id: sc.id,
+      severity: 'warning',
+      problem: 'id_prefix',
+      detail: 'O10M preset ids should start with o10m_',
+    });
+  }
+  if (sc.objectives.length === 0) {
+    issues.push({ id: sc.id, severity: 'error', problem: 'no_objectives', detail: 'Scenario has zero objectives' });
+  }
+  const primary = sc.objectives.filter(o => o.isPrimary !== false);
+  if (primary.length === 0) {
+    issues.push({ id: sc.id, severity: 'error', problem: 'no_primary', detail: 'No primary objectives defined' });
+  }
+  for (const r of sc.startingRegions) {
+    if (!VALID_REGION_CODES.has(r)) {
+      issues.push({
+        id: sc.id,
+        severity: 'error',
+        problem: 'bad_region',
+        detail: `Invalid starting region code: ${r}`,
+      });
+    }
+  }
+  const objIds = new Set<string>();
+  for (const o of sc.objectives) {
+    if (objIds.has(o.id)) {
+      issues.push({ id: sc.id, severity: 'error', problem: 'dup_objective', detail: `Duplicate objective id ${o.id}` });
+    }
+    objIds.add(o.id);
+    if (o.targetType === 'specific_region_controlled' && o.targetRegionId && !VALID_REGION_CODES.has(o.targetRegionId)) {
+      issues.push({
+        id: sc.id,
+        severity: 'error',
+        problem: 'bad_target_region',
+        detail: `Objective ${o.id} targets unknown region ${o.targetRegionId}`,
+      });
+    }
+  }
+  if (typeof sc.startingMoney !== 'number' || sc.startingMoney < 0) {
+    issues.push({ id: sc.id, severity: 'error', problem: 'bad_money', detail: 'startingMoney must be non-negative' });
+  }
+  return issues;
+}
+
+export function auditO10mScenarioCatalog(scenarios: PresetScenario[] = O10M_OPERATION_SCENARIOS): O10mContentAuditIssue[] {
+  const issues: O10mContentAuditIssue[] = [];
+  const ids = new Set<string>();
+  for (const sc of scenarios) {
+    if (ids.has(sc.id)) {
+      issues.push({ id: sc.id, severity: 'error', problem: 'dup_scenario', detail: 'Duplicate scenario id' });
+    }
+    ids.add(sc.id);
+    issues.push(...auditScenario(sc));
+  }
+  return issues;
+}
+
+export function auditO10mScenarioChains(): O10mContentAuditIssue[] {
+  const issues: O10mContentAuditIssue[] = [];
+  for (const chain of O10M_SCENARIO_CHAINS) {
+    const stepIndexes = new Set<number>();
+    for (const step of chain.steps) {
+      if (stepIndexes.has(step.stepIndex)) {
+        issues.push({
+          id: chain.id,
+          severity: 'error',
+          problem: 'dup_step_index',
+          detail: `Duplicate step index ${step.stepIndex}`,
+        });
+      }
+      stepIndexes.add(step.stepIndex);
+      if (!findO10mScenario(step.scenarioId)) {
+        issues.push({
+          id: chain.id,
+          severity: 'error',
+          problem: 'missing_scenario',
+          detail: `Step ${step.stepIndex} references unknown scenario ${step.scenarioId}`,
+        });
+      }
+    }
+    if (chain.steps.length < 2) {
+      issues.push({
+        id: chain.id,
+        severity: 'warning',
+        problem: 'short_chain',
+        detail: 'Chains should have at least 2 steps',
+      });
+    }
+  }
+  return issues;
+}
+
+export function auditO10mChallengeModes(): O10mContentAuditIssue[] {
+  const issues: O10mContentAuditIssue[] = [];
+  for (const mode of O10M_CHALLENGE_MODES) {
+    if (mode.compatibleBaseModes.some(m => mode.incompatibleBaseModes.includes(m))) {
+      issues.push({
+        id: mode.id,
+        severity: 'error',
+        problem: 'mode_overlap',
+        detail: 'Challenge mode lists the same base mode as compatible and incompatible',
+      });
+    }
+  }
+  return issues;
+}
+
+export function runO10mContentAudit(): O10mContentAuditReport {
+  const issues = [
+    ...auditO10mScenarioCatalog(),
+    ...auditO10mScenarioChains(),
+    ...auditO10mChallengeModes(),
+  ];
+  const isClean = issues.every(i => i.severity !== 'error');
+  return {
+    issues,
+    checked: {
+      scenarios: O10M_OPERATION_SCENARIOS.length,
+      chains: O10M_SCENARIO_CHAINS.length,
+      challengeModes: O10M_CHALLENGE_MODES.length,
+    },
+    isClean,
+  };
+}
+
+export function summarizeContentAudit(report: O10mContentAuditReport): string {
+  const err = report.issues.filter(i => i.severity === 'error').length;
+  const warn = report.issues.filter(i => i.severity === 'warning').length;
+  return `scenarios=${report.checked.scenarios} chains=${report.checked.chains} challenges=${report.checked.challengeModes} errors=${err} warnings=${warn}`;
+}
+
 
 /** Agent 25 — smoke self-tests (subset of agent-04 npm test). */
 export function runAgent04ModesScenariosSelfTests(): {
@@ -1882,9 +2442,12 @@ export function runAgent04ModesScenariosSelfTests(): {
   const push = (id: string, passed: boolean, detail?: string) => results.push({ id, passed, detail });
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
-  push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 8, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 3, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 12, String(O10M_OPERATION_SCENARIOS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 4, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
+  push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
+  const audit = runO10mContentAudit();
+  push('agent04_chunk_09', audit.isClean, summarizeContentAudit(audit));
 
   const modeOk = resolveModeInteraction({
     baseMode: 'scenario',
@@ -1906,7 +2469,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v1',
+  schemaVersion: 'op10m-agent04-v2',
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

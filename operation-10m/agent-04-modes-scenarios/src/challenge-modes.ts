@@ -70,6 +70,29 @@ export const O10M_CHALLENGE_MODES: O10mChallengeMode[] = [
     },
     modifiers: [],
   },
+  {
+    id: 'o10m_stability_focus',
+    title: 'Stability Focus',
+    description: 'Elevates public stability systems and dampens sabotage frequency in scenario matches.',
+    compatibleBaseModes: ['scenario', 'ai', 'team_human_ai_vs_ai_ai'],
+    incompatibleBaseModes: ['single'],
+    forcedSettingsPatch: {
+      publicStabilityEnabled: true,
+      sabotageEnabled: false,
+      o10mStabilityFocus: true,
+    },
+    modifiers: [
+      {
+        id: 'o10m_stability_decay_relief',
+        name: 'Stability Relief',
+        description: 'Slows stability decay during crisis spikes.',
+        domain: 'stability',
+        targetKey: 'publicStabilityDecayMultiplier',
+        value: 0.9,
+        isGlobal: true,
+      },
+    ],
+  },
 ];
 
 const CHALLENGE_BY_ID: Record<O10mChallengeModeId, O10mChallengeMode> = O10M_CHALLENGE_MODES.reduce(

@@ -37,11 +37,18 @@ export const O10M_MISSION_MILESTONES: O10mMissionMilestone[] = [
     badgeId: 'badge_o10m_milestone_team_ledger',
   },
   {
-    id: 'o10m_milestone_silent_perfection',
-    title: 'Silent Perfection',
-    description: 'Complete Silent Diplomat with optional Clean Hands objective.',
+    id: 'o10m_milestone_chain_complete',
+    title: 'Chain Finisher',
+    description: 'Complete any O10M multi-step scenario chain.',
     category: 'scenario',
-    badgeId: 'badge_o10m_milestone_silent_perfection',
+    badgeId: 'badge_o10m_milestone_chain_complete',
+  },
+  {
+    id: 'o10m_milestone_autoplay_observatory',
+    title: 'Observatory Clear',
+    description: 'Primary-clear Autoplay Observatory in team_ai_vs_ai mode.',
+    category: 'mode',
+    badgeId: 'badge_o10m_milestone_autoplay_observatory',
   },
 ];
 
@@ -67,6 +74,14 @@ function checkMilestone(m: O10mMissionMilestone, run: O10mRunSummary): boolean {
       );
     case 'o10m_milestone_silent_perfection':
       return run.scenarioId === 'o10m_silent_diplomat' && run.optionalObjectivesCompleted >= 1 && run.primaryVictory;
+    case 'o10m_milestone_chain_complete':
+      return Boolean(run.scenarioId?.startsWith('o10m_')) && run.primaryVictory && run.chainCompleted === true;
+    case 'o10m_milestone_autoplay_observatory':
+      return (
+        run.scenarioId === 'o10m_autoplay_observatory' &&
+        run.baseMode === 'team_ai_vs_ai' &&
+        run.primaryVictory
+      );
     default:
       return false;
   }
