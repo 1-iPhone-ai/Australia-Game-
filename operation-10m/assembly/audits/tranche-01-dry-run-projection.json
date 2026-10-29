@@ -1,0 +1,29 @@
+{
+  "trancheId": "tranche-01-op10m-registry",
+  "dryRunAt": "2026-10-29T06:00:44.165Z",
+  "canonicalBaseCommit": "bc1adf3",
+  "baselineAuditedFunctional": 389566,
+  "projectedAuditedFunctional": 389613,
+  "deltaAuditedFunctional": 47,
+  "baselinePhysicalLines": 419353,
+  "projectedPhysicalLines": 419410,
+  "integrationOrder": [
+    "agent-25-op10m-registry"
+  ],
+  "moduleStats": [
+    {
+      "moduleId": "agent-25-op10m-registry",
+      "slot": "pre-final-export",
+      "chunkLines": 56,
+      "contentSha256": "ab4c5979022091045987084038013d0911b9789f54fdcc58804a4d37ec9e6ff8"
+    }
+  ],
+  "labEntryPlanned": {
+    "afterAnchorId": "v1015_orchestrator",
+    "id": "op10m_assembly_registry",
+    "label": "Operation 10M assembly registry",
+    "runExport": "runOp10mAssemblyRegistrySelfTests"
+  },
+  "artifact": "build/tranche-dry-run-projection.tsx",
+  "note": "Projection only — canonical not modified."
+}
