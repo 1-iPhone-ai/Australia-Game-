@@ -99,7 +99,7 @@ export function bilateralCycleRestartAcknowledgmentExportScale(
   snapshot: GTELBilateralCycleRestartAcknowledgmentSnapshot,
 ): number {
   if (snapshot.band === 'acknowledged') return gtelClamp(1 + snapshot.score * 0.002, 1, 1.007);
-  if (snapshot.band === 'rejected') return gtelClamp(0.985 + snapshot.score * 0.005, 0.975, 0.99);
+  if (snapshot.band === 'rejected') return gtelClamp(0.972 + snapshot.score * 0.006, 0.968, 0.984);
   if (snapshot.band === 'deferred') return gtelClamp(0.997 + snapshot.score * 0.002, 0.992, 0.999);
   return gtelClamp(0.984 + snapshot.score * 0.001, 0.95, 1.02);
 }

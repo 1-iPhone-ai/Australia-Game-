@@ -7862,15 +7862,15 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const reentryEvent = bilateralCycleReentryGateWorldEvent(bilateralCycleReentryGate, turn);
   if (reentryEvent) worldEvents.push(reentryEvent);
 
-  const stabilizationStep = computeCycleReentryStabilizationSnapshot({
+  const reentryStabilizationStep = computeCycleReentryStabilizationSnapshot({
     bilateralCycleReentryGate,
     tradeCycleSealVerification,
     persisted,
   });
-  persisted = stabilizationStep.persisted;
-  const cycleReentryStabilization = stabilizationStep.snapshot;
-  const stabilizationEvent = cycleReentryStabilizationWorldEvent(cycleReentryStabilization, turn);
-  if (stabilizationEvent) worldEvents.push(stabilizationEvent);
+  persisted = reentryStabilizationStep.persisted;
+  const cycleReentryStabilization = reentryStabilizationStep.snapshot;
+  const reentryStabilizationEvent = cycleReentryStabilizationWorldEvent(cycleReentryStabilization, turn);
+  if (reentryStabilizationEvent) worldEvents.push(reentryStabilizationEvent);
 
   const resumptionStep = computeBilateralLoopResumptionGateSnapshot({
     cycleReentryStabilization,
