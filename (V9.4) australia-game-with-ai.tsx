@@ -47651,7 +47651,7 @@ export interface AIAction {
     | 'invest_infrastructure' | 'invest_infrastructure_project' | 'start_infrastructure_project' | 'startInfrastructure' | 'contribute_infrastructure_labor' | 'contributeInfrastructureLabor' | 'complete_infrastructure_project' | 'upgrade_regional_dev_level' | 'apply_regional_bonus'
     | 'resolve_crisis_choice' | 'resolveCrisisChoice' | 'mitigate_crisis' | 'mitigateCrisis' | 'work' | 'double_or_nothing' | 'support' | 'progress_contract_objective' | 'deliver_contract_objectives'
     | 'megaproject_contribute'
-    | 'create_replay_branch' | 'createReplayBranch' | 'switch_replay_branch' | 'switchReplayBranch' | 'switch_active_timeline' | 'simulate_alternative_action' | 'compute_branch_delta' | 'prune_replay_branch' | 'merge_timeline_outcomes';
+    | 'create_replay_branch' | 'createReplayBranch' | 'switch_replay_branch' | 'switchReplayBranch' | 'switch_active_timeline' | 'create_whatif_timeline' | 'createWhatIfTimeline' | 'simulate_alternative_action' | 'compute_branch_delta' | 'prune_replay_branch' | 'merge_timeline_outcomes';
   description: string;
   data?: any;
   parameters?: any;
@@ -137519,9 +137519,15 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number; pr
     const held = !alone.executionResult.success && alone.executionResult.error === 'COPILOT_AUTHORITY_DENIED' && state.player.money === 1000 && unconfirmed.executionResult.error === 'AWAITING_CONFIRMATION' && !forced.executionResult.success && forced.executionResult.error === 'COPILOT_AUTHORITY_DENIED';
     return (built && held) || JSON.stringify({ click: clicked.executionResult.error, money: after?.money, remaining, alone: alone.executionResult.error, ask: unconfirmed.executionResult.error, forced: forced.executionResult.error });
   });
-
-
-
+  check('u_team_whatif_timeline_is_routed', 'Team AI routes create_whatif_timeline onto the canonical timeline (SIM-055)', () => {
+    const player = { id: 'player', money: 5000, currentRegion: 'QLD', actionsUsedThisTurn: 0, actionPoints: 3 };
+    const pocket: any = { day: 4, turn: 2, turnCounter: 2, player, actorsById: { player: { ...player } }, whatIfTimelines: {}, gameSettings: { ...DEFAULT_GAME_SETTINGS, actionLimitsEnabled: true, playerActionsPerDay: 3 } };
+    const made = reduceGameAction(pocket, { type: 'create_whatif_timeline', actorId: 'player', parameters: { timelineId: 'tl_probe', name: 'Probe' } } as any);
+    const timeline = made.nextState.whatIfTimelines?.tl_probe;
+    const routed = String(AustraliaGame).includes("runCanonicalTeamAction('create_whatif_timeline'") || String(AustraliaGame).includes('runCanonicalTeamAction("create_whatif_timeline"');
+    const ok = made.success && timeline && timeline.title === 'Probe' && timeline.status === 'active' && made.nextState.activeTimelineId === 'tl_probe' && made.nextState.player.money === 5000 && made.nextState.player.actionsUsedThisTurn === 1 && routed;
+    return ok || JSON.stringify({ success: made.success, cash: made.nextState.player.money, ap: made.nextState.player.actionsUsedThisTurn, title: timeline && timeline.title, active: made.nextState.activeTimelineId, routed });
+  });
 
   return results;
 }
@@ -202934,6 +202940,17 @@ function dispatchGameSettingsChange(
         const sourceTimelineId = act.data?.sourceTimelineId || act.parameters?.sourceTimelineId;
         const targetTimelineId = act.data?.targetTimelineId || act.parameters?.targetTimelineId;
         actionSucceeded = runCanonicalTeamAction('merge_timeline_outcomes', { sourceTimelineId, targetTimelineId });
+        break;
+      }
+      case 'create_whatif_timeline':
+      case 'createWhatIfTimeline': {
+        const act = action as unknown as Record<string, any>;
+        const timelineId = act.data?.timelineId || act.parameters?.timelineId;
+        const name = act.data?.name || act.parameters?.name || act.data?.title || act.parameters?.title;
+        actionSucceeded = runCanonicalTeamAction('create_whatif_timeline', {
+          ...(timelineId ? { timelineId } : {}),
+          ...(name ? { name } : {})
+        });
         break;
       }
       case 'end_turn': {
