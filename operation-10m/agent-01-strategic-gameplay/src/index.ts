@@ -108,6 +108,7 @@ export {
   sovereignContinuumRankingBonus,
   eternalAscendanceRankingBonus,
   infinitePersistenceRankingBonus,
+  primordialContinuityRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -303,6 +304,16 @@ export {
   applyInfinitePersistenceMandateBonus,
 } from './engine/coalition-infinite-persistence.ts';
 
+export { coalitionPrimordialContinuityStreakIssues } from './engine/coalition-primordial-continuity-gates.ts';
+
+export {
+  PRIMORDIAL_COALITION_CONTINUITY_THRESHOLD,
+  advanceCoalitionPrimordialContinuityStreak,
+  resetCoalitionPrimordialContinuityStreak,
+  isPrimordialCoalitionContinuity,
+  applyPrimordialContinuityMandateBonus,
+} from './engine/coalition-primordial-continuity.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '3.0.0';
+export const AGENT_01_MODULE_VERSION = '3.1.0';

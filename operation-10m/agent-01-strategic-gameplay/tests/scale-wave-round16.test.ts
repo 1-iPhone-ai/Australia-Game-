@@ -112,7 +112,7 @@ describe('scale wave round 16 — civilizational coalition endurance', () => {
       coalitionCivilizationalEnduranceStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(18);
+    expect(save.version).toBe(19);
     expect(save.coalitionCivilizationalEnduranceStreakDays).toBe(5);
   });
 });

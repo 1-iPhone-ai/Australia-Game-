@@ -178,3 +178,13 @@ export function infinitePersistenceRankingBonus(
   if (streak >= action.minCoalitionInfinitePersistenceStreakDays) return 13;
   return 2;
 }
+
+export function primordialContinuityRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionPrimordialContinuityStreakDays === undefined) return 0;
+  const streak = state.coalitionPrimordialContinuityStreakDays ?? 0;
+  if (streak >= action.minCoalitionPrimordialContinuityStreakDays) return 14;
+  return 2;
+}

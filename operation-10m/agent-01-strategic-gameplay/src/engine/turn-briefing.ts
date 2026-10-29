@@ -22,6 +22,7 @@ import { isTranscendentCoalitionLegacy } from './coalition-transcendent-legacy.t
 import { isSovereignCoalitionContinuum } from './coalition-sovereign-continuum.ts';
 import { isEternalCoalitionAscendance } from './coalition-eternal-ascendance.ts';
 import { isInfiniteCoalitionPersistence } from './coalition-infinite-persistence.ts';
+import { isPrimordialCoalitionContinuity } from './coalition-primordial-continuity.ts';
 import { listStakeholderWarnings } from './stakeholder-coalition.ts';
 import { rankStrategicActions } from './strategic-recommendations.ts';
 import { listStrategicActions } from '../catalog/strategic-action-catalog.ts';
@@ -79,6 +80,8 @@ export function buildTurnStrategicBriefing(
     coalitionEternalAscendanceStreakDays: state.coalitionEternalAscendanceStreakDays ?? 0,
     infiniteCoalitionPersistence: isInfiniteCoalitionPersistence(state),
     coalitionInfinitePersistenceStreakDays: state.coalitionInfinitePersistenceStreakDays ?? 0,
+    primordialCoalitionContinuity: isPrimordialCoalitionContinuity(state),
+    coalitionPrimordialContinuityStreakDays: state.coalitionPrimordialContinuityStreakDays ?? 0,
     mandateDriftRisk: classifyMandateDriftRisk(state),
     completedActionCount: state.completedActionIds.length,
     activeChoiceId: state.activeChoice?.choiceId ?? null,

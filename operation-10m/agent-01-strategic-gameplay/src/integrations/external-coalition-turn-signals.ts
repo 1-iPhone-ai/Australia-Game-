@@ -15,6 +15,7 @@ import { isTranscendentCoalitionLegacy } from '../engine/coalition-transcendent-
 import { isSovereignCoalitionContinuum } from '../engine/coalition-sovereign-continuum.ts';
 import { isEternalCoalitionAscendance } from '../engine/coalition-eternal-ascendance.ts';
 import { isInfiniteCoalitionPersistence } from '../engine/coalition-infinite-persistence.ts';
+import { isPrimordialCoalitionContinuity } from '../engine/coalition-primordial-continuity.ts';
 
 /** Outbound coalition telemetry for Agent 02 / Agent 05 assembly hooks (round 10+). */
 export interface ExternalCoalitionTurnSignals {
@@ -45,6 +46,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionEternalAscendanceStreakDays: number;
   infiniteCoalitionPersistence: boolean;
   coalitionInfinitePersistenceStreakDays: number;
+  primordialCoalitionContinuity: boolean;
+  coalitionPrimordialContinuityStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -79,6 +82,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionEternalAscendanceStreakDays: state.coalitionEternalAscendanceStreakDays ?? 0,
     infiniteCoalitionPersistence: isInfiniteCoalitionPersistence(state),
     coalitionInfinitePersistenceStreakDays: state.coalitionInfinitePersistenceStreakDays ?? 0,
+    primordialCoalitionContinuity: isPrimordialCoalitionContinuity(state),
+    coalitionPrimordialContinuityStreakDays: state.coalitionPrimordialContinuityStreakDays ?? 0,
   };
 }
 
@@ -113,5 +118,7 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionEternalAscendanceStreakDays: raw?.coalitionEternalAscendanceStreakDays ?? 0,
     infiniteCoalitionPersistence: raw?.infiniteCoalitionPersistence ?? false,
     coalitionInfinitePersistenceStreakDays: raw?.coalitionInfinitePersistenceStreakDays ?? 0,
+    primordialCoalitionContinuity: raw?.primordialCoalitionContinuity ?? false,
+    coalitionPrimordialContinuityStreakDays: raw?.coalitionPrimordialContinuityStreakDays ?? 0,
   };
 }
