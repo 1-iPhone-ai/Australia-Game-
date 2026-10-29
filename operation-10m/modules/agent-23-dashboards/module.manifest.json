@@ -1,0 +1,8 @@
+{
+  "moduleId": "agent-23-dashboards",
+  "slot": "post-living-regions-national-systems",
+  "touchesSaveFormat": false,
+  "readOnly": true,
+  "contentSha256": "2ed401f6af4b1b97d6491e48da8faef8e808874f3a6aedf44a4feba2539aa602",
+  "chunkPath": "operation-10m/modules/agent-23-dashboards/chunk.tsx"
+}

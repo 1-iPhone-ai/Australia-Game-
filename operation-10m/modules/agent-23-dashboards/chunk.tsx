@@ -1,0 +1,1133 @@
+// OP10M_MODULE_BEGIN agent-23-dashboards
+// Operation 10M — Agent 23 dashboards / maps / data viz (bundled for Agent 25 assembly).
+// Source tree: operation-10m/agent-23-dashboards/ — regenerate via npm run bundle:agent-23-chunk
+// --- bundled from types.ts ---
+/** Agent 23 — dashboard/map contracts (mirror V9.4 Living Regions + National Systems views). */
+
+export type LRMomentumBand =
+  | 'declining'
+  | 'weakening'
+  | 'stable'
+  | 'growing'
+  | 'rapid_growth'
+  | 'booming';
+
+export type LRDevTier =
+  | 'underdeveloped'
+  | 'emerging'
+  | 'developing'
+  | 'advanced'
+  | 'highly_developed';
+
+export type LREconomyBand = 'depressed' | 'weak' | 'moderate' | 'strong' | 'booming';
+
+export type NationalNetworkKind = 'freight' | 'energy' | 'water' | 'trade' | 'digital';
+
+export type NationalNetworkCondition =
+  | 'surplus'
+  | 'healthy'
+  | 'strained'
+  | 'bottlenecked'
+  | 'critical';
+
+export type NationalResilienceBand =
+  | 'fragile'
+  | 'exposed'
+  | 'stable'
+  | 'resilient'
+  | 'highly_resilient';
+
+export interface RegionalNeed {
+  category: string;
+  status: 'open' | 'met' | 'dismissed';
+  severity: 'low' | 'moderate' | 'high' | 'critical';
+}
+
+export interface RegionalRisk {
+  severity: 'low' | 'moderate' | 'high' | 'critical';
+}
+
+export interface DynamicRegionalState {
+  regionId: string;
+  name: string;
+  development: { tier: LRDevTier };
+  economy: { band: LREconomyBand };
+  momentum: { band: LRMomentumBand; history: number[] };
+  needs: RegionalNeed[];
+  risks: RegionalRisk[];
+}
+
+export interface LRDerivedEvent {
+  turn: number;
+  text: string;
+  significance: 'meaningful' | 'major';
+}
+
+export interface LivingRegionsState {
+  revision: number;
+  regions: Record<string, DynamicRegionalState>;
+  derived: LRDerivedEvent[];
+}
+
+export interface LivingRegionsWorldView {
+  state: LivingRegionsState;
+}
+
+export interface NationalNetworkRegionState {
+  utilization: number;
+  condition: NationalNetworkCondition;
+}
+
+export interface NationalRegionSystemsState {
+  regionId: string;
+  name: string;
+  networks: Record<NationalNetworkKind, NationalNetworkRegionState>;
+  primaryConstraint: NationalNetworkKind | null;
+  resilience: number;
+  resilienceBand: NationalResilienceBand;
+}
+
+export interface NationalNetworkNationalSummary {
+  utilization: number;
+  condition: NationalNetworkCondition;
+  bottlenecks: number;
+}
+
+export interface NationalSystemsSummary
+  extends Record<NationalNetworkKind, NationalNetworkNationalSummary> {
+  resilienceScore: number;
+  resilienceBand: NationalResilienceBand;
+}
+
+export interface NationalSystemHistoryEntry {
+  turn: number;
+  summary: string;
+}
+
+export interface NationalBottleneck {
+  id: string;
+}
+
+export interface NationalDependency {
+  id: string;
+}
+
+export interface NationalSystemsState {
+  revision: number;
+  turn?: number;
+  regions: Record<string, NationalRegionSystemsState>;
+  bottlenecks: NationalBottleneck[];
+  dependencies: NationalDependency[];
+  national: NationalSystemsSummary;
+  history: NationalSystemHistoryEntry[];
+}
+
+export interface NationalSystemsWorldView {
+  regionOwners: Record<string, 'you' | 'rival' | 'neutral'>;
+}
+
+export type NrDashProvenanceSource = 'living_regions' | 'national_systems' | 'derived_compare';
+
+export interface NrDashProvenance {
+  source: NrDashProvenanceSource;
+  revision: string | number | null;
+  turn: number;
+  detail: string;
+}
+
+export interface NrDashNetworkBar {
+  network: NationalNetworkKind;
+  label: string;
+  icon: string;
+  utilization: number;
+  condition: NationalNetworkCondition;
+  bottlenecks: number;
+}
+
+export interface NrDashRegionalRow {
+  regionId: string;
+  name: string;
+  owner: 'you' | 'rival' | 'neutral' | 'unknown';
+  developmentTier: string;
+  economyBand: string;
+  momentumBand: string;
+  momentumHistory: number[];
+  resilience: number | null;
+  resilienceBand: string | null;
+  openNeeds: number;
+  highRisks: number;
+  primaryConstraint: NationalNetworkKind | null;
+}
+
+export interface NrDashAuthSnapshot {
+  turn: number;
+  provenance: NrDashProvenance[];
+  nationalResilience: number | null;
+  nationalResilienceBand: string | null;
+  bottleneckCount: number;
+  dependencyCount: number;
+  networks: NrDashNetworkBar[];
+  regions: NrDashRegionalRow[];
+  historySnippets: string[];
+}
+
+export interface NrDashHeatCell {
+  row: string;
+  col: string;
+  label: string;
+  tone: NationalNetworkCondition;
+  title: string;
+}
+
+export type NrDashTabId = 'overview' | 'regions' | 'networks' | 'trends' | 'map';
+
+export interface RegionMapLayoutEntry {
+  regionId: string;
+  name: string;
+  color: string;
+  x: number;
+  y: number;
+}
+
+export interface RegionMapNode {
+  regionId: string;
+  name: string;
+  color: string;
+  x: number;
+  y: number;
+  owner: NrDashRegionalRow['owner'];
+  momentumBand: string;
+  openNeeds: number;
+  highRisks: number;
+  resilience: number | null;
+  /** 0..1 visual weight from authoritative momentum history span (not simulated). */
+  activityWeight: number;
+}
+
+export interface Agent23TestResult {
+  id: string;
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+// --- bundled from core/constants.ts ---
+export const COMM_REGION_CODES = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'] as const;
+
+/** Canonical REGIONS.position from V9.4 (strategic map overlay, not geographic GIS). */
+export const AGENT23_REGION_MAP_LAYOUT: RegionMapLayoutEntry[] = [
+  { regionId: 'QLD', name: 'Queensland', color: '#f4a261', x: 80, y: 35 },
+  { regionId: 'NSW', name: 'New South Wales', color: '#e76f51', x: 80, y: 65 },
+  { regionId: 'VIC', name: 'Victoria', color: '#264653', x: 65, y: 85 },
+  { regionId: 'TAS', name: 'Tasmania', color: '#2a9d8f', x: 75, y: 100 },
+  { regionId: 'SA', name: 'South Australia', color: '#e9c46a', x: 45, y: 75 },
+  { regionId: 'WA', name: 'Western Australia', color: '#f4a261', x: 15, y: 55 },
+  { regionId: 'NT', name: 'Northern Territory', color: '#e76f51', x: 45, y: 35 },
+  { regionId: 'ACT', name: 'Australian Capital Territory', color: '#264653', x: 75, y: 70 },
+];
+
+export const NATIONAL_NETWORKS: NationalNetworkKind[] = [
+  'freight',
+  'energy',
+  'water',
+  'trade',
+  'digital',
+];
+
+export const NATIONAL_NETWORK_LABEL: Record<NationalNetworkKind, string> = {
+  freight: 'Freight',
+  energy: 'Energy',
+  water: 'Water',
+  trade: 'Trade',
+  digital: 'Digital',
+};
+
+export const NATIONAL_NETWORK_ICON: Record<NationalNetworkKind, string> = {
+  freight: '🚆',
+  energy: '⚡',
+  water: '💧',
+  trade: '🚢',
+  digital: '🛰',
+};
+
+export const NATIONAL_CONDITION_LABEL: Record<NationalNetworkCondition, string> = {
+  surplus: 'Surplus',
+  healthy: 'Healthy',
+  strained: 'Strained',
+  bottlenecked: 'Bottlenecked',
+  critical: 'Critical',
+};
+
+export const NATIONAL_CONDITION_ICON: Record<NationalNetworkCondition, string> = {
+  surplus: '✚',
+  healthy: '✓',
+  strained: '●',
+  bottlenecked: '⚠',
+  critical: '⛔',
+};
+
+export const NATIONAL_RESILIENCE_LABEL: Record<NationalResilienceBand, string> = {
+  fragile: 'Fragile',
+  exposed: 'Exposed',
+  stable: 'Stable',
+  resilient: 'Resilient',
+  highly_resilient: 'Highly resilient',
+};
+
+export const LR_DEV_LABEL: Record<LRDevTier, string> = {
+  underdeveloped: 'Underdeveloped',
+  emerging: 'Emerging',
+  developing: 'Developing',
+  advanced: 'Advanced',
+  highly_developed: 'Highly Developed',
+};
+
+export const LR_MOMENTUM_LABEL: Record<LRMomentumBand, string> = {
+  declining: 'Declining',
+  weakening: 'Weakening',
+  stable: 'Stable',
+  growing: 'Growing',
+  rapid_growth: 'Rapid Growth',
+  booming: 'Booming',
+};
+
+export const LR_ECON_LABEL: Record<LREconomyBand, string> = {
+  depressed: 'Depressed',
+  weak: 'Weak',
+  moderate: 'Moderate',
+  strong: 'Strong',
+  booming: 'Booming',
+};
+
+export const NR_DASH_COND_COLOR: Record<NationalNetworkCondition, string> = {
+  surplus: '#34d399',
+  healthy: '#5eead4',
+  strained: '#fbbf24',
+  bottlenecked: '#fb923c',
+  critical: '#f87171',
+};
+
+export const NR_DASH_TAB_ORDER = [
+  'overview',
+  'regions',
+  'networks',
+  'trends',
+  'map',
+] as const;
+
+export const NR_DASH_TAB_LABELS: Record<(typeof NR_DASH_TAB_ORDER)[number], string> = {
+  overview: 'National overview',
+  regions: 'Regional compare',
+  networks: 'Network matrix',
+  trends: 'Turning points',
+  map: 'Strategic map',
+};
+
+export const NR_DASH_MOM_RANK: Record<LRMomentumBand, number> = {
+  declining: 0,
+  weakening: 1,
+  stable: 2,
+  growing: 3,
+  rapid_growth: 4,
+  booming: 5,
+};
+
+// --- bundled from core/util.ts ---
+export function nrDashClamp01(x: number): number {
+  if (!Number.isFinite(x)) return 0;
+  return Math.max(0, Math.min(1, x));
+}
+
+export function nrDashOwnerLabel(o: 'you' | 'rival' | 'neutral' | 'unknown'): string {
+  return o === 'you' ? 'You' : o === 'rival' ? 'Rival' : o === 'neutral' ? 'Neutral' : '—';
+}
+
+/** Activity weight from momentum history span only (state field, no simulation). */
+export function nrDashHistoryActivityWeight(history: number[]): number {
+  const pts = (history || []).filter(v => Number.isFinite(v));
+  if (pts.length < 2) return 0.35;
+  const min = Math.min(...pts);
+  const max = Math.max(...pts);
+  const span = max - min;
+  return nrDashClamp01(span / (Math.abs(max) + 1 || 1));
+}
+
+// --- bundled from core/auth-snapshot.ts ---
+/** Build a dashboard snapshot from authoritative views only (no recompute). */
+export function nrDashBuildAuthSnapshot(
+  turn: number,
+  lr: LivingRegionsWorldView | null,
+  ns: NationalSystemsState | null,
+  owners: Record<string, 'you' | 'rival' | 'neutral'> | null
+): NrDashAuthSnapshot | null {
+  if (!lr && !ns) return null;
+  const provenance: NrDashProvenance[] = [];
+  if (lr) {
+    provenance.push({
+      source: 'living_regions',
+      revision: lr.state.revision,
+      turn,
+      detail: `regions=${Object.keys(lr.state.regions).length} derived=${lr.state.derived.length}`,
+    });
+  }
+  if (ns) {
+    provenance.push({
+      source: 'national_systems',
+      revision: ns.revision,
+      turn: ns.turn ?? turn,
+      detail: `bottlenecks=${ns.bottlenecks.length} deps=${ns.dependencies.length}`,
+    });
+  }
+
+  const networks: NrDashNetworkBar[] = ns
+    ? NATIONAL_NETWORKS.map(n => {
+        const x = ns.national[n];
+        return {
+          network: n,
+          label: NATIONAL_NETWORK_LABEL[n],
+          icon: NATIONAL_NETWORK_ICON[n],
+          utilization: nrDashClamp01(x.utilization),
+          condition: x.condition,
+          bottlenecks: x.bottlenecks,
+        };
+      })
+    : [];
+
+  const regions: NrDashRegionalRow[] = lr
+    ? Object.values(lr.state.regions)
+        .map(reg => {
+          const nsReg = ns?.regions[reg.regionId];
+          return {
+            regionId: reg.regionId,
+            name: reg.name,
+            owner: owners?.[reg.regionId] || 'unknown',
+            developmentTier: LR_DEV_LABEL[reg.development.tier],
+            economyBand: LR_ECON_LABEL[reg.economy.band],
+            momentumBand: LR_MOMENTUM_LABEL[reg.momentum.band],
+            momentumHistory: reg.momentum.history.slice(-12),
+            resilience: nsReg ? Math.round(nsReg.resilience) : null,
+            resilienceBand: nsReg ? NATIONAL_RESILIENCE_LABEL[nsReg.resilienceBand] : null,
+            openNeeds: reg.needs.filter(n => n.status === 'open').length,
+            highRisks: reg.risks.filter(r => r.severity === 'high').length,
+            primaryConstraint: nsReg?.primaryConstraint ?? null,
+          };
+        })
+        .sort((a, b) => a.regionId.localeCompare(b.regionId))
+    : [];
+
+  const historySnippets: string[] = [];
+  if (ns?.history.length) {
+    historySnippets.push(...ns.history.slice(-4).reverse().map(h => `R${h.turn}: ${h.summary}`));
+  }
+  if (lr) {
+    const majors = lr.state.derived
+      .filter(d => d.significance === 'major')
+      .slice(-3)
+      .reverse()
+      .map(d => `R${d.turn}: ${d.text}`);
+    historySnippets.push(...majors);
+  }
+
+  return {
+    turn,
+    provenance,
+    nationalResilience: ns ? Math.round(ns.national.resilienceScore) : null,
+    nationalResilienceBand: ns ? NATIONAL_RESILIENCE_LABEL[ns.national.resilienceBand] : null,
+    bottleneckCount: ns?.bottlenecks.length ?? 0,
+    dependencyCount: ns?.dependencies.length ?? 0,
+    networks,
+    regions,
+    historySnippets: historySnippets.slice(0, 8),
+  };
+}
+
+// --- bundled from core/heat-matrix.ts ---
+export function nrDashBuildHeatCells(ns: NationalSystemsState | null): {
+  cells: NrDashHeatCell[];
+  rows: string[];
+  cols: string[];
+} {
+  if (!ns) return { cells: [], rows: [], cols: [] };
+  const rows = Object.values(ns.regions)
+    .sort((a, b) => a.regionId.localeCompare(b.regionId))
+    .map(r => r.regionId);
+  const cols = NATIONAL_NETWORKS.map(n => NATIONAL_NETWORK_LABEL[n]);
+  const cells: NrDashHeatCell[] = [];
+  for (const reg of Object.values(ns.regions)) {
+    for (const n of NATIONAL_NETWORKS) {
+      const x = reg.networks[n];
+      cells.push({
+        row: reg.regionId,
+        col: NATIONAL_NETWORK_LABEL[n],
+        label: NATIONAL_CONDITION_LABEL[x.condition],
+        tone: x.condition,
+        title: `${reg.name} ${NATIONAL_NETWORK_LABEL[n]}: ${NATIONAL_CONDITION_LABEL[x.condition]} (${Math.round(x.utilization * 100)}% used)`,
+      });
+    }
+  }
+  return { cells, rows, cols };
+}
+
+// --- bundled from core/region-map-model.ts ---
+/**
+ * Merge layout constants with rows from an authoritative snapshot.
+ * Missing regions in snap still appear with neutral defaults (layout-only).
+ */
+export function nrDashBuildRegionMapNodes(snap: NrDashAuthSnapshot | null): RegionMapNode[] {
+  const byId = new Map((snap?.regions || []).map(r => [r.regionId, r]));
+  return AGENT23_REGION_MAP_LAYOUT.map(layout => {
+    const row = byId.get(layout.regionId);
+    return {
+      regionId: layout.regionId,
+      name: layout.name,
+      color: layout.color,
+      x: layout.x,
+      y: layout.y,
+      owner: row?.owner ?? 'unknown',
+      momentumBand: row?.momentumBand ?? '—',
+      openNeeds: row?.openNeeds ?? 0,
+      highRisks: row?.highRisks ?? 0,
+      resilience: row?.resilience ?? null,
+      activityWeight: nrDashHistoryActivityWeight(row?.momentumHistory ?? []),
+    };
+  });
+}
+
+// --- bundled from tests/fixtures.ts ---
+function emptyNetworks(): Record<NationalNetworkKind, NationalRegionSystemsState['networks']['freight']> {
+  const base = { utilization: 0.4, condition: 'healthy' as const };
+  return {
+    freight: { ...base },
+    energy: { ...base },
+    water: { ...base },
+    trade: { ...base },
+    digital: { ...base },
+  };
+}
+
+export function createAgent23LrFixture(): LivingRegionsWorldView {
+  const regions: Record<string, DynamicRegionalState> = {};
+  COMM_REGION_CODES.forEach((code, i) => {
+    regions[code] = {
+      regionId: code,
+      name: code,
+      development: { tier: i % 2 === 0 ? 'developing' : 'advanced' },
+      economy: { band: 'moderate' },
+      momentum: { band: 'stable', history: [1 + i * 0.1, 1.2 + i * 0.1, 1.15 + i * 0.1] },
+      needs: [{ category: 'transport', status: 'open', severity: 'moderate' }],
+      risks: i === 0 ? [{ severity: 'high' }] : [],
+    };
+  });
+  const state: LivingRegionsState = {
+    revision: 3,
+    regions,
+    derived: [{ turn: 4, text: 'NSW momentum ticked up', significance: 'major' }],
+  };
+  return { state };
+}
+
+export function createAgent23NsFixture(): NationalSystemsState {
+  const regions: Record<string, NationalRegionSystemsState> = {};
+  COMM_REGION_CODES.forEach(code => {
+    regions[code] = {
+      regionId: code,
+      name: code,
+      networks: emptyNetworks(),
+      primaryConstraint: 'freight',
+      resilience: 55,
+      resilienceBand: 'stable',
+    };
+  });
+  const national = {} as NationalSystemsState['national'];
+  NATIONAL_NETWORKS.forEach((n, i) => {
+    national[n] = {
+      utilization: 0.35 + i * 0.05,
+      condition: 'healthy',
+      bottlenecks: 0,
+    };
+  });
+  national.resilienceScore = 58;
+  national.resilienceBand = 'stable';
+  return {
+    revision: 2,
+    turn: 5,
+    regions,
+    bottlenecks: [{ id: 'bn1' }],
+    dependencies: [{ id: 'dep1' }, { id: 'dep2' }],
+    national,
+    history: [{ turn: 5, summary: 'Freight corridor strained in NSW' }],
+  };
+}
+
+// --- bundled from ui/charts.tsx ---
+export interface NrDashSparklineProps {
+  values: number[];
+  width?: number;
+  height?: number;
+  stroke?: string;
+  fill?: string;
+  ariaLabel: string;
+}
+
+export const NrDashSparkline: React.FC<NrDashSparklineProps> = ({
+  values,
+  width = 120,
+  height = 28,
+  stroke = '#38bdf8',
+  fill = 'rgba(56,189,248,0.15)',
+  ariaLabel,
+}) => {
+  const pts = (values || []).filter(v => Number.isFinite(v));
+  if (pts.length < 2) {
+    return (
+      <svg width={width} height={height} aria-label={ariaLabel} role="img" data-testid="nr-dash-sparkline-empty">
+        <line x1={0} y1={height / 2} x2={width} y2={height / 2} stroke="#475569" strokeDasharray="4 3" />
+      </svg>
+    );
+  }
+  const min = Math.min(...pts);
+  const max = Math.max(...pts);
+  const span = max - min || 1;
+  const coords = pts.map((v, i) => {
+    const x = (i / (pts.length - 1)) * width;
+    const y = height - 2 - ((v - min) / span) * (height - 4);
+    return `${x},${y}`;
+  });
+  const poly = `${coords.join(' ')} ${width},${height} 0,${height}`;
+  return (
+    <svg width={width} height={height} aria-label={ariaLabel} role="img" data-testid="nr-dash-sparkline">
+      <polygon points={poly} fill={fill} stroke="none" />
+      <polyline
+        points={coords.join(' ')}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={1.5}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+};
+
+export interface NrDashBarChartProps {
+  items: Array<{ key: string; label: string; value: number; sublabel?: string; color?: string }>;
+  maxValue?: number;
+  height?: number;
+}
+
+export const NrDashBarChart: React.FC<NrDashBarChartProps> = ({ items, maxValue }) => {
+  const max = maxValue ?? Math.max(1, ...items.map(i => i.value));
+  return (
+    <div className="space-y-1" data-testid="nr-dash-bar-chart" role="list">
+      {items.map(it => (
+        <div key={it.key} role="listitem" className="grid grid-cols-[minmax(6rem,8rem)_1fr_auto] gap-2 items-center text-xs">
+          <span className="truncate opacity-90" title={it.label}>
+            {it.label}
+          </span>
+          <div className="h-3 bg-slate-800 rounded overflow-hidden" aria-hidden="true">
+            <div
+              className="h-full rounded transition-all duration-300"
+              style={{
+                width: `${Math.round(nrDashClamp01(it.value / max) * 100)}%`,
+                background: it.color || '#38bdf8',
+              }}
+            />
+          </div>
+          <span className="font-mono opacity-80 w-10 text-right">
+            {Math.round(it.value * (max <= 1 ? 100 : 1))}
+            {max <= 1 ? '%' : ''}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+export const NrDashHeatMatrix: React.FC<{
+  cells: NrDashHeatCell[];
+  rowLabels: string[];
+  colLabels: string[];
+}> = ({ cells, rowLabels, colLabels }) => (
+  <div className="overflow-x-auto" data-testid="nr-dash-heat-matrix">
+    <table className="text-[10px] border-collapse min-w-full">
+      <thead>
+        <tr>
+          <th className="p-1 text-left opacity-70" />
+          {colLabels.map(c => (
+            <th key={c} className="p-1 font-normal opacity-80">
+              {c}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rowLabels.map(row => (
+          <tr key={row}>
+            <th className="p-1 text-left font-semibold pr-2">{row}</th>
+            {colLabels.map(col => {
+              const cell = cells.find(x => x.row === row && x.col === col);
+              const bg = cell ? NR_DASH_COND_COLOR[cell.tone as NationalNetworkCondition] : '#334155';
+              return (
+                <td key={col} className="p-0.5">
+                  <div
+                    className="w-8 h-6 rounded border border-slate-700/80 flex items-center justify-center text-[9px]"
+                    style={{ backgroundColor: `${bg}33`, borderColor: bg }}
+                    title={cell?.title || 'No data'}
+                  >
+                    {cell ? NATIONAL_CONDITION_ICON[cell.tone as NationalNetworkCondition] : '·'}
+                  </div>
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+);
+
+// --- bundled from ui/region-position-map.tsx ---
+export interface RegionPositionMapProps {
+  nodes: RegionMapNode[];
+  focusRegionId?: string | null;
+  width?: number;
+  height?: number;
+  onSelect?: (regionId: string) => void;
+}
+
+const OWNER_RING: Record<RegionMapNode['owner'], string> = {
+  you: '#38bdf8',
+  rival: '#f87171',
+  neutral: '#94a3b8',
+  unknown: '#475569',
+};
+
+/** SVG strategic map — node size from momentum history activity weight in snapshot. */
+export const RegionPositionMap: React.FC<RegionPositionMapProps> = ({
+  nodes,
+  focusRegionId = null,
+  width = 420,
+  height = 260,
+  onSelect,
+}) => (
+  <svg
+    viewBox="0 0 100 115"
+    width={width}
+    height={height}
+    className="rounded-lg border border-slate-700 bg-slate-950/80"
+    data-testid="agent23-region-position-map"
+    role="img"
+    aria-label="Australian regions strategic map"
+  >
+    <rect x={0} y={0} width={100} height={115} fill="#0f172a" />
+    {nodes.map(n => {
+      const r = 2.2 + n.activityWeight * 2.8;
+      const focused = focusRegionId === n.regionId;
+      return (
+        <g key={n.regionId} data-testid={`agent23-map-node-${n.regionId}`}>
+          <circle
+            cx={n.x}
+            cy={n.y}
+            r={r + (focused ? 1.2 : 0)}
+            fill={n.color}
+            fillOpacity={0.85}
+            stroke={OWNER_RING[n.owner]}
+            strokeWidth={focused ? 1.4 : 0.9}
+            onClick={() => onSelect?.(n.regionId)}
+            style={{ cursor: onSelect ? 'pointer' : 'default' }}
+          />
+          <text x={n.x} y={n.y + r + 4} textAnchor="middle" fontSize={3.2} fill="#e2e8f0">
+            {n.regionId}
+          </text>
+          <title>
+            {`${n.name} · ${nrDashOwnerLabel(n.owner)} · ${n.momentumBand} · needs ${n.openNeeds} · risks ${n.highRisks}${
+              n.resilience != null ? ` · resilience ${n.resilience}` : ''
+            }`}
+          </title>
+        </g>
+      );
+    })}
+  </svg>
+);
+
+// --- bundled from ui/dashboard-modal.tsx ---
+const NrDashProvenanceStrip: React.FC<{ items: NrDashProvenance[] }> = ({ items }) => (
+  <div className="flex flex-wrap gap-2 text-[10px] opacity-75" data-testid="nr-dash-provenance">
+    {items.map((p, i) => (
+      <span key={`${p.source}_${i}`} className="px-1.5 py-0.5 rounded border border-slate-600">
+        {p.source === 'living_regions' ? '🗺 LR' : '🔗 NS'} rev {String(p.revision ?? '—')} · {p.detail}
+      </span>
+    ))}
+  </div>
+);
+
+export const NrDashOverviewTab: React.FC<{ snap: NrDashAuthSnapshot; onAsk?: (q: string) => void }> = ({
+  snap,
+  onAsk,
+}) => (
+  <div className="space-y-4" data-testid="nr-dash-tab-overview">
+    <NrDashProvenanceStrip items={snap.provenance} />
+    <div className="grid md:grid-cols-3 gap-3 text-sm">
+      <div className="rounded-lg border border-slate-600/50 p-3">
+        <div className="text-xs opacity-70">National resilience</div>
+        <div className="text-xl font-bold">{snap.nationalResilienceBand ?? '—'}</div>
+        <div className="text-xs opacity-80">
+          {snap.nationalResilience != null ? `${snap.nationalResilience}/100` : 'National Systems off'}
+        </div>
+      </div>
+      <div className="rounded-lg border border-slate-600/50 p-3">
+        <div className="text-xs opacity-70">Active bottlenecks</div>
+        <div className="text-xl font-bold">{snap.bottleneckCount}</div>
+        {onAsk && (
+          <button type="button" className="text-xs underline mt-1" onClick={() => onAsk('Where are the national bottlenecks?')}>
+            Ask Game AI
+          </button>
+        )}
+      </div>
+      <div className="rounded-lg border border-slate-600/50 p-3">
+        <div className="text-xs opacity-70">Interregional dependencies</div>
+        <div className="text-xl font-bold">{snap.dependencyCount}</div>
+      </div>
+    </div>
+    {snap.networks.length > 0 && (
+      <div>
+        <h4 className="font-bold text-sm mb-2">Network utilization (authoritative)</h4>
+        <NrDashBarChart
+          items={snap.networks.map(n => ({
+            key: n.network,
+            label: `${n.icon} ${n.label}`,
+            value: n.utilization,
+            color: NR_DASH_COND_COLOR[n.condition],
+          }))}
+          maxValue={1}
+        />
+      </div>
+    )}
+  </div>
+);
+
+export const NrDashRegionsTab: React.FC<{
+  snap: NrDashAuthSnapshot;
+  focusRegionId: string | null;
+  onFocusRegion?: (id: string) => void;
+}> = ({ snap, focusRegionId, onFocusRegion }) => (
+  <div className="space-y-2" data-testid="nr-dash-tab-regions">
+    <NrDashProvenanceStrip items={snap.provenance.filter(p => p.source === 'living_regions')} />
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="opacity-70 text-left border-b border-slate-700">
+            <th className="py-1 pr-2">Region</th>
+            <th className="py-1 pr-2">Owner</th>
+            <th className="py-1 pr-2">Economy</th>
+            <th className="py-1 pr-2">Momentum</th>
+            <th className="py-1 pr-2">Trend</th>
+            <th className="py-1 pr-2">Needs</th>
+            <th className="py-1 pr-2">Resilience</th>
+          </tr>
+        </thead>
+        <tbody>
+          {snap.regions.map(r => {
+            const focused = focusRegionId === r.regionId;
+            return (
+              <tr
+                key={r.regionId}
+                className={`border-b border-slate-800/80 ${focused ? 'bg-sky-950/40' : ''}`}
+                data-testid={`nr-dash-region-row-${r.regionId}`}
+              >
+                <td className="py-1 pr-2">
+                  <button type="button" className="font-semibold underline" onClick={() => onFocusRegion?.(r.regionId)}>
+                    {r.name}
+                  </button>
+                  <div className="opacity-60">{r.developmentTier}</div>
+                </td>
+                <td className="py-1 pr-2">{nrDashOwnerLabel(r.owner)}</td>
+                <td className="py-1 pr-2">{r.economyBand}</td>
+                <td className="py-1 pr-2">{r.momentumBand}</td>
+                <td className="py-1 pr-2">
+                  <NrDashSparkline values={r.momentumHistory} ariaLabel={`${r.name} momentum history`} width={100} height={24} />
+                </td>
+                <td className="py-1 pr-2">{r.openNeeds || '—'}</td>
+                <td className="py-1 pr-2">{r.resilienceBand ?? '—'}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  </div>
+);
+
+export const NrDashNetworksTab: React.FC<{
+  ns: NationalSystemsState | null;
+  onMapNetwork?: (n: NationalNetworkKind) => void;
+}> = ({ ns, onMapNetwork }) => {
+  if (!ns) {
+    return (
+      <p className="text-sm opacity-80" data-testid="nr-dash-networks-empty">
+        National Systems data is not available in this match.
+      </p>
+    );
+  }
+  const heat = nrDashBuildHeatCells(ns);
+  return (
+    <div className="space-y-3" data-testid="nr-dash-tab-networks">
+      <div className="flex flex-wrap gap-2">
+        {NATIONAL_NETWORKS.map(n => (
+          <button
+            key={n}
+            type="button"
+            className="text-xs px-2 py-1 rounded border border-slate-600 hover:border-sky-500"
+            onClick={() => onMapNetwork?.(n)}
+          >
+            {NATIONAL_NETWORK_ICON[n]} Map {NATIONAL_NETWORK_LABEL[n]}
+          </button>
+        ))}
+      </div>
+      <NrDashHeatMatrix cells={heat.cells} rowLabels={heat.rows} colLabels={heat.cols} />
+      <p className="text-[10px] opacity-70">Cell color reflects network condition from National Systems (not Living Regions).</p>
+    </div>
+  );
+};
+
+export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }) => (
+  <div data-testid="nr-dash-tab-trends">
+    <NrDashProvenanceStrip items={snap.provenance} />
+    {snap.historySnippets.length ? (
+      <ol className="text-xs space-y-1 mt-2 list-decimal list-inside">
+        {snap.historySnippets.map((t, i) => (
+          <li key={i}>{t}</li>
+        ))}
+      </ol>
+    ) : (
+      <p className="text-sm opacity-80">No national or major regional turning points recorded yet.</p>
+    )}
+  </div>
+);
+
+export const NrDashMapTab: React.FC<{
+  snap: NrDashAuthSnapshot;
+  focusRegionId: string | null;
+  onFocusRegion?: (id: string) => void;
+}> = ({ snap, focusRegionId, onFocusRegion }) => {
+  const nodes = useMemo(() => nrDashBuildRegionMapNodes(snap), [snap]);
+  return (
+    <div className="space-y-3" data-testid="nr-dash-tab-map">
+      <NrDashProvenanceStrip items={snap.provenance} />
+      <RegionPositionMap nodes={nodes} focusRegionId={focusRegionId} onSelect={onFocusRegion} />
+      <p className="text-[10px] opacity-70">
+        Node size reflects momentum history span from Living Regions; ring color reflects map owner view from National Systems.
+      </p>
+    </div>
+  );
+};
+
+export interface NationalRegionalDashboardModalProps {
+  open: boolean;
+  onClose: () => void;
+  theme: { card?: string; border?: string; button?: string; buttonSecondary?: string; scrollbar?: string };
+  turn: number;
+  lrView: LivingRegionsWorldView | null;
+  nsState: NationalSystemsState | null;
+  nsView: NationalSystemsWorldView | null;
+  focusRegionId?: string | null;
+  onFocusRegion?: (id: string) => void;
+  onAsk?: (q: string) => void;
+  onMapNetwork?: (n: NationalNetworkKind) => void;
+}
+
+export const NationalRegionalDashboardModal: React.FC<NationalRegionalDashboardModalProps> = ({
+  open,
+  onClose,
+  theme,
+  turn,
+  lrView,
+  nsState,
+  nsView,
+  focusRegionId = null,
+  onFocusRegion,
+  onAsk,
+  onMapNetwork,
+}) => {
+  const [tab, setTab] = useState<NrDashTabId>('overview');
+  useEffect(() => {
+    if (open) setTab('overview');
+  }, [open]);
+  const snap = useMemo(
+    () => nrDashBuildAuthSnapshot(turn, lrView, nsState, nsView?.regionOwners || null),
+    [turn, lrView, nsState, nsView]
+  );
+  if (!open) return null;
+  const card = theme.card || '';
+  const border = theme.border || 'border-slate-700';
+  return (
+    <div
+      className="fixed inset-0 bg-black/60 flex items-start justify-center p-4 overflow-y-auto z-[9600]"
+      data-testid="national-regional-dashboard-modal"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="nr-dash-title"
+    >
+      <div
+        className={`${card} ${border} border rounded-xl max-w-5xl w-full max-h-[calc(100dvh-2rem)] flex flex-col`}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className={`flex justify-between items-center p-4 border-b ${border}`}>
+          <div>
+            <h2 id="nr-dash-title" className="text-xl font-bold">
+              📊 National & regional dashboard
+            </h2>
+            <p className="text-xs opacity-75">Round {turn} · authoritative Living Regions + National Systems</p>
+          </div>
+          <button
+            type="button"
+            className={`${theme.buttonSecondary || ''} px-3 py-1 rounded`}
+            onClick={onClose}
+            aria-label="Close dashboard"
+          >
+            ✕
+          </button>
+        </div>
+        <div className={`flex flex-wrap gap-1 px-4 pt-3 border-b ${border}`} role="tablist">
+          {NR_DASH_TAB_ORDER.map(id => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={tab === id}
+              className={`px-3 py-1.5 text-xs rounded-t border-b-2 ${tab === id ? 'border-sky-400 font-bold' : 'border-transparent opacity-70'}`}
+              onClick={() => setTab(id)}
+            >
+              {NR_DASH_TAB_LABELS[id]}
+            </button>
+          ))}
+        </div>
+        <div className={`flex-1 overflow-y-auto p-4 ${theme.scrollbar || ''}`}>
+          {!snap ? (
+            <p className="text-sm opacity-80">Enable Living Regions or National Systems to populate this dashboard.</p>
+          ) : tab === 'overview' ? (
+            <NrDashOverviewTab snap={snap} onAsk={onAsk} />
+          ) : tab === 'regions' ? (
+            <NrDashRegionsTab snap={snap} focusRegionId={focusRegionId} onFocusRegion={onFocusRegion} />
+          ) : tab === 'networks' ? (
+            <NrDashNetworksTab ns={nsState} onMapNetwork={onMapNetwork} />
+          ) : tab === 'map' ? (
+            <NrDashMapTab snap={snap} focusRegionId={focusRegionId} onFocusRegion={onFocusRegion} />
+          ) : (
+            <NrDashTrendsTab snap={snap} />
+          )}
+        </div>
+        <div className={`p-3 border-t ${border} flex justify-end`}>
+          <button type="button" className={`${theme.button || ''} px-4 py-2 rounded`} onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- bundled from tests/agent23-self-tests.ts ---
+export function summarizeAgent23Tests(results: Agent23TestResult[]): {
+  total: number;
+  passed: number;
+  failed: Agent23TestResult[];
+} {
+  const failed = results.filter(r => !r.passed);
+  return { total: results.length, passed: results.length - failed.length, failed };
+}
+
+export function runAgent23SelfTests(): Agent23TestResult[] {
+  const results: Agent23TestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  check('a23_null_snap', 'Snapshot null when LR and NS missing', () => nrDashBuildAuthSnapshot(1, null, null, null) === null);
+
+  check('a23_lr_only', 'LR-only snapshot has 8 regions and provenance', () => {
+    const lr = createAgent23LrFixture();
+    const snap = nrDashBuildAuthSnapshot(5, lr, null, null);
+    return Boolean(
+      snap && snap.regions.length === COMM_REGION_CODES.length && snap.provenance.some(p => p.source === 'living_regions')
+    );
+  });
+
+  check('a23_ns_only', 'NS-only snapshot exposes five network bars', () => {
+    const ns = createAgent23NsFixture();
+    const snap = nrDashBuildAuthSnapshot(5, null, ns, null);
+    return Boolean(snap && snap.networks.length === 5 && snap.provenance.some(p => p.source === 'national_systems'));
+  });
+
+  check('a23_heat_full', 'Heat matrix covers region × network grid', () => {
+    const ns = createAgent23NsFixture();
+    const heat = nrDashBuildHeatCells(ns);
+    const expected = Object.keys(ns.regions).length * NATIONAL_NETWORKS.length;
+    return heat.cells.length === expected || `cells=${heat.cells.length} expected=${expected}`;
+  });
+
+  check('a23_map_layout', 'Strategic map layout lists eight AU codes', () => AGENT23_REGION_MAP_LAYOUT.length === 8);
+
+  check('a23_map_nodes', 'Map nodes align to layout ids', () => {
+    const snap = nrDashBuildAuthSnapshot(3, createAgent23LrFixture(), null, null)!;
+    const nodes = nrDashBuildRegionMapNodes(snap);
+    return nodes.length === 8 && nodes.every(n => COMM_REGION_CODES.includes(n.regionId as (typeof COMM_REGION_CODES)[number]));
+  });
+
+  check('a23_activity_weight', 'History activity weight is bounded 0..1', () => {
+    const w = nrDashHistoryActivityWeight([0, 2, 4]);
+    return w > 0 && nrDashClamp01(1.5) === 1;
+  });
+
+  check('a23_owner_labels', 'Owner labels', () =>
+    nrDashOwnerLabel('you') === 'You' && nrDashOwnerLabel('rival') === 'Rival' && nrDashOwnerLabel('unknown') === '—'
+  );
+
+  check('a23_merged_counts', 'Merged snapshot counts bottlenecks and deps from NS', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), { NSW: 'you' })!;
+    return snap.bottleneckCount === 1 && snap.dependencyCount === 2 && snap.regions.find(r => r.regionId === 'NSW')?.owner === 'you';
+  });
+
+  for (const code of COMM_REGION_CODES) {
+    check(`a23_region_${code.toLowerCase()}`, `Regional row includes ${code}`, () => {
+      const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+      return snap.regions.some(r => r.regionId === code) || `missing ${code}`;
+    });
+  }
+
+  for (const net of NATIONAL_NETWORKS) {
+    check(`a23_net_${net}`, `Network bar includes ${net}`, () => {
+      const snap = nrDashBuildAuthSnapshot(2, null, createAgent23NsFixture(), null)!;
+      return snap.networks.some(n => n.network === net);
+    });
+  }
+
+  check('a23_history_snippets', 'History snippets merge NS history and LR majors', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    return snap.historySnippets.length >= 2;
+  });
+
+  return results;
+}
+
+/** Merge hook name expected by Agent 25 assembly. */
+export function runAgent23NationalRegionalDashboardSelfTests(): Agent23TestResult[] {
+  return runAgent23SelfTests();
+}
+
+
+export const OP10M_AGENT23_MODULE_META = {
+  moduleId: 'agent-23-dashboards',
+  schemaVersion: 'op10m-agent23-v1',
+  integrationDoc: 'operation-10m/agent-23-dashboards/merge/INTEGRATION.md',
+  slot: 'post-living-regions-national-systems',
+  readOnly: true,
+} as const;
+// OP10M_MODULE_END agent-23-dashboards
+

@@ -6,7 +6,8 @@
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 5173",
-    "test:agent23": "tsx operation-10m/agent-23-dashboards/verify/run.mts"
+    "test:agent23": "tsx operation-10m/agent-23-dashboards/verify/run.mts",
+    "bundle:agent-23-chunk": "node operation-10m/agent-23-dashboards/scripts/bundle-chunk.mjs"
   },
   "dependencies": {
     "react": "19.3.1",

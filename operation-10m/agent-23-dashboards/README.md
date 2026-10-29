@@ -23,7 +23,10 @@ No recomputation of LR/NS engines inside this module; snapshots and charts bind 
 
 ```bash
 npx tsx operation-10m/agent-23-dashboards/verify/run.mts
+npm run bundle:agent-23-chunk
 ```
+
+Assembly artifact: `operation-10m/modules/agent-23-dashboards/chunk.tsx` (`OP10M_MODULE_BEGIN agent-23-dashboards`).
 
 Set `CANONICAL_SMOKE=0` to skip optional V9.4 export check pre-merge.
 
