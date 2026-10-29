@@ -45,7 +45,8 @@ Suggested marker:
 - `computePublicServiceCapacity`
 - `advanceDelayedSpendingEffects` / `commitSpendingProgram` / `makeSpendingCommitment`
 - `runAgent14WellbeingSelfTests`
-- `AGENT14_WELLBEING_SCHEMA_VERSION`
+- `runAgent14HousingScenarioSweep` / `simulateAgent14HousingScenario`
+- `AGENT14_WELLBEING_SCHEMA_VERSION` (`10.14.2-housing-depth`)
 
 ## Upstream inputs (read-only)
 

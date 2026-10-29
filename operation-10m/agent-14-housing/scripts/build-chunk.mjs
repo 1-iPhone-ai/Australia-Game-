@@ -15,9 +15,12 @@ const outFile = path.join(outDir, 'chunk.tsx');
 const FILES = [
   'types.ts',
   'constants.ts',
+  'housing-delivery-pipeline.ts',
+  'national-wellbeing-snapshot.ts',
   'public-service-capacity.ts',
   'delayed-spending-effects.ts',
   'turn-advance.ts',
+  'scenario-sweep.ts',
   'self-tests.ts',
 ];
 

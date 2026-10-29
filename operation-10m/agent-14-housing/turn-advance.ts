@@ -1,4 +1,6 @@
 import { advanceDelayedSpendingEffects, commitSpendingProgram } from './delayed-spending-effects.ts';
+import { computeAllRegionalHousingPipelines } from './housing-delivery-pipeline.ts';
+import { computeNationalHousingWellbeingSnapshot } from './national-wellbeing-snapshot.ts';
 import {
   canAcceptSpendingCommitment,
   computePublicServiceCapacity,
@@ -50,6 +52,15 @@ export function advancePublicServicesTurn(
 
   const capacity = computePublicServiceCapacity(args.inputs, spendingPersisted.active);
 
+  const fiscalHeadroom = args.inputs.fiscalHeadroom ?? 55;
+  const regionalPipelines = computeAllRegionalHousingPipelines(
+    turn,
+    capacity,
+    effects,
+    fiscalHeadroom
+  );
+  const housingWellbeing = computeNationalHousingWellbeingSnapshot(turn, regionalPipelines);
+
   const enriched: EnrichedPublicServiceTurnInputs = {
     ...args.inputs,
     turn,
@@ -62,6 +73,7 @@ export function advancePublicServicesTurn(
     activeProgramCount: spendingPersisted.active.length,
     capacity,
     spending: effects,
+    housingWellbeing,
   };
 
   return { inputs: enriched, spendingPersisted, rejectedCommitments };

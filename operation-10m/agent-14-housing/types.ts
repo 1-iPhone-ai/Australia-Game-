@@ -1,6 +1,6 @@
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.1-capacity-delay' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.2-housing-depth' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -88,4 +88,39 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   activeProgramCount: number;
   capacity: PublicServiceCapacitySnapshot;
   spending: DelayedSpendingTurnEffects;
+  housingWellbeing?: NationalHousingWellbeingSnapshot;
+}
+
+export type HousingPipelineStage =
+  | 'planning'
+  | 'approvals'
+  | 'construction'
+  | 'handover'
+  | 'stabilized';
+
+export type AffordabilityStressBand = 'low' | 'moderate' | 'elevated' | 'severe';
+
+export interface RegionalHousingPipelineState {
+  regionId: string;
+  stage: HousingPipelineStage;
+  planningBacklogMonths: number;
+  dwellingsInPipeline: number;
+  socialHousingCompletionsRate: number;
+  affordabilityStress: AffordabilityStressBand;
+  affordabilityIndex: number;
+  remoteShare: number;
+  deliveryPressure: number;
+  evidence: string[];
+}
+
+export interface NationalHousingWellbeingSnapshot {
+  turn: number;
+  nationalAffordabilityIndex: number;
+  affordabilityStress: AffordabilityStressBand;
+  averagePlanningBacklogMonths: number;
+  totalDwellingsInPipeline: number;
+  socialCompletionsIndex: number;
+  regionalEquityGap: number;
+  regions: Record<string, RegionalHousingPipelineState>;
+  narrativeSummary: string;
 }
