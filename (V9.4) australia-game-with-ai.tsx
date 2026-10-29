@@ -6856,9 +6856,10 @@ export function validateActionPointRequest(
   canOverride: boolean;
   overrideCost: number;
   reason?: string;
+  code?: 'UNMAPPED_ACTION_ID' | 'INSUFFICIENT_AP' | 'ACTION_LIMITS_OFF';
 } {
   if (!settings || settings.actionLimitsEnabled === false) {
-    return { allowed: true, actionId: normalizeActionPointId(actionId), cost: 0, remaining: Infinity, missing: 0, canOverride: false, overrideCost: 0 };
+    return { allowed: true, actionId: normalizeActionPointId(actionId), cost: 0, remaining: Infinity, missing: 0, canOverride: false, overrideCost: 0, code: 'ACTION_LIMITS_OFF' };
   }
   const normId = normalizeActionPointId(actionId);
   if (!normId || normId === 'end_turn') {
@@ -6866,7 +6867,17 @@ export function validateActionPointRequest(
     if (!normId && actionId) {
       console.warn(`[validateActionPointRequest] Unmapped action identifier '${actionId}' passed; fail-open fallback returning cost 0.`);
     }
-    return { allowed: true, actionId: normId, cost: 0, remaining: getRemainingActionPoints(actor, settings), missing: 0, canOverride: false, overrideCost: 0, reason: !normId ? `Unmapped action identifier '${actionId}'` : undefined };
+    return {
+      allowed: true,
+      actionId: normId,
+      cost: 0,
+      remaining: getRemainingActionPoints(actor, settings),
+      missing: 0,
+      canOverride: false,
+      overrideCost: 0,
+      reason: !normId ? `Unmapped action identifier '${actionId}'` : undefined,
+      code: !normId && actionId ? 'UNMAPPED_ACTION_ID' : undefined
+    };
   }
   const isAi = Boolean(actor?.isAi || actor?.kind === 'ai');
   const cost = getActionPointCost(normId, settings, isAi);
@@ -6895,7 +6906,8 @@ export function validateActionPointRequest(
     missing,
     canOverride,
     overrideCost,
-    reason: canOverride ? 'Action point limit reached. Override available.' : 'Action point limit reached.'
+    reason: canOverride ? 'Action point limit reached. Override available.' : 'Action point limit reached.',
+    code: 'INSUFFICIENT_AP'
   };
 }
 
@@ -11338,6 +11350,7 @@ export function reduceGameAction(
       const usedAtStart = Number(actor?.actionsUsedThisTurn) || 0;
 
       let actionExecuted = false;
+      let commandRejectionReason: string | undefined;
 
       switch (action.type as string) {
         case 'copilot_telemetry_noop':
@@ -12101,6 +12114,8 @@ export function reduceGameAction(
             actor.money -= mpRes.moneySpent;
             (nextState as any).megaprojects = mpRes.persisted;
             actionExecuted = true;
+          } else {
+            commandRejectionReason = mpRes.reason || 'Megaproject command rejected.';
           }
           break;
         }
@@ -13429,7 +13444,8 @@ export function reduceGameAction(
         nextState,
         actionAttemptId,
         stateHash,
-        ledgerEvent
+        ledgerEvent,
+        error: commandRejectionReason
       };
     });
   });
@@ -130357,6 +130373,15 @@ export function buildBlockedActionHelp(kind: string, blocker: string, ctx: { cas
     asks.push('How do Actions work?');
   } else if (/objective/i.test(text)) {
     conceptId = 'contracts'; need = 'every contract objective completed'; how.push('Use Deliver / Progress in the target region'); nav = navAction('contracts', 'Open Contracts'); asks.push('How do I complete this contract?');
+  } else if (/Decide|program|megaproject|stage|commit the program|Labour must be on site|Minimum contribution/i.test(text) || kind === 'megaproject') {
+    conceptId = 'infrastructure';
+    if (/Decide/.test(text)) { need = 'a design decision before this stage can finish'; how.push('Open National Programs and record your choice (choices are permanent)'); }
+    else if (/Commit the program first/i.test(text)) { need = 'the program committed before contributions'; how.push('Use Commit with an opening capital contribution'); }
+    else if (/Labour must be on site/i.test(text)) { need = 'to be in the required region for on-site labour'; how.push(`Travel to the site region (${ctx.currentRegionName} is where you are now)`); nav = navAction('map', 'Open Map'); }
+    else if (/Minimum contribution/i.test(text)) { need = text.match(/Minimum contribution is \$(\d[\d,]*)/)?.[0]?.replace('Minimum contribution is ', '') || 'a larger contribution'; how.push('Increase the contribution amount or wait until the stage needs less'); }
+    else if (/No actions left/i.test(text)) { conceptId = 'action_points'; need = 'an Action'; how.push('End your turn — Actions refresh next turn'); }
+    else how.push('Check program eligibility and stage prerequisites in National Programs');
+    asks.push('What do I need for this national program?');
   } else {
     how.push('Ask the game for the options available right now'); asks.push('Why is this blocked?');
   }
@@ -133832,6 +133857,43 @@ export function createFeelSnapshotFixture(o: Partial<FeelSnapshot> = {}): FeelSn
   };
 }
 
+
+export function runCommandInterpretationSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  check('cmd12_mp_missing_op', 'Megaproject interpret rejects missing op with a clear message', () => {
+    const r = interpretMegaprojectCommand({});
+    return !r.ok && r.errors.some(e => e.code === 'missing_field') && /Missing op/.test(formatCommandInterpretationErrors(r.errors));
+  });
+  check('cmd12_mp_bad_amount', 'Megaproject interpret rejects non-numeric amounts', () => {
+    const r = interpretMegaprojectCommand({ op: 'contribute', programId: 'mp_x', amount: 'lots' });
+    return !r.ok && r.errors.some(e => e.code === 'invalid_amount');
+  });
+  check('cmd12_mp_ok', 'Megaproject interpret accepts a minimal valid propose', () => {
+    const kind = MEGAPROJECT_DEFINITIONS[0]?.kind;
+    if (!kind) return 'no catalog';
+    const r = interpretMegaprojectCommand({ op: 'propose', kind });
+    return r.ok && r.value?.op === 'propose' && r.value.kind === kind;
+  });
+  check('cmd12_ap_code', 'Action point validation exposes UNMAPPED_ACTION_ID code', () => {
+    const r = validateActionPointRequest({ actionsUsedThisTurn: 0 }, 'not_a_real_action_type', { actionLimitsEnabled: true, playerActionsPerDay: 3 });
+    return r.code === 'UNMAPPED_ACTION_ID' && r.allowed === true;
+  });
+  check('cmd12_reduce_error', 'reduceGameAction returns error text when megaproject command fails', () => {
+    const base: any = JSON.parse(JSON.stringify(initialGameState));
+    base.player = { ...base.player, id: 'player', money: 100, actionsUsedThisTurn: 0, currentRegion: 'NSW' };
+    base.actorsById = { player: base.player };
+    base.megaprojects = createEmptyMegaprojectsPersisted();
+    const bundle: any = { gameState: base, player: base.player, actorsById: base.actorsById, gameSettings: { ...DEFAULT_GAME_SETTINGS, megaprojectsEnabled: true, nationalSystemsEnabled: true, actionLimitsEnabled: false } };
+    const res = reduceGameAction(bundle, { type: 'megaproject_command', actorId: 'player', parameters: { command: { op: 'contribute', programId: 'missing' }, derived: {} } } as any, { active: true, operation: 'megaproject_command', actorId: 'player' });
+    return res.success === false && typeof res.error === 'string' && res.error.length > 0;
+  });
+  return results;
+}
+
 export function runV94GameFeelPolishSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
   const check = (id: string, name: string, fn: () => boolean | string) => {
@@ -136512,6 +136574,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
+  { id: 'cmd12', label: 'Command Interpretation', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runCommandInterpretationSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
@@ -142422,6 +142485,109 @@ export type MegaprojectDerivedKind = 'megaproject_proposed' | 'megaproject_commi
 export interface MegaprojectDerivedEvent { id: string; turn: number; kind: MegaprojectDerivedKind; programId: string; programKind: MegaprojectKind; regionIds: string[]; actorId: string | null; text: string; significance: 'meaningful' | 'major'; evidence: string[]; projectIds: string[]; projectTypes: string[]; contributorIds: string[] }
 export interface MegaprojectCommand { op: MegaprojectCommandOp; kind?: MegaprojectKind; programId?: string; amount?: number; labor?: number; choiceId?: string; optionId?: string }
 export interface MegaprojectActorContext { id: string; kind: 'human' | 'ai'; teamId: string | null; money: number; currentRegion: string | null; apRemaining: number; apCost: number; turnOwner: boolean }
+
+/** Structured outcome when parsing player/AI/UI payloads into canonical commands (before world validation). */
+export type CommandInterpretationErrorCode =
+  | 'invalid_payload'
+  | 'missing_field'
+  | 'unknown_op'
+  | 'unknown_kind'
+  | 'invalid_amount'
+  | 'invalid_program_id'
+  | 'missing_choice'
+  | 'unmapped_action_id';
+
+export interface CommandInterpretationError { code: CommandInterpretationErrorCode; message: string; field?: string }
+
+export interface CommandInterpretationResult<T> { ok: boolean; value: T | null; errors: CommandInterpretationError[] }
+
+const MEGAPROJECT_COMMAND_OPS: MegaprojectCommandOp[] = ['propose', 'commit', 'contribute', 'choose', 'suspend', 'resume'];
+
+/** Normalize a loose UI/AI payload into a MegaprojectCommand (does not check game rules). */
+export function interpretMegaprojectCommand(raw: unknown): CommandInterpretationResult<MegaprojectCommand> {
+  const errors: CommandInterpretationError[] = [];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ok: false, value: null, errors: [{ code: 'invalid_payload', message: 'Megaproject command must be an object.' }] };
+  }
+  const src = raw as Record<string, unknown>;
+  const opRaw = typeof src.op === 'string' ? src.op.trim().toLowerCase() : '';
+  if (!opRaw) errors.push({ code: 'missing_field', message: 'Missing op (propose, commit, contribute, choose, suspend, or resume).', field: 'op' });
+  else if (!MEGAPROJECT_COMMAND_OPS.includes(opRaw as MegaprojectCommandOp)) {
+    errors.push({ code: 'unknown_op', message: `Unknown megaproject op "${String(src.op)}".`, field: 'op' });
+  }
+  const op = (errors.length ? null : opRaw) as MegaprojectCommandOp | null;
+  let kind: MegaprojectKind | undefined;
+  if (typeof src.kind === 'string' && src.kind.trim()) {
+    const k = src.kind.trim() as MegaprojectKind;
+    if (MEGAPROJECT_DEF_BY_KIND[k]) kind = k;
+    else errors.push({ code: 'unknown_kind', message: `Unknown program kind "${src.kind}".`, field: 'kind' });
+  }
+  let programId: string | undefined;
+  if (src.programId !== undefined && src.programId !== null && src.programId !== '') {
+    programId = String(src.programId).slice(0, 120);
+  }
+  const parseOptionalInt = (field: 'amount' | 'labor', v: unknown): number | undefined => {
+    if (v === undefined || v === null || v === '') return undefined;
+    const n = typeof v === 'number' ? v : Number(String(v).replace(/[$,\s]/g, ''));
+    if (!Number.isFinite(n) || n < 0) {
+      errors.push({ code: 'invalid_amount', message: `Invalid ${field} "${String(v)}".`, field });
+      return undefined;
+    }
+    return Math.floor(n);
+  };
+  const amount = parseOptionalInt('amount', src.amount);
+  const labor = parseOptionalInt('labor', src.labor);
+  const choiceId = typeof src.choiceId === 'string' && src.choiceId.trim() ? src.choiceId.trim().slice(0, 80) : undefined;
+  const optionId = typeof src.optionId === 'string' && src.optionId.trim() ? src.optionId.trim().slice(0, 80) : undefined;
+  if (op === 'propose' && !kind) errors.push({ code: 'missing_field', message: 'Propose requires a program kind.', field: 'kind' });
+  if (op === 'choose') {
+    if (!choiceId) errors.push({ code: 'missing_choice', message: 'Choose requires choiceId.', field: 'choiceId' });
+    if (!optionId) errors.push({ code: 'missing_choice', message: 'Choose requires optionId.', field: 'optionId' });
+  }
+  if ((op === 'commit' || op === 'contribute' || op === 'suspend' || op === 'resume' || op === 'choose') && !programId && !kind) {
+    errors.push({ code: 'missing_field', message: 'This command requires programId or kind.', field: 'programId' });
+  }
+  if (errors.length) return { ok: false, value: null, errors };
+  return {
+    ok: true,
+    value: { op: op!, ...(kind ? { kind } : {}), ...(programId ? { programId } : {}), ...(amount !== undefined ? { amount } : {}), ...(labor !== undefined ? { labor } : {}), ...(choiceId ? { choiceId } : {}), ...(optionId ? { optionId } : {}) },
+    errors: []
+  };
+}
+
+/** Human-readable summary of interpretation errors (for notifications and blocked-action help). */
+export function formatCommandInterpretationErrors(errors: CommandInterpretationError[]): string {
+  if (!errors.length) return 'Invalid command.';
+  return errors.map(e => e.message).slice(0, 3).join(' ');
+}
+
+/** Team commands parsed from language must still reference real teammates and known regions. */
+export function validateTeamCommandIntent(cmd: TeamCommandIntent | null, world: Pick<GIWorld, 'actors' | 'regions'>): { ok: boolean; reason?: string; code?: string } {
+  if (!cmd) return { ok: false, reason: 'Not a team command.', code: 'empty' };
+  const mateIds = new Set(world.actors.filter(a => a.relation === 'teammate').map(a => a.id));
+  const regionCodes = new Set(Object.keys(world.regions || {}));
+  for (const r of cmd.responsibilities) {
+    if (r.actorId !== 'player' && r.actorId !== 'both' && !mateIds.has(r.actorId)) {
+      return { ok: false, reason: `Unknown teammate "${r.actorId}" in this command.`, code: 'unknown_teammate' };
+    }
+    if (r.regionId && !regionCodes.has(r.regionId)) {
+      return { ok: false, reason: `Unknown region "${r.regionId}" in this command.`, code: 'unknown_region' };
+    }
+  }
+  for (const d of cmd.deprioritizedRegions) {
+    if (!regionCodes.has(d)) return { ok: false, reason: `Unknown region "${d}" to deprioritize.`, code: 'unknown_region' };
+  }
+  for (const c of cmd.contingencies) {
+    if (c.regionId && !regionCodes.has(c.regionId)) return { ok: false, reason: `Unknown region "${c.regionId}" in a contingency.`, code: 'unknown_region' };
+    if (c.supportRegionId && !regionCodes.has(c.supportRegionId)) return { ok: false, reason: `Unknown support region "${c.supportRegionId}".`, code: 'unknown_region' };
+    if (c.actorId && c.actorId !== 'player' && !mateIds.has(c.actorId)) return { ok: false, reason: `Unknown teammate "${c.actorId}" in a contingency.`, code: 'unknown_teammate' };
+  }
+  if (cmd.reserveFloor !== null && (!Number.isFinite(cmd.reserveFloor) || cmd.reserveFloor < 0)) {
+    return { ok: false, reason: 'Reserve floor must be a non-negative amount.', code: 'invalid_reserve' };
+  }
+  return { ok: true };
+}
+
 
 // ---- Curated catalog (8 distinct programs over canonical project ids) -------------------------------------
 const mpq = (id: string, kind: MegaprojectPrerequisiteKind, label: string, extra: Partial<MegaprojectPrerequisite> = {}): MegaprojectPrerequisite => ({ id, kind, label, ...extra });
@@ -212716,6 +212882,15 @@ function dispatchGameSettingsChange(
     const view = teamOsViewRef.current;
     const inputs = view?.inputs || null;
     if (!view || !inputs) { addNotification('Team Intelligence is not active in this match.', 'warning', false, 'system'); return false; }
+    const giWorld = giWorldBuilderRef.current?.();
+    if (giWorld) {
+      const cmdCheck = validateTeamCommandIntent(command, giWorld);
+      if (!cmdCheck.ok) {
+        addNotification(`🧭 Team command not applied: ${cmdCheck.reason || 'Invalid team command.'}`.slice(0, 200), 'warning', false, 'system');
+        reportBlockedActionRef.current?.('team_command', cmdCheck.reason || 'Invalid team command.');
+        return false;
+      }
+    }
     const team: any = (teamsById as any)?.[teamOsTeamId];
     const route = routeTeamStrategyChange({ summary, teamId: teamOsTeamId, proposerActorId: String(player?.id || 'player') }, team, gameSettings, gameState);
     if (!route.approved) {
@@ -214143,18 +214318,22 @@ function dispatchGameSettingsChange(
   }, [mpEnabled, gameState.gameMode, gameState.infrastructureProjects]);
   /** One command through the canonical reducer (validation + cash exactly once). The AI's AP is counted by executeAiAction. */
   const mpRunCommand = useCallback((who: 'human' | 'ai', cmd: MegaprojectCommand): { ok: boolean; reason: string | null } => {
+    const interpreted = interpretMegaprojectCommand(cmd);
+    if (!interpreted.ok || !interpreted.value) {
+      return { ok: false, reason: formatCommandInterpretationErrors(interpreted.errors) };
+    }
+    const canonicalCmd = interpreted.value;
     const human: any = playerRef.current; const ai: any = aiPlayerRef.current;
     const actorId = who === 'ai' ? 'ai' : String(human?.id || 'player');
     const act: any = who === 'ai' ? ai : human;
     const bundle: any = { gameState: gameStateLiveRef.current, player: human, aiPlayer: ai, actorsById: { [String(human?.id || 'player')]: human, player: human, ...(ai ? { ai } : {}) }, gameSettings };
     const derived = { national: nsStateRef.current, industries: scStateRef.current, networks: inStateRef.current };
-    const res = reduceGameAction(bundle, { type: 'megaproject_command', actorId, teamId: act?.teamId, parameters: { command: cmd, derived } } as any, { active: true, operation: 'megaproject_command', actorId, teamId: act?.teamId } as ActionExecutionContext);
+    const res = reduceGameAction(bundle, { type: 'megaproject_command', actorId, teamId: act?.teamId, parameters: { command: canonicalCmd, derived } } as any, { active: true, operation: 'megaproject_command', actorId, teamId: act?.teamId } as ActionExecutionContext);
     const dg = mpDiagRef.current; dg.commands += 1;
     if (!res?.success) {
       dg.rejected += 1;
-      const limitsOn = gameSettings.actionLimitsEnabled !== false;
-      const why = applyMegaprojectCommand(mpPersistedRef.current, cmd, { id: actorId, kind: who, teamId: act?.teamId || null, money: Number(act?.money) || 0, currentRegion: act?.currentRegion || null,
-        apRemaining: limitsOn ? getRemainingActionPoints(act, gameSettings) : Number.POSITIVE_INFINITY, apCost: limitsOn ? 1 : 0, turnOwner: who === 'ai' || !isHumanLockedOutForSoloRival(gameStateLiveRef.current, 'human') }, mpWorldRef.current).reason;
+      const why = res?.error || applyMegaprojectCommand(mpPersistedRef.current, canonicalCmd, { id: actorId, kind: who, teamId: act?.teamId || null, money: Number(act?.money) || 0, currentRegion: act?.currentRegion || null,
+        apRemaining: gameSettings.actionLimitsEnabled !== false ? getRemainingActionPoints(act, gameSettings) : Number.POSITIVE_INFINITY, apCost: gameSettings.actionLimitsEnabled !== false ? 1 : 0, turnOwner: who === 'ai' || !isHumanLockedOutForSoloRival(gameStateLiveRef.current, 'human') }, mpWorldRef.current).reason;
       return { ok: false, reason: why || 'Not possible right now.' };
     }
     const next: any = res.nextState;
@@ -231565,7 +231744,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = isolateLabSelfTestRun(() => [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV95ReleaseReadinessSelfTests({ stressTurns: 30 })]);
+            const sync = isolateLabSelfTestRun(() => [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runCommandInterpretationSelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV95ReleaseReadinessSelfTests({ stressTurns: 30 })]);
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
