@@ -114,6 +114,12 @@ import { nrDashBuildNationalConditionGap } from '../core/national-condition-gap.
 import { nrDashBuildDependencyLowShare } from '../core/dependency-low-share.ts';
 import { nrDashBuildBottleneckNetworkSeverityLoadSpread } from '../core/bottleneck-network-severity-load-spread.ts';
 import { nrDashBuildMomentumBandSpan } from '../core/momentum-band-span.ts';
+import { nrDashBuildEconomyBandSpan } from '../core/economy-band-span.ts';
+import { nrDashBuildResilienceBandSpan } from '../core/resilience-band-span.ts';
+import { nrDashBuildModerateRiskShare } from '../core/moderate-risk-share.ts';
+import { nrDashBuildNationalBottleneckGap } from '../core/national-bottleneck-gap.ts';
+import { nrDashBuildDependencyConsumerSpan } from '../core/dependency-consumer-span.ts';
+import { nrDashBuildMapPulseSpan } from '../core/map-pulse-span.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -316,6 +322,22 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const modRisk = nrDashBuildModerateRiskShare(lrView);
+      return modRisk ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-moderate-risk-share">
+          Moderate risk share {modRisk.moderateShare} · {modRisk.moderateCount}/{modRisk.riskCount} risks
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const bnGap = nrDashBuildNationalBottleneckGap(nsState);
+      return bnGap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-bottleneck-gap">
+          National bottleneck gap {bnGap.gap} · national bars {bnGap.nationalBarTotal} vs list {bnGap.activeListCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const needsSpread = nrDashBuildOpenNeedsSpread(snap);
       return needsSpread ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-open-needs-spread">
@@ -420,6 +442,24 @@ export const NrDashRegionsTab: React.FC<{
         </div>
       ) : null;
     })()}
+    {(() => {
+      const econSpan = nrDashBuildEconomyBandSpan(snap);
+      return econSpan ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-economy-band-span">
+          Economy band span {econSpan.rankSpread} · rank {econSpan.minRank}–{econSpan.maxRank} across {econSpan.regionCount}{' '}
+          regions
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const resSpan = nrDashBuildResilienceBandSpan(snap);
+      return resSpan ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-resilience-band-span">
+          Resilience band span {resSpan.rankSpread} · rank {resSpan.minRank}–{resSpan.maxRank} across {resSpan.regionCount}{' '}
+          regions
+        </div>
+      ) : null;
+    })()}
     <NrDashRegionsDepthStrip
       spread={nrDashBuildResilienceSpread(snap)}
       outliers={nrDashTopParityOutliers(snap, 3)}
@@ -468,16 +508,25 @@ export const NrDashRegionsTab: React.FC<{
         </div>
       ) : null;
     })()}
-    {(() => {
-      const load = nrDashBuildDependencyConsumerLoad(nsState);
-      return load ? (
-        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dep-consumer-load">
-          Dependency consumer load σ {load.stdDev} · μ {load.meanEdgesPerConsumer} edges/consumer ({load.edgeCount} edges)
-        </div>
-      ) : null;
-    })()}
-    {(() => {
-      const providers = nrDashBuildDependencyProviderLoad(nsState);
+      {(() => {
+        const load = nrDashBuildDependencyConsumerLoad(nsState);
+        return load ? (
+          <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dep-consumer-load">
+            Dependency consumer load σ {load.stdDev} · μ {load.meanEdgesPerConsumer} edges/consumer ({load.edgeCount} edges)
+          </div>
+        ) : null;
+      })()}
+      {(() => {
+        const consumerSpan = nrDashBuildDependencyConsumerSpan(nsState);
+        return consumerSpan ? (
+          <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dep-consumer-span">
+            Dependency consumer span {consumerSpan.spanRatio} · {consumerSpan.distinctConsumers}/{consumerSpan.regionSlots}{' '}
+            slots
+          </div>
+        ) : null;
+      })()}
+      {(() => {
+        const providers = nrDashBuildDependencyProviderLoad(nsState);
       return providers ? (
         <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dep-provider-load">
           Dependency provider load σ {providers.stdDev} · μ {providers.meanEdgesPerProvider} edges/provider ({providers.edgeCount}{' '}
@@ -1064,6 +1113,15 @@ export const NrDashMapTab: React.FC<{
           {Math.round(pulseConc.topRegionShare * 100)}%)
         </p>
       )}
+      {(() => {
+        const pulseSpan = nrDashBuildMapPulseSpan(baseNodes);
+        return pulseSpan && pulseSpan.intensitySpread > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-map-pulse-span">
+            Map pulse span {pulseSpan.intensitySpread} · min {pulseSpan.minIntensity} · max {pulseSpan.maxIntensity} across{' '}
+            {pulseSpan.regionCount} nodes
+          </p>
+        ) : null;
+      })()}
       {hubConc && hubConc.concentrationIndex > 0 && (
         <p className="text-[10px] opacity-75" data-testid="nr-dash-map-hub-concentration">
           Hub score concentration {hubConc.concentrationIndex} · top {hubConc.topRegionId ?? '—'} (

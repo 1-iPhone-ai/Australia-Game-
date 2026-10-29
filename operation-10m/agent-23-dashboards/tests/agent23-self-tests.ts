@@ -110,6 +110,13 @@ import { nrDashBuildNationalConditionGap } from '../core/national-condition-gap.
 import { nrDashBuildDependencyLowShare } from '../core/dependency-low-share.ts';
 import { nrDashBuildBottleneckNetworkSeverityLoadSpread } from '../core/bottleneck-network-severity-load-spread.ts';
 import { nrDashBuildMomentumBandSpan } from '../core/momentum-band-span.ts';
+import { nrDashBuildEconomyBandSpan } from '../core/economy-band-span.ts';
+import { nrDashBuildResilienceBandSpan } from '../core/resilience-band-span.ts';
+import { nrDashBuildModerateRiskShare } from '../core/moderate-risk-share.ts';
+import { nrDashBuildNationalBottleneckGap } from '../core/national-bottleneck-gap.ts';
+import { nrDashBuildDependencyConsumerSpan } from '../core/dependency-consumer-span.ts';
+import { nrDashBuildMapPulseSpan } from '../core/map-pulse-span.ts';
+import { nrDashBuildRegionMapNodes } from '../core/region-map-model.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -890,6 +897,39 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
     const span = nrDashBuildMomentumBandSpan(snap)!;
     return span.rankSpread === 0 && span.minRank === 2 && span.maxRank === 2;
+  });
+
+  check('a23_economy_band_span', 'Economy band span is zero on uniform moderate fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const span = nrDashBuildEconomyBandSpan(snap)!;
+    return span.rankSpread === 0 && span.minRank === 2 && span.maxRank === 2;
+  });
+
+  check('a23_resilience_band_span', 'Resilience band span is zero on uniform stable fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const span = nrDashBuildResilienceBandSpan(snap)!;
+    return span.rankSpread === 0 && span.minRank === 2 && span.maxRank === 2;
+  });
+
+  check('a23_moderate_risk_share', 'Moderate risk share is zero on high-only NSW fixture', () => {
+    const share = nrDashBuildModerateRiskShare(createAgent23LrFixture())!;
+    return share.riskCount === 1 && share.moderateCount === 0 && share.moderateShare === 0;
+  });
+
+  check('a23_national_bottleneck_gap', 'National bottleneck gap contrasts bar totals and active list', () => {
+    const gap = nrDashBuildNationalBottleneckGap(createAgent23NsFixture())!;
+    return gap.nationalBarTotal === 0 && gap.activeListCount === 1 && gap.gap === -1;
+  });
+
+  check('a23_dep_consumer_span', 'Dependency consumer span covers three consumer slots', () => {
+    const span = nrDashBuildDependencyConsumerSpan(createAgent23NsFixture())!;
+    return span.distinctConsumers === 3 && span.spanRatio === 0.375;
+  });
+
+  check('a23_map_pulse_span', 'Map pulse span is positive on NSW hotspot fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const span = nrDashBuildMapPulseSpan(nrDashBuildRegionMapNodes(snap))!;
+    return span.regionCount === 8 && span.intensitySpread > 0.05;
   });
 
   return results;
