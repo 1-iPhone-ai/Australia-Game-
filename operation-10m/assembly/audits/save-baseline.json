@@ -1,0 +1,31 @@
+{
+  "auditedAt": "2026-10-29T05:55:53.064Z",
+  "file": "(V9.4) australia-game-with-ai.tsx",
+  "exportMigrators": [
+    {
+      "name": "migrateAiMemoriesFromSave",
+      "line": 129
+    },
+    {
+      "name": "migrateCommunicationState",
+      "line": 1100
+    },
+    {
+      "name": "migrateV69ToV70SaveData",
+      "line": 51031
+    },
+    {
+      "name": "migrateReplayFileWithReport",
+      "line": 51711
+    },
+    {
+      "name": "migrateSaveToV71Expansion",
+      "line": 118551
+    }
+  ],
+  "requiredMigratorSymbolsPresent": true,
+  "missingRequiredMigrators": [],
+  "largeSliceCapsOver5000": 1,
+  "moduleFixturePolicy": "Modules with touchesSaveFormat must ship operation-10m/modules/.../tests.fixture.json (validated at assembly)",
+  "verdict": "baseline_migrations_present"
+}

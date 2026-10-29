@@ -1,0 +1,15 @@
+{
+  "benchmarkedAt": "2026-10-29T05:55:53.306Z",
+  "file": "(V9.4) australia-game-with-ai.tsx",
+  "readMs": 17,
+  "hashMs": 20,
+  "scanMs": 168,
+  "bytes": 36690885,
+  "lines": 399195,
+  "exportLines": 7265,
+  "sha256": "0d2891081ebbb7c22e95e38b9d2a315ae996fd117ba1ca835f9f02e3f890ded2",
+  "extrapolation10M": {
+    "note": "Linear extrapolation from current scan; not predictive for tsc/vite at 10M.",
+    "estimatedScanMsAt10M": 4208
+  }
+}

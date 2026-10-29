@@ -1,0 +1,7 @@
+{
+  "$schema": "./manifest.schema.json",
+  "version": 1,
+  "canonical": "(V9.4) australia-game-with-ai.tsx",
+  "baselineAuditedFunctional": 372625,
+  "modules": []
+}
