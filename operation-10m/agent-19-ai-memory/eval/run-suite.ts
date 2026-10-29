@@ -53,6 +53,17 @@ import {
   AGENT19_DEBUG_EXPORT_NARRATIVE_CAP,
 } from '../explainability-debug-export.ts';
 import { auditExplainabilityIntegrity } from '../memory-explainability-integrity.ts';
+import {
+  buildOpponentModelExplainabilityBrief,
+  listOpponentBeliefExplainLines,
+} from '../opponent-model-explainability.ts';
+import {
+  auditInfluenceDriftBetweenTurns,
+  AGENT19_INFLUENCE_DRIFT_SPIKE_THRESHOLD,
+} from '../influence-drift-audit.ts';
+import { auditPriorEventTension } from '../prior-event-tension-audit.ts';
+import { buildMatchExplainabilityDigest, AGENT19_MATCH_DIGEST_LINE_CAP } from '../match-explainability-digest.ts';
+import { buildTurnPackGiClaims } from '../turn-pack-gi-bridge.ts';
 import type { MemoryEvalResult } from '../types.ts';
 
 type Case = [string, string, () => boolean | string];
@@ -596,6 +607,185 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
         () => {
           const report = auditExplainabilityIntegrity(createEmptyAiActorMemory('ai'), 1);
           return report.boundsOk && report.findings.length >= 0 && report.narrativeLines[0].includes('integrity') || report.narrativeLines[0];
+        },
+      ],
+      [
+        'a19_r6_opponent_brief',
+        'Opponent model brief lists confident match beliefs',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.opponentModels.player = {
+            actorId: 'player',
+            totalOpportunities: 4,
+            beliefs: {
+              aggressive: {
+                key: 'aggressive',
+                value: 0.72,
+                confidence: 0.55,
+                observations: 3,
+                opportunityCount: 4,
+                source: 'match',
+              },
+            },
+            regionalInterest: {},
+            predictedObjectives: [],
+          };
+          const lines = buildOpponentModelExplainabilityBrief(mem, 'player');
+          return lines.some(l => l.includes('aggressive')) && listOpponentBeliefExplainLines(mem, 'player').length === 1 || lines.join('|');
+        },
+      ],
+      [
+        'a19_r6_opponent_empty',
+        'Missing opponent model returns explicit idle copy',
+        () => {
+          const lines = buildOpponentModelExplainabilityBrief(createEmptyAiActorMemory('ai'), 'player');
+          return lines[0].includes('No opponent model') || lines[0];
+        },
+      ],
+      [
+        'a19_r6_drift_spike',
+        'Influence drift warns on sharp turn-to-turn spike',
+        () => {
+          const low = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 1 }],
+            decisionsAfter: [{ type: 'a', score: 2, memoryInfluence: 1 }],
+          });
+          const high = buildTurnExplainabilityPack({
+            turn: 2,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 1 }],
+            decisionsAfter: [
+              {
+                type: 'a',
+                score: 30,
+                memoryInfluence: 25,
+                memoryInfluenceSlices: [{ horizon: 'team_directive', delta: 25, reason: 'plan' }],
+              },
+            ],
+          });
+          const findings = auditInfluenceDriftBetweenTurns(low, high);
+          return (
+            findings.some(f => f.code === 'influence_spike') &&
+            AGENT19_INFLUENCE_DRIFT_SPIKE_THRESHOLD >= 10
+          ) || JSON.stringify(findings);
+        },
+      ],
+      [
+        'a19_r6_drift_stable',
+        'Stable influence between turns yields no spike warning',
+        () => {
+          const a = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 1 }],
+            decisionsAfter: [{ type: 'a', score: 3, memoryInfluence: 2 }],
+          });
+          const b = buildTurnExplainabilityPack({
+            turn: 2,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 1 }],
+            decisionsAfter: [{ type: 'a', score: 4, memoryInfluence: 3 }],
+          });
+          const findings = auditInfluenceDriftBetweenTurns(a, b);
+          return !findings.some(f => f.code === 'influence_spike') || JSON.stringify(findings);
+        },
+      ],
+      [
+        'a19_r6_match_digest',
+        'Match digest merges session health and integrity',
+        () => {
+          const pack = buildTurnExplainabilityPack({
+            turn: 2,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 1 }],
+            decisionsAfter: [{ type: 'a', score: 5, memoryInfluence: 4 }],
+          });
+          const digest = buildMatchExplainabilityDigest({
+            packs: [pack],
+            memory: createEmptyAiActorMemory('ai'),
+            currentTurn: 2,
+          });
+          return (
+            digest.integrityOk &&
+            digest.narrativeLines.length <= AGENT19_MATCH_DIGEST_LINE_CAP &&
+            digest.narrativeLines[0].includes('digest')
+          ) || JSON.stringify(digest);
+        },
+      ],
+      [
+        'a19_r6_prior_tension',
+        'Prior/event tension warns when cooperative prior meets hostile events',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.events = [
+            {
+              id: 'e1',
+              turn: 5,
+              actionType: 'sabotage',
+              actorId: 'player',
+              targetId: 'ai',
+              regionId: null,
+              summary: 'hit',
+              importance: 2,
+              valence: -0.6,
+              stableKey: 's1',
+            },
+          ];
+          mem.opponentModels.player = {
+            actorId: 'player',
+            totalOpportunities: 2,
+            beliefs: {
+              cooperative: {
+                key: 'cooperative',
+                value: 0.7,
+                confidence: 0.4,
+                observations: 1,
+                opportunityCount: 2,
+                source: 'persistent_prior',
+              },
+            },
+            regionalInterest: {},
+            predictedObjectives: [],
+          };
+          const findings = auditPriorEventTension(mem, { persistentMemoryEnabled: true });
+          return findings.some(f => f.code === 'prior_event_tension') || JSON.stringify(findings);
+        },
+      ],
+      [
+        'a19_r6_turn_gi_bridge',
+        'Turn pack GI bridge adds influence and counterfactual claims',
+        () => {
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 5 }],
+            decisionsAfter: [
+              {
+                type: 'a',
+                score: 10,
+                memoryInfluence: 5,
+                memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 'grievance' }],
+              },
+            ],
+          });
+          const claims = buildTurnPackGiClaims({
+            pack,
+            horizon: pack.horizonAfter,
+            memoryInfluenceEnabled: true,
+          });
+          return (
+            claims.some(c => c.id === 'turn_influence') &&
+            claims.some(c => c.id === 'turn_counterfactual') &&
+            claims.some(c => c.id === 'mem_rule_based')
+          ) || claims.map(c => c.id).join(',');
         },
       ],
     ]),

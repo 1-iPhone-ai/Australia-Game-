@@ -1254,6 +1254,273 @@ export function auditExplainabilityIntegrity(
 }
 
 
+// --- source: opponent-model-explainability.ts ---
+
+export interface OpponentBeliefExplainLine {
+  actorId: string;
+  beliefKey: string;
+  value: number;
+  confidence: number;
+  source: AiBelief['source'];
+  line: string;
+}
+
+export function listOpponentBeliefExplainLines(
+  memory: AiActorMemory | null | undefined,
+  subjectActorId: string,
+  opts?: { minConfidence?: number; limit?: number },
+): OpponentBeliefExplainLine[] {
+  const minConf = opts?.minConfidence ?? 0.15;
+  const limit = opts?.limit ?? 5;
+  const om: AiOpponentModel | undefined = memory?.opponentModels?.[subjectActorId];
+  if (!om) return [];
+  const lines: OpponentBeliefExplainLine[] = [];
+  Object.values(om.beliefs || {}).forEach(b => {
+    if (b.confidence < minConf) return;
+    lines.push({
+      actorId: subjectActorId,
+      beliefKey: b.key,
+      value: b.value,
+      confidence: b.confidence,
+      source: b.source,
+      line: `${b.key} estimate ${(b.value * 100).toFixed(0)}% (${b.source === 'persistent_prior' ? 'cross-match prior' : 'this match'}, conf ${(b.confidence * 100).toFixed(0)}%).`,
+    });
+  });
+  return lines.sort((a, b) => b.confidence - a.confidence).slice(0, limit);
+}
+
+/** Player-facing brief for a tracked opponent model (non-redacted inspection contexts only). */
+export function buildOpponentModelExplainabilityBrief(
+  memory: AiActorMemory | null | undefined,
+  subjectActorId: string,
+): string[] {
+  const om = memory?.opponentModels?.[subjectActorId];
+  if (!om) {
+    return [`No opponent model tracked yet for ${subjectActorId} — beliefs appear after observed opportunities.`];
+  }
+  const beliefs = listOpponentBeliefExplainLines(memory, subjectActorId);
+  const lines = [
+    `Opponent model for ${subjectActorId} (${om.totalOpportunities} observation slot(s)):`,
+  ];
+  if (!beliefs.length) {
+    lines.push('No confident beliefs yet — memory influence stays neutral until patterns emerge.');
+    return lines;
+  }
+  beliefs.forEach(b => lines.push(`• ${b.line}`));
+  if (om.predictedObjectives?.length) {
+    const top = [...om.predictedObjectives].sort((a, b) => b.probability - a.probability)[0];
+    if (top && top.probability >= 0.35) {
+      lines.push(
+        `Predicted objective ${top.objectiveId} at ${(top.probability * 100).toFixed(0)}% — adaptive plans may reference this.`,
+      );
+    }
+  }
+  return lines;
+}
+
+
+// --- source: influence-drift-audit.ts ---
+
+export const AGENT19_INFLUENCE_DRIFT_SPIKE_THRESHOLD = 18;
+
+/** Flags explainability risk when influence magnitude jumps sharply between consecutive turn packs. */
+export function auditInfluenceDriftBetweenTurns(
+  previous: TurnExplainabilityPack | null | undefined,
+  current: TurnExplainabilityPack,
+): MemoryInfluenceAuditFinding[] {
+  const findings: MemoryInfluenceAuditFinding[] = [];
+  if (!previous) return findings;
+  const prevMag = Math.abs(previous.influenceSummary.totalInfluenceDelta);
+  const curMag = Math.abs(current.influenceSummary.totalInfluenceDelta);
+  const delta = curMag - prevMag;
+  if (delta >= AGENT19_INFLUENCE_DRIFT_SPIKE_THRESHOLD) {
+    findings.push({
+      code: 'influence_spike',
+      severity: 'warn',
+      message: `Influence |Δ| jumped from ${prevMag.toFixed(2)} (turn ${previous.turn}) to ${curMag.toFixed(2)} (turn ${current.turn}) — briefs should cite the dominant slice.`,
+    });
+  }
+  const prevEvents = previous.horizonAfter.shortTermEventCount;
+  const curEvents = current.horizonAfter.shortTermEventCount;
+  if (curEvents > prevEvents + 3) {
+    findings.push({
+      code: 'event_burst',
+      severity: 'info',
+      message: `${curEvents - prevEvents} new committed event(s) since prior turn pack — horizon diff may dominate narratives.`,
+    });
+  }
+  const pickDominant = (byHorizon: Record<string, { totalDelta: number; count: number }>) => {
+    let best: string | null = null;
+    let mag = 0;
+    Object.entries(byHorizon).forEach(([h, v]) => {
+      const m = Math.abs(v.totalDelta);
+      if (m > mag) {
+        mag = m;
+        best = h;
+      }
+    });
+    return best;
+  };
+  const prevHorizon = pickDominant(previous.influenceSummary.byHorizon);
+  const curHorizon = pickDominant(current.influenceSummary.byHorizon);
+  if (prevHorizon && curHorizon && prevHorizon !== curHorizon) {
+    findings.push({
+      code: 'dominant_horizon_shift',
+      severity: 'info',
+      message: `Dominant influence horizon shifted ${prevHorizon} → ${curHorizon} between turns ${previous.turn} and ${current.turn}.`,
+    });
+  }
+  return findings;
+}
+
+export function summarizeInfluenceDrift(findings: MemoryInfluenceAuditFinding[]): string[] {
+  if (!findings.length) {
+    return ['Influence drift check: no sharp spikes vs the prior turn pack.'];
+  }
+  return ['Influence drift check:', ...findings.map(f => `[${f.severity}] ${f.message}`)];
+}
+
+
+// --- source: prior-event-tension-audit.ts ---
+
+export const AGENT19_PRIOR_EVENT_VALENCE_TENSION = -0.35;
+
+/** Warn when cross-match priors imply cooperation but recent committed events are strongly negative. */
+export function auditPriorEventTension(
+  memory: AiActorMemory | null | undefined,
+  opts?: { persistentMemoryEnabled?: boolean; recentEventWindow?: number },
+): MemoryInfluenceAuditFinding[] {
+  const findings: MemoryInfluenceAuditFinding[] = [];
+  if (!opts?.persistentMemoryEnabled || !memory) return findings;
+  const window = opts.recentEventWindow ?? 6;
+  const recent = [...(memory.events || [])]
+    .sort((a, b) => b.turn - a.turn)
+    .slice(0, window);
+  const hostile = recent.filter(e => e.valence <= AGENT19_PRIOR_EVENT_VALENCE_TENSION);
+  if (!hostile.length) return findings;
+  const priors = listPersistentPriorBeliefs(memory);
+  const cooperativePrior = priors.find(
+    p => (p.beliefKey === 'cooperative' || p.beliefKey === 'cooperation') && p.value >= 0.55,
+  );
+  if (cooperativePrior) {
+    findings.push({
+      code: 'prior_event_tension',
+      severity: 'warn',
+      message: `Cross-match prior suggests ${cooperativePrior.subjectActorId} is cooperative, but ${hostile.length} recent event(s) are strongly negative — explainability should mention both.`,
+    });
+  }
+  const aggressivePrior = priors.find(p => p.beliefKey === 'aggressive' && p.value >= 0.65);
+  if (aggressivePrior && hostile.every(e => e.actorId === aggressivePrior.subjectActorId)) {
+    findings.push({
+      code: 'prior_reinforced',
+      severity: 'info',
+      message: `Recent hostile events toward ${aggressivePrior.subjectActorId} align with saved aggressive prior — influence may compound.`,
+    });
+  }
+  return findings;
+}
+
+export function priorEventTensionOk(findings: MemoryInfluenceAuditFinding[]): boolean {
+  return !findings.some(f => f.severity === 'fail');
+}
+
+
+// --- source: match-explainability-digest.ts ---
+
+export const AGENT19_MATCH_DIGEST_LINE_CAP = 12;
+
+export interface MatchExplainabilityDigest {
+  turnCount: number;
+  healthBand: ReturnType<typeof computeMemoryHealthScorecard>['band'];
+  integrityOk: boolean;
+  session: ReturnType<typeof buildSessionExplainabilityRollup>;
+  narrativeLines: string[];
+}
+
+/** Checkpoint / match-end rollup combining session influence, integrity, and health scorecard. */
+export function buildMatchExplainabilityDigest(params: {
+  packs: TurnExplainabilityPack[];
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  persistentMemoryEnabled?: boolean;
+}): MatchExplainabilityDigest {
+  const session = buildSessionExplainabilityRollup(params.packs);
+  const integrity = auditExplainabilityIntegrity(params.memory, params.currentTurn);
+  const health = computeMemoryHealthScorecard(params.memory, {
+    persistentMemoryEnabled: params.persistentMemoryEnabled,
+  });
+  const integrityOk = integrity.boundsOk && integrity.stalenessOk;
+  const narrativeLines = [
+    `Match explainability digest @ turn ${params.currentTurn} (${params.packs.length} turn pack(s)).`,
+    health.summaryLine,
+    session.narrativeLines[0],
+    integrity.narrativeLines[0],
+  ];
+  if (session.dominantHorizon) {
+    narrativeLines.push(`Session dominant horizon: ${session.dominantHorizon}.`);
+  }
+  params.packs.slice(-1).forEach(p => {
+    if (p.counterfactual.influencedCount > 0) {
+      narrativeLines.push(
+        `Latest counterfactual: ${p.counterfactual.influencedCount} decision(s) would score differently without memory on turn ${p.turn}.`,
+      );
+    }
+  });
+  return {
+    turnCount: params.packs.length,
+    healthBand: health.band,
+    integrityOk,
+    session,
+    narrativeLines: narrativeLines.slice(0, AGENT19_MATCH_DIGEST_LINE_CAP),
+  };
+}
+
+
+// --- source: turn-pack-gi-bridge.ts ---
+
+/** Ask-the-Game claims extended with turn-pack influence and counterfactual facts. */
+export function buildTurnPackGiClaims(params: {
+  pack: TurnExplainabilityPack;
+  horizon: AiMemoryHorizonSnapshot;
+  inspection?: AiMemoryInspectionView | null;
+  memoryInfluenceEnabled?: boolean;
+}): MemoryGiClaim[] {
+  const base = buildMemoryGiClaims({
+    horizon: params.horizon,
+    inspection: params.inspection,
+    memoryInfluenceEnabled: params.memoryInfluenceEnabled,
+  });
+  const extra: MemoryGiClaim[] = [];
+  const inf = params.pack.influenceSummary;
+  if (inf.influencedDecisionCount > 0) {
+    extra.push({
+      id: 'turn_influence',
+      kind: 'fact',
+      text: `Turn ${params.pack.turn}: memory adjusted ${inf.influencedDecisionCount} decision score(s) (total Δ ${inf.totalInfluenceDelta.toFixed(2)}).`,
+      confidence: inf.auditOk ? 'confirmed' : 'likely',
+    });
+  }
+  if (params.pack.counterfactual.influencedCount > 0) {
+    extra.push({
+      id: 'turn_counterfactual',
+      kind: 'interpretation',
+      text: `Without memory influence, ${params.pack.counterfactual.influencedCount} option(s) on turn ${params.pack.turn} would use baseline scores instead.`,
+      confidence: 'likely',
+    });
+  }
+  if (params.pack.topSlices[0]) {
+    const s = params.pack.topSlices[0];
+    extra.push({
+      id: 'turn_top_slice',
+      kind: 'interpretation',
+      text: `Strongest slice this turn: ${s.horizon} (${s.delta >= 0 ? '+' : ''}${s.delta.toFixed(2)} — ${s.reason}).`,
+      confidence: 'likely',
+    });
+  }
+  return [...base, ...extra];
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -1378,6 +1645,12 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   explainabilityDebugExportWithinCap,
   AGENT19_DEBUG_EXPORT_NARRATIVE_CAP,
 } from '../explainability-debug-export.ts';
+  buildOpponentModelExplainabilityBrief,
+  listOpponentBeliefExplainLines,
+} from '../opponent-model-explainability.ts';
+  auditInfluenceDriftBetweenTurns,
+  AGENT19_INFLUENCE_DRIFT_SPIKE_THRESHOLD,
+} from '../influence-drift-audit.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -1920,6 +2193,185 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
         () => {
           const report = auditExplainabilityIntegrity(createEmptyAiActorMemory('ai'), 1);
           return report.boundsOk && report.findings.length >= 0 && report.narrativeLines[0].includes('integrity') || report.narrativeLines[0];
+        },
+      ],
+      [
+        'a19_r6_opponent_brief',
+        'Opponent model brief lists confident match beliefs',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.opponentModels.player = {
+            actorId: 'player',
+            totalOpportunities: 4,
+            beliefs: {
+              aggressive: {
+                key: 'aggressive',
+                value: 0.72,
+                confidence: 0.55,
+                observations: 3,
+                opportunityCount: 4,
+                source: 'match',
+              },
+            },
+            regionalInterest: {},
+            predictedObjectives: [],
+          };
+          const lines = buildOpponentModelExplainabilityBrief(mem, 'player');
+          return lines.some(l => l.includes('aggressive')) && listOpponentBeliefExplainLines(mem, 'player').length === 1 || lines.join('|');
+        },
+      ],
+      [
+        'a19_r6_opponent_empty',
+        'Missing opponent model returns explicit idle copy',
+        () => {
+          const lines = buildOpponentModelExplainabilityBrief(createEmptyAiActorMemory('ai'), 'player');
+          return lines[0].includes('No opponent model') || lines[0];
+        },
+      ],
+      [
+        'a19_r6_drift_spike',
+        'Influence drift warns on sharp turn-to-turn spike',
+        () => {
+          const low = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 1 }],
+            decisionsAfter: [{ type: 'a', score: 2, memoryInfluence: 1 }],
+          });
+          const high = buildTurnExplainabilityPack({
+            turn: 2,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 1 }],
+            decisionsAfter: [
+              {
+                type: 'a',
+                score: 30,
+                memoryInfluence: 25,
+                memoryInfluenceSlices: [{ horizon: 'team_directive', delta: 25, reason: 'plan' }],
+              },
+            ],
+          });
+          const findings = auditInfluenceDriftBetweenTurns(low, high);
+          return (
+            findings.some(f => f.code === 'influence_spike') &&
+            AGENT19_INFLUENCE_DRIFT_SPIKE_THRESHOLD >= 10
+          ) || JSON.stringify(findings);
+        },
+      ],
+      [
+        'a19_r6_drift_stable',
+        'Stable influence between turns yields no spike warning',
+        () => {
+          const a = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 1 }],
+            decisionsAfter: [{ type: 'a', score: 3, memoryInfluence: 2 }],
+          });
+          const b = buildTurnExplainabilityPack({
+            turn: 2,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 1 }],
+            decisionsAfter: [{ type: 'a', score: 4, memoryInfluence: 3 }],
+          });
+          const findings = auditInfluenceDriftBetweenTurns(a, b);
+          return !findings.some(f => f.code === 'influence_spike') || JSON.stringify(findings);
+        },
+      ],
+      [
+        'a19_r6_match_digest',
+        'Match digest merges session health and integrity',
+        () => {
+          const pack = buildTurnExplainabilityPack({
+            turn: 2,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 1 }],
+            decisionsAfter: [{ type: 'a', score: 5, memoryInfluence: 4 }],
+          });
+          const digest = buildMatchExplainabilityDigest({
+            packs: [pack],
+            memory: createEmptyAiActorMemory('ai'),
+            currentTurn: 2,
+          });
+          return (
+            digest.integrityOk &&
+            digest.narrativeLines.length <= AGENT19_MATCH_DIGEST_LINE_CAP &&
+            digest.narrativeLines[0].includes('digest')
+          ) || JSON.stringify(digest);
+        },
+      ],
+      [
+        'a19_r6_prior_tension',
+        'Prior/event tension warns when cooperative prior meets hostile events',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.events = [
+            {
+              id: 'e1',
+              turn: 5,
+              actionType: 'sabotage',
+              actorId: 'player',
+              targetId: 'ai',
+              regionId: null,
+              summary: 'hit',
+              importance: 2,
+              valence: -0.6,
+              stableKey: 's1',
+            },
+          ];
+          mem.opponentModels.player = {
+            actorId: 'player',
+            totalOpportunities: 2,
+            beliefs: {
+              cooperative: {
+                key: 'cooperative',
+                value: 0.7,
+                confidence: 0.4,
+                observations: 1,
+                opportunityCount: 2,
+                source: 'persistent_prior',
+              },
+            },
+            regionalInterest: {},
+            predictedObjectives: [],
+          };
+          const findings = auditPriorEventTension(mem, { persistentMemoryEnabled: true });
+          return findings.some(f => f.code === 'prior_event_tension') || JSON.stringify(findings);
+        },
+      ],
+      [
+        'a19_r6_turn_gi_bridge',
+        'Turn pack GI bridge adds influence and counterfactual claims',
+        () => {
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 5 }],
+            decisionsAfter: [
+              {
+                type: 'a',
+                score: 10,
+                memoryInfluence: 5,
+                memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 'grievance' }],
+              },
+            ],
+          });
+          const claims = buildTurnPackGiClaims({
+            pack,
+            horizon: pack.horizonAfter,
+            memoryInfluenceEnabled: true,
+          });
+          return (
+            claims.some(c => c.id === 'turn_influence') &&
+            claims.some(c => c.id === 'turn_counterfactual') &&
+            claims.some(c => c.id === 'mem_rule_based')
+          ) || claims.map(c => c.id).join(',');
         },
       ],
     ]),
