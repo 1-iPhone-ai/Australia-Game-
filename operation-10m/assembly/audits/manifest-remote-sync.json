@@ -1,5 +1,5 @@
 {
-  "scannedAt": "2026-10-29T10:02:23.840Z",
+  "scannedAt": "2026-10-29T10:07:24.803Z",
   "canonicalBase": "origin/australia-game-upgrade",
   "baselineCommit": "bc1adf3",
   "originOp10mHeadCount": 33,
@@ -55,7 +55,7 @@
       "chunkPath": "operation-10m/agent-05-events/chunk.tsx",
       "markerModuleId": "agent-05-events",
       "assemblyReady": true,
-      "contentSha256": "623a9c2091ce339dcc8c17a1cf566c984c63ebc729a97618885683628b5e3fd5",
+      "contentSha256": "b7d9c8361fbf73bbc674fdd39014e7c90068c8622a422d8b15c23ceb284628d1",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -125,7 +125,7 @@
       "chunkPath": "operation-10m/modules/agent-11-cities/chunk.tsx",
       "markerModuleId": "agent-11-cities",
       "assemblyReady": true,
-      "contentSha256": "abd3ab772fa5791c75b9902b7d5ca7c835f551c9f691fcc0aa2c61283fe51800",
+      "contentSha256": "14b76b07b5b9ad440520fcf6ea4fd55954dda46ad0a93974809093282402d622",
       "defaultSlot": "pre-final-export"
     },
     {
