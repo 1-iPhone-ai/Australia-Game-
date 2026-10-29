@@ -88,4 +88,7 @@ export * from './scale-wave-handoff-integration-outlook.ts';
 export * from './scale-wave-handoff-integration-band-log.ts';
 export * from './scale-wave-handoff-integration-snapshot.ts';
 export * from './scale-wave-handoff-integration-seal-outlook.ts';
+export * from './scale-wave-handoff-integration-seal-band-log.ts';
+export * from './scale-wave-handoff-integration-seal-snapshot.ts';
+export * from './scale-wave-integration-seal-handoff-outlook.ts';
 export * from './compute.ts';

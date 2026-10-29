@@ -40,6 +40,7 @@ import { computeResearchScaleWaveIntegrationContinuityOutlook } from './scale-wa
 import { computeResearchScaleWaveContinuityHandoffOutlook } from './scale-wave-continuity-handoff-outlook.ts';
 import { computeResearchScaleWaveHandoffIntegrationOutlook } from './scale-wave-handoff-integration-outlook.ts';
 import { computeResearchScaleWaveHandoffIntegrationSealOutlook } from './scale-wave-handoff-integration-seal-outlook.ts';
+import { computeResearchScaleWaveIntegrationSealHandoffOutlook } from './scale-wave-integration-seal-handoff-outlook.ts';
 import { branchNodeTopologicalOrder, evaluateNodePrerequisites } from './prerequisites.ts';
 import { resolveActiveStrategyHooks, STRATEGY_HOOK_BY_ID } from './strategy-hooks.ts';
 import {
@@ -444,6 +445,13 @@ export function computeResearchProgress(
     continuityHandoffSnapshot: coreBase.continuityHandoffSnapshot ?? null,
   });
 
+  const scaleWaveIntegrationSealHandoffOutlook = computeResearchScaleWaveIntegrationSealHandoffOutlook(inputs, {
+    scaleWaveHandoffIntegrationSealOutlook,
+    scaleWaveHandoffIntegrationOutlook,
+    handoffIntegrationSealSnapshot: coreBase.handoffIntegrationSealSnapshot ?? null,
+    handoffIntegrationSnapshot: coreBase.handoffIntegrationSnapshot ?? null,
+  });
+
   const computed: ResearchProgressState = {
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: coreBase.revision,
@@ -484,6 +492,7 @@ export function computeResearchProgress(
     scaleWaveContinuityHandoffOutlook,
     scaleWaveHandoffIntegrationOutlook,
     scaleWaveHandoffIntegrationSealOutlook,
+    scaleWaveIntegrationSealHandoffOutlook,
     unlockSeq: coreBase.unlockSeq,
     branchEmphasis: coreBase.branchEmphasis,
   };
