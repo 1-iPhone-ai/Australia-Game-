@@ -260,6 +260,16 @@ import {
   bilateralCommitmentWindowHandoffExportScale,
 } from './bilateral-commitment-window-handoff.ts';
 import {
+  computeCommitmentWindowSustainmentSnapshot,
+  createEmptyCommitmentWindowSustainmentSnapshot,
+  commitmentWindowSustainmentExportScale,
+} from './commitment-window-sustainment.ts';
+import {
+  computeBilateralForwardCycleAdvanceGateSnapshot,
+  createEmptyBilateralForwardCycleAdvanceGateSnapshot,
+  bilateralForwardCycleAdvanceGateExportScale,
+} from './bilateral-forward-cycle-advance-gate.ts';
+import {
   computeBilateralTradeWindowContinuitySnapshot,
   createEmptyBilateralTradeWindowContinuitySnapshot,
 } from './bilateral-trade-window-continuity.ts';
@@ -1852,6 +1862,59 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       bilateralCommitmentWindowHandoffExportScale(handed) >= bilateralCommitmentWindowHandoffExportScale(blocked),
       'expected window handoff scale lift',
+    );
+  });
+
+  ok('commitment window sustainment improves when handoff is handed off', () => {
+    const handoff = {
+      ...createEmptyBilateralCommitmentWindowHandoffSnapshot(),
+      score: 0.95,
+      band: 'handed_off' as const,
+    };
+    const admitted = {
+      ...createEmptyAdmittedForwardCommitmentContinuitySnapshot(),
+      score: 0.93,
+      band: 'anchored' as const,
+    };
+    const sustained = computeCommitmentWindowSustainmentSnapshot({
+      bilateralCommitmentWindowHandoff: handoff,
+      admittedForwardCommitmentContinuity: admitted,
+      persisted: { ...createEmptyGTELPersisted(), commitmentWindowSustainmentSmoothing: 0.9 },
+    }).snapshot;
+    const dropped = computeCommitmentWindowSustainmentSnapshot({
+      bilateralCommitmentWindowHandoff: { ...handoff, score: 0.1, band: 'blocked' },
+      admittedForwardCommitmentContinuity: { ...admitted, score: 0.08, band: 'revoked' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(sustained.score > dropped.score, 'expected window sustainment when handed off');
+    gtelAssert(
+      commitmentWindowSustainmentExportScale(sustained) >= commitmentWindowSustainmentExportScale(dropped),
+      'expected window sustainment scale lift',
+    );
+  });
+
+  ok('bilateral forward cycle advance gate improves when sustainment is sustained', () => {
+    const sustainment = {
+      ...createEmptyCommitmentWindowSustainmentSnapshot(),
+      score: 0.96,
+      band: 'sustained' as const,
+    };
+    const seal = { ...createEmptyTradeCycleSealVerificationSnapshot(), score: 0.88, band: 'verified' as const };
+    const advanced = computeBilateralForwardCycleAdvanceGateSnapshot({
+      commitmentWindowSustainment: sustainment,
+      tradeCycleSealVerification: seal,
+      persisted: { ...createEmptyGTELPersisted(), bilateralForwardCycleAdvanceGateSmoothing: 0.92 },
+    }).snapshot;
+    const denied = computeBilateralForwardCycleAdvanceGateSnapshot({
+      commitmentWindowSustainment: { ...sustainment, score: 0.1, band: 'dropped' },
+      tradeCycleSealVerification: { ...seal, score: 0.08, band: 'failed' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(advanced.score > denied.score, 'expected cycle advance when sustained');
+    gtelAssert(
+      bilateralForwardCycleAdvanceGateExportScale(advanced) >=
+        bilateralForwardCycleAdvanceGateExportScale(denied),
+      'expected cycle advance scale lift',
     );
   });
 

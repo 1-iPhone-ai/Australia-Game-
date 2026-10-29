@@ -67,5 +67,7 @@ export * from './commitment-arc-continuity.ts';
 export * from './bilateral-forward-commitment-admission.ts';
 export * from './admitted-forward-commitment-continuity.ts';
 export * from './bilateral-commitment-window-handoff.ts';
+export * from './commitment-window-sustainment.ts';
+export * from './bilateral-forward-cycle-advance-gate.ts';
 export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';

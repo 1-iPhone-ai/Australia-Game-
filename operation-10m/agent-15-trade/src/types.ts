@@ -204,6 +204,8 @@ export interface GTELPersisted {
   bilateralForwardCommitmentAdmissionSmoothing?: number;
   admittedForwardCommitmentContinuitySmoothing?: number;
   bilateralCommitmentWindowHandoffSmoothing?: number;
+  commitmentWindowSustainmentSmoothing?: number;
+  bilateralForwardCycleAdvanceGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -277,6 +279,8 @@ export interface GTELState {
   bilateralForwardCommitmentAdmission: GTELBilateralForwardCommitmentAdmissionSnapshot;
   admittedForwardCommitmentContinuity: GTELAdmittedForwardCommitmentContinuitySnapshot;
   bilateralCommitmentWindowHandoff: GTELBilateralCommitmentWindowHandoffSnapshot;
+  commitmentWindowSustainment: GTELCommitmentWindowSustainmentSnapshot;
+  bilateralForwardCycleAdvanceGate: GTELBilateralForwardCycleAdvanceGateSnapshot;
   inputHash: string;
 }
 
@@ -1001,6 +1005,26 @@ export interface GTELBilateralCommitmentWindowHandoffSnapshot {
   band: GTELBilateralCommitmentWindowHandoffBand;
   continuityAnchor: number;
   windowFeed: number;
+  summary: string;
+}
+
+export type GTELCommitmentWindowSustainmentBand = 'sustained' | 'carrying' | 'fading' | 'dropped';
+
+export interface GTELCommitmentWindowSustainmentSnapshot {
+  score: number;
+  band: GTELCommitmentWindowSustainmentBand;
+  handoffSupport: number;
+  admittedAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralForwardCycleAdvanceGateBand = 'advanced' | 'clearing' | 'held' | 'denied';
+
+export interface GTELBilateralForwardCycleAdvanceGateSnapshot {
+  score: number;
+  band: GTELBilateralForwardCycleAdvanceGateBand;
+  sustainmentFeed: number;
+  sealLift: number;
   summary: string;
 }
 
