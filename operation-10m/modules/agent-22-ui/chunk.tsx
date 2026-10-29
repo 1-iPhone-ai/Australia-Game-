@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 1372eaf1915b078e
+// content-sha256-prefix: a4e1a94d4ea399ea
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -967,6 +967,10 @@ export interface DayAdvanceUiEvolutionResult {
   textScaleDensityAppliedDayCoachCopy: string | null;
   milestoneForecastRosterDayCoachCopy: string | null;
   previewHeavyCoverageDayCoachCopy: string | null;
+  showAllOverrideActiveDayCoachCopy: string | null;
+  cognitiveLoadBandDayCoachCopy: string | null;
+  onboardingActiveStepsDayCoachCopy: string | null;
+  legacyNavRememberPlanDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1702,6 +1706,34 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const loadForDayCoachBand = assessCognitiveLoad({
+    signals: nextSignals,
+    policy,
+    pendingCoachAnnouncements: combinedQueue.length,
+  });
+
+  const showAllOverrideActiveDayCoach = buildShowAllOverrideActiveDayCoach({
+    persisted: persistedAfterCalm,
+    policy,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const cognitiveLoadBandDayCoach = buildCognitiveLoadBandDayCoach({
+    band: loadForDayCoachBand.band,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const onboardingActiveStepsDayCoach = buildOnboardingActiveStepsDayCoach({
+    gameDay: nextSignals.gameDay,
+    persisted: persistedAfterCalm,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const legacyNavRememberPlanDayCoach = buildLegacyNavRememberPlanDayCoach({
+    plan: legacyRememberPlan,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1840,6 +1872,10 @@ export function tickEvolvingUiOnDayAdvance(
     textScaleDensityAppliedDayCoachCopy: textScaleDensityAppliedDayCoach.coachCopy,
     milestoneForecastRosterDayCoachCopy: milestoneForecastRosterDayCoach.coachCopy,
     previewHeavyCoverageDayCoachCopy: previewHeavyCoverageDayCoach.coachCopy,
+    showAllOverrideActiveDayCoachCopy: showAllOverrideActiveDayCoach.coachCopy,
+    cognitiveLoadBandDayCoachCopy: cognitiveLoadBandDayCoach.coachCopy,
+    onboardingActiveStepsDayCoachCopy: onboardingActiveStepsDayCoach.coachCopy,
+    legacyNavRememberPlanDayCoachCopy: legacyNavRememberPlanDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -7200,6 +7236,269 @@ export function buildPreviewHeavyCoverageDayCoach(input: {
     visibleCount: input.snapshot.visible,
     coachCopy: `Day ${input.nextGameDay}: ${input.snapshot.preview} panels in preview vs ${input.snapshot.visible} visible — unlock hints show what is left.`,
   };
+}
+
+// --- source: engine/show-all-override-active-day-coach.ts ---
+export interface ShowAllOverrideActiveDayCoach {
+  overrideActive: boolean;
+  coachCopy: string | null;
+}
+
+export function buildShowAllOverrideActiveDayCoach(input: {
+  persisted: EvolvingUiPersistedState;
+  policy: EvolvingUiAccessPolicy;
+  nextGameDay: number;
+}): ShowAllOverrideActiveDayCoach {
+  const overrideActive = Boolean(
+    input.persisted.showAllPanelsOverride ?? input.policy.showAllPanelsOverride
+  );
+  if (!overrideActive) {
+    return { overrideActive: false, coachCopy: null };
+  }
+  return {
+    overrideActive: true,
+    coachCopy: `Day ${input.nextGameDay}: Show-all panels override is active — previews stay visible for exploration.`,
+  };
+}
+
+// --- source: engine/cognitive-load-band-day-coach.ts ---
+export interface CognitiveLoadBandDayCoach {
+  band: CognitiveLoadBand;
+  coachCopy: string | null;
+}
+
+export function buildCognitiveLoadBandDayCoach(input: {
+  band: CognitiveLoadBand;
+  nextGameDay: number;
+}): CognitiveLoadBandDayCoach {
+  if (input.band === 'light') {
+    return { band: input.band, coachCopy: null };
+  }
+  return {
+    band: input.band,
+    coachCopy: `Day ${input.nextGameDay}: Cognitive load is ${input.band} — defer non-essential coaching surfaces.`,
+  };
+}
+
+// --- source: engine/onboarding-active-steps-day-coach.ts ---
+export interface OnboardingActiveStepsDayCoach {
+  activeStepCount: number;
+  coachCopy: string | null;
+}
+
+export function buildOnboardingActiveStepsDayCoach(input: {
+  gameDay: number;
+  persisted: EvolvingUiPersistedState;
+  nextGameDay: number;
+}): OnboardingActiveStepsDayCoach {
+  const steps = listActiveOnboardingStepsForPersisted(input.gameDay, input.persisted);
+  if (!steps.length) {
+    return { activeStepCount: 0, coachCopy: null };
+  }
+  const extra = steps.length > 1 ? ` (+${steps.length - 1} more)` : '';
+  return {
+    activeStepCount: steps.length,
+    coachCopy: `Day ${input.nextGameDay}: Onboarding — ${steps[0].title}${extra}.`,
+  };
+}
+
+// --- source: engine/legacy-nav-remember-plan-day-coach.ts ---
+export interface LegacyNavRememberPlanDayCoach {
+  panelCount: number;
+  coachCopy: string | null;
+}
+
+export function buildLegacyNavRememberPlanDayCoach(input: {
+  plan: LegacyNavAutoRememberPlan;
+  nextGameDay: number;
+}): LegacyNavRememberPlanDayCoach {
+  if (!input.plan.panelIdsToRemember.length || !input.plan.coachCopy) {
+    return { panelCount: 0, coachCopy: null };
+  }
+  return {
+    panelCount: input.plan.panelIdsToRemember.length,
+    coachCopy: `Day ${input.nextGameDay}: ${input.plan.coachCopy}`,
+  };
+}
+
+// --- source: engine/round38-self-tests.ts ---
+export function runAgent22Round38SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r38_show_all',
+    'show all override active day coach',
+    (() => {
+      const coach = buildShowAllOverrideActiveDayCoach({
+        persisted: { showAllPanelsOverride: true },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        nextGameDay: 3,
+      });
+      return coach.overrideActive && Boolean(coach.coachCopy?.includes('Day 3'));
+    })()
+  );
+
+  check(
+    'r38_load_band',
+    'cognitive load band day coach heavy',
+    (() => {
+      const coach = buildCognitiveLoadBandDayCoach({ band: 'heavy', nextGameDay: 4 });
+      return coach.band === 'heavy' && Boolean(coach.coachCopy?.includes('Day 4'));
+    })()
+  );
+
+  check(
+    'r38_onboarding_steps',
+    'onboarding active steps day coach',
+    (() => {
+      const coach = buildOnboardingActiveStepsDayCoach({
+        gameDay: 1,
+        persisted: createDefaultEvolvingUiPersistedState(),
+        nextGameDay: 1,
+      });
+      return coach.activeStepCount >= 1 && Boolean(coach.coachCopy?.includes('Day 1'));
+    })()
+  );
+
+  check(
+    'r38_legacy_plan',
+    'legacy nav remember plan day coach',
+    (() => {
+      const plan = buildLegacyNavAutoRememberPlan(
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState()
+      );
+      const coach = buildLegacyNavRememberPlanDayCoach({ plan, nextGameDay: 5 });
+      return plan.panelIdsToRemember.length === 0 || Boolean(coach.coachCopy?.includes('Day 5') || coach.coachCopy === null);
+    })()
+  );
+
+  check(
+    'r38_tick_show_all',
+    'tick exposes show all override active day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        { ...DEFAULT_EVOLVING_UI_ACCESS_POLICY, showAllPanelsOverride: true },
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.showAllOverrideActiveDayCoachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r38_tick_load_band',
+    'tick exposes cognitive load band day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 6, turnCount: 6, interfaceLevel: 'expert' },
+        { gameDay: 7, turnCount: 7, interfaceLevel: 'expert' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.cognitiveLoadBandDayCoachCopy === 'string' || r.cognitiveLoadBandDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r38_tick_onboarding',
+    'tick exposes onboarding active steps day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.onboardingActiveStepsDayCoachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r38_tick_legacy_plan',
+    'tick exposes legacy nav remember plan day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.legacyNavRememberPlanDayCoachCopy === 'string' || r.legacyNavRememberPlanDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r38_show_all_off',
+    'show all null when override off',
+    (() => {
+      const coach = buildShowAllOverrideActiveDayCoach({
+        persisted: {},
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        nextGameDay: 2,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r38_load_light',
+    'load band null when light',
+    (() => {
+      const coach = buildCognitiveLoadBandDayCoach({ band: 'light', nextGameDay: 1 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r38_plan_empty',
+    'legacy plan null when empty',
+    (() => {
+      const coach = buildLegacyNavRememberPlanDayCoach({
+        plan: { entries: [], panelIdsToRemember: [], coachCopy: null },
+        nextGameDay: 3,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r38_onboarding_dismissed',
+    'onboarding steps null when all dismissed',
+    (() => {
+      const persisted = {
+        ...createDefaultEvolvingUiPersistedState(),
+        onboardingDismissedKeys: [
+          'onboarding_map',
+          'onboarding_economy',
+          'onboarding_standing',
+          'onboarding_advanced',
+        ],
+      };
+      const coach = buildOnboardingActiveStepsDayCoach({
+        gameDay: 10,
+        persisted,
+        nextGameDay: 10,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round37-self-tests.ts ---
@@ -14265,6 +14564,18 @@ export function SimulationUiEvolutionBridge({
       {result.previewHeavyCoverageDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-preview-heavy-day">{result.previewHeavyCoverageDayCoachCopy}</div>
       ) : null}
+      {result.showAllOverrideActiveDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-show-all-active-day">{result.showAllOverrideActiveDayCoachCopy}</div>
+      ) : null}
+      {result.cognitiveLoadBandDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-load-band-day">{result.cognitiveLoadBandDayCoachCopy}</div>
+      ) : null}
+      {result.onboardingActiveStepsDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-onboarding-steps-day">{result.onboardingActiveStepsDayCoachCopy}</div>
+      ) : null}
+      {result.legacyNavRememberPlanDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-legacy-plan-day">{result.legacyNavRememberPlanDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -16315,7 +16626,7 @@ export function ContextualWidgetDayCoachStrip({
 }
 
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.37.0';
+export const AGENT_22_MODULE_VERSION = '1.38.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -16466,6 +16777,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round38 = runAgent22Round38SelfTests();
+  for (const r of round38.results) {
+    check(`agent22_round38_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round37 = runAgent22Round37SelfTests();

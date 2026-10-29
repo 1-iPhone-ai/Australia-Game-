@@ -324,6 +324,18 @@ export function SimulationUiEvolutionBridge({
       {result.previewHeavyCoverageDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-preview-heavy-day">{result.previewHeavyCoverageDayCoachCopy}</div>
       ) : null}
+      {result.showAllOverrideActiveDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-show-all-active-day">{result.showAllOverrideActiveDayCoachCopy}</div>
+      ) : null}
+      {result.cognitiveLoadBandDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-load-band-day">{result.cognitiveLoadBandDayCoachCopy}</div>
+      ) : null}
+      {result.onboardingActiveStepsDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-onboarding-steps-day">{result.onboardingActiveStepsDayCoachCopy}</div>
+      ) : null}
+      {result.legacyNavRememberPlanDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-legacy-plan-day">{result.legacyNavRememberPlanDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets

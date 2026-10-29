@@ -129,6 +129,10 @@ import { buildCalmRecoveryAutoAppliedDayCoach } from '../engine/calm-recovery-au
 import { buildTextScaleDensityAppliedDayCoach } from '../engine/text-scale-density-applied-day-coach.js';
 import { buildMilestoneForecastRosterDayCoach } from '../engine/milestone-forecast-roster-day-coach.js';
 import { buildPreviewHeavyCoverageDayCoach } from '../engine/preview-heavy-coverage-day-coach.js';
+import { buildShowAllOverrideActiveDayCoach } from '../engine/show-all-override-active-day-coach.js';
+import { buildCognitiveLoadBandDayCoach } from '../engine/cognitive-load-band-day-coach.js';
+import { buildOnboardingActiveStepsDayCoach } from '../engine/onboarding-active-steps-day-coach.js';
+import { buildLegacyNavRememberPlanDayCoach } from '../engine/legacy-nav-remember-plan-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -266,6 +270,10 @@ export interface DayAdvanceUiEvolutionResult {
   textScaleDensityAppliedDayCoachCopy: string | null;
   milestoneForecastRosterDayCoachCopy: string | null;
   previewHeavyCoverageDayCoachCopy: string | null;
+  showAllOverrideActiveDayCoachCopy: string | null;
+  cognitiveLoadBandDayCoachCopy: string | null;
+  onboardingActiveStepsDayCoachCopy: string | null;
+  legacyNavRememberPlanDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1001,6 +1009,34 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const loadForDayCoachBand = assessCognitiveLoad({
+    signals: nextSignals,
+    policy,
+    pendingCoachAnnouncements: combinedQueue.length,
+  });
+
+  const showAllOverrideActiveDayCoach = buildShowAllOverrideActiveDayCoach({
+    persisted: persistedAfterCalm,
+    policy,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const cognitiveLoadBandDayCoach = buildCognitiveLoadBandDayCoach({
+    band: loadForDayCoachBand.band,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const onboardingActiveStepsDayCoach = buildOnboardingActiveStepsDayCoach({
+    gameDay: nextSignals.gameDay,
+    persisted: persistedAfterCalm,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const legacyNavRememberPlanDayCoach = buildLegacyNavRememberPlanDayCoach({
+    plan: legacyRememberPlan,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1139,6 +1175,10 @@ export function tickEvolvingUiOnDayAdvance(
     textScaleDensityAppliedDayCoachCopy: textScaleDensityAppliedDayCoach.coachCopy,
     milestoneForecastRosterDayCoachCopy: milestoneForecastRosterDayCoach.coachCopy,
     previewHeavyCoverageDayCoachCopy: previewHeavyCoverageDayCoach.coachCopy,
+    showAllOverrideActiveDayCoachCopy: showAllOverrideActiveDayCoach.coachCopy,
+    cognitiveLoadBandDayCoachCopy: cognitiveLoadBandDayCoach.coachCopy,
+    onboardingActiveStepsDayCoachCopy: onboardingActiveStepsDayCoach.coachCopy,
+    legacyNavRememberPlanDayCoachCopy: legacyNavRememberPlanDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

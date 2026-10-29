@@ -125,3 +125,7 @@ export { CalmRecoveryAutoAppliedDayCoachStrip } from './CalmRecoveryAutoAppliedD
 export { TextScaleDensityAppliedDayCoachStrip } from './TextScaleDensityAppliedDayCoachStrip.js';
 export { MilestoneForecastRosterDayCoachStrip } from './MilestoneForecastRosterDayCoachStrip.js';
 export { PreviewHeavyCoverageDayCoachStrip } from './PreviewHeavyCoverageDayCoachStrip.js';
+export { ShowAllOverrideActiveDayCoachStrip } from './ShowAllOverrideActiveDayCoachStrip.js';
+export { CognitiveLoadBandDayCoachStrip } from './CognitiveLoadBandDayCoachStrip.js';
+export { OnboardingActiveStepsDayCoachStrip } from './OnboardingActiveStepsDayCoachStrip.js';
+export { LegacyNavRememberPlanDayCoachStrip } from './LegacyNavRememberPlanDayCoachStrip.js';
