@@ -28,6 +28,7 @@ const FILES = [
   'hydrogen-critical-minerals-ledger.ts',
   'offshore-marine-demand-response-ledger.ts',
   'carbon-capture-grid-firming-ledger.ts',
+  'rez-transmission-bushfire-resilience-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -44,6 +45,8 @@ const EXPORT_MANIFEST = [
   'V1014_DEMAND_RESPONSE_CATALOG',
   'V1014_CCS_HUB_CATALOG',
   'V1014_GRID_FIRMING_CATALOG',
+  'V1014_REZ_TRANSMISSION_CATALOG',
+  'V1014_BUSHFIRE_RESILIENCE_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -74,6 +77,9 @@ const EXPORT_MANIFEST = [
   'runAgent13CcsFirmingScaleSelfTests',
   'runAgent13CcsFirmingTurnScenario',
   'V1014_CCS_FIRMING_TURN_SCENARIOS',
+  'runAgent13RezBushfireScaleSelfTests',
+  'runAgent13RezBushfireTurnScenario',
+  'V1014_REZ_BUSHFIRE_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

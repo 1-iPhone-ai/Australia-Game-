@@ -25,6 +25,11 @@ import {
   V1014_CCS_FIRMING_TURN_SCENARIOS,
 } from '../modules/carbon-capture-grid-firming-ledger.ts';
 import {
+  runAgent13RezBushfireScaleSelfTests,
+  runAgent13RezBushfireTurnScenario,
+  V1014_REZ_BUSHFIRE_TURN_SCENARIOS,
+} from '../modules/rez-transmission-bushfire-resilience-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -162,6 +167,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const ccsTurn = runAgent13CcsFirmingTurnScenario(V1014_CCS_FIRMING_TURN_SCENARIOS[0]);
   ok(ccsTurn.passed);
+
+  const rezBushfire = runAgent13RezBushfireScaleSelfTests();
+  ok(rezBushfire.failed === 0 && rezBushfire.passed >= 7);
+
+  const rezTurn = runAgent13RezBushfireTurnScenario(V1014_REZ_BUSHFIRE_TURN_SCENARIOS[0]);
+  ok(rezTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }
