@@ -8,6 +8,7 @@ import { runAccountingReconciliationSelfTests } from './accounting/reconciliatio
 import { runRegionalReconciliationSelfTests } from './accounting/regional-reconciliation.ts';
 import { runCyclicalShockLibrarySelfTests } from './catalog/cyclical-shocks-self-tests.ts';
 import { runAgent06DepthSelfTests } from './depth-self-tests.ts';
+import { runAgent06Round2SelfTests } from './round2-self-tests.ts';
 
 export function runV1014_MACRO_MacroEconomySelfTests(): {
   passed: number;
@@ -100,6 +101,11 @@ export function runV1014_MACRO_MacroEconomySelfTests(): {
 
   const depth = runAgent06DepthSelfTests();
   for (const r of depth.results) {
+    check(r.id, r.name, r.passed, r.detail);
+  }
+
+  const round2 = runAgent06Round2SelfTests();
+  for (const r of round2.results) {
     check(r.id, r.name, r.passed, r.detail);
   }
 

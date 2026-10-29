@@ -19,6 +19,8 @@ import {
   v1014macroNormalizeRegionalShares
 } from './regional-aggregation.ts';
 import { computeNationalSectorOutputMix } from './sector-decomposition.ts';
+import { computeRegionalDivergenceSnapshot } from './regional-divergence.ts';
+import { projectMacroEconomyOutlook } from './outlook-projection.ts';
 import { macroEconomyInputHash, sanitizeMacroEconomyPersisted } from './persisted.ts';
 import {
   applyMacroShockAdjustments,
@@ -89,6 +91,7 @@ export function computeNationalMacroEconomy(
 
   const sectorProductivity = nationalSectorProductivityFromScore(productivityScore);
   const sectorOutputMix = computeNationalSectorOutputMix(regionalContributions);
+  const regionalDivergence = computeRegionalDivergenceSnapshot(regionalContributions);
 
   let nextPersisted: MacroEconomyPersisted = {
     ...persisted,
@@ -110,14 +113,14 @@ export function computeNationalMacroEconomy(
     nextPhase: cyclePhase
   });
 
-  const state: NationalMacroEconomyState = {
+  const partialStateForOutlook: NationalMacroEconomyState = {
     schemaVersion: V1014_MACRO_SCHEMA_VERSION,
     revision: nextPersisted.revision,
     turn: inputs.turn,
     inputHash: hash,
     cyclePhase,
     cycleMomentum: v1014macroClamp((cycleScore - 50) / 50, -1, 1),
-    cycleDurationTurns: prevState?.cyclePhase === cyclePhase ? prevState.cycleDurationTurns + 1 : 1,
+    cycleDurationTurns: prevState?.cyclePhase === cyclePhase ? (prevState?.cycleDurationTurns ?? 0) + 1 : 1,
     productivityBand,
     productivityIndex: productivityScore,
     investmentClimate,
@@ -130,8 +133,24 @@ export function computeNationalMacroEconomy(
     sectorOutputMix,
     activeCyclicalShockIds: activeShockIds,
     fiscalSpilloverSummary: fiscalSpillover.summary,
+    regionalDivergence,
+    outlookProjection: {
+      horizonTurns: 3,
+      projectedCyclePhase: cyclePhase,
+      projectedInvestmentClimate: investmentClimate,
+      projectedProductivityBand: productivityBand,
+      projectedOutputIndex: accounting.grossOutputIndex,
+      confidence: 0.9
+    },
     evidence: evList.slice(0, V1014_MACRO_LIMITS.maxEvidence),
     outlook: { phase: cyclePhase, productivity: productivityBand, investment: investmentClimate }
+  };
+
+  const outlookProjection = projectMacroEconomyOutlook(partialStateForOutlook, inputs, 3);
+
+  const state: NationalMacroEconomyState = {
+    ...partialStateForOutlook,
+    outlookProjection
   };
 
   return { state, persisted: nextPersisted };

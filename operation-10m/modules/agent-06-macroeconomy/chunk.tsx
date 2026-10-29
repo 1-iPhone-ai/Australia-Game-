@@ -88,12 +88,33 @@ export interface NationalMacroEconomyState {
   sectorOutputMix: Record<string, number>;
   activeCyclicalShockIds: string[];
   fiscalSpilloverSummary: string | null;
+  regionalDivergence: RegionalDivergenceSnapshot;
+  outlookProjection: MacroOutlookProjection;
   evidence: MacroEconomyEvidence[];
   outlook: {
     phase: BusinessCyclePhase;
     productivity: MacroProductivityBand;
     investment: MacroInvestmentClimateBand;
   };
+}
+
+export type RegionalDivergenceBand = 'cohesive' | 'moderate_spread' | 'wide_spread';
+
+export interface RegionalDivergenceSnapshot {
+  band: RegionalDivergenceBand;
+  productivitySpread: number;
+  shareHerfindahl: number;
+  leadingRegionId: string;
+  laggingRegionId: string;
+}
+
+export interface MacroOutlookProjection {
+  horizonTurns: number;
+  projectedCyclePhase: BusinessCyclePhase;
+  projectedInvestmentClimate: MacroInvestmentClimateBand;
+  projectedProductivityBand: MacroProductivityBand;
+  projectedOutputIndex: number;
+  confidence: number;
 }
 
 export interface MacroEconomyPersisted {
@@ -686,6 +707,57 @@ export function runCyclicalShockLibrarySelfTests(): {
 
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: catalog/stress-scenarios.ts ---
+/** Named macro stress bundles for LAB / regression (shock id lists only). */
+export interface MacroStressScenario {
+  id: string;
+  label: string;
+  shockIds: string[];
+  description: string;
+}
+
+export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
+  {
+    id: 'baseline_soft_landing',
+    label: 'Soft landing',
+    shockIds: ['terms_of_trade_squeeze'],
+    description: 'Mild external drag without credit seizure.'
+  },
+  {
+    id: 'resource_bust',
+    label: 'Resource bust',
+    shockIds: ['commodity_bust', 'credit_contraction'],
+    description: 'Mining terms and credit tighten together.'
+  },
+  {
+    id: 'stagflation_mix',
+    label: 'Stagflation mix',
+    shockIds: ['high_inflation', 'global_slowdown'],
+    description: 'Inflation scenario plus external demand shock.'
+  },
+  {
+    id: 'policy_recovery',
+    label: 'Policy recovery',
+    shockIds: ['stimulus_bounce', 'mining_supercycle'],
+    description: 'Stimulus plus resource capex upswing.'
+  },
+  {
+    id: 'housing_and_credit',
+    label: 'Housing & credit',
+    shockIds: ['housing_correction', 'credit_contraction'],
+    description: 'Domestic financial stress combination.'
+  }
+];
+
+export function resolveMacroStressScenario(id: string): MacroStressScenario | null {
+  return MACRO_STRESS_SCENARIO_CATALOG.find(s => s.id === id) ?? null;
+}
+
+export function macroStressScenarioShockIds(id: string): string[] {
+  return resolveMacroStressScenario(id)?.shockIds ?? [];
 }
 
 
@@ -1288,6 +1360,133 @@ export function dominantNationalSector(mix: Record<string, number>): string {
 }
 
 
+// --- source: regional-divergence.ts ---
+
+function herfindahl(shares: number[]): number {
+  return shares.reduce((acc, s) => acc + s * s, 0);
+}
+
+export function computeRegionalDivergenceSnapshot(
+  contributions: RegionalMacroContribution[]
+): RegionalDivergenceSnapshot {
+  const productivity = contributions.map(r => r.productivityIndex);
+  const shares = contributions.map(r => r.share);
+  const minP = Math.min(...productivity);
+  const maxP = Math.max(...productivity);
+  const productivitySpread = maxP - minP;
+  const shareHerfindahl = herfindahl(shares);
+  let band: RegionalDivergenceBand = 'moderate_spread';
+  if (productivitySpread < 8 && shareHerfindahl < 0.14) band = 'cohesive';
+  if (productivitySpread > 18 || shareHerfindahl > 0.2) band = 'wide_spread';
+  const sortedProd = [...contributions].sort((a, b) => b.productivityIndex - a.productivityIndex);
+  return {
+    band,
+    productivitySpread: v1014macroClamp(productivitySpread, 0, 100),
+    shareHerfindahl: v1014macroClamp(shareHerfindahl, 0, 1),
+    leadingRegionId: sortedProd[0]?.regionId ?? 'NSW',
+    laggingRegionId: sortedProd[sortedProd.length - 1]?.regionId ?? 'TAS'
+  };
+}
+
+
+// --- source: outlook-projection.ts ---
+  v1014macroBandInvestment,
+  v1014macroBandProductivity,
+  v1014macroClamp,
+  v1014macroCycleFromScore
+} from './math.ts';
+  BusinessCyclePhase,
+  MacroEconomyInputs,
+  MacroOutlookProjection,
+  NationalMacroEconomyState
+} from './types.ts';
+
+export function projectMacroEconomyOutlook(
+  state: NationalMacroEconomyState,
+  inputs: MacroEconomyInputs,
+  horizonTurns = 3
+): MacroOutlookProjection {
+  const h = Math.max(1, Math.min(6, Math.floor(horizonTurns)));
+  let cycleScore = state.productivityIndex * 0.35 + state.grossInvestmentIndex * 0.35 + 50 * 0.3;
+  let productivityScore = state.productivityIndex;
+  let investmentScore = state.grossInvestmentIndex;
+  const shockIds = resolveActiveCyclicalShockIds(inputs);
+  const stacked = composeStackedShockDeltas(shockIds, CYCLICAL_MACRO_SHOCK_CATALOG);
+  cycleScore += stacked.cycleDelta * 0.35 * h;
+  productivityScore += stacked.productivityDelta * 0.25 * h;
+  investmentScore += stacked.investmentDelta * 0.25 * h;
+  cycleScore = v1014macroClamp(cycleScore, 0, 100);
+  productivityScore = v1014macroClamp(productivityScore, 0, 100);
+  investmentScore = v1014macroClamp(investmentScore, 0, 100);
+  const projectedCyclePhase: BusinessCyclePhase = v1014macroCycleFromScore(cycleScore, state.cyclePhase);
+  const projectedProductivityBand = v1014macroBandProductivity(productivityScore);
+  const projectedInvestmentClimate = v1014macroBandInvestment(investmentScore);
+  const utilization = deriveUtilizationIndex(cycleScore, investmentScore);
+  const projectedOutputIndex = deriveGrossOutputIndex(productivityScore, utilization, investmentScore);
+  const confidence = v1014macroClamp(0.92 - shockIds.length * 0.06 - h * 0.04, 0.45, 0.95);
+  return {
+    horizonTurns: h,
+    projectedCyclePhase,
+    projectedInvestmentClimate,
+    projectedProductivityBand,
+    projectedOutputIndex,
+    confidence
+  };
+}
+
+
+// --- source: action-alignment.ts ---
+
+export interface MacroActionAlignment {
+  category: string;
+  scoreDelta: number;
+  rationale: string;
+}
+
+const CATEGORY_WEIGHT: Record<string, { cycle: number; investment: number; productivity: number }> = {
+  investments: { cycle: 0.2, investment: 0.55, productivity: 0.25 },
+  infrastructure: { cycle: 0.25, investment: 0.45, productivity: 0.3 },
+  industry: { cycle: 0.15, investment: 0.35, productivity: 0.5 },
+  austerity: { cycle: -0.35, investment: -0.45, productivity: -0.2 },
+  stimulus: { cycle: 0.4, investment: 0.35, productivity: 0.25 }
+};
+
+export function macroEconomyActionAlignment(
+  state: NationalMacroEconomyState | null | undefined,
+  action: { category?: string; regionId?: string | null }
+): MacroActionAlignment | null {
+  if (!state) return null;
+  const cat = String(action.category ?? '').toLowerCase();
+  const weights = CATEGORY_WEIGHT[cat];
+  if (!weights) return null;
+  const cycleNorm = (state.cycleMomentum + 1) / 2;
+  const invNorm = state.grossInvestmentIndex / 100;
+  const prodNorm = state.productivityIndex / 100;
+  let scoreDelta =
+    weights.cycle * (cycleNorm - 0.5) * 10 +
+    weights.investment * (invNorm - 0.5) * 10 +
+    weights.productivity * (prodNorm - 0.5) * 10;
+  if (cat === 'austerity') {
+    scoreDelta -= 1.25;
+    if (state.cyclePhase === 'contraction' || state.cyclePhase === 'trough' || state.investmentClimate === 'frozen') {
+      scoreDelta -= 1.5;
+    }
+  }
+  if (action.regionId) {
+    const row = state.regionalContributions.find(r => r.regionId === action.regionId);
+    if (row && row.role === 'lagging') scoreDelta -= 1.2;
+    if (row && row.role === 'anchor') scoreDelta += 0.6;
+  }
+  if (state.regionalDivergence?.band === 'wide_spread' && cat === 'investments') scoreDelta -= 0.8;
+  scoreDelta = v1014macroClamp(scoreDelta, -6, 6);
+  return {
+    category: cat,
+    scoreDelta,
+    rationale: `Macro alignment vs ${state.cyclePhase}/${state.investmentClimate}/${state.productivityBand}.`
+  };
+}
+
+
 // --- source: gi-queries.ts ---
 
 export type MacroGiTopic =
@@ -1431,6 +1630,7 @@ export function computeNationalMacroEconomy(
 
   const sectorProductivity = nationalSectorProductivityFromScore(productivityScore);
   const sectorOutputMix = computeNationalSectorOutputMix(regionalContributions);
+  const regionalDivergence = computeRegionalDivergenceSnapshot(regionalContributions);
 
   let nextPersisted: MacroEconomyPersisted = {
     ...persisted,
@@ -1452,14 +1652,14 @@ export function computeNationalMacroEconomy(
     nextPhase: cyclePhase
   });
 
-  const state: NationalMacroEconomyState = {
+  const partialStateForOutlook: NationalMacroEconomyState = {
     schemaVersion: V1014_MACRO_SCHEMA_VERSION,
     revision: nextPersisted.revision,
     turn: inputs.turn,
     inputHash: hash,
     cyclePhase,
     cycleMomentum: v1014macroClamp((cycleScore - 50) / 50, -1, 1),
-    cycleDurationTurns: prevState?.cyclePhase === cyclePhase ? prevState.cycleDurationTurns + 1 : 1,
+    cycleDurationTurns: prevState?.cyclePhase === cyclePhase ? (prevState?.cycleDurationTurns ?? 0) + 1 : 1,
     productivityBand,
     productivityIndex: productivityScore,
     investmentClimate,
@@ -1472,8 +1672,24 @@ export function computeNationalMacroEconomy(
     sectorOutputMix,
     activeCyclicalShockIds: activeShockIds,
     fiscalSpilloverSummary: fiscalSpillover.summary,
+    regionalDivergence,
+    outlookProjection: {
+      horizonTurns: 3,
+      projectedCyclePhase: cyclePhase,
+      projectedInvestmentClimate: investmentClimate,
+      projectedProductivityBand: productivityBand,
+      projectedOutputIndex: accounting.grossOutputIndex,
+      confidence: 0.9
+    },
     evidence: evList.slice(0, V1014_MACRO_LIMITS.maxEvidence),
     outlook: { phase: cyclePhase, productivity: productivityBand, investment: investmentClimate }
+  };
+
+  const outlookProjection = projectMacroEconomyOutlook(partialStateForOutlook, inputs, 3);
+
+  const state: NationalMacroEconomyState = {
+    ...partialStateForOutlook,
+    outlookProjection
   };
 
   return { state, persisted: nextPersisted };
@@ -1873,6 +2089,94 @@ export function runAgent06DepthSelfTests(): {
 }
 
 
+// --- source: round2-self-tests.ts ---
+
+export function runAgent06Round2SelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: MacroSelfTestResult[];
+} {
+  const results: MacroSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const base = computeNationalMacroEconomy(makeDefaultV1014_MACRO_TestInputs(), null, null);
+  const div = computeRegionalDivergenceSnapshot(base.state.regionalContributions);
+  record('R2-01', 'Regional divergence snapshot populated', div.leadingRegionId.length >= 2, div.band);
+
+  record(
+    'R2-02',
+    'State carries regional divergence',
+    base.state.regionalDivergence.shareHerfindahl > 0,
+    String(base.state.regionalDivergence.shareHerfindahl)
+  );
+
+  const outlook = projectMacroEconomyOutlook(base.state, makeDefaultV1014_MACRO_TestInputs(), 3);
+  record(
+    'R2-03',
+    'Outlook projection bounded confidence',
+    outlook.confidence >= 0.45 && outlook.confidence <= 0.95,
+    String(outlook.confidence)
+  );
+
+  record(
+    'R2-04',
+    'State carries outlook projection',
+    base.state.outlookProjection.horizonTurns === 3,
+    String(base.state.outlookProjection.projectedOutputIndex)
+  );
+
+  const stressed = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({ activeCyclicalShockIds: macroStressScenarioShockIds('resource_bust') }),
+    null,
+    null
+  );
+  record(
+    'R2-05',
+    'Stress scenario lowers investment vs baseline',
+    stressed.state.grossInvestmentIndex <= base.state.grossInvestmentIndex,
+    `${base.state.grossInvestmentIndex}->${stressed.state.grossInvestmentIndex}`
+  );
+
+  const align = macroEconomyActionAlignment(base.state, { category: 'investments', regionId: 'NSW' });
+  record('R2-06', 'Action alignment bounded', Boolean(align && align.scoreDelta >= -6 && align.scoreDelta <= 6), String(align?.scoreDelta));
+
+  record(
+    'R2-07',
+    'Stress catalog entries have shock lists',
+    MACRO_STRESS_SCENARIO_CATALOG.every(s => s.shockIds.length > 0),
+    String(MACRO_STRESS_SCENARIO_CATALOG.length)
+  );
+
+  const stimOutlook = projectMacroEconomyOutlook(
+    base.state,
+    makeDefaultV1014_MACRO_TestInputs({ activeCyclicalShockIds: macroStressScenarioShockIds('policy_recovery') }),
+    2
+  );
+  record(
+    'R2-08',
+    'Recovery scenario outlook output >= baseline outlook',
+    stimOutlook.projectedOutputIndex >= base.state.outlookProjection.projectedOutputIndex - 5,
+    String(stimOutlook.projectedOutputIndex)
+  );
+
+  record(
+    'R2-09',
+    'Wide spread increases under commodity bust',
+    computeRegionalDivergenceSnapshot(stressed.state.regionalContributions).productivitySpread >= div.productivitySpread - 0.01,
+    stressed.state.regionalDivergence.band
+  );
+
+  const austerity = macroEconomyActionAlignment(stressed.state, { category: 'austerity' });
+  record('R2-10', 'Austerity alignment negative under stress', Boolean(austerity && austerity.scoreDelta <= 0), String(austerity?.scoreDelta));
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
 // --- source: self-tests.ts ---
 
 export function runV1014_MACRO_MacroEconomySelfTests(): {
@@ -1966,6 +2270,11 @@ export function runV1014_MACRO_MacroEconomySelfTests(): {
 
   const depth = runAgent06DepthSelfTests();
   for (const r of depth.results) {
+    check(r.id, r.name, r.passed, r.detail);
+  }
+
+  const round2 = runAgent06Round2SelfTests();
+  for (const r of round2.results) {
     check(r.id, r.name, r.passed, r.detail);
   }
 

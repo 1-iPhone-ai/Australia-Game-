@@ -84,12 +84,33 @@ export interface NationalMacroEconomyState {
   sectorOutputMix: Record<string, number>;
   activeCyclicalShockIds: string[];
   fiscalSpilloverSummary: string | null;
+  regionalDivergence: RegionalDivergenceSnapshot;
+  outlookProjection: MacroOutlookProjection;
   evidence: MacroEconomyEvidence[];
   outlook: {
     phase: BusinessCyclePhase;
     productivity: MacroProductivityBand;
     investment: MacroInvestmentClimateBand;
   };
+}
+
+export type RegionalDivergenceBand = 'cohesive' | 'moderate_spread' | 'wide_spread';
+
+export interface RegionalDivergenceSnapshot {
+  band: RegionalDivergenceBand;
+  productivitySpread: number;
+  shareHerfindahl: number;
+  leadingRegionId: string;
+  laggingRegionId: string;
+}
+
+export interface MacroOutlookProjection {
+  horizonTurns: number;
+  projectedCyclePhase: BusinessCyclePhase;
+  projectedInvestmentClimate: MacroInvestmentClimateBand;
+  projectedProductivityBand: MacroProductivityBand;
+  projectedOutputIndex: number;
+  confidence: number;
 }
 
 export interface MacroEconomyPersisted {
