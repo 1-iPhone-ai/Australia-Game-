@@ -179,3 +179,35 @@ export interface FinancialShockDefinition {
   temporary: boolean;
   explanation: string;
 }
+
+export type V1014_FINSTAB_QueryTopic =
+  | 'overview'
+  | 'inflation'
+  | 'credit'
+  | 'stability'
+  | 'stance'
+  | 'cost_pressure'
+  | 'loan_conditions'
+  | 'investment_climate_link'
+  | 'fiscal_spillover'
+  | 'regional_spread';
+
+export interface MacroFinancialQuery {
+  topic: V1014_FINSTAB_QueryTopic;
+  regionId: string | null;
+  rawQuestion: string;
+}
+
+export interface MacroFinancialWorldRootEvent {
+  id: string;
+  turn: number;
+  day: number;
+  sourceSystem: string;
+  sourceEventId: string;
+  kind: string;
+  significance: 'minor' | 'meaningful' | 'major' | 'critical';
+  visibility: 'public' | 'diagnostic';
+  summary: string;
+  title: string;
+  affectedDomains: string[];
+}

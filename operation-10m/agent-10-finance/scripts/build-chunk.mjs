@@ -23,7 +23,14 @@ const FILES = [
   'rates/reference-rate.ts',
   'prices/boundary.ts',
   'shocks/catalog.ts',
+  'shocks/scenario-runner.ts',
+  'inflation/pass-through.ts',
+  'credit/loan-pricing.ts',
+  'transmission/channels.ts',
   'compute/national-macro-financial.ts',
+  'integration/query-co-pilot.ts',
+  'self-tests.ts',
+  'react/FinanceConditionsLab.tsx',
 ];
 
 function stripModulePreamble(source) {

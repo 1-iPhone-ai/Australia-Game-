@@ -2,7 +2,6 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   AGENT10_GLOSSARY_ENTRIES,
-  macroInflationMayUseCommodityPrices,
 } from '../src/definitions/glossary.js';
 import {
   integrationNoteNonCpiBoundary,
@@ -15,7 +14,7 @@ import { V1014_FINSTAB_POLICY_TRANSMISSION_CHANNELS, V1014_FINSTAB_REGION_CREDIT
 import { bandCredit, bandInflation } from '../src/credit/bands.js';
 import { computeActorCreditStressIndex } from '../src/credit/actor-leverage.js';
 import { referencePolicyRate } from '../src/rates/reference-rate.js';
-import { FINANCIAL_SHOCK_CATALOG, getShockById, applyShockDeltasToScores } from '../src/shocks/catalog.js';
+import { getShockById, applyShockDeltasToScores, FINANCIAL_SHOCK_CATALOG } from '../src/shocks/catalog.js';
 import {
   computeNationalMacroFinancialConditions,
   createInitialMacroFinancialPersisted,
@@ -31,6 +30,9 @@ import {
   V1014_FINSTAB_LIMITS,
   V1014_FINSTAB_SCHEMA_VERSION,
 } from '../src/definitions/constants.js';
+import { runAgent10FinanceSelfTests } from '../src/self-tests.js';
+import { evaluatePolicyTransmissionChannels } from '../src/transmission/channels.js';
+import { runFinancialShockSequence } from '../src/shocks/scenario-runner.js';
 
 describe('Agent 10 glossary & boundaries', () => {
   it('defines coherent finance terms', () => {
@@ -170,5 +172,24 @@ describe('National macro-financial compute (V10.14 parity)', () => {
     );
     assert.ok(r.state.modifiers.costOfLivingMultiplier <= V1014_FINSTAB_LIMITS.maxCostMultiplier);
     assert.ok(r.state.modifiers.creditSpreadMultiplier <= V1014_FINSTAB_LIMITS.maxCreditSpreadMultiplier);
+  });
+});
+
+describe('Agent 10 scale-wave extensions', () => {
+  it('runAgent10FinanceSelfTests all pass', () => {
+    const r = runAgent10FinanceSelfTests();
+    assert.equal(r.allPassed, true, r.results.filter((x) => !x.passed).map((x) => x.name).join('; '));
+    assert.ok(r.total >= 50);
+  });
+
+  it('transmission channels activate under fiscal critical', () => {
+    const hits = evaluatePolicyTransmissionChannels(makeDefaultMacroFinancialTestInputs({ fiscalPressure: 'critical' }));
+    assert.ok(hits.some((h) => h.active && h.targetDomain === 'credit'));
+  });
+
+  it('shock sequence stacks deltas', () => {
+    const seq = runFinancialShockSequence({ inflation: 40, credit: 50, stability: 55 }, ['shock_credit_tightening']);
+    assert.ok(seq.scores.credit < 50);
+    assert.equal(seq.creditShockActive, true);
   });
 });

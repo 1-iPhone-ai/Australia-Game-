@@ -184,6 +184,38 @@ export interface FinancialShockDefinition {
   explanation: string;
 }
 
+export type V1014_FINSTAB_QueryTopic =
+  | 'overview'
+  | 'inflation'
+  | 'credit'
+  | 'stability'
+  | 'stance'
+  | 'cost_pressure'
+  | 'loan_conditions'
+  | 'investment_climate_link'
+  | 'fiscal_spillover'
+  | 'regional_spread';
+
+export interface MacroFinancialQuery {
+  topic: V1014_FINSTAB_QueryTopic;
+  regionId: string | null;
+  rawQuestion: string;
+}
+
+export interface MacroFinancialWorldRootEvent {
+  id: string;
+  turn: number;
+  day: number;
+  sourceSystem: string;
+  sourceEventId: string;
+  kind: string;
+  significance: 'minor' | 'meaningful' | 'major' | 'critical';
+  visibility: 'public' | 'diagnostic';
+  summary: string;
+  title: string;
+  affectedDomains: string[];
+}
+
 
 // --- source: definitions/constants.ts ---
 export const V1014_FINSTAB_SCHEMA_VERSION = '10.14.0';
@@ -604,6 +636,194 @@ export function applyShockDeltasToScores(
     stability: scores.stability + shock.stabilityScoreDelta,
     creditShockActive: shock.setsCreditShockFlag,
   };
+}
+
+
+// --- source: shocks/scenario-runner.ts ---
+
+export interface ShockSequenceResult {
+  scores: { inflation: number; credit: number; stability: number };
+  creditShockActive: boolean;
+  appliedShockIds: string[];
+  skippedShockIds: string[];
+}
+
+/** Applies shock catalog entries in order with score clamping — simulation helper only. */
+export function runFinancialShockSequence(
+  initial: { inflation: number; credit: number; stability: number },
+  shockIds: string[],
+): ShockSequenceResult {
+  let scores = { ...initial };
+  let creditShockActive = false;
+  const appliedShockIds: string[] = [];
+  const skippedShockIds: string[] = [];
+  for (const id of shockIds) {
+    const shock = getShockById(id);
+    if (!shock) {
+      skippedShockIds.push(id);
+      continue;
+    }
+    const next = applyShockDeltasToScores(scores, shock);
+    scores = {
+      inflation: finClamp(next.inflation, 0, 100),
+      credit: finClamp(next.credit, 0, 100),
+      stability: finClamp(next.stability, 0, 100),
+    };
+    creditShockActive = creditShockActive || next.creditShockActive;
+    appliedShockIds.push(id);
+  }
+  return { scores, creditShockActive, appliedShockIds, skippedShockIds };
+}
+
+
+// --- source: inflation/pass-through.ts ---
+
+/** Applies macro cost-of-living multiplier to non-commodity economy/travel presentation costs. */
+export function applyMacroCostOfLivingToEconomyLayer(baseCost: number, multiplier: number, min = 0.92, max = 1.45): number {
+  const m = finClamp(multiplier, min, max);
+  return Math.max(0, Math.round(baseCost * m));
+}
+
+/** Auto-mode handicap category — must not alter resource market quotes or macro CPI scores. */
+export function autoModePriceInflationHandicapFactor(enabled: boolean, categoryActive: boolean): number {
+  if (!enabled || !categoryActive) return 1;
+  return 1.08;
+}
+
+export function inflationBandSeverityRank(band: InflationConditionsBand): number {
+  const order: InflationConditionsBand[] = ['disinflation', 'anchored', 'elevated', 'high', 'scenario_runaway'];
+  return order.indexOf(band);
+}
+
+export function compareInflationBands(a: InflationConditionsBand, b: InflationConditionsBand): number {
+  return inflationBandSeverityRank(a) - inflationBandSeverityRank(b);
+}
+
+export function serviceCostPassThroughFromAffordability(
+  affordability: 'healthy' | 'strained' | 'severe_pressure' | null | undefined,
+): number {
+  if (affordability === 'severe_pressure') return 0.12;
+  if (affordability === 'strained') return 0.07;
+  return 0;
+}
+
+
+// --- source: credit/loan-pricing.ts ---
+
+export interface LoanPricingQuote {
+  baseRate: number;
+  spreadMultiplier: number;
+  regionalPremium: number;
+  effectiveRate: number;
+  affordabilityNote: string;
+}
+
+export function quoteAdvancedLoanPricing(
+  baseRate: number,
+  spreadMultiplier: number,
+  credit: CreditConditionsBand,
+  loanAffordabilityIndex: number,
+  regionalPremium = 1,
+): LoanPricingQuote {
+  const effectiveRate = advancedLoanEffectiveRate(baseRate, spreadMultiplier * regionalPremium);
+  let affordabilityNote = 'Macro loan conditions are neutral.';
+  if (credit === 'frozen' || credit === 'restricted') {
+    affordabilityNote = 'Restricted macro credit — spreads elevated (metadata only).';
+  } else if (credit === 'accommodative' && loanAffordabilityIndex >= 60) {
+    affordabilityNote = 'Accommodative credit supports prudent borrowing.';
+  } else if (loanAffordabilityIndex < 40) {
+    affordabilityNote = 'Low loan affordability index — consider deleveraging first.';
+  }
+  return {
+    baseRate,
+    spreadMultiplier: finClamp(spreadMultiplier * regionalPremium, 0.88, 1.85),
+    regionalPremium,
+    effectiveRate,
+    affordabilityNote,
+  };
+}
+
+export function refinanceTimingSignal(
+  credit: CreditConditionsBand,
+  actorStress: number,
+): 'favorable' | 'neutral' | 'defer' {
+  if (credit === 'frozen' || credit === 'restricted' || actorStress > 0.75) return 'defer';
+  if (credit === 'accommodative' && actorStress < 0.45) return 'favorable';
+  return 'neutral';
+}
+
+
+// --- source: transmission/channels.ts ---
+
+export interface TransmissionChannelHit {
+  id: string;
+  sourceDomain: string;
+  targetDomain: string;
+  weight: number;
+  explanation: string;
+  active: boolean;
+  activationReason: string;
+}
+
+export function evaluatePolicyTransmissionChannels(
+  inputs: MacroFinancialSystemInputs,
+): TransmissionChannelHit[] {
+  return V1014_FINSTAB_POLICY_TRANSMISSION_CHANNELS.map((ch) => {
+    let active = false;
+    let activationReason = 'inactive';
+    switch (ch.id) {
+      case 'fiscal_strain_tightens_credit':
+        active = inputs.fiscalPressure === 'strained' || inputs.fiscalPressure === 'critical';
+        activationReason = active ? `fiscalPressure=${inputs.fiscalPressure}` : activationReason;
+        break;
+      case 'debt_service_crowds_lending':
+        active = inputs.sovereignDebtPressure === 'high' || inputs.sovereignDebtPressure === 'critical';
+        activationReason = active ? `debt=${inputs.sovereignDebtPressure}` : activationReason;
+        break;
+      case 'capital_flexibility_eases_investment':
+        active = inputs.capitalFlexibility === 'high' || inputs.capitalFlexibility === 'very_high';
+        activationReason = active ? 'strong capital flexibility' : activationReason;
+        break;
+      case 'capital_squeeze_freezes_projects':
+        active = inputs.capitalFlexibility === 'very_low' || inputs.capitalFlexibility === 'critical';
+        activationReason = active ? 'capital squeeze' : activationReason;
+        break;
+      case 'household_strain_feeds_inflation':
+        active =
+          inputs.householdAffordability === 'strained' || inputs.householdAffordability === 'severe_pressure';
+        activationReason = active ? `affordability=${inputs.householdAffordability}` : activationReason;
+        break;
+      case 'scenario_inflation_anchor_break':
+        active = inputs.highInflationScenario;
+        activationReason = active ? 'high inflation scenario' : activationReason;
+        break;
+      case 'liquidity_shock_stability':
+        active = inputs.systemicLiquidityBand === 'strained' || inputs.systemicLiquidityBand === 'critical';
+        activationReason = active ? `liquidity=${inputs.systemicLiquidityBand}` : activationReason;
+        break;
+      case 'public_stability_buffer':
+        active = inputs.publicStability >= 55;
+        activationReason = active ? `publicStability=${inputs.publicStability}` : activationReason;
+        break;
+      case 'actor_leverage_warning':
+        active = inputs.actorCreditStressIndex > 0.55;
+        activationReason = active ? `stress=${inputs.actorCreditStressIndex}` : activationReason;
+        break;
+      case 'crisis_stack_amplification':
+        active = inputs.activeCrises >= 2;
+        activationReason = active ? `crises=${inputs.activeCrises}` : activationReason;
+        break;
+      default:
+        break;
+    }
+    return { ...ch, active, activationReason };
+  });
+}
+
+export function sumActiveTransmissionWeight(hits: TransmissionChannelHit[], targetDomain: string): number {
+  return hits
+    .filter((h) => h.active && h.targetDomain === targetDomain)
+    .reduce((s, h) => s + h.weight, 0);
 }
 
 
@@ -1101,6 +1321,397 @@ export function buildMacroFinancialInputs(raw: {
     creditShockActive: Boolean(gs.creditShockActive || gset.creditShockActive),
     regions,
   };
+}
+
+
+// --- source: integration/query-co-pilot.ts ---
+  MacroFinancialComputeResult,
+  MacroFinancialQuery,
+  MacroFinancialWorldRootEvent,
+  NationalMacroFinancialState,
+  V1014_FINSTAB_QueryTopic,
+} from '../definitions/types.js';
+
+export function macroFinancialActionAlignment(
+  state: NationalMacroFinancialState | null | undefined,
+  candidate: { kind?: string; category?: string; programId?: string },
+): { scoreDelta: number; rationale: string } | null {
+  if (!state) return null;
+  const text = `${candidate.kind || ''} ${candidate.category || ''} ${candidate.programId || ''}`.toLowerCase();
+  let delta = 0;
+  let rationale = 'Neutral macro-financial alignment.';
+  if (text.includes('loan') || text.includes('credit') || text.includes('borrow')) {
+    if (state.credit === 'frozen' || state.credit === 'restricted') {
+      delta -= 4;
+      rationale = 'Restricted macro credit conditions — borrowing is poorly timed.';
+    } else if (state.credit === 'accommodative') {
+      delta += 1.5;
+      rationale = 'Accommodative credit conditions support prudent leverage.';
+    }
+  }
+  if (text.includes('invest') || text.includes('infrastructure') || text.includes('megaproject')) {
+    if (state.stability === 'crisis' || state.stability === 'stressed') {
+      delta -= 3;
+      rationale = 'Financial stability under stress — major capital calls face higher risk premium.';
+    }
+    if (state.stance === 'restrictive' && state.inflation === 'high') {
+      delta -= 2;
+      rationale = 'Restrictive macro stance during high inflation — defer discretionary capex.';
+    }
+  }
+  return { scoreDelta: finClamp(delta, -6, 6), rationale };
+}
+
+export function macroFinancialGuardianWarning(
+  state: NationalMacroFinancialState | null | undefined,
+  ctx: { actionLabel?: string; category?: string },
+): string | null {
+  if (!state) return null;
+  const cat = String(ctx.category || '').toLowerCase();
+  if ((cat.includes('loan') || cat.includes('credit')) && (state.credit === 'frozen' || state.credit === 'restricted')) {
+    return `Macro credit conditions are ${V1014_FINSTAB_CREDIT_LABEL[state.credit]} — new borrowing may face punitive spreads (metadata warning only).`;
+  }
+  if (state.stability === 'crisis') {
+    return 'National financial stability is in crisis band — consider liquidity preservation (warning only).';
+  }
+  return null;
+}
+
+export function detectMacroFinancialQuery(raw: string): MacroFinancialQuery | null {
+  const q = ` ${String(raw || '').toLowerCase()} `;
+  const regionId = V1014_FINSTAB_CORE_REGIONS.find((r) => q.includes(` ${r.toLowerCase()} `)) || null;
+  const mk = (topic: V1014_FINSTAB_QueryTopic): MacroFinancialQuery => ({ topic, regionId, rawQuestion: raw });
+  if (/\b(financial stability|systemic risk|macro stability)\b/.test(q)) return mk('stability');
+  if (/\b(credit conditions|tight credit|loan conditions|borrowing conditions)\b/.test(q)) return mk('credit');
+  if (/\b(inflation|cost of living|price pressure)\b/.test(q) && !/\bcommodity\b/.test(q)) return mk('inflation');
+  if (/\b(monetary policy|policy stance|interest rate stance)\b/.test(q)) return mk('stance');
+  if (/\b(fiscal spillover|budget.*credit|debt.*credit)\b/.test(q)) return mk('fiscal_spillover');
+  if (/\b(investment climate|capital allocation).*\b(credit|stability)\b/.test(q)) return mk('investment_climate_link');
+  if (regionId && /\b(spread|regional credit)\b/.test(q)) return mk('regional_spread');
+  if (/\b(macro financial|monetary conditions|v10\.14)\b/.test(q)) return mk('overview');
+  return null;
+}
+
+export function answerMacroFinancialQuestion(
+  state: NationalMacroFinancialState | null | undefined,
+  question: string,
+): {
+  fact: string;
+  calculated: string;
+  inference: string;
+  projection: string;
+} {
+  if (!state) {
+    return {
+      fact: 'Macro financial stability layer is not active.',
+      calculated: 'No modifiers applied.',
+      inference: 'Enable national systems and macro financial stability in settings.',
+      projection: 'Neutral macro path assumed.',
+    };
+  }
+  const q = detectMacroFinancialQuery(question);
+  const m = state.modifiers;
+  const fact = `${state.summary} Policy stance: ${state.stance.replace(/_/g, ' ')}.`;
+  const calculated = `Cost-of-living multiplier ${m.costOfLivingMultiplier.toFixed(2)}; credit spread ${m.creditSpreadMultiplier.toFixed(2)}; stability index ${m.financialStabilityIndex.toFixed(0)}/100.`;
+  let inference = 'Conditions are broadly consistent with current fiscal and capital signals.';
+  if (state.stability === 'watch' || state.stability === 'stressed') {
+    inference = 'Financial stability warrants caution on concurrent large loans and megaproject commitments.';
+  }
+  if (state.inflation === 'high' || state.inflation === 'scenario_runaway') {
+    inference = 'Inflation pass-through elevates service/travel costs without rewriting commodity market prices.';
+  }
+  let projection = 'If fiscal and capital inputs stabilize, credit conditions may normalize within a few turns.';
+  if (q?.topic === 'credit' && state.credit === 'tight') {
+    projection = 'Credit may remain tight until fiscal pressure eases or capital flexibility improves (V10.9/V10.12).';
+  }
+  return { fact, calculated, inference, projection };
+}
+
+export function macroFinancialWorldRoots(
+  enabled: boolean,
+  events: MacroFinancialComputeResult['events'],
+  day = 1,
+): MacroFinancialWorldRootEvent[] {
+  if (!enabled || !events?.length) return [];
+  return events.map((e) => ({
+    id: `swr_${e.id}`,
+    turn: e.turn,
+    day,
+    sourceSystem: 'macro_financial',
+    sourceEventId: e.id,
+    kind: e.kind,
+    significance: e.significance,
+    visibility: 'public' as const,
+    summary: e.summary,
+    title: e.title,
+    affectedDomains: ['economy', 'finance'],
+  }));
+}
+
+
+// --- source: self-tests.ts ---
+  computeNationalMacroFinancialConditions,
+  createInitialMacroFinancialPersisted,
+  macroFinancialEconomyCostMultiplier,
+  macroFinancialInputHash,
+  macroFinancialLoanSpreadMultiplier,
+  makeDefaultMacroFinancialTestInputs,
+  sanitizeMacroFinancialPersisted,
+  buildMacroFinancialInputs,
+} from './compute/national-macro-financial.js';
+  detectMacroFinancialQuery,
+  macroFinancialActionAlignment,
+  macroFinancialGuardianWarning,
+  macroFinancialWorldRoots,
+  answerMacroFinancialQuestion,
+} from './integration/query-co-pilot.js';
+
+export function runAgent10FinanceSelfTests(): {
+  passed: number;
+  failed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const check = (id: string, name: string, ok: boolean, detail = 'ok') =>
+    results.push({ id, name, passed: ok, detail: ok ? 'ok' : detail });
+
+  check('a10_t01', 'schema version', createInitialMacroFinancialPersisted().schemaVersion === V1014_FINSTAB_SCHEMA_VERSION);
+  check('a10_t02', 'sanitize null', sanitizeMacroFinancialPersisted(null) === null);
+  check(
+    'a10_t03',
+    'default compute',
+    !!computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state,
+  );
+  check(
+    'a10_t04',
+    'high inflation cost mult',
+    computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs({ highInflationScenario: true }), null, null)
+      .state.modifiers.costOfLivingMultiplier > 1.1,
+  );
+  check(
+    'a10_t05',
+    'credit shock spread',
+    computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs({ creditShockActive: true }), null, null)
+      .state.modifiers.creditSpreadMultiplier > 1.05,
+  );
+  check(
+    'a10_t06',
+    'hash stable',
+    macroFinancialInputHash(makeDefaultMacroFinancialTestInputs()) ===
+      macroFinancialInputHash(makeDefaultMacroFinancialTestInputs()),
+  );
+  check(
+    'a10_t07',
+    'hash turn delta',
+    macroFinancialInputHash(makeDefaultMacroFinancialTestInputs({ turn: 1 })) !==
+      macroFinancialInputHash(makeDefaultMacroFinancialTestInputs({ turn: 2 })),
+  );
+  check('a10_t08', 'economy mult off', macroFinancialEconomyCostMultiplier(null) === 1);
+  check('a10_t09', 'loan spread off', macroFinancialLoanSpreadMultiplier(undefined) === 1);
+  check('a10_t10', 'detect stability', detectMacroFinancialQuery('How is financial stability?')?.topic === 'stability');
+  check('a10_t11', 'detect credit', detectMacroFinancialQuery('Are credit conditions tight?')?.topic === 'credit');
+  check(
+    'a10_t12',
+    'detect inflation not commodity',
+    detectMacroFinancialQuery('inflation and cost of living')?.topic === 'inflation',
+  );
+  check(
+    'a10_t13',
+    'commodity query excluded',
+    detectMacroFinancialQuery('commodity inflation prices')?.topic !== 'inflation' ||
+      detectMacroFinancialQuery('commodity inflation prices') === null,
+  );
+
+  const frozenState = {
+    ...computeNationalMacroFinancialConditions(
+      makeDefaultMacroFinancialTestInputs({ creditShockActive: true, fiscalPressure: 'critical', actorCreditStressIndex: 0.9 }),
+      null,
+      null,
+    ).state,
+    credit: 'frozen' as const,
+  };
+  check(
+    'a10_t14',
+    'alignment loans frozen',
+    (macroFinancialActionAlignment(frozenState, { category: 'loans_and_credit' })?.scoreDelta ?? 0) <= 0,
+  );
+  check(
+    'a10_t15',
+    'guardian frozen credit',
+    !!macroFinancialGuardianWarning(frozenState, { category: 'loans_and_credit' }),
+  );
+  check(
+    'a10_t16',
+    'world roots disabled',
+    macroFinancialWorldRoots(false, [{ id: 'x', turn: 1, kind: 'k', significance: 'minor', title: 't', summary: 's', dedupeKey: 'd' }])
+      .length === 0,
+  );
+  check(
+    'a10_t17',
+    'world roots enabled',
+    macroFinancialWorldRoots(true, [{ id: 'x', turn: 1, kind: 'k', significance: 'minor', title: 't', summary: 's', dedupeKey: 'd' }])
+      .length === 1,
+  );
+  check(
+    'a10_t18',
+    'scenario id inflation',
+    buildMacroFinancialInputs({ turn: 3, gameSettings: { selectedScenarioId: 'high_inflation' } }).highInflationScenario === true,
+  );
+  check(
+    'a10_t19',
+    'non-CPI note',
+    computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state.integrationNotes.some((n) =>
+      n.includes('commodity'),
+    ),
+  );
+  check(
+    'a10_t20',
+    'regional spreads count',
+    computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state.regionalSpreads.length ===
+      V1014_FINSTAB_CORE_REGIONS.length,
+  );
+
+  const hits = evaluatePolicyTransmissionChannels(makeDefaultMacroFinancialTestInputs({ fiscalPressure: 'critical' }));
+  check('a10_t21', 'transmission fiscal active', hits.some((h) => h.id === 'fiscal_strain_tightens_credit' && h.active));
+  check(
+    'a10_t22',
+    'transmission credit weight',
+    sumActiveTransmissionWeight(hits, 'credit') >= 1,
+  );
+
+  check(
+    'a10_t23',
+    'economy layer cost apply',
+    applyMacroCostOfLivingToEconomyLayer(100, 1.2) === 120,
+  );
+  check(
+    'a10_t24',
+    'inflation band order',
+    compareInflationBands('elevated', 'anchored') > 0,
+  );
+
+  const st = computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state;
+  const quote = quoteAdvancedLoanPricing(0.1, st.modifiers.creditSpreadMultiplier, st.credit, st.modifiers.loanAffordabilityIndex);
+  check('a10_t25', 'loan quote effective', quote.effectiveRate > 0 && quote.effectiveRate <= 1);
+
+  check('a10_t26', 'refinance defer frozen', refinanceTimingSignal('frozen', 0.2) === 'defer');
+  check('a10_t27', 'refinance favorable', refinanceTimingSignal('accommodative', 0.3) === 'favorable');
+
+  const seq = runFinancialShockSequence({ inflation: 50, credit: 55, stability: 60 }, [
+    'shock_credit_tightening',
+    'shock_household_cost_surge',
+    'bogus_id',
+  ]);
+  check('a10_t28', 'shock sequence applied', seq.appliedShockIds.length === 2);
+  check('a10_t29', 'shock sequence skip', seq.skippedShockIds.includes('bogus_id'));
+  check('a10_t30', 'shock sequence flag', seq.creditShockActive === true);
+
+  check(
+    'a10_t31',
+    'reference rate tight > easy',
+    referencePolicyRate('tightening', 'restricted') > referencePolicyRate('neutral', 'accommodative'),
+  );
+
+  check(
+    'a10_t32',
+    'answer shapes',
+    !!answerMacroFinancialQuestion(st, 'macro financial overview').fact,
+  );
+
+  check(
+    'a10_t33',
+    'evidence bounded',
+    computeNationalMacroFinancialConditions(
+      makeDefaultMacroFinancialTestInputs({ highInflationScenario: true, creditShockActive: true, fiscalPressure: 'critical' }),
+      null,
+      null,
+    ).state.evidence.length <= V1014_FINSTAB_LIMITS.maxEvidence,
+  );
+
+  check(
+    'a10_t34',
+    'investment risk cap',
+    computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state.modifiers.investmentRiskPremium <=
+      0.35,
+  );
+
+  check(
+    'a10_t35',
+    'cached hash reuse',
+    (() => {
+      const p = createInitialMacroFinancialPersisted();
+      const inp = makeDefaultMacroFinancialTestInputs();
+      p.lastInputHash = macroFinancialInputHash(inp);
+      const prev = computeNationalMacroFinancialConditions(inp, p, null).state;
+      const r = computeNationalMacroFinancialConditions(inp, p, prev);
+      return r.state === prev;
+    })(),
+  );
+
+  for (let i = 0; i < 15; i++) {
+    const turn = i + 1;
+    const r = computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs({ turn }), null, null);
+    check(
+      `a10_t${36 + i}`,
+      `turn ${turn} revision`,
+      r.state.revision >= 1 && r.state.turn === turn,
+    );
+  }
+
+  const passed = results.filter((r) => r.passed).length;
+  const failed = results.length - passed;
+  return { passed, failed, total: results.length, allPassed: failed === 0, results };
+}
+
+
+// --- source: react/FinanceConditionsLab.tsx ---
+
+export interface FinanceConditionsLabProps {
+  state: NationalMacroFinancialState | null;
+  title?: string;
+}
+
+/** Lightweight inspector panel for macro-financial bands (Agent 10 / Operation 10M). */
+export function FinanceConditionsLab(props: FinanceConditionsLabProps) {
+  const { state, title = 'Macro financial conditions' } = props;
+  if (!state) {
+    return (
+      <div className="op10m-finance-lab op10m-finance-lab--empty" data-testid="finance-conditions-lab">
+        <h4>{title}</h4>
+        <p>Macro financial layer inactive.</p>
+      </div>
+    );
+  }
+  const m = state.modifiers;
+  return (
+    <div className="op10m-finance-lab" data-testid="finance-conditions-lab">
+      <h4>{title}</h4>
+      <p>{state.summary}</p>
+      <ul>
+        <li>Inflation: {V1014_FINSTAB_INFLATION_LABEL[state.inflation]}</li>
+        <li>Credit: {V1014_FINSTAB_CREDIT_LABEL[state.credit]}</li>
+        <li>Stability: {V1014_FINSTAB_STABILITY_LABEL[state.stability]}</li>
+        <li>Stance: {state.stance.replace(/_/g, ' ')}</li>
+        <li>Cost-of-living ×{m.costOfLivingMultiplier.toFixed(2)}</li>
+        <li>Credit spread ×{m.creditSpreadMultiplier.toFixed(2)}</li>
+        <li>Loan affordability {m.loanAffordabilityIndex.toFixed(0)}/100</li>
+      </ul>
+      {state.pressures.length > 0 && (
+        <section>
+          <strong>Pressures</strong>
+          <ul>
+            {state.pressures.map((p) => (
+              <li key={p.id}>
+                {p.domain}: {p.explanation}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  );
 }
 
 
