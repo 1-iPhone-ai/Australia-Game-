@@ -37,4 +37,8 @@ export * from './forecast-replay-coherence';
 export * from './forecast-escalation-runbook';
 export * from './forecast-lab-integration-handoff';
 export * from './forecast-round9-console';
+export * from './forecast-handoff-readiness';
+export * from './forecast-operator-signoff';
+export * from './forecast-lab-staging-packet';
+export * from './forecast-round10-console';
 export * from './strategic-forecast-policy-lab';

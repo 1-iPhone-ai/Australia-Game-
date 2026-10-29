@@ -102,7 +102,7 @@ export function ag21Provenance(
   };
 }
 
-export const O10M_AGENT21_MODULE_VERSION = '2.1.0';
+export const O10M_AGENT21_MODULE_VERSION = '2.2.0';
 export const O10M_AGENT21_MODULE_ID = 'forecasting_policy_lab';
 
 // --- bundled from counterfactual-experiments.ts ---
@@ -3932,6 +3932,316 @@ export const Ag21ForecastRound9Console: React.FC<{ seed?: number }> = ({ seed = 
   );
 };
 
+// --- bundled from forecast-handoff-readiness.ts ---
+/**
+ * Agent 21 — integration handoff readiness gate (read-only round 10).
+ */
+
+
+export type Ag21HandoffReadinessStatus = 'ready' | 'hold' | 'blocked';
+
+export interface Ag21HandoffReadinessReport {
+  status: Ag21HandoffReadinessStatus;
+  blockers: string[];
+  handoffId: string;
+  escalationTier: ReturnType<typeof resolveAg21OperatorEscalation>['tier'];
+  coherenceStatus: ReturnType<typeof buildAg21LabIntegrationHandoff>['coherenceStatus'];
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+function ag21ReadinessFromSignals(
+  validationStatus: ReturnType<typeof buildAg21LabIntegrationHandoff>['validationStatus'],
+  coherenceStatus: Ag21HandoffReadinessReport['coherenceStatus'],
+  tier: Ag21HandoffReadinessReport['escalationTier']
+): { status: Ag21HandoffReadinessStatus; blockers: string[] } {
+  const blockers: string[] = [];
+  if (validationStatus === 'blocked') blockers.push('crosslink validation blocked');
+  if (coherenceStatus === 'broken') blockers.push('replay coherence broken');
+  if (tier === 'incident') blockers.push('operator escalation incident');
+
+  if (blockers.length > 0) return { status: 'blocked', blockers };
+  if (validationStatus === 'drift' || coherenceStatus === 'partial' || tier === 'review') {
+    blockers.push('await operator review before staging');
+    return { status: 'hold', blockers };
+  }
+  if (tier === 'watch') {
+    return { status: 'hold', blockers: ['escalation watch — defer staging promotion'] };
+  }
+  return { status: 'ready', blockers: [] };
+}
+
+/** Evaluate whether round 9 integration handoff may enter assembly staging (round 10). */
+export function evaluateAg21HandoffReadiness(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21HandoffReadinessReport {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.78),
+      actorDebt: baseCtx.actorDebt + 165
+    } satisfies Ag21ForecastContext);
+
+  const handoff = buildAg21LabIntegrationHandoff(baseCtx, candidate);
+  const escalation = resolveAg21OperatorEscalation(baseCtx, candidate);
+  const { status, blockers } = ag21ReadinessFromSignals(
+    handoff.validationStatus,
+    handoff.coherenceStatus,
+    escalation.tier
+  );
+
+  return {
+    status,
+    blockers,
+    handoffId: handoff.handoffId,
+    escalationTier: escalation.tier,
+    coherenceStatus: handoff.coherenceStatus,
+    disclaimer: '(Non-authoritative forecast.) Handoff readiness for modular staging only.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'ready' ? 'low' : status === 'hold' ? 'moderate' : 'high',
+      [`readiness=${status}`, `blockers=${blockers.length}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21HandoffReadinessSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 16, seed: 71, actorCash: 1010, actorDebt: 90, regionsControlled: 3 };
+  const report = evaluateAg21HandoffReadiness(ctx);
+
+  push('readiness_status', ['ready', 'hold', 'blocked'].includes(report.status), report.status);
+  push('readiness_handoff', report.handoffId.startsWith('ag21_handoff_'), report.handoffId);
+  push('readiness_blockers', Array.isArray(report.blockers), String(report.blockers.length));
+  push('readiness_non_auth', report.authoritative === false, report.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-operator-signoff.ts ---
+/**
+ * Agent 21 — operator signoff checklist from readiness + runbook (read-only round 10).
+ */
+
+
+export interface Ag21OperatorSignoffItem {
+  id: string;
+  label: string;
+  satisfied: boolean;
+}
+
+export interface Ag21OperatorSignoffRecord {
+  signoffId: string;
+  readinessStatus: ReturnType<typeof evaluateAg21HandoffReadiness>['status'];
+  items: Ag21OperatorSignoffItem[];
+  satisfiedCount: number;
+  mayStage: boolean;
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Build operator signoff checklist before lab staging export (round 10). */
+export function buildAg21OperatorSignoffRecord(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21OperatorSignoffRecord {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.77),
+      actorDebt: baseCtx.actorDebt + 175
+    } satisfies Ag21ForecastContext);
+
+  const readiness = evaluateAg21HandoffReadiness(baseCtx, candidate);
+  const runbook = buildAg21EscalationRunbook(baseCtx, candidate);
+
+  const items: Ag21OperatorSignoffItem[] = [
+    {
+      id: 'readiness_clear',
+      label: 'Handoff readiness not blocked',
+      satisfied: readiness.status !== 'blocked'
+    },
+    {
+      id: 'coherence_ok',
+      label: 'Replay coherence not broken',
+      satisfied: readiness.coherenceStatus !== 'broken'
+    },
+    {
+      id: 'runbook_reviewed',
+      label: 'Runbook steps acknowledged',
+      satisfied: runbook.stepCount >= 1 && runbook.steps.every(s => s.action.length > 5)
+    },
+    {
+      id: 'escalation_not_incident',
+      label: 'No active incident tier',
+      satisfied: readiness.escalationTier !== 'incident'
+    }
+  ];
+
+  const satisfiedCount = items.filter(i => i.satisfied).length;
+  const mayStage = readiness.status === 'ready' && satisfiedCount === items.length;
+  const signoffId = `ag21_signoff_${baseCtx.turn}_${baseCtx.seed}_${readiness.status}`;
+
+  return {
+    signoffId,
+    readinessStatus: readiness.status,
+    items,
+    satisfiedCount,
+    mayStage,
+    disclaimer: '(Non-authoritative forecast.) Operator signoff for lab staging only.',
+    overallUncertainty: ag21LabelUncertainty(
+      mayStage ? 'low' : readiness.status === 'blocked' ? 'high' : 'moderate',
+      [`signoff=${signoffId}`, `satisfied=${satisfiedCount}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21OperatorSignoffSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 12, seed: 33, actorCash: 850, actorDebt: 140, regionsControlled: 2 };
+  const signoff = buildAg21OperatorSignoffRecord(ctx);
+
+  push('signoff_id', signoff.signoffId.startsWith('ag21_signoff_'), signoff.signoffId);
+  push('signoff_items', signoff.items.length === 4, String(signoff.items.length));
+  push('signoff_count', signoff.satisfiedCount <= signoff.items.length, String(signoff.satisfiedCount));
+  push('signoff_non_auth', signoff.authoritative === false, signoff.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-lab-staging-packet.ts ---
+/**
+ * Agent 21 — pre-assembly staging packet for wave dry-runs (read-only round 10).
+ */
+
+
+export type Ag21LabStagingPhase = 'draft' | 'staged' | 'rejected';
+
+export interface Ag21LabStagingPacket {
+  packetId: string;
+  phase: Ag21LabStagingPhase;
+  moduleVersion: string;
+  handoffId: string;
+  signoffId: string;
+  stagingTags: string[];
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+function ag21StagingPhase(
+  readiness: ReturnType<typeof evaluateAg21HandoffReadiness>['status'],
+  mayStage: boolean
+): Ag21LabStagingPhase {
+  if (readiness === 'blocked') return 'rejected';
+  if (mayStage && readiness === 'ready') return 'staged';
+  return 'draft';
+}
+
+/** Build staging packet wrapping handoff + signoff for Agent 25 dry-run wiring. */
+export function buildAg21LabStagingPacket(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21LabStagingPacket {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.76),
+      actorDebt: baseCtx.actorDebt + 185
+    } satisfies Ag21ForecastContext);
+
+  const handoff = buildAg21LabIntegrationHandoff(baseCtx, candidate);
+  const readiness = evaluateAg21HandoffReadiness(baseCtx, candidate);
+  const signoff = buildAg21OperatorSignoffRecord(baseCtx, candidate);
+  const phase = ag21StagingPhase(readiness.status, signoff.mayStage);
+
+  const packetId = `ag21_stage_${baseCtx.turn}_${baseCtx.seed}_${phase}`;
+
+  const stagingTags = [
+    `phase:${phase}`,
+    `readiness:${readiness.status}`,
+    `signoff:${signoff.signoffId}`,
+    `handoff:${handoff.handoffId}`,
+    `version:${O10M_AGENT21_MODULE_VERSION}`
+  ];
+
+  return {
+    packetId,
+    phase,
+    moduleVersion: O10M_AGENT21_MODULE_VERSION,
+    handoffId: handoff.handoffId,
+    signoffId: signoff.signoffId,
+    stagingTags,
+    disclaimer: '(Non-authoritative forecast.) Staging packet for Operation 10M dry-run only.',
+    overallUncertainty: ag21LabelUncertainty(
+      phase === 'staged' ? 'low' : phase === 'rejected' ? 'high' : 'moderate',
+      [`packet=${packetId}`, `phase=${phase}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21LabStagingPacketSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 24, seed: 17, actorCash: 1180, actorDebt: 62, regionsControlled: 4 };
+  const packet = buildAg21LabStagingPacket(ctx);
+
+  push('staging_packet_id', packet.packetId.startsWith('ag21_stage_'), packet.packetId);
+  push('staging_phase', ['draft', 'staged', 'rejected'].includes(packet.phase), packet.phase);
+  push('staging_tags', packet.stagingTags.length >= 5, String(packet.stagingTags.length));
+  push('staging_non_auth', packet.authoritative === false, packet.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-round10-console.tsx ---
+/**
+ * Agent 21 — scale wave round 10 console (readiness + signoff + staging packet).
+ */
+
+
+export const Ag21ForecastRound10Console: React.FC<{ seed?: number }> = ({ seed = 74 }) => {
+  const base = useMemo(() => createDefaultAg21ForecastContext({ seed, turn: 21 }), [seed]);
+  const stressed = useMemo(
+    () => ({ ...base, actorCash: Math.round(base.actorCash * 0.68), actorDebt: base.actorDebt + 310 }),
+    [base]
+  );
+
+  const readiness = useMemo(() => evaluateAg21HandoffReadiness(base, stressed), [base, stressed]);
+  const signoff = useMemo(() => buildAg21OperatorSignoffRecord(base, stressed), [base, stressed]);
+  const staging = useMemo(() => buildAg21LabStagingPacket(base, stressed), [base, stressed]);
+
+  return (
+    <div className="border border-sky-500/30 rounded-lg p-3 bg-slate-950/85 text-xs space-y-2" data-testid="ag21-round10-console">
+      <div className="font-bold text-sky-200">
+        🔬 Forecast Lab Round 10 <span className="text-[10px] font-normal opacity-70">(non-authoritative)</span>
+      </div>
+      <div data-testid="ag21-round10-readiness">
+        Readiness · {readiness.status} · blockers {readiness.blockers.length}
+      </div>
+      <div data-testid="ag21-round10-signoff">
+        Signoff · {signoff.satisfiedCount}/{signoff.items.length} · stage {signoff.mayStage ? 'yes' : 'no'}
+      </div>
+      <div data-testid="ag21-round10-staging">
+        Staging · {staging.phase} · {staging.packetId.slice(0, 30)}…
+      </div>
+    </div>
+  );
+};
+
 
 
 /** Agent 25 — modular self-tests (subset of npm run test:ag21). */
@@ -4020,6 +4330,15 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21LabIntegrationHandoffSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21HandoffReadinessSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21OperatorSignoffSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21LabStagingPacketSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({

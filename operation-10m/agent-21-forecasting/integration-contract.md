@@ -8,7 +8,7 @@
 ## Module identity
 
 - `O10M_AGENT21_MODULE_ID` = `forecasting_policy_lab`
-- `O10M_AGENT21_MODULE_VERSION` = `2.1.0`
+- `O10M_AGENT21_MODULE_VERSION` = `2.2.0`
 
 ## Assembly chunk
 
@@ -59,6 +59,10 @@
 | `buildAg21EscalationRunbook` | Round 9 operator runbook steps from escalation tier |
 | `buildAg21LabIntegrationHandoff` | Round 9 assembly handoff bundle for Agent 24/25 |
 | `Ag21ForecastRound9Console` | Round 9 UI (`data-testid="ag21-round9-console"`) |
+| `evaluateAg21HandoffReadiness` | Round 10 handoff readiness gate |
+| `buildAg21OperatorSignoffRecord` | Round 10 operator signoff checklist |
+| `buildAg21LabStagingPacket` | Round 10 pre-assembly staging packet |
+| `Ag21ForecastRound10Console` | Round 10 UI (`data-testid="ag21-round10-console"`) |
 
 ## Upstream dependencies (canonical only)
 

@@ -51,7 +51,11 @@ const SOURCE_FILES = [
   'operation-10m/agent-21-forecasting/forecast-replay-coherence.ts',
   'operation-10m/agent-21-forecasting/forecast-escalation-runbook.ts',
   'operation-10m/agent-21-forecasting/forecast-lab-integration-handoff.ts',
-  'operation-10m/agent-21-forecasting/forecast-round9-console.tsx'
+  'operation-10m/agent-21-forecasting/forecast-round9-console.tsx',
+  'operation-10m/agent-21-forecasting/forecast-handoff-readiness.ts',
+  'operation-10m/agent-21-forecasting/forecast-operator-signoff.ts',
+  'operation-10m/agent-21-forecasting/forecast-lab-staging-packet.ts',
+  'operation-10m/agent-21-forecasting/forecast-round10-console.tsx'
 ];
 
 function stripModuleImports(src) {
@@ -161,6 +165,15 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21LabIntegrationHandoffSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21HandoffReadinessSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21OperatorSignoffSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21LabStagingPacketSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({
