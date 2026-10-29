@@ -8,6 +8,10 @@ export interface Agent06MacroSnapshot {
   unemploymentBand: 'low' | 'moderate' | 'elevated' | 'severe';
   outputGap: number;
   nominalDemandPressure: number;
+  /** Round 18: fragile macro transmission stability layer (Agent 06 round 17). */
+  transmissionStabilityFragile?: boolean;
+  /** Round 18: recovery-oriented scenario rank under stress. */
+  macroRecoveryRankStressActive?: boolean;
 }
 
 export function mergeAgent06IntoMacroFinancialInputs(
@@ -31,12 +35,29 @@ export function mergeAgent06IntoMacroFinancialInputs(
     fiscalPressure = 'tight';
   }
 
+  if (snapshot.transmissionStabilityFragile) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  }
+  if (snapshot.macroRecoveryRankStressActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
   return {
     ...base,
     turn: Math.max(base.turn, snapshot.turn),
     inflationSettingMultiplier,
     actorCreditStressIndex,
     fiscalPressure,
+    highInflationScenario:
+      base.highInflationScenario ||
+      snapshot.transmissionStabilityFragile === true ||
+      snapshot.macroRecoveryRankStressActive === true,
+    systemicLiquidityBand:
+      snapshot.transmissionStabilityFragile &&
+      base.systemicLiquidityBand !== 'critical' &&
+      base.systemicLiquidityBand !== 'strained'
+        ? 'strained'
+        : base.systemicLiquidityBand,
   };
 }
 

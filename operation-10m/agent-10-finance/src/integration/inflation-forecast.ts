@@ -1,4 +1,5 @@
 import type { InflationConditionsBand } from '../definitions/types.js';
+import { finClamp } from '../compute/math.js';
 import { makeDefaultMacroFinancialTestInputs, computeNationalMacroFinancialConditions } from '../compute/national-macro-financial.js';
 import { stepInflationExpectations, initialInflationAnchoringScore } from '../inflation/expectations-anchor.js';
 import { assessWagePriceSpiral } from '../inflation/wage-price-spiral.js';
@@ -103,6 +104,14 @@ import {
   assessUiInflationSaliencePassThrough,
   type UiInflationSalienceBand,
 } from '../inflation/ui-inflation-salience-pass-through.js';
+import {
+  assessHousingMortgageEssentialInflation,
+  type HousingMortgageEssentialBand,
+} from '../inflation/housing-mortgage-essential-inflation.js';
+import {
+  assessMacroTransmissionMergeInflation,
+  type MacroTransmissionMergeBand,
+} from '../inflation/macro-transmission-merge-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -137,6 +146,8 @@ export interface InflationForecastPoint {
   agriculturalFarmgatePressureBand: AgriculturalFarmgatePressureBand;
   publicUtilitiesGridTariffBand: PublicUtilitiesGridTariffBand;
   uiInflationSalienceBand: UiInflationSalienceBand;
+  housingMortgageEssentialBand: HousingMortgageEssentialBand;
+  macroTransmissionMergeBand: MacroTransmissionMergeBand;
 }
 
 export interface InflationForecastPath {
@@ -360,6 +371,32 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const housingEssential = assessHousingMortgageEssentialInflation({
+      mortgageStressBand:
+        inputs.householdAffordability === 'severe_pressure'
+          ? 'severe'
+          : inputs.householdAffordability === 'strained'
+            ? 'elevated'
+            : 'low',
+      wellbeingCostBand:
+        inputs.householdInflationScenarioActive && inputs.publicStability < 45
+          ? 'critical'
+          : inputs.householdInflationScenarioActive
+            ? 'strained'
+            : 'stable',
+      essentialServicesInflationFlag: inputs.householdInflationScenarioActive,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const macroMerge = assessMacroTransmissionMergeInflation({
+      transmissionStabilityFragile:
+        inputs.systemicLiquidityBand === 'strained' || inputs.systemicLiquidityBand === 'critical',
+      macroRecoveryRankStressActive: inputs.creditShockActive || inputs.fiscalPressure === 'critical',
+      outputGap: inputs.highInflationScenario ? 0.28 : -0.04,
+      nominalDemandPressure: finClamp((inputs.inflationSettingMultiplier ?? 1) - 1, -0.2, 0.6),
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -394,6 +431,8 @@ export function projectInflationForecastPath(
       agriculturalFarmgatePressureBand: farmgate.pressureBand,
       publicUtilitiesGridTariffBand: publicGrid.tariffBand,
       uiInflationSalienceBand: uiSalience.salienceBand,
+      housingMortgageEssentialBand: housingEssential.essentialBand,
+      macroTransmissionMergeBand: macroMerge.mergeBand,
     });
   }
 

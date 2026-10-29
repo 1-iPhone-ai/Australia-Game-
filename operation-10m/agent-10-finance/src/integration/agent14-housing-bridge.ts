@@ -7,6 +7,10 @@ export interface Agent14HousingSnapshot {
   mortgageStressBand: 'low' | 'elevated' | 'severe';
   wellbeingCostBand: 'stable' | 'strained' | 'critical';
   essentialServicesInflationFlag: boolean;
+  /** Round 18: inline merge trajectory band from Agent 14 wellbeing module. */
+  inlineMergeTrajectoryBand?: 'on_track' | 'lagging' | 'blocked';
+  /** Round 18: turn-boundary inline activation monitor in critical band. */
+  inlineActivationBoundaryCritical?: boolean;
 }
 
 export function mergeAgent14IntoMacroFinancialInputs(
@@ -32,6 +36,12 @@ export function mergeAgent14IntoMacroFinancialInputs(
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   }
 
+  if (snapshot.inlineMergeTrajectoryBand === 'blocked') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  } else if (snapshot.inlineMergeTrajectoryBand === 'lagging') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
   let householdAffordability = base.householdAffordability;
   if (
     snapshot.mortgageStressBand === 'severe' &&
@@ -50,7 +60,12 @@ export function mergeAgent14IntoMacroFinancialInputs(
     householdInflationScenarioActive:
       base.householdInflationScenarioActive ||
       snapshot.essentialServicesInflationFlag ||
-      snapshot.wellbeingCostBand === 'critical',
+      snapshot.wellbeingCostBand === 'critical' ||
+      snapshot.inlineActivationBoundaryCritical === true,
+    highInflationScenario:
+      base.highInflationScenario ||
+      snapshot.inlineMergeTrajectoryBand === 'blocked' ||
+      snapshot.inlineActivationBoundaryCritical === true,
   };
 }
 

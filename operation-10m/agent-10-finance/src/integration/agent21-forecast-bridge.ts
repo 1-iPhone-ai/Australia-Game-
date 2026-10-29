@@ -28,11 +28,13 @@ import type { FinancialServicesFeeBand } from '../inflation/financial-services-f
 import type { AgriculturalFarmgatePressureBand } from '../inflation/agricultural-farmgate-inflation.js';
 import type { PublicUtilitiesGridTariffBand } from '../inflation/public-utilities-grid-tariff-inflation.js';
 import type { UiInflationSalienceBand } from '../inflation/ui-inflation-salience-pass-through.js';
+import type { HousingMortgageEssentialBand } from '../inflation/housing-mortgage-essential-inflation.js';
+import type { MacroTransmissionMergeBand } from '../inflation/macro-transmission-merge-inflation.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r17';
+  schemaVersion: '10.14.agent10.r18';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -62,6 +64,8 @@ export interface Agent21InflationForecastBundle {
   terminalAgriculturalFarmgatePressure: AgriculturalFarmgatePressureBand;
   terminalPublicUtilitiesGridTariff: PublicUtilitiesGridTariffBand;
   terminalUiInflationSalience: UiInflationSalienceBand;
+  terminalHousingMortgageEssential: HousingMortgageEssentialBand;
+  terminalMacroTransmissionMerge: MacroTransmissionMergeBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -90,7 +94,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r17',
+    schemaVersion: '10.14.agent10.r18',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -120,6 +124,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalAgriculturalFarmgatePressure: lastPoint?.agriculturalFarmgatePressureBand ?? 'soft',
     terminalPublicUtilitiesGridTariff: lastPoint?.publicUtilitiesGridTariffBand ?? 'subdued',
     terminalUiInflationSalience: lastPoint?.uiInflationSalienceBand ?? 'muted',
+    terminalHousingMortgageEssential: lastPoint?.housingMortgageEssentialBand ?? 'subdued',
+    terminalMacroTransmissionMerge: lastPoint?.macroTransmissionMergeBand ?? 'coherent',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

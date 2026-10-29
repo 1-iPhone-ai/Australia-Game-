@@ -3162,6 +3162,158 @@ export function uiInflationSaliencePassThroughScoreAdjustment(band: UiInflationS
 }
 
 
+// --- source: inflation/housing-mortgage-essential-inflation.ts ---
+
+export type HousingMortgageEssentialBand = 'subdued' | 'firming' | 'elevated' | 'services_shock';
+
+export interface HousingMortgageEssentialInflationAssessment {
+  essentialBand: HousingMortgageEssentialBand;
+  servicesIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Mortgage servicing and essential wellbeing services in CPI metadata (Agent 14 housing). */
+export function assessHousingMortgageEssentialInflation(input: {
+  mortgageStressBand: 'low' | 'elevated' | 'severe';
+  wellbeingCostBand: 'stable' | 'strained' | 'critical';
+  essentialServicesInflationFlag: boolean;
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): HousingMortgageEssentialInflationAssessment {
+  let pressure = 0;
+  if (input.mortgageStressBand === 'severe') {
+    pressure += 0.32;
+  } else if (input.mortgageStressBand === 'elevated') {
+    pressure += 0.16;
+  }
+
+  if (input.wellbeingCostBand === 'critical') {
+    pressure += 0.28;
+  } else if (input.wellbeingCostBand === 'strained') {
+    pressure += 0.14;
+  }
+
+  if (input.essentialServicesInflationFlag) {
+    pressure += 0.18;
+  }
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.07;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.0042, 0, 1.05);
+  const servicesIndex = finRound(100 + pressure * 17, 1);
+
+  let essentialBand: HousingMortgageEssentialBand = 'subdued';
+  if (pressure >= 0.56) essentialBand = 'services_shock';
+  else if (pressure >= 0.36) essentialBand = 'elevated';
+  else if (pressure >= 0.19) essentialBand = 'firming';
+
+  const inflationScoreNudge =
+    essentialBand === 'services_shock'
+      ? 0.085
+      : essentialBand === 'elevated'
+        ? 0.055
+        : essentialBand === 'firming'
+          ? 0.028
+          : 0;
+
+  const narrative =
+    essentialBand === 'services_shock' || essentialBand === 'elevated'
+      ? 'Mortgage servicing and essential wellbeing services are lifting CPI through household stress.'
+      : essentialBand === 'firming'
+        ? 'Essential services inflation firming as mortgage and wellbeing costs tighten.'
+        : 'Housing mortgage and essential services pass-through subdued versus headline.';
+
+  return { essentialBand, servicesIndex, inflationScoreNudge, narrative };
+}
+
+export function housingMortgageEssentialInflationScoreAdjustment(band: HousingMortgageEssentialBand): number {
+  if (band === 'services_shock') return 4;
+  if (band === 'elevated') return 3;
+  if (band === 'firming') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/macro-transmission-merge-inflation.ts ---
+
+export type MacroTransmissionMergeBand = 'coherent' | 'drifting' | 'fragile' | 'inline_blocked';
+
+export interface MacroTransmissionMergeInflationAssessment {
+  mergeBand: MacroTransmissionMergeBand;
+  transmissionIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Macro transmission disagreement and inline merge readiness feeding CPI metadata (Agent 06). */
+export function assessMacroTransmissionMergeInflation(input: {
+  transmissionStabilityFragile: boolean;
+  macroRecoveryRankStressActive: boolean;
+  outputGap: number;
+  nominalDemandPressure: number;
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): MacroTransmissionMergeInflationAssessment {
+  let pressure = 0;
+  if (input.transmissionStabilityFragile) {
+    pressure += 0.3;
+  }
+  if (input.macroRecoveryRankStressActive) {
+    pressure += 0.22;
+  }
+
+  if (input.outputGap > 0.25) {
+    pressure += 0.12;
+  } else if (input.outputGap < -0.2) {
+    pressure += 0.08;
+  }
+
+  if (input.nominalDemandPressure > 0.4) {
+    pressure += 0.14;
+  }
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.06;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.0038, 0, 1.05);
+  const transmissionIndex = finRound(100 + pressure * 16, 1);
+
+  let mergeBand: MacroTransmissionMergeBand = 'coherent';
+  if (pressure >= 0.55) mergeBand = 'inline_blocked';
+  else if (pressure >= 0.38) mergeBand = 'fragile';
+  else if (pressure >= 0.2) mergeBand = 'drifting';
+
+  const inflationScoreNudge =
+    mergeBand === 'inline_blocked'
+      ? 0.088
+      : mergeBand === 'fragile'
+        ? 0.058
+        : mergeBand === 'drifting'
+          ? 0.026
+          : 0;
+
+  const narrative =
+    mergeBand === 'inline_blocked' || mergeBand === 'fragile'
+      ? 'Macro transmission merge stress is passing through to CPI via fragile stability layers.'
+      : mergeBand === 'drifting'
+        ? 'Transmission layers drifting — modest CPI nudge from recovery rank stress.'
+        : 'Macro transmission merge coherent; inline merge pass-through subdued.';
+
+  return { mergeBand, transmissionIndex, inflationScoreNudge, narrative };
+}
+
+export function macroTransmissionMergeInflationScoreAdjustment(band: MacroTransmissionMergeBand): number {
+  if (band === 'inline_blocked') return 4;
+  if (band === 'fragile') return 3;
+  if (band === 'drifting') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -3960,6 +4112,43 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'ui', 'utilities', 'round17'],
   },
+  {
+    id: 'housing_mortgage_essential_stack',
+    label: 'Housing mortgage essential stack',
+    description: 'Severe mortgage stress with essential services inflation flag.',
+    patch: {
+      householdAffordability: 'severe_pressure',
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.22,
+      publicStability: 44,
+    },
+    tags: ['inflation', 'housing', 'round18'],
+  },
+  {
+    id: 'macro_transmission_merge_stress',
+    label: 'Macro transmission merge stress',
+    description: 'Fragile transmission with recovery rank stress — merge CPI metadata.',
+    patch: {
+      systemicLiquidityBand: 'strained',
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.25,
+      highInflationScenario: true,
+    },
+    tags: ['inflation', 'macro', 'round18'],
+  },
+  {
+    id: 'housing_macro_merge_fusion_stress',
+    label: 'Housing & macro merge fusion stress',
+    description: 'Aligned with Agent 14 inline merge + Agent 06 transmission fragile bands.',
+    patch: {
+      inflationSettingMultiplier: 1.29,
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      systemicLiquidityBand: 'critical',
+      publicStability: 36,
+    },
+    tags: ['inflation', 'housing', 'macro', 'round18'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
@@ -4711,6 +4900,10 @@ export interface Agent06MacroSnapshot {
   unemploymentBand: 'low' | 'moderate' | 'elevated' | 'severe';
   outputGap: number;
   nominalDemandPressure: number;
+  /** Round 18: fragile macro transmission stability layer (Agent 06 round 17). */
+  transmissionStabilityFragile?: boolean;
+  /** Round 18: recovery-oriented scenario rank under stress. */
+  macroRecoveryRankStressActive?: boolean;
 }
 
 export function mergeAgent06IntoMacroFinancialInputs(
@@ -4734,12 +4927,29 @@ export function mergeAgent06IntoMacroFinancialInputs(
     fiscalPressure = 'tight';
   }
 
+  if (snapshot.transmissionStabilityFragile) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  }
+  if (snapshot.macroRecoveryRankStressActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
   return {
     ...base,
     turn: Math.max(base.turn, snapshot.turn),
     inflationSettingMultiplier,
     actorCreditStressIndex,
     fiscalPressure,
+    highInflationScenario:
+      base.highInflationScenario ||
+      snapshot.transmissionStabilityFragile === true ||
+      snapshot.macroRecoveryRankStressActive === true,
+    systemicLiquidityBand:
+      snapshot.transmissionStabilityFragile &&
+      base.systemicLiquidityBand !== 'critical' &&
+      base.systemicLiquidityBand !== 'strained'
+        ? 'strained'
+        : base.systemicLiquidityBand,
   };
 }
 
@@ -5067,6 +5277,10 @@ export interface Agent14HousingSnapshot {
   mortgageStressBand: 'low' | 'elevated' | 'severe';
   wellbeingCostBand: 'stable' | 'strained' | 'critical';
   essentialServicesInflationFlag: boolean;
+  /** Round 18: inline merge trajectory band from Agent 14 wellbeing module. */
+  inlineMergeTrajectoryBand?: 'on_track' | 'lagging' | 'blocked';
+  /** Round 18: turn-boundary inline activation monitor in critical band. */
+  inlineActivationBoundaryCritical?: boolean;
 }
 
 export function mergeAgent14IntoMacroFinancialInputs(
@@ -5092,6 +5306,12 @@ export function mergeAgent14IntoMacroFinancialInputs(
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   }
 
+  if (snapshot.inlineMergeTrajectoryBand === 'blocked') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  } else if (snapshot.inlineMergeTrajectoryBand === 'lagging') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
   let householdAffordability = base.householdAffordability;
   if (
     snapshot.mortgageStressBand === 'severe' &&
@@ -5110,7 +5330,12 @@ export function mergeAgent14IntoMacroFinancialInputs(
     householdInflationScenarioActive:
       base.householdInflationScenarioActive ||
       snapshot.essentialServicesInflationFlag ||
-      snapshot.wellbeingCostBand === 'critical',
+      snapshot.wellbeingCostBand === 'critical' ||
+      snapshot.inlineActivationBoundaryCritical === true,
+    highInflationScenario:
+      base.highInflationScenario ||
+      snapshot.inlineMergeTrajectoryBand === 'blocked' ||
+      snapshot.inlineActivationBoundaryCritical === true,
   };
 }
 
@@ -5865,6 +6090,12 @@ export function agent23DashboardsBridgeIntegrationNote(): string {
   assessUiInflationSaliencePassThrough,
   type UiInflationSalienceBand,
 } from '../inflation/ui-inflation-salience-pass-through.js';
+  assessHousingMortgageEssentialInflation,
+  type HousingMortgageEssentialBand,
+} from '../inflation/housing-mortgage-essential-inflation.js';
+  assessMacroTransmissionMergeInflation,
+  type MacroTransmissionMergeBand,
+} from '../inflation/macro-transmission-merge-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -5899,6 +6130,8 @@ export interface InflationForecastPoint {
   agriculturalFarmgatePressureBand: AgriculturalFarmgatePressureBand;
   publicUtilitiesGridTariffBand: PublicUtilitiesGridTariffBand;
   uiInflationSalienceBand: UiInflationSalienceBand;
+  housingMortgageEssentialBand: HousingMortgageEssentialBand;
+  macroTransmissionMergeBand: MacroTransmissionMergeBand;
 }
 
 export interface InflationForecastPath {
@@ -6122,6 +6355,32 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const housingEssential = assessHousingMortgageEssentialInflation({
+      mortgageStressBand:
+        inputs.householdAffordability === 'severe_pressure'
+          ? 'severe'
+          : inputs.householdAffordability === 'strained'
+            ? 'elevated'
+            : 'low',
+      wellbeingCostBand:
+        inputs.householdInflationScenarioActive && inputs.publicStability < 45
+          ? 'critical'
+          : inputs.householdInflationScenarioActive
+            ? 'strained'
+            : 'stable',
+      essentialServicesInflationFlag: inputs.householdInflationScenarioActive,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const macroMerge = assessMacroTransmissionMergeInflation({
+      transmissionStabilityFragile:
+        inputs.systemicLiquidityBand === 'strained' || inputs.systemicLiquidityBand === 'critical',
+      macroRecoveryRankStressActive: inputs.creditShockActive || inputs.fiscalPressure === 'critical',
+      outputGap: inputs.highInflationScenario ? 0.28 : -0.04,
+      nominalDemandPressure: finClamp((inputs.inflationSettingMultiplier ?? 1) - 1, -0.2, 0.6),
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -6156,6 +6415,8 @@ export function projectInflationForecastPath(
       agriculturalFarmgatePressureBand: farmgate.pressureBand,
       publicUtilitiesGridTariffBand: publicGrid.tariffBand,
       uiInflationSalienceBand: uiSalience.salienceBand,
+      housingMortgageEssentialBand: housingEssential.essentialBand,
+      macroTransmissionMergeBand: macroMerge.mergeBand,
     });
   }
 
@@ -6261,7 +6522,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r17';
+  schemaVersion: '10.14.agent10.r18';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -6291,6 +6552,8 @@ export interface Agent21InflationForecastBundle {
   terminalAgriculturalFarmgatePressure: AgriculturalFarmgatePressureBand;
   terminalPublicUtilitiesGridTariff: PublicUtilitiesGridTariffBand;
   terminalUiInflationSalience: UiInflationSalienceBand;
+  terminalHousingMortgageEssential: HousingMortgageEssentialBand;
+  terminalMacroTransmissionMerge: MacroTransmissionMergeBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -6319,7 +6582,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r17',
+    schemaVersion: '10.14.agent10.r18',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -6349,6 +6612,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalAgriculturalFarmgatePressure: lastPoint?.agriculturalFarmgatePressureBand ?? 'soft',
     terminalPublicUtilitiesGridTariff: lastPoint?.publicUtilitiesGridTariffBand ?? 'subdued',
     terminalUiInflationSalience: lastPoint?.uiInflationSalienceBand ?? 'muted',
+    terminalHousingMortgageEssential: lastPoint?.housingMortgageEssentialBand ?? 'subdued',
+    terminalMacroTransmissionMerge: lastPoint?.macroTransmissionMergeBand ?? 'coherent',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -6548,6 +6813,12 @@ export function effectiveTierLoanRate(
   assessUiInflationSaliencePassThrough,
   uiInflationSaliencePassThroughScoreAdjustment,
 } from './inflation/ui-inflation-salience-pass-through.js';
+  assessHousingMortgageEssentialInflation,
+  housingMortgageEssentialInflationScoreAdjustment,
+} from './inflation/housing-mortgage-essential-inflation.js';
+  assessMacroTransmissionMergeInflation,
+  macroTransmissionMergeInflationScoreAdjustment,
+} from './inflation/macro-transmission-merge-inflation.js';
   mergeAgent22IntoMacroFinancialInputs,
   agent22UiBridgeIntegrationNote,
 } from './integration/agent22-ui-bridge.js';
@@ -6952,7 +7223,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r17');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r18');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -7099,7 +7370,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r17' &&
+      bundle.schemaVersion === '10.14.agent10.r18' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -7191,7 +7462,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r17' &&
+      bundle.schemaVersion === '10.14.agent10.r18' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -7290,7 +7561,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r17' &&
+      bundle.schemaVersion === '10.14.agent10.r18' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -7388,7 +7659,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r17' &&
+      bundle.schemaVersion === '10.14.agent10.r18' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -7486,7 +7757,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r17' &&
+      bundle.schemaVersion === '10.14.agent10.r18' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -7576,7 +7847,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r12_10',
       'agent21 r12 fields',
-      bundle.schemaVersion === '10.14.agent10.r17' &&
+      bundle.schemaVersion === '10.14.agent10.r18' &&
         bundle.terminalRecreationLeisurePressure !== undefined &&
         bundle.terminalProfessionalServicesFee !== undefined,
     );
@@ -7666,7 +7937,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r13_10',
       'agent21 r13 fields',
-      bundle.schemaVersion === '10.14.agent10.r17' &&
+      bundle.schemaVersion === '10.14.agent10.r18' &&
         bundle.terminalChildcareServicesPressure !== undefined &&
         bundle.terminalGovernmentChargesPressure !== undefined,
     );
@@ -7756,7 +8027,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r14_10',
       'agent21 r14 fields',
-      bundle.schemaVersion === '10.14.agent10.r17' &&
+      bundle.schemaVersion === '10.14.agent10.r18' &&
         bundle.terminalWaterUtilitiesPressure !== undefined &&
         bundle.terminalDomesticTravelPressure !== undefined,
     );
@@ -7846,7 +8117,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r15_10',
       'agent21 r15 fields',
-      bundle.schemaVersion === '10.14.agent10.r17' &&
+      bundle.schemaVersion === '10.14.agent10.r18' &&
         bundle.terminalConstructionMaterialsPressure !== undefined &&
         bundle.terminalRetailTradeMargin !== undefined,
     );
@@ -7938,7 +8209,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r16_10',
       'agent21 r16 fields',
-      bundle.schemaVersion === '10.14.agent10.r17' &&
+      bundle.schemaVersion === '10.14.agent10.r18' &&
         bundle.terminalFinancialServicesFee !== undefined &&
         bundle.terminalAgriculturalFarmgatePressure !== undefined,
     );
@@ -8034,7 +8305,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r17_10',
       'agent21 r17 fields',
-      bundle.schemaVersion === '10.14.agent10.r17' &&
+      bundle.schemaVersion === '10.14.agent10.r18' &&
         bundle.terminalPublicUtilitiesGridTariff !== undefined &&
         bundle.terminalUiInflationSalience !== undefined,
     );
@@ -8061,6 +8332,110 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'ui_utilities_fusion_stress');
       return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.25;
+    })(),
+  );
+
+  // --- Round 18 scale wave ---
+  {
+    const essential = assessHousingMortgageEssentialInflation({
+      mortgageStressBand: 'severe',
+      wellbeingCostBand: 'critical',
+      essentialServicesInflationFlag: true,
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r18_01',
+      'housing essential elevated or shock',
+      essential.essentialBand === 'elevated' || essential.essentialBand === 'services_shock',
+    );
+    check('a10_r18_02', 'housing essential score adj', housingMortgageEssentialInflationScoreAdjustment(essential.essentialBand) >= 3);
+  }
+  {
+    const merge = assessMacroTransmissionMergeInflation({
+      transmissionStabilityFragile: true,
+      macroRecoveryRankStressActive: true,
+      outputGap: 0.35,
+      nominalDemandPressure: 0.45,
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r18_03',
+      'macro merge fragile or blocked',
+      merge.mergeBand === 'fragile' || merge.mergeBand === 'inline_blocked',
+    );
+    check('a10_r18_04', 'macro merge score adj', macroTransmissionMergeInflationScoreAdjustment(merge.mergeBand) >= 3);
+  }
+  {
+    const merged14 = mergeAgent14IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      mortgageStressBand: 'elevated',
+      wellbeingCostBand: 'strained',
+      essentialServicesInflationFlag: true,
+      inlineMergeTrajectoryBand: 'blocked',
+      inlineActivationBoundaryCritical: true,
+    });
+    check('a10_r18_05', 'agent14 inline merge merge', merged14.highInflationScenario === true && merged14.householdInflationScenarioActive === true);
+    check('a10_r18_06', 'agent14 bridge note', agent14HousingBridgeIntegrationNote().includes('Agent 14'));
+  }
+  {
+    const merged06 = mergeAgent06IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      gdpGrowthBand: 'slow',
+      unemploymentBand: 'moderate',
+      outputGap: 0.1,
+      nominalDemandPressure: 0.2,
+      transmissionStabilityFragile: true,
+      macroRecoveryRankStressActive: true,
+    });
+    check('a10_r18_07', 'agent06 transmission merge', merged06.highInflationScenario === true && merged06.systemicLiquidityBand === 'strained');
+    check('a10_r18_08', 'agent06 bridge note', agent06BridgeIntegrationNote().includes('Agent 06'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r18_09',
+      'forecast housing essential and macro merge fields',
+      path.points.every((p) => !!p.housingMortgageEssentialBand && !!p.macroTransmissionMergeBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r18_10',
+      'agent21 r18 fields',
+      bundle.schemaVersion === '10.14.agent10.r18' &&
+        bundle.terminalHousingMortgageEssential !== undefined &&
+        bundle.terminalMacroTransmissionMerge !== undefined,
+    );
+  }
+  check(
+    'a10_r18_11',
+    'round18 preset housing essential stack',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'housing_mortgage_essential_stack');
+      return inp?.householdAffordability === 'severe_pressure' && inp.householdInflationScenarioActive === true;
+    })(),
+  );
+  check(
+    'a10_r18_12',
+    'round18 preset macro transmission merge',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'macro_transmission_merge_stress');
+      return inp?.creditShockActive === true && inp.systemicLiquidityBand === 'strained';
+    })(),
+  );
+  check(
+    'a10_r18_13',
+    'round18 preset housing macro fusion',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'housing_macro_merge_fusion_stress');
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.28;
     })(),
   );
 
@@ -9004,6 +9379,86 @@ export function UiUtilitiesGridInflationPanel(props: UiUtilitiesGridInflationPan
       </p>
       <p data-testid="ui-utilities-grid-note">{grid.narrative}</p>
       <p>{salience.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/HousingMacroMergeInflationPanel.tsx ---
+  assessHousingMortgageEssentialInflation,
+  housingMortgageEssentialInflationScoreAdjustment,
+} from '../inflation/housing-mortgage-essential-inflation.js';
+  assessMacroTransmissionMergeInflation,
+  macroTransmissionMergeInflationScoreAdjustment,
+} from '../inflation/macro-transmission-merge-inflation.js';
+
+export interface HousingMacroMergeInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent14?: Agent14HousingSnapshot | null;
+  agent06?: Agent06MacroSnapshot | null;
+}
+
+export function HousingMacroMergeInflationPanel(props: HousingMacroMergeInflationPanelProps) {
+  const housing = props.agent14 ?? {
+    turn: props.inputs.turn,
+    mortgageStressBand:
+      props.inputs.householdAffordability === 'severe_pressure'
+        ? ('severe' as const)
+        : props.inputs.householdAffordability === 'strained'
+          ? ('elevated' as const)
+          : ('low' as const),
+    wellbeingCostBand:
+      props.inputs.householdInflationScenarioActive && props.inputs.publicStability < 45
+        ? ('critical' as const)
+        : props.inputs.householdInflationScenarioActive
+          ? ('strained' as const)
+          : ('stable' as const),
+    essentialServicesInflationFlag: props.inputs.householdInflationScenarioActive,
+    inlineMergeTrajectoryBand: props.inputs.fiscalPressure === 'critical' ? ('blocked' as const) : ('lagging' as const),
+    inlineActivationBoundaryCritical: props.inputs.publicStability < 40,
+  };
+
+  const macro = props.agent06 ?? {
+    turn: props.inputs.turn,
+    gdpGrowthBand: props.inputs.fiscalPressure === 'critical' ? ('contraction' as const) : ('slow' as const),
+    unemploymentBand: props.inputs.actorCreditStressIndex > 0.55 ? ('elevated' as const) : ('moderate' as const),
+    outputGap: props.inputs.highInflationScenario ? 0.3 : -0.05,
+    nominalDemandPressure: props.inputs.inflationSettingMultiplier ? props.inputs.inflationSettingMultiplier - 1 : 0.1,
+    transmissionStabilityFragile: props.inputs.systemicLiquidityBand === 'strained',
+    macroRecoveryRankStressActive: props.inputs.creditShockActive,
+  };
+
+  const essential = assessHousingMortgageEssentialInflation({
+    mortgageStressBand: housing.mortgageStressBand,
+    wellbeingCostBand: housing.wellbeingCostBand,
+    essentialServicesInflationFlag: housing.essentialServicesInflationFlag,
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const merge = assessMacroTransmissionMergeInflation({
+    transmissionStabilityFragile: macro.transmissionStabilityFragile === true,
+    macroRecoveryRankStressActive: macro.macroRecoveryRankStressActive === true,
+    outputGap: macro.outputGap,
+    nominalDemandPressure: macro.nominalDemandPressure,
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-housing-macro-merge-inflation" data-testid="housing-macro-merge-inflation-panel">
+      <h4>Housing essential & macro merge (round 18)</h4>
+      <p>
+        Essential {essential.essentialBand} · index {essential.servicesIndex.toFixed(0)} · score adj{' '}
+        {housingMortgageEssentialInflationScoreAdjustment(essential.essentialBand)}
+      </p>
+      <p>
+        Merge {merge.mergeBand} · index {merge.transmissionIndex.toFixed(0)} · score adj{' '}
+        {macroTransmissionMergeInflationScoreAdjustment(merge.mergeBand)}
+      </p>
+      <p data-testid="housing-macro-merge-note">{essential.narrative}</p>
+      <p>{merge.narrative}</p>
     </div>
   );
 }

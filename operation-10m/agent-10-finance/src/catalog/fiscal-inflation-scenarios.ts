@@ -560,6 +560,43 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'ui', 'utilities', 'round17'],
   },
+  {
+    id: 'housing_mortgage_essential_stack',
+    label: 'Housing mortgage essential stack',
+    description: 'Severe mortgage stress with essential services inflation flag.',
+    patch: {
+      householdAffordability: 'severe_pressure',
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.22,
+      publicStability: 44,
+    },
+    tags: ['inflation', 'housing', 'round18'],
+  },
+  {
+    id: 'macro_transmission_merge_stress',
+    label: 'Macro transmission merge stress',
+    description: 'Fragile transmission with recovery rank stress — merge CPI metadata.',
+    patch: {
+      systemicLiquidityBand: 'strained',
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.25,
+      highInflationScenario: true,
+    },
+    tags: ['inflation', 'macro', 'round18'],
+  },
+  {
+    id: 'housing_macro_merge_fusion_stress',
+    label: 'Housing & macro merge fusion stress',
+    description: 'Aligned with Agent 14 inline merge + Agent 06 transmission fragile bands.',
+    patch: {
+      inflationSettingMultiplier: 1.29,
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      systemicLiquidityBand: 'critical',
+      publicStability: 36,
+    },
+    tags: ['inflation', 'housing', 'macro', 'round18'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
