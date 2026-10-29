@@ -27,6 +27,9 @@ export * from './automation-steward-idle-coordination.js';
 export * from './automation-backpressure-remediation.js';
 export * from './automation-idle-ops-governance.js';
 export * from './automation-idle-governance-report.js';
+export * from './automation-governance-remediation-runner.js';
+export * from './automation-idle-governance-audit-trail.js';
+export * from './automation-idle-governance-stabilization.js';
 
 import type { O10SelfTestResult } from './types.js';
 import { runO10Agent20NationalStewardSelfTests } from './national-steward.js';
@@ -54,6 +57,9 @@ import { runO10Agent20StewardIdleCoordinationSelfTests } from './automation-stew
 import { runO10Agent20BackpressureRemediationSelfTests } from './automation-backpressure-remediation.js';
 import { runO10Agent20IdleOpsGovernanceSelfTests } from './automation-idle-ops-governance.js';
 import { runO10Agent20IdleGovernanceReportSelfTests } from './automation-idle-governance-report.js';
+import { runO10Agent20GovernanceRemediationRunnerSelfTests } from './automation-governance-remediation-runner.js';
+import { runO10Agent20IdleGovernanceAuditTrailSelfTests } from './automation-idle-governance-audit-trail.js';
+import { runO10Agent20IdleGovernanceStabilizationSelfTests } from './automation-idle-governance-stabilization.js';
 
 /** Full module self-test bundle for Agent 25 dev lab registration. */
 export function runO10Agent20ModuleSelfTests(): {
@@ -111,6 +117,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20BackpressureRemediationSelfTests());
   results.push(...runO10Agent20IdleOpsGovernanceSelfTests());
   results.push(...runO10Agent20IdleGovernanceReportSelfTests());
+  results.push(...runO10Agent20GovernanceRemediationRunnerSelfTests());
+  results.push(...runO10Agent20IdleGovernanceAuditTrailSelfTests());
+  results.push(...runO10Agent20IdleGovernanceStabilizationSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }

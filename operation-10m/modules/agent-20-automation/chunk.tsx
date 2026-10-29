@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-20-automation
-// OP10M_MANIFEST_SHA256: fac3d526e792eecc7b48eeefd566a98f66024a5a8abfb4600bd5285157e8a229
-// OP10M_MODULE_VERSION: 10m.1.8.0-agent20
+// OP10M_MANIFEST_SHA256: 8de1e3a2a1ec18de2e0780e90795904be75f1056671d64674125fedb18a9e0ee
+// OP10M_MODULE_VERSION: 10m.1.9.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
@@ -4823,6 +4823,530 @@ export function runO10Agent20IdleGovernanceReportSelfTests(): O10SelfTestResult[
 }
 
 
+// --- source: automation-governance-remediation-runner.ts ---
+  planBackpressureRemediation,
+  type O10BackpressureRemediationKind,
+  type O10BackpressureRemediationPlan,
+} from './automation-backpressure-remediation.js';
+
+export interface O10GovernanceRemediationRunResult {
+  schema: '10m.agent20.governance-remediation-run.v1';
+  plan: O10BackpressureRemediationPlan;
+  queue: O10AutomationIntentQueue;
+  appliedKinds: O10BackpressureRemediationKind[];
+  appliedStepCount: number;
+  pendingHumanCommit: boolean;
+  summaryLine: string;
+}
+
+const LOW_PRIORITY_CUTOFF = 4;
+
+function shrinkQueueForRemediation(queue: O10AutomationIntentQueue): O10AutomationIntentQueue {
+  const nextMax = Math.max(1, queue.maxDepth - 2);
+  const items = queue.items.map(item => {
+    if (item.status !== 'queued') return item;
+    if (item.priority < LOW_PRIORITY_CUTOFF) {
+      return { ...item, status: 'cancelled' as const, reason: 'bp_remediation_shrink' };
+    }
+    return item;
+  });
+  return { maxDepth: nextMax, items };
+}
+
+function deferLowPriorityIntents(queue: O10AutomationIntentQueue): O10AutomationIntentQueue {
+  const items = queue.items.map(item => {
+    if (item.status !== 'queued') return item;
+    if (item.priority < LOW_PRIORITY_CUTOFF) {
+      return { ...item, status: 'blocked' as const, reason: 'bp_remediation_defer' };
+    }
+    return item;
+  });
+  return { ...queue, items };
+}
+
+/** Apply ordered remediation steps from a governance pass onto the live intent queue. */
+export function runGovernanceRemediationPlaybook(
+  governance: O10IdleOpsGovernanceResult
+): O10GovernanceRemediationRunResult {
+  const alert = evaluateBackpressureAlertsFromSlices(governance.window.telemetry);
+  const plan = planBackpressureRemediation(alert);
+  let queue = governance.window.queue;
+  const appliedKinds: O10BackpressureRemediationKind[] = [];
+  let pendingHumanCommit = false;
+
+  for (const step of plan.steps) {
+    switch (step.kind) {
+      case 'none':
+      case 'surface_warn_banner':
+        appliedKinds.push(step.kind);
+        break;
+      case 'defer_low_priority_intents':
+        queue = deferLowPriorityIntents(queue);
+        appliedKinds.push(step.kind);
+        break;
+      case 'shrink_intent_queue':
+        queue = shrinkQueueForRemediation(queue);
+        appliedKinds.push(step.kind);
+        break;
+      case 'request_human_commit':
+        pendingHumanCommit = true;
+        appliedKinds.push(step.kind);
+        break;
+      case 'steward_watch_only':
+        appliedKinds.push(step.kind);
+        break;
+      default:
+        break;
+    }
+  }
+
+  const summaryLine = [
+    `gov_remediation_run level=${plan.alertLevel}`,
+    `applied=${appliedKinds.length}`,
+    `pending_human=${pendingHumanCommit}`,
+    `queue_depth=${queue.maxDepth}`,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.governance-remediation-run.v1',
+    plan,
+    queue,
+    appliedKinds,
+    appliedStepCount: appliedKinds.filter(k => k !== 'none').length,
+    pendingHumanCommit,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20GovernanceRemediationRunnerSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const calmGovernance: O10IdleOpsGovernanceResult = {
+    schema: '10m.agent20.idle-ops-governance.v1',
+    alertLevel: 'none',
+    remediationStepCount: 1,
+    summaryLine: 'calm',
+    steward: { persisted: {} as never, throttled: false, reason: 'tier_nominal' },
+    window: {
+      queue: { maxDepth: 8, items: [] },
+      deescalationState: {} as never,
+      telemetry: [
+        {
+          turn: 1,
+          day: 1,
+          tier: 0,
+          effectiveMaxDepth: 8,
+          deferLowPriorityBelow: 4,
+          decision: 'execute_now',
+          droppedLowPriority: 0,
+        },
+      ],
+      summary: {
+        schema: '10m.agent20.idle-ops-window.v1',
+        turnsRun: 1,
+        humanCommitCount: 1,
+        peakEffectiveTier: 0,
+        finalScheduleAction: 'execute_now',
+        digestSummary: 'ok',
+      },
+      lastTurn: {} as never,
+    },
+  };
+
+  const calmRun = runGovernanceRemediationPlaybook(calmGovernance);
+  push(
+    'gov_remed_run_calm',
+    'calm governance applies nominal none step',
+    calmRun.appliedKinds.includes('none') && calmRun.pendingHumanCommit === false
+  );
+
+  const stressed = {
+    ...calmGovernance,
+    alertLevel: 'critical',
+    remediationStepCount: 3,
+    window: {
+      ...calmGovernance.window,
+      queue: {
+        maxDepth: 8,
+        items: [
+          {
+            id: 'i1',
+            ruleId: 'r1',
+            actionType: 'wait',
+            priority: 2,
+            enqueuedTurn: 1,
+            enqueuedDay: 1,
+            resolvedCost: 0,
+            status: 'queued' as const,
+          },
+          {
+            id: 'i2',
+            ruleId: 'r2',
+            actionType: 'wait',
+            priority: 8,
+            enqueuedTurn: 1,
+            enqueuedDay: 1,
+            resolvedCost: 0,
+            status: 'queued' as const,
+          },
+        ],
+      },
+      telemetry: [
+        {
+          turn: 1,
+          day: 1,
+          tier: 3,
+          effectiveMaxDepth: 5,
+          deferLowPriorityBelow: 4,
+          decision: 'defer',
+          droppedLowPriority: 4,
+        },
+        {
+          turn: 2,
+          day: 1,
+          tier: 3,
+          effectiveMaxDepth: 5,
+          deferLowPriorityBelow: 4,
+          decision: 'defer',
+          droppedLowPriority: 2,
+        },
+      ],
+      summary: {
+        ...calmGovernance.window.summary,
+        peakEffectiveTier: 3,
+        humanCommitCount: 0,
+      },
+    },
+  };
+
+  const stressRun = runGovernanceRemediationPlaybook(stressed as O10IdleOpsGovernanceResult);
+  push(
+    'gov_remed_run_critical',
+    'critical plan shrinks queue and requests human',
+    stressRun.pendingHumanCommit &&
+      stressRun.queue.maxDepth < 8 &&
+      stressRun.appliedKinds.includes('shrink_intent_queue')
+  );
+
+  push(
+    'gov_remed_run_schema',
+    'remediation run schema marker',
+    stressRun.schema === '10m.agent20.governance-remediation-run.v1' && stressRun.summaryLine.includes('gov_remediation_run')
+  );
+
+  push(
+    'gov_remed_run_low_priority',
+    'low priority intents cancelled or blocked under stress',
+    stressRun.queue.items.some(i => i.id === 'i1' && (i.status === 'cancelled' || i.status === 'blocked')) &&
+      stressRun.queue.items.some(i => i.id === 'i2' && i.status === 'queued')
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-audit-trail.ts ---
+
+export interface O10IdleGovernanceAuditEntry {
+  schema: '10m.agent20.idle-governance-audit.v1';
+  turn: number;
+  alertLevel: string;
+  peakTier: number;
+  appliedStepCount: number;
+  pendingHumanCommit: boolean;
+  fingerprint: string;
+}
+
+export interface O10IdleGovernanceAuditTrail {
+  schema: '10m.agent20.idle-governance-audit-trail.v1';
+  entries: O10IdleGovernanceAuditEntry[];
+}
+
+export function createEmptyIdleGovernanceAuditTrail(): O10IdleGovernanceAuditTrail {
+  return { schema: '10m.agent20.idle-governance-audit-trail.v1', entries: [] };
+}
+
+function fingerprintGovernancePass(
+  governance: O10IdleOpsGovernanceResult,
+  run: O10GovernanceRemediationRunResult
+): string {
+  return [
+    governance.alertLevel,
+    governance.window.summary.peakEffectiveTier,
+    run.appliedStepCount,
+    run.pendingHumanCommit ? 1 : 0,
+    governance.summaryLine.slice(0, 48),
+  ].join('|');
+}
+
+/** Append one governance + remediation cycle to the audit trail (cap 64). */
+export function appendIdleGovernanceAuditEntry(
+  trail: O10IdleGovernanceAuditTrail,
+  governance: O10IdleOpsGovernanceResult,
+  run: O10GovernanceRemediationRunResult,
+  turn: number
+): O10IdleGovernanceAuditTrail {
+  const entry: O10IdleGovernanceAuditEntry = {
+    schema: '10m.agent20.idle-governance-audit.v1',
+    turn,
+    alertLevel: governance.alertLevel,
+    peakTier: governance.window.summary.peakEffectiveTier,
+    appliedStepCount: run.appliedStepCount,
+    pendingHumanCommit: run.pendingHumanCommit,
+    fingerprint: fingerprintGovernancePass(governance, run),
+  };
+  const entries = [...trail.entries, entry].slice(-64);
+  return { schema: trail.schema, entries };
+}
+
+export function formatIdleGovernanceAuditDigest(trail: O10IdleGovernanceAuditTrail): string {
+  if (trail.entries.length === 0) return 'idle_gov_audit entries=0';
+  const last = trail.entries[trail.entries.length - 1];
+  return `idle_gov_audit entries=${trail.entries.length} last_alert=${last.alertLevel} peak=t${last.peakTier}`;
+}
+
+export function runO10Agent20IdleGovernanceAuditTrailSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const mockGovernance = {
+    schema: '10m.agent20.idle-ops-governance.v1' as const,
+    alertLevel: 'warn',
+    remediationStepCount: 2,
+    summaryLine: 'ops_window turns=2 alert=warn',
+    steward: { persisted: {} as never, throttled: true, reason: 'idle_ops_tier2_throttle_autonomy' },
+    window: {
+      queue: { maxDepth: 6, items: [] },
+      deescalationState: {} as never,
+      telemetry: [],
+      summary: {
+        schema: '10m.agent20.idle-ops-window.v1' as const,
+        turnsRun: 2,
+        humanCommitCount: 0,
+        peakEffectiveTier: 2 as const,
+        finalScheduleAction: 'defer',
+        digestSummary: 'defer=1/2',
+      },
+      lastTurn: {} as never,
+    },
+  };
+
+  const mockRun: O10GovernanceRemediationRunResult = {
+    schema: '10m.agent20.governance-remediation-run.v1',
+    plan: { schema: '10m.agent20.backpressure-remediation.v1', alertLevel: 'warn', steps: [] },
+    queue: { maxDepth: 6, items: [] },
+    appliedKinds: ['surface_warn_banner', 'defer_low_priority_intents'],
+    appliedStepCount: 2,
+    pendingHumanCommit: false,
+    summaryLine: 'gov_remediation_run level=warn applied=2',
+  };
+
+  let trail = createEmptyIdleGovernanceAuditTrail();
+  push('gov_audit_empty', 'empty trail digest', formatIdleGovernanceAuditDigest(trail) === 'idle_gov_audit entries=0');
+
+  trail = appendIdleGovernanceAuditEntry(trail, mockGovernance, mockRun, 5);
+  push(
+    'gov_audit_append',
+    'append records alert and peak tier',
+    trail.entries.length === 1 &&
+      trail.entries[0].alertLevel === 'warn' &&
+      trail.entries[0].peakTier === 2 &&
+      trail.entries[0].fingerprint.includes('warn')
+  );
+
+  trail = appendIdleGovernanceAuditEntry(trail, { ...mockGovernance, alertLevel: 'none' }, { ...mockRun, appliedStepCount: 0 }, 6);
+  push('gov_audit_cap', 'trail retains latest entries', trail.entries.length === 2);
+
+  push(
+    'gov_audit_digest',
+    'digest summarizes last entry',
+    formatIdleGovernanceAuditDigest(trail).includes('last_alert=none') && formatIdleGovernanceAuditDigest(trail).includes('entries=2')
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-stabilization.ts ---
+  appendIdleGovernanceAuditEntry,
+  createEmptyIdleGovernanceAuditTrail,
+  formatIdleGovernanceAuditDigest,
+  type O10IdleGovernanceAuditTrail,
+} from './automation-idle-governance-audit-trail.js';
+  runGovernanceRemediationPlaybook,
+  type O10GovernanceRemediationRunResult,
+} from './automation-governance-remediation-runner.js';
+
+export type O10IdleGovernanceStabilizationWave = 'idle_governance_calm' | 'idle_governance_remediating' | 'idle_governance_blocked';
+
+export interface O10IdleGovernanceStabilizationResult {
+  schema: '10m.agent20.idle-governance-stabilization.v1';
+  wave: O10IdleGovernanceStabilizationWave;
+  stabilized: boolean;
+  auditDigest: string;
+  reportHeadline: string;
+  summaryLine: string;
+}
+
+export interface O10IdleGovernanceStabilizationPassResult {
+  schema: '10m.agent20.idle-governance-stabilization-pass.v1';
+  governance: O10IdleOpsGovernanceResult;
+  remediationRun: O10GovernanceRemediationRunResult;
+  auditTrail: O10IdleGovernanceAuditTrail;
+  stabilization: O10IdleGovernanceStabilizationResult;
+}
+
+export function evaluateIdleGovernanceStabilization(
+  governance: O10IdleOpsGovernanceResult,
+  run: O10GovernanceRemediationRunResult,
+  auditDigest: string
+): O10IdleGovernanceStabilizationResult {
+  const calm = governance.alertLevel === 'none';
+  const humanRelief =
+    governance.window.summary.humanCommitCount > 0 && governance.window.summary.peakEffectiveTier <= 1;
+  const remediated =
+    run.appliedStepCount > 0 && !run.pendingHumanCommit && governance.window.summary.peakEffectiveTier <= 2;
+
+  let wave: O10IdleGovernanceStabilizationWave = 'idle_governance_remediating';
+  if (calm || humanRelief) wave = 'idle_governance_calm';
+  else if (run.pendingHumanCommit && governance.window.summary.humanCommitCount === 0) {
+    wave = 'idle_governance_blocked';
+  }
+
+  const stabilized = wave === 'idle_governance_calm' || (remediated && humanRelief);
+  const report = buildIdleGovernanceReport(governance);
+
+  const summaryLine = [
+    `gov_stabilization wave=${wave}`,
+    `stabilized=${stabilized}`,
+    auditDigest,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-stabilization.v1',
+    wave,
+    stabilized,
+    auditDigest,
+    reportHeadline: report.headline,
+    summaryLine,
+  };
+}
+
+/** Full round-9 pass: remediation playbook, audit trail, stabilization wave classification. */
+export function runIdleGovernanceStabilizationPass(
+  governance: O10IdleOpsGovernanceResult,
+  turn: number,
+  priorTrail: O10IdleGovernanceAuditTrail = createEmptyIdleGovernanceAuditTrail()
+): O10IdleGovernanceStabilizationPassResult {
+  const remediationRun = runGovernanceRemediationPlaybook(governance);
+  const auditTrail = appendIdleGovernanceAuditEntry(priorTrail, governance, remediationRun, turn);
+  const auditDigest = formatIdleGovernanceAuditDigest(auditTrail);
+  const stabilization = evaluateIdleGovernanceStabilization(governance, remediationRun, auditDigest);
+
+  return {
+    schema: '10m.agent20.idle-governance-stabilization-pass.v1',
+    governance,
+    remediationRun,
+    auditTrail,
+    stabilization,
+  };
+}
+
+export function runO10Agent20IdleGovernanceStabilizationSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const calmGov: O10IdleOpsGovernanceResult = {
+    schema: '10m.agent20.idle-ops-governance.v1',
+    alertLevel: 'none',
+    remediationStepCount: 1,
+    summaryLine: 'calm',
+    steward: { persisted: {} as never, throttled: false, reason: 'tier_nominal' },
+    window: {
+      queue: { maxDepth: 8, items: [] },
+      deescalationState: {} as never,
+      telemetry: [
+        {
+          turn: 1,
+          day: 1,
+          tier: 0,
+          effectiveMaxDepth: 8,
+          deferLowPriorityBelow: 4,
+          decision: 'execute_now',
+          droppedLowPriority: 0,
+        },
+      ],
+      summary: {
+        schema: '10m.agent20.idle-ops-window.v1',
+        turnsRun: 2,
+        humanCommitCount: 1,
+        peakEffectiveTier: 0,
+        finalScheduleAction: 'execute_now',
+        digestSummary: 'ok',
+      },
+      lastTurn: {} as never,
+    },
+  };
+
+  const calmPass = runIdleGovernanceStabilizationPass(calmGov, 3);
+  push(
+    'gov_stab_calm',
+    'calm governance stabilizes on calm wave',
+    calmPass.stabilization.wave === 'idle_governance_calm' && calmPass.stabilization.stabilized
+  );
+
+  const blockedGov: O10IdleOpsGovernanceResult = {
+    ...calmGov,
+    alertLevel: 'critical',
+    window: {
+      ...calmGov.window,
+      summary: {
+        ...calmGov.window.summary,
+        humanCommitCount: 0,
+        peakEffectiveTier: 3,
+      },
+      telemetry: [
+        {
+          turn: 1,
+          day: 1,
+          tier: 3,
+          effectiveMaxDepth: 5,
+          deferLowPriorityBelow: 4,
+          decision: 'defer',
+          droppedLowPriority: 6,
+        },
+      ],
+    },
+  };
+
+  const blockedPass = runIdleGovernanceStabilizationPass(blockedGov, 4);
+  push(
+    'gov_stab_blocked',
+    'critical without human commit stays blocked',
+    blockedPass.stabilization.wave === 'idle_governance_blocked' && blockedPass.stabilization.stabilized === false
+  );
+
+  push(
+    'gov_stab_audit',
+    'pass appends audit trail',
+    blockedPass.auditTrail.entries.length === 1 && blockedPass.stabilization.auditDigest.includes('entries=1')
+  );
+
+  push(
+    'gov_stab_schema',
+    'stabilization pass schema marker',
+    blockedPass.schema === '10m.agent20.idle-governance-stabilization-pass.v1' &&
+      blockedPass.stabilization.schema === '10m.agent20.idle-governance-stabilization.v1'
+  );
+
+  return results;
+}
+
+
 // --- source: index.ts ---
 
 
@@ -4882,6 +5406,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20BackpressureRemediationSelfTests());
   results.push(...runO10Agent20IdleOpsGovernanceSelfTests());
   results.push(...runO10Agent20IdleGovernanceReportSelfTests());
+  results.push(...runO10Agent20GovernanceRemediationRunnerSelfTests());
+  results.push(...runO10Agent20IdleGovernanceAuditTrailSelfTests());
+  results.push(...runO10Agent20IdleGovernanceStabilizationSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }
