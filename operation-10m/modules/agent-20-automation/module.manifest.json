@@ -1,13 +1,13 @@
 {
   "moduleId": "agent-20-automation",
-  "moduleVersion": "10m.1.33.0-agent20",
+  "moduleVersion": "10m.1.34.0-agent20",
   "slot": "append-only-self-tests",
   "touchesSaveFormat": true,
   "anchorComment": "O10_AGENT20_INTEGRATION_ANCHOR",
   "sourceRoot": "operation-10m/agent-20-automation/src",
   "regenerate": "node operation-10m/agent-20-automation/scripts/build-chunk.mjs",
-  "chunkSha256": "7292691d1c460f3119aeebc4bc9edbb026d83295534f58bf1a3ea8ed1206f4c7",
-  "chunkLineCount": 14955,
+  "chunkSha256": "557eed6c889cfd8f70ac8c50bc9acdc3382dcc6d1b6026cc0239a3d4b29b8a25",
+  "chunkLineCount": 15304,
   "sourceFiles": [
     "types.ts",
     "conditional-actions.ts",
@@ -113,6 +113,9 @@
     "automation-idle-governance-program-wave-round32-capstone-compare.ts",
     "automation-idle-governance-program-wave-round33-export.ts",
     "automation-idle-governance-program-wave-round33-capstone.ts",
+    "automation-idle-governance-program-wave-round33-capstone-compare.ts",
+    "automation-idle-governance-program-wave-round34-export.ts",
+    "automation-idle-governance-program-wave-round34-capstone.ts",
     "index.ts"
   ]
 }
