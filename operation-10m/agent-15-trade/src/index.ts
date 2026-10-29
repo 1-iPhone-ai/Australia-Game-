@@ -35,5 +35,7 @@ export * from './trade-fx-hedging.ts';
 export * from './import-lane-pressure.ts';
 export * from './diplomatic-trade-coherence.ts';
 export * from './trade-balance-stabilization.ts';
+export * from './trade-shock-absorption.ts';
+export * from './export-commitment-pipeline.ts';
 export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';

@@ -50,6 +50,7 @@ import {
 import { computeMaritimeRiskSnapshot, createEmptyMaritimeRiskSnapshot, maritimeRiskExportScale } from './maritime-risk-premium.ts';
 import {
   computePreferentialUtilizationSnapshot,
+  createEmptyPreferentialUtilizationSnapshot,
   preferentialUtilizationExportScale,
 } from './preferential-access-utilization.ts';
 import {
@@ -75,6 +76,7 @@ import {
 } from './sanctions-spillover-depth.ts';
 import {
   computeTradeCorridorResilienceSnapshot,
+  createEmptyTradeCorridorResilienceSnapshot,
   tradeCorridorExportScale,
 } from './trade-corridor-resilience.ts';
 import {
@@ -88,12 +90,21 @@ import {
 } from './import-lane-pressure.ts';
 import {
   computeDiplomaticTradeCoherenceSnapshot,
+  createEmptyDiplomaticTradeCoherenceSnapshot,
   diplomaticTradeCoherenceExportScale,
 } from './diplomatic-trade-coherence.ts';
 import {
   computeTradeBalanceStabilizationSnapshot,
   tradeBalanceStabilizationExportScale,
 } from './trade-balance-stabilization.ts';
+import {
+  computeTradeShockAbsorptionSnapshot,
+  tradeShockAbsorptionExportScale,
+} from './trade-shock-absorption.ts';
+import {
+  computeTradeCommitmentPipelineSnapshot,
+  exportCommitmentPipelineExportScale,
+} from './export-commitment-pipeline.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -1004,6 +1015,44 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     }).snapshot;
     gtelAssert(unstable.index < anchored.index, 'expected weaker stabilization');
     gtelAssert(tradeBalanceStabilizationExportScale(unstable) <= tradeBalanceStabilizationExportScale(anchored) + 0.01, 'expected stabilization scale drag');
+  });
+
+  ok('trade shock absorption deepens with robust insurance and resilience', () => {
+    const thin = computeTradeShockAbsorptionSnapshot({
+      supplyChainResilience: { score: 0.32, band: 'brittle', chokepointCount: 4, redundancyIndex: 0.22, summary: 'test' },
+      tradeFxHedging: createEmptyTradeFxHedgingSnapshot(),
+      exportInsuranceStack: createEmptyExportInsuranceStackSnapshot(),
+      diplomaticTradeCoherence: createEmptyDiplomaticTradeCoherenceSnapshot(),
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const deep = computeTradeShockAbsorptionSnapshot({
+      supplyChainResilience: { score: 0.78, band: 'robust', chokepointCount: 1, redundancyIndex: 0.72, summary: 'test' },
+      tradeFxHedging: { ...createEmptyTradeFxHedgingSnapshot(), band: 'well_hedged', effectiveness: 0.8 },
+      exportInsuranceStack: { ...createEmptyExportInsuranceStackSnapshot(), band: 'robust', compositeScore: 0.76 },
+      diplomaticTradeCoherence: { ...createEmptyDiplomaticTradeCoherenceSnapshot(), band: 'aligned', score: 0.76 },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(deep.capacity > thin.capacity, 'expected deeper shock absorption');
+    gtelAssert(tradeShockAbsorptionExportScale(deep) >= tradeShockAbsorptionExportScale(thin), 'expected absorption scale lift');
+  });
+
+  ok('export commitment pipeline fills under saturated capacity and strong finance', () => {
+    const slack = computeTradeCommitmentPipelineSnapshot({
+      exportCapacity: createEmptyExportCapacitySnapshot(),
+      preferentialUtilization: createEmptyPreferentialUtilizationSnapshot(),
+      tradeFinance: createEmptyTradeFinanceSnapshot(),
+      tradeCorridorResilience: createEmptyTradeCorridorResilienceSnapshot(),
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const booked = computeTradeCommitmentPipelineSnapshot({
+      exportCapacity: { ...createEmptyExportCapacitySnapshot(), band: 'saturated', utilization: 0.94, allocationEfficiency: 0.82 },
+      preferentialUtilization: { ...createEmptyPreferentialUtilizationSnapshot(), band: 'high', utilizationRate: 0.72, activeAgreementCount: 2, boostedCommodities: ['coal'] },
+      tradeFinance: { ...createEmptyTradeFinanceSnapshot(), availabilityScore: 0.82, band: 'fluid' },
+      tradeCorridorResilience: { ...createEmptyTradeCorridorResilienceSnapshot(), score: 0.68, band: 'stable' },
+      persisted: { ...createEmptyGTELPersisted(), exportCommitmentPipelineSmoothing: 0.72 },
+    }).snapshot;
+    gtelAssert(booked.fillRate > slack.fillRate, 'expected higher pipeline fill');
+    gtelAssert(exportCommitmentPipelineExportScale(booked) <= exportCommitmentPipelineExportScale(slack) + 0.05, 'booked_out may drag scale');
   });
 
   return { passed, failed };

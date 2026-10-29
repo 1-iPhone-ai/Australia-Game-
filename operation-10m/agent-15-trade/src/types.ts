@@ -158,6 +158,10 @@ export interface GTELPersisted {
   diplomaticTradeCoherenceSmoothing?: number;
   /** Smoothed trade balance stabilization index (0–1). */
   tradeBalanceStabilizationSmoothing?: number;
+  /** Smoothed trade shock absorption capacity (0–1). */
+  tradeShockAbsorptionSmoothing?: number;
+  /** Smoothed export commitment pipeline fill (0–1). */
+  exportCommitmentPipelineSmoothing?: number;
 }
 
 export interface GTELState {
@@ -199,6 +203,8 @@ export interface GTELState {
   importLanePressure: GTELImportLanePressureSnapshot;
   diplomaticTradeCoherence: GTELDiplomaticTradeCoherenceSnapshot;
   tradeBalanceStabilization: GTELTradeBalanceStabilizationSnapshot;
+  tradeShockAbsorption: GTELTradeShockAbsorptionSnapshot;
+  exportCommitmentPipeline: GTELTradeCommitmentPipelineSnapshot;
   inputHash: string;
 }
 
@@ -603,6 +609,26 @@ export interface GTELTradeBalanceStabilizationSnapshot {
   band: GTELTradeBalanceStabilizationBand;
   surplusSupport: number;
   volatilityDampening: number;
+  summary: string;
+}
+
+export type GTELTradeShockAbsorptionBand = 'deep' | 'moderate' | 'thin' | 'exhausted';
+
+export interface GTELTradeShockAbsorptionSnapshot {
+  capacity: number;
+  band: GTELTradeShockAbsorptionBand;
+  resilienceBuffer: number;
+  hedgingBuffer: number;
+  summary: string;
+}
+
+export type GTELTradeCommitmentPipelineBand = 'slack' | 'steady' | 'strong' | 'booked_out';
+
+export interface GTELTradeCommitmentPipelineSnapshot {
+  fillRate: number;
+  band: GTELTradeCommitmentPipelineBand;
+  forwardBookTurns: number;
+  financeCoverage: number;
   summary: string;
 }
 

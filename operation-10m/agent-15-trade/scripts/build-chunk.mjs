@@ -51,6 +51,8 @@ const FILES = [
   'import-lane-pressure.ts',
   'diplomatic-trade-coherence.ts',
   'trade-balance-stabilization.ts',
+  'trade-shock-absorption.ts',
+  'export-commitment-pipeline.ts',
   'domestic-consequences.ts',
   'household-bridge.ts',
   'trade-turn.ts',

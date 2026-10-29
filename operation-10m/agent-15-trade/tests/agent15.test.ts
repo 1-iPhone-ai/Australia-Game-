@@ -47,7 +47,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 39);
+  assert.ok(r.passed >= 41);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {
@@ -706,4 +706,41 @@ test('round 14: deficit stress lowers stabilization vs healthy baseline', () => 
     persisted,
   });
   assert.ok(stressed.state.tradeBalanceStabilization.index <= healthy.state.tradeBalanceStabilization.index + 0.08);
+});
+
+test('round 15: trade shock absorption and export commitment pipeline on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.tradeShockAbsorptionSmoothing = 0.56;
+  persisted.exportCommitmentPipelineSmoothing = 0.6;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 47,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 100 } } },
+    persisted,
+  });
+  assert.ok(r.state.tradeShockAbsorption);
+  assert.ok(['deep', 'moderate', 'thin', 'exhausted'].includes(r.state.tradeShockAbsorption.band));
+  assert.ok(r.state.exportCommitmentPipeline);
+  assert.ok(['slack', 'steady', 'strong', 'booked_out'].includes(r.state.exportCommitmentPipeline.band));
+  assert.ok(r.persisted.tradeShockAbsorptionSmoothing != null);
+  assert.ok(r.persisted.exportCommitmentPipelineSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Trade shock absorption/i.test(n)));
+  assert.ok(notes.some(n => /Export commitment pipeline/i.test(n)));
+});
+
+test('round 15: saturated export capacity raises pipeline fill vs slack baseline', () => {
+  const slack = advanceGlobalTradeEconomyTurn({
+    turn: 48,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 55 } } },
+    persisted: createEmptyGTELPersisted(),
+  });
+  const saturated = advanceGlobalTradeEconomyTurn({
+    turn: 48,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 190 } } },
+    persisted: createEmptyGTELPersisted(),
+  });
+  assert.ok(saturated.state.exportCommitmentPipeline.fillRate >= slack.state.exportCommitmentPipeline.fillRate - 0.05);
 });
