@@ -11,4 +11,4 @@ Branch: `op10m/agent-05-events` · baseline **`6f7fa49`** · **`93624473`** @ **
 
 ## Commit
 
-Round 39 base: **`93624473`**. Round 40 HEAD: TBD. Push-first.
+Round 39 base: **`93624473`**. Round 40 HEAD: **`0c5b5c50`**. Push-first.
