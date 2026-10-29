@@ -1,6 +1,6 @@
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.4-scale-wave-4' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.5-scale-wave-5' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -95,6 +95,62 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   crossPillarCoupling?: CrossPillarCouplingSnapshot;
   regionalWellbeingMemory?: RegionalWellbeingMemorySnapshot;
   executiveBrief?: Agent14WellbeingExecutiveBrief;
+  couplingTrajectory?: CouplingTrajectorySnapshot;
+  accountabilityScorecard?: Agent14WellbeingAccountabilityScorecard;
+  equityRebalancing?: EquityRebalancingAdvice;
+}
+
+export type CouplingTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
+
+export interface CouplingTrajectorySnapshot {
+  turn: number;
+  nationalCouplingEma: number;
+  instantaneousIndex: number;
+  band: CouplingStressBand;
+  trajectory: CouplingTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface CouplingTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  nationalCouplingEma: number;
+  priorEma?: number;
+}
+
+export type AccountabilityBand = 'strong' | 'adequate' | 'at_risk' | 'failing';
+
+export interface Agent14WellbeingAccountabilityScorecard {
+  turn: number;
+  overallScore: number;
+  band: AccountabilityBand;
+  dimensions: {
+    delivery: number;
+    equity: number;
+    warnings: number;
+    coupling: number;
+    portfolioBalance: number;
+    memoryTrend: number;
+  };
+  evidence: string[];
+}
+
+export interface EquityRebalancingRegionAdvice {
+  regionId: string;
+  deficitIndex: number;
+  urgencyScore: number;
+  weakestPillar: PublicServicePillar;
+  suggestedProgramIds: string[];
+  rationale: string;
+}
+
+export interface EquityRebalancingAdvice {
+  turn: number;
+  equityGap: number;
+  shouldEscalate: boolean;
+  laggingRegions: EquityRebalancingRegionAdvice[];
+  summary: string;
 }
 
 export type CouplingStressBand = 'stable' | 'watch' | 'strained' | 'critical';

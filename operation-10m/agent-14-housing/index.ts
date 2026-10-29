@@ -13,4 +13,7 @@ export * from './wellbeing-forecast.ts';
 export * from './cross-pillar-coupling.ts';
 export * from './regional-wellbeing-memory.ts';
 export * from './wellbeing-executive-brief.ts';
+export * from './coupling-trajectory.ts';
+export * from './wellbeing-accountability-scorecard.ts';
+export * from './equity-rebalancing-advisor.ts';
 export { runAgent14WellbeingSelfTests } from './self-tests.ts';

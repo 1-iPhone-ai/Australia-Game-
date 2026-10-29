@@ -89,6 +89,8 @@ export const AGENT14_HEALTH_ED_PROGRAM_STUBS: readonly {
   { id: 'ps_ed_VIC_tafe', pillar: 'education', regionId: 'VIC', fiscalLoadPoints: 16, durationTurns: 4, baseImpact: 7, effectLagTurns: 2 },
   { id: 'ps_ed_WA_regional_schools', pillar: 'education', regionId: 'WA', fiscalLoadPoints: 21, durationTurns: 6, baseImpact: 9, effectLagTurns: 3 },
   { id: 'ps_ed_TAS_rural_connect', pillar: 'education', regionId: 'TAS', fiscalLoadPoints: 19, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
+  { id: 'ps_xp_QLD_wellness_hub', pillar: 'healthcare', regionId: 'QLD', fiscalLoadPoints: 23, durationTurns: 6, baseImpact: 10, effectLagTurns: 2 },
+  { id: 'ps_xp_NT_integrated_services', pillar: 'education', regionId: 'NT', fiscalLoadPoints: 25, durationTurns: 7, baseImpact: 11, effectLagTurns: 3 },
 ];
 
 export const AGENT14_ALL_PROGRAM_STUBS = [

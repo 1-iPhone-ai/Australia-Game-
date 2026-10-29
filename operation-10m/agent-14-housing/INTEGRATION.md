@@ -15,6 +15,18 @@ Agent 25 inlines the chunk (or runs the assembly pipeline) — **do not** hand-e
 
 Integration branch: **`op10m/agent-14-housing`** (canonical worker branch for this module). Scale wave round 4 workers may push **`op10m/agent-14-housing-wellbeing`** for PR #331 head sync.
 
+## Scale wave 5 (accountability & equity)
+
+| Module | Purpose |
+|--------|---------|
+| `coupling-trajectory.ts` | Cross-turn EMA of national coupling index with trajectory band |
+| `wellbeing-accountability-scorecard.ts` | Multi-dimension GI scorecard (delivery, equity, warnings, coupling, portfolio) |
+| `equity-rebalancing-advisor.ts` | Regional deficit ranking with suggested program stubs |
+
+Turn advance attaches `couplingTrajectory`, `accountabilityScorecard`, `equityRebalancing`, and returns `couplingTrajectoryPersisted`.
+
+Cross-pillar wellness stubs (`ps_xp_*`); scenarios `coupling_stress_escalation`, `equity_rebalance_push`.
+
 ## Scale wave 4 (persisted memory)
 
 | Module | Purpose |
@@ -45,9 +57,9 @@ Suggested marker:
 ## Wire-in steps
 
 1. Inline `operation-10m/modules/agent-14-housing/chunk.tsx` at the anchor (or merge exports from source tree).
-2. Extend `PublicServicesPersisted` (or parallel persisted blob on game state) with `delayedSpending: DelayedSpendingPersisted` and optional `regionalWellbeingMemory: RegionalWellbeingMemoryPersisted`.
+2. Extend `PublicServicesPersisted` (or parallel persisted blob on game state) with `delayedSpending: DelayedSpendingPersisted`, optional `regionalWellbeingMemory: RegionalWellbeingMemoryPersisted`, and optional `couplingTrajectory: CouplingTrajectoryPersisted`.
 3. At national turn boundary **before** `computeNationalPublicServices`:
-   - Call `advancePublicServicesTurn({ inputs, spendingPersisted, wellbeingMemoryPersisted, newCommitments })`.
+   - Call `advancePublicServicesTurn({ inputs, spendingPersisted, wellbeingMemoryPersisted, couplingTrajectoryPersisted, newCommitments })`.
    - Spread `result.inputs` fields into `V1014PublicServicesInputs` (`fiscalLoadFromActivePrograms`, `completed*Projects`, `activeProgramCount`, optional `stateCapacityLoad` from V10.11).
 4. Register `runAgent14WellbeingSelfTests` in dev lab quick tier (`id: v1014_agent14_capacity_delay`).
 
@@ -58,7 +70,7 @@ Suggested marker:
 - `advanceDelayedSpendingEffects` / `commitSpendingProgram` / `makeSpendingCommitment`
 - `runAgent14WellbeingSelfTests`
 - `runAgent14HousingScenarioSweep` / `simulateAgent14HousingScenario`
-- `AGENT14_WELLBEING_SCHEMA_VERSION` (`10.14.4-scale-wave-4`)
+- `AGENT14_WELLBEING_SCHEMA_VERSION` (`10.14.5-scale-wave-5`)
 
 ## Upstream inputs (read-only)
 

@@ -18,7 +18,9 @@ export type Agent14HousingScenarioId =
   | 'mixed_pillar_push'
   | 'capacity_saturated'
   | 'health_education_surge'
-  | 'persisted_recovery_arc';
+  | 'persisted_recovery_arc'
+  | 'coupling_stress_escalation'
+  | 'equity_rebalance_push';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -103,6 +105,23 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
     baseInputs: { fiscalHeadroom: 38, stateCapacityLoad: 65, workforceReadiness: 'weak' },
     launchProgramIds: ['ps_h_SA_modular', 'ps_he_QLD_remote_clinic', 'ps_ed_TAS_rural_connect'],
   },
+  {
+    id: 'coupling_stress_escalation',
+    label: 'Coupling stress escalation',
+    baseInputs: { fiscalHeadroom: 18, stateCapacityLoad: 88, workforceReadiness: 'blocking', workforceSpecialistGap: 75 },
+    launchProgramIds: ['ps_h_NT_remote_housing', 'ps_h_TAS_affordable', 'ps_he_NT_remote_clinic'],
+  },
+  {
+    id: 'equity_rebalance_push',
+    label: 'Equity rebalance push',
+    baseInputs: { fiscalHeadroom: 55, stateCapacityLoad: 48, workforceReadiness: 'balanced' },
+    launchProgramIds: [
+      'ps_xp_QLD_wellness_hub',
+      'ps_xp_NT_integrated_services',
+      'ps_h_WA_remote_housing',
+      'ps_ed_WA_regional_schools',
+    ],
+  },
 ];
 
 export function commitmentFromProgramStub(
@@ -138,6 +157,7 @@ export function simulateAgent14HousingScenario(
   const maxTurns = Math.min(Math.max(1, turnCount), AGENT14_LIMITS.maxSimulationTurns);
   let spendingPersisted: DelayedSpendingPersisted | null = null;
   let wellbeingMemoryPersisted = null;
+  let couplingTrajectoryPersisted = null;
   const turns: EnrichedPublicServiceTurnInputs[] = [];
 
   for (let t = 1; t <= maxTurns; t += 1) {
@@ -152,11 +172,13 @@ export function simulateAgent14HousingScenario(
       inputs: { turn: t, ...scenario.baseInputs },
       spendingPersisted,
       wellbeingMemoryPersisted,
+      couplingTrajectoryPersisted,
       newCommitments,
       enforceCapacity: true,
     });
     spendingPersisted = result.spendingPersisted;
     wellbeingMemoryPersisted = result.wellbeingMemoryPersisted;
+    couplingTrajectoryPersisted = result.couplingTrajectoryPersisted;
     turns.push(result.inputs);
   }
 

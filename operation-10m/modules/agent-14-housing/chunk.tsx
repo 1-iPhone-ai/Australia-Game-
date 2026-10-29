@@ -5,7 +5,7 @@
 // --- source: types.ts ---
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.4-scale-wave-4' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.5-scale-wave-5' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -100,6 +100,62 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   crossPillarCoupling?: CrossPillarCouplingSnapshot;
   regionalWellbeingMemory?: RegionalWellbeingMemorySnapshot;
   executiveBrief?: Agent14WellbeingExecutiveBrief;
+  couplingTrajectory?: CouplingTrajectorySnapshot;
+  accountabilityScorecard?: Agent14WellbeingAccountabilityScorecard;
+  equityRebalancing?: EquityRebalancingAdvice;
+}
+
+export type CouplingTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
+
+export interface CouplingTrajectorySnapshot {
+  turn: number;
+  nationalCouplingEma: number;
+  instantaneousIndex: number;
+  band: CouplingStressBand;
+  trajectory: CouplingTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface CouplingTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  nationalCouplingEma: number;
+  priorEma?: number;
+}
+
+export type AccountabilityBand = 'strong' | 'adequate' | 'at_risk' | 'failing';
+
+export interface Agent14WellbeingAccountabilityScorecard {
+  turn: number;
+  overallScore: number;
+  band: AccountabilityBand;
+  dimensions: {
+    delivery: number;
+    equity: number;
+    warnings: number;
+    coupling: number;
+    portfolioBalance: number;
+    memoryTrend: number;
+  };
+  evidence: string[];
+}
+
+export interface EquityRebalancingRegionAdvice {
+  regionId: string;
+  deficitIndex: number;
+  urgencyScore: number;
+  weakestPillar: PublicServicePillar;
+  suggestedProgramIds: string[];
+  rationale: string;
+}
+
+export interface EquityRebalancingAdvice {
+  turn: number;
+  equityGap: number;
+  shouldEscalate: boolean;
+  laggingRegions: EquityRebalancingRegionAdvice[];
+  summary: string;
 }
 
 export type CouplingStressBand = 'stable' | 'watch' | 'strained' | 'critical';
@@ -343,6 +399,8 @@ export const AGENT14_HEALTH_ED_PROGRAM_STUBS: readonly {
   { id: 'ps_ed_VIC_tafe', pillar: 'education', regionId: 'VIC', fiscalLoadPoints: 16, durationTurns: 4, baseImpact: 7, effectLagTurns: 2 },
   { id: 'ps_ed_WA_regional_schools', pillar: 'education', regionId: 'WA', fiscalLoadPoints: 21, durationTurns: 6, baseImpact: 9, effectLagTurns: 3 },
   { id: 'ps_ed_TAS_rural_connect', pillar: 'education', regionId: 'TAS', fiscalLoadPoints: 19, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
+  { id: 'ps_xp_QLD_wellness_hub', pillar: 'healthcare', regionId: 'QLD', fiscalLoadPoints: 23, durationTurns: 6, baseImpact: 10, effectLagTurns: 2 },
+  { id: 'ps_xp_NT_integrated_services', pillar: 'education', regionId: 'NT', fiscalLoadPoints: 25, durationTurns: 7, baseImpact: 11, effectLagTurns: 3 },
 ];
 
 export const AGENT14_ALL_PROGRAM_STUBS = [
@@ -686,7 +744,7 @@ export function canAcceptSpendingCommitment(
 // --- source: delayed-spending-effects.ts ---
 export function createInitialDelayedSpendingPersisted(): DelayedSpendingPersisted {
   return {
-    schemaVersion: '10.14.4-scale-wave-4' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.5-scale-wave-5' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     active: [],
     history: [],
   };
@@ -708,7 +766,7 @@ export function sanitizeDelayedSpendingPersisted(
         .slice(0, AGENT14_LIMITS.maxActiveCommitments)
     : [];
   return {
-    schemaVersion: '10.14.4-scale-wave-4' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.5-scale-wave-5' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     active,
     history: Array.isArray(raw.history) ? raw.history.slice(-AGENT14_LIMITS.maxHistory) : [],
   };
@@ -827,6 +885,7 @@ export interface AdvancePublicServicesTurnArgs {
   inputs: CapacityAndSpendingInputs;
   spendingPersisted?: DelayedSpendingPersisted | null;
   wellbeingMemoryPersisted?: RegionalWellbeingMemoryPersisted | null;
+  couplingTrajectoryPersisted?: CouplingTrajectoryPersisted | null;
   /** New commitments queued this turn (already validated or not). */
   newCommitments?: SpendingCommitment[];
   /** When true, reject commitments that fail capacity gate. */
@@ -837,6 +896,7 @@ export interface AdvancePublicServicesTurnResult {
   inputs: EnrichedPublicServiceTurnInputs;
   spendingPersisted: DelayedSpendingPersisted;
   wellbeingMemoryPersisted: RegionalWellbeingMemoryPersisted;
+  couplingTrajectoryPersisted: CouplingTrajectoryPersisted;
   rejectedCommitments: Array<{ commitment: SpendingCommitment; reason: string }>;
 }
 
@@ -910,11 +970,37 @@ export function advancePublicServicesTurn(
     args.wellbeingMemoryPersisted
   );
 
+  const couplingTrajectoryAdvance = advanceCouplingTrajectory(
+    turn,
+    crossPillarCoupling,
+    args.couplingTrajectoryPersisted
+  );
+
+  const equityRebalancing = adviseEquityRebalancing({
+    turn,
+    housing: housingWellbeing,
+    access: serviceAccessLens,
+    memory: memoryAdvance.snapshot,
+  });
+
+  const accountabilityScorecard = composeWellbeingAccountabilityScorecard({
+    turn,
+    capacity,
+    housing: housingWellbeing,
+    warnings: wellbeingWarnings,
+    coupling: crossPillarCoupling,
+    couplingTrajectory: couplingTrajectoryAdvance.snapshot,
+    memory: memoryAdvance.snapshot,
+    spendingPersisted,
+  });
+
   const executiveBrief = composeAgent14WellbeingExecutiveBrief({
     turn,
     warnings: wellbeingWarnings,
     coupling: crossPillarCoupling,
     recommendations: programRecommendations,
+    accountabilityScorecard,
+    equityRebalancing,
   });
 
   const enriched: EnrichedPublicServiceTurnInputs = {
@@ -936,12 +1022,16 @@ export function advancePublicServicesTurn(
     crossPillarCoupling,
     regionalWellbeingMemory: memoryAdvance.snapshot,
     executiveBrief,
+    couplingTrajectory: couplingTrajectoryAdvance.snapshot,
+    accountabilityScorecard,
+    equityRebalancing,
   };
 
   return {
     inputs: enriched,
     spendingPersisted,
     wellbeingMemoryPersisted: memoryAdvance.persisted,
+    couplingTrajectoryPersisted: couplingTrajectoryAdvance.persisted,
     rejectedCommitments,
   };
 }
@@ -958,7 +1048,9 @@ export type Agent14HousingScenarioId =
   | 'mixed_pillar_push'
   | 'capacity_saturated'
   | 'health_education_surge'
-  | 'persisted_recovery_arc';
+  | 'persisted_recovery_arc'
+  | 'coupling_stress_escalation'
+  | 'equity_rebalance_push';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -1043,6 +1135,23 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
     baseInputs: { fiscalHeadroom: 38, stateCapacityLoad: 65, workforceReadiness: 'weak' },
     launchProgramIds: ['ps_h_SA_modular', 'ps_he_QLD_remote_clinic', 'ps_ed_TAS_rural_connect'],
   },
+  {
+    id: 'coupling_stress_escalation',
+    label: 'Coupling stress escalation',
+    baseInputs: { fiscalHeadroom: 18, stateCapacityLoad: 88, workforceReadiness: 'blocking', workforceSpecialistGap: 75 },
+    launchProgramIds: ['ps_h_NT_remote_housing', 'ps_h_TAS_affordable', 'ps_he_NT_remote_clinic'],
+  },
+  {
+    id: 'equity_rebalance_push',
+    label: 'Equity rebalance push',
+    baseInputs: { fiscalHeadroom: 55, stateCapacityLoad: 48, workforceReadiness: 'balanced' },
+    launchProgramIds: [
+      'ps_xp_QLD_wellness_hub',
+      'ps_xp_NT_integrated_services',
+      'ps_h_WA_remote_housing',
+      'ps_ed_WA_regional_schools',
+    ],
+  },
 ];
 
 export function commitmentFromProgramStub(
@@ -1078,6 +1187,7 @@ export function simulateAgent14HousingScenario(
   const maxTurns = Math.min(Math.max(1, turnCount), AGENT14_LIMITS.maxSimulationTurns);
   let spendingPersisted: DelayedSpendingPersisted | null = null;
   let wellbeingMemoryPersisted = null;
+  let couplingTrajectoryPersisted = null;
   const turns: EnrichedPublicServiceTurnInputs[] = [];
 
   for (let t = 1; t <= maxTurns; t += 1) {
@@ -1092,11 +1202,13 @@ export function simulateAgent14HousingScenario(
       inputs: { turn: t, ...scenario.baseInputs },
       spendingPersisted,
       wellbeingMemoryPersisted,
+      couplingTrajectoryPersisted,
       newCommitments,
       enforceCapacity: true,
     });
     spendingPersisted = result.spendingPersisted;
     wellbeingMemoryPersisted = result.wellbeingMemoryPersisted;
+    couplingTrajectoryPersisted = result.couplingTrajectoryPersisted;
     turns.push(result.inputs);
   }
 
@@ -1956,8 +2068,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Ten housing scenarios registered',
-    listAgent14ScenarioIds().length === 10,
+    'Twelve housing scenarios registered',
+    listAgent14ScenarioIds().length === 12,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -2149,8 +2261,8 @@ export function runAgent14WellbeingSelfTests(): {
     check(
       results,
       'wave4_memory_sanitize_schema',
-      'Memory sanitize upgrades schema to wave 4',
-      raw.schemaVersion === '10.14.4-scale-wave-4' && raw.affordabilityEma.NSW === 50,
+      'Memory sanitize upgrades schema to wave 5',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.affordabilityEma.NSW === 50,
       `schema=${raw.schemaVersion}`
     );
   }
@@ -2181,6 +2293,129 @@ export function runAgent14WellbeingSelfTests(): {
       `band=${brief.couplingBand}`
     );
   }
+
+  check(
+    results,
+    'wave5_schema_version',
+    'Wellbeing schema version is wave 5',
+    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.5-scale-wave-5',
+    AGENT14_WELLBEING_SCHEMA_VERSION
+  );
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 40, stateCapacityLoad: 70, workforceReadiness: 'strained' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      couplingTrajectoryPersisted: createInitialCouplingTrajectory(),
+    });
+    check(
+      results,
+      'wave5_coupling_trajectory',
+      'Turn advance attaches coupling trajectory snapshot',
+      adv.inputs.couplingTrajectory !== undefined &&
+        adv.couplingTrajectoryPersisted.lastTurn === 4 &&
+        adv.inputs.couplingTrajectory!.nationalCouplingEma > 0,
+      `trajectory=${adv.inputs.couplingTrajectory?.trajectory} ema=${adv.inputs.couplingTrajectory?.nationalCouplingEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 5, fiscalHeadroom: 50, stateCapacityLoad: 55 },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave5_accountability_scorecard',
+      'Accountability scorecard populated with band',
+      adv.inputs.accountabilityScorecard !== undefined &&
+        adv.inputs.accountabilityScorecard!.overallScore > 0 &&
+        adv.inputs.accountabilityScorecard!.band.length > 0,
+      `score=${adv.inputs.accountabilityScorecard?.overallScore} band=${adv.inputs.accountabilityScorecard?.band}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 2, fiscalHeadroom: 44, stateCapacityLoad: 58, workforceSpecialistGap: 50 },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave5_equity_rebalancing',
+      'Equity rebalancing advice includes summary',
+      adv.inputs.equityRebalancing !== undefined && adv.inputs.equityRebalancing!.summary.length > 8,
+      adv.inputs.equityRebalancing?.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const raw = sanitizeCouplingTrajectory({
+      schemaVersion: '10.14.4-scale-wave-4' as any,
+      lastTurn: 3,
+      emaAlpha: 0.3,
+      nationalCouplingEma: 51,
+    });
+    check(
+      results,
+      'wave5_coupling_sanitize',
+      'Coupling trajectory sanitize upgrades schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.nationalCouplingEma === 51,
+      `schema=${raw.schemaVersion}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('coupling_stress_escalation', 12);
+    const last = sim.turns[11];
+    const minCoupling = Math.min(...sim.turns.map((t) => t.crossPillarCoupling!.nationalCouplingIndex));
+    const stressedTurn = sim.turns.some(
+      (t) =>
+        t.crossPillarCoupling!.band === 'watch' ||
+        t.crossPillarCoupling!.band === 'strained' ||
+        t.crossPillarCoupling!.band === 'critical' ||
+        t.couplingTrajectory!.trajectory === 'deteriorating' ||
+        (t.accountabilityScorecard && t.accountabilityScorecard.band !== 'strong')
+    );
+    check(
+      results,
+      'wave5_coupling_stress_scenario',
+      'Coupling stress scenario shows stress markers across the arc',
+      last.couplingTrajectory !== undefined &&
+        (stressedTurn || minCoupling < 58 || last.wellbeingWarnings!.warnings.length >= 2),
+      `band=${last.crossPillarCoupling?.band} min=${minCoupling} warnings=${last.wellbeingWarnings?.warnings.length}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('equity_rebalance_push', 8);
+    const last = sim.turns[7];
+    check(
+      results,
+      'wave5_equity_rebalance_scenario',
+      'Equity rebalance scenario surfaces lagging regions or escalation',
+      last.equityRebalancing !== undefined &&
+        (last.equityRebalancing!.laggingRegions.length > 0 || last.equityRebalancing!.shouldEscalate),
+      `regions=${last.equityRebalancing?.laggingRegions.length} escalate=${last.equityRebalancing?.shouldEscalate}`
+    );
+  }
+
+  check(
+    results,
+    'wave5_cross_pillar_stub_catalog',
+    'Cross-pillar wellness stubs present',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id.startsWith('ps_xp_')),
+    `n=${AGENT14_HEALTH_ED_PROGRAM_STUBS.length}`
+  );
+
+  check(
+    results,
+    'wave5_scenario_catalog',
+    'Scenario catalog includes wave 5 scenarios',
+    listAgent14ScenarioIds().includes('coupling_stress_escalation') &&
+      listAgent14ScenarioIds().includes('equity_rebalance_push'),
+    `count=${listAgent14ScenarioIds().length}`
+  );
 
   const passed = results.filter((r) => r.passed).length;
   return { passed, failed: results.length - passed, total: results.length, results };

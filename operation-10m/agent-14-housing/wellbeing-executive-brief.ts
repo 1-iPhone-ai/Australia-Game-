@@ -1,7 +1,9 @@
 import type {
+  Agent14WellbeingAccountabilityScorecard,
   Agent14WellbeingExecutiveBrief,
   Agent14WellbeingWarningBundle,
   CrossPillarCouplingSnapshot,
+  EquityRebalancingAdvice,
   ProgramSequencingRecommendation,
   WellbeingTurnForecastPoint,
 } from './types.ts';
@@ -12,6 +14,8 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   coupling: CrossPillarCouplingSnapshot;
   recommendations: ProgramSequencingRecommendation[];
   forecastPoints?: WellbeingTurnForecastPoint[];
+  accountabilityScorecard?: Agent14WellbeingAccountabilityScorecard;
+  equityRebalancing?: EquityRebalancingAdvice;
 }): Agent14WellbeingExecutiveBrief {
   const giNotes: string[] = [];
   const topWarning = args.warnings.warnings.sort((a, b) => {
@@ -38,6 +42,15 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
 
   if (args.coupling.evidence.length > 0) {
     giNotes.push(...args.coupling.evidence.slice(0, 2));
+  }
+
+  if (args.accountabilityScorecard) {
+    giNotes.push(
+      `Accountability ${args.accountabilityScorecard.band} (${args.accountabilityScorecard.overallScore})`
+    );
+  }
+  if (args.equityRebalancing?.shouldEscalate) {
+    giNotes.push(`Equity rebalance: ${args.equityRebalancing.summary}`);
   }
 
   const headlineParts: string[] = [];

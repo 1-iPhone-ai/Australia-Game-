@@ -7,6 +7,9 @@ import { computeNationalServiceAccessLens } from './service-access-lens.ts';
 import { computeCrossPillarCoupling } from './cross-pillar-coupling.ts';
 import { advanceRegionalWellbeingMemory } from './regional-wellbeing-memory.ts';
 import { evaluateAgent14WellbeingWarnings } from './wellbeing-guardian-warnings.ts';
+import { advanceCouplingTrajectory } from './coupling-trajectory.ts';
+import { adviseEquityRebalancing } from './equity-rebalancing-advisor.ts';
+import { composeWellbeingAccountabilityScorecard } from './wellbeing-accountability-scorecard.ts';
 import { composeAgent14WellbeingExecutiveBrief } from './wellbeing-executive-brief.ts';
 import {
   canAcceptSpendingCommitment,
@@ -14,6 +17,7 @@ import {
 } from './public-service-capacity.ts';
 import type {
   CapacityAndSpendingInputs,
+  CouplingTrajectoryPersisted,
   DelayedSpendingPersisted,
   EnrichedPublicServiceTurnInputs,
   RegionalWellbeingMemoryPersisted,
@@ -24,6 +28,7 @@ export interface AdvancePublicServicesTurnArgs {
   inputs: CapacityAndSpendingInputs;
   spendingPersisted?: DelayedSpendingPersisted | null;
   wellbeingMemoryPersisted?: RegionalWellbeingMemoryPersisted | null;
+  couplingTrajectoryPersisted?: CouplingTrajectoryPersisted | null;
   /** New commitments queued this turn (already validated or not). */
   newCommitments?: SpendingCommitment[];
   /** When true, reject commitments that fail capacity gate. */
@@ -34,6 +39,7 @@ export interface AdvancePublicServicesTurnResult {
   inputs: EnrichedPublicServiceTurnInputs;
   spendingPersisted: DelayedSpendingPersisted;
   wellbeingMemoryPersisted: RegionalWellbeingMemoryPersisted;
+  couplingTrajectoryPersisted: CouplingTrajectoryPersisted;
   rejectedCommitments: Array<{ commitment: SpendingCommitment; reason: string }>;
 }
 
@@ -107,11 +113,37 @@ export function advancePublicServicesTurn(
     args.wellbeingMemoryPersisted
   );
 
+  const couplingTrajectoryAdvance = advanceCouplingTrajectory(
+    turn,
+    crossPillarCoupling,
+    args.couplingTrajectoryPersisted
+  );
+
+  const equityRebalancing = adviseEquityRebalancing({
+    turn,
+    housing: housingWellbeing,
+    access: serviceAccessLens,
+    memory: memoryAdvance.snapshot,
+  });
+
+  const accountabilityScorecard = composeWellbeingAccountabilityScorecard({
+    turn,
+    capacity,
+    housing: housingWellbeing,
+    warnings: wellbeingWarnings,
+    coupling: crossPillarCoupling,
+    couplingTrajectory: couplingTrajectoryAdvance.snapshot,
+    memory: memoryAdvance.snapshot,
+    spendingPersisted,
+  });
+
   const executiveBrief = composeAgent14WellbeingExecutiveBrief({
     turn,
     warnings: wellbeingWarnings,
     coupling: crossPillarCoupling,
     recommendations: programRecommendations,
+    accountabilityScorecard,
+    equityRebalancing,
   });
 
   const enriched: EnrichedPublicServiceTurnInputs = {
@@ -133,12 +165,16 @@ export function advancePublicServicesTurn(
     crossPillarCoupling,
     regionalWellbeingMemory: memoryAdvance.snapshot,
     executiveBrief,
+    couplingTrajectory: couplingTrajectoryAdvance.snapshot,
+    accountabilityScorecard,
+    equityRebalancing,
   };
 
   return {
     inputs: enriched,
     spendingPersisted,
     wellbeingMemoryPersisted: memoryAdvance.persisted,
+    couplingTrajectoryPersisted: couplingTrajectoryAdvance.persisted,
     rejectedCommitments,
   };
 }
