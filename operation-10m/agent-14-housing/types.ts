@@ -2158,7 +2158,7 @@ export interface Wave56GateTrajectoryPersisted {
 
 export interface Wave56IntegrationMonitor {
   turn: number;
-  shouldRunO10m254DryRun: boolean;
+  shouldRunO10m257DryRun: boolean;
   wave56GateBand: Wave56GateBand;
   blockingReasons: string[];
   summary: string;
@@ -2167,7 +2167,7 @@ export interface Wave56IntegrationMonitor {
 export interface Agent25Wave56ProjectionHandoffBrief {
   turn: number;
   shouldProjectWave56: boolean;
-  shouldRunO10m254DryRun: boolean;
+  shouldRunO10m257DryRun: boolean;
   headlines: string[];
   summary: string;
 }
@@ -2194,7 +2194,7 @@ export interface Wave57GateTrajectoryPersisted {
 
 export interface Wave57IntegrationMonitor {
   turn: number;
-  shouldRunO10m257DryRun: boolean;
+  shouldRunO10m260DryRun: boolean;
   wave57GateBand: Wave57GateBand;
   blockingReasons: string[];
   summary: string;
@@ -2203,7 +2203,7 @@ export interface Wave57IntegrationMonitor {
 export interface Agent25Wave57ProjectionHandoffBrief {
   turn: number;
   shouldProjectWave57: boolean;
-  shouldRunO10m257DryRun: boolean;
+  shouldRunO10m260DryRun: boolean;
   headlines: string[];
   summary: string;
 }
@@ -2365,13 +2365,13 @@ export interface WellbeingMultiTurnForecast {
   horizonTurns: number;
   points: WellbeingTurnForecastPoint[];
 }
-export type Wave58GateBand = 'ready' | 'pending' | 'blocked';
+export type Wave59GateBand = 'ready' | 'pending' | 'blocked';
 
-export interface Wave58GateTrajectorySnapshot {
+export interface Wave59GateTrajectorySnapshot {
   turn: number;
-  wave58GateEma: number;
+  wave57GateEma: number;
   instantaneousGate: number;
-  band: Wave58GateBand;
+  band: Wave59GateBand;
   trajectory: CouplingTrajectoryTrend;
   evidence: string[];
 }
