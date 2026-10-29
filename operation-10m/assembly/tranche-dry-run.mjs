@@ -96,7 +96,10 @@ const payload = {
   note: "Projection only — canonical not modified.",
 };
 
-const auditOut = resolve(__dirname, "audits/tranche-01-dry-run-projection.json");
+const auditOut = resolve(
+  __dirname,
+  `audits/${tranche.id === "tranche-projection-with-chunks" ? "tranche-projection-with-chunks" : "tranche-01-dry-run-projection"}.json`
+);
 writeFileSync(auditOut, JSON.stringify(payload, null, 2) + "\n");
 console.log(`Tranche ${tranche.id} dry-run projection:`);
 console.log(`  baseline audited functional: ${baselineLoc.totals.code.toLocaleString()}`);

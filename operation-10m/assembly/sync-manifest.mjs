@@ -5,7 +5,7 @@
  *   node sync-manifest.mjs                 # local operation-10m/modules only
  *   node sync-manifest.mjs --remote-op10m    # also scan remote branches → audits/manifest-remote-sync.json
  */
-import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,7 +27,7 @@ function syncLocalModules() {
     if (!statSync(dir).isDirectory()) continue;
     const chunkPath = join(dir, "chunk.tsx");
     const localManifestPath = join(dir, "module.manifest.json");
-    if (!statSync(chunkPath).isFile() || !statSync(localManifestPath).isFile()) continue;
+    if (!existsSync(chunkPath) || !existsSync(localManifestPath)) continue;
 
     const local = JSON.parse(readFileSync(localManifestPath, "utf8"));
     const chunkText = readFileSync(chunkPath, "utf8");
@@ -127,6 +127,42 @@ function scanRemoteBranches() {
   };
 }
 
+function materializeReadyChunks(scan) {
+  let imported = 0;
+  for (const row of scan.rows) {
+    if (!row.assemblyReady || !row.chunkPath) continue;
+    const chunkText = gitLines(row.branch, row.chunkPath);
+    if (!chunkText) continue;
+    const destDir = join(modulesRoot, row.moduleId);
+    mkdirSync(destDir, { recursive: true });
+    writeFileSync(
+      join(destDir, "chunk.tsx"),
+      chunkText.endsWith("\n") ? chunkText : chunkText + "\n"
+    );
+    const manifestFile = join(destDir, "module.manifest.json");
+    const remoteManifestPath = `operation-10m/modules/${row.moduleId}/module.manifest.json`;
+    const remoteManifest = gitLines(row.branch, remoteManifestPath);
+    if (remoteManifest) {
+      writeFileSync(manifestFile, remoteManifest.endsWith("\n") ? remoteManifest : remoteManifest + "\n");
+    } else if (!existsSync(manifestFile)) {
+      writeFileSync(
+        manifestFile,
+        JSON.stringify(
+          {
+            moduleId: row.moduleId,
+            slot: row.defaultSlot || "pre-final-export",
+            importedFrom: row.branch,
+          },
+          null,
+          2
+        ) + "\n"
+      );
+    }
+    imported++;
+  }
+  return imported;
+}
+
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 const localModules = syncLocalModules();
 manifest.modules = localModules.map(({ source, ...rest }) => rest);
@@ -142,10 +178,18 @@ console.log(`sync-manifest: ${localModules.length} local module(s) → manifest.
 
 if (remoteOp10m) {
   const scan = scanRemoteBranches();
+  const imported = materializeReadyChunks(scan);
+  if (imported > 0) {
+    console.log(`imported ${imported} remote chunk(s) → operation-10m/modules/`);
+  }
   const out = resolve(__dirname, "audits/manifest-remote-sync.json");
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(scan, null, 2) + "\n");
   console.log(
     `remote scan: ${scan.branchCount} branches, ${scan.assemblyReadyCount} assembly-ready chunk(s) → audits/manifest-remote-sync.json`
   );
+  const localModulesAfter = syncLocalModules();
+  manifest.modules = localModulesAfter.map(({ source, ...rest }) => rest);
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+  console.log(`sync-manifest: ${localModulesAfter.length} local module(s) → manifest.json (after remote import)`);
 }
