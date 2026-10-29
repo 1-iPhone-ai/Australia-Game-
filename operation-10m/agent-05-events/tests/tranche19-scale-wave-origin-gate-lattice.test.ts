@@ -18,12 +18,12 @@ describe('Tranche 19 scale-wave-origin-gate lattice catalog', () => {
   it('adds 320 scale-wave-origin-gate lattice chains', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE19_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche19Chains, 320);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 21220);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 21440);
   });
 
   it('uses op10m_t19 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 21220);
+    assert.equal(ids.size, 21440);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE19) {
       assert.match(c.chainId, /^op10m_t19_/);
     }
