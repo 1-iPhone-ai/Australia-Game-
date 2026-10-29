@@ -98,6 +98,12 @@ import { nrDashBuildNationalResilienceGap } from '../core/national-resilience-ga
 import { nrDashBuildDependencyHighShare } from '../core/dependency-high-share.ts';
 import { nrDashBuildBottleneckRegionSpan } from '../core/bottleneck-region-span.ts';
 import { nrDashBuildMomentumHistorySpan } from '../core/momentum-history-span.ts';
+import { nrDashBuildHighRiskSpread } from '../core/high-risk-spread.ts';
+import { nrDashBuildHighNeedsShare } from '../core/high-needs-share.ts';
+import { nrDashBuildNationalUtilizationGap } from '../core/national-utilization-gap.ts';
+import { nrDashBuildDependencyModerateShare } from '../core/dependency-moderate-share.ts';
+import { nrDashBuildBottleneckSeveritySpan } from '../core/bottleneck-severity-span.ts';
+import { nrDashBuildDevelopmentTierSpan } from '../core/development-tier-span.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -815,6 +821,38 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
     const span = nrDashBuildMomentumHistorySpan(snap)!;
     return span.minLength === 3 && span.maxLength === 3 && span.lengthSpread === 0;
+  });
+
+  check('a23_high_risk_spread', 'High-risk spread peaks on NSW-only fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const spread = nrDashBuildHighRiskSpread(snap)!;
+    return spread.totalHighRisks === 1 && spread.stdDev > 0.3 && spread.meanHighRisks === 0.125;
+  });
+
+  check('a23_high_needs_share', 'High needs share is zero on moderate fixture', () => {
+    const share = nrDashBuildHighNeedsShare(createAgent23LrFixture())!;
+    return share.openNeedCount === 8 && share.highCount === 0 && share.highShare === 0;
+  });
+
+  check('a23_national_util_gap', 'National utilization gap compares NS national and regional means', () => {
+    const gap = nrDashBuildNationalUtilizationGap(createAgent23NsFixture())!;
+    return gap.nationalMean === 0.45 && gap.regionalMean === 0.425 && gap.gap === 0.025;
+  });
+
+  check('a23_dep_moderate_share', 'Dependency moderate share counts one of three edges', () => {
+    const share = nrDashBuildDependencyModerateShare(createAgent23NsFixture())!;
+    return share.edgeCount === 3 && share.moderateCount === 1 && share.moderateShare > 0.3;
+  });
+
+  check('a23_bottleneck_severity_span', 'Bottleneck severity span is zero on single meaningful bottleneck', () => {
+    const span = nrDashBuildBottleneckSeveritySpan(createAgent23NsFixture())!;
+    return span.activeCount === 1 && span.rankSpread === 0 && span.minRank === 1;
+  });
+
+  check('a23_dev_tier_span', 'Development tier span spans developing and advanced fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const span = nrDashBuildDevelopmentTierSpan(snap)!;
+    return span.rankSpread === 1 && span.regionCount === 8;
   });
 
   return results;

@@ -3865,6 +3865,175 @@ export function nrDashBuildMomentumHistorySpan(
   };
 }
 
+// --- bundled from core/high-risk-spread.ts ---
+export interface NrDashHighRiskSpread {
+  regionCount: number;
+  totalHighRisks: number;
+  meanHighRisks: number;
+  stdDev: number;
+}
+
+/** Cross-region dispersion of LR high-severity risk counts on the snapshot. */
+export function nrDashBuildHighRiskSpread(
+  snap: NrDashAuthSnapshot | null
+): NrDashHighRiskSpread | null {
+  if (!snap?.regions.length) return null;
+  const counts = snap.regions.map(r => r.highRisks);
+  const totalHighRisks = counts.reduce((s, n) => s + n, 0);
+  const meanHighRisks = totalHighRisks / counts.length;
+  const variance =
+    counts.reduce((s, n) => s + (n - meanHighRisks) ** 2, 0) / Math.max(counts.length, 1);
+  return {
+    regionCount: counts.length,
+    totalHighRisks,
+    meanHighRisks: Math.round(meanHighRisks * 1000) / 1000,
+    stdDev: Math.round(Math.sqrt(variance) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/high-needs-share.ts ---
+export interface NrDashHighNeedsShare {
+  openNeedCount: number;
+  highCount: number;
+  highShare: number;
+}
+
+/** Share of open LR needs marked high severity (authoritative needs list). */
+export function nrDashBuildHighNeedsShare(
+  lr: LivingRegionsWorldView | null
+): NrDashHighNeedsShare | null {
+  if (!lr?.state.regions) return null;
+  let openNeedCount = 0;
+  let highCount = 0;
+  Object.values(lr.state.regions).forEach(reg => {
+    reg.needs.forEach(n => {
+      if (n.status !== 'open') return;
+      openNeedCount += 1;
+      if (n.severity === 'high') highCount += 1;
+    });
+  });
+  if (openNeedCount <= 0) return null;
+  return {
+    openNeedCount,
+    highCount,
+    highShare: Math.round((highCount / openNeedCount) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/national-utilization-gap.ts ---
+export interface NrDashNationalUtilizationGap {
+  nationalMean: number;
+  regionalMean: number;
+  gap: number;
+  sampleCells: number;
+}
+
+/** Delta between NS national network utilization mean and mean regional cell utilization. */
+export function nrDashBuildNationalUtilizationGap(
+  ns: NationalSystemsState | null
+): NrDashNationalUtilizationGap | null {
+  if (!ns?.national || !ns.regions) return null;
+  const nationalUtils = NATIONAL_NETWORKS.map(n => ns.national[n]?.utilization ?? 0);
+  if (!nationalUtils.length) return null;
+  const nationalMean = nationalUtils.reduce((s, u) => s + u, 0) / nationalUtils.length;
+  const regionalCells: number[] = [];
+  Object.values(ns.regions).forEach(reg => {
+    NATIONAL_NETWORKS.forEach(n => {
+      regionalCells.push(reg.networks[n]?.utilization ?? 0);
+    });
+  });
+  if (!regionalCells.length) return null;
+  const regionalMean = regionalCells.reduce((s, u) => s + u, 0) / regionalCells.length;
+  return {
+    nationalMean: Math.round(nationalMean * 1000) / 1000,
+    regionalMean: Math.round(regionalMean * 1000) / 1000,
+    gap: Math.round((nationalMean - regionalMean) * 1000) / 1000,
+    sampleCells: regionalCells.length,
+  };
+}
+
+// --- bundled from core/dependency-moderate-share.ts ---
+export interface NrDashDependencyModerateShare {
+  edgeCount: number;
+  moderateCount: number;
+  moderateShare: number;
+}
+
+/** Share of NS dependency edges marked moderate importance. */
+export function nrDashBuildDependencyModerateShare(
+  ns: NationalSystemsState | null
+): NrDashDependencyModerateShare | null {
+  if (!ns?.dependencies?.length) return null;
+  const moderateCount = ns.dependencies.filter(d => d.importance === 'moderate').length;
+  return {
+    edgeCount: ns.dependencies.length,
+    moderateCount,
+    moderateShare: Math.round((moderateCount / ns.dependencies.length) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/bottleneck-severity-span.ts ---
+const SEVERITY_RANK: Record<string, number> = {
+  minor: 0,
+  meaningful: 1,
+  major: 2,
+  critical: 3,
+};
+
+export interface NrDashBottleneckSeveritySpan {
+  activeCount: number;
+  distinctSeverities: number;
+  minRank: number;
+  maxRank: number;
+  rankSpread: number;
+}
+
+/** Spread of severity ranks across active NS bottleneck records. */
+export function nrDashBuildBottleneckSeveritySpan(
+  ns: NationalSystemsState | null
+): NrDashBottleneckSeveritySpan | null {
+  if (!ns?.bottlenecks?.length) return null;
+  const ranks = ns.bottlenecks.map(b => SEVERITY_RANK[b.severity ?? ''] ?? 1);
+  const distinct = new Set(ranks);
+  const minRank = Math.min(...ranks);
+  const maxRank = Math.max(...ranks);
+  return {
+    activeCount: ns.bottlenecks.length,
+    distinctSeverities: distinct.size,
+    minRank,
+    maxRank,
+    rankSpread: maxRank - minRank,
+  };
+}
+
+// --- bundled from core/development-tier-span.ts ---
+const LR_DEV_RANK: Record<string, number> = Object.fromEntries(
+  (Object.keys(LR_DEV_LABEL) as LRDevTier[]).map((tier, i) => [LR_DEV_LABEL[tier], i])
+);
+
+export interface NrDashDevelopmentTierSpan {
+  regionCount: number;
+  minRank: number;
+  maxRank: number;
+  rankSpread: number;
+}
+
+/** Spread of LR development tier ordinals across snapshot rows. */
+export function nrDashBuildDevelopmentTierSpan(
+  snap: NrDashAuthSnapshot | null
+): NrDashDevelopmentTierSpan | null {
+  if (!snap?.regions.length) return null;
+  const ranks = snap.regions.map(r => LR_DEV_RANK[r.developmentTier] ?? 0);
+  const minRank = Math.min(...ranks);
+  const maxRank = Math.max(...ranks);
+  return {
+    regionCount: ranks.length,
+    minRank,
+    maxRank,
+    rankSpread: maxRank - minRank,
+  };
+}
+
 // --- bundled from tests/fixtures.ts ---
 function emptyNetworks(): Record<NationalNetworkKind, NationalRegionSystemsState['networks']['freight']> {
   const base = { utilization: 0.4, condition: 'healthy' as const };
@@ -4618,6 +4787,14 @@ export const NrDashOverviewTab: React.FC<{
         </div>
       ) : null;
     })()}
+    {(() => {
+      const riskSpread = nrDashBuildHighRiskSpread(snap);
+      return riskSpread ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-high-risk-spread">
+          High-risk spread σ {riskSpread.stdDev} · μ {riskSpread.meanHighRisks} across {riskSpread.regionCount} regions
+        </div>
+      ) : null;
+    })()}
     <NrDashOwnerStressGapCard gap={nrDashBuildOwnerStressGap(snap)} />
     <NrDashOwnedMomentumSkewCard skew={nrDashBuildOwnedMomentumSkew(snap)} />
     {(() => {
@@ -4705,6 +4882,14 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const highShare = nrDashBuildHighNeedsShare(lrView);
+      return highShare ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-high-needs-share">
+          High needs share {highShare.highShare} · {highShare.highCount}/{highShare.openNeedCount} open
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const needsSpread = nrDashBuildOpenNeedsSpread(snap);
       return needsSpread ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-open-needs-spread">
@@ -4717,6 +4902,14 @@ export const NrDashOverviewTab: React.FC<{
       return resGap ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-resilience-gap">
           National resilience gap {resGap.gap} · national {resGap.nationalScore} vs regional μ {resGap.regionalMean}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const utilGap = nrDashBuildNationalUtilizationGap(nsState);
+      return utilGap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-utilization-gap">
+          National utilization gap {utilGap.gap} · national μ {utilGap.nationalMean} vs regional μ {utilGap.regionalMean}
         </div>
       ) : null;
     })()}
@@ -4780,6 +4973,15 @@ export const NrDashRegionsTab: React.FC<{
       return tiers ? (
         <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dev-tier-diversity">
           Development tier diversity {tiers.diversityIndex} · {tiers.distinctTiers} tiers · dominant {tiers.dominantTier ?? '—'}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const tierSpan = nrDashBuildDevelopmentTierSpan(snap);
+      return tierSpan ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dev-tier-span">
+          Development tier span {tierSpan.rankSpread} · rank {tierSpan.minRank}–{tierSpan.maxRank} across {tierSpan.regionCount}{' '}
+          regions
         </div>
       ) : null;
     })()}
@@ -5123,6 +5325,23 @@ export const NrDashNetworksTab: React.FC<{
         return regionSpan ? (
           <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-bottleneck-region-span">
             Bottleneck region span {regionSpan.spanRatio} · {regionSpan.distinctRegions}/{regionSpan.regionSlots} slots
+          </div>
+        ) : null;
+      })()}
+      {(() => {
+        const sevSpan = nrDashBuildBottleneckSeveritySpan(ns);
+        return sevSpan ? (
+          <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-bottleneck-severity-span">
+            Bottleneck severity span {sevSpan.rankSpread} · ranks {sevSpan.minRank}–{sevSpan.maxRank} ·{' '}
+            {sevSpan.distinctSeverities} levels
+          </div>
+        ) : null;
+      })()}
+      {(() => {
+        const modShare = nrDashBuildDependencyModerateShare(ns);
+        return modShare ? (
+          <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-dep-moderate-share">
+            Dependency moderate share {modShare.moderateShare} · {modShare.moderateCount}/{modShare.edgeCount} edges
           </div>
         ) : null;
       })()}
@@ -6208,6 +6427,38 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
     const span = nrDashBuildMomentumHistorySpan(snap)!;
     return span.minLength === 3 && span.maxLength === 3 && span.lengthSpread === 0;
+  });
+
+  check('a23_high_risk_spread', 'High-risk spread peaks on NSW-only fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const spread = nrDashBuildHighRiskSpread(snap)!;
+    return spread.totalHighRisks === 1 && spread.stdDev > 0.3 && spread.meanHighRisks === 0.125;
+  });
+
+  check('a23_high_needs_share', 'High needs share is zero on moderate fixture', () => {
+    const share = nrDashBuildHighNeedsShare(createAgent23LrFixture())!;
+    return share.openNeedCount === 8 && share.highCount === 0 && share.highShare === 0;
+  });
+
+  check('a23_national_util_gap', 'National utilization gap compares NS national and regional means', () => {
+    const gap = nrDashBuildNationalUtilizationGap(createAgent23NsFixture())!;
+    return gap.nationalMean === 0.45 && gap.regionalMean === 0.425 && gap.gap === 0.025;
+  });
+
+  check('a23_dep_moderate_share', 'Dependency moderate share counts one of three edges', () => {
+    const share = nrDashBuildDependencyModerateShare(createAgent23NsFixture())!;
+    return share.edgeCount === 3 && share.moderateCount === 1 && share.moderateShare > 0.3;
+  });
+
+  check('a23_bottleneck_severity_span', 'Bottleneck severity span is zero on single meaningful bottleneck', () => {
+    const span = nrDashBuildBottleneckSeveritySpan(createAgent23NsFixture())!;
+    return span.activeCount === 1 && span.rankSpread === 0 && span.minRank === 1;
+  });
+
+  check('a23_dev_tier_span', 'Development tier span spans developing and advanced fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const span = nrDashBuildDevelopmentTierSpan(snap)!;
+    return span.rankSpread === 1 && span.regionCount === 8;
   });
 
   return results;
