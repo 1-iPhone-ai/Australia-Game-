@@ -116,7 +116,6 @@ import { nrDashBuildModerateRiskShare } from '../core/moderate-risk-share.ts';
 import { nrDashBuildNationalBottleneckGap } from '../core/national-bottleneck-gap.ts';
 import { nrDashBuildDependencyConsumerSpan } from '../core/dependency-consumer-span.ts';
 import { nrDashBuildMapPulseSpan } from '../core/map-pulse-span.ts';
-import { nrDashBuildRegionMapNodes } from '../core/region-map-model.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
