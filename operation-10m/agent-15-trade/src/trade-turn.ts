@@ -1,0 +1,246 @@
+import {
+  GTEL_ACCESS_RANK,
+  GTEL_BASE_COMMODITY_INDEX,
+  GTEL_COMMODITIES,
+  GTEL_COMMODITY_LABEL,
+  GTEL_LIMITS,
+  GTEL_PARTNER_DEFS,
+} from './constants.ts';
+import {
+  deriveDiplomaticTradeModifiers,
+  gtelAccessBandFromScore,
+  gtelActiveDeals,
+  gtelNetworkModifier,
+  gtelRecentViolations,
+} from './diplomacy-linkage.ts';
+import { computeRegionalDomesticImpacts, summarizeDomesticConsequences } from './domestic-consequences.ts';
+import { createEmptyGTELPersisted, sanitizeGTELPersisted } from './persist.ts';
+import {
+  deriveTradeAgreementModifiers,
+  expireStaleAgreements,
+  mergeCommodityDeltas,
+  mergePartnerDeltas,
+} from './trade-agreements.ts';
+import type { GTELPartnerMarket, GTELTurnInput, GTELTurnResult } from './types.ts';
+import { gtelClamp, gtelHash, gtelNum } from './util.ts';
+import {
+  applyScheduledShocks,
+  deriveShockModifiers,
+  getWorldTradeShockDefinition,
+  shockWorldEventFromDefinition,
+} from './world-shocks.ts';
+
+export { createEmptyGTELPersisted, sanitizeGTELPersisted };
+
+export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnResult {
+  const turn = Math.max(1, Math.floor(gtelNum(input.turn, 1)));
+  let persisted = sanitizeGTELPersisted(input.persisted, turn);
+  persisted.agreements = expireStaleAgreements(persisted, turn);
+  const shockSchedule = applyScheduledShocks(persisted, turn);
+  persisted = shockSchedule.persisted;
+
+  const names = input.actorNames || {};
+  const dip = deriveDiplomaticTradeModifiers(input.diplomacyState, turn, names);
+  const agr = deriveTradeAgreementModifiers(persisted, turn);
+  const shock = deriveShockModifiers(persisted);
+
+  const partnerDeltas = mergePartnerDeltas(mergePartnerDeltas(dip.partnerDeltas, agr.partnerDeltas), shock.partnerDeltas);
+  const commodityDeltas = mergeCommodityDeltas(
+    mergeCommodityDeltas(dip.commodityDeltas, agr.commodityDeltas),
+    shock.commodityDeltas,
+  );
+
+  const notes = [...dip.notes, ...agr.notes, ...shock.notes];
+  const net = gtelNetworkModifier(input.nationalSystems);
+  const worldEvents: GTELTurnResult['worldEvents'] = [];
+
+  shockSchedule.newShockIds.forEach(id => {
+    const def = getWorldTradeShockDefinition(id);
+    if (def) worldEvents.push(shockWorldEventFromDefinition(def, turn));
+  });
+
+  const partners: GTELPartnerMarket[] = GTEL_PARTNER_DEFS.map(def => {
+    const prevBand = persisted.partnerAccess[def.id] || 'normal';
+    const prevScore = GTEL_ACCESS_RANK[prevBand] / 4;
+    const delta = gtelNum(partnerDeltas[def.id], 0);
+    const embKey = `embargo_${def.id}`;
+    const cooldown = gtelNum(persisted.embargoCooldowns[embKey], 0);
+    let penalty = cooldown > 0 ? -0.15 : 0;
+    if (cooldown > 0) persisted.embargoCooldowns[embKey] = cooldown - 1;
+    const score = gtelClamp(def.baseOpenness * 0.55 + prevScore * 0.25 + delta + net.networkMod + penalty, 0, 1);
+    const access = gtelAccessBandFromScore(score);
+    persisted.partnerAccess[def.id] = access;
+    return { ...def, access, accessScore: score };
+  });
+
+  if (dip.notes.some(n => /friction/i.test(n))) {
+    GTEL_PARTNER_DEFS.forEach(p => {
+      if (p.id !== 'domestic_premium') persisted.embargoCooldowns[`embargo_${p.id}`] = GTEL_LIMITS.embargoCooldown;
+    });
+    worldEvents.push({
+      id: `gtel_embargo_${turn}`,
+      turn,
+      kind: 'diplomacy',
+      title: 'Trade access under pressure',
+      summary: 'Diplomatic breaches are propagating into tighter export partner gates.',
+      regionIds: ['WA', 'QLD', 'NSW'],
+    });
+  }
+
+  const commodities = GTEL_COMMODITIES.map(commodity => {
+    const baseIndex = GTEL_BASE_COMMODITY_INDEX[commodity];
+    const prevSmooth = gtelNum(persisted.commoditySmoothing[commodity], baseIndex);
+    let partnerModifier = 0;
+    partners.forEach(p => {
+      const w = gtelNum(p.demandWeights[commodity], 0.5);
+      partnerModifier += (GTEL_ACCESS_RANK[p.access] / 4 - 0.5) * w * 0.06 * p.priceSensitivity;
+    });
+    const diplomacyModifier = gtelNum(commodityDeltas[commodity], 0);
+    const agreementModifier = gtelNum(agr.commodityDeltas[commodity], 0);
+    const shockModifier = gtelNum(shock.commodityDeltas[commodity], 0);
+    const networkModifier = net.networkMod * (commodity === 'services' ? 0.5 : 1);
+    const raw =
+      baseIndex * (1 + partnerModifier + diplomacyModifier + agreementModifier + shockModifier + networkModifier);
+    const effectiveIndex = prevSmooth * (1 - GTEL_LIMITS.smoothing) + raw * GTEL_LIMITS.smoothing;
+    persisted.commoditySmoothing[commodity] = gtelClamp(effectiveIndex, 45, 175);
+    const trend =
+      effectiveIndex > prevSmooth + 1.5 ? 'rising' : effectiveIndex < prevSmooth - 1.5 ? 'falling' : 'stable';
+    const evidence = [
+      `National trade network: ${net.condition}`,
+      `Partner-weighted access applied`,
+      diplomacyModifier !== 0 ? 'Diplomatic resource terms adjusted price' : 'No active resource-transfer terms',
+      agreementModifier !== 0 ? 'Ratified trade agreement tariff cuts applied' : 'No ratified agreement tariff cuts',
+      shockModifier !== 0 ? 'World shock adjusted export index' : 'No active shock on this commodity',
+    ];
+    return {
+      commodity,
+      baseIndex,
+      partnerModifier,
+      diplomacyModifier,
+      networkModifier,
+      shockModifier,
+      agreementModifier,
+      effectiveIndex: Math.round(effectiveIndex * 10) / 10,
+      trend,
+      evidence,
+    };
+  });
+
+  const exportLedPressure = gtelClamp(
+    (net.throughput / 120) * 0.4 + partners.filter(p => p.id !== 'domestic_premium' && GTEL_ACCESS_RANK[p.access] >= 3).length * 0.08,
+    0,
+    1,
+  );
+  const avgCommodity = commodities.reduce((a, c) => a + c.effectiveIndex, 0) / commodities.length;
+  const householdOffset = gtelClamp((avgCommodity - 95) / -80 - shock.domesticStress * 0.15, -0.25, 0.35);
+  const exportSectorBoom = exportLedPressure > 0.55 && avgCommodity > 98;
+  let exportVsDomesticModel: import('./types.ts').GTELDomesticCoupling['exportVsDomesticModel'] = 'domestically_balanced';
+  if (exportSectorBoom && householdOffset < -0.05) exportVsDomesticModel = 'export_led';
+  else if (householdOffset > 0.12 && exportLedPressure < 0.35) exportVsDomesticModel = 'household_led';
+  else if (net.condition === 'critical' || net.condition === 'bottlenecked') exportVsDomesticModel = 'constrained';
+
+  const transportHealthDelta = gtelClamp(net.networkMod * 12 + (exportSectorBoom ? 2 : 0), -8, 6);
+  let domesticSummary =
+    exportVsDomesticModel === 'export_led'
+      ? 'Export channels are hot; watch whether household demand keeps pace.'
+      : exportVsDomesticModel === 'constrained'
+        ? 'Trade bottlenecks are capping exports and squeezing domestic spillover.'
+        : exportVsDomesticModel === 'household_led'
+          ? 'Domestic channels carry more of national income than export premiums right now.'
+          : 'Exports and domestic demand are roughly in balance.';
+  const domestic = {
+    exportLedPressure,
+    householdOffset,
+    exportSectorBoom,
+    exportVsDomesticModel,
+    transportHealthDelta,
+    summary: domesticSummary,
+  };
+
+  const regionalImpacts = computeRegionalDomesticImpacts({
+    commodities,
+    partners,
+    domestic,
+    nationalSystems: input.nationalSystems,
+    shockStress: shock.domesticStress,
+    shockRegions: shock.regionIds,
+  });
+  domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
+
+  const inputHash = gtelHash([
+    turn,
+    partnerDeltas,
+    commodityDeltas,
+    net.condition,
+    commodities.map(c => c.effectiveIndex),
+    partners.map(p => p.access),
+    persisted.activeShocks.map(s => s.shockId),
+  ]);
+  persisted.revision += 1;
+  persisted.lastProcessedTurn = turn;
+
+  if (exportSectorBoom) {
+    worldEvents.push({
+      id: `gtel_boom_${turn}`,
+      turn,
+      kind: 'trade',
+      title: 'Export window widening',
+      summary: domestic.summary,
+      regionIds: ['WA', 'QLD'],
+    });
+  }
+
+  if (shock.regionIds.length && shock.domesticStress > 0.05) {
+    worldEvents.push({
+      id: `gtel_domestic_spill_${turn}`,
+      turn,
+      kind: 'domestic',
+      title: 'Domestic spillover from world markets',
+      summary: summarizeDomesticConsequences(regionalImpacts),
+      regionIds: shock.regionIds.slice(0, 6),
+    });
+  }
+
+  persisted.recentEvents = [
+    ...persisted.recentEvents,
+    ...worldEvents.map(e => ({ id: e.id, turn: e.turn, kind: e.kind, text: e.summary })),
+  ].slice(-GTEL_LIMITS.history);
+
+  const state = {
+    turn,
+    partners,
+    commodities,
+    domestic,
+    regionalImpacts,
+    nationalTradeCondition: net.condition,
+    exportThroughput: net.throughput,
+    diplomacyTradeDealsActive: gtelActiveDeals(input.diplomacyState).filter(d => d.type === 'resource_trade').length,
+    violationsLastWindow: gtelRecentViolations(input.diplomacyState, turn),
+    inputHash,
+  };
+
+  return { state, persisted, worldEvents: worldEvents.slice(0, GTEL_LIMITS.maxEvent) };
+}
+
+export function buildGlobalTradeEconomyInputsFromGameState(gs: any, turn?: number): GTELTurnInput {
+  const t = Math.max(1, Math.floor(gtelNum(turn ?? gs?.turnCounter ?? gs?.turn ?? 1, 1)));
+  return {
+    turn: t,
+    diplomacyState: gs?.diplomacyState || null,
+    nationalSystems: gs?.nationalSystems || null,
+    persisted: sanitizeGTELPersisted(gs?.globalTradeEconomy, t),
+    actorNames: gs?.actorNames || { player: 'You', ai: 'Rival' },
+  };
+}
+
+export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState | null): string[] {
+  if (!state) return [];
+  const lines = [state.domestic.summary];
+  const hot = state.commodities.filter(c => c.trend === 'rising').slice(0, 2);
+  if (hot.length) lines.push(`Rising quotes: ${hot.map(c => GTEL_COMMODITY_LABEL[c.commodity]).join(', ')}.`);
+  const blocked = state.partners.filter(p => p.access === 'blocked' || p.access === 'restricted');
+  if (blocked.length) lines.push(`Restricted partners: ${blocked.map(p => p.label).join('; ')}.`);
+  const stressed = state.regionalImpacts?.filter(r => r.stabilityDelta < -0.05).slice(0, 2);
+  if (stressed?.length) lines.push(`Regional stress: ${stressed.map(r => r.regionId).join(', ')}.`);
+  return lines;
+}

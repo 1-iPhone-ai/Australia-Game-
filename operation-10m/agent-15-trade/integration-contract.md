@@ -1,0 +1,46 @@
+# Agent 15 — Trade, diplomacy, world economy (Operation 10M)
+
+## Purpose
+
+Deterministic **global trade economy linkage (GTEL)** between:
+
+- Diplomatic deals (especially `resource_trade` and resource-transfer terms)
+- National trade network condition / export throughput
+- Partner market access bands and commodity export indices
+- **Structured trade agreements** (tariff / quota schedules independent of one-off deals)
+- **World economy shocks** (embargo, shipping, commodity swings)
+- **Domestic consequences** (regional employment / price / stability spillover)
+
+## Merge targets (Agent 25)
+
+| Export | Canonical hook |
+|--------|----------------|
+| `advanceGlobalTradeEconomyTurn` | Per-turn national systems / macro tick |
+| `buildGlobalTradeEconomyInputsFromGameState` | Reducer turn advance |
+| `applyGlobalTradeHouseholdOverrides` | Household / GI inputs builder |
+| `buildGlobalTradeGi3Notes` | Co-pilot / GI evidence strings |
+| `GlobalTradeEconomyPanel` | Trade / economy UI section |
+| `runAgent15GlobalTradeLinkageSelfTests` | Master self-test registry |
+
+Persisted schema: `GTELPersisted.schemaVersion === 1`.
+
+## State keys
+
+```ts
+gameState.globalTradeEconomy: GTELPersisted
+gameState.tradeAgreementLedger?: TradeAgreementLedger  // optional until wired
+```
+
+## Dependencies (read-only at runtime)
+
+- `diplomacyState` (deals, events)
+- `nationalSystems.national.trade` and regional trade networks
+- Optional `actorNames` for player-facing copy
+
+## Tests
+
+```bash
+npm run test:agent15
+```
+
+Must pass before merge. No PR close/triage by workers.
