@@ -53,7 +53,10 @@ export function buildAgent24ReplayScaleWaveWave23IntegrationHandoffReport(
   const waveRound = input.replayScaleWaveFullChunksVerification.waveRound;
   const integrationBaselineSha = input.integrationBaselineSha ?? O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA;
   const baselineAligned =
-    waveRound >= 37
+    waveRound >= 38
+      ? input.replayScaleWaveFullChunksVerification.fullChunksBaselineSha ===
+        O6K_AGENT24_WAVE38_INTEGRATION_BASELINE_SHA
+      : waveRound >= 37
       ? input.replayScaleWaveFullChunksVerification.fullChunksBaselineSha ===
         O6K_AGENT24_WAVE37_INTEGRATION_BASELINE_SHA
       : waveRound >= 36
