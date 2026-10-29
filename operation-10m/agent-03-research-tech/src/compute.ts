@@ -29,6 +29,7 @@ import { computeResearchStrategicDeliveryOutlook } from './strategic-delivery-ou
 import { computeResearchScaleWaveMaturityOutlook } from './scale-wave-maturity-outlook.ts';
 import { computeResearchNationalIntegrationOutlook } from './national-integration-outlook.ts';
 import { computeResearchScaleWaveProjectionOutlook } from './scale-wave-projection-outlook.ts';
+import { computeResearchTrancheProjectionReadinessOutlook } from './tranche-projection-readiness-outlook.ts';
 import { branchNodeTopologicalOrder, evaluateNodePrerequisites } from './prerequisites.ts';
 import { resolveActiveStrategyHooks, STRATEGY_HOOK_BY_ID } from './strategy-hooks.ts';
 import {
@@ -352,6 +353,13 @@ export function computeResearchProgress(
     scaleWaveMaturitySnapshot: coreBase.scaleWaveMaturitySnapshot ?? null,
   });
 
+  const trancheProjectionReadinessOutlook = computeResearchTrancheProjectionReadinessOutlook(inputs, {
+    scaleWaveProjectionOutlook,
+    nationalIntegrationOutlook,
+    scaleWaveProjectionSnapshot: coreBase.scaleWaveProjectionSnapshot ?? null,
+    nationalIntegrationSnapshot: coreBase.nationalIntegrationSnapshot ?? null,
+  });
+
   const computed: ResearchProgressState = {
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: coreBase.revision,
@@ -381,6 +389,7 @@ export function computeResearchProgress(
     scaleWaveMaturityOutlook,
     nationalIntegrationOutlook,
     scaleWaveProjectionOutlook,
+    trancheProjectionReadinessOutlook,
     unlockSeq: coreBase.unlockSeq,
     branchEmphasis: coreBase.branchEmphasis,
   };

@@ -55,4 +55,7 @@ export * from './national-integration-outlook.ts';
 export * from './national-integration-band-log.ts';
 export * from './national-integration-snapshot.ts';
 export * from './scale-wave-projection-outlook.ts';
+export * from './scale-wave-projection-band-log.ts';
+export * from './scale-wave-projection-snapshot.ts';
+export * from './tranche-projection-readiness-outlook.ts';
 export * from './compute.ts';
