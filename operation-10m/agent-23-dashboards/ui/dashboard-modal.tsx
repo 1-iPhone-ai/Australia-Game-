@@ -174,6 +174,12 @@ import { nrDashBuildAdjacencyPulseAsymmetry } from '../core/adjacency-pulse-asym
 import { nrDashBuildSnippetTurnSpan } from '../core/snippet-turn-span.ts';
 import { nrDashBuildHubCorridorSaturationShare } from '../core/hub-corridor-saturation-share.ts';
 import { nrDashBuildNationalDerivedOverlapGap } from '../core/national-derived-overlap-gap.ts';
+import { nrDashBuildNeutralOwnerMomentumGap } from '../core/neutral-owner-momentum-gap.ts';
+import { nrDashBuildOpenNeedsSeveritySpan } from '../core/open-needs-severity-span.ts';
+import { nrDashBuildPeripheralPulseAsymmetry } from '../core/peripheral-pulse-asymmetry.ts';
+import { nrDashBuildHistorySnippetTurnGap } from '../core/history-snippet-turn-gap.ts';
+import { nrDashBuildDependencyCorridorSaturationShare } from '../core/dependency-corridor-saturation-share.ts';
+import { nrDashBuildLrMajorSnippetOverlapGap } from '../core/lr-major-snippet-overlap-gap.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -650,6 +656,23 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const neutralMomGap = nrDashBuildNeutralOwnerMomentumGap(snap);
+      return neutralMomGap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-neutral-owner-momentum-gap">
+          Neutral-owner momentum gap {neutralMomGap.momentumGap} · neutral μ {neutralMomGap.neutralMeanRank} · national μ{' '}
+          {neutralMomGap.nationalMeanRank}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const sevSpan = nrDashBuildOpenNeedsSeveritySpan(lrView);
+      return sevSpan && sevSpan.severitySpread > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-open-needs-severity-span">
+          Open needs severity span {sevSpan.severitySpread} · rank {sevSpan.minSeverityRank}–{sevSpan.maxSeverityRank}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const lowConc = nrDashBuildLowTierNeedsConcentration(lrView);
       return lowConc ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-low-tier-needs-concentration">
@@ -691,6 +714,24 @@ export const NrDashOverviewTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-derived-overlap-gap">
           National derived overlap gap {nationalDerivedGap.overlapGap} · R{nationalDerivedGap.nationalTurn} · NS{' '}
           {nationalDerivedGap.nsEntryCount} · LR {nationalDerivedGap.derivedEntryCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const histSnippetGap = nrDashBuildHistorySnippetTurnGap(lrView, nsState, snap);
+      return histSnippetGap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-history-snippet-turn-gap">
+          History snippet turn gap {histSnippetGap.turnGap} · source {histSnippetGap.sourceTurnSpread} · snippet{' '}
+          {histSnippetGap.snippetTurnSpread}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const majorSnippetGap = nrDashBuildLrMajorSnippetOverlapGap(lrView, snap);
+      return majorSnippetGap && majorSnippetGap.overlapGap > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-lr-major-snippet-overlap-gap">
+          LR major snippet overlap gap {majorSnippetGap.overlapGap} · {majorSnippetGap.majorEventCount} majors ·{' '}
+          {majorSnippetGap.snippetTurnCount} snippet hits
         </div>
       ) : null;
     })()}
@@ -1676,6 +1717,24 @@ export const NrDashMapTab: React.FC<{
           <p className="text-[10px] opacity-75" data-testid="nr-dash-adjacency-pulse-asymmetry">
             Adjacency pulse asymmetry μΔ {adjAsym.meanEndpointDelta} · peak {adjAsym.maxEndpointDelta} · {adjAsym.linkCount}{' '}
             links
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const peripheralAsym = nrDashBuildPeripheralPulseAsymmetry(nsState, baseNodes);
+        return peripheralAsym && peripheralAsym.maxEndpointDelta > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-peripheral-pulse-asymmetry">
+            Peripheral pulse asymmetry μΔ {peripheralAsym.meanEndpointDelta} · peak {peripheralAsym.maxEndpointDelta} ·{' '}
+            {peripheralAsym.peripheralLinkCount} links
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const depCorridorSat = nrDashBuildDependencyCorridorSaturationShare(stressedLinks, baseNodes);
+        return depCorridorSat && depCorridorSat.saturationShare > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-dependency-corridor-saturation-share">
+            Dependency corridor saturation share {depCorridorSat.saturationShare} · μ {depCorridorSat.meanBlend} · peak{' '}
+            {depCorridorSat.peakBlend}
           </p>
         ) : null;
       })()}

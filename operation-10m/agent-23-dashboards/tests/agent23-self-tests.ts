@@ -170,6 +170,12 @@ import { nrDashBuildAdjacencyPulseAsymmetry } from '../core/adjacency-pulse-asym
 import { nrDashBuildSnippetTurnSpan } from '../core/snippet-turn-span.ts';
 import { nrDashBuildHubCorridorSaturationShare } from '../core/hub-corridor-saturation-share.ts';
 import { nrDashBuildNationalDerivedOverlapGap } from '../core/national-derived-overlap-gap.ts';
+import { nrDashBuildNeutralOwnerMomentumGap } from '../core/neutral-owner-momentum-gap.ts';
+import { nrDashBuildOpenNeedsSeveritySpan } from '../core/open-needs-severity-span.ts';
+import { nrDashBuildPeripheralPulseAsymmetry } from '../core/peripheral-pulse-asymmetry.ts';
+import { nrDashBuildHistorySnippetTurnGap } from '../core/history-snippet-turn-gap.ts';
+import { nrDashBuildDependencyCorridorSaturationShare } from '../core/dependency-corridor-saturation-share.ts';
+import { nrDashBuildLrMajorSnippetOverlapGap } from '../core/lr-major-snippet-overlap-gap.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -1338,6 +1344,51 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     lr.state.derived.push({ turn: 5, text: 'National echo', significance: 'major' });
     const gap = nrDashBuildNationalDerivedOverlapGap(lr, createAgent23NsFixture())!;
     return gap.nationalTurn === 5 && gap.nsEntryCount === 1 && gap.derivedEntryCount === 1 && gap.overlapGap === 1;
+  });
+
+  check('a23_neutral_owner_momentum_gap', 'Neutral-owner momentum gap is zero on uniform stable fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { VIC: 'neutral' })!;
+    const gap = nrDashBuildNeutralOwnerMomentumGap(snap)!;
+    return gap.neutralRegionCount === 1 && gap.momentumGap === 0;
+  });
+
+  check('a23_open_needs_severity_span', 'Open needs severity span separates critical NSW fixture', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.regions.NSW!.needs.push({ category: 'security', status: 'open', severity: 'critical' });
+    const span = nrDashBuildOpenNeedsSeveritySpan(lr)!;
+    return span.severitySpread === 2 && span.maxSeverityRank === 3;
+  });
+
+  check('a23_peripheral_pulse_asymmetry', 'Peripheral pulse asymmetry is positive off-hub links', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const asym = nrDashBuildPeripheralPulseAsymmetry(createAgent23NsFixture(), nrDashBuildRegionMapNodes(snap))!;
+    return asym.peripheralLinkCount > 0 && asym.maxEndpointDelta > 0.01;
+  });
+
+  check('a23_history_snippet_turn_gap', 'History snippet turn gap is zero when spans align', () => {
+    const lr = createAgent23LrFixture();
+    const ns = createAgent23NsFixture();
+    const snap = nrDashBuildAuthSnapshot(5, lr, ns, null)!;
+    const gap = nrDashBuildHistorySnippetTurnGap(lr, ns, snap)!;
+    return gap.sourceTurnSpread === 1 && gap.snippetTurnSpread === 1 && gap.turnGap === 0;
+  });
+
+  check('a23_dependency_corridor_saturation_share', 'Dependency corridor saturation share is below one on fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const nodes = nrDashBuildRegionMapNodes(snap);
+    const links = nrDashMergeMapLinks(
+      nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
+      nrDashBuildDependencyLinks(createAgent23NsFixture(), AGENT23_REGION_MAP_LAYOUT)
+    );
+    const sat = nrDashBuildDependencyCorridorSaturationShare(links, nodes)!;
+    return sat.linkCount === 3 && sat.saturationShare > 0 && sat.saturationShare < 1;
+  });
+
+  check('a23_lr_major_snippet_overlap_gap', 'LR major snippet overlap gap counts duplicate major turns', () => {
+    const lr = createAgent23LrFixture();
+    const snap = nrDashBuildAuthSnapshot(5, lr, null, null)!;
+    const gap = nrDashBuildLrMajorSnippetOverlapGap(lr, snap)!;
+    return gap.majorEventCount === 1 && gap.snippetTurnCount === 1 && gap.overlapGap === 1;
   });
 
   return results;
