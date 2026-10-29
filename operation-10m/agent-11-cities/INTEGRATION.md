@@ -40,6 +40,13 @@ All symbols are prefixed `OP10M_A11_` for grep-safe assembly.
 - **Settlement existential absolute nullity beatification** — consecration × panpsychism × nullity sentence (`op10mA11ComputeSettlementExistentialAbsoluteNullityBeatification`)
 - Derived events: `collapse_omni_singularity_panidealism`, `void_total_erosion_dissipation`, `existential_absolute_nullity_beatification`
 
+### Scale wave round 51 (O10-233, schema `10m.a11.composite.50`)
+
+- **Regional collapse omni singularity panmonism** — pantheosis × evaporation × glorification (`op10mA11ComputeRegionalCollapseOmniSingularityPanmonism`)
+- **Interregional void total erosion sublimation** — evaporation × pantheosis × void front (`op10mA11ComputeInterregionalVoidTotalErosionSublimation`)
+- **Settlement existential absolute nullity deification** — glorification × pantheosis × nullity sentence (`op10mA11ComputeSettlementExistentialAbsoluteNullityDeification`)
+- Derived events: `collapse_omni_singularity_panmonism`, `void_total_erosion_sublimation`, `existential_absolute_nullity_deification`
+
 ### Scale wave round 50 (O10-231, schema `10m.a11.composite.48`)
 
 - **Regional collapse omni singularity pantheosis** — panpsychism × attenuation × consecration (`op10mA11ComputeRegionalCollapseOmniSingularityPantheosis`)

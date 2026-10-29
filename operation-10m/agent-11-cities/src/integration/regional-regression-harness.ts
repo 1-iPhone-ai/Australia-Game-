@@ -144,6 +144,9 @@ export type OP10M_A11_RegressionTurnSnapshot = {
   collapseOmniSingularityPantheosisIndex: number;
   voidTotalErosionEvaporationIndex: number;
   existentialAbsoluteNullityGlorificationIndex: number;
+  collapseOmniSingularityPanmonismIndex: number;
+  voidTotalErosionSublimationIndex: number;
+  existentialAbsoluteNullityDeificationIndex: number;
   validationErrors: number;
 };
 
