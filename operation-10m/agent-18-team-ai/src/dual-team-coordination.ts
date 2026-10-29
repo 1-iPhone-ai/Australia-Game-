@@ -5,6 +5,9 @@ import {
 } from './coordination-composite-score.ts';
 import { combineDualTeamLeaseHealth } from './lease-expiry-watchdog.ts';
 import { combineDualTeamRoleChurn } from './role-churn-index.ts';
+import { combineDualTeamDirectiveCollision } from './directive-collision-index.ts';
+import { combineDualTeamHandoffIntegrity } from './handoff-chain-integrity.ts';
+import { combineDualTeamEscalationTier } from './coordination-escalation-tier.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -27,6 +30,9 @@ export interface DualTeamMultiAgentResult {
   coordinationCompositeCombined: number;
   roleChurnCombined: number;
   leaseHealthCombined: number;
+  directiveCollisionCombined: number;
+  handoffIntegrityCombined: number;
+  escalationTierCombined: number;
 }
 
 /**
@@ -65,6 +71,9 @@ export function evaluateDualTeamMultiAgentLayers(
       coordinationCompositeCombined: friendly.state.meta.coordinationCompositeScore ?? 100,
       roleChurnCombined: friendly.state.meta.roleChurnIndex ?? 0,
       leaseHealthCombined: friendly.state.meta.leaseHealthScore ?? 100,
+      directiveCollisionCombined: friendly.state.meta.directiveCollisionIndex ?? 0,
+      handoffIntegrityCombined: friendly.state.meta.handoffIntegrityScore ?? 100,
+      escalationTierCombined: friendly.state.meta.coordinationEscalationTier ?? 0,
     };
   }
 
@@ -150,6 +159,36 @@ export function evaluateDualTeamMultiAgentLayers(
         expiredLeaseIds: enemy.state.meta.expiredLeaseIds ?? [],
         notes: [],
       },
+    ),
+    directiveCollisionCombined: combineDualTeamDirectiveCollision(
+      {
+        collisionIndex: friendly.state.meta.directiveCollisionIndex ?? 0,
+        collidingProposalIds: friendly.state.meta.collidingDirectiveIds ?? [],
+        notes: [],
+      },
+      {
+        collisionIndex: enemy.state.meta.directiveCollisionIndex ?? 0,
+        collidingProposalIds: enemy.state.meta.collidingDirectiveIds ?? [],
+        notes: [],
+      },
+    ),
+    handoffIntegrityCombined: combineDualTeamHandoffIntegrity(
+      {
+        integrityScore: friendly.state.meta.handoffIntegrityScore ?? 100,
+        brokenHandoffIds: friendly.state.meta.brokenHandoffIds ?? [],
+        duplicatePendingTaskIds: friendly.state.meta.duplicatePendingHandoffTaskIds ?? [],
+        notes: [],
+      },
+      {
+        integrityScore: enemy.state.meta.handoffIntegrityScore ?? 100,
+        brokenHandoffIds: enemy.state.meta.brokenHandoffIds ?? [],
+        duplicatePendingTaskIds: enemy.state.meta.duplicatePendingHandoffTaskIds ?? [],
+        notes: [],
+      },
+    ),
+    escalationTierCombined: combineDualTeamEscalationTier(
+      friendly.state.meta.coordinationEscalationTier ?? 0,
+      enemy.state.meta.coordinationEscalationTier ?? 0,
     ),
   };
 }

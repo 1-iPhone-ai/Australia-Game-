@@ -24,4 +24,7 @@ export * from './workstream-barrier-monitor.ts';
 export * from './role-churn-index.ts';
 export * from './lease-expiry-watchdog.ts';
 export * from './coordination-composite-score.ts';
+export * from './directive-collision-index.ts';
+export * from './handoff-chain-integrity.ts';
+export * from './coordination-escalation-tier.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';

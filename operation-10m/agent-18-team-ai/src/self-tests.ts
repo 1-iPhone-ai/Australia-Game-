@@ -46,6 +46,9 @@ import {
 import { computeRoleChurnIndex } from './role-churn-index.ts';
 import { evaluateLeaseExpiry } from './lease-expiry-watchdog.ts';
 import { computeCoordinationComposite } from './coordination-composite-score.ts';
+import { computeDirectiveCollisionIndex } from './directive-collision-index.ts';
+import { evaluateHandoffChainIntegrity } from './handoff-chain-integrity.ts';
+import { computeCoordinationEscalationTier } from './coordination-escalation-tier.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -1256,6 +1259,119 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.coordinationCompositeCombined === 'number' &&
       typeof dual.leaseHealthCombined === 'number' &&
       typeof dual.roleChurnCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_directive_collision', 'Directive collision: same region proposals from two actors', () => {
+    const report = computeDirectiveCollisionIndex([
+      { id: 'd1', actorId: 'a', goalKind: 'take_region', targetRegionId: 'NSW', taskId: 't1', priority: 1 },
+      { id: 'd2', actorId: 'b', goalKind: 'defend_region', targetRegionId: 'NSW', taskId: 't2', priority: 2 },
+    ]);
+    return report.collisionIndex > 0 && report.collidingProposalIds.length === 2;
+  });
+
+  check(results, 'a18_directive_collision_none', 'Directive collision: disjoint targets score zero', () => {
+    const report = computeDirectiveCollisionIndex([
+      { id: 'd1', actorId: 'a', goalKind: 'take_region', targetRegionId: 'NSW', taskId: 't1', priority: 1 },
+      { id: 'd2', actorId: 'b', goalKind: 'take_region', targetRegionId: 'VIC', taskId: 't2', priority: 2 },
+    ]);
+    return report.collisionIndex === 0;
+  });
+
+  check(results, 'a18_handoff_integrity_self', 'Handoff integrity: self-handoff lowers score', () => {
+    const report = evaluateHandoffChainIntegrity(
+      [
+        {
+          id: 'h_self',
+          fromActorId: 'player',
+          toActorId: 'player',
+          regionId: 'NSW',
+          taskId: 't1',
+          status: 'pending',
+          requestedTurn: 1,
+          reason: 'test',
+        },
+      ],
+      ['player', 'mate'],
+    );
+    return report.brokenHandoffIds.includes('h_self') && report.integrityScore < 100;
+  });
+
+  check(results, 'a18_handoff_integrity_dup', 'Handoff integrity: duplicate pending task flagged', () => {
+    const handoff = {
+      fromActorId: 'player',
+      toActorId: 'mate',
+      regionId: 'NSW',
+      taskId: 't_dup',
+      status: 'pending' as const,
+      requestedTurn: 1,
+      reason: 'test',
+    };
+    const report = evaluateHandoffChainIntegrity(
+      [
+        { ...handoff, id: 'h1' },
+        { ...handoff, id: 'h2', fromActorId: 'mate', toActorId: 'player' },
+      ],
+      ['player', 'mate'],
+    );
+    return report.duplicatePendingTaskIds.includes('t_dup');
+  });
+
+  check(results, 'a18_escalation_critical', 'Escalation tier: audit errors force critical tier', () => {
+    const report = computeCoordinationEscalationTier({
+      coordinationCompositeScore: 90,
+      auditErrors: 1,
+      auditWarnings: 0,
+    });
+    return report.tier === 3 && report.label === 'critical';
+  });
+
+  check(results, 'a18_escalation_nominal', 'Escalation tier: healthy team stays nominal', () => {
+    const report = computeCoordinationEscalationTier({
+      coordinationCompositeScore: 92,
+      auditErrors: 0,
+      auditWarnings: 0,
+      directiveCollisionIndex: 0,
+      handoffIntegrityScore: 100,
+    });
+    return report.tier === 0;
+  });
+
+  check(results, 'a18_eval_round7_meta', 'Layer: round-7 meta exposes collision, integrity, escalation', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.directiveCollisionIndex === 'number' &&
+      typeof m.handoffIntegrityScore === 'number' &&
+      typeof m.coordinationEscalationTier === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_escalation', 'Audit: critical escalation tier surfaces error finding', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = {
+      ...ev.state,
+      meta: { ...ev.state.meta, coordinationEscalationTier: 3, coordinationEscalationLabel: 'critical' },
+    };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'error' && /escalation critical/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round7_combined', 'Dual team: round-7 combined collision, integrity, escalation exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.directiveCollisionCombined === 'number' &&
+      typeof dual.handoffIntegrityCombined === 'number' &&
+      typeof dual.escalationTierCombined === 'number'
     );
   });
 

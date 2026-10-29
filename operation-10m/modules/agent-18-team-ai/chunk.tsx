@@ -254,6 +254,13 @@ export interface TeamMultiAgentCoordinationMeta {
   expiredLeaseIds?: string[];
   coordinationCompositeScore?: number;
   coordinationWeakestDimension?: string;
+  directiveCollisionIndex?: number;
+  collidingDirectiveIds?: string[];
+  handoffIntegrityScore?: number;
+  brokenHandoffIds?: string[];
+  duplicatePendingHandoffTaskIds?: string[];
+  coordinationEscalationTier?: number;
+  coordinationEscalationLabel?: string;
 }
 
 export const AGENT18_LIMITS = {
@@ -1527,6 +1534,36 @@ export function auditTeamMultiAgentLayer(
     });
   }
 
+  if (typeof state.meta.directiveCollisionIndex === 'number' && state.meta.directiveCollisionIndex >= 40) {
+    push({
+      severity: 'warning',
+      message: `High directive collision index (${state.meta.directiveCollisionIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (typeof state.meta.handoffIntegrityScore === 'number' && state.meta.handoffIntegrityScore < 70) {
+    push({
+      severity: 'warning',
+      message: `Low handoff chain integrity (${state.meta.handoffIntegrityScore})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.coordinationEscalationTier === 'number' &&
+    state.meta.coordinationEscalationTier >= 2
+  ) {
+    push({
+      severity: state.meta.coordinationEscalationTier >= 3 ? 'error' : 'warning',
+      message: `Coordination escalation ${state.meta.coordinationEscalationLabel || state.meta.coordinationEscalationTier} (tier ${state.meta.coordinationEscalationTier})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
   state.coordination.leases.forEach(lease => {
     if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
       push({
@@ -1863,6 +1900,29 @@ export function sanitizeTeamMultiAgentCoordinationState(
         typeof metaRaw.coordinationWeakestDimension === 'string'
           ? metaRaw.coordinationWeakestDimension
           : undefined,
+      directiveCollisionIndex:
+        typeof metaRaw.directiveCollisionIndex === 'number'
+          ? metaRaw.directiveCollisionIndex
+          : undefined,
+      collidingDirectiveIds: Array.isArray(metaRaw.collidingDirectiveIds)
+        ? metaRaw.collidingDirectiveIds.map(String).slice(0, 8)
+        : undefined,
+      handoffIntegrityScore:
+        typeof metaRaw.handoffIntegrityScore === 'number' ? metaRaw.handoffIntegrityScore : undefined,
+      brokenHandoffIds: Array.isArray(metaRaw.brokenHandoffIds)
+        ? metaRaw.brokenHandoffIds.map(String).slice(0, 8)
+        : undefined,
+      duplicatePendingHandoffTaskIds: Array.isArray(metaRaw.duplicatePendingHandoffTaskIds)
+        ? metaRaw.duplicatePendingHandoffTaskIds.map(String).slice(0, 8)
+        : undefined,
+      coordinationEscalationTier:
+        typeof metaRaw.coordinationEscalationTier === 'number'
+          ? metaRaw.coordinationEscalationTier
+          : undefined,
+      coordinationEscalationLabel:
+        typeof metaRaw.coordinationEscalationLabel === 'string'
+          ? metaRaw.coordinationEscalationLabel
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -1909,6 +1969,10 @@ export function evaluateTeamMultiAgentLayer(
     diagnostics.push(`Dropped directive ${d.proposal.id}: ${d.reason}`),
   );
   const proposals = quota.allowed;
+  const directiveCollisions = computeDirectiveCollisionIndex(proposals);
+  directiveCollisions.notes.forEach(n => diagnostics.push(n));
+  const handoffIntegrity = evaluateHandoffChainIntegrity(coordination.handoffs, scope);
+  handoffIntegrity.notes.forEach(n => diagnostics.push(n));
   const directiveResult = coordinateTeammateDirectives(proposals, coordination, roles);
   const handoffSla = evaluateHandoffSla(inputs.turn, coordination.handoffs, {
     maxPendingTurns: AGENT18_LIMITS.handoffSlaMaxPendingTurns,
@@ -2033,11 +2097,28 @@ export function evaluateTeamMultiAgentLayer(
       expiredLeaseIds: leaseExpiry.expiredLeaseIds,
       coordinationCompositeScore: coordinationComposite.compositeScore,
       coordinationWeakestDimension: coordinationComposite.weakestDimension,
+      directiveCollisionIndex: directiveCollisions.collisionIndex,
+      collidingDirectiveIds: directiveCollisions.collidingProposalIds,
+      handoffIntegrityScore: handoffIntegrity.integrityScore,
+      brokenHandoffIds: handoffIntegrity.brokenHandoffIds,
+      duplicatePendingHandoffTaskIds: handoffIntegrity.duplicatePendingTaskIds,
     },
   };
 
   const auditFindings = auditTeamMultiAgentLayer(state, inputs);
-  state = attachAuditToState(state, auditFindings, {});
+  const escalation = computeCoordinationEscalationTier({
+    coordinationCompositeScore: coordinationComposite.compositeScore,
+    auditErrors: auditFindings.filter(f => f.severity === 'error').length,
+    auditWarnings: auditFindings.filter(f => f.severity === 'warning').length,
+    directiveCollisionIndex: directiveCollisions.collisionIndex,
+    handoffIntegrityScore: handoffIntegrity.integrityScore,
+  });
+  escalation.notes.forEach(n => diagnostics.push(n));
+  state = attachAuditToState(state, auditFindings, {
+    coordinationEscalationTier: escalation.tier,
+    coordinationEscalationLabel: escalation.label,
+  });
+  state = { ...state, diagnostics };
 
   const coordinationIssues = [
     ...sharedIssues,
@@ -2211,6 +2292,9 @@ export interface DualTeamMultiAgentResult {
   coordinationCompositeCombined: number;
   roleChurnCombined: number;
   leaseHealthCombined: number;
+  directiveCollisionCombined: number;
+  handoffIntegrityCombined: number;
+  escalationTierCombined: number;
 }
 
 /**
@@ -2249,6 +2333,9 @@ export function evaluateDualTeamMultiAgentLayers(
       coordinationCompositeCombined: friendly.state.meta.coordinationCompositeScore ?? 100,
       roleChurnCombined: friendly.state.meta.roleChurnIndex ?? 0,
       leaseHealthCombined: friendly.state.meta.leaseHealthScore ?? 100,
+      directiveCollisionCombined: friendly.state.meta.directiveCollisionIndex ?? 0,
+      handoffIntegrityCombined: friendly.state.meta.handoffIntegrityScore ?? 100,
+      escalationTierCombined: friendly.state.meta.coordinationEscalationTier ?? 0,
     };
   }
 
@@ -2334,6 +2421,36 @@ export function evaluateDualTeamMultiAgentLayers(
         expiredLeaseIds: enemy.state.meta.expiredLeaseIds ?? [],
         notes: [],
       },
+    ),
+    directiveCollisionCombined: combineDualTeamDirectiveCollision(
+      {
+        collisionIndex: friendly.state.meta.directiveCollisionIndex ?? 0,
+        collidingProposalIds: friendly.state.meta.collidingDirectiveIds ?? [],
+        notes: [],
+      },
+      {
+        collisionIndex: enemy.state.meta.directiveCollisionIndex ?? 0,
+        collidingProposalIds: enemy.state.meta.collidingDirectiveIds ?? [],
+        notes: [],
+      },
+    ),
+    handoffIntegrityCombined: combineDualTeamHandoffIntegrity(
+      {
+        integrityScore: friendly.state.meta.handoffIntegrityScore ?? 100,
+        brokenHandoffIds: friendly.state.meta.brokenHandoffIds ?? [],
+        duplicatePendingTaskIds: friendly.state.meta.duplicatePendingHandoffTaskIds ?? [],
+        notes: [],
+      },
+      {
+        integrityScore: enemy.state.meta.handoffIntegrityScore ?? 100,
+        brokenHandoffIds: enemy.state.meta.brokenHandoffIds ?? [],
+        duplicatePendingTaskIds: enemy.state.meta.duplicatePendingHandoffTaskIds ?? [],
+        notes: [],
+      },
+    ),
+    escalationTierCombined: combineDualTeamEscalationTier(
+      friendly.state.meta.coordinationEscalationTier ?? 0,
+      enemy.state.meta.coordinationEscalationTier ?? 0,
     ),
   };
 }
@@ -3079,6 +3196,200 @@ export function combineDualTeamCoordinationComposite(
 ): number {
   if (enemy === null) return friendly;
   return Math.round((friendly + enemy) / 2);
+}
+
+
+// --- source: directive-collision-index.ts ---
+
+export interface DirectiveCollisionReport {
+  collisionIndex: number;
+  collidingProposalIds: string[];
+  notes: string[];
+}
+
+function targetsSameResource(a: TeammateDirectiveProposal, b: TeammateDirectiveProposal): boolean {
+  if (a.actorId === b.actorId) return false;
+  if (a.taskId && b.taskId && a.taskId === b.taskId) return true;
+  if (a.targetRegionId && b.targetRegionId && a.targetRegionId === b.targetRegionId) {
+    return /deposit|defend|take|region/i.test(a.goalKind) && /deposit|defend|take|region/i.test(b.goalKind);
+  }
+  return false;
+}
+
+/**
+ * Cross-actor directive overlap on the same region or task (after in-team scoping).
+ */
+export function computeDirectiveCollisionIndex(
+  proposals: TeammateDirectiveProposal[],
+): DirectiveCollisionReport {
+  const notes: string[] = [];
+  const collidingIds = new Set<string>();
+  let pairCount = 0;
+
+  for (let i = 0; i < proposals.length; i++) {
+    for (let j = i + 1; j < proposals.length; j++) {
+      const a = proposals[i];
+      const b = proposals[j];
+      if (!targetsSameResource(a, b)) continue;
+      pairCount += 1;
+      collidingIds.add(a.id);
+      collidingIds.add(b.id);
+      notes.push(
+        `Directive collision ${a.actorId} vs ${b.actorId} on ${a.taskId || a.targetRegionId || 'resource'}`,
+      );
+    }
+  }
+
+  const maxPairs = Math.max(1, (proposals.length * (proposals.length - 1)) / 2);
+  const collisionIndex = proposals.length < 2 ? 0 : Math.round(Math.min(100, (pairCount / maxPairs) * 100));
+
+  return {
+    collisionIndex,
+    collidingProposalIds: [...collidingIds].slice(0, 8),
+    notes: notes.slice(0, 6),
+  };
+}
+
+export function combineDualTeamDirectiveCollision(
+  friendly: DirectiveCollisionReport,
+  enemy: DirectiveCollisionReport | null,
+): number {
+  if (!enemy) return friendly.collisionIndex;
+  return Math.max(friendly.collisionIndex, enemy.collisionIndex);
+}
+
+
+// --- source: handoff-chain-integrity.ts ---
+
+export interface HandoffChainIntegrityReport {
+  integrityScore: number;
+  brokenHandoffIds: string[];
+  duplicatePendingTaskIds: string[];
+  notes: string[];
+}
+
+function actorKnown(actorId: string, known: Set<string>): boolean {
+  return known.has(actorId);
+}
+
+/**
+ * Validate pending handoff chains: actor membership, self-handoffs, duplicate pending targets.
+ */
+export function evaluateHandoffChainIntegrity(
+  handoffs: HandoffRequest[],
+  teamActorIds: Iterable<string>,
+): HandoffChainIntegrityReport {
+  const known = new Set(teamActorIds);
+  const notes: string[] = [];
+  const brokenHandoffIds: string[] = [];
+  const pendingByTask = new Map<string, HandoffRequest[]>();
+
+  handoffs
+    .filter(h => h.status === 'pending')
+    .forEach(h => {
+      const list = pendingByTask.get(h.taskId) || [];
+      list.push(h);
+      pendingByTask.set(h.taskId, list);
+
+      if (h.fromActorId === h.toActorId) {
+        brokenHandoffIds.push(h.id);
+        notes.push(`Handoff ${h.id} is a self-handoff`);
+      }
+      if (!actorKnown(h.fromActorId, known) || !actorKnown(h.toActorId, known)) {
+        brokenHandoffIds.push(h.id);
+        notes.push(`Handoff ${h.id} references unknown actor`);
+      }
+    });
+
+  const duplicatePendingTaskIds: string[] = [];
+  pendingByTask.forEach((list, taskId) => {
+    if (list.length > 1) {
+      duplicatePendingTaskIds.push(taskId);
+      list.forEach(h => {
+        if (!brokenHandoffIds.includes(h.id)) brokenHandoffIds.push(h.id);
+      });
+      notes.push(`Multiple pending handoffs for task ${taskId}`);
+    }
+  });
+
+  const pendingCount = handoffs.filter(h => h.status === 'pending').length;
+  const defectCount = new Set(brokenHandoffIds).size;
+  const integrityScore =
+    pendingCount === 0 ? 100 : Math.round(Math.max(0, 100 - (defectCount / pendingCount) * 100));
+
+  return {
+    integrityScore,
+    brokenHandoffIds: [...new Set(brokenHandoffIds)].slice(0, 8),
+    duplicatePendingTaskIds: duplicatePendingTaskIds.slice(0, 8),
+    notes: notes.slice(0, 6),
+  };
+}
+
+export function combineDualTeamHandoffIntegrity(
+  friendly: HandoffChainIntegrityReport,
+  enemy: HandoffChainIntegrityReport | null,
+): number {
+  if (!enemy) return friendly.integrityScore;
+  return Math.round((friendly.integrityScore + enemy.integrityScore) / 2);
+}
+
+
+// --- source: coordination-escalation-tier.ts ---
+export interface CoordinationEscalationInputs {
+  coordinationCompositeScore: number;
+  auditErrors: number;
+  auditWarnings: number;
+  directiveCollisionIndex?: number;
+  handoffIntegrityScore?: number;
+}
+
+export interface CoordinationEscalationReport {
+  tier: 0 | 1 | 2 | 3;
+  label: string;
+  notes: string[];
+}
+
+const TIER_LABELS: Record<CoordinationEscalationReport['tier'], string> = {
+  0: 'nominal',
+  1: 'watch',
+  2: 'elevated',
+  3: 'critical',
+};
+
+/**
+ * Operator escalation ladder from composite health, audit pressure, and round-7 integrity signals.
+ */
+export function computeCoordinationEscalationTier(
+  inputs: CoordinationEscalationInputs,
+): CoordinationEscalationReport {
+  const composite = inputs.coordinationCompositeScore;
+  const collision = inputs.directiveCollisionIndex ?? 0;
+  const integrity = inputs.handoffIntegrityScore ?? 100;
+  const notes: string[] = [];
+
+  let tier: CoordinationEscalationReport['tier'] = 0;
+
+  if (inputs.auditErrors > 0 || composite < 45 || integrity < 50) {
+    tier = 3;
+    notes.push('Critical coordination escalation — errors or severe health collapse');
+  } else if (composite < 60 || collision >= 50 || inputs.auditWarnings >= 4) {
+    tier = 2;
+    notes.push('Elevated coordination escalation');
+  } else if (composite < 75 || collision >= 25 || inputs.auditWarnings >= 2) {
+    tier = 1;
+    notes.push('Watch-tier coordination escalation');
+  }
+
+  return {
+    tier,
+    label: TIER_LABELS[tier],
+    notes: notes.slice(0, 4),
+  };
+}
+
+export function combineDualTeamEscalationTier(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
 }
 
 
@@ -4320,6 +4631,119 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.coordinationCompositeCombined === 'number' &&
       typeof dual.leaseHealthCombined === 'number' &&
       typeof dual.roleChurnCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_directive_collision', 'Directive collision: same region proposals from two actors', () => {
+    const report = computeDirectiveCollisionIndex([
+      { id: 'd1', actorId: 'a', goalKind: 'take_region', targetRegionId: 'NSW', taskId: 't1', priority: 1 },
+      { id: 'd2', actorId: 'b', goalKind: 'defend_region', targetRegionId: 'NSW', taskId: 't2', priority: 2 },
+    ]);
+    return report.collisionIndex > 0 && report.collidingProposalIds.length === 2;
+  });
+
+  check(results, 'a18_directive_collision_none', 'Directive collision: disjoint targets score zero', () => {
+    const report = computeDirectiveCollisionIndex([
+      { id: 'd1', actorId: 'a', goalKind: 'take_region', targetRegionId: 'NSW', taskId: 't1', priority: 1 },
+      { id: 'd2', actorId: 'b', goalKind: 'take_region', targetRegionId: 'VIC', taskId: 't2', priority: 2 },
+    ]);
+    return report.collisionIndex === 0;
+  });
+
+  check(results, 'a18_handoff_integrity_self', 'Handoff integrity: self-handoff lowers score', () => {
+    const report = evaluateHandoffChainIntegrity(
+      [
+        {
+          id: 'h_self',
+          fromActorId: 'player',
+          toActorId: 'player',
+          regionId: 'NSW',
+          taskId: 't1',
+          status: 'pending',
+          requestedTurn: 1,
+          reason: 'test',
+        },
+      ],
+      ['player', 'mate'],
+    );
+    return report.brokenHandoffIds.includes('h_self') && report.integrityScore < 100;
+  });
+
+  check(results, 'a18_handoff_integrity_dup', 'Handoff integrity: duplicate pending task flagged', () => {
+    const handoff = {
+      fromActorId: 'player',
+      toActorId: 'mate',
+      regionId: 'NSW',
+      taskId: 't_dup',
+      status: 'pending' as const,
+      requestedTurn: 1,
+      reason: 'test',
+    };
+    const report = evaluateHandoffChainIntegrity(
+      [
+        { ...handoff, id: 'h1' },
+        { ...handoff, id: 'h2', fromActorId: 'mate', toActorId: 'player' },
+      ],
+      ['player', 'mate'],
+    );
+    return report.duplicatePendingTaskIds.includes('t_dup');
+  });
+
+  check(results, 'a18_escalation_critical', 'Escalation tier: audit errors force critical tier', () => {
+    const report = computeCoordinationEscalationTier({
+      coordinationCompositeScore: 90,
+      auditErrors: 1,
+      auditWarnings: 0,
+    });
+    return report.tier === 3 && report.label === 'critical';
+  });
+
+  check(results, 'a18_escalation_nominal', 'Escalation tier: healthy team stays nominal', () => {
+    const report = computeCoordinationEscalationTier({
+      coordinationCompositeScore: 92,
+      auditErrors: 0,
+      auditWarnings: 0,
+      directiveCollisionIndex: 0,
+      handoffIntegrityScore: 100,
+    });
+    return report.tier === 0;
+  });
+
+  check(results, 'a18_eval_round7_meta', 'Layer: round-7 meta exposes collision, integrity, escalation', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.directiveCollisionIndex === 'number' &&
+      typeof m.handoffIntegrityScore === 'number' &&
+      typeof m.coordinationEscalationTier === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_escalation', 'Audit: critical escalation tier surfaces error finding', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = {
+      ...ev.state,
+      meta: { ...ev.state.meta, coordinationEscalationTier: 3, coordinationEscalationLabel: 'critical' },
+    };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'error' && /escalation critical/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round7_combined', 'Dual team: round-7 combined collision, integrity, escalation exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.directiveCollisionCombined === 'number' &&
+      typeof dual.handoffIntegrityCombined === 'number' &&
+      typeof dual.escalationTierCombined === 'number'
     );
   });
 

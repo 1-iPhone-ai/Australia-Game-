@@ -38,6 +38,9 @@ import {
 import { computeRoleChurnIndex } from './role-churn-index.ts';
 import { evaluateLeaseExpiry } from './lease-expiry-watchdog.ts';
 import { computeCoordinationComposite } from './coordination-composite-score.ts';
+import { computeDirectiveCollisionIndex } from './directive-collision-index.ts';
+import { evaluateHandoffChainIntegrity } from './handoff-chain-integrity.ts';
+import { computeCoordinationEscalationTier } from './coordination-escalation-tier.ts';
 import {
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
@@ -184,6 +187,29 @@ export function sanitizeTeamMultiAgentCoordinationState(
         typeof metaRaw.coordinationWeakestDimension === 'string'
           ? metaRaw.coordinationWeakestDimension
           : undefined,
+      directiveCollisionIndex:
+        typeof metaRaw.directiveCollisionIndex === 'number'
+          ? metaRaw.directiveCollisionIndex
+          : undefined,
+      collidingDirectiveIds: Array.isArray(metaRaw.collidingDirectiveIds)
+        ? metaRaw.collidingDirectiveIds.map(String).slice(0, 8)
+        : undefined,
+      handoffIntegrityScore:
+        typeof metaRaw.handoffIntegrityScore === 'number' ? metaRaw.handoffIntegrityScore : undefined,
+      brokenHandoffIds: Array.isArray(metaRaw.brokenHandoffIds)
+        ? metaRaw.brokenHandoffIds.map(String).slice(0, 8)
+        : undefined,
+      duplicatePendingHandoffTaskIds: Array.isArray(metaRaw.duplicatePendingHandoffTaskIds)
+        ? metaRaw.duplicatePendingHandoffTaskIds.map(String).slice(0, 8)
+        : undefined,
+      coordinationEscalationTier:
+        typeof metaRaw.coordinationEscalationTier === 'number'
+          ? metaRaw.coordinationEscalationTier
+          : undefined,
+      coordinationEscalationLabel:
+        typeof metaRaw.coordinationEscalationLabel === 'string'
+          ? metaRaw.coordinationEscalationLabel
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -230,6 +256,10 @@ export function evaluateTeamMultiAgentLayer(
     diagnostics.push(`Dropped directive ${d.proposal.id}: ${d.reason}`),
   );
   const proposals = quota.allowed;
+  const directiveCollisions = computeDirectiveCollisionIndex(proposals);
+  directiveCollisions.notes.forEach(n => diagnostics.push(n));
+  const handoffIntegrity = evaluateHandoffChainIntegrity(coordination.handoffs, scope);
+  handoffIntegrity.notes.forEach(n => diagnostics.push(n));
   const directiveResult = coordinateTeammateDirectives(proposals, coordination, roles);
   const handoffSla = evaluateHandoffSla(inputs.turn, coordination.handoffs, {
     maxPendingTurns: AGENT18_LIMITS.handoffSlaMaxPendingTurns,
@@ -354,11 +384,28 @@ export function evaluateTeamMultiAgentLayer(
       expiredLeaseIds: leaseExpiry.expiredLeaseIds,
       coordinationCompositeScore: coordinationComposite.compositeScore,
       coordinationWeakestDimension: coordinationComposite.weakestDimension,
+      directiveCollisionIndex: directiveCollisions.collisionIndex,
+      collidingDirectiveIds: directiveCollisions.collidingProposalIds,
+      handoffIntegrityScore: handoffIntegrity.integrityScore,
+      brokenHandoffIds: handoffIntegrity.brokenHandoffIds,
+      duplicatePendingHandoffTaskIds: handoffIntegrity.duplicatePendingTaskIds,
     },
   };
 
   const auditFindings = auditTeamMultiAgentLayer(state, inputs);
-  state = attachAuditToState(state, auditFindings, {});
+  const escalation = computeCoordinationEscalationTier({
+    coordinationCompositeScore: coordinationComposite.compositeScore,
+    auditErrors: auditFindings.filter(f => f.severity === 'error').length,
+    auditWarnings: auditFindings.filter(f => f.severity === 'warning').length,
+    directiveCollisionIndex: directiveCollisions.collisionIndex,
+    handoffIntegrityScore: handoffIntegrity.integrityScore,
+  });
+  escalation.notes.forEach(n => diagnostics.push(n));
+  state = attachAuditToState(state, auditFindings, {
+    coordinationEscalationTier: escalation.tier,
+    coordinationEscalationLabel: escalation.label,
+  });
+  state = { ...state, diagnostics };
 
   const coordinationIssues = [
     ...sharedIssues,

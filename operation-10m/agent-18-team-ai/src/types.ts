@@ -250,6 +250,13 @@ export interface TeamMultiAgentCoordinationMeta {
   expiredLeaseIds?: string[];
   coordinationCompositeScore?: number;
   coordinationWeakestDimension?: string;
+  directiveCollisionIndex?: number;
+  collidingDirectiveIds?: string[];
+  handoffIntegrityScore?: number;
+  brokenHandoffIds?: string[];
+  duplicatePendingHandoffTaskIds?: string[];
+  coordinationEscalationTier?: number;
+  coordinationEscalationLabel?: string;
 }
 
 export const AGENT18_LIMITS = {

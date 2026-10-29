@@ -35,6 +35,9 @@ const FILES = [
   'role-churn-index.ts',
   'lease-expiry-watchdog.ts',
   'coordination-composite-score.ts',
+  'directive-collision-index.ts',
+  'handoff-chain-integrity.ts',
+  'coordination-escalation-tier.ts',
   'self-tests.ts',
 ];
 
