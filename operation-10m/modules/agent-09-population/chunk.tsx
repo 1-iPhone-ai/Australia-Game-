@@ -377,6 +377,10 @@ export interface NationalLaborDemographicsState {
   steadfastResilienceOutlook?: NationalSteadfastResilienceOutlook;
   subjectSteadfastReadinessBrief?: NationalSubjectSteadfastReadinessBrief;
   nationalWorkforceSteadfastDepthIndex?: NationalWorkforceSteadfastDepthIndex;
+  steadfastAdvocacyCouplingBrief?: NationalSteadfastAdvocacyCouplingBrief;
+  advocacyResilienceOutlook?: NationalAdvocacyResilienceOutlook;
+  subjectAdvocacySteadfastReadinessBrief?: NationalSubjectAdvocacySteadfastReadinessBrief;
+  nationalWorkforceAdvocacyDepthIndex?: NationalWorkforceAdvocacyDepthIndex;
 }
 
 export type MigrationShockKind =
@@ -2529,6 +2533,55 @@ export interface NationalWorkforceSteadfastDepthIndex {
   stewardNote: string;
 }
 
+
+export type SteadfastAdvocacyCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalSteadfastAdvocacyCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: SteadfastAdvocacyCouplingBand;
+  steadfastDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type AdvocacyResilienceBand = 'ebbing' | 'patchy' | 'rising' | 'fortified';
+
+export interface NationalAdvocacyResilienceOutlook {
+  turn: number;
+  resilienceIndex: number;
+  band: AdvocacyResilienceBand;
+  steadfastDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectAdvocacySteadfastReadinessBand =
+  | 'below_advocacy'
+  | 'approaching'
+  | 'advocacy_ready'
+  | 'steadfast_locked';
+
+export interface NationalSubjectAdvocacySteadfastReadinessBrief {
+  turn: number;
+  advocacyIndex: number;
+  band: SubjectAdvocacySteadfastReadinessBand;
+  advocacyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceAdvocacyDepthBand = 'fragile' | 'thin' | 'elevated' | 'advocacy';
+
+export interface NationalWorkforceAdvocacyDepthIndex {
+  turn: number;
+  advocacyIndex: number;
+  band: WorkforceAdvocacyDepthBand;
+  advocacyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
 export interface LaborDemographicsPersisted {
   schemaVersion: string;
   revision: number;
@@ -3783,7 +3836,11 @@ export type LaborGiQueryTopic =
   | 'resolve_steadfast_coupling'
   | 'steadfast_resilience'
   | 'subject_steadfast_readiness'
-  | 'workforce_steadfast_depth';
+  | 'workforce_steadfast_depth'
+  | 'steadfast_advocacy_coupling'
+  | 'advocacy_resilience'
+  | 'subject_advocacy_steadfast_readiness'
+  | 'workforce_advocacy_depth';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -3854,6 +3911,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(workforce grit depth|grit depth index labor)/.test(q)) return 'workforce_grit_depth';
   if (/\b(workforce resolve depth|resolve depth index labor)/.test(q)) return 'workforce_resolve_depth';
   if (/\b(workforce steadfast depth|steadfast depth index labor)/.test(q)) return 'workforce_steadfast_depth';
+  if (/\b(steadfast advocacy|steadfast-advocacy coupling)/.test(q)) return 'steadfast_advocacy_coupling';
+  if (/\b(advocacy resilience)/.test(q)) return 'advocacy_resilience';
+  if (/\b(subject advocacy steadfast readiness|subject advocacy readiness steadfast)/.test(q)) return 'subject_advocacy_steadfast_readiness';
+  if (/\b(workforce advocacy depth|advocacy depth index labor)/.test(q)) return 'workforce_advocacy_depth';
   if (/\b(workforce perseverance depth|perseverance depth index labor)/.test(q)) return 'workforce_perseverance_depth';
   if (/\b(workforce tenacity depth|tenacity depth index labor)/.test(q)) return 'workforce_tenacity_depth';
   if (/\b(workforce tenacity|tenacity index labor)/.test(q)) return 'workforce_tenacity';
@@ -5523,6 +5584,38 @@ export function answerLaborDemographicsQuestion(
         inference: state.nationalWorkforceSteadfastDepthIndex?.stewardNote || state.summary,
         projection: 'Steadfast depth synthesizes resolve-steadfast coupling, resilience, and subject steadfast.'
       };
+    case 'steadfast_advocacy_coupling':
+      return {
+        topic,
+        headline: state.steadfastAdvocacyCouplingBrief?.summary || 'Steadfast-advocacy coupling unavailable.',
+        fact: `Coupling band ${state.steadfastAdvocacyCouplingBrief?.band ?? 'unknown'}; steadfast drag ${Math.round(state.steadfastAdvocacyCouplingBrief?.steadfastDrag ?? 0)}.`,
+        inference: state.steadfastAdvocacyCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce steadfast depth with advocacy levers — bounded indices only.'
+      };
+    case 'advocacy_resilience':
+      return {
+        topic,
+        headline: state.advocacyResilienceOutlook?.summary || 'Advocacy resilience unavailable.',
+        fact: `Resilience band ${state.advocacyResilienceOutlook?.band ?? 'unknown'}; steadfast drag ${Math.round(state.advocacyResilienceOutlook?.steadfastDrag ?? 0)}.`,
+        inference: state.advocacyResilienceOutlook?.stewardNote || state.outlook,
+        projection: 'Resilience outlook tracks steadfast resilience against advocacy levers for wave 52 depth.'
+      };
+    case 'subject_advocacy_steadfast_readiness':
+      return {
+        topic,
+        headline: state.subjectAdvocacySteadfastReadinessBrief?.summary || 'Subject advocacy readiness unavailable.',
+        fact: `Advocacy band ${state.subjectAdvocacySteadfastReadinessBrief?.band ?? 'unknown'}; advocacy drag ${Math.round(state.subjectAdvocacySteadfastReadinessBrief?.advocacyDrag ?? 0)}.`,
+        inference: state.subjectAdvocacySteadfastReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject advocacy readiness gates subject steadfast against steadfast depth for O10-235 wave 52.'
+      };
+    case 'workforce_advocacy_depth':
+      return {
+        topic,
+        headline: state.nationalWorkforceAdvocacyDepthIndex?.summary || 'Workforce advocacy depth unavailable.',
+        fact: `Advocacy band ${state.nationalWorkforceAdvocacyDepthIndex?.band ?? 'unknown'}; advocacy drag ${Math.round(state.nationalWorkforceAdvocacyDepthIndex?.advocacyDrag ?? 0)}.`,
+        inference: state.nationalWorkforceAdvocacyDepthIndex?.stewardNote || state.summary,
+        projection: 'Advocacy depth synthesizes steadfast-advocacy coupling, resilience, and subject advocacy.'
+      };
     default:
       return {
         topic: 'national_summary',
@@ -6889,6 +6982,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceSteadfastDepthIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceSteadfastDepthIndex.stewardNote);
+  }
+  if (
+    state.steadfastAdvocacyCouplingBrief?.band === 'decoupled' ||
+    state.steadfastAdvocacyCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.steadfastAdvocacyCouplingBrief.stewardNote);
+  }
+  if (
+    state.advocacyResilienceOutlook?.band === 'ebbing' ||
+    state.advocacyResilienceOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.advocacyResilienceOutlook.stewardNote);
+  }
+  if (
+    state.subjectAdvocacySteadfastReadinessBrief?.band === 'below_advocacy' ||
+    state.subjectAdvocacySteadfastReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectAdvocacySteadfastReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceAdvocacyDepthIndex?.band === 'fragile' ||
+    state.nationalWorkforceAdvocacyDepthIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceAdvocacyDepthIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -21187,6 +21304,395 @@ export function steadfastEaseForRegion(
 }
 
 
+// --- source: steadfast-advocacy-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalSteadfastAdvocacyCouplingBrief,
+  type NationalWorkforceSteadfastDepthIndex,
+  type SteadfastAdvocacyCouplingBand
+} from './types';
+
+function couplingBand(index: number): SteadfastAdvocacyCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-52 / wave-52 steadfast-advocacy coupling — steadfast depth × advocacy (O10-235). */
+export function computeNationalSteadfastAdvocacyCouplingBrief(
+  state: NationalLaborDemographicsState,
+  steadfastDepth: NationalWorkforceSteadfastDepthIndex | null | undefined
+): NationalSteadfastAdvocacyCouplingBrief {
+  if (!state.enabled || !steadfastDepth) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      steadfastDrag: 0,
+      summary: 'Steadfast-advocacy coupling idle — workforce steadfast depth unavailable.',
+      stewardNote: 'Compute workforce steadfast depth before advocacy coupling guidance.'
+    };
+  }
+
+  let advocacyLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    advocacyLift += advocacyEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  advocacyLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const steadfastDrag = v1014laborClamp(
+    steadfastDepth.steadfastDrag * 0.46 +
+      (steadfastDepth.band === 'fragile' || steadfastDepth.band === 'thin' ? 11 : 3)
+  );
+  const depthLift =
+    steadfastDepth.band === 'elevated' || steadfastDepth.band === 'steadfast'
+      ? steadfastDepth.steadfastIndex * 0.22
+      : steadfastDepth.steadfastIndex * 0.11;
+
+  const couplingIndex = v1014laborClamp(22 + advocacyLift * 21 + depthLift - steadfastDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained steadfast-advocacy link — deploy advocacy levers before wave-52 commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard advocacy resilience spikes that drain steadfast buffers.'
+        : 'Amplified coupling — pair advocacy packs with subject advocacy readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    steadfastDrag,
+    summary: `Steadfast-advocacy coupling ${band} (index ${Math.round(couplingIndex)}); steadfast drag ${Math.round(steadfastDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: advocacy-resilience-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalAdvocacyResilienceOutlook,
+  type NationalLaborDemographicsState,
+  type NationalSteadfastResilienceOutlook,
+  type AdvocacyResilienceBand
+} from './types';
+
+function resilienceBand(index: number): AdvocacyResilienceBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'fortified';
+}
+
+/** Round-52 / wave-52 advocacy resilience — steadfast resilience × advocacy levers (O10-235). */
+export function computeNationalAdvocacyResilienceOutlook(
+  state: NationalLaborDemographicsState,
+  steadfastResilience: NationalSteadfastResilienceOutlook | null | undefined
+): NationalAdvocacyResilienceOutlook {
+  if (!state.enabled || !steadfastResilience) {
+    return {
+      turn: state.turn,
+      resilienceIndex: 50,
+      band: 'patchy',
+      steadfastDrag: 0,
+      summary: 'Advocacy resilience idle — steadfast resilience unavailable.',
+      stewardNote: 'Compute steadfast resilience before advocacy resilience guidance.'
+    };
+  }
+
+  let advocacyLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    advocacyLift += advocacyEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  advocacyLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const steadfastDrag = v1014laborClamp(
+    steadfastResilience.resolveDrag * 0.44 +
+      (steadfastResilience.band === 'ebbing' || steadfastResilience.band === 'patchy' ? 10 : 3)
+  );
+  const resilienceLift =
+    steadfastResilience.band === 'rising' || steadfastResilience.band === 'fortified'
+      ? steadfastResilience.resilienceIndex * 0.18
+      : steadfastResilience.resilienceIndex * 0.09;
+
+  const resilienceIndex = v1014laborClamp(24 + advocacyLift * 22 + resilienceLift - steadfastDrag);
+  const band = resilienceBand(resilienceIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy advocacy resilience — deploy advocacy levers before subject advocacy assembly.'
+      : band === 'fortified'
+        ? 'Fortified band — verify steadfast-advocacy coupling before auto workforce pushes.'
+        : 'Rising resilience — align with steadfast resilience outlook checks.';
+
+  return {
+    turn: state.turn,
+    resilienceIndex,
+    band,
+    steadfastDrag,
+    summary: `National advocacy resilience ${band} (index ${Math.round(resilienceIndex)}); steadfast drag ${Math.round(steadfastDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-advocacy-steadfast-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectAdvocacySteadfastReadinessBrief,
+  type NationalSubjectSteadfastReadinessBrief,
+  type NationalWorkforceSteadfastDepthIndex,
+  type SubjectAdvocacySteadfastReadinessBand
+} from './types';
+
+function advocacyBand(index: number): SubjectAdvocacySteadfastReadinessBand {
+  if (index <= 34) return 'below_advocacy';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'advocacy_ready';
+  return 'steadfast_locked';
+}
+
+/** Round-52 / wave-52 subject advocacy readiness — subject steadfast × steadfast depth (O10-235). */
+export function computeNationalSubjectAdvocacySteadfastReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectSteadfast: NationalSubjectSteadfastReadinessBrief | null | undefined,
+  steadfastDepth: NationalWorkforceSteadfastDepthIndex | null | undefined
+): NationalSubjectAdvocacySteadfastReadinessBrief {
+  if (!state.enabled || !subjectSteadfast || !steadfastDepth) {
+    return {
+      turn: state.turn,
+      advocacyIndex: 50,
+      band: 'approaching',
+      advocacyDrag: 0,
+      summary: 'Subject advocacy readiness idle — subject steadfast or steadfast depth unavailable.',
+      stewardNote: 'Compute subject steadfast and steadfast depth before advocacy guidance.'
+    };
+  }
+
+  const advocacyDrag = v1014laborClamp(
+    subjectSteadfast.steadfastDrag * 0.36 +
+      steadfastDepth.steadfastDrag * 0.36 +
+      (subjectSteadfast.band === 'below_steadfast' || steadfastDepth.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectSteadfast.band === 'steadfast_ready' || subjectSteadfast.band === 'resolve_locked'
+      ? subjectSteadfast.steadfastIndex * 0.25
+      : subjectSteadfast.steadfastIndex * 0.13;
+  const depthLift =
+    steadfastDepth.band === 'elevated' || steadfastDepth.band === 'steadfast'
+      ? steadfastDepth.steadfastIndex * 0.23
+      : steadfastDepth.steadfastIndex * 0.12;
+
+  const advocacyIndex = v1014laborClamp(20 + subjectLift + depthLift - advocacyDrag);
+  const band = advocacyBand(advocacyIndex);
+
+  const stewardNote =
+    band === 'below_advocacy' || band === 'approaching'
+      ? 'Approaching advocacy — hold O10-235 wave-52 scale until steadfast-advocacy syncs.'
+      : band === 'steadfast_locked'
+        ? 'Steadfast-locked advocacy — still monitor advocacy resilience during corridor peaks.'
+        : 'Advocacy-ready — pair with workforce advocacy depth index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    advocacyIndex,
+    band,
+    advocacyDrag,
+    summary: `Subject advocacy readiness ${band} (index ${Math.round(advocacyIndex)}); advocacy drag ${Math.round(advocacyDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-advocacy-depth-index.ts ---
+  type NationalAdvocacyResilienceOutlook,
+  type NationalLaborDemographicsState,
+  type NationalSteadfastAdvocacyCouplingBrief,
+  type NationalSubjectAdvocacySteadfastReadinessBrief,
+  type NationalWorkforceAdvocacyDepthIndex,
+  type WorkforceAdvocacyDepthBand
+} from './types';
+
+function depthBand(index: number): WorkforceAdvocacyDepthBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'advocacy';
+}
+
+export function computeNationalWorkforceAdvocacyDepthIndex(
+  state: NationalLaborDemographicsState,
+  steadfastAdvocacy: NationalSteadfastAdvocacyCouplingBrief | null | undefined,
+  advocacyResilience: NationalAdvocacyResilienceOutlook | null | undefined,
+  subjectAdvocacySteadfast: NationalSubjectAdvocacySteadfastReadinessBrief | null | undefined
+): NationalWorkforceAdvocacyDepthIndex {
+  if (!state.enabled || !steadfastAdvocacy || !advocacyResilience || !subjectAdvocacySteadfast) {
+    return {
+      turn: state.turn,
+      advocacyIndex: 50,
+      band: 'thin',
+      advocacyDrag: 0,
+      summary: 'Workforce advocacy depth idle — coupling, resilience, or subject advocacy unavailable.',
+      stewardNote: 'Compute O10-235 wave-52 depth stack before advocacy guidance.'
+    };
+  }
+
+  const advocacyDrag = v1014laborClamp(
+    subjectAdvocacySteadfast.advocacyDrag * 0.35 +
+      steadfastAdvocacy.steadfastDrag * 0.3 +
+      advocacyResilience.steadfastDrag * 0.25 +
+      (subjectAdvocacySteadfast.band === 'below_advocacy' || steadfastAdvocacy.band === 'decoupled' ? 8 : 2)
+  );
+  const couplingLift =
+    steadfastAdvocacy.band === 'amplified' || steadfastAdvocacy.band === 'elevated'
+      ? steadfastAdvocacy.couplingIndex * 0.2
+      : steadfastAdvocacy.couplingIndex * 0.1;
+  const resilienceLift =
+    advocacyResilience.band === 'rising' || advocacyResilience.band === 'fortified'
+      ? advocacyResilience.resilienceIndex * 0.18
+      : advocacyResilience.resilienceIndex * 0.09;
+  const subjectLift =
+    subjectAdvocacySteadfast.band === 'advocacy_ready' || subjectAdvocacySteadfast.band === 'steadfast_locked'
+      ? subjectAdvocacySteadfast.advocacyIndex * 0.22
+      : subjectAdvocacySteadfast.advocacyIndex * 0.11;
+
+  const advocacyIndex = v1014laborClamp(18 + couplingLift + resilienceLift + subjectLift - advocacyDrag);
+  const band = depthBand(advocacyIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce advocacy depth — sequence steadfast-advocacy, resilience, and subject advocacy before post-ba97bdce tranche.'
+      : band === 'advocacy'
+        ? 'Advocacy band — avoid corridor overload that breaks subject advocacy bands.'
+        : 'Elevated advocacy depth — refresh subject advocacy checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    advocacyIndex,
+    band,
+    advocacyDrag,
+    summary: `National workforce advocacy depth ${band} (index ${Math.round(advocacyIndex)}); advocacy drag ${Math.round(advocacyDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: catalog/workforce-advocacy-levers.ts ---
+
+export type WorkforceAdvocacyLeverKind =
+  | 'worker_voice_forum'
+  | 'grievance_fast_lane'
+  | 'sector_advocacy_pack'
+  | 'regional_labor_council'
+  | 'equity_watch_band';
+
+export interface WorkforceAdvocacyLever {
+  id: string;
+  kind: WorkforceAdvocacyLeverKind;
+  targetIndustry: StrategicIndustryKind;
+  hostRegions: readonly string[];
+  advocacyStrength: number;
+  label: string;
+  narrative: string;
+}
+
+export const WORKFORCE_ADVOCACY_LEVERS: WorkforceAdvocacyLever[] = [
+  {
+    id: 'adv_manufacturing_vic',
+    kind: 'sector_advocacy_pack',
+    targetIndustry: 'manufacturing',
+    hostRegions: ['VIC', 'SA'],
+    advocacyStrength: 0.69,
+    label: 'Manufacturing sector advocacy pack',
+    narrative: 'Advocacy packs reinforce participation equity without literal union sim.'
+  },
+  {
+    id: 'adv_health_nsw',
+    kind: 'worker_voice_forum',
+    targetIndustry: 'research',
+    hostRegions: ['NSW', 'ACT'],
+    advocacyStrength: 0.72,
+    label: 'Capital health worker voice forum',
+    narrative: 'Voice forums align household coupling with coordination levers.'
+  },
+  {
+    id: 'adv_agri_tas',
+    kind: 'regional_labor_council',
+    targetIndustry: 'agriculture',
+    hostRegions: ['TAS', 'SA', 'VIC'],
+    advocacyStrength: 0.61,
+    label: 'Regional agri labor council',
+    narrative: 'Labor councils smooth participation-velocity coupling in seasonal corridors.'
+  },
+  {
+    id: 'adv_tourism_qld',
+    kind: 'grievance_fast_lane',
+    targetIndustry: 'tourism',
+    hostRegions: ['QLD', 'NSW'],
+    advocacyStrength: 0.64,
+    label: 'Coastal tourism grievance lane',
+    narrative: 'Fast lanes stabilize migration-equity buffers in coastal hubs.'
+  },
+  {
+    id: 'adv_tech_nsw_vic',
+    kind: 'equity_watch_band',
+    targetIndustry: 'technology',
+    hostRegions: ['NSW', 'VIC'],
+    advocacyStrength: 0.75,
+    label: 'Tech equity watch band',
+    narrative: 'Equity watch bands support skills-tightness coherence in tech corridors.'
+  },
+  {
+    id: 'adv_mining_wa',
+    kind: 'worker_voice_forum',
+    targetIndustry: 'mining',
+    hostRegions: ['WA', 'QLD', 'NT'],
+    advocacyStrength: 0.68,
+    label: 'Frontier mining worker voice',
+    narrative: 'Worker voice eases rebalancing stress before wage spillover surges.'
+  },
+  {
+    id: 'adv_energy_nt',
+    kind: 'sector_advocacy_pack',
+    targetIndustry: 'energy',
+    hostRegions: ['NT', 'QLD'],
+    advocacyStrength: 0.63,
+    label: 'Energy sector advocacy pack',
+    narrative: 'Advocacy packs reinforce integrated labor readiness in energy corridors.'
+  },
+  {
+    id: 'adv_trade_sa',
+    kind: 'regional_labor_council',
+    targetIndustry: 'trade',
+    hostRegions: ['SA', 'WA'],
+    advocacyStrength: 0.6,
+    label: 'Trade logistics labor council',
+    narrative: 'Councils align capacity-participation alignment across logistics hubs.'
+  }
+];
+
+export function lookupWorkforceAdvocacyLever(id: string): WorkforceAdvocacyLever | undefined {
+  return WORKFORCE_ADVOCACY_LEVERS.find(l => l.id === id);
+}
+
+export function advocacyLeversForIndustry(industry: StrategicIndustryKind): WorkforceAdvocacyLever[] {
+  return WORKFORCE_ADVOCACY_LEVERS.filter(l => l.targetIndustry === industry);
+}
+
+export function advocacyEaseForRegion(
+  regionId: string,
+  dominantIndustry: StrategicIndustryKind | null | undefined
+): number {
+  if (!dominantIndustry) return 0;
+  const matches = WORKFORCE_ADVOCACY_LEVERS.filter(
+    l => l.targetIndustry === dominantIndustry && l.hostRegions.includes(regionId)
+  );
+  if (!matches.length) return 0;
+  return matches.reduce((a, l) => a + l.advocacyStrength, 0) / matches.length;
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -22523,6 +23029,25 @@ export function computeNationalLaborDemographics(
     state.steadfastResilienceOutlook,
     state.subjectSteadfastReadinessBrief
   );
+  state.steadfastAdvocacyCouplingBrief = computeNationalSteadfastAdvocacyCouplingBrief(
+    state,
+    state.nationalWorkforceSteadfastDepthIndex
+  );
+  state.advocacyResilienceOutlook = computeNationalAdvocacyResilienceOutlook(
+    state,
+    state.steadfastResilienceOutlook
+  );
+  state.subjectAdvocacySteadfastReadinessBrief = computeNationalSubjectAdvocacySteadfastReadinessBrief(
+    state,
+    state.subjectSteadfastReadinessBrief,
+    state.nationalWorkforceSteadfastDepthIndex
+  );
+  state.nationalWorkforceAdvocacyDepthIndex = computeNationalWorkforceAdvocacyDepthIndex(
+    state,
+    state.steadfastAdvocacyCouplingBrief,
+    state.advocacyResilienceOutlook,
+    state.subjectAdvocacySteadfastReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -23733,6 +24258,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceSteadfastDepthIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.steadfastAdvocacyCouplingBrief?.band === 'decoupled' ||
+      state.steadfastAdvocacyCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.steadfastAdvocacyCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.advocacyResilienceOutlook?.band === 'ebbing' ||
+      state.advocacyResilienceOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.advocacyResilienceOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectAdvocacySteadfastReadinessBrief?.band === 'below_advocacy' ||
+      state.subjectAdvocacySteadfastReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectAdvocacySteadfastReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceAdvocacyDepthIndex?.band === 'fragile' ||
+      state.nationalWorkforceAdvocacyDepthIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceAdvocacyDepthIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -26856,7 +27409,83 @@ export function runV1014LaborDemographicsSelfTests(): {
   );
   check('R5116', steadfastEaseForRegion('NSW', 'technology') > 0, 'steadfast ease for region');
 
-  for (let i = 19; i <= 51; i++) {
+  check('R5201', Boolean(r1.state.steadfastAdvocacyCouplingBrief?.band), 'steadfast advocacy on state');
+  check(
+    'R5202',
+    (r1.state.steadfastAdvocacyCouplingBrief?.steadfastDrag ?? 0) >= 0,
+    'steadfast advocacy drag'
+  );
+  check('R5203', Boolean(r1.state.advocacyResilienceOutlook?.band), 'advocacy resilience on state');
+  check(
+    'R5204',
+    (r1.state.advocacyResilienceOutlook?.steadfastDrag ?? 0) >= 0,
+    'advocacy resilience steadfast drag'
+  );
+  check(
+    'R5205',
+    Boolean(r1.state.subjectAdvocacySteadfastReadinessBrief?.band),
+    'subject advocacy steadfast on state'
+  );
+  check(
+    'R5206',
+    Boolean(r1.state.nationalWorkforceAdvocacyDepthIndex?.band),
+    'workforce advocacy depth on state'
+  );
+  check(
+    'R5207',
+    detectLaborDemographicsQuery('steadfast advocacy coupling') === 'steadfast_advocacy_coupling',
+    'GI steadfast advocacy detect'
+  );
+  check(
+    'R5208',
+    detectLaborDemographicsQuery('advocacy resilience') === 'advocacy_resilience',
+    'GI advocacy resilience detect'
+  );
+  check(
+    'R5209',
+    detectLaborDemographicsQuery('subject advocacy steadfast readiness') === 'subject_advocacy_steadfast_readiness',
+    'GI subject advocacy steadfast detect'
+  );
+  check(
+    'R5210',
+    detectLaborDemographicsQuery('workforce advocacy depth') === 'workforce_advocacy_depth',
+    'GI workforce advocacy depth detect'
+  );
+  check(
+    'R5211',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_advocacy_depth').headline.length > 5,
+    'GI workforce advocacy depth answer'
+  );
+  const steadfastAdvocacyOnly = computeNationalSteadfastAdvocacyCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceSteadfastDepthIndex
+  );
+  check('R5212', steadfastAdvocacyOnly.summary.length > 10, 'steadfast advocacy standalone summary');
+  const advocacyResilienceOnly = computeNationalAdvocacyResilienceOutlook(
+    r1.state,
+    r1.state.steadfastResilienceOutlook
+  );
+  check('R5213', advocacyResilienceOnly.band.length > 3, 'advocacy resilience band string');
+  const subjectAdvocacySteadfastOnly = computeNationalSubjectAdvocacySteadfastReadinessBrief(
+    r1.state,
+    r1.state.subjectSteadfastReadinessBrief,
+    r1.state.nationalWorkforceSteadfastDepthIndex
+  );
+  check('R5214', subjectAdvocacySteadfastOnly.advocacyDrag >= 0, 'subject advocacy steadfast drag');
+  check(
+    'R5215',
+    computeNationalWorkforceAdvocacyDepthIndex(
+      rHhBad.state,
+      rHhBad.state.steadfastAdvocacyCouplingBrief,
+      rHhBad.state.advocacyResilienceOutlook,
+      rHhBad.state.subjectAdvocacySteadfastReadinessBrief
+    ).stewardNote.length > 8,
+    'advocacy depth steward note'
+  );
+  check('R5216', advocacyEaseForRegion('NSW', 'technology') > 0, 'advocacy ease for region');
+
+
+  for (let i = 19; i <= 52; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
     check(`LD${String(i).padStart(2, '0')}`, ok, `invariant bundle ${i}`);
   }
