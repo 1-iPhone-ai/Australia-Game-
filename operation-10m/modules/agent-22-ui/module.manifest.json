@@ -1,0 +1,10 @@
+{
+  "moduleId": "agent-22-ui",
+  "slot": "post-v10z",
+  "touchesSaveFormat": false,
+  "proposedGameSettingsField": "evolvingUi",
+  "contentSha256": "d188279462844ed3c24f783192bd7afe416b77ef6f3e985efc45a9b6ab5ab918",
+  "chunkPath": "operation-10m/modules/agent-22-ui/chunk.tsx",
+  "selfTestExport": "runOp10mAgent22EvolvingUiSelfTests",
+  "moduleVersion": "1.46.0"
+}
