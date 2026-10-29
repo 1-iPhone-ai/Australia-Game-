@@ -1,7 +1,7 @@
 # Agent 03 — Integration Contract (Research / Technology / Progression)
 
 **Module root:** `operation-10m/agent-03-research-tech/`  
-**Schema version:** `op10m-agent03-v14` (horizon convergence band log + snapshot persisted; research execution outlook derived, v13 migration)  
+**Schema version:** `op10m-agent03-v15` (research execution band log + snapshot persisted; strategic delivery outlook derived, v14 migration)  
 **Owner:** Agent 03 (content + pure engine). **Assembly:** Agent 25 only.
 
 ## Purpose
@@ -35,9 +35,9 @@ gameState.researchProgress: ResearchProgressPersistedCore | null;
 
 Use `prepareResearchProgressForSave(state)` before write; on load `applyResearchProgressSavePipeline(inputs, raw)` or `computeResearchProgressFromSave`.
 
-**v14 persisted core** adds bounded `horizonConvergenceBandLog` and `horizonConvergenceSnapshot` on top of v13 (`diffusionForecastBandLog`, `diffusionForecastSnapshot`, prior waves). Derived analytics including `researchExecutionOutlook` recomputed each turn.
+**v15 persisted core** adds bounded `researchExecutionBandLog` and `researchExecutionSnapshot` on top of v14 (`horizonConvergenceBandLog`, `horizonConvergenceSnapshot`, prior waves). Derived analytics including `strategicDeliveryOutlook` recomputed each turn.
 
-Legacy `op10m-agent03-v13`, `op10m-agent03-v12`, `op10m-agent03-v11`, `op10m-agent03-v10`, `op10m-agent03-v9`, `op10m-agent03-v8`, `op10m-agent03-v7`, `op10m-agent03-v6`, `op10m-agent03-v5`, `op10m-agent03-v4`, `op10m-agent03-v3`, `op10m-agent03-v2`, and `op10m-agent03-v1` migrate via `migrateResearchProgressSave()`.
+Legacy `op10m-agent03-v14`, `op10m-agent03-v13`, `op10m-agent03-v12`, `op10m-agent03-v11`, `op10m-agent03-v10`, `op10m-agent03-v9`, `op10m-agent03-v8`, `op10m-agent03-v7`, `op10m-agent03-v6`, `op10m-agent03-v5`, `op10m-agent03-v4`, `op10m-agent03-v3`, `op10m-agent03-v2`, and `op10m-agent03-v1` migrate via `migrateResearchProgressSave()`.
 
 ### Input wiring
 

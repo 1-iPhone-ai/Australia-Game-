@@ -43,4 +43,7 @@ export * from './horizon-convergence-outlook.ts';
 export * from './horizon-convergence-band-log.ts';
 export * from './horizon-convergence-snapshot.ts';
 export * from './research-execution-outlook.ts';
+export * from './research-execution-band-log.ts';
+export * from './research-execution-snapshot.ts';
+export * from './strategic-delivery-outlook.ts';
 export * from './compute.ts';

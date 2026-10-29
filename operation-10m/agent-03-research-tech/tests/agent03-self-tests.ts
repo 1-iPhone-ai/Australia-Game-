@@ -1117,6 +1117,73 @@ tests.push(
 );
 
 tests.push(
+  test('save_v14_migrates_to_v15_with_research_execution_fields', () => {
+    const v14 = {
+      schemaVersion: 'op10m-agent03-v14',
+      turn: 26,
+      revision: 3,
+      unlockedNodes: [],
+      institutionUpgrades: [],
+      unlockSeq: 0,
+      branchEmphasis: [],
+      emphasisRevision: 1,
+      migrationLog: [{ fromVersion: 'op10m-agent03-v13', toVersion: 'op10m-agent03-v14', turn: 25 }],
+      saveKind: 'manual',
+      updatedAtTurn: 26,
+      sessionId: 'v14',
+      persistRevision: 13,
+      unlockEventLog: [],
+      lastReconciledAtTurn: 26,
+      emphasisChangeLog: [],
+      institutionTierSnapshot: { capturedAtTurn: 26, tiers: {}, digest: 'abc', nationalIntegrationCount: 0, strategicOrAboveCount: 0 },
+      readinessMilestoneLog: [],
+      readinessBranchSnapshot: null,
+      integrationRiskLog: [],
+      integrationRiskSnapshot: null,
+      scaleWaveSnapshot: null,
+      synergyThresholdLog: [],
+      synergySnapshot: null,
+      commercializationMilestoneLog: [],
+      commercializationSnapshot: null,
+      diffusionIntegrationLog: [],
+      diffusionIntegrationSnapshot: null,
+      portfolioBalanceLog: [],
+      portfolioBalanceSnapshot: null,
+      diffusionForecastBandLog: [],
+      diffusionForecastSnapshot: null,
+      horizonConvergenceBandLog: [],
+      horizonConvergenceSnapshot: null,
+      coreFingerprint: 'legacy',
+    };
+    const core = migrateResearchProgressSave(v14);
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v14'));
+    assert(Array.isArray(core?.researchExecutionBandLog));
+    assert(core?.researchExecutionSnapshot === null);
+  })
+);
+
+tests.push(
+  test('research_execution_log_and_snapshot_on_compute', () => {
+    const inputs = baseInputs({ turn: 34 });
+    const state = computeResearchProgress(inputs, null);
+    assert(typeof state.researchExecutionSnapshot?.digest === 'string');
+    assert(Array.isArray(state.researchExecutionBandLog));
+  })
+);
+
+tests.push(
+  test('strategic_delivery_outlook_derived', () => {
+    const inputs = baseInputs({ turn: 30 });
+    const state = computeResearchProgress(inputs, null);
+    const outlook = state.strategicDeliveryOutlook;
+    assert(outlook != null);
+    assert(typeof outlook?.nationalDeliveryScore === 'number');
+    assert(detectForeignSaveFields({ strategicDeliveryOutlook: outlook }).includes('strategicDeliveryOutlook'));
+  })
+);
+
+tests.push(
   test('agent25_chunk_markers_and_hash', () => {
     const moduleId = 'agent-03-research-tech';
     const chunkPath = resolve(process.cwd(), 'operation-10m/modules/agent-03-research-tech/chunk.tsx');

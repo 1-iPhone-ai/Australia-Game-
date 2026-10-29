@@ -3,8 +3,8 @@
   "slot": "post-v10z",
   "touchesSaveFormat": true,
   "proposedGameStateField": "researchProgress",
-  "contentSha256": "b761a3c518840427b874f17287becbbd46cbb1bdfffbcea5b7a85d368d8246e5",
-  "saveFormatVersion": 14,
-  "schemaVersion": "op10m-agent03-v14",
+  "contentSha256": "5de9b7de80d72f73c1164c7592456f57372cc46801fce1bd4ab672472d5bdbef",
+  "saveFormatVersion": 15,
+  "schemaVersion": "op10m-agent03-v15",
   "chunkPath": "operation-10m/modules/agent-03-research-tech/chunk.tsx"
 }

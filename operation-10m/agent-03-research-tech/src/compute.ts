@@ -25,6 +25,7 @@ import { computeResearchNationalCoherenceOutlook } from './national-coherence-ou
 import { computeResearchStrategicAlignmentOutlook } from './strategic-alignment-outlook.ts';
 import { computeResearchHorizonConvergenceOutlook } from './horizon-convergence-outlook.ts';
 import { computeResearchExecutionOutlook } from './research-execution-outlook.ts';
+import { computeResearchStrategicDeliveryOutlook } from './strategic-delivery-outlook.ts';
 import { branchNodeTopologicalOrder, evaluateNodePrerequisites } from './prerequisites.ts';
 import { resolveActiveStrategyHooks, STRATEGY_HOOK_BY_ID } from './strategy-hooks.ts';
 import {
@@ -320,6 +321,13 @@ export function computeResearchProgress(
     horizonConvergenceSnapshot: coreBase.horizonConvergenceSnapshot ?? null,
   });
 
+  const strategicDeliveryOutlook = computeResearchStrategicDeliveryOutlook(inputs, {
+    researchExecutionOutlook,
+    exportContinuityOutlook,
+    adoptionHorizonOutlook,
+    researchExecutionSnapshot: coreBase.researchExecutionSnapshot ?? null,
+  });
+
   const computed: ResearchProgressState = {
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: coreBase.revision,
@@ -345,6 +353,7 @@ export function computeResearchProgress(
     strategicAlignmentOutlook,
     horizonConvergenceOutlook,
     researchExecutionOutlook,
+    strategicDeliveryOutlook,
     unlockSeq: coreBase.unlockSeq,
     branchEmphasis: coreBase.branchEmphasis,
   };

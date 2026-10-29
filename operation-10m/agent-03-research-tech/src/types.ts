@@ -162,12 +162,13 @@ export interface ResearchBranchEmphasisState {
   setTurn: number;
 }
 
-export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v14' as const;
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v15' as const;
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
 export type ResearchProgressSchemaVersion =
   | typeof RESEARCH_PROGRESS_SCHEMA_VERSION
+  | 'op10m-agent03-v14'
   | 'op10m-agent03-v13'
   | 'op10m-agent03-v12'
   | 'op10m-agent03-v11'
@@ -570,6 +571,44 @@ export interface ResearchExecutionOutlook {
   links: ResearchExecutionLink[];
 }
 
+export type ResearchExecutionBand = 30 | 45 | 60 | 75;
+
+export interface ResearchExecutionBandEvent {
+  seq: number;
+  turn: number;
+  band: ResearchExecutionBand;
+  nationalExecutionScore: number;
+  horizonTurns: number;
+  phase: 'escalation' | 'de-escalation';
+}
+
+export interface ResearchExecutionSnapshot {
+  capturedAtTurn: number;
+  nationalExecutionScore: number;
+  projectedExecutionScore: number;
+  horizonTurns: number;
+  criticalRiskBranchCount: number;
+  peakBand: ResearchExecutionBand | 0;
+  digest: string;
+}
+
+export interface ResearchStrategicDeliveryLink {
+  regionId: V94AustralianRegionCode;
+  deliveryPosture: 'expedite' | 'sustain' | 'monitor';
+  executionDelta: number;
+}
+
+export interface ResearchStrategicDeliveryOutlook {
+  active: boolean;
+  baseTurn: number;
+  horizonTurns: number;
+  nationalDeliveryScore: number;
+  projectedDeliveryScore: number;
+  exportContinuityHeadroom: number;
+  executionMomentum: number;
+  links: ResearchStrategicDeliveryLink[];
+}
+
 export interface ResearchProgressState {
   schemaVersion: ResearchProgressSchemaVersion;
   revision: number;
@@ -595,6 +634,7 @@ export interface ResearchProgressState {
   strategicAlignmentOutlook?: ResearchStrategicAlignmentOutlook | null;
   horizonConvergenceOutlook?: ResearchHorizonConvergenceOutlook | null;
   researchExecutionOutlook?: ResearchExecutionOutlook | null;
+  strategicDeliveryOutlook?: ResearchStrategicDeliveryOutlook | null;
   unlockSeq: number;
   branchEmphasis?: ResearchBranchEmphasisState[];
   emphasisRevision?: number;
@@ -624,6 +664,8 @@ export interface ResearchProgressState {
   diffusionForecastSnapshot?: ResearchDiffusionForecastSnapshot | null;
   horizonConvergenceBandLog?: ResearchHorizonConvergenceBandEvent[];
   horizonConvergenceSnapshot?: ResearchHorizonConvergenceSnapshot | null;
+  researchExecutionBandLog?: ResearchExecutionBandEvent[];
+  researchExecutionSnapshot?: ResearchExecutionSnapshot | null;
 }
 
 export interface StrategyHookDefinition {
