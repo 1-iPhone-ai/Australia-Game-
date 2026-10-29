@@ -261,6 +261,10 @@ export interface NationalLaborDemographicsState {
   retentionAnchorOutlook?: NationalRetentionAnchorOutlook;
   subjectSealReadinessBrief?: NationalSubjectSealReadinessBrief;
   nationalWorkforceResolveIndex?: NationalWorkforceResolveIndex;
+  resolveUpskillingCouplingBrief?: NationalResolveUpskillingCouplingBrief;
+  coordinationBindOutlook?: NationalCoordinationBindOutlook;
+  subjectBindReadinessBrief?: NationalSubjectBindReadinessBrief;
+  nationalWorkforceFortitudeIndex?: NationalWorkforceFortitudeIndex;
 }
 
 export type MigrationShockKind =
@@ -1109,6 +1113,50 @@ export interface NationalWorkforceResolveIndex {
   resolveIndex: number;
   band: WorkforceResolveBand;
   sealDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ResolveUpskillingCouplingBand = 'decoupled' | 'strained' | 'aligned' | 'accelerated';
+
+export interface NationalResolveUpskillingCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: ResolveUpskillingCouplingBand;
+  resolveDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CoordinationBindBand = 'loose' | 'patchy' | 'bound' | 'locked';
+
+export interface NationalCoordinationBindOutlook {
+  turn: number;
+  bindIndex: number;
+  band: CoordinationBindBand;
+  schedulingDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectBindReadinessBand = 'unbound' | 'tension' | 'bound' | 'locked';
+
+export interface NationalSubjectBindReadinessBrief {
+  turn: number;
+  bindIndex: number;
+  band: SubjectBindReadinessBand;
+  bindDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceFortitudeBand = 'fragile' | 'thin' | 'solid' | 'unshakable';
+
+export interface NationalWorkforceFortitudeIndex {
+  turn: number;
+  fortitudeIndex: number;
+  band: WorkforceFortitudeBand;
+  bindDrag: number;
   summary: string;
   stewardNote: string;
 }

@@ -79,7 +79,11 @@ export type LaborGiQueryTopic =
   | 'steadfast_scheduling_coupling'
   | 'retention_anchor'
   | 'subject_seal_readiness'
-  | 'workforce_resolve';
+  | 'workforce_resolve'
+  | 'resolve_upskilling_coupling'
+  | 'coordination_bind'
+  | 'subject_bind_readiness'
+  | 'workforce_fortitude';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -156,6 +160,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(retention anchor|labor retention anchor)/.test(q)) return 'retention_anchor';
   if (/\b(subject seal readiness|seal readiness subject)/.test(q)) return 'subject_seal_readiness';
   if (/\b(workforce resolve|resolve index labor)/.test(q)) return 'workforce_resolve';
+  if (/\b(resolve upskilling|resolve-upskilling coupling)/.test(q)) return 'resolve_upskilling_coupling';
+  if (/\b(coordination bind|labor coordination bind)/.test(q)) return 'coordination_bind';
+  if (/\b(subject bind readiness|bind readiness subject)/.test(q)) return 'subject_bind_readiness';
+  if (/\b(workforce fortitude|fortitude index labor)/.test(q)) return 'workforce_fortitude';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -782,6 +790,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Resolve band ${state.nationalWorkforceResolveIndex?.band ?? 'unknown'}; seal drag ${Math.round(state.nationalWorkforceResolveIndex?.sealDrag ?? 0)}.`,
         inference: state.nationalWorkforceResolveIndex?.stewardNote || state.summary,
         projection: 'Resolve synthesizes scheduling coupling, retention anchor, and subject seal readiness.'
+      };
+    case 'resolve_upskilling_coupling':
+      return {
+        topic,
+        headline: state.resolveUpskillingCouplingBrief?.summary || 'Resolve-upskilling coupling unavailable.',
+        fact: `Coupling band ${state.resolveUpskillingCouplingBrief?.band ?? 'unknown'}; resolve drag ${Math.round(state.resolveUpskillingCouplingBrief?.resolveDrag ?? 0)}.`,
+        inference: state.resolveUpskillingCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce resolve with upskilling velocity and program levers.'
+      };
+    case 'coordination_bind':
+      return {
+        topic,
+        headline: state.coordinationBindOutlook?.summary || 'Coordination bind unavailable.',
+        fact: `Bind band ${state.coordinationBindOutlook?.band ?? 'unknown'}; scheduling drag ${Math.round(state.coordinationBindOutlook?.schedulingDrag ?? 0)}.`,
+        inference: state.coordinationBindOutlook?.stewardNote || state.outlook,
+        projection: 'Bind blends coordination levers with steadfast-scheduling coupling.'
+      };
+    case 'subject_bind_readiness':
+      return {
+        topic,
+        headline: state.subjectBindReadinessBrief?.summary || 'Subject bind readiness unavailable.',
+        fact: `Bind band ${state.subjectBindReadinessBrief?.band ?? 'unknown'}; bind drag ${Math.round(state.subjectBindReadinessBrief?.bindDrag ?? 0)}.`,
+        inference: state.subjectBindReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject bind readiness gates seal against resolve for O10-179 wave bind.'
+      };
+    case 'workforce_fortitude':
+      return {
+        topic,
+        headline: state.nationalWorkforceFortitudeIndex?.summary || 'Workforce fortitude unavailable.',
+        fact: `Fortitude band ${state.nationalWorkforceFortitudeIndex?.band ?? 'unknown'}; bind drag ${Math.round(state.nationalWorkforceFortitudeIndex?.bindDrag ?? 0)}.`,
+        inference: state.nationalWorkforceFortitudeIndex?.stewardNote || state.summary,
+        projection: 'Fortitude synthesizes upskilling coupling, coordination bind, and subject bind readiness.'
       };
     default:
       return {

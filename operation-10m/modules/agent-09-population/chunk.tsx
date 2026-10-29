@@ -265,6 +265,10 @@ export interface NationalLaborDemographicsState {
   retentionAnchorOutlook?: NationalRetentionAnchorOutlook;
   subjectSealReadinessBrief?: NationalSubjectSealReadinessBrief;
   nationalWorkforceResolveIndex?: NationalWorkforceResolveIndex;
+  resolveUpskillingCouplingBrief?: NationalResolveUpskillingCouplingBrief;
+  coordinationBindOutlook?: NationalCoordinationBindOutlook;
+  subjectBindReadinessBrief?: NationalSubjectBindReadinessBrief;
+  nationalWorkforceFortitudeIndex?: NationalWorkforceFortitudeIndex;
 }
 
 export type MigrationShockKind =
@@ -1113,6 +1117,50 @@ export interface NationalWorkforceResolveIndex {
   resolveIndex: number;
   band: WorkforceResolveBand;
   sealDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ResolveUpskillingCouplingBand = 'decoupled' | 'strained' | 'aligned' | 'accelerated';
+
+export interface NationalResolveUpskillingCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: ResolveUpskillingCouplingBand;
+  resolveDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CoordinationBindBand = 'loose' | 'patchy' | 'bound' | 'locked';
+
+export interface NationalCoordinationBindOutlook {
+  turn: number;
+  bindIndex: number;
+  band: CoordinationBindBand;
+  schedulingDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectBindReadinessBand = 'unbound' | 'tension' | 'bound' | 'locked';
+
+export interface NationalSubjectBindReadinessBrief {
+  turn: number;
+  bindIndex: number;
+  band: SubjectBindReadinessBand;
+  bindDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceFortitudeBand = 'fragile' | 'thin' | 'solid' | 'unshakable';
+
+export interface NationalWorkforceFortitudeIndex {
+  turn: number;
+  fortitudeIndex: number;
+  band: WorkforceFortitudeBand;
+  bindDrag: number;
   summary: string;
   stewardNote: string;
 }
@@ -2259,7 +2307,11 @@ export type LaborGiQueryTopic =
   | 'steadfast_scheduling_coupling'
   | 'retention_anchor'
   | 'subject_seal_readiness'
-  | 'workforce_resolve';
+  | 'workforce_resolve'
+  | 'resolve_upskilling_coupling'
+  | 'coordination_bind'
+  | 'subject_bind_readiness'
+  | 'workforce_fortitude';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -2336,6 +2388,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(retention anchor|labor retention anchor)/.test(q)) return 'retention_anchor';
   if (/\b(subject seal readiness|seal readiness subject)/.test(q)) return 'subject_seal_readiness';
   if (/\b(workforce resolve|resolve index labor)/.test(q)) return 'workforce_resolve';
+  if (/\b(resolve upskilling|resolve-upskilling coupling)/.test(q)) return 'resolve_upskilling_coupling';
+  if (/\b(coordination bind|labor coordination bind)/.test(q)) return 'coordination_bind';
+  if (/\b(subject bind readiness|bind readiness subject)/.test(q)) return 'subject_bind_readiness';
+  if (/\b(workforce fortitude|fortitude index labor)/.test(q)) return 'workforce_fortitude';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -2962,6 +3018,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Resolve band ${state.nationalWorkforceResolveIndex?.band ?? 'unknown'}; seal drag ${Math.round(state.nationalWorkforceResolveIndex?.sealDrag ?? 0)}.`,
         inference: state.nationalWorkforceResolveIndex?.stewardNote || state.summary,
         projection: 'Resolve synthesizes scheduling coupling, retention anchor, and subject seal readiness.'
+      };
+    case 'resolve_upskilling_coupling':
+      return {
+        topic,
+        headline: state.resolveUpskillingCouplingBrief?.summary || 'Resolve-upskilling coupling unavailable.',
+        fact: `Coupling band ${state.resolveUpskillingCouplingBrief?.band ?? 'unknown'}; resolve drag ${Math.round(state.resolveUpskillingCouplingBrief?.resolveDrag ?? 0)}.`,
+        inference: state.resolveUpskillingCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce resolve with upskilling velocity and program levers.'
+      };
+    case 'coordination_bind':
+      return {
+        topic,
+        headline: state.coordinationBindOutlook?.summary || 'Coordination bind unavailable.',
+        fact: `Bind band ${state.coordinationBindOutlook?.band ?? 'unknown'}; scheduling drag ${Math.round(state.coordinationBindOutlook?.schedulingDrag ?? 0)}.`,
+        inference: state.coordinationBindOutlook?.stewardNote || state.outlook,
+        projection: 'Bind blends coordination levers with steadfast-scheduling coupling.'
+      };
+    case 'subject_bind_readiness':
+      return {
+        topic,
+        headline: state.subjectBindReadinessBrief?.summary || 'Subject bind readiness unavailable.',
+        fact: `Bind band ${state.subjectBindReadinessBrief?.band ?? 'unknown'}; bind drag ${Math.round(state.subjectBindReadinessBrief?.bindDrag ?? 0)}.`,
+        inference: state.subjectBindReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject bind readiness gates seal against resolve for O10-179 wave bind.'
+      };
+    case 'workforce_fortitude':
+      return {
+        topic,
+        headline: state.nationalWorkforceFortitudeIndex?.summary || 'Workforce fortitude unavailable.',
+        fact: `Fortitude band ${state.nationalWorkforceFortitudeIndex?.band ?? 'unknown'}; bind drag ${Math.round(state.nationalWorkforceFortitudeIndex?.bindDrag ?? 0)}.`,
+        inference: state.nationalWorkforceFortitudeIndex?.stewardNote || state.summary,
+        projection: 'Fortitude synthesizes upskilling coupling, coordination bind, and subject bind readiness.'
       };
     default:
       return {
@@ -3663,6 +3751,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceResolveIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceResolveIndex.stewardNote);
+  }
+  if (
+    state.resolveUpskillingCouplingBrief?.band === 'decoupled' ||
+    state.resolveUpskillingCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.resolveUpskillingCouplingBrief.stewardNote);
+  }
+  if (
+    state.coordinationBindOutlook?.band === 'loose' ||
+    state.coordinationBindOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.coordinationBindOutlook.stewardNote);
+  }
+  if (
+    state.subjectBindReadinessBrief?.band === 'unbound' ||
+    state.subjectBindReadinessBrief?.band === 'tension'
+  ) {
+    hints.push(state.subjectBindReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceFortitudeIndex?.band === 'fragile' ||
+    state.nationalWorkforceFortitudeIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceFortitudeIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -9904,6 +10016,285 @@ export function computeNationalWorkforceResolveIndex(
 }
 
 
+// --- source: resolve-upskilling-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalResolveUpskillingCouplingBrief,
+  type NationalUpskillingVelocityOutlook,
+  type NationalWorkforceResolveIndex,
+  type ResolveUpskillingCouplingBand
+} from './types';
+
+function couplingBand(index: number): ResolveUpskillingCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'aligned';
+  return 'accelerated';
+}
+
+export function computeNationalResolveUpskillingCouplingBrief(
+  state: NationalLaborDemographicsState,
+  resolve: NationalWorkforceResolveIndex | null | undefined,
+  upskillingVelocity: NationalUpskillingVelocityOutlook | null | undefined
+): NationalResolveUpskillingCouplingBrief {
+  if (!state.enabled || !resolve || !upskillingVelocity) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      resolveDrag: 0,
+      summary: 'Resolve-upskilling coupling idle — workforce resolve or upskilling velocity unavailable.',
+      stewardNote: 'Compute workforce resolve and upskilling velocity before coupling guidance.'
+    };
+  }
+
+  let upskillingLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    upskillingLift += upskillingUpliftForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  upskillingLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const resolveDrag = v1014laborClamp(
+    resolve.sealDrag * 0.45 +
+      upskillingVelocity.mismatchDrag * 0.35 +
+      (resolve.band === 'fragile' || resolve.band === 'thin' ? 10 : 2)
+  );
+  const resolveLift =
+    resolve.band === 'firm' || resolve.band === 'indomitable'
+      ? resolve.resolveIndex * 0.22
+      : resolve.resolveIndex * 0.11;
+  const velocityLift =
+    upskillingVelocity.band === 'active' || upskillingVelocity.band === 'accelerating'
+      ? upskillingVelocity.velocityIndex * 0.2
+      : upskillingVelocity.velocityIndex * 0.1;
+
+  const couplingIndex = v1014laborClamp(22 + upskillingLift * 21 + resolveLift + velocityLift - resolveDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained resolve-upskilling link — deploy program levers before round-24 bind commits.'
+      : band === 'accelerated'
+        ? 'Accelerated coupling — guard coordination binds that drain upskilling buffers.'
+        : 'Aligned coupling — pair upskilling packs with subject bind readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    resolveDrag,
+    summary: `Resolve-upskilling coupling ${band} (index ${Math.round(couplingIndex)}); resolve drag ${Math.round(resolveDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: coordination-bind-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type CoordinationBindBand,
+  type NationalCoordinationBindOutlook,
+  type NationalLaborDemographicsState,
+  type NationalSteadfastSchedulingCouplingBrief
+} from './types';
+
+function bindBand(index: number): CoordinationBindBand {
+  if (index <= 34) return 'loose';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'bound';
+  return 'locked';
+}
+
+export function computeNationalCoordinationBindOutlook(
+  state: NationalLaborDemographicsState,
+  schedulingCoupling: NationalSteadfastSchedulingCouplingBrief | null | undefined
+): NationalCoordinationBindOutlook {
+  if (!state.enabled || !schedulingCoupling) {
+    return {
+      turn: state.turn,
+      bindIndex: 50,
+      band: 'patchy',
+      schedulingDrag: 0,
+      summary: 'Coordination bind idle — steadfast-scheduling coupling unavailable.',
+      stewardNote: 'Compute steadfast-scheduling coupling before coordination bind guidance.'
+    };
+  }
+
+  let coordinationLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    coordinationLift += coordinationEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  coordinationLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const schedulingDrag = v1014laborClamp(
+    schedulingCoupling.steadfastDrag * 0.46 +
+      (schedulingCoupling.band === 'decoupled' || schedulingCoupling.band === 'strained' ? 10 : 3)
+  );
+  const schedulingLift =
+    schedulingCoupling.band === 'rhythmic' || schedulingCoupling.band === 'locked'
+      ? schedulingCoupling.couplingIndex * 0.2
+      : schedulingCoupling.couplingIndex * 0.1;
+
+  const bindIndex = v1014laborClamp(24 + coordinationLift * 22 + schedulingLift - schedulingDrag);
+  const band = bindBand(bindIndex);
+
+  const stewardNote =
+    band === 'loose' || band === 'patchy'
+      ? 'Patchy coordination bind — ease coordination levers before subject bind assembly.'
+      : band === 'locked'
+        ? 'Locked bind band — verify resolve-upskilling coupling before auto workforce pushes.'
+        : 'Bound coordination — align bind with labor market stability checks.';
+
+  return {
+    turn: state.turn,
+    bindIndex,
+    band,
+    schedulingDrag,
+    summary: `National coordination bind ${band} (index ${Math.round(bindIndex)}); scheduling drag ${Math.round(schedulingDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-bind-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectBindReadinessBrief,
+  type NationalSubjectSealReadinessBrief,
+  type NationalWorkforceResolveIndex,
+  type SubjectBindReadinessBand
+} from './types';
+
+function bindBand(index: number): SubjectBindReadinessBand {
+  if (index <= 34) return 'unbound';
+  if (index <= 48) return 'tension';
+  if (index <= 62) return 'bound';
+  return 'locked';
+}
+
+/** Round-24 subject bind readiness — seal × resolve gate for wave bind. */
+export function computeNationalSubjectBindReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectSeal: NationalSubjectSealReadinessBrief | null | undefined,
+  resolve: NationalWorkforceResolveIndex | null | undefined
+): NationalSubjectBindReadinessBrief {
+  if (!state.enabled || !subjectSeal || !resolve) {
+    return {
+      turn: state.turn,
+      bindIndex: 50,
+      band: 'tension',
+      bindDrag: 0,
+      summary: 'Subject bind readiness idle — subject seal or resolve unavailable.',
+      stewardNote: 'Compute subject seal readiness and workforce resolve before bind guidance.'
+    };
+  }
+
+  const bindDrag = v1014laborClamp(
+    subjectSeal.sealDrag * 0.38 +
+      resolve.sealDrag * 0.38 +
+      (subjectSeal.band === 'open' || resolve.band === 'fragile' ? 12 : 3)
+  );
+  const sealLift =
+    subjectSeal.band === 'sealed' || subjectSeal.band === 'locked'
+      ? subjectSeal.sealIndex * 0.27
+      : subjectSeal.sealIndex * 0.14;
+  const resolveLift =
+    resolve.band === 'firm' || resolve.band === 'indomitable'
+      ? resolve.resolveIndex * 0.25
+      : resolve.resolveIndex * 0.12;
+
+  const bindIndex = v1014laborClamp(20 + sealLift + resolveLift - bindDrag);
+  const band = bindBand(bindIndex);
+
+  const stewardNote =
+    band === 'unbound' || band === 'tension'
+      ? 'Tension bind readiness — hold O10-179 scale bind until resolve-upskilling syncs.'
+      : band === 'locked'
+        ? 'Locked bind band — still monitor coordination bind during corridor peaks.'
+        : 'Bound band — pair with workforce fortitude index each assembly tranche.';
+
+  return {
+    turn: state.turn,
+    bindIndex,
+    band,
+    bindDrag,
+    summary: `Subject bind readiness ${band} (index ${Math.round(bindIndex)}); bind drag ${Math.round(bindDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-fortitude-index.ts ---
+  type NationalCoordinationBindOutlook,
+  type NationalLaborDemographicsState,
+  type NationalResolveUpskillingCouplingBrief,
+  type NationalSubjectBindReadinessBrief,
+  type NationalWorkforceFortitudeIndex,
+  type WorkforceFortitudeBand
+} from './types';
+
+function fortitudeBand(index: number): WorkforceFortitudeBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'solid';
+  return 'unshakable';
+}
+
+export function computeNationalWorkforceFortitudeIndex(
+  state: NationalLaborDemographicsState,
+  upskillingCoupling: NationalResolveUpskillingCouplingBrief | null | undefined,
+  coordinationBind: NationalCoordinationBindOutlook | null | undefined,
+  subjectBind: NationalSubjectBindReadinessBrief | null | undefined
+): NationalWorkforceFortitudeIndex {
+  if (!state.enabled || !upskillingCoupling || !coordinationBind || !subjectBind) {
+    return {
+      turn: state.turn,
+      fortitudeIndex: 50,
+      band: 'thin',
+      bindDrag: 0,
+      summary: 'Workforce fortitude idle — upskilling coupling, coordination bind, or subject bind unavailable.',
+      stewardNote: 'Compute round-24 depth stack before fortitude guidance.'
+    };
+  }
+
+  const bindDrag = v1014laborClamp(
+    subjectBind.bindDrag * 0.35 +
+      upskillingCoupling.resolveDrag * 0.3 +
+      coordinationBind.schedulingDrag * 0.25 +
+      (subjectBind.band === 'unbound' || upskillingCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const upskillingLift =
+    upskillingCoupling.band === 'aligned' || upskillingCoupling.band === 'accelerated'
+      ? upskillingCoupling.couplingIndex * 0.2
+      : upskillingCoupling.couplingIndex * 0.1;
+  const coordinationLift =
+    coordinationBind.band === 'bound' || coordinationBind.band === 'locked'
+      ? coordinationBind.bindIndex * 0.18
+      : coordinationBind.bindIndex * 0.09;
+  const subjectLift =
+    subjectBind.band === 'bound' || subjectBind.band === 'locked'
+      ? subjectBind.bindIndex * 0.22
+      : subjectBind.bindIndex * 0.11;
+
+  const fortitudeIndex = v1014laborClamp(18 + upskillingLift + coordinationLift + subjectLift - bindDrag);
+  const band = fortitudeBand(fortitudeIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce fortitude — sequence resolve-upskilling, coordination bind, and subject bind before post-b64a7aa8 tranche.'
+      : band === 'unshakable'
+        ? 'Unshakable fortitude — avoid corridor overload that breaks subject bind bands.'
+        : 'Solid fortitude — refresh subject bind checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    fortitudeIndex,
+    band,
+    bindDrag,
+    summary: `National workforce fortitude ${band} (index ${Math.round(fortitudeIndex)}); bind drag ${Math.round(bindDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -10713,6 +11104,26 @@ export function computeNationalLaborDemographics(
     state.retentionAnchorOutlook,
     state.subjectSealReadinessBrief
   );
+  state.resolveUpskillingCouplingBrief = computeNationalResolveUpskillingCouplingBrief(
+    state,
+    state.nationalWorkforceResolveIndex,
+    state.upskillingVelocityOutlook
+  );
+  state.coordinationBindOutlook = computeNationalCoordinationBindOutlook(
+    state,
+    state.steadfastSchedulingCouplingBrief
+  );
+  state.subjectBindReadinessBrief = computeNationalSubjectBindReadinessBrief(
+    state,
+    state.subjectSealReadinessBrief,
+    state.nationalWorkforceResolveIndex
+  );
+  state.nationalWorkforceFortitudeIndex = computeNationalWorkforceFortitudeIndex(
+    state,
+    state.resolveUpskillingCouplingBrief,
+    state.coordinationBindOutlook,
+    state.subjectBindReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -11143,6 +11554,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceResolveIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.resolveUpskillingCouplingBrief?.band === 'decoupled' ||
+      state.resolveUpskillingCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.resolveUpskillingCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.coordinationBindOutlook?.band === 'loose' ||
+      state.coordinationBindOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.coordinationBindOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectBindReadinessBrief?.band === 'unbound' ||
+      state.subjectBindReadinessBrief?.band === 'tension') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectBindReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceFortitudeIndex?.band === 'fragile' ||
+      state.nationalWorkforceFortitudeIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceFortitudeIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -12512,6 +12951,63 @@ export function runV1014LaborDemographicsSelfTests(): {
     'resolve steward note'
   );
   check('R2316', schedulingEaseForRegion('NSW', 'technology') > 0, 'scheduling ease for region');
+
+  check('R2401', Boolean(r1.state.resolveUpskillingCouplingBrief?.band), 'resolve upskilling on state');
+  check('R2402', (r1.state.resolveUpskillingCouplingBrief?.resolveDrag ?? 0) >= 0, 'resolve upskilling drag');
+  check('R2403', Boolean(r1.state.coordinationBindOutlook?.band), 'coordination bind on state');
+  check('R2404', (r1.state.coordinationBindOutlook?.schedulingDrag ?? 0) >= 0, 'coordination scheduling drag');
+  check('R2405', Boolean(r1.state.subjectBindReadinessBrief?.band), 'subject bind on state');
+  check('R2406', Boolean(r1.state.nationalWorkforceFortitudeIndex?.band), 'workforce fortitude on state');
+  check(
+    'R2407',
+    detectLaborDemographicsQuery('resolve upskilling coupling') === 'resolve_upskilling_coupling',
+    'GI resolve upskilling detect'
+  );
+  check(
+    'R2408',
+    detectLaborDemographicsQuery('coordination bind') === 'coordination_bind',
+    'GI coordination bind detect'
+  );
+  check(
+    'R2409',
+    detectLaborDemographicsQuery('subject bind readiness') === 'subject_bind_readiness',
+    'GI subject bind detect'
+  );
+  check(
+    'R2410',
+    detectLaborDemographicsQuery('workforce fortitude') === 'workforce_fortitude',
+    'GI workforce fortitude detect'
+  );
+  check(
+    'R2411',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_fortitude').headline.length > 5,
+    'GI workforce fortitude answer'
+  );
+  const upskillingCouplingOnly = computeNationalResolveUpskillingCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceResolveIndex,
+    r1.state.upskillingVelocityOutlook
+  );
+  check('R2412', upskillingCouplingOnly.summary.length > 10, 'upskilling coupling standalone summary');
+  const bindOnly = computeNationalCoordinationBindOutlook(r1.state, r1.state.steadfastSchedulingCouplingBrief);
+  check('R2413', bindOnly.band.length > 3, 'coordination bind band string');
+  const subjectBindOnly = computeNationalSubjectBindReadinessBrief(
+    r1.state,
+    r1.state.subjectSealReadinessBrief,
+    r1.state.nationalWorkforceResolveIndex
+  );
+  check('R2414', subjectBindOnly.bindDrag >= 0, 'subject bind drag');
+  check(
+    'R2415',
+    computeNationalWorkforceFortitudeIndex(
+      rHhBad.state,
+      rHhBad.state.resolveUpskillingCouplingBrief,
+      rHhBad.state.coordinationBindOutlook,
+      rHhBad.state.subjectBindReadinessBrief
+    ).stewardNote.length > 8,
+    'fortitude steward note'
+  );
+  check('R2416', upskillingUpliftForRegion('NSW', 'technology') > 0, 'upskilling uplift for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

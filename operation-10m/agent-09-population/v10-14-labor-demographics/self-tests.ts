@@ -146,6 +146,10 @@ import { computeNationalSteadfastSchedulingCouplingBrief } from './steadfast-sch
 import { computeNationalRetentionAnchorOutlook } from './retention-anchor-outlook';
 import { computeNationalSubjectSealReadinessBrief } from './subject-seal-readiness-brief';
 import { computeNationalWorkforceResolveIndex } from './national-workforce-resolve-index';
+import { computeNationalResolveUpskillingCouplingBrief } from './resolve-upskilling-coupling-brief';
+import { computeNationalCoordinationBindOutlook } from './coordination-bind-outlook';
+import { computeNationalSubjectBindReadinessBrief } from './subject-bind-readiness-brief';
+import { computeNationalWorkforceFortitudeIndex } from './national-workforce-fortitude-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -1446,6 +1450,63 @@ export function runV1014LaborDemographicsSelfTests(): {
     'resolve steward note'
   );
   check('R2316', schedulingEaseForRegion('NSW', 'technology') > 0, 'scheduling ease for region');
+
+  check('R2401', Boolean(r1.state.resolveUpskillingCouplingBrief?.band), 'resolve upskilling on state');
+  check('R2402', (r1.state.resolveUpskillingCouplingBrief?.resolveDrag ?? 0) >= 0, 'resolve upskilling drag');
+  check('R2403', Boolean(r1.state.coordinationBindOutlook?.band), 'coordination bind on state');
+  check('R2404', (r1.state.coordinationBindOutlook?.schedulingDrag ?? 0) >= 0, 'coordination scheduling drag');
+  check('R2405', Boolean(r1.state.subjectBindReadinessBrief?.band), 'subject bind on state');
+  check('R2406', Boolean(r1.state.nationalWorkforceFortitudeIndex?.band), 'workforce fortitude on state');
+  check(
+    'R2407',
+    detectLaborDemographicsQuery('resolve upskilling coupling') === 'resolve_upskilling_coupling',
+    'GI resolve upskilling detect'
+  );
+  check(
+    'R2408',
+    detectLaborDemographicsQuery('coordination bind') === 'coordination_bind',
+    'GI coordination bind detect'
+  );
+  check(
+    'R2409',
+    detectLaborDemographicsQuery('subject bind readiness') === 'subject_bind_readiness',
+    'GI subject bind detect'
+  );
+  check(
+    'R2410',
+    detectLaborDemographicsQuery('workforce fortitude') === 'workforce_fortitude',
+    'GI workforce fortitude detect'
+  );
+  check(
+    'R2411',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_fortitude').headline.length > 5,
+    'GI workforce fortitude answer'
+  );
+  const upskillingCouplingOnly = computeNationalResolveUpskillingCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceResolveIndex,
+    r1.state.upskillingVelocityOutlook
+  );
+  check('R2412', upskillingCouplingOnly.summary.length > 10, 'upskilling coupling standalone summary');
+  const bindOnly = computeNationalCoordinationBindOutlook(r1.state, r1.state.steadfastSchedulingCouplingBrief);
+  check('R2413', bindOnly.band.length > 3, 'coordination bind band string');
+  const subjectBindOnly = computeNationalSubjectBindReadinessBrief(
+    r1.state,
+    r1.state.subjectSealReadinessBrief,
+    r1.state.nationalWorkforceResolveIndex
+  );
+  check('R2414', subjectBindOnly.bindDrag >= 0, 'subject bind drag');
+  check(
+    'R2415',
+    computeNationalWorkforceFortitudeIndex(
+      rHhBad.state,
+      rHhBad.state.resolveUpskillingCouplingBrief,
+      rHhBad.state.coordinationBindOutlook,
+      rHhBad.state.subjectBindReadinessBrief
+    ).stewardNote.length > 8,
+    'fortitude steward note'
+  );
+  check('R2416', upskillingUpliftForRegion('NSW', 'technology') > 0, 'upskilling uplift for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
