@@ -11,6 +11,10 @@ export interface Agent19MemorySnapshot {
   memoryInflationRecallCascade?: boolean;
   /** Round 24: explainability inflation salience band. */
   explainabilityInflationSalienceBand?: 'muted' | 'elevated' | 'critical';
+  /** Round 34: commonwealth inflation recall latch. */
+  memoryCommonwealthInflationLatch?: boolean;
+  /** Round 34: realm recall gate band. */
+  realmRecallGateBand?: 'sealed' | 'opening' | 'breached';
 }
 
 export function mergeAgent19IntoMacroFinancialInputs(
@@ -37,6 +41,13 @@ export function mergeAgent19IntoMacroFinancialInputs(
   if (snapshot.memoryInflationRecallCascade && snapshot.explainabilityInflationSalienceBand === 'critical') {
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  }
+
+  if (snapshot.memoryCommonwealthInflationLatch && snapshot.realmRecallGateBand === 'breached') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.realmRecallGateBand === 'opening' && snapshot.explainabilityAlertActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
   return {

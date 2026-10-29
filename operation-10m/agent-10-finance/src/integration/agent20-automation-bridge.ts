@@ -11,6 +11,10 @@ export interface Agent20AutomationSnapshot {
   idleMacroInflationEscalation?: boolean;
   /** Round 25: autopilot drift cascade band. */
   autopilotDriftCascadeBand?: 'none' | 'drifting' | 'runaway';
+  /** Round 34: synthesis autopilot inflation latch. */
+  synthesisAutopilotInflationLatch?: boolean;
+  /** Round 34: cascade stack drift band. */
+  cascadeStackDriftBand?: 'stable' | 'stacking' | 'runaway';
 }
 
 export function mergeAgent20IntoMacroFinancialInputs(
@@ -36,6 +40,13 @@ export function mergeAgent20IntoMacroFinancialInputs(
   }
   if (snapshot.autopilotDriftCascadeBand === 'runaway' || snapshot.idleMacroInflationEscalation) {
     highInflationScenario = highInflationScenario || snapshot.autopilotDriftCascadeBand === 'runaway';
+  }
+
+  if (snapshot.synthesisAutopilotInflationLatch && snapshot.cascadeStackDriftBand === 'runaway') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.cascadeStackDriftBand === 'stacking' && snapshot.unattendedShockDriftActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
   return {

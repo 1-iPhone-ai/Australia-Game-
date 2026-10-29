@@ -1172,6 +1172,47 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'guardian', 'team', 'round33'],
   },
+  {
+    id: 'memory_commonwealth_recall_gate_stack',
+    label: 'Memory commonwealth recall gate stack',
+    description: 'Breached realm recall with commonwealth inflation latch.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.38,
+      publicStability: 37,
+    },
+    tags: ['inflation', 'memory', 'round34'],
+  },
+  {
+    id: 'automation_synthesis_cascade_drift_stress',
+    label: 'Automation synthesis cascade drift stress',
+    description: 'Runaway cascade stack under unattended autopilot shock drift.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.35,
+      publicStability: 36,
+    },
+    tags: ['inflation', 'automation', 'round34'],
+  },
+  {
+    id: 'memory_automation_commonwealth_fusion_stress',
+    label: 'Memory & automation commonwealth fusion stress',
+    description: 'Commonwealth recall gate colliding with synthesis runaway cascade.',
+    patch: {
+      inflationSettingMultiplier: 1.45,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 27,
+    },
+    tags: ['inflation', 'memory', 'automation', 'round34'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
