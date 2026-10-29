@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-20-automation
-// OP10M_MANIFEST_SHA256: e90f99ceb64a613953b66be6f487fca3df17e6ded6b4e465e1d5ba2830bf9408
-// OP10M_MODULE_VERSION: 10m.1.16.0-agent20
+// OP10M_MANIFEST_SHA256: 0bb5be5c4f27586ba0608dd82fe6d2b6093b6622b8e809dc2bad3da91eb33087
+// OP10M_MODULE_VERSION: 10m.1.17.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
@@ -8189,6 +8189,451 @@ export function runO10Agent20IdleGovernanceProgramExecutivePassSelfTests(): O10S
 }
 
 
+// --- source: automation-idle-governance-program-subject-pass.ts ---
+  createEmptyIdleGovernanceProgramRegistry,
+  type O10IdleGovernanceProgramRegistry,
+} from './automation-idle-governance-program-registry.js';
+
+export type O10IdleGovernanceProgramSubjectClearance = 'cleared' | 'conditional' | 'blocked';
+
+export interface O10IdleGovernanceProgramSubjectPassResult {
+  schema: '10m.agent20.idle-governance-program-subject-pass.v1';
+  executive: ReturnType<typeof runIdleGovernanceProgramExecutivePass>;
+  clearance: O10IdleGovernanceProgramSubjectClearance;
+  subjectMarkdown: string;
+  summaryLine: string;
+}
+
+function mapBoardDecisionToSubjectClearance(
+  decision: ReturnType<typeof runIdleGovernanceProgramExecutivePass>['board']['decision']
+): O10IdleGovernanceProgramSubjectClearance {
+  if (decision === 'certify') return 'cleared';
+  if (decision === 'hold') return 'conditional';
+  return 'blocked';
+}
+
+export function buildIdleGovernanceProgramSubjectMarkdown(
+  executive: ReturnType<typeof runIdleGovernanceProgramExecutivePass>,
+  clearance: O10IdleGovernanceProgramSubjectClearance
+): string {
+  return [
+    '# Agent 20 idle governance subject pass',
+    '',
+    `- clearance=${clearance}`,
+    `- board_decision=${executive.board.decision}`,
+    '',
+    executive.executiveMarkdown,
+  ].join('\n');
+}
+
+/** Round-17 subject pass: executive stack mapped to subject clearance lanes. */
+export function runIdleGovernanceProgramSubjectPass(
+  spec: O10IdleOpsWindowSpec,
+  rule: PortableHumanAutomationRule,
+  startTurn: number,
+  requestedCycles: number,
+  priorRegistry: O10IdleGovernanceProgramRegistry = createEmptyIdleGovernanceProgramRegistry()
+): O10IdleGovernanceProgramSubjectPassResult {
+  const executive = runIdleGovernanceProgramExecutivePass(spec, rule, startTurn, requestedCycles, priorRegistry);
+  const clearance = mapBoardDecisionToSubjectClearance(executive.board.decision);
+  const subjectMarkdown = buildIdleGovernanceProgramSubjectMarkdown(executive, clearance);
+
+  const summaryLine = [
+    'gov_program_subject',
+    `clearance=${clearance}`,
+    executive.board.summaryLine,
+    executive.summaryLine,
+  ].join(' | ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-subject-pass.v1',
+    executive,
+    clearance,
+    subjectMarkdown,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramSubjectPassSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const sampleRule: PortableHumanAutomationRule = {
+    id: 'subj1',
+    name: 'Subject pass',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 5,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 10, maxRunsTotal: null, cooldownTurns: 0 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: null,
+      lastRunTurn: null,
+      runsToday: 0,
+      runsTodayDay: -1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+  };
+
+  const calmSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 2,
+    humanCommittedEvery: 1,
+    idleMsStart: 0,
+    idleMsStep: 0,
+    consecutiveIdleStart: 0,
+  };
+
+  const subject = runIdleGovernanceProgramSubjectPass(calmSpec, sampleRule, 1, 3);
+  push(
+    'gov_prog_subject_calm',
+    'calm subject pass chains executive and markdown',
+    subject.subjectMarkdown.includes('subject pass') &&
+      subject.executive.director.registryRollup.entryCount === 1 &&
+      subject.clearance.length > 0
+  );
+
+  const stressSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 6,
+    humanCommittedEvery: 0,
+    idleMsStart: 240_000,
+    idleMsStep: 110_000,
+    consecutiveIdleStart: 10,
+  };
+  const subject2 = runIdleGovernanceProgramSubjectPass(
+    stressSpec,
+    sampleRule,
+    5,
+    4,
+    subject.executive.director.operations.registry
+  );
+  push(
+    'gov_prog_subject_chain',
+    'chained subject pass accumulates registry',
+    subject2.executive.director.registryRollup.entryCount === 2 &&
+      subject2.summaryLine.includes('gov_program_subject')
+  );
+
+  push(
+    'gov_prog_subject_schema',
+    'subject pass schema marker',
+    subject.schema === '10m.agent20.idle-governance-program-subject-pass.v1'
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-scale-wave-rollup.ts ---
+
+export interface O10IdleGovernanceProgramScaleWaveRollupResult {
+  schema: '10m.agent20.idle-governance-program-scale-wave-rollup.v1';
+  waveRound: number;
+  subjectPassCount: number;
+  clearedCount: number;
+  conditionalCount: number;
+  blockedCount: number;
+  meanComplianceScore: number;
+  waveRecommendation: string;
+  summaryLine: string;
+}
+
+/** Round-17 scale wave rollup across one or more subject passes in the same wave. */
+export function rollupIdleGovernanceProgramScaleWave(
+  waveRound: number,
+  subjectPasses: O10IdleGovernanceProgramSubjectPassResult[]
+): O10IdleGovernanceProgramScaleWaveRollupResult {
+  const count = subjectPasses.length;
+  if (count === 0) {
+    return {
+      schema: '10m.agent20.idle-governance-program-scale-wave-rollup.v1',
+      waveRound,
+      subjectPassCount: 0,
+      clearedCount: 0,
+      conditionalCount: 0,
+      blockedCount: 0,
+      meanComplianceScore: 0,
+      waveRecommendation: 'run_subject_pass',
+      summaryLine: `gov_program_scale_wave_rollup round=${waveRound} passes=0`,
+    };
+  }
+
+  let clearedCount = 0;
+  let conditionalCount = 0;
+  let blockedCount = 0;
+  let scoreSum = 0;
+
+  for (const pass of subjectPasses) {
+    if (pass.clearance === 'cleared') clearedCount += 1;
+    else if (pass.clearance === 'conditional') conditionalCount += 1;
+    else blockedCount += 1;
+    scoreSum += pass.executive.director.complianceScore.score;
+  }
+
+  const meanComplianceScore = scoreSum / count;
+
+  let waveRecommendation = 'continue_scale_wave';
+  if (blockedCount >= Math.ceil(count / 2)) {
+    waveRecommendation = 'halt_scale_wave_escalate';
+  } else if (conditionalCount > clearedCount) {
+    waveRecommendation = 'slow_scale_wave_remediate';
+  } else if (clearedCount === count && meanComplianceScore >= 75) {
+    waveRecommendation = 'advance_scale_wave';
+  }
+
+  const summaryLine = [
+    'gov_program_scale_wave_rollup',
+    `round=${waveRound}`,
+    `passes=${count}`,
+    `cleared=${clearedCount}`,
+    `mean_score=${meanComplianceScore.toFixed(1)}`,
+    `rec=${waveRecommendation}`,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-scale-wave-rollup.v1',
+    waveRound,
+    subjectPassCount: count,
+    clearedCount,
+    conditionalCount,
+    blockedCount,
+    meanComplianceScore,
+    waveRecommendation,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramScaleWaveRollupSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const empty = rollupIdleGovernanceProgramScaleWave(17, []);
+  push('gov_prog_wave_roll_empty', 'empty wave rollup prompts subject pass', empty.waveRecommendation === 'run_subject_pass');
+
+  const mockSubject = (clearance: 'cleared' | 'conditional' | 'blocked', score: number) =>
+    ({
+      schema: '10m.agent20.idle-governance-program-subject-pass.v1',
+      clearance,
+      summaryLine: 'subject',
+      subjectMarkdown: 'md',
+      executive: {
+        schema: '10m.agent20.idle-governance-program-executive-pass.v1',
+        summaryLine: 'exec',
+        executiveMarkdown: 'exec',
+        board: {
+          schema: '10m.agent20.idle-governance-program-board-certification.v1',
+          decision: clearance === 'cleared' ? 'certify' : clearance === 'conditional' ? 'hold' : 'escalate',
+          rationale: [],
+          certificationMarkdown: '',
+          summaryLine: 'board',
+        },
+        remediation: {
+          schema: '10m.agent20.idle-governance-program-remediation-plan.v1',
+          items: [],
+          summaryLine: 'rem',
+          planMarkdown: '',
+        },
+        director: {
+          schema: '10m.agent20.idle-governance-program-director-pass.v1',
+          summaryLine: 'dir',
+          directorMarkdown: '',
+          operations: {} as O10IdleGovernanceProgramSubjectPassResult['executive']['director']['operations'],
+          registryRollup: {
+            schema: '10m.agent20.idle-governance-program-registry-rollup.v1',
+            entryCount: 1,
+            attestOkRatio: 1,
+            escalationCount: 0,
+            dominantRollup: 'continue_scheduled_watch',
+            recommendation: 'director_certify_program',
+            summaryLine: 'rollup',
+          },
+          complianceScore: {
+            schema: '10m.agent20.idle-governance-program-compliance-score.v1',
+            score,
+            band: score >= 70 ? 'green' : score >= 45 ? 'amber' : 'red',
+            factors: [],
+            summaryLine: 'score',
+          },
+        },
+      },
+    }) satisfies O10IdleGovernanceProgramSubjectPassResult;
+
+  const advance = rollupIdleGovernanceProgramScaleWave(17, [
+    mockSubject('cleared', 88),
+    mockSubject('cleared', 82),
+  ]);
+  push('gov_prog_wave_roll_advance', 'all cleared high scores advance wave', advance.waveRecommendation === 'advance_scale_wave');
+
+  const halt = rollupIdleGovernanceProgramScaleWave(17, [
+    mockSubject('blocked', 20),
+    mockSubject('blocked', 25),
+  ]);
+  push('gov_prog_wave_roll_halt', 'majority blocked halts wave', halt.waveRecommendation === 'halt_scale_wave_escalate');
+
+  push(
+    'gov_prog_wave_roll_schema',
+    'scale wave rollup schema marker',
+    advance.schema === '10m.agent20.idle-governance-program-scale-wave-rollup.v1'
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-wave-closeout.ts ---
+  createEmptyIdleGovernanceProgramRegistry,
+  type O10IdleGovernanceProgramRegistry,
+} from './automation-idle-governance-program-registry.js';
+
+export interface O10IdleGovernanceProgramWaveCloseoutResult {
+  schema: '10m.agent20.idle-governance-program-wave-closeout.v1';
+  waveRound: number;
+  subject: ReturnType<typeof runIdleGovernanceProgramSubjectPass>;
+  scaleWaveRollup: ReturnType<typeof rollupIdleGovernanceProgramScaleWave>;
+  closeoutMarkdown: string;
+  summaryLine: string;
+}
+
+export function buildIdleGovernanceProgramWaveCloseoutMarkdown(
+  waveRound: number,
+  subject: ReturnType<typeof runIdleGovernanceProgramSubjectPass>,
+  scaleWaveRollup: ReturnType<typeof rollupIdleGovernanceProgramScaleWave>
+): string {
+  return [
+    '# Agent 20 idle governance scale wave closeout',
+    '',
+    `- wave_round=${waveRound}`,
+    `- ${scaleWaveRollup.summaryLine}`,
+    '',
+    subject.subjectMarkdown,
+  ].join('\n');
+}
+
+/** Round-17 wave closeout: subject pass + scale wave rollup for the active wave round. */
+export function runIdleGovernanceProgramWaveCloseout(
+  spec: O10IdleOpsWindowSpec,
+  rule: PortableHumanAutomationRule,
+  startTurn: number,
+  requestedCycles: number,
+  waveRound: number,
+  priorRegistry: O10IdleGovernanceProgramRegistry = createEmptyIdleGovernanceProgramRegistry()
+): O10IdleGovernanceProgramWaveCloseoutResult {
+  const subject = runIdleGovernanceProgramSubjectPass(spec, rule, startTurn, requestedCycles, priorRegistry);
+  const scaleWaveRollup = rollupIdleGovernanceProgramScaleWave(waveRound, [subject]);
+  const closeoutMarkdown = buildIdleGovernanceProgramWaveCloseoutMarkdown(waveRound, subject, scaleWaveRollup);
+
+  const summaryLine = [
+    'gov_program_wave_closeout',
+    `round=${waveRound}`,
+    scaleWaveRollup.summaryLine,
+    subject.summaryLine,
+  ].join(' | ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-wave-closeout.v1',
+    waveRound,
+    subject,
+    scaleWaveRollup,
+    closeoutMarkdown,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramWaveCloseoutSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const sampleRule: PortableHumanAutomationRule = {
+    id: 'close1',
+    name: 'Wave closeout',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 5,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 10, maxRunsTotal: null, cooldownTurns: 0 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: null,
+      lastRunTurn: null,
+      runsToday: 0,
+      runsTodayDay: -1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+  };
+
+  const calmSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 2,
+    humanCommittedEvery: 1,
+    idleMsStart: 0,
+    idleMsStep: 0,
+    consecutiveIdleStart: 0,
+  };
+
+  const closeout = runIdleGovernanceProgramWaveCloseout(calmSpec, sampleRule, 1, 3, 17);
+  push(
+    'gov_prog_closeout_calm',
+    'calm wave closeout chains subject and rollup',
+    closeout.closeoutMarkdown.includes('scale wave closeout') &&
+      closeout.waveRound === 17 &&
+      closeout.scaleWaveRollup.subjectPassCount === 1
+  );
+
+  const closeout2 = runIdleGovernanceProgramWaveCloseout(
+    calmSpec,
+    sampleRule,
+    3,
+    2,
+    17,
+    closeout.subject.executive.director.operations.registry
+  );
+  push(
+    'gov_prog_closeout_chain',
+    'chained closeout accumulates registry',
+    closeout2.subject.executive.director.registryRollup.entryCount === 2 &&
+      closeout2.summaryLine.includes('gov_program_wave_closeout')
+  );
+
+  push(
+    'gov_prog_closeout_schema',
+    'wave closeout schema marker',
+    closeout.schema === '10m.agent20.idle-governance-program-wave-closeout.v1'
+  );
+
+  return results;
+}
+
+
 // --- source: index.ts ---
 
 
@@ -8272,6 +8717,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceProgramRemediationPlanSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramBoardCertificationSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramExecutivePassSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramSubjectPassSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramScaleWaveRollupSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveCloseoutSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }

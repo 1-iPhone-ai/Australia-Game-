@@ -1,13 +1,13 @@
 {
   "moduleId": "agent-20-automation",
-  "moduleVersion": "10m.1.16.0-agent20",
+  "moduleVersion": "10m.1.17.0-agent20",
   "slot": "append-only-self-tests",
   "touchesSaveFormat": true,
   "anchorComment": "O10_AGENT20_INTEGRATION_ANCHOR",
   "sourceRoot": "operation-10m/agent-20-automation/src",
   "regenerate": "node operation-10m/agent-20-automation/scripts/build-chunk.mjs",
-  "chunkSha256": "e90f99ceb64a613953b66be6f487fca3df17e6ded6b4e465e1d5ba2830bf9408",
-  "chunkLineCount": 8281,
+  "chunkSha256": "0bb5be5c4f27586ba0608dd82fe6d2b6093b6622b8e809dc2bad3da91eb33087",
+  "chunkLineCount": 8729,
   "sourceFiles": [
     "types.ts",
     "conditional-actions.ts",
@@ -62,6 +62,9 @@
     "automation-idle-governance-program-remediation-plan.ts",
     "automation-idle-governance-program-board-certification.ts",
     "automation-idle-governance-program-executive-pass.ts",
+    "automation-idle-governance-program-subject-pass.ts",
+    "automation-idle-governance-program-scale-wave-rollup.ts",
+    "automation-idle-governance-program-wave-closeout.ts",
     "index.ts"
   ]
 }
