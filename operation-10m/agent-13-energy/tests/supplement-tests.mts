@@ -210,6 +210,11 @@ import {
   V1014_OFFSHORE_WIND_EXPORT_TURN_SCENARIOS,
 } from '../modules/offshore-floating-wind-export-corridor-federation-ledger.ts';
 import {
+  runAgent13ClimateHardeningFederationScaleSelfTests,
+  runAgent13ClimateHardeningFederationTurnScenario,
+  V1014_CLIMATE_HARDENING_FEDERATION_TURN_SCENARIOS,
+} from '../modules/compound-climate-grid-hardening-federation-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -563,6 +568,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const mlfArbTurn = runAgent13MlfMerchantArbitrationTurnScenario(V1014_MLF_MERCHANT_ARBITRATION_TURN_SCENARIOS[0]);
   ok(mlfArbTurn.passed);
+
+  const offshoreWindExport = runAgent13OffshoreWindExportFederationScaleSelfTests();
+  ok(offshoreWindExport.failed === 0 && offshoreWindExport.passed >= 5);
+
+  const offshoreWindExportTurn = runAgent13OffshoreWindExportTurnScenario(V1014_OFFSHORE_WIND_EXPORT_TURN_SCENARIOS[0]);
+  ok(offshoreWindExportTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

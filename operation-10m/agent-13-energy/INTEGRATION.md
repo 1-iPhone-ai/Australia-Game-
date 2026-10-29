@@ -51,6 +51,7 @@ operation-10m/agent-13-energy/
   modules/grid-ai-forecast-demand-flex-federation-ledger.ts  # scale wave round 43 (O10-217)
   modules/transmission-mlf-merchant-arbitration-federation-ledger.ts  # scale wave round 44 (O10-219)
   modules/offshore-floating-wind-export-corridor-federation-ledger.ts  # scale wave round 45 (O10-221)
+  modules/compound-climate-grid-hardening-federation-ledger.ts  # scale wave round 46 (O10-223)
   modules/climate-hazards.ts
   modules/household-industry-links.ts
   modules/v94-type-stubs.ts                    # drop on merge

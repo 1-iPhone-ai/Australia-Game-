@@ -65,6 +65,7 @@ const FILES = [
   'grid-ai-forecast-demand-flex-federation-ledger.ts',
   'transmission-mlf-merchant-arbitration-federation-ledger.ts',
   'offshore-floating-wind-export-corridor-federation-ledger.ts',
+  'compound-climate-grid-hardening-federation-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -153,6 +154,8 @@ const EXPORT_MANIFEST = [
   'V1014_DEMAND_FLEX_FEDERATION_CATALOG',
   'V1014_TRANSMISSION_MLF_CATALOG',
   'V1014_MERCHANT_ARBITRATION_FEDERATION_CATALOG',
+  'V1014_OFFSHORE_FLOATING_WIND_CATALOG',
+  'V1014_MARINE_EXPORT_CORRIDOR_FEDERATION_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -291,6 +294,9 @@ const EXPORT_MANIFEST = [
   'runAgent13MlfMerchantArbitrationScaleSelfTests',
   'runAgent13MlfMerchantArbitrationTurnScenario',
   'V1014_MLF_MERCHANT_ARBITRATION_TURN_SCENARIOS',
+  'runAgent13OffshoreWindExportFederationScaleSelfTests',
+  'runAgent13OffshoreWindExportTurnScenario',
+  'V1014_OFFSHORE_WIND_EXPORT_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];
