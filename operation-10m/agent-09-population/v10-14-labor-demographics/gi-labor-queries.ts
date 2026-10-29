@@ -51,7 +51,11 @@ export type LaborGiQueryTopic =
   | 'national_labor_cohesion'
   | 'seasonal_participation_swing'
   | 'cohesion_corridor_coupling'
-  | 'workforce_reliability';
+  | 'workforce_reliability'
+  | 'retention_reliability_coupling'
+  | 'upskilling_velocity'
+  | 'subject_workforce_readiness'
+  | 'workforce_sustainment';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -100,6 +104,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(seasonal participation swing|seasonal swing outlook)/.test(q)) return 'seasonal_participation_swing';
   if (/\b(cohesion corridor coupling|corridor cohesion link)/.test(q)) return 'cohesion_corridor_coupling';
   if (/\b(workforce reliability|reliability index labor)/.test(q)) return 'workforce_reliability';
+  if (/\b(retention reliability|retention-reliability coupling)/.test(q)) return 'retention_reliability_coupling';
+  if (/\b(upskilling velocity|skills velocity outlook)/.test(q)) return 'upskilling_velocity';
+  if (/\b(subject workforce readiness|subject readiness labor)/.test(q)) return 'subject_workforce_readiness';
+  if (/\b(workforce sustainment|sustainment index labor)/.test(q)) return 'workforce_sustainment';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -502,6 +510,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Reliability band ${state.nationalWorkforceReliabilityIndex?.band ?? 'unknown'}; coupling drag ${Math.round(state.nationalWorkforceReliabilityIndex?.couplingDrag ?? 0)}.`,
         inference: state.nationalWorkforceReliabilityIndex?.stewardNote || state.summary,
         projection: 'Reliability synthesizes seasonal swing, scheduling, safety, and cohesion-corridor coupling.'
+      };
+    case 'retention_reliability_coupling':
+      return {
+        topic,
+        headline: state.retentionReliabilityCouplingBrief?.summary || 'Retention-reliability coupling unavailable.',
+        fact: `Coupling band ${state.retentionReliabilityCouplingBrief?.band ?? 'unknown'}; reliability drag ${Math.round(state.retentionReliabilityCouplingBrief?.reliabilityDrag ?? 0)}.`,
+        inference: state.retentionReliabilityCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links retention levers with workforce reliability — bounded indices only.'
+      };
+    case 'upskilling_velocity':
+      return {
+        topic,
+        headline: state.upskillingVelocityOutlook?.summary || 'Upskilling velocity unavailable.',
+        fact: `Velocity band ${state.upskillingVelocityOutlook?.band ?? 'unknown'}; mismatch drag ${Math.round(state.upskillingVelocityOutlook?.mismatchDrag ?? 0)}.`,
+        inference: state.upskillingVelocityOutlook?.stewardNote || state.outlook,
+        projection: 'Velocity blends upskilling program levers with skills tightness coherence — not literal training counts.'
+      };
+    case 'subject_workforce_readiness':
+      return {
+        topic,
+        headline: state.subjectWorkforceReadinessBrief?.summary || 'Subject workforce readiness unavailable.',
+        fact: `Subject band ${state.subjectWorkforceReadinessBrief?.band ?? 'unknown'}; readiness drag ${Math.round(state.subjectWorkforceReadinessBrief?.readinessDrag ?? 0)}.`,
+        inference: state.subjectWorkforceReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject readiness gates retention coupling against integrated labor readiness for assembly waves.'
+      };
+    case 'workforce_sustainment':
+      return {
+        topic,
+        headline: state.nationalWorkforceSustainmentIndex?.summary || 'Workforce sustainment unavailable.',
+        fact: `Sustainment band ${state.nationalWorkforceSustainmentIndex?.band ?? 'unknown'}; subject drag ${Math.round(state.nationalWorkforceSustainmentIndex?.subjectDrag ?? 0)}.`,
+        inference: state.nationalWorkforceSustainmentIndex?.stewardNote || state.summary,
+        projection: 'Sustainment synthesizes reliability, upskilling velocity, and subject readiness — steward guidance only.'
       };
     default:
       return {

@@ -118,6 +118,10 @@ import {
 import { computeNationalSeasonalParticipationSwingOutlook } from './seasonal-participation-swing-outlook';
 import { computeNationalCohesionCorridorCouplingBrief } from './cohesion-corridor-coupling-brief';
 import { computeNationalWorkforceReliabilityIndex } from './national-workforce-reliability-index';
+import { computeNationalRetentionReliabilityCouplingBrief } from './retention-reliability-coupling-brief';
+import { computeNationalUpskillingVelocityOutlook } from './upskilling-velocity-outlook';
+import { computeNationalSubjectWorkforceReadinessBrief } from './subject-workforce-readiness-brief';
+import { computeNationalWorkforceSustainmentIndex } from './national-workforce-sustainment-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -1015,6 +1019,62 @@ export function runV1014LaborDemographicsSelfTests(): {
       rHhBad.state.cohesionCorridorCouplingBrief
     ).stewardNote.length > 8,
     'reliability steward note'
+  );
+
+  check('R1701', retentionPullForRegion('NSW', 'technology') > 0, 'retention pull for region');
+  check('R1702', Boolean(r1.state.retentionReliabilityCouplingBrief?.band), 'retention coupling on state');
+  check('R1703', (r1.state.retentionReliabilityCouplingBrief?.reliabilityDrag ?? 0) >= 0, 'retention reliability drag');
+  check('R1704', Boolean(r1.state.upskillingVelocityOutlook?.band), 'upskilling velocity on state');
+  check('R1705', (r1.state.upskillingVelocityOutlook?.mismatchDrag ?? 0) >= 0, 'upskilling mismatch drag');
+  check('R1706', Boolean(r1.state.subjectWorkforceReadinessBrief?.band), 'subject readiness on state');
+  check('R1707', Boolean(r1.state.nationalWorkforceSustainmentIndex?.band), 'sustainment on state');
+  check(
+    'R1708',
+    detectLaborDemographicsQuery('retention reliability coupling') === 'retention_reliability_coupling',
+    'GI retention coupling detect'
+  );
+  check(
+    'R1709',
+    detectLaborDemographicsQuery('upskilling velocity') === 'upskilling_velocity',
+    'GI upskilling velocity detect'
+  );
+  check(
+    'R1710',
+    detectLaborDemographicsQuery('subject workforce readiness') === 'subject_workforce_readiness',
+    'GI subject readiness detect'
+  );
+  check(
+    'R1711',
+    detectLaborDemographicsQuery('workforce sustainment') === 'workforce_sustainment',
+    'GI sustainment detect'
+  );
+  check(
+    'R1712',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_sustainment').headline.length > 5,
+    'GI sustainment answer'
+  );
+  const retentionCouplingOnly = computeNationalRetentionReliabilityCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceReliabilityIndex
+  );
+  check('R1713', retentionCouplingOnly.summary.length > 10, 'retention coupling standalone summary');
+  const upskillingOnly = computeNationalUpskillingVelocityOutlook(r1.state, r1.state.skillsTightnessCoherenceOutlook);
+  check('R1714', upskillingOnly.band.length > 3, 'upskilling velocity band string');
+  const subjectOnly = computeNationalSubjectWorkforceReadinessBrief(
+    r1.state,
+    r1.state.retentionReliabilityCouplingBrief,
+    r1.state.integratedLaborReadinessOutlook
+  );
+  check('R1715', subjectOnly.readinessDrag >= 0, 'subject readiness drag');
+  check(
+    'R1716',
+    computeNationalWorkforceSustainmentIndex(
+      rHhBad.state,
+      rHhBad.state.nationalWorkforceReliabilityIndex,
+      rHhBad.state.upskillingVelocityOutlook,
+      rHhBad.state.subjectWorkforceReadinessBrief
+    ).stewardNote.length > 8,
+    'sustainment steward note'
   );
 
   for (let i = 19; i <= 50; i++) {
