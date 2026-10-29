@@ -29199,7 +29199,7 @@ export function generateTeamDirective(
   turn: number
 ): TeamDirective {
   const totalDays = context?.totalDays || 30;
-  const endgameActive = isEndgamePeriod(day, totalDays, context?.settings?.teamAiEndgameStartPercent ?? 80);
+  const endgameActive = isEndgamePeriod(day, totalDays, context?.settings?.teamAiEndgameStartPercent ?? DEFAULT_GAME_SETTINGS.teamAiEndgameStartPercent);
   const horizon: TeamDirective['horizon'] = endgameActive
     ? 'endgame'
     : (actor.inEconomicRecovery || goal.kind === 'recovery')
@@ -133345,6 +133345,56 @@ export function runV93ContentReplayabilitySelfTests(): V9SelfTestResult[] {
   return results;
 }
 
+// ---- Late-game phase self-tests (Operation 111 · Agent 79) ----------------
+
+export function runLateGamePhaseSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  check('lg79_endgame_boundary', 'isEndgamePeriod respects startPercent (0.8 default)', () => {
+    const start = DEFAULT_GAME_SETTINGS.teamAiEndgameStartPercent;
+    return isEndgamePeriod(79, 100, start) === false && isEndgamePeriod(80, 100, start) === true;
+  });
+  check('lg79_economic_phase', 'Governor economic phase switches to endgame when window active', () => {
+    const settings = { ...DEFAULT_GAME_SETTINGS, economyRecoveryTarget: 100, economyCashFloor: 500, economyReserveStrength: 'normal' as const };
+    const phase = computeEconomicPhase({}, 5000, settings, true);
+    return phase === 'endgame';
+  });
+  check('lg79_treasury_reserve', 'Dynamic team treasury reserve tightens during endgame (0.7×)', () => {
+    const settings = { ...DEFAULT_GAME_SETTINGS, teamTreasuryDynamicReserveEnabled: true, teamTreasuryReserve: 1000, totalDays: 100 };
+    const mid = computeTeamTreasuryReserve([], settings, 85, false);
+    const end = computeTeamTreasuryReserve([], settings, 85, true);
+    return end < mid && Math.round(mid * 0.7) === end;
+  });
+  check('lg79_emergency_reasons', 'Team emergency actions include endgame_threat tag', () => {
+    return EMERGENCY_REASON_TAGS.includes('endgame_threat') && EMERGENCY_ACTIONS.some(a => a.activationConditions.includes('endgame_threat'));
+  });
+  check('lg79_directive_horizon', 'Team directives use endgame horizon without settings override bug', () => {
+    const actor = { id: 'ai1', money: 5000, inEconomicRecovery: false } as ActorState;
+    const team = { id: 't1' } as TeamState;
+    const goal = { id: 'g1', kind: 'control', description: 'Win', priority: 1, status: 'active' } as TeamGoal;
+    const ctx = { totalDays: 100, settings: {} } as TeamAiContext;
+    const directive = generateTeamDirective(actor, team, goal, ctx, 85, 1);
+    return directive.horizon === 'endgame';
+  });
+  check('lg79_plan_types', 'Team plan catalog includes late-game conversion plan types', () => {
+    return TEAM_PLAN_TYPES.includes('endgame_conversion') && TEAM_PLAN_TYPES.includes('block_opponent_win');
+  });
+  check('lg79_settings_catalog', 'Settings intelligence lists endgame acceleration fields', () => {
+    const entry = SETTINGS_HUB_SECTION_INDEX.find(r => r.id === 'teamModeAi.endgameAcceleration');
+    return Boolean(entry && entry.fieldKeys.includes('teamAiEndgameStartPercent'));
+  });
+
+  return results;
+}
+
 
 // ============================================================================
 // SECTION 20P: V9.4 GAME FEEL & POLISH — RESPONSIVE • SATISFYING • CLEAR • ALIVE • POLISHED
@@ -136514,6 +136564,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
+  { id: 'lg79', label: 'Late Game Phase', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runLateGamePhaseSelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
   { id: 'v91', label: 'V9.1 Strategic Balance', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicDepthBalanceSelfTests() },
   { id: 'v9c', label: 'V9 Cohesion', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV9GameplayCohesionSelfTests() },
