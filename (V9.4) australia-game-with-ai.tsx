@@ -136399,6 +136399,155 @@ export function runV95ResourceConservationFuzz(seed = 95): V95FuzzResult {
   return out;
 }
 
+
+// ---- O111 Agent 98: adversarial executor / save-hostility probes (pure) ------------------------------------
+function o111AdvTotalCash(s: CanonicalGameState): number {
+  const ids = new Set<string>(['player', 'ai', ...Object.keys(s.actorsById || {})]);
+  let sum = 0;
+  ids.forEach(id => {
+    const a = s.actorsById?.[id] || (id === 'player' ? s.player : id === 'ai' ? s.aiPlayer : null);
+    sum += Number(a?.money) || 0;
+  });
+  let deposits = 0;
+  Object.values(s.gameState?.regionDeposits || {}).forEach((o: any) => Object.values(o || {}).forEach(v => { deposits += Number(v) || 0; }));
+  return sum + deposits;
+}
+
+function o111AdvHumanMatch(seed = 9801): CanonicalGameState {
+  const base = createTuningMatchState(seed, false);
+  base.player.kind = 'human';
+  base.player.money = 12000;
+  base.aiPlayer.money = 8000;
+  base.gameState.currentActorId = 'player';
+  base.gameState.currentTurn = 'player';
+  return base;
+}
+
+export function runO111AdversarialSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+
+  const hostileTypes = ['', '__proto__', 'constructor', 'DROP TABLE', 'give_cash', 'GIVE_CASH', 'null', 'undefined', '💸', 'a'.repeat(4000)];
+  check('o111_adv01_unknown_no_throw', 'Unknown action types never throw from reduceGameAction', () => {
+    const base = o111AdvHumanMatch();
+    for (const type of hostileTypes) {
+      reduceGameAction(base, { type, actorId: 'player' } as GameAction);
+    }
+    return true;
+  });
+
+  check('o111_adv02_unknown_no_success', 'Unknown action types do not report success', () => {
+    const base = o111AdvHumanMatch();
+    for (const type of ['not_a_real_action', 'exploit_dupe', 'admin_grant']) {
+      const r = reduceGameAction(base, { type, actorId: 'player', price: 1e9 } as GameAction);
+      if (r.success) return `${type} succeeded unexpectedly`;
+    }
+    return true;
+  });
+
+  check('o111_adv03_unknown_conserves_cash', 'Spam unknown actions conserve total cash', () => {
+    const base = o111AdvHumanMatch();
+    const before = o111AdvTotalCash(base);
+    let state = base;
+    for (let i = 0; i < 40; i++) {
+      const r = reduceGameAction(state, { type: `hostile_${i}`, actorId: 'player', price: 999999 } as GameAction);
+      state = r.nextState || state;
+    }
+    const after = o111AdvTotalCash(state);
+    return Math.abs(after - before) < 1e-6 || `before=${before} after=${after}`;
+  });
+
+  check('o111_adv04_hostile_actor_id', 'Missing / ghost actor ids do not mint cash', () => {
+    const base = o111AdvHumanMatch();
+    const before = o111AdvTotalCash(base);
+    const ids = ['', 'ghost', '__proto__', 'constructor', 'player'.repeat(200)];
+    for (const actorId of ids) {
+      const r = reduceGameAction(base, { type: 'give_cash', actorId, targetActorId: 'ai', price: 5000 } as GameAction);
+      if (r.success && o111AdvTotalCash(r.nextState) > before + 1) return `${actorId} created money`;
+    }
+    return true;
+  });
+
+  check('o111_adv05_negative_transfer_blocked', 'Negative transfer amounts cannot succeed', () => {
+    const base = o111AdvHumanMatch();
+    const aiBefore = Number(base.aiPlayer.money);
+    const r = reduceGameAction(base, { type: 'transfer_cash', actorId: 'player', targetActorId: 'ai', price: -5000 } as GameAction);
+    return (!r.success && Number(r.nextState?.aiPlayer?.money) === aiBefore) || JSON.stringify({ success: r.success, ai: r.nextState?.aiPlayer?.money });
+  });
+
+  check('o111_adv06_emergency_loan_cap', 'Emergency loans stop at MAX_ACTIVE_LOANS without runaway grants', () => {
+    const base = o111AdvHumanMatch();
+    let state = base;
+    let successes = 0;
+    for (let i = 0; i < 8; i++) {
+      const r = reduceGameAction(state, { type: 'emergency_loan', actorId: 'player' } as GameAction);
+      state = r.nextState;
+      if (r.success) successes += 1;
+    }
+    const loans = state.player?.loans?.length ?? 0;
+    return (successes === MAX_ACTIVE_LOANS && loans === MAX_ACTIVE_LOANS) || `successes=${successes} loans=${loans}`;
+  });
+
+  check('o111_adv07_copilot_noop_inert', 'Co-Pilot telemetry noops succeed without changing wallets', () => {
+    const base = o111AdvHumanMatch();
+    const before = o111AdvTotalCash(base);
+    const r = reduceGameAction(base, { type: 'copilot_telemetry_noop', actorId: 'player' } as GameAction);
+    return (r.success && Math.abs(o111AdvTotalCash(r.nextState) - before) < 1e-6) || `cash drift ${before} → ${o111AdvTotalCash(r.nextState)}`;
+  });
+
+  check('o111_adv08_merge_fake_timeline', 'merge_timeline_outcomes with a fake source does not execute', () => {
+    const base = o111AdvHumanMatch();
+    const before = Number(base.player.money);
+    const r = reduceGameAction(base, {
+      type: 'merge_timeline_outcomes',
+      actorId: 'player',
+      parameters: { sourceTimelineId: 'fake_timeline_98', targetTimelineId: 'also_fake' }
+    } as GameAction);
+    return (!r.success && Number(r.nextState?.player?.money) === before) || JSON.stringify({ success: r.success, money: r.nextState?.player?.money });
+  });
+
+  check('o111_adv09_save_proto_pollution', 'Save JSON with __proto__ keys does not pollute Object.prototype', () => {
+    const fixture = createV95SaveFixture();
+    const raw = JSON.stringify(fixture);
+    const injected = raw.replace('"metadata"', '"__proto__":{"polluted":true},"metadata"');
+    const t = prepareSaveLoadTransaction(injected);
+    const polluted = (Object.prototype as any).polluted;
+    return (t.ok && polluted === undefined) || `polluted=${polluted} ok=${t.ok}`;
+  });
+
+  check('o111_adv10_travel_unknown_region', 'Travel to an unknown region with zero cost does not execute', () => {
+    const base = o111AdvHumanMatch();
+    const regionBefore = base.player.currentRegion;
+    const r = reduceGameAction(base, {
+      type: 'move',
+      actorId: 'player',
+      targetRegion: 'ATLANTIS',
+      price: 0
+    } as GameAction);
+    return (!r.success && r.nextState?.player?.currentRegion === regionBefore) || JSON.stringify({ success: r.success, region: r.nextState?.player?.currentRegion });
+  });
+
+  check('o111_adv11_resource_fuzz', 'Resource conservation fuzz (hostile amounts) has zero breaches', () => {
+    const f = v95WithIsolatedGlobals(() => runV95ResourceConservationFuzz(98098));
+    return f.breaches.length === 0 || `${f.breaches.length}/${f.cases}: ${f.breaches.slice(0, 2).join('; ')}`;
+  });
+
+  check('o111_adv12_think_wait_inert', 'think/wait never mark success', () => {
+    const base = o111AdvHumanMatch();
+    for (const type of ['think', 'wait'] as const) {
+      const r = reduceGameAction(base, { type, actorId: 'player' } as GameAction);
+      if (r.success) return `${type} succeeded`;
+    }
+    return true;
+  });
+
+  return results;
+}
+
+
 // ---- AI turn watchdog decision (pure; the live effect uses exactly this) ------------------------------------
 export const V95_AI_TURN_WATCHDOG_MS = 15000;
 export function decideAiTurnWatchdog(input: { isThinking: boolean; hasPendingApprovals: boolean; msSinceLastAction: number; thresholdMs?: number }): 'idle' | 'healthy' | 'waiting_for_approval' | 'recover' {
@@ -136533,6 +136682,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'intent', label: 'Player Intent', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runPlayerIntentLayerSelfTests() },
   { id: 'copilot', label: 'Co-Pilot', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runCoPilotDevSelfTests() },
   { id: 'reliability', label: 'Reliability upgrade regressions', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runReliabilityUpgradeSelfTests() },
+  { id: 'o111-adv', label: 'O111 Adversarial Verification', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runO111AdversarialSelfTests() },
   { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
     ...runAiMemoryPhase1SelfTests().results, ...runAiMemoryPhase2SelfTests().results, ...runAiMemoryPhase3SelfTests().results,
