@@ -317,6 +317,13 @@ import {
   type V1014RegionalTransmissionMlfLedger,
 } from './transmission-mlf-merchant-arbitration-federation-ledger';
 import {
+  advanceRegionalMarineExportCorridorFederationOrchestration,
+  computeRegionalOffshoreFloatingWindLedger,
+  scoreAgent13OffshoreWindExportGIAlignment,
+  type V1014RegionalMarineExportCorridorFederationLedger,
+  type V1014RegionalOffshoreFloatingWindLedger,
+} from './offshore-floating-wind-export-corridor-federation-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25945,6 +25952,10 @@ export interface V1014RegionalEnergyProfile {
   transmissionMlfRelief: number;
   merchantArbitrationFederationBand: string;
   merchantArbitrationFederationRelief: number;
+  offshoreFloatingWindBand: string;
+  offshoreFloatingWindRelief: number;
+  marineExportCorridorFederationBand: string;
+  marineExportCorridorFederationRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -26067,6 +26078,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalDemandFlexFederationLedgers: Record<string, V1014RegionalDemandFlexFederationLedger>;
   regionalTransmissionMlfLedgers: Record<string, V1014RegionalTransmissionMlfLedger>;
   regionalMerchantArbitrationFederationLedgers: Record<string, V1014RegionalMerchantArbitrationFederationLedger>;
+  regionalOffshoreFloatingWindLedgers: Record<string, V1014RegionalOffshoreFloatingWindLedger>;
+  regionalMarineExportCorridorFederationLedgers: Record<string, V1014RegionalMarineExportCorridorFederationLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -26160,6 +26173,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalDemandFlexFederationMemory: Record<string, { flexIndex: number }>;
   regionalTransmissionMlfMemory: Record<string, { mlfBalance: number; mlfIndex: number }>;
   regionalMerchantArbitrationFederationMemory: Record<string, { arbitrationIndex: number }>;
+  regionalOffshoreFloatingWindMemory: Record<string, { windBalance: number; windIndex: number }>;
+  regionalMarineExportCorridorFederationMemory: Record<string, { corridorIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -26265,6 +26280,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalDemandFlexFederationMemory: {},
     regionalTransmissionMlfMemory: {},
     regionalMerchantArbitrationFederationMemory: {},
+    regionalOffshoreFloatingWindMemory: {},
+    regionalMarineExportCorridorFederationMemory: {},
     history: [],
   };
 }
@@ -26534,6 +26551,14 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalMerchantArbitrationFederationMemory === 'object' && raw.regionalMerchantArbitrationFederationMemory
         ? raw.regionalMerchantArbitrationFederationMemory
         : {},
+    regionalOffshoreFloatingWindMemory:
+      typeof raw.regionalOffshoreFloatingWindMemory === 'object' && raw.regionalOffshoreFloatingWindMemory
+        ? raw.regionalOffshoreFloatingWindMemory
+        : {},
+    regionalMarineExportCorridorFederationMemory:
+      typeof raw.regionalMarineExportCorridorFederationMemory === 'object' && raw.regionalMarineExportCorridorFederationMemory
+        ? raw.regionalMarineExportCorridorFederationMemory
+        : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -26726,6 +26751,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalDemandFlexFederationLedgers: {},
       regionalTransmissionMlfLedgers: {},
       regionalMerchantArbitrationFederationLedgers: {},
+      regionalOffshoreFloatingWindLedgers: {},
+      regionalMarineExportCorridorFederationLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26822,6 +26849,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const demandFlexFederationLedgers: Record<string, V1014RegionalDemandFlexFederationLedger> = {};
   const transmissionMlfLedgers: Record<string, V1014RegionalTransmissionMlfLedger> = {};
   const merchantArbitrationFederationLedgers: Record<string, V1014RegionalMerchantArbitrationFederationLedger> = {};
+  const offshoreFloatingWindLedgers: Record<string, V1014RegionalOffshoreFloatingWindLedger> = {};
+  const marineExportCorridorFederationLedgers: Record<string, V1014RegionalMarineExportCorridorFederationLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -27034,6 +27063,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   const nextMerchantArbitrationFederationMemory: Record<string, { arbitrationIndex: number }> = {
     ...persisted.regionalMerchantArbitrationFederationMemory,
+  };
+  const nextOffshoreFloatingWindMemory: Record<string, { windBalance: number; windIndex: number }> = {
+    ...persisted.regionalOffshoreFloatingWindMemory,
+  };
+  const nextMarineExportCorridorFederationMemory: Record<string, { corridorIndex: number }> = {
+    ...persisted.regionalMarineExportCorridorFederationMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -28203,6 +28238,34 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextMerchantArbitrationFederationMemory[regionId] = merchantArbitrationFederationStep.next;
     merchantArbitrationFederationLedgers[regionId] = merchantArbitrationFederationStep.ledger;
     pressure -= merchantArbitrationFederationStep.ledger.merchantArbitrationFederationRelief;
+
+    const offshoreFloatingWindStep = computeRegionalOffshoreFloatingWindLedger({
+      regionId,
+      merchantArbitrationFederationRelief: merchantArbitrationFederationStep.ledger.merchantArbitrationFederationRelief,
+      transmissionMlfRelief: transmissionMlfStep.ledger.transmissionMlfRelief,
+      exportBufferFederationRelief: exportBufferFederationStep.ledger.exportBufferFederationRelief,
+      offshoreRenewableRelief: offshoreStep.ledger.offshoreRenewableRelief,
+      portGreenCorridorRelief: portGreenCorridorStep.ledger.portGreenCorridorRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextOffshoreFloatingWindMemory[regionId] || null,
+    });
+    nextOffshoreFloatingWindMemory[regionId] = offshoreFloatingWindStep.next;
+    offshoreFloatingWindLedgers[regionId] = offshoreFloatingWindStep.ledger;
+    pressure -= offshoreFloatingWindStep.ledger.offshoreFloatingWindRelief;
+
+    const marineExportCorridorFederationStep = advanceRegionalMarineExportCorridorFederationOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      offshoreWindBand: offshoreFloatingWindStep.ledger.band,
+      maritimeShorePowerRelief: maritimeShorePowerStep.ledger.maritimeShorePowerRelief,
+      exportHydrogenCorridorRelief: exportHydrogenCorridorStep.ledger.exportHydrogenCorridorRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextMarineExportCorridorFederationMemory[regionId] || null,
+    });
+    nextMarineExportCorridorFederationMemory[regionId] = marineExportCorridorFederationStep.next;
+    marineExportCorridorFederationLedgers[regionId] = marineExportCorridorFederationStep.ledger;
+    pressure -= marineExportCorridorFederationStep.ledger.marineExportCorridorFederationRelief;
     pressure = v1014Clamp(pressure, 0, 100);
 
     nextHyst[regionId] = { extractionScore, renewableScore: renewableShareScore, pressure };
@@ -28301,6 +28364,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       demandFlexFederationStep.ledger.summary,
       transmissionMlfStep.ledger.summary,
       merchantArbitrationFederationStep.ledger.summary,
+      offshoreFloatingWindStep.ledger.summary,
+      marineExportCorridorFederationStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -28549,6 +28614,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       transmissionMlfRelief: transmissionMlfStep.ledger.transmissionMlfRelief,
       merchantArbitrationFederationBand: merchantArbitrationFederationStep.ledger.band,
       merchantArbitrationFederationRelief: merchantArbitrationFederationStep.ledger.merchantArbitrationFederationRelief,
+      offshoreFloatingWindBand: offshoreFloatingWindStep.ledger.band,
+      offshoreFloatingWindRelief: offshoreFloatingWindStep.ledger.offshoreFloatingWindRelief,
+      marineExportCorridorFederationBand: marineExportCorridorFederationStep.ledger.band,
+      marineExportCorridorFederationRelief: marineExportCorridorFederationStep.ledger.marineExportCorridorFederationRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -28700,6 +28769,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalDemandFlexFederationLedgers: demandFlexFederationLedgers,
     regionalTransmissionMlfLedgers: transmissionMlfLedgers,
     regionalMerchantArbitrationFederationLedgers: merchantArbitrationFederationLedgers,
+    regionalOffshoreFloatingWindLedgers: offshoreFloatingWindLedgers,
+    regionalMarineExportCorridorFederationLedgers: marineExportCorridorFederationLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -28793,6 +28864,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalDemandFlexFederationMemory: nextDemandFlexFederationMemory,
     regionalTransmissionMlfMemory: nextTransmissionMlfMemory,
     regionalMerchantArbitrationFederationMemory: nextMerchantArbitrationFederationMemory,
+    regionalOffshoreFloatingWindMemory: nextOffshoreFloatingWindMemory,
+    regionalMarineExportCorridorFederationMemory: nextMarineExportCorridorFederationMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -30438,8 +30511,8 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
       'grid_ai_forecast_federation_hub',
       'industrial_dr_federation_orchestration_hub',
       'merchant_interconnection_stacking_layer',
-      'national_decarbon_federation_hub',
-      'renewable_energy_zone_hub',
+      'decarbon_federation_orchestration_hub',
+      'rez_transmission_backbone',
       'renewable_grid',
       'battery_grid',
     ],
@@ -30470,6 +30543,50 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     arbitrationBand: rr44.state.regions.NSW?.merchantArbitrationFederationBand,
   });
   check('MLF MERCHANT ARB GI alignment', giMlfMerchantArb.relevanceDelta > 0.25, giMlfMerchantArb.reason || '');
+
+  const offshoreWindExportInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'offshore_floating_wind_federation_hub',
+      'federation_offshore_floating_wind_tie',
+      'offshore_floating_wind',
+      'offshore_export_cable_orchestration_hub',
+      'marine_renewable_shore_tie_federation_corridor',
+      'transmission_mlf_federation_hub',
+      'export_firming_buffer_hub',
+      'maritime_shore_power_orchestration_hub',
+      'export_h2_federation_orchestration_hub',
+      'offshore_export_cable_corridor',
+      'renewable_grid',
+      'battery_grid',
+    ],
+  };
+  const rr45 = computeIndustrialEnergyEnvironmentalState(
+    offshoreWindExportInp,
+    createInitialIndustrialEnergyEnvironmentalPersisted(),
+    null,
+  );
+  check(
+    'OFFSHORE floating wind tracked',
+    !!rr45.state.regionalOffshoreFloatingWindLedgers.TAS?.band,
+    rr45.state.regionalOffshoreFloatingWindLedgers.TAS?.band || '',
+  );
+  check(
+    'MARINE export corridor relief',
+    (rr45.state.regions.TAS?.marineExportCorridorFederationRelief || 0) > 0,
+    String(rr45.state.regions.TAS?.marineExportCorridorFederationRelief),
+  );
+  check(
+    'OFFSHORE wind memory persisted',
+    !!rr45.persisted.regionalOffshoreFloatingWindMemory.TAS,
+    String(rr45.persisted.regionalOffshoreFloatingWindMemory.TAS?.windIndex),
+  );
+  const giOffshoreWindExport = scoreAgent13OffshoreWindExportGIAlignment({
+    actionText: 'Offshore floating wind federation hub with export cable orchestration and marine renewable shore-tie corridor',
+    offshoreWindBand: rr45.state.regions.TAS?.offshoreFloatingWindBand,
+    marineExportBand: rr45.state.regions.TAS?.marineExportCorridorFederationBand,
+  });
+  check('OFFSHORE WIND EXPORT GI alignment', giOffshoreWindExport.relevanceDelta > 0.25, giOffshoreWindExport.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');

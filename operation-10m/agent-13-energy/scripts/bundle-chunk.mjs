@@ -64,6 +64,7 @@ const FILES = [
   'hydrogen-ldes-export-buffer-federation-ledger.ts',
   'grid-ai-forecast-demand-flex-federation-ledger.ts',
   'transmission-mlf-merchant-arbitration-federation-ledger.ts',
+  'offshore-floating-wind-export-corridor-federation-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 

@@ -205,6 +205,11 @@ import {
   V1014_MLF_MERCHANT_ARBITRATION_TURN_SCENARIOS,
 } from '../modules/transmission-mlf-merchant-arbitration-federation-ledger.ts';
 import {
+  runAgent13OffshoreWindExportFederationScaleSelfTests,
+  runAgent13OffshoreWindExportTurnScenario,
+  V1014_OFFSHORE_WIND_EXPORT_TURN_SCENARIOS,
+} from '../modules/offshore-floating-wind-export-corridor-federation-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
