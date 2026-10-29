@@ -11,6 +11,16 @@
 | Round 45 target | CF173–CF176, `layerCount` **116** |
 | V9.4 / promote | **Not touched** |
 
+## Git (push-first)
+
+| Role | SHA | Subject |
+| --- | --- | --- |
+| Module base (round 44 docs tip) | **`a40e1d4`** | `docs(op10m): O10-219 · wave 44 · round 44 handoff` |
+| Gate feat (origin, push-first) | **`2f0b7e0`** | `feat(op10m): O10-221 · wave 45 · round 45` |
+| Origin tip | **`a54b258`** | `docs(op10m): O10-221 · wave 45 · round 45 handoff gate pins` |
+
+Gate subject scan: **O10-221 · wave 45 · round 45** (feat pushed before docs; **424/424** post-push).
+
 ## What landed in round 45
 
 1. **Reconciliation outlook bridge** — `modules/reconciliation-outlook-bridge/`
