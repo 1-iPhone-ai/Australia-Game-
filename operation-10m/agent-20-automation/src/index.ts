@@ -45,6 +45,9 @@ export * from './automation-idle-governance-program-pass.js';
 export * from './automation-idle-governance-program-attestation.js';
 export * from './automation-idle-governance-program-registry.js';
 export * from './automation-idle-governance-program-operations.js';
+export * from './automation-idle-governance-program-registry-rollup.js';
+export * from './automation-idle-governance-program-compliance-score.js';
+export * from './automation-idle-governance-program-director-pass.js';
 
 import type { O10SelfTestResult } from './types.js';
 import { runO10Agent20NationalStewardSelfTests } from './national-steward.js';
@@ -90,6 +93,9 @@ import { runO10Agent20IdleGovernanceProgramPassSelfTests } from './automation-id
 import { runO10Agent20IdleGovernanceProgramAttestationSelfTests } from './automation-idle-governance-program-attestation.js';
 import { runO10Agent20IdleGovernanceProgramRegistrySelfTests } from './automation-idle-governance-program-registry.js';
 import { runO10Agent20IdleGovernanceProgramOperationsSelfTests } from './automation-idle-governance-program-operations.js';
+import { runO10Agent20IdleGovernanceProgramRegistryRollupSelfTests } from './automation-idle-governance-program-registry-rollup.js';
+import { runO10Agent20IdleGovernanceProgramComplianceScoreSelfTests } from './automation-idle-governance-program-compliance-score.js';
+import { runO10Agent20IdleGovernanceProgramDirectorPassSelfTests } from './automation-idle-governance-program-director-pass.js';
 
 /** Full module self-test bundle for Agent 25 dev lab registration. */
 export function runO10Agent20ModuleSelfTests(): {
@@ -165,6 +171,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceProgramAttestationSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramRegistrySelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramOperationsSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramRegistryRollupSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramComplianceScoreSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramDirectorPassSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }
