@@ -1,4 +1,8 @@
 import { attachAuditToState, auditTeamMultiAgentLayer, emptyCoordinationMeta } from './coordination-audit.ts';
+import {
+  mergeReconcileThrashing,
+  reconcileCoordinationPlans,
+} from './coordination-reconcile.ts';
 import { orchestrateTeamCoordination, serializeCoordinationPlan } from './coordination-orchestrator.ts';
 import {
   buildActorDirectiveConstraints,
@@ -89,6 +93,13 @@ export function sanitizeTeamMultiAgentCoordinationState(
         metaRaw.auditSummary && typeof metaRaw.auditSummary === 'object'
           ? (metaRaw.auditSummary as TeamMultiAgentLayerState['meta']['auditSummary'])
           : { errors: 0, warnings: 0, info: 0 },
+      lastReconcileStable: metaRaw.lastReconcileStable !== false,
+      thrashingRegions: Array.isArray(metaRaw.thrashingRegions)
+        ? metaRaw.thrashingRegions.map(String).slice(0, 8)
+        : [],
+      mutexHistory: Array.isArray(metaRaw.mutexHistory)
+        ? (metaRaw.mutexHistory as Array<Record<string, string>>).slice(-5)
+        : [],
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -157,13 +168,35 @@ export function evaluateTeamMultiAgentLayer(
     auditFindings: [],
   };
 
+  const mutexHistory = [...(previous?.meta.mutexHistory || []), coordination.mutexRegions].slice(-5);
+  const reconcile = mergeReconcileThrashing(
+    reconcileCoordinationPlans(previous?.coordination ?? null, coordination, inputs.turn),
+    mutexHistory,
+  );
+  if (!reconcile.stable) {
+    diagnostics.push(`Coordination reconcile: ${reconcile.changes.length} change(s)`);
+  }
+  if (reconcile.thrashingRegions.length) {
+    diagnostics.push(`Mutex thrashing: ${reconcile.thrashingRegions.join(', ')}`);
+  }
+
+  state = {
+    ...state,
+    diagnostics,
+    meta: {
+      ...emptyCoordinationMeta(),
+      directiveConstraints: directiveResult.constraintsByActor,
+      suppressedDirectiveIds: directiveResult.suppressed
+        .map(s => s.proposal.id)
+        .slice(0, AGENT18_LIMITS.maxSuppressedDirectives),
+      lastReconcileStable: reconcile.stable,
+      thrashingRegions: reconcile.thrashingRegions,
+      mutexHistory,
+    },
+  };
+
   const auditFindings = auditTeamMultiAgentLayer(state, inputs);
-  state = attachAuditToState(state, auditFindings, {
-    directiveConstraints: directiveResult.constraintsByActor,
-    suppressedDirectiveIds: directiveResult.suppressed
-      .map(s => s.proposal.id)
-      .slice(0, AGENT18_LIMITS.maxSuppressedDirectives),
-  });
+  state = attachAuditToState(state, auditFindings, {});
 
   const coordinationIssues = [
     ...sharedIssues,

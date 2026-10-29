@@ -21,6 +21,9 @@ export function emptyCoordinationMeta(): TeamMultiAgentCoordinationMeta {
     directiveConstraints: {},
     suppressedDirectiveIds: [],
     auditSummary: { errors: 0, warnings: 0, info: 0 },
+    lastReconcileStable: true,
+    thrashingRegions: [],
+    mutexHistory: [],
   };
 }
 
@@ -118,6 +121,47 @@ export function auditTeamMultiAgentLayer(
       regionId: null,
     });
   }
+
+  if (state.meta.thrashingRegions.length > 0) {
+    push({
+      severity: 'error',
+      message: `Mutex thrashing on ${state.meta.thrashingRegions.join(', ')}`,
+      actorIds: [],
+      regionId: state.meta.thrashingRegions[0] || null,
+    });
+  }
+
+  if (state.meta.lastReconcileStable === false) {
+    push({
+      severity: 'warning',
+      message: 'Coordination plan changed materially since last evaluation',
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  const suppressRate =
+    state.meta.suppressedDirectiveIds.length /
+    Math.max(1, state.meta.suppressedDirectiveIds.length + Object.keys(state.meta.directiveConstraints).length);
+  if (state.meta.suppressedDirectiveIds.length >= 3 && suppressRate > 0.5) {
+    push({
+      severity: 'info',
+      message: `High directive suppression rate (${state.meta.suppressedDirectiveIds.length} suppressed)`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  state.coordination.leases.forEach(lease => {
+    if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
+      push({
+        severity: 'warning',
+        message: `Lease ${lease.id} expired at turn ${lease.expiresTurn}`,
+        actorIds: [lease.holderActorId],
+        regionId: lease.regionId,
+      });
+    }
+  });
 
   return findings;
 }

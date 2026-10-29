@@ -21,6 +21,7 @@ const FILES = [
   'coordination-orchestrator.ts',
   'directive-coordination.ts',
   'coordination-audit.ts',
+  'coordination-reconcile.ts',
   'multi-agent-state.ts',
   'self-tests.ts',
 ];

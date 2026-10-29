@@ -13,6 +13,11 @@ import {
 } from './directive-coordination.ts';
 import { auditTeamMultiAgentLayer } from './coordination-audit.ts';
 import {
+  detectMutexThrashing,
+  mergeReconcileThrashing,
+  reconcileCoordinationPlans,
+} from './coordination-reconcile.ts';
+import {
   DuplicateActionGuard,
   buildActionFingerprint,
   detectDuplicateIntents,
@@ -674,6 +679,75 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       info: ev.auditFindings.filter(f => f.severity === 'info').length,
     };
     return s.errors === counts.errors && s.warnings === counts.warnings && s.info === counts.info;
+  });
+
+  check(results, 'a18_reconcile_stable', 'Reconcile: identical plans report stable with no changes', () => {
+    const plan = orchestrateTeamCoordination(3, baseInputs().tasks, assignTeamRolesWithSlots(baseInputs()).roles);
+    const r = reconcileCoordinationPlans(plan, plan, 4);
+    return r.stable && r.changes.length === 0;
+  });
+
+  check(results, 'a18_reconcile_mutex_change', 'Reconcile: mutex holder change recorded', () => {
+    const prev = orchestrateTeamCoordination(1, baseInputs().tasks, assignTeamRolesWithSlots(baseInputs()).roles);
+    const next = { ...prev, mutexRegions: { ...prev.mutexRegions, NSW: 'mate' } };
+    const r = reconcileCoordinationPlans(prev, next, 2);
+    return r.changes.some(c => c.kind === 'mutex_holder_changed') || JSON.stringify(r.changes);
+  });
+
+  check(results, 'a18_thrash_detect', 'Reconcile: detectMutexThrashing flags flip-flopping region', () => {
+    const history = [
+      { NSW: 'player' },
+      { NSW: 'mate' },
+      { NSW: 'player' },
+      { NSW: 'mate' },
+    ];
+    const thrash = detectMutexThrashing(history, 2);
+    return thrash.includes('NSW') || JSON.stringify(thrash);
+  });
+
+  check(results, 'a18_eval_reconcile_meta', 'Layer: prior state yields reconcile metadata on plan change', () => {
+    const a = evaluateTeamMultiAgentLayer(baseInputs({ turn: 4 }), null);
+    const b = evaluateTeamMultiAgentLayer(baseInputs({ turn: 5 }), a.state);
+    return b.state.meta.mutexHistory.length >= 2 || `history ${b.state.meta.mutexHistory.length}`;
+  });
+
+  check(results, 'a18_audit_expired_lease', 'Audit: expired treasury lease surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs({ turn: 10 }), null);
+    const state = { ...ev.state };
+    state.coordination = {
+      ...state.coordination,
+      leases: [
+        {
+          id: 'lease_x',
+          kind: 'treasury_request',
+          holderActorId: 'mate',
+          regionId: null,
+          taskId: 'task_cash_mate',
+          sinceTurn: 8,
+          expiresTurn: 9,
+          reason: 'test',
+        },
+      ],
+    };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs({ turn: 10 }));
+    return findings.some(f => /expired/.test(f.message)) || JSON.stringify(findings);
+  });
+
+  check(results, 'a18_audit_thrash_error', 'Audit: thrashing regions in meta escalate to error finding', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = {
+      ...ev.state,
+      meta: { ...ev.state.meta, thrashingRegions: ['NSW'] },
+    };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'error' && /thrashing/.test(f.message));
+  });
+
+  check(results, 'a18_merge_reconcile_thrash', 'Reconcile: mergeReconcileThrashing marks plan unstable', () => {
+    const history = [{ NSW: 'a' }, { NSW: 'b' }, { NSW: 'a' }, { NSW: 'b' }];
+    const base = reconcileCoordinationPlans(null, orchestrateTeamCoordination(0, baseInputs().tasks, assignTeamRolesWithSlots(baseInputs()).roles), 1);
+    const merged = mergeReconcileThrashing(base, history);
+    return merged.stable === false && merged.thrashingRegions.includes('NSW');
   });
 
   return results;

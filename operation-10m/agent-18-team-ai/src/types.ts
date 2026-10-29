@@ -219,6 +219,10 @@ export interface TeamMultiAgentCoordinationMeta {
   directiveConstraints: Record<string, string>;
   suppressedDirectiveIds: string[];
   auditSummary: { errors: number; warnings: number; info: number };
+  lastReconcileStable: boolean;
+  thrashingRegions: string[];
+  /** Rolling mutex snapshots for thrashing detection (newest last). */
+  mutexHistory: Array<Record<string, string>>;
 }
 
 export const AGENT18_LIMITS = {

@@ -223,6 +223,10 @@ export interface TeamMultiAgentCoordinationMeta {
   directiveConstraints: Record<string, string>;
   suppressedDirectiveIds: string[];
   auditSummary: { errors: number; warnings: number; info: number };
+  lastReconcileStable: boolean;
+  thrashingRegions: string[];
+  /** Rolling mutex snapshots for thrashing detection (newest last). */
+  mutexHistory: Array<Record<string, string>>;
 }
 
 export const AGENT18_LIMITS = {
@@ -1280,6 +1284,9 @@ export function emptyCoordinationMeta(): TeamMultiAgentCoordinationMeta {
     directiveConstraints: {},
     suppressedDirectiveIds: [],
     auditSummary: { errors: 0, warnings: 0, info: 0 },
+    lastReconcileStable: true,
+    thrashingRegions: [],
+    mutexHistory: [],
   };
 }
 
@@ -1378,6 +1385,47 @@ export function auditTeamMultiAgentLayer(
     });
   }
 
+  if (state.meta.thrashingRegions.length > 0) {
+    push({
+      severity: 'error',
+      message: `Mutex thrashing on ${state.meta.thrashingRegions.join(', ')}`,
+      actorIds: [],
+      regionId: state.meta.thrashingRegions[0] || null,
+    });
+  }
+
+  if (state.meta.lastReconcileStable === false) {
+    push({
+      severity: 'warning',
+      message: 'Coordination plan changed materially since last evaluation',
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  const suppressRate =
+    state.meta.suppressedDirectiveIds.length /
+    Math.max(1, state.meta.suppressedDirectiveIds.length + Object.keys(state.meta.directiveConstraints).length);
+  if (state.meta.suppressedDirectiveIds.length >= 3 && suppressRate > 0.5) {
+    push({
+      severity: 'info',
+      message: `High directive suppression rate (${state.meta.suppressedDirectiveIds.length} suppressed)`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  state.coordination.leases.forEach(lease => {
+    if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
+      push({
+        severity: 'warning',
+        message: `Lease ${lease.id} expired at turn ${lease.expiresTurn}`,
+        actorIds: [lease.holderActorId],
+        regionId: lease.regionId,
+      });
+    }
+  });
+
   return findings;
 }
 
@@ -1397,7 +1445,147 @@ export function attachAuditToState(
 }
 
 
+// --- source: coordination-reconcile.ts ---
+
+export interface CoordinationReconcileChange {
+  kind:
+    | 'mutex_holder_changed'
+    | 'handoff_opened'
+    | 'handoff_closed'
+    | 'lease_added'
+    | 'lease_removed'
+    | 'arbitration_reversed';
+  regionId: string | null;
+  detail: string;
+}
+
+export interface CoordinationReconcileReport {
+  turn: number;
+  stable: boolean;
+  changes: CoordinationReconcileChange[];
+  thrashingRegions: string[];
+}
+
+function handoffKey(h: HandoffRequest): string {
+  return `${h.id}:${h.status}`;
+}
+
+/** Compare two coordination plans for material diffs (turn-to-turn stability). */
+export function reconcileCoordinationPlans(
+  previous: CoordinationPlan | null,
+  next: CoordinationPlan,
+  turn: number,
+): CoordinationReconcileReport {
+  const changes: CoordinationReconcileChange[] = [];
+  if (!previous) {
+    return { turn, stable: true, changes, thrashingRegions: [] };
+  }
+
+  const prevRegions = previous.mutexRegions;
+  const nextRegions = next.mutexRegions;
+  new Set([...Object.keys(prevRegions), ...Object.keys(nextRegions)]).forEach(regionId => {
+    const a = prevRegions[regionId];
+    const b = nextRegions[regionId];
+    if (a && b && a !== b) {
+      changes.push({
+        kind: 'mutex_holder_changed',
+        regionId,
+        detail: `${regionId}: ${a} → ${b}`,
+      });
+      const prevArb = previous.arbitrationLog.find(x => x.regionId === regionId);
+      const nextArb = next.arbitrationLog.find(x => x.regionId === regionId);
+      if (prevArb && nextArb && prevArb.winnerActorId !== nextArb.winnerActorId) {
+        changes.push({
+          kind: 'arbitration_reversed',
+          regionId,
+          detail: `arbitration ${prevArb.winnerActorId} → ${nextArb.winnerActorId}`,
+        });
+      }
+    }
+  });
+
+  const prevHandoffs = new Map(previous.handoffs.map(h => [handoffKey(h), h]));
+  next.handoffs.forEach(h => {
+    const k = handoffKey(h);
+    const p = prevHandoffs.get(k);
+    if (!p && h.status === 'pending') {
+      changes.push({ kind: 'handoff_opened', regionId: h.regionId, detail: h.id });
+    }
+  });
+  previous.handoffs.forEach(h => {
+    const n = next.handoffs.find(x => x.id === h.id);
+    if (h.status === 'pending' && n && n.status !== 'pending') {
+      changes.push({
+        kind: 'handoff_closed',
+        regionId: h.regionId,
+        detail: `${h.id} → ${n.status}`,
+      });
+    }
+  });
+
+  const prevLeaseIds = new Set(previous.leases.map(l => l.id));
+  const nextLeaseIds = new Set(next.leases.map(l => l.id));
+  next.leases.forEach(l => {
+    if (!prevLeaseIds.has(l.id)) {
+      changes.push({ kind: 'lease_added', regionId: l.regionId, detail: l.id });
+    }
+  });
+  previous.leases.forEach(l => {
+    if (!nextLeaseIds.has(l.id)) {
+      changes.push({ kind: 'lease_removed', regionId: l.regionId, detail: l.id });
+    }
+  });
+
+  return {
+    turn,
+    stable: changes.length === 0,
+    changes,
+    thrashingRegions: [],
+  };
+}
+
+/** Flag regions whose mutex holder changed in ≥2 of the last N snapshots. */
+export function detectMutexThrashing(
+  mutexHistory: Array<Record<string, string>>,
+  minFlips: number = 2,
+): string[] {
+  const flips: Record<string, number> = {};
+  for (let i = 1; i < mutexHistory.length; i += 1) {
+    const prev = mutexHistory[i - 1];
+    const cur = mutexHistory[i];
+    new Set([...Object.keys(prev), ...Object.keys(cur)]).forEach(regionId => {
+      if (prev[regionId] && cur[regionId] && prev[regionId] !== cur[regionId]) {
+        flips[regionId] = (flips[regionId] || 0) + 1;
+      }
+    });
+  }
+  return Object.entries(flips)
+    .filter(([, n]) => n >= minFlips)
+    .map(([regionId]) => regionId)
+    .sort();
+}
+
+export function mergeReconcileThrashing(
+  report: CoordinationReconcileReport,
+  mutexHistory: Array<Record<string, string>>,
+): CoordinationReconcileReport {
+  const thrashingRegions = detectMutexThrashing(mutexHistory);
+  return {
+    ...report,
+    stable: report.stable && thrashingRegions.length === 0,
+    thrashingRegions,
+  };
+}
+
+export function summarizeArbitrationDemotions(log: PriorityArbitrationRecord[]): number {
+  return log.reduce((s, e) => s + e.demoted.length, 0);
+}
+
+
 // --- source: multi-agent-state.ts ---
+  mergeReconcileThrashing,
+  reconcileCoordinationPlans,
+} from './coordination-reconcile.ts';
   buildActorDirectiveConstraints,
   coordinateTeammateDirectives,
 } from './directive-coordination.ts';
@@ -1483,6 +1671,13 @@ export function sanitizeTeamMultiAgentCoordinationState(
         metaRaw.auditSummary && typeof metaRaw.auditSummary === 'object'
           ? (metaRaw.auditSummary as TeamMultiAgentLayerState['meta']['auditSummary'])
           : { errors: 0, warnings: 0, info: 0 },
+      lastReconcileStable: metaRaw.lastReconcileStable !== false,
+      thrashingRegions: Array.isArray(metaRaw.thrashingRegions)
+        ? metaRaw.thrashingRegions.map(String).slice(0, 8)
+        : [],
+      mutexHistory: Array.isArray(metaRaw.mutexHistory)
+        ? (metaRaw.mutexHistory as Array<Record<string, string>>).slice(-5)
+        : [],
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -1551,13 +1746,35 @@ export function evaluateTeamMultiAgentLayer(
     auditFindings: [],
   };
 
+  const mutexHistory = [...(previous?.meta.mutexHistory || []), coordination.mutexRegions].slice(-5);
+  const reconcile = mergeReconcileThrashing(
+    reconcileCoordinationPlans(previous?.coordination ?? null, coordination, inputs.turn),
+    mutexHistory,
+  );
+  if (!reconcile.stable) {
+    diagnostics.push(`Coordination reconcile: ${reconcile.changes.length} change(s)`);
+  }
+  if (reconcile.thrashingRegions.length) {
+    diagnostics.push(`Mutex thrashing: ${reconcile.thrashingRegions.join(', ')}`);
+  }
+
+  state = {
+    ...state,
+    diagnostics,
+    meta: {
+      ...emptyCoordinationMeta(),
+      directiveConstraints: directiveResult.constraintsByActor,
+      suppressedDirectiveIds: directiveResult.suppressed
+        .map(s => s.proposal.id)
+        .slice(0, AGENT18_LIMITS.maxSuppressedDirectives),
+      lastReconcileStable: reconcile.stable,
+      thrashingRegions: reconcile.thrashingRegions,
+      mutexHistory,
+    },
+  };
+
   const auditFindings = auditTeamMultiAgentLayer(state, inputs);
-  state = attachAuditToState(state, auditFindings, {
-    directiveConstraints: directiveResult.constraintsByActor,
-    suppressedDirectiveIds: directiveResult.suppressed
-      .map(s => s.proposal.id)
-      .slice(0, AGENT18_LIMITS.maxSuppressedDirectives),
-  });
+  state = attachAuditToState(state, auditFindings, {});
 
   const coordinationIssues = [
     ...sharedIssues,
@@ -1592,6 +1809,10 @@ export function syncMultiAgentCoordinationForDirectives(
   dedupeDirectiveProposals,
   stressDirectiveCoordination,
 } from './directive-coordination.ts';
+  detectMutexThrashing,
+  mergeReconcileThrashing,
+  reconcileCoordinationPlans,
+} from './coordination-reconcile.ts';
   DuplicateActionGuard,
   buildActionFingerprint,
   detectDuplicateIntents,
@@ -2250,6 +2471,75 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       info: ev.auditFindings.filter(f => f.severity === 'info').length,
     };
     return s.errors === counts.errors && s.warnings === counts.warnings && s.info === counts.info;
+  });
+
+  check(results, 'a18_reconcile_stable', 'Reconcile: identical plans report stable with no changes', () => {
+    const plan = orchestrateTeamCoordination(3, baseInputs().tasks, assignTeamRolesWithSlots(baseInputs()).roles);
+    const r = reconcileCoordinationPlans(plan, plan, 4);
+    return r.stable && r.changes.length === 0;
+  });
+
+  check(results, 'a18_reconcile_mutex_change', 'Reconcile: mutex holder change recorded', () => {
+    const prev = orchestrateTeamCoordination(1, baseInputs().tasks, assignTeamRolesWithSlots(baseInputs()).roles);
+    const next = { ...prev, mutexRegions: { ...prev.mutexRegions, NSW: 'mate' } };
+    const r = reconcileCoordinationPlans(prev, next, 2);
+    return r.changes.some(c => c.kind === 'mutex_holder_changed') || JSON.stringify(r.changes);
+  });
+
+  check(results, 'a18_thrash_detect', 'Reconcile: detectMutexThrashing flags flip-flopping region', () => {
+    const history = [
+      { NSW: 'player' },
+      { NSW: 'mate' },
+      { NSW: 'player' },
+      { NSW: 'mate' },
+    ];
+    const thrash = detectMutexThrashing(history, 2);
+    return thrash.includes('NSW') || JSON.stringify(thrash);
+  });
+
+  check(results, 'a18_eval_reconcile_meta', 'Layer: prior state yields reconcile metadata on plan change', () => {
+    const a = evaluateTeamMultiAgentLayer(baseInputs({ turn: 4 }), null);
+    const b = evaluateTeamMultiAgentLayer(baseInputs({ turn: 5 }), a.state);
+    return b.state.meta.mutexHistory.length >= 2 || `history ${b.state.meta.mutexHistory.length}`;
+  });
+
+  check(results, 'a18_audit_expired_lease', 'Audit: expired treasury lease surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs({ turn: 10 }), null);
+    const state = { ...ev.state };
+    state.coordination = {
+      ...state.coordination,
+      leases: [
+        {
+          id: 'lease_x',
+          kind: 'treasury_request',
+          holderActorId: 'mate',
+          regionId: null,
+          taskId: 'task_cash_mate',
+          sinceTurn: 8,
+          expiresTurn: 9,
+          reason: 'test',
+        },
+      ],
+    };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs({ turn: 10 }));
+    return findings.some(f => /expired/.test(f.message)) || JSON.stringify(findings);
+  });
+
+  check(results, 'a18_audit_thrash_error', 'Audit: thrashing regions in meta escalate to error finding', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = {
+      ...ev.state,
+      meta: { ...ev.state.meta, thrashingRegions: ['NSW'] },
+    };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'error' && /thrashing/.test(f.message));
+  });
+
+  check(results, 'a18_merge_reconcile_thrash', 'Reconcile: mergeReconcileThrashing marks plan unstable', () => {
+    const history = [{ NSW: 'a' }, { NSW: 'b' }, { NSW: 'a' }, { NSW: 'b' }];
+    const base = reconcileCoordinationPlans(null, orchestrateTeamCoordination(0, baseInputs().tasks, assignTeamRolesWithSlots(baseInputs()).roles), 1);
+    const merged = mergeReconcileThrashing(base, history);
+    return merged.stable === false && merged.thrashingRegions.includes('NSW');
   });
 
   return results;
