@@ -61,6 +61,7 @@ import {
   buildGuardianDepthExonerationReport,
   buildGuardianDepthVindicationReport,
   buildGuardianDepthJustificationReport,
+  buildGuardianDepthLegitimationReport,
   runGuardianDepthUnitSelfTests,
 } from './guardian-depth.js';
 import type { AdvisoryRecommendation, Agent16SelfTestResult, AiSuggestedAction } from './types.js';
@@ -235,8 +236,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 41 scale wave brings monitor catalog to 526+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 526;
+  check(results, 'a16_expansion_count', 'Round 42 scale wave brings monitor catalog to 538+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 538;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -1774,6 +1775,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthJustificationReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round42_metrics', 'Round 42 legitimation envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.legitimationStrainIndex >= 40 &&
+      snap.legitimationIntegrityScore <= 100 &&
+      snap.governancePepScore <= 100
+    );
+  });
+
+  check(results, 'a16_legitimation_report', 'Guardian depth legitimation report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthLegitimationReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 
