@@ -9696,6 +9696,12 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
       collapseOmniSingularityConsolidationIndex: out.state.nationalCollapseOmniSingularityConsolidationIndex,
       voidTotalErosionDissolutionIndex: out.state.nationalVoidTotalErosionDissolutionIndex,
       existentialAbsoluteNullityImmutabilityIndex: out.state.nationalExistentialAbsoluteNullityImmutabilityIndex,
+      collapseOmniSingularityCoalescenceIndex: out.state.nationalCollapseOmniSingularityCoalescenceIndex,
+      voidTotalErosionSublimationIndex: out.state.nationalVoidTotalErosionSublimationIndex,
+      existentialAbsoluteNullityPermanenceIndex: out.state.nationalExistentialAbsoluteNullityPermanenceIndex,
+      collapseOmniSingularityAmalgamationIndex: out.state.nationalCollapseOmniSingularityAmalgamationIndex,
+      voidTotalErosionAtomizationIndex: out.state.nationalVoidTotalErosionAtomizationIndex,
+      existentialAbsoluteNullityInevitabilityIndex: out.state.nationalExistentialAbsoluteNullityInevitabilityIndex,
       validationErrors,
     });
   }
@@ -9936,6 +9942,24 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
   const nullityImmutabilityStable = snapshots.every(
     (s) => s.existentialAbsoluteNullityImmutabilityIndex >= 8 && s.existentialAbsoluteNullityImmutabilityIndex <= 100,
   );
+  const omniCoalescenceStable = snapshots.every(
+    (s) => s.collapseOmniSingularityCoalescenceIndex >= 8 && s.collapseOmniSingularityCoalescenceIndex <= 100,
+  );
+  const erosionSublimationStable = snapshots.every(
+    (s) => s.voidTotalErosionSublimationIndex >= 8 && s.voidTotalErosionSublimationIndex <= 100,
+  );
+  const nullityPermanenceStable = snapshots.every(
+    (s) => s.existentialAbsoluteNullityPermanenceIndex >= 8 && s.existentialAbsoluteNullityPermanenceIndex <= 100,
+  );
+  const omniAmalgamationStable = snapshots.every(
+    (s) => s.collapseOmniSingularityAmalgamationIndex >= 8 && s.collapseOmniSingularityAmalgamationIndex <= 100,
+  );
+  const erosionAtomizationStable = snapshots.every(
+    (s) => s.voidTotalErosionAtomizationIndex >= 8 && s.voidTotalErosionAtomizationIndex <= 100,
+  );
+  const nullityInevitabilityStable = snapshots.every(
+    (s) => s.existentialAbsoluteNullityInevitabilityIndex >= 8 && s.existentialAbsoluteNullityInevitabilityIndex <= 100,
+  );
 
   const ok =
     monotonicRevision &&
@@ -10035,10 +10059,16 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
     nullityPerpetuityStable &&
     omniConsolidationStable &&
     erosionDissolutionStable &&
-    nullityImmutabilityStable;
+    nullityImmutabilityStable &&
+    omniCoalescenceStable &&
+    erosionSublimationStable &&
+    nullityPermanenceStable &&
+    omniAmalgamationStable &&
+    erosionAtomizationStable &&
+    nullityInevitabilityStable;
   const detail = ok
-    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, nullity immutability ${snapshots[snapshots.length - 1].existentialAbsoluteNullityImmutabilityIndex}`
-    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable} gridlock=${landUseGridlockStable} trap=${mobilityTrapStable} gap=${absorptionGapStable} relief=${reliefOverheadStable} drift=${corridorDriftStable} lag=${adaptationLagStable} fiscal=${fiscalCapacityStable} erosion=${networkErosionStable} horizon=${horizonRiskStable} integrity=${cohesionIntegrityStable} reliefEq=${reliefEquityGapStable} systemic=${systemicFragilityStable} govDecay=${governanceDecayStable} migStab=${migrationStabilityStable} ceiling=${adaptiveCeilingStable} fiscalGov=${fiscalGovernanceCouplingStable} netEq=${networkEquityTensionStable} frontier=${resilienceFrontierStable} metaGov=${metaGovernanceFatigueStable} capital=${capitalMobilityStable} compound=${compoundShockStable} trust=${institutionalTrustStable} liquidity=${liquidityFragmentationStable} cascade=${cascadingFailureStable} social=${socialContractStable} flight=${capitalFlightStable} irrecoverable=${irrecoverableCollapseStable} legitimacy=${legitimacyCollapseStable} contagion=${fiscalContagionStable} lockin=${terminalLockInStable} vacuum=${governanceVacuumStable} abandonment=${abandonmentSpiralStable} recovery=${recoveryImpossibilityStable} amplification=${cascadeAmplificationStable} hollow=${hollowContagionStable} depop=${depopulationLockStable} singularity=${collapseSingularityStable} void=${voidExpansionStable} continuity=${continuityFractureStable} horizon=${horizonConvergenceStable} totalization=${voidTotalizationStable} terminus=${terminusLockStable} absolute=${absoluteHorizonLockStable} finalization=${voidFinalizationStable} obliteration=${obliterationThresholdStable} seal=${singularitySealStable} annihilation=${voidAnnihilationStable} nullstate=${nullStateLockStable} point=${existencePointStable} front=${voidFrontStable} zero=${absoluteZeroStable} omni=${omniNodeStable} erosion=${erosionSurgeStable} nullity=${finalNullityStable} vertex=${totalVertexStable} terminal=${terminalErosionStable} ultimate=${ultimateNullitySealStable} apex=${singularityApexStable} complete=${completeTerminalityStable} closure=${nullityClosureStable} zenith=${singularityZenithStable} finality=${totalFinalityStable} verdict=${nullityVerdictStable} nexus=${singularityNexusStable} termination=${erosionTerminationStable} sentence=${nullitySentenceStable} culmination=${singularityCulminationStable} extinction=${erosionExtinctionStable} decree=${nullityDecreeStable} synthesis=${omniSynthesisStable} annihilation=${erosionAnnihilationStable} mandate=${nullityMandateStable} convergence=${omniConvergenceStable} obliteration=${erosionObliterationStable} binding=${nullityBindingStable} integration=${omniIntegrationStable} eradication=${erosionEradicationStable} continuity=${nullityContinuityStable} unification=${omniUnificationStable} elimination=${erosionEliminationStable} perpetuity=${nullityPerpetuityStable} consolidation=${omniConsolidationStable} dissolution=${erosionDissolutionStable} immutability=${nullityImmutabilityStable}`;
+    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, nullity inevitability ${snapshots[snapshots.length - 1].existentialAbsoluteNullityInevitabilityIndex}`
+    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable} gridlock=${landUseGridlockStable} trap=${mobilityTrapStable} gap=${absorptionGapStable} relief=${reliefOverheadStable} drift=${corridorDriftStable} lag=${adaptationLagStable} fiscal=${fiscalCapacityStable} erosion=${networkErosionStable} horizon=${horizonRiskStable} integrity=${cohesionIntegrityStable} reliefEq=${reliefEquityGapStable} systemic=${systemicFragilityStable} govDecay=${governanceDecayStable} migStab=${migrationStabilityStable} ceiling=${adaptiveCeilingStable} fiscalGov=${fiscalGovernanceCouplingStable} netEq=${networkEquityTensionStable} frontier=${resilienceFrontierStable} metaGov=${metaGovernanceFatigueStable} capital=${capitalMobilityStable} compound=${compoundShockStable} trust=${institutionalTrustStable} liquidity=${liquidityFragmentationStable} cascade=${cascadingFailureStable} social=${socialContractStable} flight=${capitalFlightStable} irrecoverable=${irrecoverableCollapseStable} legitimacy=${legitimacyCollapseStable} contagion=${fiscalContagionStable} lockin=${terminalLockInStable} vacuum=${governanceVacuumStable} abandonment=${abandonmentSpiralStable} recovery=${recoveryImpossibilityStable} amplification=${cascadeAmplificationStable} hollow=${hollowContagionStable} depop=${depopulationLockStable} singularity=${collapseSingularityStable} void=${voidExpansionStable} continuity=${continuityFractureStable} horizon=${horizonConvergenceStable} totalization=${voidTotalizationStable} terminus=${terminusLockStable} absolute=${absoluteHorizonLockStable} finalization=${voidFinalizationStable} obliteration=${obliterationThresholdStable} seal=${singularitySealStable} annihilation=${voidAnnihilationStable} nullstate=${nullStateLockStable} point=${existencePointStable} front=${voidFrontStable} zero=${absoluteZeroStable} omni=${omniNodeStable} erosion=${erosionSurgeStable} nullity=${finalNullityStable} vertex=${totalVertexStable} terminal=${terminalErosionStable} ultimate=${ultimateNullitySealStable} apex=${singularityApexStable} complete=${completeTerminalityStable} closure=${nullityClosureStable} zenith=${singularityZenithStable} finality=${totalFinalityStable} verdict=${nullityVerdictStable} nexus=${singularityNexusStable} termination=${erosionTerminationStable} sentence=${nullitySentenceStable} culmination=${singularityCulminationStable} extinction=${erosionExtinctionStable} decree=${nullityDecreeStable} synthesis=${omniSynthesisStable} annihilation=${erosionAnnihilationStable} mandate=${nullityMandateStable} convergence=${omniConvergenceStable} obliteration=${erosionObliterationStable} binding=${nullityBindingStable} integration=${omniIntegrationStable} eradication=${erosionEradicationStable} continuity=${nullityContinuityStable} unification=${omniUnificationStable} elimination=${erosionEliminationStable} perpetuity=${nullityPerpetuityStable} consolidation=${omniConsolidationStable} dissolution=${erosionDissolutionStable} immutability=${nullityImmutabilityStable} coalescence=${omniCoalescenceStable} sublimation=${erosionSublimationStable} permanence=${nullityPermanenceStable} amalgamation=${omniAmalgamationStable} atomization=${erosionAtomizationStable} inevitability=${nullityInevitabilityStable}`;
 
   return { ok, snapshots, detail };
 }
@@ -13387,6 +13417,34 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     composite.state.existentialAbsoluteNullityPermanence.every((p) => p.narrative.includes('existential absolute nullity permanence')),
     composite.state.existentialAbsoluteNullityPermanence[0]?.band ?? 'none',
   );
+
+  const collapseOmniSingularityAmalgamation = op10mA11ComputeRegionalCollapseOmniSingularityAmalgamation({
+    collapseOmniSingularityCoalescence: composite.state.collapseOmniSingularityCoalescence,
+    voidTotalErosionSublimation: composite.state.voidTotalErosionSublimation,
+    existentialAbsoluteNullityPermanence: composite.state.existentialAbsoluteNullityPermanence,
+  });
+  push(out, 'a11_339', composite.state.collapseOmniSingularityAmalgamation.length === 8 && composite.state.nationalCollapseOmniSingularityAmalgamationIndex === collapseOmniSingularityAmalgamation.nationalIndex, `omni amalgamation ${composite.state.nationalCollapseOmniSingularityAmalgamationIndex}`);
+
+  const voidTotalErosionAtomization = op10mA11ComputeInterregionalVoidTotalErosionAtomization({
+    voidTotalErosionSublimation: composite.state.voidTotalErosionSublimation,
+    collapseOmniSingularityCoalescence: composite.state.collapseOmniSingularityCoalescence,
+    voidExistenceAnnihilationFront: composite.state.voidExistenceAnnihilationFront,
+  });
+  push(out, 'a11_340', composite.state.voidTotalErosionAtomization.length === 8 && composite.state.nationalVoidTotalErosionAtomizationIndex === voidTotalErosionAtomization.nationalIndex, `erosion atomization ${composite.state.nationalVoidTotalErosionAtomizationIndex}`);
+
+  const existentialAbsoluteNullityInevitability = op10mA11ComputeSettlementExistentialAbsoluteNullityInevitability({
+    existentialAbsoluteNullityPermanence: composite.state.existentialAbsoluteNullityPermanence,
+    collapseOmniSingularityCoalescence: composite.state.collapseOmniSingularityCoalescence,
+    existentialFinalNullitySentence: composite.state.existentialFinalNullitySentence,
+  });
+  push(out, 'a11_341', composite.state.existentialAbsoluteNullityInevitability.length === 8 && composite.state.nationalExistentialAbsoluteNullityInevitabilityIndex === existentialAbsoluteNullityInevitability.nationalIndex, `nullity inevitability ${composite.state.nationalExistentialAbsoluteNullityInevitabilityIndex}`);
+
+  push(out, 'a11_342', composite.state.collapseOmniSingularityAmalgamation.every((a) => a.narrative.includes('collapse omni singularity amalgamation')), composite.state.collapseOmniSingularityAmalgamation[0]?.band ?? 'none');
+  push(out, 'a11_343', composite.derived.some((d) => d.kind === 'collapse_omni_singularity_amalgamation') || composite.state.collapseOmniSingularityAmalgamation.some((a) => a.band === 'total' || a.band === 'amalgamation'), composite.derived.map((d) => d.kind).join(', '));
+  push(out, 'a11_344', composite.derived.some((d) => d.kind === 'void_total_erosion_atomization') || composite.state.voidTotalErosionAtomization.some((a) => a.band === 'total' || a.band === 'complete_atomization'), composite.state.voidTotalErosionAtomization[0]?.band ?? 'none');
+  push(out, 'a11_345', composite.persisted.lastVoidTotalErosionAtomizationIndex === composite.state.nationalVoidTotalErosionAtomizationIndex, `persisted atomization ${composite.persisted.lastVoidTotalErosionAtomizationIndex}`);
+  push(out, 'a11_346', composite.derived.some((d) => d.kind === 'existential_absolute_nullity_inevitability') || composite.state.existentialAbsoluteNullityInevitability.some((i) => i.band === 'absolute' || i.band === 'total_inevitability'), composite.state.existentialAbsoluteNullityInevitability[0]?.band ?? 'none');
+  push(out, 'a11_347', composite.state.existentialAbsoluteNullityInevitability.every((i) => i.narrative.includes('existential absolute nullity inevitability')), composite.state.existentialAbsoluteNullityInevitability[0]?.band ?? 'none');
 
   return out;
 }
