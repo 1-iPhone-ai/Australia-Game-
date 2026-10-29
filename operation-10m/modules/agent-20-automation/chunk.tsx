@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-20-automation
-// OP10M_MANIFEST_SHA256: 370baa050cbccb71cc2397daec9151c2fa6951184f4d257ebe789505f959ecb2
-// OP10M_MODULE_VERSION: 10m.1.20.0-agent20
+// OP10M_MANIFEST_SHA256: e304888378f60ba61c94b63e3a081157070303475acd552c19921a9e8e2bf10b
+// OP10M_MODULE_VERSION: 10m.1.21.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
@@ -9931,6 +9931,412 @@ export function runO10Agent20IdleGovernanceProgramWaveIntegrationGateSelfTests()
 }
 
 
+// --- source: automation-idle-governance-program-wave-integration-gate-compare.ts ---
+
+export interface O10IdleGovernanceProgramWaveIntegrationGateCompareResult {
+  schema: '10m.agent20.idle-governance-program-wave-integration-gate-compare.v1';
+  waveRound: number;
+  parityOk: boolean;
+  mismatches: string[];
+  summaryLine: string;
+}
+
+function compareIntegrationGateFields(
+  baseline: O10IdleGovernanceProgramWaveIntegrationGateResult,
+  candidate: O10IdleGovernanceProgramWaveIntegrationGateResult
+): string[] {
+  const mismatches: string[] = [];
+  if (baseline.waveRound !== candidate.waveRound) {
+    mismatches.push(`wave_round ${baseline.waveRound} vs ${candidate.waveRound}`);
+  }
+  if (baseline.gateOpen !== candidate.gateOpen) {
+    mismatches.push(`gate_open ${baseline.gateOpen} vs ${candidate.gateOpen}`);
+  }
+  if (baseline.exportCompare.parityOk !== candidate.exportCompare.parityOk) {
+    mismatches.push('export_compare_parity');
+  }
+  if (baseline.replayParity.replayParityOk !== candidate.replayParity.replayParityOk) {
+    mismatches.push('replay_parity');
+  }
+  if (
+    baseline.primaryExport.payload.runSucceeded !== candidate.primaryExport.payload.runSucceeded
+  ) {
+    mismatches.push('primary_run_succeeded');
+  }
+  return mismatches;
+}
+
+/** Round-21 twin integration gate regression compare. */
+export function compareIdleGovernanceProgramWaveIntegrationGates(
+  baseline: O10IdleGovernanceProgramWaveIntegrationGateResult,
+  candidate: O10IdleGovernanceProgramWaveIntegrationGateResult
+): O10IdleGovernanceProgramWaveIntegrationGateCompareResult {
+  const mismatches = compareIntegrationGateFields(baseline, candidate);
+  const waveRound = baseline.waveRound;
+  const parityOk = mismatches.length === 0;
+
+  const summaryLine = [
+    'gov_program_wave_integration_gate_compare',
+    `round=${waveRound}`,
+    `parity=${parityOk}`,
+    `mismatches=${mismatches.length}`,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-wave-integration-gate-compare.v1',
+    waveRound,
+    parityOk,
+    mismatches,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramWaveIntegrationGateCompareSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const twin = (): O10IdleGovernanceProgramWaveIntegrationGateResult => ({
+    schema: '10m.agent20.idle-governance-program-wave-integration-gate.v1',
+    waveRound: 21,
+    gateOpen: true,
+    gateMarkdown: 'md',
+    summaryLine: 'gate',
+    primaryExport: {
+      payload: { runSucceeded: true },
+    } as O10IdleGovernanceProgramWaveIntegrationGateResult['primaryExport'],
+    twinExport: {} as O10IdleGovernanceProgramWaveIntegrationGateResult['twinExport'],
+    exportCompare: {
+      parityOk: true,
+      summaryLine: 'cmp',
+    } as O10IdleGovernanceProgramWaveIntegrationGateResult['exportCompare'],
+    replayParity: {
+      replayParityOk: true,
+      summaryLine: 'rpl',
+    } as O10IdleGovernanceProgramWaveIntegrationGateResult['replayParity'],
+  });
+
+  const ok = compareIdleGovernanceProgramWaveIntegrationGates(twin(), twin());
+  push('gov_prog_int_gate_cmp_parity', 'identical gates report parity', ok.parityOk === true);
+
+  const bad = compareIdleGovernanceProgramWaveIntegrationGates(twin(), { ...twin(), gateOpen: false });
+  push(
+    'gov_prog_int_gate_cmp_drift',
+    'gate_open drift surfaces mismatch',
+    bad.parityOk === false && bad.mismatches.some(m => m.startsWith('gate_open'))
+  );
+
+  push(
+    'gov_prog_int_gate_cmp_schema',
+    'integration gate compare schema marker',
+    ok.schema === '10m.agent20.idle-governance-program-wave-integration-gate-compare.v1'
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-wave-handoff-bundle.ts ---
+
+export interface O10IdleGovernanceProgramWaveHandoffBundlePayload {
+  schema: '10m.agent20.idle-governance-program-wave-handoff-bundle.v1';
+  waveRound: number;
+  gateOpen: boolean;
+  integrationHookLines: string[];
+  handoffDigestLines: string[];
+}
+
+export interface O10IdleGovernanceProgramWaveHandoffBundleResult {
+  schema: '10m.agent20.idle-governance-program-wave-handoff-bundle.v1';
+  waveRound: number;
+  gate: O10IdleGovernanceProgramWaveIntegrationGateResult;
+  payload: O10IdleGovernanceProgramWaveHandoffBundlePayload;
+  bundleMarkdown: string;
+  summaryLine: string;
+}
+
+function buildHandoffDigestLines(gate: O10IdleGovernanceProgramWaveIntegrationGateResult): string[] {
+  const exp = gate.primaryExport.payload;
+  return [
+    `O10_AGENT20_WAVE_HANDOFF round=${gate.waveRound}`,
+    `O10_AGENT20_WAVE_INTEGRATION_GATE open=${gate.gateOpen}`,
+    `O10_AGENT20_WAVE_EXPORT_COMPARE parity=${gate.exportCompare.parityOk}`,
+    `O10_AGENT20_WAVE_REPLAY parity=${gate.replayParity.replayParityOk}`,
+    `O10_AGENT20_WAVE_DIGEST run_ok=${exp.runSucceeded} band=${exp.assemblyDigest.scorecardBand}`,
+  ];
+}
+
+/** Round-21 handoff bundle flattening integration gate for scale-wave coordination. */
+export function bundleIdleGovernanceProgramWaveHandoff(
+  gate: O10IdleGovernanceProgramWaveIntegrationGateResult
+): O10IdleGovernanceProgramWaveHandoffBundleResult {
+  const integrationHookLines = gate.primaryExport.payload.integrationHookLines;
+  const handoffDigestLines = buildHandoffDigestLines(gate);
+
+  const payload: O10IdleGovernanceProgramWaveHandoffBundlePayload = {
+    schema: '10m.agent20.idle-governance-program-wave-handoff-bundle.v1',
+    waveRound: gate.waveRound,
+    gateOpen: gate.gateOpen,
+    integrationHookLines: [...integrationHookLines],
+    handoffDigestLines,
+  };
+
+  const bundleMarkdown = [
+    '# Agent 20 idle governance wave handoff bundle',
+    '',
+    ...handoffDigestLines.map(line => `- ${line}`),
+    '',
+    gate.gateMarkdown,
+  ].join('\n');
+
+  const summaryLine = [
+    'gov_program_wave_handoff_bundle',
+    `round=${gate.waveRound}`,
+    `open=${gate.gateOpen}`,
+    `digests=${handoffDigestLines.length}`,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-wave-handoff-bundle.v1',
+    waveRound: gate.waveRound,
+    gate,
+    payload,
+    bundleMarkdown,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramWaveHandoffBundleSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const mockGate = (): O10IdleGovernanceProgramWaveIntegrationGateResult => ({
+    schema: '10m.agent20.idle-governance-program-wave-integration-gate.v1',
+    waveRound: 21,
+    gateOpen: true,
+    gateMarkdown: '# gate',
+    summaryLine: 'gate',
+    exportCompare: { parityOk: true, summaryLine: 'c' } as O10IdleGovernanceProgramWaveIntegrationGateResult['exportCompare'],
+    replayParity: { replayParityOk: true, summaryLine: 'r' } as O10IdleGovernanceProgramWaveIntegrationGateResult['replayParity'],
+    twinExport: {} as O10IdleGovernanceProgramWaveIntegrationGateResult['twinExport'],
+    primaryExport: {
+      payload: {
+        runSucceeded: true,
+        integrationHookLines: ['hook-a'],
+        assemblyDigest: {
+          waveRound: 21,
+          gateOpen: true,
+          scorecardBand: 'green',
+          waveRecommendation: 'advance_scale_wave',
+          closeoutParityOk: true,
+          scorecardParityOk: true,
+          assemblyReady: true,
+        },
+      },
+    } as O10IdleGovernanceProgramWaveIntegrationGateResult['primaryExport'],
+  });
+
+  const bundle = bundleIdleGovernanceProgramWaveHandoff(mockGate());
+  push(
+    'gov_prog_handoff_bundle_lines',
+    'handoff bundle includes digest and hook lines',
+    bundle.payload.handoffDigestLines.length === 5 &&
+      bundle.payload.integrationHookLines[0] === 'hook-a' &&
+      bundle.bundleMarkdown.includes('handoff bundle')
+  );
+
+  push(
+    'gov_prog_handoff_bundle_schema',
+    'handoff bundle schema marker',
+    bundle.schema === '10m.agent20.idle-governance-program-wave-handoff-bundle.v1'
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-wave-cycle-closeout.ts ---
+  createEmptyIdleGovernanceProgramRegistry,
+  type O10IdleGovernanceProgramRegistry,
+} from './automation-idle-governance-program-registry.js';
+
+export type O10IdleGovernanceProgramWaveCycleRecommendation =
+  | 'advance_scale_wave_cycle'
+  | 'hold_scale_wave_cycle'
+  | 'escalate_scale_wave_cycle';
+
+export interface O10IdleGovernanceProgramWaveCycleCloseoutResult {
+  schema: '10m.agent20.idle-governance-program-wave-cycle-closeout.v1';
+  waveRound: number;
+  primaryGate: ReturnType<typeof gateIdleGovernanceProgramWaveIntegration>;
+  twinGate: ReturnType<typeof gateIdleGovernanceProgramWaveIntegration>;
+  gateCompare: ReturnType<typeof compareIdleGovernanceProgramWaveIntegrationGates>;
+  handoffBundle: ReturnType<typeof bundleIdleGovernanceProgramWaveHandoff>;
+  cycleRecommendation: O10IdleGovernanceProgramWaveCycleRecommendation;
+  cycleCloseoutMarkdown: string;
+  summaryLine: string;
+}
+
+function deriveCycleRecommendation(
+  gateOpen: boolean,
+  gateCompareParity: boolean
+): O10IdleGovernanceProgramWaveCycleRecommendation {
+  if (gateOpen && gateCompareParity) return 'advance_scale_wave_cycle';
+  if (!gateCompareParity) return 'escalate_scale_wave_cycle';
+  return 'hold_scale_wave_cycle';
+}
+
+export function buildIdleGovernanceProgramWaveCycleCloseoutMarkdown(
+  waveRound: number,
+  recommendation: O10IdleGovernanceProgramWaveCycleRecommendation,
+  handoffBundle: ReturnType<typeof bundleIdleGovernanceProgramWaveHandoff>
+): string {
+  return [
+    '# Agent 20 idle governance wave cycle closeout',
+    '',
+    `- wave_round=${waveRound}`,
+    `- cycle_recommendation=${recommendation}`,
+    '',
+    handoffBundle.bundleMarkdown,
+  ].join('\n');
+}
+
+/** Round-21 cycle closeout: integration gate, twin compare, handoff bundle, cycle recommendation. */
+export function runIdleGovernanceProgramWaveCycleCloseout(
+  spec: O10IdleOpsWindowSpec,
+  rule: PortableHumanAutomationRule,
+  startTurn: number,
+  requestedCycles: number,
+  waveRound: number,
+  priorRegistry: O10IdleGovernanceProgramRegistry = createEmptyIdleGovernanceProgramRegistry()
+): O10IdleGovernanceProgramWaveCycleCloseoutResult {
+  const primaryGate = gateIdleGovernanceProgramWaveIntegration(
+    spec,
+    rule,
+    startTurn,
+    requestedCycles,
+    waveRound,
+    priorRegistry
+  );
+  const twinGate = gateIdleGovernanceProgramWaveIntegration(
+    spec,
+    rule,
+    startTurn,
+    requestedCycles,
+    waveRound,
+    priorRegistry
+  );
+  const gateCompare = compareIdleGovernanceProgramWaveIntegrationGates(primaryGate, twinGate);
+  const handoffBundle = bundleIdleGovernanceProgramWaveHandoff(primaryGate);
+  const cycleRecommendation = deriveCycleRecommendation(primaryGate.gateOpen, gateCompare.parityOk);
+  const cycleCloseoutMarkdown = buildIdleGovernanceProgramWaveCycleCloseoutMarkdown(
+    waveRound,
+    cycleRecommendation,
+    handoffBundle
+  );
+
+  const summaryLine = [
+    'gov_program_wave_cycle_closeout',
+    `round=${waveRound}`,
+    `rec=${cycleRecommendation}`,
+    gateCompare.summaryLine,
+    handoffBundle.summaryLine,
+  ].join(' | ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-wave-cycle-closeout.v1',
+    waveRound,
+    primaryGate,
+    twinGate,
+    gateCompare,
+    handoffBundle,
+    cycleRecommendation,
+    cycleCloseoutMarkdown,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramWaveCycleCloseoutSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const sampleRule: PortableHumanAutomationRule = {
+    id: 'cyc1',
+    name: 'Cycle closeout',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 5,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 10, maxRunsTotal: null, cooldownTurns: 0 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: null,
+      lastRunTurn: null,
+      runsToday: 0,
+      runsTodayDay: -1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+  };
+
+  const calmSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 2,
+    humanCommittedEvery: 1,
+    idleMsStart: 0,
+    idleMsStep: 0,
+    consecutiveIdleStart: 0,
+  };
+
+  const closeout = runIdleGovernanceProgramWaveCycleCloseout(calmSpec, sampleRule, 1, 3, 21);
+  push(
+    'gov_prog_cycle_closeout_calm',
+    'calm cycle closeout advances with gate parity',
+    closeout.cycleRecommendation === 'advance_scale_wave_cycle' &&
+      closeout.gateCompare.parityOk === true &&
+      closeout.cycleCloseoutMarkdown.includes('cycle closeout')
+  );
+
+  const closeout2 = runIdleGovernanceProgramWaveCycleCloseout(
+    calmSpec,
+    sampleRule,
+    3,
+    2,
+    21,
+    closeout.primaryGate.primaryExport.run.primaryGate.primaryCloseout.subject.executive.director
+      .operations.registry
+  );
+  push(
+    'gov_prog_cycle_closeout_chain',
+    'chained cycle closeout accumulates registry',
+    closeout2.primaryGate.primaryExport.run.primaryGate.primaryCloseout.subject.executive.director
+      .registryRollup.entryCount === 2 &&
+      closeout2.summaryLine.includes('gov_program_wave_cycle_closeout')
+  );
+
+  push(
+    'gov_prog_cycle_closeout_schema',
+    'cycle closeout schema marker',
+    closeout.schema === '10m.agent20.idle-governance-program-wave-cycle-closeout.v1'
+  );
+
+  return results;
+}
+
+
 // --- source: index.ts ---
 
 
@@ -10026,6 +10432,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceProgramWaveAssemblyExportCompareSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveAssemblyReplayParitySelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveIntegrationGateSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveIntegrationGateCompareSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveHandoffBundleSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveCycleCloseoutSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }

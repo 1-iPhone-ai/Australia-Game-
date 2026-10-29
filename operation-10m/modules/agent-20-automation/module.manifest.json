@@ -1,13 +1,13 @@
 {
   "moduleId": "agent-20-automation",
-  "moduleVersion": "10m.1.20.0-agent20",
+  "moduleVersion": "10m.1.21.0-agent20",
   "slot": "append-only-self-tests",
   "touchesSaveFormat": true,
   "anchorComment": "O10_AGENT20_INTEGRATION_ANCHOR",
   "sourceRoot": "operation-10m/agent-20-automation/src",
   "regenerate": "node operation-10m/agent-20-automation/scripts/build-chunk.mjs",
-  "chunkSha256": "370baa050cbccb71cc2397daec9151c2fa6951184f4d257ebe789505f959ecb2",
-  "chunkLineCount": 10035,
+  "chunkSha256": "e304888378f60ba61c94b63e3a081157070303475acd552c19921a9e8e2bf10b",
+  "chunkLineCount": 10444,
   "sourceFiles": [
     "types.ts",
     "conditional-actions.ts",
@@ -74,6 +74,9 @@
     "automation-idle-governance-program-wave-assembly-export-compare.ts",
     "automation-idle-governance-program-wave-assembly-replay-parity.ts",
     "automation-idle-governance-program-wave-integration-gate.ts",
+    "automation-idle-governance-program-wave-integration-gate-compare.ts",
+    "automation-idle-governance-program-wave-handoff-bundle.ts",
+    "automation-idle-governance-program-wave-cycle-closeout.ts",
     "index.ts"
   ]
 }
