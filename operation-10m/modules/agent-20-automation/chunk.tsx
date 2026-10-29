@@ -1,12 +1,12 @@
 // OP10M_MODULE_BEGIN agent-20-automation
-// OP10M_MANIFEST_SHA256: 917a498cd73e120e51da55628a5b315d31d8f902f2bc39a40947c6a5c182abc9
-// OP10M_MODULE_VERSION: 10m.1.2.0-agent20
+// OP10M_MANIFEST_SHA256: 78db3ccf6473f6788e43b7fe753c02270be51a986733770a22e7b06e2ebb8c50
+// OP10M_MODULE_VERSION: 10m.1.3.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
 /** Operation 10M Agent 20 — shared types (mirror V9.4 SECTION 20AN + HA2). */
 
-export const O10_AGENT20_MODULE_VERSION = '10m.1.2.0-agent20';
+export const O10_AGENT20_MODULE_VERSION = '10m.1.3.0-agent20';
 export const O10_AGENT20_SCHEMA_VERSION = '10.14.0-agent20';
 
 export const O10_AUTOMATION_PATH_IDS = [
@@ -264,6 +264,34 @@ export interface AutomationRuleConflict {
   otherRuleId: string;
   kind: 'priority_collision' | 'trigger_overlap';
   message: string;
+}
+
+export type O10AutomationIntentStatus = 'queued' | 'running' | 'completed' | 'cancelled' | 'blocked';
+
+export interface O10AutomationIntent {
+  id: string;
+  ruleId: string;
+  actionType: string;
+  priority: number;
+  enqueuedTurn: number;
+  enqueuedDay: number;
+  resolvedCost: number;
+  status: O10AutomationIntentStatus;
+  reason?: string;
+}
+
+export interface O10AutomationIntentQueue {
+  maxDepth: number;
+  items: O10AutomationIntent[];
+}
+
+export interface O10DayBoundaryResult {
+  allowed: boolean;
+  reason: string;
+  nextDay: number;
+  steward: NationalStewardPersisted;
+  turnSpendReset: boolean;
+  cycleRolled: boolean;
 }
 
 export interface NationalStewardPlanStep {
@@ -1690,6 +1718,8 @@ export interface O10TurnComputeInput {
   autoModeReplayRecording: boolean;
   dialogBlockingTime: boolean;
   matchEnded?: boolean;
+  advanceDayAfterTurn?: boolean;
+  requireEndTurn?: boolean;
   gameState: Record<string, unknown>;
   settings: Record<string, unknown>;
   automationRules: PortableHumanAutomationRule[];
@@ -2176,6 +2206,446 @@ function createEmptyEffects(): NonNullable<O10TurnComputeState['effects']> {
 }
 
 
+// --- source: automation-intent-queue.ts ---
+  O10AutomationIntent,
+  O10AutomationIntentQueue,
+  O10SelfTestResult,
+  PortableHumanAutomationRule,
+} from './types.js';
+
+export const O10_DEFAULT_INTENT_QUEUE_DEPTH = 8;
+
+export function createEmptyAutomationIntentQueue(
+  maxDepth = O10_DEFAULT_INTENT_QUEUE_DEPTH
+): O10AutomationIntentQueue {
+  return { maxDepth, items: [] };
+}
+
+export function enqueueAutomationIntent(
+  queue: O10AutomationIntentQueue,
+  intent: O10AutomationIntent
+): { queue: O10AutomationIntentQueue; accepted: boolean; reason?: string } {
+  if (queue.items.some(i => i.ruleId === intent.ruleId && i.status === 'queued')) {
+    return { queue, accepted: false, reason: 'Duplicate rule already queued.' };
+  }
+  if (queue.items.filter(i => i.status === 'queued' || i.status === 'running').length >= queue.maxDepth) {
+    return { queue, accepted: false, reason: 'Intent queue at capacity.' };
+  }
+  return { queue: { ...queue, items: [...queue.items, intent] }, accepted: true };
+}
+
+export function intentFromSelectedRule(
+  rule: PortableHumanAutomationRule,
+  turn: number,
+  day: number,
+  idSuffix = '0'
+): O10AutomationIntent {
+  return {
+    id: `intent_${rule.id}_${turn}_${idSuffix}`,
+    ruleId: rule.id,
+    actionType: rule.actionType,
+    priority: rule.priority,
+    enqueuedTurn: turn,
+    enqueuedDay: day,
+    resolvedCost: rule.resolvedCost,
+    status: 'queued',
+  };
+}
+
+export function dequeueHighestPriorityIntent(
+  queue: O10AutomationIntentQueue,
+  turn: number
+): { queue: O10AutomationIntentQueue; intent: O10AutomationIntent | null } {
+  const queued = queue.items.filter(i => i.status === 'queued' && i.enqueuedTurn <= turn);
+  if (queued.length === 0) return { queue, intent: null };
+  const pick = [...queued].sort((a, b) => b.priority - a.priority)[0];
+  const items = queue.items.map(i =>
+    i.id === pick.id ? { ...i, status: 'running' as const } : i
+  );
+  return { queue: { ...queue, items }, intent: { ...pick, status: 'running' } };
+}
+
+export function completeAutomationIntent(
+  queue: O10AutomationIntentQueue,
+  intentId: string,
+  status: 'completed' | 'cancelled' | 'blocked',
+  reason?: string
+): O10AutomationIntentQueue {
+  return {
+    ...queue,
+    items: queue.items.map(i =>
+      i.id === intentId ? { ...i, status, reason: reason || i.reason } : i
+    ),
+  };
+}
+
+export function pruneAutomationIntentHistory(
+  queue: O10AutomationIntentQueue,
+  keep = 32
+): O10AutomationIntentQueue {
+  return { ...queue, items: queue.items.slice(-keep) };
+}
+
+export function runO10Agent20IntentQueueSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  let q = createEmptyAutomationIntentQueue(2);
+  const a = intentFromSelectedRule(
+    {
+      id: 'r1',
+      name: 'A',
+      enabled: true,
+      authorityDisabled: false,
+      priority: 5,
+      activeFromDay: 0,
+      activeUntilDay: 9,
+      trigger: { type: 'turn_start' },
+      conditions: null,
+      limits: { maxRunsPerDay: 1, maxRunsTotal: null, cooldownTurns: 0 },
+      safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 3 },
+      stats: {
+        totalRuns: 0,
+        totalSuccesses: 0,
+        totalSkipped: 0,
+        totalFailed: 0,
+        lastRunDay: null,
+        lastRunTurn: null,
+        runsToday: 0,
+        runsTodayDay: -1,
+        consecutiveNoChangeCount: 0,
+        lastResultSummary: '',
+      },
+      actionType: 'sell',
+      resolvedCost: 0,
+      spendableCash: 100,
+    },
+    1,
+    1
+  );
+  const e1 = enqueueAutomationIntent(q, a);
+  q = e1.queue;
+  push('enqueue_ok', 'accepts first intent', e1.accepted === true);
+  const dup = enqueueAutomationIntent(q, { ...a, id: 'intent_dup' });
+  push('enqueue_dup', 'rejects duplicate rule', dup.accepted === false);
+  const e2 = enqueueAutomationIntent(q, { ...a, id: 'i2', ruleId: 'r2', priority: 9 });
+  q = e2.queue;
+  const e3 = enqueueAutomationIntent(q, { ...a, id: 'i3', ruleId: 'r3' });
+  push('enqueue_cap', 'respects max depth', e3.accepted === false);
+  const { queue: q2, intent } = dequeueHighestPriorityIntent(q, 1);
+  push('dequeue_prio', 'dequeues highest priority', intent?.ruleId === 'r2' && intent.status === 'running');
+  const q3 = completeAutomationIntent(q2, intent!.id, 'completed');
+  push('complete', 'marks intent completed', q3.items.find(i => i.id === intent!.id)?.status === 'completed');
+
+  return results;
+}
+
+
+// --- source: day-boundary-compute.ts ---
+
+export interface O10DayBoundaryInput {
+  currentDay: number;
+  currentTurn: number;
+  safeTimeCtx: SafeTimeAdvanceContext;
+  steward: NationalStewardPersisted;
+  humanCommittedOnLastTurn: boolean;
+  msSinceLastHumanInput: number;
+  msSinceLastCommittedAction: number;
+}
+
+export function computeO10DayBoundary(input: O10DayBoundaryInput): O10DayBoundaryResult {
+  const verdict = canAdvanceDay(input.safeTimeCtx);
+  if (!verdict.allowed) {
+    return {
+      allowed: false,
+      reason: verdict.reason,
+      nextDay: input.currentDay,
+      steward: input.steward,
+      turnSpendReset: false,
+      cycleRolled: false,
+    };
+  }
+
+  let steward = tickIdleNationalStewardTelemetry(input.steward, {
+    msSinceLastHumanInput: input.msSinceLastHumanInput,
+    msSinceLastCommittedAction: input.msSinceLastCommittedAction,
+    humanCommittedThisTurn: input.humanCommittedOnLastTurn,
+    turn: input.currentTurn,
+  });
+
+  const cycleRolled =
+    input.currentTurn > steward.cycleStartTurn + steward.spendingCap.cycleTurns;
+  if (cycleRolled) {
+    steward = {
+      ...steward,
+      cycleSpendAccumulator: 0,
+      cycleStartTurn: input.currentTurn,
+    };
+  }
+
+  steward = {
+    ...steward,
+    turnSpendAccumulator: 0,
+    idleTelemetry: {
+      ...steward.idleTelemetry,
+      consecutiveIdleTurns: input.humanCommittedOnLastTurn ? 0 : steward.idleTelemetry.consecutiveIdleTurns,
+    },
+  };
+
+  return {
+    allowed: true,
+    reason: '',
+    nextDay: input.currentDay + 1,
+    steward,
+    turnSpendReset: true,
+    cycleRolled,
+  };
+}
+
+export function dayBoundaryFromComputeState(
+  state: O10TurnComputeState,
+  input: Omit<O10DayBoundaryInput, 'steward' | 'safeTimeCtx'> & { safeTimeCtx: SafeTimeAdvanceContext }
+): O10DayBoundaryResult {
+  const steward = state.effects?.steward || createDefaultAutonomousIdleNationalPersisted();
+  return computeO10DayBoundary({ ...input, steward });
+}
+
+export function runO10Agent20DayBoundarySelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const baseCtx: SafeTimeAdvanceContext = {
+    gameMode: 'game',
+    matchEnded: false,
+    currentActorId: 'player',
+    humanAutomationEnabled: true,
+    humanAutomationExecuting: false,
+    pendingHumanAutomationApprovals: 0,
+    pendingGenericApprovals: 0,
+    copilotTakeoverActive: false,
+    copilotStepInFlight: false,
+    playerInTransit: false,
+    nationalStewardPlanBlocked: false,
+    nationalStewardPaused: false,
+    autoModeReplayRecording: false,
+    dialogBlockingTime: false,
+  };
+
+  const ok = computeO10DayBoundary({
+    currentDay: 2,
+    currentTurn: 8,
+    safeTimeCtx: baseCtx,
+    steward: { ...createDefaultAutonomousIdleNationalPersisted(), turnSpendAccumulator: 500 },
+    humanCommittedOnLastTurn: true,
+    msSinceLastHumanInput: 1000,
+    msSinceLastCommittedAction: 1000,
+  });
+  push('day_ok', 'allows day when safe', ok.allowed && ok.nextDay === 3 && ok.turnSpendReset);
+  push('day_reset_spend', 'resets turn spend accumulator', ok.steward.turnSpendAccumulator === 0);
+
+  const blocked = computeO10DayBoundary({
+    currentDay: 2,
+    currentTurn: 8,
+    safeTimeCtx: { ...baseCtx, pendingGenericApprovals: 2 },
+    steward: createDefaultAutonomousIdleNationalPersisted(),
+    humanCommittedOnLastTurn: false,
+    msSinceLastHumanInput: 0,
+    msSinceLastCommittedAction: 0,
+  });
+  push('day_block', 'blocks day on approvals', blocked.allowed === false);
+
+  return results;
+}
+
+
+// --- source: scenario-runner.ts ---
+  completeAutomationIntent,
+  createEmptyAutomationIntentQueue,
+  dequeueHighestPriorityIntent,
+  enqueueAutomationIntent,
+  intentFromSelectedRule,
+} from './automation-intent-queue.js';
+  createDefaultO10TurnComputeState,
+  type O10TurnComputeInput,
+} from './turn-compute-engine.js';
+
+export interface O10ScenarioTurnSpec {
+  label: string;
+  patch: Partial<O10TurnComputeInput> & {
+    advanceDayAfterTurn?: boolean;
+    requireEndTurn?: boolean;
+  };
+}
+
+export interface O10ScenarioRunResult {
+  labels: string[];
+  digests: string[];
+  violations: string[];
+  finalState: import('./turn-compute-engine.js').O10TurnComputeState;
+}
+
+export interface O10ScenarioOptions {
+  hooks?: Parameters<typeof simulateO10IdleAutomationTurn>[2];
+  queueIntents?: boolean;
+}
+
+/** Multi-turn scripted simulation with optional intent queue + day boundary checks. */
+export function runO10IdleAutomationScenario(
+  baseInput: O10TurnComputeInput,
+  steps: O10ScenarioTurnSpec[],
+  options: O10ScenarioOptions = {}
+): O10ScenarioRunResult {
+  const labels: string[] = [];
+  const digests: string[] = [];
+  const violations: string[] = [];
+  let state = createDefaultO10TurnComputeState();
+  let queue = createEmptyAutomationIntentQueue();
+
+  for (const step of steps) {
+    const merged: O10TurnComputeInput = {
+      ...baseInput,
+      ...step.patch,
+      conditionalCtx: step.patch.conditionalCtx || baseInput.conditionalCtx,
+      automationRules: step.patch.automationRules || baseInput.automationRules,
+      gameState: step.patch.gameState || baseInput.gameState,
+      settings: step.patch.settings || baseInput.settings,
+    };
+    const turn = simulateO10IdleAutomationTurn(merged, state, options.hooks);
+    labels.push(step.label);
+    digests.push(turn.digest);
+    state = turn.state;
+
+    if (options.queueIntents && turn.effects.selectedRule) {
+      const enq = enqueueAutomationIntent(
+        queue,
+        intentFromSelectedRule(turn.effects.selectedRule, merged.turn, merged.day, step.label)
+      );
+      if (enq.accepted) queue = enq.queue;
+      const { queue: q2, intent } = dequeueHighestPriorityIntent(queue, merged.turn);
+      queue = q2;
+      if (intent) {
+        queue = completeAutomationIntent(queue, intent.id, 'completed');
+      }
+    }
+
+    if (step.patch.advanceDayAfterTurn) {
+      const safeCtx = buildSafeTimeAdvanceContextFromIdle({
+        gameMode: merged.gameMode,
+        matchEnded: merged.matchEnded ?? false,
+        currentActorId: merged.actorId,
+        humanAutomationEnabled: merged.humanAutomationEnabled,
+        humanAutomationExecuting: merged.humanAutomationExecuting,
+        pendingHumanAutomationApprovals: merged.pendingHumanAutomationApprovals,
+        pendingGenericApprovals: merged.pendingGenericApprovals,
+        copilotTakeoverActive: merged.copilotTakeoverActive,
+        copilotStepInFlight: merged.copilotStepInFlight,
+        playerInTransit: merged.playerInTransit,
+        stewardPlanBlocked: Boolean(turn.effects.stewardStep?.blocked),
+        stewardPaused: turn.effects.steward.playerOverride.paused,
+        autoModeReplayRecording: merged.autoModeReplayRecording,
+        dialogBlockingTime: merged.dialogBlockingTime,
+      });
+      const day = dayBoundaryFromComputeState(state, {
+        currentDay: merged.day,
+        currentTurn: merged.turn,
+        safeTimeCtx: safeCtx,
+        humanCommittedOnLastTurn: merged.humanCommittedThisTurn,
+        msSinceLastHumanInput: merged.msSinceLastHumanInput,
+        msSinceLastCommittedAction: merged.msSinceLastCommittedAction,
+      });
+      if (!day.allowed) violations.push(`${step.label}:day_blocked:${day.reason}`);
+      else if (state.effects) state = { ...state, effects: { ...state.effects, steward: day.steward } };
+    }
+
+    if (turn.effects.endTurnAllowed === false && step.patch.requireEndTurn) {
+      violations.push(`${step.label}:end_turn_blocked`);
+    }
+  }
+
+  return { labels, digests, violations, finalState: state };
+}
+
+export function runO10Agent20ScenarioSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const base: O10TurnComputeInput = {
+    turn: 0,
+    day: 1,
+    actorId: 'player',
+    gameMode: 'game',
+    humanCommittedThisTurn: false,
+    msSinceLastHumanInput: 5000,
+    msSinceLastCommittedAction: 5000,
+    playerInTransit: false,
+    humanAutomationEnabled: true,
+    humanAutomationExecuting: false,
+    pendingHumanAutomationApprovals: 0,
+    pendingGenericApprovals: 0,
+    copilotTakeoverActive: false,
+    copilotStepInFlight: false,
+    autoModeReplayRecording: false,
+    dialogBlockingTime: false,
+    gameState: { turnCounter: 1 },
+    settings: { playerControlMode: 'manual' },
+    automationRules: [
+      {
+        id: 'auto1',
+        name: 'Auto',
+        enabled: true,
+        authorityDisabled: false,
+        priority: 2,
+        activeFromDay: 0,
+        activeUntilDay: 99,
+        trigger: { type: 'turn_start' },
+        conditions: null,
+        limits: { maxRunsPerDay: 9, maxRunsTotal: null, cooldownTurns: 0 },
+        safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 9 },
+        stats: {
+          totalRuns: 0,
+          totalSuccesses: 0,
+          totalSkipped: 0,
+          totalFailed: 0,
+          lastRunDay: null,
+          lastRunTurn: null,
+          runsToday: 0,
+          runsTodayDay: -1,
+          consecutiveNoChangeCount: 0,
+          lastResultSummary: '',
+        },
+        actionType: 'wait',
+        resolvedCost: 0,
+        spendableCash: 200,
+      },
+    ],
+    conditionalCtx: {
+      actor: { money: 200, inventory: [], currentRegion: 'NSW' },
+      currentDay: 1,
+      currentTurn: 1,
+      isNewDayForActor: false,
+      extendedTriggersEnabled: true,
+      settingsFlags: {},
+    },
+  };
+
+  const run = runO10IdleAutomationScenario(base, [
+    { label: 't1', patch: { turn: 1, day: 1 } },
+    { label: 't2', patch: { turn: 2, day: 1, humanAutomationExecuting: true, requireEndTurn: true } },
+    { label: 't3', patch: { turn: 3, day: 1, humanAutomationExecuting: false, advanceDayAfterTurn: true } },
+  ], { queueIntents: true });
+
+  push('scenario_steps', 'runs all scenario steps', run.labels.length === 3);
+  push('scenario_digests', 'unique digests per step', new Set(run.digests).size >= 2);
+  push('scenario_violation', 'detects blocked end turn', run.violations.some(v => v.includes('end_turn_blocked')));
+  push('scenario_queue', 'scenario completes without crash', run.finalState.lastTurnKey === 'player:3');
+
+  return results;
+}
+
+
 // --- source: index.ts ---
 
 
@@ -2217,6 +2687,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20TurnComputeSelfTests());
   results.push(...runO10Agent20TurnHooksSelfTests());
   results.push(...runO10Agent20SimulationSelfTests());
+  results.push(...runO10Agent20IntentQueueSelfTests());
+  results.push(...runO10Agent20DayBoundarySelfTests());
+  results.push(...runO10Agent20ScenarioSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }

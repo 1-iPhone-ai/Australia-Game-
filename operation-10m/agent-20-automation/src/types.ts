@@ -1,6 +1,6 @@
 /** Operation 10M Agent 20 — shared types (mirror V9.4 SECTION 20AN + HA2). */
 
-export const O10_AGENT20_MODULE_VERSION = '10m.1.2.0-agent20';
+export const O10_AGENT20_MODULE_VERSION = '10m.1.3.0-agent20';
 export const O10_AGENT20_SCHEMA_VERSION = '10.14.0-agent20';
 
 export const O10_AUTOMATION_PATH_IDS = [
@@ -258,6 +258,34 @@ export interface AutomationRuleConflict {
   otherRuleId: string;
   kind: 'priority_collision' | 'trigger_overlap';
   message: string;
+}
+
+export type O10AutomationIntentStatus = 'queued' | 'running' | 'completed' | 'cancelled' | 'blocked';
+
+export interface O10AutomationIntent {
+  id: string;
+  ruleId: string;
+  actionType: string;
+  priority: number;
+  enqueuedTurn: number;
+  enqueuedDay: number;
+  resolvedCost: number;
+  status: O10AutomationIntentStatus;
+  reason?: string;
+}
+
+export interface O10AutomationIntentQueue {
+  maxDepth: number;
+  items: O10AutomationIntent[];
+}
+
+export interface O10DayBoundaryResult {
+  allowed: boolean;
+  reason: string;
+  nextDay: number;
+  steward: NationalStewardPersisted;
+  turnSpendReset: boolean;
+  cycleRolled: boolean;
 }
 
 export interface NationalStewardPlanStep {

@@ -9,6 +9,9 @@ export * from './idle-automation-depth.js';
 export * from './turn-compute-engine.js';
 export * from './turn-hooks.js';
 export * from './idle-automation-simulation.js';
+export * from './automation-intent-queue.js';
+export * from './day-boundary-compute.js';
+export * from './scenario-runner.js';
 
 import type { O10SelfTestResult } from './types.js';
 import { runO10Agent20NationalStewardSelfTests } from './national-steward.js';
@@ -18,6 +21,9 @@ import { runO10Agent20IdleDepthSelfTests } from './idle-automation-depth.js';
 import { runO10Agent20TurnComputeSelfTests } from './turn-compute-engine.js';
 import { runO10Agent20TurnHooksSelfTests } from './turn-hooks.js';
 import { runO10Agent20SimulationSelfTests } from './idle-automation-simulation.js';
+import { runO10Agent20IntentQueueSelfTests } from './automation-intent-queue.js';
+import { runO10Agent20DayBoundarySelfTests } from './day-boundary-compute.js';
+import { runO10Agent20ScenarioSelfTests } from './scenario-runner.js';
 
 /** Full module self-test bundle for Agent 25 dev lab registration. */
 export function runO10Agent20ModuleSelfTests(): {
@@ -57,6 +63,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20TurnComputeSelfTests());
   results.push(...runO10Agent20TurnHooksSelfTests());
   results.push(...runO10Agent20SimulationSelfTests());
+  results.push(...runO10Agent20IntentQueueSelfTests());
+  results.push(...runO10Agent20DayBoundarySelfTests());
+  results.push(...runO10Agent20ScenarioSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }

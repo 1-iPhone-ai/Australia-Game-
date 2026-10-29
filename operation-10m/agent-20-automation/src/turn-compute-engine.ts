@@ -20,6 +20,8 @@ export interface O10TurnComputeInput {
   autoModeReplayRecording: boolean;
   dialogBlockingTime: boolean;
   matchEnded?: boolean;
+  advanceDayAfterTurn?: boolean;
+  requireEndTurn?: boolean;
   gameState: Record<string, unknown>;
   settings: Record<string, unknown>;
   automationRules: PortableHumanAutomationRule[];
