@@ -167,6 +167,8 @@ export function createDefaultOp10mNarrativeEngineState(): Op10mNarrativeEngineSt
       agent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitPasses: 0,
       scaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSeals: 0,
       agent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealPasses: 0,
+      scaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealeds: 0,
+      agent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealedPasses: 0,
     },
     regional: createDefaultRegionalContagionLedger(),
   };
@@ -523,6 +525,14 @@ export function sanitizeOp10mNarrativeEngineState(raw: unknown): Op10mNarrativeE
     base.telemetry.agent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealPasses = Math.max(
       0,
       Number(t.agent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealPasses) || 0
+    );
+    base.telemetry.scaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealeds = Math.max(
+      0,
+      Number(t.scaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealeds) || 0
+    );
+    base.telemetry.agent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealedPasses = Math.max(
+      0,
+      Number(t.agent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealedPasses) || 0
     );
   }
 

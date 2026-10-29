@@ -601,6 +601,14 @@ export interface Op10mTriggerRequireAgent25FullChunksHandoffClosureFinalizeSealS
   k: 'agent25_full_chunks_handoff_closure_finalize_seal_sync_latch_wave_ready_commit_seal';
 }
 
+export interface Op10mTriggerRequireScaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealed {
+  k: 'scale_wave_full_chunks_handoff_closure_finalize_seal_sync_latch_wave_ready_commit_sealed';
+}
+
+export interface Op10mTriggerRequireAgent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealed {
+  k: 'agent25_full_chunks_handoff_closure_finalize_seal_sync_latch_wave_ready_commit_sealed';
+}
+
 export type Op10mComputeTurnStage =
   | 'pre_simulation'
   | 'post_simulation'
@@ -743,7 +751,9 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequireScaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommit
   | Op10mTriggerRequireAgent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommit
   | Op10mTriggerRequireScaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSeal
-  | Op10mTriggerRequireAgent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSeal;
+  | Op10mTriggerRequireAgent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSeal
+  | Op10mTriggerRequireScaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealed
+  | Op10mTriggerRequireAgent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealed;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
@@ -923,6 +933,8 @@ export interface Op10mNarrativeEngineState {
     agent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitPasses: number;
     scaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSeals: number;
     agent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealPasses: number;
+    scaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealeds: number;
+    agent25FullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealedPasses: number;
   };
   regional?: Op10mRegionalContagionLedger;
   turnCompute?: Op10mTurnComputeLedger;

@@ -61,6 +61,7 @@ import { evaluateComputeTurnScaleWaveFullChunksHandoffClosureFinalizeSealSyncCom
 import { evaluateComputeTurnScaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCoordination } from './compute-turn-scale-wave-full-chunks-handoff-closure-finalize-seal-sync-latch-wave-ready-coordinator.ts';
 import { evaluateComputeTurnScaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitCoordination } from './compute-turn-scale-wave-full-chunks-handoff-closure-finalize-seal-sync-latch-wave-ready-commit-coordinator.ts';
 import { evaluateComputeTurnScaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealCoordination } from './compute-turn-scale-wave-full-chunks-handoff-closure-finalize-seal-sync-latch-wave-ready-commit-seal-coordinator.ts';
+import { evaluateComputeTurnScaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealedCoordination } from './compute-turn-scale-wave-full-chunks-handoff-closure-finalize-seal-sync-latch-wave-ready-commit-sealed-coordinator.ts';
 import type {
   Op10mChainDescriptor,
   Op10mComputeTurnStage,
@@ -621,6 +622,16 @@ export function executeOp10mNarrativeComputeTurnHook(
   simulation = handoffClosureFinalizeSealSyncLatchWaveReadyCommitSealPass.simulation;
   narrative = handoffClosureFinalizeSealSyncLatchWaveReadyCommitSealPass.narrative;
   log.push(...handoffClosureFinalizeSealSyncLatchWaveReadyCommitSealPass.log);
+
+  const handoffClosureFinalizeSealSyncLatchWaveReadyCommitSealedPass =
+    evaluateComputeTurnScaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchWaveReadyCommitSealedCoordination(
+      simulation,
+      narrative,
+      params.day
+    );
+  simulation = handoffClosureFinalizeSealSyncLatchWaveReadyCommitSealedPass.simulation;
+  narrative = handoffClosureFinalizeSealSyncLatchWaveReadyCommitSealedPass.narrative;
+  log.push(...handoffClosureFinalizeSealSyncLatchWaveReadyCommitSealedPass.log);
 
   const postSettle = settleOp10mComputeTurnDriftAfterReconcile(simulation, narrative);
   simulation = postSettle.simulation;

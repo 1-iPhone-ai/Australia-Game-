@@ -57,6 +57,7 @@ export * from './compute-turn-scale-wave-full-chunks-handoff-closure-finalize-se
 export * from './compute-turn-scale-wave-full-chunks-handoff-closure-finalize-seal-sync-latch-wave-ready-coordinator.ts';
 export * from './compute-turn-scale-wave-full-chunks-handoff-closure-finalize-seal-sync-latch-wave-ready-commit-coordinator.ts';
 export * from './compute-turn-scale-wave-full-chunks-handoff-closure-finalize-seal-sync-latch-wave-ready-commit-seal-coordinator.ts';
+export * from './compute-turn-scale-wave-full-chunks-handoff-closure-finalize-seal-sync-latch-wave-ready-commit-sealed-coordinator.ts';
 export * from './compute-turn-hooks.ts';
 export * from './chain-catalog-aggregate.ts';
 export {
