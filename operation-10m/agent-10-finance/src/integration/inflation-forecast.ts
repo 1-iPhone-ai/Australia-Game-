@@ -208,6 +208,14 @@ import {
   assessHouseholdWageInflationDeanchoring,
   type HouseholdWageInflationDeanchoringBand,
 } from '../inflation/household-wage-inflation-deanchoring.js';
+import {
+  assessCorporateMarkupInflationCascade,
+  type CorporateMarkupInflationCascadeBand,
+} from '../inflation/corporate-markup-inflation-cascade.js';
+import {
+  assessTradeTariffImportInflationPipeline,
+  type TradeTariffImportInflationPipelineBand,
+} from '../inflation/trade-tariff-import-inflation-pipeline.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -268,6 +276,8 @@ export interface InflationForecastPoint {
   uiPlayerInflationSalienceNudgeBand: UiPlayerInflationSalienceNudgeBand;
   fiscalIndexationInflationAnchorBreachBand: FiscalIndexationInflationAnchorBreachBand;
   householdWageInflationDeanchoringBand: HouseholdWageInflationDeanchoringBand;
+  corporateMarkupInflationCascadeBand: CorporateMarkupInflationCascadeBand;
+  tradeTariffImportInflationPipelineBand: TradeTariffImportInflationPipelineBand;
 }
 
 export interface InflationForecastPath {
@@ -764,6 +774,26 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const markupCascade = assessCorporateMarkupInflationCascade({
+      pricingPowerBand: inputs.highInflationScenario ? 'dominant' : inputs.creditShockActive ? 'strong' : 'moderate',
+      passThroughIntent: inputs.highInflationScenario ? 'full' : 'partial',
+      marginCompression: inputs.fiscalPressure === 'critical' ? 'severe' : 'mild',
+      corporatePricingInflationLatch: inputs.householdInflationScenarioActive,
+      markupPassThroughCascadeBand:
+        inputs.systemicLiquidityBand === 'critical' ? 'full' : inputs.creditShockActive ? 'partial' : 'absorbed',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const tariffPipeline = assessTradeTariffImportInflationPipeline({
+      tradeOpennessBand: 'open',
+      exchangeRatePressure: inputs.creditShockActive ? 'sharp_depreciation' : inputs.highInflationScenario ? 'depreciation' : 'stable',
+      commodityImportShare: 0.4,
+      importTariffInflationLatch: inputs.creditShockActive,
+      exchangePipelineStressBand:
+        inputs.systemicLiquidityBand === 'critical' ? 'ruptured' : inputs.fiscalPressure === 'critical' ? 'stressed' : 'stable',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -824,6 +854,8 @@ export function projectInflationForecastPath(
       uiPlayerInflationSalienceNudgeBand: uiSalienceNudge.nudgeBand,
       fiscalIndexationInflationAnchorBreachBand: fiscalBreach.breachBand,
       householdWageInflationDeanchoringBand: householdDeanchoring.deanchoringBand,
+      corporateMarkupInflationCascadeBand: markupCascade.cascadeBand,
+      tradeTariffImportInflationPipelineBand: tariffPipeline.pipelineBand,
     });
   }
 

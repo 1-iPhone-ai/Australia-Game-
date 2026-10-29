@@ -326,6 +326,14 @@ import {
   householdWageInflationDeanchoringScoreAdjustment,
 } from './inflation/household-wage-inflation-deanchoring.js';
 import {
+  assessCorporateMarkupInflationCascade,
+  corporateMarkupInflationCascadeScoreAdjustment,
+} from './inflation/corporate-markup-inflation-cascade.js';
+import {
+  assessTradeTariffImportInflationPipeline,
+  tradeTariffImportInflationPipelineScoreAdjustment,
+} from './inflation/trade-tariff-import-inflation-pipeline.js';
+import {
   mergeAgent22IntoMacroFinancialInputs,
   agent22UiBridgeIntegrationNote,
 } from './integration/agent22-ui-bridge.js';
@@ -731,7 +739,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r30');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r31');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -878,7 +886,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -970,7 +978,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -1069,7 +1077,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -1167,7 +1175,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -1265,7 +1273,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -1355,7 +1363,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r12_10',
       'agent21 r12 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalRecreationLeisurePressure !== undefined &&
         bundle.terminalProfessionalServicesFee !== undefined,
     );
@@ -1445,7 +1453,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r13_10',
       'agent21 r13 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalChildcareServicesPressure !== undefined &&
         bundle.terminalGovernmentChargesPressure !== undefined,
     );
@@ -1535,7 +1543,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r14_10',
       'agent21 r14 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalWaterUtilitiesPressure !== undefined &&
         bundle.terminalDomesticTravelPressure !== undefined,
     );
@@ -1625,7 +1633,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r15_10',
       'agent21 r15 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalConstructionMaterialsPressure !== undefined &&
         bundle.terminalRetailTradeMargin !== undefined,
     );
@@ -1717,7 +1725,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r16_10',
       'agent21 r16 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalFinancialServicesFee !== undefined &&
         bundle.terminalAgriculturalFarmgatePressure !== undefined,
     );
@@ -1813,7 +1821,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r17_10',
       'agent21 r17 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalPublicUtilitiesGridTariff !== undefined &&
         bundle.terminalUiInflationSalience !== undefined,
     );
@@ -1917,7 +1925,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r18_10',
       'agent21 r18 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalHousingMortgageEssential !== undefined &&
         bundle.terminalMacroTransmissionMerge !== undefined,
     );
@@ -2022,7 +2030,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r19_10',
       'agent21 r19 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalDynamicEventsInflationSpillover !== undefined &&
         bundle.terminalDashboardMapInflationOverlay !== undefined,
     );
@@ -2127,7 +2135,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r20_10',
       'agent21 r20 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalPublicFinanceDebtService !== undefined &&
         bundle.terminalPopulationLaborWage !== undefined,
     );
@@ -2237,7 +2245,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r21_10',
       'agent21 r21 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalWholesaleEnergyTransition !== undefined &&
         bundle.terminalUrbanRentDispersion !== undefined,
     );
@@ -2339,7 +2347,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r22_10',
       'agent21 r22 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalCorporatePricingPassThrough !== undefined &&
         bundle.terminalTradeExchangeImport !== undefined,
     );
@@ -2445,7 +2453,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r23_10',
       'agent21 r23 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalGuardianInflationIntervention !== undefined &&
         bundle.terminalTeamIntelligenceConsensus !== undefined,
     );
@@ -2551,7 +2559,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r24_10',
       'agent21 r24 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalStrategicGeopoliticalPremium !== undefined &&
         bundle.terminalAiMemoryInflationRecall !== undefined,
     );
@@ -2657,7 +2665,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r25_10',
       'agent21 r25 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalCalendarSeasonInflationCarryover !== undefined &&
         bundle.terminalAutomationAutopilotInflationDrift !== undefined,
     );
@@ -2773,7 +2781,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r26_10',
       'agent21 r26 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalResearchProductivityInflationOffset !== undefined &&
         bundle.terminalScenarioSandboxInflationBias !== undefined,
     );
@@ -2886,7 +2894,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r27_10',
       'agent21 r27 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalEventsNarrativeInflationPersistence !== undefined &&
         bundle.terminalMacroDemandOverheatInflationSlippage !== undefined,
     );
@@ -2995,7 +3003,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r28_10',
       'agent21 r28 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalFreightLogisticsInflationCongestion !== undefined &&
         bundle.terminalHousingWellbeingInflationEssentialStress !== undefined,
     );
@@ -3099,7 +3107,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r29_10',
       'agent21 r29 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalCommandCenterInflationFusionEscalation !== undefined &&
         bundle.terminalUiPlayerInflationSalienceNudge !== undefined,
     );
@@ -3207,7 +3215,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r30_10',
       'agent21 r30 fields',
-      bundle.schemaVersion === '10.14.agent10.r30' &&
+      bundle.schemaVersion === '10.14.agent10.r31' &&
         bundle.terminalFiscalIndexationInflationAnchorBreach !== undefined &&
         bundle.terminalHouseholdWageInflationDeanchoring !== undefined,
     );
@@ -3234,6 +3242,114 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'fiscal_household_fusion_stress');
       return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.4;
+    })(),
+  );
+
+  // --- Round 31 scale wave ---
+  {
+    const markup = assessCorporateMarkupInflationCascade({
+      pricingPowerBand: 'dominant',
+      passThroughIntent: 'full',
+      marginCompression: 'none',
+      corporatePricingInflationLatch: true,
+      markupPassThroughCascadeBand: 'full',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r31_01',
+      'markup active or dominant',
+      markup.cascadeBand === 'active' || markup.cascadeBand === 'dominant',
+    );
+    check('a10_r31_02', 'markup score adj', corporateMarkupInflationCascadeScoreAdjustment(markup.cascadeBand) >= 3);
+  }
+  {
+    const pipeline = assessTradeTariffImportInflationPipeline({
+      tradeOpennessBand: 'open',
+      exchangeRatePressure: 'sharp_depreciation',
+      commodityImportShare: 0.45,
+      importTariffInflationLatch: true,
+      exchangePipelineStressBand: 'ruptured',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r31_03',
+      'trade fragile or ruptured',
+      pipeline.pipelineBand === 'fragile' || pipeline.pipelineBand === 'ruptured',
+    );
+    check('a10_r31_04', 'trade score adj', tradeTariffImportInflationPipelineScoreAdjustment(pipeline.pipelineBand) >= 3);
+  }
+  {
+    const merged08 = mergeAgent08IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      pricingPowerBand: 'moderate',
+      marginCompression: 'none',
+      passThroughIntent: 'partial',
+      corporatePricingInflationLatch: true,
+      markupPassThroughCascadeBand: 'full',
+    });
+    check('a10_r31_05', 'agent08 full cascade merge', merged08.highInflationScenario === true);
+    check('a10_r31_06', 'agent08 bridge note', agent08CorporateBridgeIntegrationNote().includes('Agent 08'));
+  }
+  {
+    const merged15 = mergeAgent15IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      tradeOpennessBand: 'open',
+      exchangeRatePressure: 'stable',
+      commodityImportShare: 0.3,
+      importTariffInflationLatch: true,
+      exchangePipelineStressBand: 'ruptured',
+    });
+    check('a10_r31_07', 'agent15 ruptured merge', merged15.highInflationScenario === true);
+    check('a10_r31_08', 'agent15 bridge note', agent15TradeBridgeIntegrationNote().includes('Agent 15'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r31_09',
+      'forecast markup cascade and tariff pipeline fields',
+      path.points.every(
+        (p) => !!p.corporateMarkupInflationCascadeBand && !!p.tradeTariffImportInflationPipelineBand,
+      ),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r31_10',
+      'agent21 r31 fields',
+      bundle.schemaVersion === '10.14.agent10.r31' &&
+        bundle.terminalCorporateMarkupInflationCascade !== undefined &&
+        bundle.terminalTradeTariffImportInflationPipeline !== undefined,
+    );
+  }
+  check(
+    'a10_r31_11',
+    'round31 preset corporate markup stack',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'corporate_markup_cascade_stack');
+      return inp?.highInflationScenario === true && inp.householdInflationScenarioActive === true;
+    })(),
+  );
+  check(
+    'a10_r31_12',
+    'round31 preset trade tariff stress',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'trade_tariff_pipeline_stress');
+      return inp?.creditShockActive === true && inp.systemicLiquidityBand === 'critical';
+    })(),
+  );
+  check(
+    'a10_r31_13',
+    'round31 preset markup tariff fusion',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'markup_tariff_fusion_stress');
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.41;
     })(),
   );
 

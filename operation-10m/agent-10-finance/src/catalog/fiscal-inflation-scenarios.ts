@@ -1056,6 +1056,43 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'fiscal', 'household', 'round30'],
   },
+  {
+    id: 'corporate_markup_cascade_stack',
+    label: 'Corporate markup cascade stack',
+    description: 'Dominant pricing power with full markup pass-through latch.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.35,
+    },
+    tags: ['inflation', 'corporate', 'round31'],
+  },
+  {
+    id: 'trade_tariff_pipeline_stress',
+    label: 'Trade tariff pipeline stress',
+    description: 'Sharp FX depreciation with ruptured exchange pipeline latch.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.32,
+    },
+    tags: ['inflation', 'trade', 'round31'],
+  },
+  {
+    id: 'markup_tariff_fusion_stress',
+    label: 'Markup & tariff fusion stress',
+    description: 'Full corporate markup cascade colliding with ruptured import pipeline.',
+    patch: {
+      inflationSettingMultiplier: 1.42,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+    },
+    tags: ['inflation', 'corporate', 'trade', 'round31'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

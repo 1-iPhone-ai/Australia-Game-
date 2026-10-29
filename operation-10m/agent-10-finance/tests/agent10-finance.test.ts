@@ -123,6 +123,8 @@ import { assessCommandCenterInflationFusionEscalation } from '../src/inflation/c
 import { assessUiPlayerInflationSalienceNudge } from '../src/inflation/ui-player-inflation-salience-nudge.js';
 import { assessFiscalIndexationInflationAnchorBreach } from '../src/inflation/fiscal-indexation-inflation-anchor-breach.js';
 import { assessHouseholdWageInflationDeanchoring } from '../src/inflation/household-wage-inflation-deanchoring.js';
+import { assessCorporateMarkupInflationCascade } from '../src/inflation/corporate-markup-inflation-cascade.js';
+import { assessTradeTariffImportInflationPipeline } from '../src/inflation/trade-tariff-import-inflation-pipeline.js';
 import { mergeAgent16IntoMacroFinancialInputs } from '../src/integration/agent16-guardian-bridge.js';
 import { mergeAgent12IntoMacroFinancialInputs } from '../src/integration/agent12-transport-bridge.js';
 
@@ -490,7 +492,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
   });
 
   it('round-6 scenario preset credit vicious loop', () => {
@@ -553,7 +555,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalImportPassThrough);
   });
 
@@ -625,7 +627,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalEnergyPassThrough);
     assert.ok(b.terminalShelterRentPressure);
   });
@@ -697,7 +699,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalFoodGroceryPassThrough);
     assert.ok(b.terminalTransportLogisticsPressure);
   });
@@ -768,7 +770,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalHealthcareServicesPressure);
     assert.ok(b.terminalInsurancePremiumPassThrough);
   });
@@ -839,7 +841,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalEducationTuitionPressure);
     assert.ok(b.terminalCommunicationsServicesPressure);
   });
@@ -910,7 +912,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalRecreationLeisurePressure);
     assert.ok(b.terminalProfessionalServicesFee);
   });
@@ -981,7 +983,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalChildcareServicesPressure);
     assert.ok(b.terminalGovernmentChargesPressure);
   });
@@ -1052,7 +1054,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalWaterUtilitiesPressure);
     assert.ok(b.terminalDomesticTravelPressure);
   });
@@ -1123,7 +1125,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalConstructionMaterialsPressure);
     assert.ok(b.terminalRetailTradeMargin);
   });
@@ -1198,7 +1200,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalFinancialServicesFee);
     assert.ok(b.terminalAgriculturalFarmgatePressure);
   });
@@ -1270,7 +1272,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(70),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalPublicUtilitiesGridTariff);
     assert.ok(b.terminalUiInflationSalience);
   });
@@ -1342,7 +1344,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(70),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalHousingMortgageEssential);
     assert.ok(b.terminalMacroTransmissionMerge);
   });
@@ -1415,7 +1417,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(70),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalDynamicEventsInflationSpillover);
     assert.ok(b.terminalDashboardMapInflationOverlay);
   });
@@ -1488,7 +1490,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(70),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalPublicFinanceDebtService);
     assert.ok(b.terminalPopulationLaborWage);
   });
@@ -1566,7 +1568,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(70),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalWholesaleEnergyTransition);
     assert.ok(b.terminalUrbanRentDispersion);
   });
@@ -1640,7 +1642,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(70),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalCorporatePricingPassThrough);
     assert.ok(b.terminalTradeExchangeImport);
   });
@@ -1713,7 +1715,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(70),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalGuardianInflationIntervention);
     assert.ok(b.terminalTeamIntelligenceConsensus);
   });
@@ -1787,7 +1789,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(70),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalStrategicGeopoliticalPremium);
     assert.ok(b.terminalAiMemoryInflationRecall);
   });
@@ -1861,7 +1863,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(70),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalCalendarSeasonInflationCarryover);
     assert.ok(b.terminalAutomationAutopilotInflationDrift);
   });
@@ -1935,7 +1937,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(70),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalResearchProductivityInflationOffset);
     assert.ok(b.terminalScenarioSandboxInflationBias);
   });
@@ -2010,7 +2012,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(70),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalEventsNarrativeInflationPersistence);
     assert.ok(b.terminalMacroDemandOverheatInflationSlippage);
   });
@@ -2085,7 +2087,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(70),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalFreightLogisticsInflationCongestion);
     assert.ok(b.terminalHousingWellbeingInflationEssentialStress);
   });
@@ -2159,7 +2161,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(70),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r30');
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
     assert.ok(b.terminalCommandCenterInflationFusionEscalation);
     assert.ok(b.terminalUiPlayerInflationSalienceNudge);
   });
@@ -2233,7 +2235,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(70),
     });
-    assert.equal(bundle.schemaVersion, '10.14.agent10.r30');
+    assert.equal(bundle.schemaVersion, '10.14.agent10.r31');
     assert.ok(bundle.terminalFiscalIndexationInflationAnchorBreach);
     assert.ok(bundle.terminalHouseholdWageInflationDeanchoring);
   });
@@ -2241,5 +2243,79 @@ describe('Agent 10 scale-wave extensions', () => {
   it('round-30 scenario preset fiscal household fusion', () => {
     const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'fiscal_household_fusion_stress');
     assert.ok(inp?.highInflationScenario && (inp.inflationSettingMultiplier ?? 1) > 1.4);
+  });
+
+  it('round-31 corporate markup inflation cascade', () => {
+    const m = assessCorporateMarkupInflationCascade({
+      pricingPowerBand: 'dominant',
+      passThroughIntent: 'full',
+      marginCompression: 'none',
+      corporatePricingInflationLatch: true,
+      markupPassThroughCascadeBand: 'full',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    assert.ok(m.cascadeBand === 'active' || m.cascadeBand === 'dominant');
+  });
+
+  it('round-31 trade tariff import pipeline', () => {
+    const p = assessTradeTariffImportInflationPipeline({
+      tradeOpennessBand: 'open',
+      exchangeRatePressure: 'sharp_depreciation',
+      commodityImportShare: 0.5,
+      importTariffInflationLatch: true,
+      exchangePipelineStressBand: 'ruptured',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    assert.ok(p.pipelineBand === 'fragile' || p.pipelineBand === 'ruptured');
+  });
+
+  it('round-31 agent08 full markup bridge', () => {
+    const merged = mergeAgent08IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      pricingPowerBand: 'weak',
+      marginCompression: 'none',
+      passThroughIntent: 'absorb',
+      corporatePricingInflationLatch: true,
+      markupPassThroughCascadeBand: 'full',
+    });
+    assert.equal(merged.highInflationScenario, true);
+  });
+
+  it('round-31 agent15 ruptured pipeline bridge', () => {
+    const merged = mergeAgent15IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      tradeOpennessBand: 'mixed',
+      exchangeRatePressure: 'stable',
+      commodityImportShare: 0.2,
+      importTariffInflationLatch: true,
+      exchangePipelineStressBand: 'ruptured',
+    });
+    assert.equal(merged.highInflationScenario, true);
+  });
+
+  it('round-31 forecast markup and trade on path', () => {
+    const path = projectInflationForecastPath(3);
+    assert.ok(path.points.every((pt) => pt.corporateMarkupInflationCascadeBand && pt.tradeTariffImportInflationPipelineBand));
+  });
+
+  it('round-31 agent21 bundle r31', () => {
+    const path = projectInflationForecastPath(2);
+    const b = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(70),
+    });
+    assert.equal(b.schemaVersion, '10.14.agent10.r31');
+    assert.ok(b.terminalCorporateMarkupInflationCascade);
+    assert.ok(b.terminalTradeTariffImportInflationPipeline);
+  });
+
+  it('round-31 scenario preset markup tariff fusion', () => {
+    const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'markup_tariff_fusion_stress');
+    assert.ok(inp?.highInflationScenario && (inp.inflationSettingMultiplier ?? 1) > 1.41);
   });
 });

@@ -11,6 +11,10 @@ export interface Agent08CorporateSnapshot {
   productionCapacityStrainInflationFlag?: boolean;
   /** Round 22: corporate markup cascade band. */
   corporateMarkupCascadeBand?: 'none' | 'building' | 'active';
+  /** Round 31: corporate pricing inflation latch. */
+  corporatePricingInflationLatch?: boolean;
+  /** Round 31: markup pass-through cascade band. */
+  markupPassThroughCascadeBand?: 'absorbed' | 'partial' | 'full';
 }
 
 export function mergeAgent08IntoMacroFinancialInputs(
@@ -41,6 +45,13 @@ export function mergeAgent08IntoMacroFinancialInputs(
     if (snapshot.corporateMarkupCascadeBand === 'active') {
       inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
     }
+  }
+
+  if (snapshot.corporatePricingInflationLatch && snapshot.markupPassThroughCascadeBand === 'full') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.markupPassThroughCascadeBand === 'partial' && snapshot.pricingPowerBand === 'strong') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
   return {
