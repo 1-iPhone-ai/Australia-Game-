@@ -18,6 +18,7 @@ const FILES = [
   'causal-records.ts',
   'timeline-registry.ts',
   'late-game-replay.ts',
+  'analytics-depth.ts',
   'history-replay-analytics.ts',
   'replay-determinism.ts',
   'historical-analytics-dashboard.tsx',

@@ -2,6 +2,7 @@ export * from './fingerprint.ts';
 export * from './causal-records.ts';
 export * from './timeline-registry.ts';
 export * from './late-game-replay.ts';
+export * from './analytics-depth.ts';
 export * from './replay-determinism.ts';
 export * from './history-replay-analytics.ts';
 export { O6kHistoricalAnalyticsDashboard } from './historical-analytics-dashboard.tsx';

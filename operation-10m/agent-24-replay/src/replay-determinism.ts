@@ -12,6 +12,7 @@ import {
   type O6kHistoricalAnalyticsBuildInput,
   type O6kHistoricalAnalyticsSnapshot,
 } from './history-replay-analytics.ts';
+import { buildAgent24ReplayAnalyticsDepth, type Agent24ReplayAnalyticsDepth } from './analytics-depth.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -19,6 +20,7 @@ export interface Agent24ReplayDeterminismBundle {
   causalIndex: Agent24CausalRecordIndex;
   timelineRegistry: Agent24TimelineRegistry;
   lateGame: Agent24LateGameReplayAssessment;
+  analyticsDepth: Agent24ReplayAnalyticsDepth;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -55,20 +57,26 @@ export function buildAgent24ReplayDeterminismBundle(
   });
   const snapshot = buildO6kHistoricalAnalyticsSnapshot(input);
   const twin = probeO6kReplayDeterminismTwice(() => input);
-  const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
-    snap: snapshot.integrity.fingerprint,
-    causal: causalIndex.deterministicFingerprint,
-    timeline: timelineRegistry.deterministicFingerprint,
-    late: lateGame.fingerprint,
-  });
-
-  return {
-    bundleId: o6kAgent24Fingerprint('replay_bundle_id', { matchId: input.matchId, turn: input.turn }),
+  const partial = {
     snapshot,
     causalIndex,
     timelineRegistry,
     lateGame,
     twinBuildPassed: twin.passed,
+  };
+  const analyticsDepth = buildAgent24ReplayAnalyticsDepth(partial);
+  const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
+    snap: snapshot.integrity.fingerprint,
+    causal: causalIndex.deterministicFingerprint,
+    timeline: timelineRegistry.deterministicFingerprint,
+    late: lateGame.fingerprint,
+    depth: analyticsDepth.deterministicFingerprint,
+  });
+
+  return {
+    bundleId: o6kAgent24Fingerprint('replay_bundle_id', { matchId: input.matchId, turn: input.turn }),
+    ...partial,
+    analyticsDepth,
     compositeFingerprint,
   };
 }
@@ -98,6 +106,11 @@ export function verifyAgent24ReplayDeterminism(
       name: 'late_game_twin',
       passed: a.lateGame.fingerprint === b.lateGame.fingerprint,
       detail: 'Twin late-game assessment fingerprints',
+    },
+    {
+      name: 'analytics_depth_twin',
+      passed: a.analyticsDepth.deterministicFingerprint === b.analyticsDepth.deterministicFingerprint,
+      detail: 'Twin analytics depth fingerprints',
     },
     {
       name: 'composite_twin',

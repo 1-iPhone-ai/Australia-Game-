@@ -7,6 +7,11 @@ import {
   buildAgent24ReplayDeterminismBundle,
   verifyAgent24ReplayDeterminism,
 } from '../src/replay-determinism.ts';
+import {
+  buildAgent24ReplayAnalyticsDepth,
+  diffAgent24ReplayBundles,
+  runAgent24AnalyticsDepthSelfTests,
+} from '../src/analytics-depth.ts';
 import { o6kAgent24StableStringify, runO6kAgent24SelfTests } from '../src/history-replay-analytics.ts';
 
 describe('Agent 24 causal records', () => {
@@ -87,6 +92,35 @@ describe('Agent 24 replay determinism bundle', () => {
   it('verifies twin determinism across full bundle', () => {
     const result = verifyAgent24ReplayDeterminism(sampleInput);
     assert.equal(result.passed, true);
+    assert.ok(result.probes.some(p => p.name === 'analytics_depth_twin' && p.passed));
+  });
+
+  it('includes analytics depth rollups and stable twin fingerprint', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(sampleInput());
+    assert.ok(bundle.analyticsDepth.totalMilestoneWeight >= 0);
+    assert.ok(bundle.analyticsDepth.longestCausalChainLength >= 1);
+    const twinDepth = buildAgent24ReplayAnalyticsDepth({
+      snapshot: bundle.snapshot,
+      causalIndex: bundle.causalIndex,
+      timelineRegistry: bundle.timelineRegistry,
+      lateGame: bundle.lateGame,
+      twinBuildPassed: bundle.twinBuildPassed,
+    });
+    assert.equal(bundle.analyticsDepth.deterministicFingerprint, twinDepth.deterministicFingerprint);
+  });
+
+  it('diffs bundles across turns', () => {
+    const early = buildAgent24ReplayDeterminismBundle({ ...sampleInput(), turn: 5, day: 5 });
+    const late = buildAgent24ReplayDeterminismBundle(sampleInput());
+    const diff = diffAgent24ReplayBundles(early, late);
+    assert.ok(diff.summary.includes('Milestones'));
+  });
+});
+
+describe('Agent 24 analytics depth self-tests', () => {
+  it('runs bundled depth self-tests', () => {
+    const results = runAgent24AnalyticsDepthSelfTests();
+    assert.ok(results.every(r => r.passed), results.filter(r => !r.passed).map(r => r.name).join(','));
   });
 });
 
