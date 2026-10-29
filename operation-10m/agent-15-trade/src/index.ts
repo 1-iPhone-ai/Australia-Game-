@@ -8,4 +8,6 @@ export * from './world-shocks.ts';
 export * from './domestic-consequences.ts';
 export * from './trade-turn.ts';
 export * from './household-bridge.ts';
+export * from './sanctions.ts';
+export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';

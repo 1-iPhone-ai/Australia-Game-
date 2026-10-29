@@ -7,6 +7,12 @@ import {
 import { advanceGlobalTradeEconomyTurn } from './trade-turn.ts';
 import { applyGlobalTradeHouseholdOverrides } from './household-bridge.ts';
 import { activateWorldTradeShock, scheduledShockIdForTurn } from './world-shocks.ts';
+import { advancePartnerSanctions, deriveSanctionModifiers } from './sanctions.ts';
+import {
+  validateScenarioShockCatalog,
+  triggerCommodityShockScenario,
+  COMMODITY_SHOCK_SCENARIOS,
+} from './commodity-shock-scenarios.ts';
 import { gtelAssert } from './util.ts';
 
 export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; failed: string[] } {
@@ -127,6 +133,39 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     const a = advanceGlobalTradeEconomyTurn(input);
     const b = advanceGlobalTradeEconomyTurn(input);
     gtelAssert(a.state.inputHash === b.state.inputHash, 'hash drift');
+  });
+
+  ok('sanctions escalate on repeated violations', () => {
+    let persisted = createEmptyGTELPersisted();
+    const dip = {
+      deals: [
+        { id: 'v1', type: 'resource_trade', status: 'violated', participants: ['player', 'ai'], compliance: 'violated' },
+        { id: 'v2', type: 'resource_trade', status: 'violated', participants: ['player', 'ai'], compliance: 'violated' },
+      ],
+      events: [{ kind: 'violation', turn: 6, text: 'embargo asia_pacific breach' }],
+    };
+    const step = advancePartnerSanctions(persisted, dip, 7);
+    persisted = step.persisted;
+    const mods = deriveSanctionModifiers(persisted);
+    gtelAssert((mods.activeTiers.asia_pacific || 'none') !== 'none', 'expected asia sanctions');
+    gtelAssert(mods.partnerDeltas.asia_pacific! < 0, 'partner penalty');
+  });
+
+  ok('commodity shock scenario registers catalog shocks', () => {
+    const missing = validateScenarioShockCatalog();
+    gtelAssert(missing.length === 0, `missing shocks: ${missing.join(',')}`);
+    let persisted = createEmptyGTELPersisted();
+    const r = triggerCommodityShockScenario(persisted, 'scenario_agri_stress', 20);
+    gtelAssert(r.scenario !== null, 'scenario missing');
+    gtelAssert(r.activatedShockIds.length >= 1, 'no shocks activated');
+    gtelAssert(r.persisted.firedShockScenarios.includes('scenario_agri_stress'), 'scenario not recorded');
+  });
+
+  ok('scenario does not double-fire', () => {
+    let persisted = createEmptyGTELPersisted();
+    persisted = triggerCommodityShockScenario(persisted, 'scenario_bulk_crash', 100).persisted;
+    const second = triggerCommodityShockScenario(persisted, 'scenario_bulk_crash', 101);
+    gtelAssert(second.activatedShockIds.length === 0, 'should not reactivate');
   });
 
   return { passed, failed };

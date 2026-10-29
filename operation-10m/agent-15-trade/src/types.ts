@@ -100,6 +100,10 @@ export interface GTELPersisted {
   agreements: TradeAgreementRecord[];
   /** Shock instances still affecting markets. */
   activeShocks: ActiveWorldTradeShock[];
+  /** Escalating partner sanctions keyed by partner market id. */
+  partnerSanctions: Partial<Record<GTELPartnerId, PartnerSanctionRegime>>;
+  /** Scenario ids already fired (dedupe). */
+  firedShockScenarios: string[];
 }
 
 export interface GTELState {
@@ -112,6 +116,7 @@ export interface GTELState {
   exportThroughput: number;
   diplomacyTradeDealsActive: number;
   violationsLastWindow: number;
+  activeSanctionTiers: Partial<Record<GTELPartnerId, SanctionTier>>;
   inputHash: string;
 }
 
@@ -130,7 +135,7 @@ export interface GTELTurnResult {
   worldEvents: Array<{
     id: string;
     turn: number;
-    kind: 'trade' | 'diplomacy' | 'domestic' | 'shock';
+    kind: 'trade' | 'diplomacy' | 'domestic' | 'shock' | 'sanction';
     title: string;
     summary: string;
     regionIds: string[];
@@ -165,13 +170,27 @@ export interface TradeAgreementLedger {
   agreements: TradeAgreementRecord[];
 }
 
+export type SanctionTier = 'none' | 'watchlist' | 'sectoral' | 'comprehensive';
+
+export interface PartnerSanctionRegime {
+  partnerId: GTELPartnerId;
+  tier: SanctionTier;
+  escalatedTurn: number;
+  cooldownUntilTurn: number | null;
+  violationStreak: number;
+  complianceStreak: number;
+  scopedCommodities: GTELCommodityId[];
+  reason: string;
+}
+
 export type WorldTradeShockKind =
   | 'shipping_disruption'
   | 'partner_embargo'
   | 'commodity_crash'
   | 'commodity_spike'
   | 'supply_chain'
-  | 'financial_contagion';
+  | 'financial_contagion'
+  | 'sanctions_retaliation';
 
 export interface WorldTradeShockDefinition {
   id: string;

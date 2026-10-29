@@ -7,6 +7,12 @@ import {
   TRADE_AGREEMENT_TEMPLATES,
 } from '../src/trade-agreements.ts';
 import { activateWorldTradeShock, WORLD_TRADE_SHOCK_CATALOG } from '../src/world-shocks.ts';
+import { advancePartnerSanctions } from '../src/sanctions.ts';
+import {
+  COMMODITY_SHOCK_SCENARIOS,
+  triggerCommodityShockScenario,
+  scheduledScenarioIdForTurn,
+} from '../src/commodity-shock-scenarios.ts';
 import { createEmptyGTELPersisted } from '../src/persist.ts';
 import { advanceGlobalTradeEconomyTurn } from '../src/trade-turn.ts';
 
@@ -34,7 +40,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 8);
+  assert.ok(r.passed >= 11);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {
@@ -61,4 +67,37 @@ test('manual embargo shock stacks with diplomacy violations', () => {
     persisted,
   });
   assert.equal(r.state.domestic.exportVsDomesticModel, 'constrained');
+});
+
+test('sanctions depth emits sanction world events', () => {
+  let persisted = createEmptyGTELPersisted();
+  const dip = {
+    deals: Array.from({ length: 3 }, (_, i) => ({
+      id: `v${i}`,
+      type: 'resource_trade',
+      status: 'violated',
+      participants: ['player', 'rival_east'],
+      compliance: 'violated',
+    })),
+    events: [{ kind: 'violation', turn: 4, text: 'sanction escalation asia_pacific' }],
+  };
+  const step = advancePartnerSanctions(persisted, dip, 5);
+  assert.ok(step.events.some(e => e.kind === 'sanction'));
+  persisted = step.persisted;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 5,
+    diplomacyState: dip,
+    nationalSystems: { national: { trade: { condition: 'strained', exportedCapacity: 50 } } },
+    persisted,
+  });
+  assert.ok(r.state.activeSanctionTiers.asia_pacific === 'sectoral' || r.state.activeSanctionTiers.asia_pacific === 'comprehensive');
+});
+
+test('commodity shock scenarios are unique and schedulable', () => {
+  const ids = COMMODITY_SHOCK_SCENARIOS.map(s => s.id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.equal(scheduledScenarioIdForTurn(120), 'scenario_energy_volatility');
+  let persisted = createEmptyGTELPersisted();
+  const fired = triggerCommodityShockScenario(persisted, 'scenario_energy_volatility', 120);
+  assert.ok(fired.activatedShockIds.length >= 2);
 });

@@ -1,6 +1,7 @@
 import { GTEL_COMMODITIES, GTEL_LIMITS, GTEL_PARTNER_DEFS, GTEL_BASE_COMMODITY_INDEX } from './constants.ts';
-import type { GTELAccessBand, GTELCommodityId, GTELPartnerId, GTELPersisted, TradeAgreementRecord } from './types.ts';
+import type { GTELAccessBand, GTELCommodityId, GTELPartnerId, GTELPersisted, PartnerSanctionRegime, TradeAgreementRecord } from './types.ts';
 import { gtelClamp, gtelNum } from './util.ts';
+import { sanitizePartnerSanctionRegime } from './sanctions.ts';
 
 export function createEmptyGTELPersisted(): GTELPersisted {
   return {
@@ -13,6 +14,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     recentEvents: [],
     agreements: [],
     activeShocks: [],
+    partnerSanctions: {},
+    firedShockScenarios: [],
   };
 }
 
@@ -98,6 +101,15 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
         endsTurn: Math.max(1, Math.floor(gtelNum(s.endsTurn, turn + 1))),
         remainingIntensity: gtelClamp(gtelNum(s.remainingIntensity, 1), 0.1, 1),
       }));
+  }
+  if (r.partnerSanctions && typeof r.partnerSanctions === 'object') {
+    Object.entries(r.partnerSanctions as Record<string, unknown>).slice(0, 6).forEach(([k, v]) => {
+      if (!GTEL_PARTNER_DEFS.some(p => p.id === k)) return;
+      base.partnerSanctions![k as GTELPartnerId] = sanitizePartnerSanctionRegime(v, k as GTELPartnerId);
+    });
+  }
+  if (Array.isArray(r.firedShockScenarios)) {
+    base.firedShockScenarios = r.firedShockScenarios.map(String).slice(-16);
   }
   return base;
 }
