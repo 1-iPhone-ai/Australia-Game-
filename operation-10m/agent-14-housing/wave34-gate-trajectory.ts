@@ -20,7 +20,7 @@ function gateSample(brief: Agent25Wave33ProjectionHandoffBrief): number {
 
 export function createInitialWave34GateTrajectory(): Wave34GateTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.44-scale-wave-44' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.45-scale-wave-45' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     wave34GateEma: 21,
@@ -41,7 +41,7 @@ export function sanitizeWave34GateTrajectory(
       ? Math.max(0, Math.min(100, raw.wave34GateEma))
       : 21;
   return {
-    schemaVersion: '10.14.44-scale-wave-44' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.45-scale-wave-45' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     wave34GateEma,
