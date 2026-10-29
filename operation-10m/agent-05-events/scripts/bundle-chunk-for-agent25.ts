@@ -117,6 +117,7 @@ const SOURCE_FILES = [
   'generated/chain-catalog-tranche47.ts',
   'generated/chain-catalog-tranche48.ts',
   'generated/chain-catalog-tranche49.ts',
+  'generated/chain-catalog-tranche50.ts',
   'src/chain-catalog-aggregate.ts',
   'generated/regional-hook-catalog.ts',
 ] as const;
@@ -183,8 +184,8 @@ function bundleSources(): string {
     `  });`,
     `  results.push({`,
     `    id: 'agent05_chain_count',`,
-    `    name: '15880 chain descriptors',`,
-    `    passed: OP10M_AGENT05_CHAIN_CATALOG.length === 15880,`,
+    `    name: '16200 chain descriptors',`,
+    `    passed: OP10M_AGENT05_CHAIN_CATALOG.length === 16200,`,
     `  });`,
     `  results.push({`,
     `    id: 'agent05_tranche4_lattice',`,
@@ -201,7 +202,14 @@ function bundleSources(): string {
     `      OP10M_AGENT05_CHAIN_CATALOG.some((c) => c.chainId.startsWith('op10m_t3_')),`,
     `  });`,
     `  results.push({`,
-    `    id: 'agent05_tranche49_scale_wave_full_chunks_handoff_closure_finalize_seal_sync_latch_commit_lattice',`,
+    `    id: 'agent05_tranche50_scale_wave_full_chunks_handoff_closure_finalize_seal_sync_latch_wave_ready_lattice',
+    name: 'tranche50 scale-wave-full-chunks-handoff-closure-finalize-seal-sync-latch-wave-ready-lattice chains present',
+    passed:
+      OP10M_AGENT05_CHAIN_CATALOG_TRANCHE50.length === 320 &&
+      OP10M_AGENT05_CHAIN_CATALOG.some((c) => c.chainId.startsWith('op10m_t50_')),
+  });
+  results.push({
+    id: 'agent05_tranche49_scale_wave_full_chunks_handoff_closure_finalize_seal_sync_latch_commit_lattice',`,
     `    name: 'tranche49 scale-wave-full-chunks-handoff-closure-finalize-seal-sync-latch-commit-lattice chains present',`,
     `    passed:`,
     `      OP10M_AGENT05_CHAIN_CATALOG_TRANCHE49.length === 320 &&`,
@@ -612,7 +620,7 @@ const manifest = {
   contentSha256Prefix: contentSha256.slice(0, 16),
   chunkPath: `operation-10m/${moduleId}/chunk.tsx`,
   chunkLineCount: lineCount,
-  chainCount: 15880,
+  chainCount: 16200,
   regenerate: 'npm run bundle:agent05',
 };
 writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');

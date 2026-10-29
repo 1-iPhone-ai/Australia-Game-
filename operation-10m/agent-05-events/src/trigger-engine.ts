@@ -188,6 +188,10 @@ import {
   OP10M_AGENT25_FULL_CHUNKS_HANDOFF_CLOSURE_FINALIZE_SEAL_SYNC_WAVE_SEALED_FLAG,
   OP10M_SCALE_WAVE_FULL_CHUNKS_HANDOFF_CLOSURE_FINALIZE_SEAL_SYNC_LATCH_COMMIT_FLAG,
 } from './compute-turn-scale-wave-full-chunks-handoff-closure-finalize-seal-sync-commit-coordinator.ts';
+import {
+  OP10M_AGENT25_FULL_CHUNKS_HANDOFF_CLOSURE_FINALIZE_SEAL_SYNC_LATCH_WAVE_READY_FLAG,
+  OP10M_SCALE_WAVE_FULL_CHUNKS_HANDOFF_CLOSURE_FINALIZE_SEAL_SYNC_LATCH_WAVE_READY_FLAG,
+} from './compute-turn-scale-wave-full-chunks-handoff-closure-finalize-seal-sync-latch-wave-ready-coordinator.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -803,6 +807,16 @@ export function evaluateRequirements(
       case 'scale_wave_full_chunks_handoff_closure_finalize_seal_sync_latch_commit':
         if (!sim.flags[OP10M_SCALE_WAVE_FULL_CHUNKS_HANDOFF_CLOSURE_FINALIZE_SEAL_SYNC_LATCH_COMMIT_FLAG]) {
           return { ok: false, reason: 'scale wave full-chunks handoff closure finalize seal sync latch not committed' };
+        }
+        break;
+      case 'scale_wave_full_chunks_handoff_closure_finalize_seal_sync_latch_wave_ready':
+        if (!sim.flags[OP10M_SCALE_WAVE_FULL_CHUNKS_HANDOFF_CLOSURE_FINALIZE_SEAL_SYNC_LATCH_WAVE_READY_FLAG]) {
+          return { ok: false, reason: 'scale wave full-chunks handoff closure finalize seal sync latch wave not ready' };
+        }
+        break;
+      case 'agent25_full_chunks_handoff_closure_finalize_seal_sync_latch_wave_ready':
+        if (!sim.flags[OP10M_AGENT25_FULL_CHUNKS_HANDOFF_CLOSURE_FINALIZE_SEAL_SYNC_LATCH_WAVE_READY_FLAG]) {
+          return { ok: false, reason: 'agent25 full-chunks handoff closure finalize seal sync latch wave not ready' };
         }
         break;
       case 'agent25_full_chunks_handoff_closure_finalize_seal_sync_wave_sealed':
