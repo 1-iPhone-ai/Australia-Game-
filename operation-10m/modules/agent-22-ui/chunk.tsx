@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: a87685c3e126cde4
+// content-sha256-prefix: d6e7cef1d56b48e2
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -1033,6 +1033,9 @@ export interface DayAdvanceUiEvolutionResult {
   fifteenthUnlockHeadlineDayCoachCopy: string | null;
   tredecimDeferredQueueDayCoachCopy: string | null;
   pacingDeferredDecDayCoachCopy: string | null;
+  sixteenthUnlockHeadlineDayCoachCopy: string | null;
+  quattuordecimDeferredQueueDayCoachCopy: string | null;
+  pacingDeferredJanDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -2131,6 +2134,22 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const sixteenthUnlockHeadlineDayCoach = buildSixteenthUnlockHeadlineDayCoach({
+    newlyUnlockedPanelIds,
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const quattuordecimDeferredQueueDayCoach = buildQuattuordecimDeferredQueueDayCoach({
+    combinedQueueDepth: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const pacingDeferredJanDayCoach = buildPacingDeferredJanDayCoach({
+    pacingDeferredCount: pacing.deferredCount,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -2335,6 +2354,9 @@ export function tickEvolvingUiOnDayAdvance(
     fifteenthUnlockHeadlineDayCoachCopy: fifteenthUnlockHeadlineDayCoach.coachCopy,
     tredecimDeferredQueueDayCoachCopy: tredecimDeferredQueueDayCoach.coachCopy,
     pacingDeferredDecDayCoachCopy: pacingDeferredDecDayCoach.coachCopy,
+    sixteenthUnlockHeadlineDayCoachCopy: sixteenthUnlockHeadlineDayCoach.coachCopy,
+    quattuordecimDeferredQueueDayCoachCopy: quattuordecimDeferredQueueDayCoach.coachCopy,
+    pacingDeferredJanDayCoachCopy: pacingDeferredJanDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
