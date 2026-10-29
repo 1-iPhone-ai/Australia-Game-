@@ -3797,6 +3797,269 @@ export function buildSpendingOffsetsReport(turn: number, v1012: V1012FiscalSnaps
 }
 
 
+// --- source: portfolio-outturn/types.ts ---
+export const PORTFOLIO_OUTTURN_SCHEMA = 'op10m-agent07-portfolio-outturn-v1';
+
+export interface PortfolioOutturnLine {
+  id: string;
+  portfolioId: string;
+  label: string;
+  appropriationBaselinePoints: number;
+  outturnPoints: number;
+  variancePoints: number;
+  varianceRatio: number;
+  withinPortfolioBand: boolean;
+}
+
+export interface PortfolioOutturnReport {
+  schemaVersion: string;
+  turn: number;
+  lines: PortfolioOutturnLine[];
+  aggregateVariancePoints: number;
+  aggregateVarianceRatio: number;
+  withinReconciliationTolerance: boolean;
+  portfoliosOutsideBand: number;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: portfolio-outturn/compute.ts ---
+
+const AGGREGATE_VARIANCE_CAP = 0.11;
+const PORTFOLIO_BAND = 0.14;
+
+function outturnLine(
+  id: string,
+  portfolioId: string,
+  label: string,
+  baseline: number,
+  drift: number
+): PortfolioOutturnLine {
+  const outturnPoints = Math.round((baseline + drift) * 10) / 10;
+  const variancePoints = Math.round((outturnPoints - baseline) * 10) / 10;
+  const varianceRatio = baseline <= 0 ? 0 : Math.round((variancePoints / baseline) * 1000) / 1000;
+  const withinPortfolioBand =
+    Math.abs(varianceRatio) <= PORTFOLIO_BAND || baseline <= 0;
+  return {
+    id,
+    portfolioId,
+    label,
+    appropriationBaselinePoints: baseline,
+    outturnPoints,
+    variancePoints,
+    varianceRatio,
+    withinPortfolioBand
+  };
+}
+
+export function buildPortfolioOutturnReport(turn: number, v1012: V1012FiscalSnapshot): PortfolioOutturnReport {
+  const yearEnd = turn % 12 >= 11;
+  const maintenanceDrift = (v1012.maintenanceLoad - 7) * 0.08;
+  const headroomDrift = Math.max(-2.5, Math.min(2.2, v1012.fiscalHeadroom * 0.06));
+  const debtDrift = v1012.debtEnabled ? v1012.debtServiceLoad * 0.04 : 0;
+
+  const raw: Array<[string, string, string, number, number]> = [
+    ['po_health', 'pf_health', 'Health & aged care', 18.5, maintenanceDrift * 0.35 + headroomDrift * 0.2],
+    ['po_education', 'pf_education', 'Education & skills', 14.2, headroomDrift * 0.15 - 0.2],
+    ['po_defence', 'pf_defence', 'Defence & national security', 16.8, debtDrift * 0.45 + (yearEnd ? 0.35 : 0)],
+    ['po_infra', 'pf_infra', 'Infrastructure & transport', 11.4, maintenanceDrift * 0.55 + headroomDrift * 0.1],
+    ['po_social', 'pf_social', 'Social security & welfare', 21.6, maintenanceDrift * 0.25 - headroomDrift * 0.12]
+  ];
+
+  let lines: PortfolioOutturnLine[] = raw.map(([id, pf, label, base, drift]) =>
+    outturnLine(id, pf, label, base, Math.round(drift * 10) / 10)
+  );
+
+  if (v1012.pressure !== 'critical') {
+    for (const line of lines) {
+      if (!line.withinPortfolioBand && line.appropriationBaselinePoints > 0) {
+        const cap = line.appropriationBaselinePoints * PORTFOLIO_BAND;
+        line.outturnPoints =
+          Math.round((line.appropriationBaselinePoints + Math.sign(line.variancePoints) * cap) * 10) / 10;
+        line.variancePoints = Math.round((line.outturnPoints - line.appropriationBaselinePoints) * 10) / 10;
+        line.varianceRatio =
+          Math.round((line.variancePoints / line.appropriationBaselinePoints) * 1000) / 1000;
+        line.withinPortfolioBand = Math.abs(line.varianceRatio) <= PORTFOLIO_BAND + 0.001;
+      }
+    }
+  }
+
+  const totalBaseline = lines.reduce((s, l) => s + l.appropriationBaselinePoints, 0);
+  const totalOutturn = lines.reduce((s, l) => s + l.outturnPoints, 0);
+  const aggregateVariancePoints = Math.round((totalOutturn - totalBaseline) * 10) / 10;
+  const aggregateVarianceRatio =
+    totalBaseline <= 0 ? 0 : Math.round((aggregateVariancePoints / totalBaseline) * 1000) / 1000;
+
+  const portfoliosOutsideBand = lines.filter(l => !l.withinPortfolioBand).length;
+
+  const withinReconciliationTolerance =
+    Math.abs(aggregateVarianceRatio) <= AGGREGATE_VARIANCE_CAP ||
+    v1012.pressure === 'critical' ||
+    (v1012.pressure === 'strained' && Math.abs(aggregateVarianceRatio) <= AGGREGATE_VARIANCE_CAP * 1.15);
+
+  const warnings: string[] = [];
+  if (portfoliosOutsideBand > 0) {
+    warnings.push(`${portfoliosOutsideBand} portfolio(s) outside outturn band.`);
+  }
+  if (!withinReconciliationTolerance) {
+    warnings.push(`Aggregate variance ratio ${aggregateVarianceRatio} exceeds cap ${AGGREGATE_VARIANCE_CAP}.`);
+  }
+
+  const narrative = withinReconciliationTolerance
+    ? `Portfolio outturn reconciled: aggregate variance ${aggregateVariancePoints} (${(aggregateVarianceRatio * 100).toFixed(1)}%).`
+    : `Outturn reconciliation alert: variance ${aggregateVariancePoints}, ${portfoliosOutsideBand} portfolio(s) off band.`;
+
+  return {
+    schemaVersion: PORTFOLIO_OUTTURN_SCHEMA,
+    turn,
+    lines,
+    aggregateVariancePoints,
+    aggregateVarianceRatio,
+    withinReconciliationTolerance,
+    portfoliosOutsideBand,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: debt-portfolio-governance/types.ts ---
+export const DEBT_PORTFOLIO_GOVERNANCE_SCHEMA = 'op10m-agent07-debt-portfolio-governance-v1';
+
+export type DurationBand = 'short' | 'neutral' | 'long';
+
+export interface DebtPortfolioTranche {
+  id: string;
+  tenorYears: number;
+  weightShare: number;
+  rolloverTurns: number;
+  concentrationFlag: boolean;
+}
+
+export interface DebtPortfolioGovernanceReport {
+  schemaVersion: string;
+  turn: number;
+  tranches: DebtPortfolioTranche[];
+  weightedAverageDurationYears: number;
+  durationBand: DurationBand;
+  maxTrancheShare: number;
+  rolloverStressAligned: boolean;
+  withinGovernanceTargets: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: debt-portfolio-governance/compute.ts ---
+
+const MAX_TRANCHE_SHARE = 0.42;
+const DURATION_FLOOR = 4.2;
+const DURATION_CEILING = 9.8;
+
+function durationBand(years: number): DurationBand {
+  if (years < DURATION_FLOOR + 0.5) return 'short';
+  if (years > DURATION_CEILING - 0.5) return 'long';
+  return 'neutral';
+}
+
+export function buildDebtPortfolioGovernanceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  opts?: { liquidityStress?: boolean }
+): DebtPortfolioGovernanceReport {
+  const stress = opts?.liquidityStress ?? v1012.debtServiceLoad > 14;
+  const levelSkew = Math.min(0.12, v1012.debtLevel / 500);
+
+  const baseShares = [
+    { id: 't_bill', tenorYears: 2, share: 0.18 - levelSkew * 0.5 },
+    { id: 't_3y', tenorYears: 3, share: 0.22 },
+    { id: 't_5y', tenorYears: 5, share: 0.26 + levelSkew },
+    { id: 't_10y', tenorYears: 10, share: 0.24 },
+    { id: 't_15y', tenorYears: 15, share: 0.1 - levelSkew * 0.5 }
+  ];
+
+  let tranches: DebtPortfolioTranche[] = baseShares.map(t => {
+    const weightShare = Math.round(Math.max(0.05, t.share) * 1000) / 1000;
+    const rolloverTurns = Math.max(1, Math.round(t.tenorYears * (stress ? 0.85 : 1.05)));
+    return {
+      id: t.id,
+      tenorYears: t.tenorYears,
+      weightShare,
+      rolloverTurns,
+      concentrationFlag: weightShare > MAX_TRANCHE_SHARE
+    };
+  });
+
+  const shareSum = tranches.reduce((s, t) => s + t.weightShare, 0);
+  tranches = tranches.map(t => ({
+    ...t,
+    weightShare: Math.round((t.weightShare / shareSum) * 1000) / 1000,
+    concentrationFlag: t.weightShare / shareSum > MAX_TRANCHE_SHARE
+  }));
+
+  if (stress && v1012.pressure !== 'critical') {
+    tranches = tranches.map(t =>
+      t.tenorYears <= 3
+        ? { ...t, weightShare: Math.round(t.weightShare * 1.08 * 1000) / 1000 }
+        : { ...t, weightShare: Math.round(t.weightShare * 0.96 * 1000) / 1000 }
+    );
+    const reSum = tranches.reduce((s, t) => s + t.weightShare, 0);
+    tranches = tranches.map(t => ({
+      ...t,
+      weightShare: Math.round((t.weightShare / reSum) * 1000) / 1000,
+      concentrationFlag: t.weightShare / reSum > MAX_TRANCHE_SHARE
+    }));
+  }
+
+  const weightedAverageDurationYears =
+    Math.round(tranches.reduce((s, t) => s + t.tenorYears * t.weightShare, 0) * 100) / 100;
+
+  const maxTrancheShare = Math.round(Math.max(...tranches.map(t => t.weightShare)) * 1000) / 1000;
+  const band = durationBand(weightedAverageDurationYears);
+
+  const rolloverStressAligned =
+    !stress ||
+    weightedAverageDurationYears >= DURATION_FLOOR ||
+    v1012.pressure === 'critical' ||
+    !v1012.debtEnabled;
+
+  const withinGovernanceTargets =
+    maxTrancheShare <= MAX_TRANCHE_SHARE + 0.02 &&
+    weightedAverageDurationYears >= DURATION_FLOOR - 0.35 &&
+    weightedAverageDurationYears <= DURATION_CEILING + 0.35 &&
+    rolloverStressAligned;
+
+  const warnings: string[] = [];
+  if (maxTrancheShare > MAX_TRANCHE_SHARE) {
+    warnings.push(`Tranche concentration ${maxTrancheShare} exceeds ${MAX_TRANCHE_SHARE}.`);
+  }
+  if (weightedAverageDurationYears < DURATION_FLOOR) {
+    warnings.push(`Weighted duration ${weightedAverageDurationYears}y below floor ${DURATION_FLOOR}.`);
+  }
+  if (!rolloverStressAligned) {
+    warnings.push('Liquidity stress not aligned with portfolio duration tilt.');
+  }
+
+  const narrative = withinGovernanceTargets
+    ? `Debt portfolio WAD ${weightedAverageDurationYears}y (${band}), max share ${maxTrancheShare}.`
+    : `Debt governance review: WAD ${weightedAverageDurationYears}y, concentration ${maxTrancheShare}.`;
+
+  return {
+    schemaVersion: DEBT_PORTFOLIO_GOVERNANCE_SCHEMA,
+    turn,
+    tranches,
+    weightedAverageDurationYears,
+    durationBand: band,
+    maxTrancheShare,
+    rolloverStressAligned,
+    withinGovernanceTargets,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -5541,11 +5804,15 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
   const warrantLedger = buildAppropriationWarrantLedger(turn, v1012);
   const supplementary = buildSupplementaryEstimatesReport(turn, v1012);
   const spendingOffsets = buildSpendingOffsetsReport(turn, v1012);
+  const portfolioOutturn = buildPortfolioOutturnReport(turn, v1012);
   const debtRollover = resolveDebtRollover({
     turn,
     v1012,
     tranches: defaultMaturityLadder(turn),
     computeTrajectory: computeDebtOutcomeTrajectory
+  });
+  const debtPortfolioGov = buildDebtPortfolioGovernanceReport(turn, v1012, {
+    liquidityStress: debtRollover.liquidityStress
   });
   const resilienceStack = assessFiscalResilience(turn, v1012, ['commodity_drop', 'rate_shock']);
   const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
@@ -5785,13 +6052,48 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `revision=${supplementary.netRevisionPoints}, warrantRemaining=${warrantLedger.aggregateRemaining}`
   });
 
+  checks.push({
+    id: 'CF29',
+    label: 'Portfolio outturn within reconciliation tolerance',
+    passed: portfolioOutturn.withinReconciliationTolerance,
+    detail: `variance=${portfolioOutturn.aggregateVariancePoints}, ratio=${portfolioOutturn.aggregateVarianceRatio}`
+  });
+
+  checks.push({
+    id: 'CF30',
+    label: 'Debt portfolio governance within targets',
+    passed: debtPortfolioGov.withinGovernanceTargets || !v1012.debtEnabled || v1012.pressure === 'critical',
+    detail: `wad=${debtPortfolioGov.weightedAverageDurationYears}, maxShare=${debtPortfolioGov.maxTrancheShare}`
+  });
+
+  checks.push({
+    id: 'CF31',
+    label: 'Outturn drift coherent with supplementary net revision',
+    passed:
+      Math.abs(portfolioOutturn.aggregateVariancePoints - supplementary.netRevisionPoints * 0.35) <= 4.5 ||
+      supplementary.netRevisionPoints <= 0 ||
+      v1012.pressure === 'critical',
+    detail: `outturn=${portfolioOutturn.aggregateVariancePoints}, suppNet=${supplementary.netRevisionPoints}`
+  });
+
+  checks.push({
+    id: 'CF32',
+    label: 'Debt portfolio duration aligned with rollover stress',
+    passed:
+      debtPortfolioGov.rolloverStressAligned ||
+      !debtRollover.liquidityStress ||
+      !v1012.debtEnabled ||
+      v1012.pressure === 'critical',
+    detail: `stress=${debtRollover.liquidityStress}, aligned=${debtPortfolioGov.rolloverStressAligned}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 26
+    layerCount: 30
   };
 }
 
@@ -7671,12 +7973,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Twenty-six fiscal layers integrated', healthy.layerCount === 26, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Thirty fiscal layers integrated', healthy.layerCount === 30, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 28,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 32,
     'ok'
   );
 
@@ -7688,9 +7990,9 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF28 ids present',
+    'CF01–CF32 ids present',
     healthy.checks.map(c => c.id).join(',') ===
-      'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08,CF09,CF10,CF11,CF12,CF13,CF14,CF15,CF16,CF17,CF18,CF19,CF20,CF21,CF22,CF23,CF24,CF25,CF26,CF27,CF28',
+      'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08,CF09,CF10,CF11,CF12,CF13,CF14,CF15,CF16,CF17,CF18,CF19,CF20,CF21,CF22,CF23,CF24,CF25,CF26,CF27,CF28,CF29,CF30,CF31,CF32',
     'ok'
   );
 
@@ -8557,6 +8859,134 @@ export function runSpendingOffsetsSelfTests(): {
     'Fully offset lines have coverage at least 1',
     healthy.lines.filter(l => l.fullyOffset).every(l => l.coverageRatio >= 0.99),
     'ok'
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: portfolio-outturn/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 70,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 6,
+    debtLevel: partial.debtLevel ?? 24,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 7,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runPortfolioOutturnSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const healthy = buildPortfolioOutturnReport(9, snap({}));
+  record('PO01', 'Five portfolio outturn lines', healthy.lines.length === 5, 'ok');
+  record('PO02', 'Healthy aggregate within tolerance', healthy.withinReconciliationTolerance, healthy.narrative);
+  record(
+    'PO03',
+    'Variance ratio bounded per line under healthy',
+    healthy.lines.every(l => l.withinPortfolioBand),
+    `outside=${healthy.portfoliosOutsideBand}`
+  );
+
+  const strained = buildPortfolioOutturnReport(11, snap({ turn: 11, maintenanceLoad: 19, fiscalHeadroom: -4, pressure: 'strained' }));
+  record(
+    'PO04',
+    'Strained maintenance increases aggregate variance magnitude',
+    Math.abs(strained.aggregateVariancePoints) >= Math.abs(healthy.aggregateVariancePoints),
+    `${strained.aggregateVariancePoints} vs ${healthy.aggregateVariancePoints}`
+  );
+
+  const critical = buildPortfolioOutturnReport(12, snap({ pressure: 'critical', fiscalHeadroom: -22, maintenanceLoad: 22 }));
+  record('PO05', 'Critical pressure overrides reconciliation guard', critical.withinReconciliationTolerance, 'ok');
+
+  record(
+    'PO06',
+    'Each line links portfolio id',
+    healthy.lines.every(l => l.portfolioId.startsWith('pf_')),
+    'ok'
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: debt-portfolio-governance/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 10,
+    revenueCapacity: partial.revenueCapacity ?? 72,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 5,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 7,
+    debtLevel: partial.debtLevel ?? 28,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 8,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runDebtPortfolioGovernanceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const healthy = buildDebtPortfolioGovernanceReport(10, snap({}));
+  record('DPG01', 'Five debt portfolio tranches', healthy.tranches.length === 5, 'ok');
+  record('DPG02', 'Healthy within governance targets', healthy.withinGovernanceTargets, healthy.narrative);
+  record(
+    'DPG03',
+    'Weighted duration within band',
+    healthy.weightedAverageDurationYears >= 4 && healthy.weightedAverageDurationYears <= 10,
+    `wad=${healthy.weightedAverageDurationYears}`
+  );
+
+  const stressed = buildDebtPortfolioGovernanceReport(10, snap({ debtServiceLoad: 18, debtLevel: 55 }), {
+    liquidityStress: true
+  });
+  record(
+    'DPG04',
+    'Liquidity stress keeps rollover alignment or critical override path',
+    stressed.rolloverStressAligned || stressed.withinGovernanceTargets,
+    `aligned=${stressed.rolloverStressAligned}`
+  );
+
+  const noDebt = buildDebtPortfolioGovernanceReport(10, snap({ debtEnabled: false, debtLevel: 0 }));
+  record('DPG05', 'Debt disabled still produces tranche ledger', noDebt.tranches.length === 5, 'ok');
+
+  record(
+    'DPG06',
+    'Max tranche share bounded under healthy',
+    healthy.maxTrancheShare <= 0.45,
+    `max=${healthy.maxTrancheShare}`
   );
 
   const passed = results.filter(r => r.passed).length;

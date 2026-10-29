@@ -17,6 +17,8 @@ import { buildCashManagementReport } from '../cash-management/compute';
 import { buildAppropriationWarrantLedger } from '../appropriation-warrants/compute';
 import { buildSupplementaryEstimatesReport } from '../supplementary-estimates/compute';
 import { buildSpendingOffsetsReport } from '../spending-offsets/compute';
+import { buildPortfolioOutturnReport } from '../portfolio-outturn/compute';
+import { buildDebtPortfolioGovernanceReport } from '../debt-portfolio-governance/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -73,11 +75,15 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
   const warrantLedger = buildAppropriationWarrantLedger(turn, v1012);
   const supplementary = buildSupplementaryEstimatesReport(turn, v1012);
   const spendingOffsets = buildSpendingOffsetsReport(turn, v1012);
+  const portfolioOutturn = buildPortfolioOutturnReport(turn, v1012);
   const debtRollover = resolveDebtRollover({
     turn,
     v1012,
     tranches: defaultMaturityLadder(turn),
     computeTrajectory: computeDebtOutcomeTrajectory
+  });
+  const debtPortfolioGov = buildDebtPortfolioGovernanceReport(turn, v1012, {
+    liquidityStress: debtRollover.liquidityStress
   });
   const resilienceStack = assessFiscalResilience(turn, v1012, ['commodity_drop', 'rate_shock']);
   const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
@@ -317,12 +323,47 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `revision=${supplementary.netRevisionPoints}, warrantRemaining=${warrantLedger.aggregateRemaining}`
   });
 
+  checks.push({
+    id: 'CF29',
+    label: 'Portfolio outturn within reconciliation tolerance',
+    passed: portfolioOutturn.withinReconciliationTolerance,
+    detail: `variance=${portfolioOutturn.aggregateVariancePoints}, ratio=${portfolioOutturn.aggregateVarianceRatio}`
+  });
+
+  checks.push({
+    id: 'CF30',
+    label: 'Debt portfolio governance within targets',
+    passed: debtPortfolioGov.withinGovernanceTargets || !v1012.debtEnabled || v1012.pressure === 'critical',
+    detail: `wad=${debtPortfolioGov.weightedAverageDurationYears}, maxShare=${debtPortfolioGov.maxTrancheShare}`
+  });
+
+  checks.push({
+    id: 'CF31',
+    label: 'Outturn drift coherent with supplementary net revision',
+    passed:
+      Math.abs(portfolioOutturn.aggregateVariancePoints - supplementary.netRevisionPoints * 0.35) <= 4.5 ||
+      supplementary.netRevisionPoints <= 0 ||
+      v1012.pressure === 'critical',
+    detail: `outturn=${portfolioOutturn.aggregateVariancePoints}, suppNet=${supplementary.netRevisionPoints}`
+  });
+
+  checks.push({
+    id: 'CF32',
+    label: 'Debt portfolio duration aligned with rollover stress',
+    passed:
+      debtPortfolioGov.rolloverStressAligned ||
+      !debtRollover.liquidityStress ||
+      !v1012.debtEnabled ||
+      v1012.pressure === 'critical',
+    detail: `stress=${debtRollover.liquidityStress}, aligned=${debtPortfolioGov.rolloverStressAligned}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 26
+    layerCount: 30
   };
 }
