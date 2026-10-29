@@ -215,7 +215,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.15' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.16' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -266,7 +266,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'resilience_frontier_pressure'
   | 'meta_governance_coordination_fatigue'
   | 'capital_mobility_asymmetry'
-  | 'compound_shock_saturation';
+  | 'compound_shock_saturation'
+  | 'institutional_trust_erosion'
+  | 'liquidity_fragmentation_stress'
+  | 'cascading_failure_risk';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -633,6 +636,36 @@ export interface OP10M_A11_CompoundShockSaturationRow {
   narrative: string;
 }
 
+export type OP10M_A11_InstitutionalTrustErosionBand = 'trusted' | 'thinning' | 'brittle' | 'breakdown';
+
+export interface OP10M_A11_InstitutionalTrustErosionRow {
+  regionId: OP10M_A11_RegionId;
+  erosionScore: number;
+  band: OP10M_A11_InstitutionalTrustErosionBand;
+  signals: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_LiquidityFragmentationBand = 'integrated' | 'segmented' | 'fractured' | 'frozen';
+
+export interface OP10M_A11_LiquidityFragmentationRow {
+  regionId: OP10M_A11_RegionId;
+  fragmentationScore: number;
+  band: OP10M_A11_LiquidityFragmentationBand;
+  drivers: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_CascadingFailureBand = 'contained' | 'spreading' | 'cascade_risk' | 'systemic';
+
+export interface OP10M_A11_CascadingFailureRiskRow {
+  regionId: OP10M_A11_RegionId;
+  cascadeScore: number;
+  band: OP10M_A11_CascadingFailureBand;
+  triggers: string[];
+  narrative: string;
+}
+
 export type OP10M_A11_MigrationPressureBand = 'stable' | 'elevated' | 'high' | 'surge';
 
 export interface OP10M_A11_MigrationPressureRow {
@@ -815,6 +848,12 @@ export interface OP10M_A11_CompositeState {
   nationalCapitalMobilityAsymmetryIndex: number;
   compoundShockSaturation: OP10M_A11_CompoundShockSaturationRow[];
   nationalCompoundShockSaturationIndex: number;
+  institutionalTrustErosion: OP10M_A11_InstitutionalTrustErosionRow[];
+  nationalInstitutionalTrustErosionIndex: number;
+  liquidityFragmentation: OP10M_A11_LiquidityFragmentationRow[];
+  nationalLiquidityFragmentationIndex: number;
+  cascadingFailureRisk: OP10M_A11_CascadingFailureRiskRow[];
+  nationalCascadingFailureRiskIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -860,5 +899,8 @@ export interface OP10M_A11_CompositePersisted {
   lastMetaGovernanceFatigueIndex: number;
   lastCapitalMobilityAsymmetryIndex: number;
   lastCompoundShockSaturationIndex: number;
+  lastInstitutionalTrustErosionIndex: number;
+  lastLiquidityFragmentationIndex: number;
+  lastCascadingFailureRiskIndex: number;
   inputHash: string;
 }

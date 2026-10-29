@@ -33,6 +33,14 @@ All symbols are prefixed `OP10M_A11_` for grep-safe assembly.
 4. Persist infra slice under `gameState.op10mAgent11IntercityInfra` (`createEmptyOP10M_A11_InfraPersisted()`).
 5. Register `runOP10M_A11_SelfTests` in quick regression suite beside `runV1014_CITIES_CityRegionalIntercitySelfTests`.
 
+### Scale wave round 17 (schema `10m.a11.composite.16`)
+
+- **Regional institutional trust erosion** — meta-governance fatigue × governance resilience decay × cohesion integrity (`op10mA11ComputeRegionalInstitutionalTrustErosion`)
+- **Interregional liquidity fragmentation stress** — capital mobility asymmetry × network equity tension × fiscal capacity strain (`op10mA11ComputeInterregionalLiquidityFragmentationStress`)
+- **Settlement cascading failure risk** — compound shock saturation × systemic fragility × adaptive capacity ceiling (`op10mA11ComputeSettlementCascadingFailureRisk`)
+- **10-turn regression harness** — extended bounds for institutional trust, liquidity fragmentation, cascading failure risk
+- Derived events: `institutional_trust_erosion`, `liquidity_fragmentation_stress`, `cascading_failure_risk`
+
 ### Scale wave round 16 (schema `10m.a11.composite.15`)
 
 - **Regional meta-governance coordination fatigue** — fiscal–governance coupling × governance friction × relief overhead (`op10mA11ComputeRegionalMetaGovernanceCoordinationFatigue`)

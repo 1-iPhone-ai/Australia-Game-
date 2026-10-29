@@ -52,5 +52,8 @@ export * from './settlement-resilience-frontier-pressure.ts';
 export * from './regional-meta-governance-coordination-fatigue.ts';
 export * from './interregional-capital-mobility-asymmetry.ts';
 export * from './settlement-compound-shock-saturation.ts';
+export * from './regional-institutional-trust-erosion.ts';
+export * from './interregional-liquidity-fragmentation-stress.ts';
+export * from './settlement-cascading-failure-risk.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';
