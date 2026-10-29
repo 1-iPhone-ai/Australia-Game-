@@ -49,7 +49,7 @@ describe('mode mission registry', () => {
 
   it('reports chain region coverage', () => {
     const coverage = chainCoverageReport();
-    assert.equal(coverage.length, 31);
+    assert.equal(coverage.length, 32);
     assert.ok(coverage.every(c => c.scenarioCount === 3));
   });
 });
