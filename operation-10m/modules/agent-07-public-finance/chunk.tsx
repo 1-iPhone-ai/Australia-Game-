@@ -7592,6 +7592,218 @@ export function buildBalanceSheetFiscalCoherenceReport(
 }
 
 
+// --- source: fiscal-risk-stress-coherence/types.ts ---
+export const FISCAL_RISK_STRESS_COHERENCE_SCHEMA = 'op10m-agent07-fiscal-risk-stress-coherence-v1';
+
+export interface RiskStressCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface FiscalRiskStressCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: RiskStressCheck[];
+  aggregateRiskStressGapPoints: number;
+  withinRiskStressBand: boolean;
+  alignedWithContingentBridge: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: fiscal-risk-stress-coherence/compute.ts ---
+
+const RISK_STRESS_TOLERANCE = 6.4;
+
+export function buildFiscalRiskStressCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  riskRegister: FiscalRiskRegisterReport,
+  fiscalStress: FiscalStressScenariosReport,
+  contingentBridge: ContingentLiabilityForwardBridgeReport
+): FiscalRiskStressCoherenceReport {
+  const stressHeatGap = Math.abs(
+    fiscalStress.worstHeadroomDelta + riskRegister.aggregateHeat * 0.42
+  );
+  const contingentGap = Math.abs(
+    contingentBridge.bridgeExposureGapPoints - riskRegister.aggregateHeat * 0.18
+  );
+  const aggregateRiskStressGapPoints =
+    Math.round((stressHeatGap + contingentGap) * 10) / 20;
+
+  const checks: RiskStressCheck[] = [
+    {
+      id: 'FRSC01',
+      label: 'Risk register within appetite',
+      passed: riskRegister.withinRiskAppetite || v1012.pressure === 'critical',
+      detail: `heat=${riskRegister.aggregateHeat}, tier=${riskRegister.tier}`
+    },
+    {
+      id: 'FRSC02',
+      label: 'Stress worst delta vs risk heat',
+      passed:
+        stressHeatGap <= RISK_STRESS_TOLERANCE + 3 ||
+        fiscalStress.withinStressAppetite ||
+        v1012.pressure === 'critical',
+      detail: `worstDelta=${fiscalStress.worstHeadroomDelta}, heat=${riskRegister.aggregateHeat}`
+    },
+    {
+      id: 'FRSC03',
+      label: 'Contingent bridge vs risk heat',
+      passed:
+        contingentGap <= RISK_STRESS_TOLERANCE + 2 ||
+        contingentBridge.withinContingentForwardBand ||
+        v1012.pressure === 'critical',
+      detail: `bridge=${contingentBridge.bridgeExposureGapPoints}, heat=${riskRegister.aggregateHeat}`
+    }
+  ];
+
+  const withinRiskStressBand =
+    checks.every(c => c.passed) ||
+    (riskRegister.withinRiskAppetite && fiscalStress.withinStressAppetite) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithContingentBridge =
+    contingentBridge.alignedWithStressBridge &&
+    (aggregateRiskStressGapPoints <= contingentBridge.bridgeExposureGapPoints + 2.5 ||
+      contingentBridge.withinContingentForwardBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinRiskStressBand) {
+    warnings.push(`Fiscal risk stress gap ${aggregateRiskStressGapPoints}.`);
+  }
+  if (!alignedWithContingentBridge) {
+    warnings.push('Risk stress coherence diverges from contingent forward bridge.');
+  }
+
+  const narrative = withinRiskStressBand
+    ? `Fiscal risk stress gap ${aggregateRiskStressGapPoints} within tolerance.`
+    : `Fiscal risk stress alert: gap ${aggregateRiskStressGapPoints}.`;
+
+  return {
+    schemaVersion: FISCAL_RISK_STRESS_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateRiskStressGapPoints,
+    withinRiskStressBand,
+    alignedWithContingentBridge,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: sovereign-issuance-coupling-bridge/types.ts ---
+export const SOVEREIGN_ISSUANCE_COUPLING_BRIDGE_SCHEMA =
+  'op10m-agent07-sovereign-issuance-coupling-bridge-v1';
+
+export interface IssuanceCouplingCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface SovereignIssuanceCouplingBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: IssuanceCouplingCheck[];
+  bridgeCouplingGapPoints: number;
+  withinIssuanceCouplingBand: boolean;
+  alignedWithDebtService: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: sovereign-issuance-coupling-bridge/compute.ts ---
+
+const COUPLING_GAP_TOLERANCE = 5.9;
+
+export function buildSovereignIssuanceCouplingBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  issuance: SovereignIssuanceCalendar,
+  debtCoupling: DebtFiscalCouplingRegisterReport,
+  debtService: DebtServiceCoverageReport
+): SovereignIssuanceCouplingBridgeReport {
+  const issuanceGap = Math.abs(issuance.totalIssued - issuance.totalScheduled * 0.88);
+  const couplingGap = Math.abs(debtCoupling.couplingStressPoints - issuanceGap * 0.15);
+  const serviceGap = Math.max(0, 1.05 - debtService.coverageRatio) * 10;
+  const bridgeCouplingGapPoints =
+    Math.round((issuanceGap + couplingGap + serviceGap) * 10) / 30;
+
+  const checks: IssuanceCouplingCheck[] = [
+    {
+      id: 'SICB01',
+      label: 'Issuance without liquidity shortfall',
+      passed: !issuance.liquidityShortfall || !v1012.debtEnabled || v1012.pressure === 'critical',
+      observed: issuance.totalIssued,
+      tolerance: issuance.totalScheduled
+    },
+    {
+      id: 'SICB02',
+      label: 'Issuance schedule vs debt coupling stress',
+      passed:
+        couplingGap <= COUPLING_GAP_TOLERANCE + 2 ||
+        debtCoupling.withinCouplingBand ||
+        v1012.pressure === 'critical',
+      observed: couplingGap,
+      tolerance: COUPLING_GAP_TOLERANCE + 2
+    },
+    {
+      id: 'SICB03',
+      label: 'Coverage ratio supports issuance bridge',
+      passed:
+        debtService.withinCoverageFloor ||
+        serviceGap <= COUPLING_GAP_TOLERANCE ||
+        v1012.pressure === 'critical',
+      observed: debtService.coverageRatio,
+      tolerance: 1.05
+    }
+  ];
+
+  const withinIssuanceCouplingBand =
+    checks.every(c => c.passed) ||
+    (!issuance.liquidityShortfall && debtCoupling.withinCouplingBand) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithDebtService =
+    debtService.runwayTurnsAligned &&
+    (bridgeCouplingGapPoints <= debtService.coverageRatio + 2.2 ||
+      debtService.withinCoverageFloor ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinIssuanceCouplingBand) {
+    warnings.push(`Sovereign issuance coupling gap ${bridgeCouplingGapPoints}.`);
+  }
+  if (!alignedWithDebtService) {
+    warnings.push('Issuance coupling bridge diverges from debt service coverage.');
+  }
+
+  const narrative = withinIssuanceCouplingBand
+    ? `Sovereign issuance coupling gap ${bridgeCouplingGapPoints} within tolerance.`
+    : `Issuance coupling alert: gap ${bridgeCouplingGapPoints}.`;
+
+  return {
+    schemaVersion: SOVEREIGN_ISSUANCE_COUPLING_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeCouplingGapPoints,
+    withinIssuanceCouplingBand,
+    alignedWithDebtService,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -9550,6 +9762,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     statutory,
     cashMgmt
   );
+  const fiscalRiskStressCoherence = buildFiscalRiskStressCoherenceReport(
+    turn,
+    v1012,
+    riskRegister,
+    fiscalStress,
+    contingentLiabilityForwardBridge
+  );
+  const sovereignIssuanceCouplingBridge = buildSovereignIssuanceCouplingBridgeReport(
+    turn,
+    v1012,
+    issuance,
+    debtFiscalCouplingRegister,
+    debtServiceCoverage
+  );
 
   checks.push({
     id: 'CF01',
@@ -10239,13 +10465,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `netWorth=${publicBalanceSheet.netWorthPoints}, fiscalBalance=${statutory.fiscalBalance}`
   });
 
+  checks.push({
+    id: 'CF97',
+    label: 'Fiscal risk stress coherence within band',
+    passed: fiscalRiskStressCoherence.withinRiskStressBand || v1012.pressure === 'critical',
+    detail: `gap=${fiscalRiskStressCoherence.aggregateRiskStressGapPoints}, checks=${fiscalRiskStressCoherence.checks.filter(c => c.passed).length}/${fiscalRiskStressCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF98',
+    label: 'Sovereign issuance coupling within band',
+    passed: sovereignIssuanceCouplingBridge.withinIssuanceCouplingBand || v1012.pressure === 'critical',
+    detail: `gap=${sovereignIssuanceCouplingBridge.bridgeCouplingGapPoints}, checks=${sovereignIssuanceCouplingBridge.checks.filter(c => c.passed).length}/${sovereignIssuanceCouplingBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF99',
+    label: 'Risk stress aligned with contingent bridge',
+    passed: fiscalRiskStressCoherence.alignedWithContingentBridge,
+    detail: `heat=${riskRegister.aggregateHeat}, contingentGap=${contingentLiabilityForwardBridge.bridgeExposureGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF100',
+    label: 'Issuance coupling aligned with debt service',
+    passed: sovereignIssuanceCouplingBridge.alignedWithDebtService,
+    detail: `coverage=${debtServiceCoverage.coverageRatio}, issued=${issuance.totalIssued}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 76
+    layerCount: 78
   };
 }
 
@@ -12125,12 +12379,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Seventy-six fiscal layers integrated', healthy.layerCount === 76, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Seventy-eight fiscal layers integrated', healthy.layerCount === 78, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 96,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 100,
     'ok'
   );
 
@@ -12142,10 +12396,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF96 ids present',
-    healthy.checks.length === 96 &&
+    'CF01–CF100 ids present',
+    healthy.checks.length === 100 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[95]?.id === 'CF96',
+      healthy.checks[99]?.id === 'CF100',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -15291,6 +15545,177 @@ export function runBalanceSheetFiscalCoherenceSelfTests(): {
     'BSFC-T03',
     'Aligned with statutory balances',
     healthy.alignedWithStatutoryBalances,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: fiscal-risk-stress-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runFiscalRiskStressCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const statutory = buildStatutoryBalancesReport(9, v);
+  const cash = buildCashManagementReport(9, v);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const fiscalRules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const contingency = buildContingencyDrawdownRegisterReport(9, v, contingencyFlex, fiscalRules);
+  const fiscalBuffer = buildFiscalBufferCoherenceReport(9, v, statutory, cash, contingency, revenueForward);
+  const debtGov = buildDebtPortfolioGovernanceReport(9, v);
+  const fiscalStress = buildFiscalStressScenariosReport(9, v);
+  const sovereignCredit = buildSovereignCreditOutlookReport(9, v, debtGov, {
+    stressWorstDelta: fiscalStress.worstHeadroomDelta
+  });
+  const debtService = buildDebtServiceCoverageReport(9, v, ledger, cash);
+  const debtCoupling = buildDebtFiscalCouplingRegisterReport(9, v, debtService, sovereignCredit, fiscalBuffer);
+  const stressBridge = buildFiscalStressResilienceBridgeReport(9, v, fiscalStress, debtCoupling, fiscalBuffer);
+  const contingent = assessContingentLiabilities(9, v);
+  const contingentBridge = buildContingentLiabilityForwardBridgeReport(
+    9,
+    v,
+    contingent,
+    forwardIntegrity,
+    stressBridge
+  );
+  const riskRegister = buildFiscalRiskRegister(9, v);
+  const healthy = buildFiscalRiskStressCoherenceReport(9, v, riskRegister, fiscalStress, contingentBridge);
+
+  record('FRSC-T01', 'Three risk stress checks', healthy.checks.length === 3, 'ok');
+  record(
+    'FRSC-T02',
+    'Within risk stress band',
+    healthy.withinRiskStressBand,
+    `gap=${healthy.aggregateRiskStressGapPoints}`
+  );
+  record(
+    'FRSC-T03',
+    'Aligned with contingent bridge',
+    healthy.alignedWithContingentBridge,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: sovereign-issuance-coupling-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runSovereignIssuanceCouplingBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const statutory = buildStatutoryBalancesReport(9, v);
+  const cash = buildCashManagementReport(9, v);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const fiscalRules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const contingency = buildContingencyDrawdownRegisterReport(9, v, contingencyFlex, fiscalRules);
+  const fiscalBuffer = buildFiscalBufferCoherenceReport(9, v, statutory, cash, contingency, revenueForward);
+  const debtGov = buildDebtPortfolioGovernanceReport(9, v);
+  const fiscalStress = buildFiscalStressScenariosReport(9, v);
+  const sovereignCredit = buildSovereignCreditOutlookReport(9, v, debtGov, {
+    stressWorstDelta: fiscalStress.worstHeadroomDelta
+  });
+  const debtService = buildDebtServiceCoverageReport(9, v, ledger, cash);
+  const debtCoupling = buildDebtFiscalCouplingRegisterReport(9, v, debtService, sovereignCredit, fiscalBuffer);
+  const issuance = executeIssuanceCalendar(9, v);
+  const healthy = buildSovereignIssuanceCouplingBridgeReport(9, v, issuance, debtCoupling, debtService);
+
+  record('SICB-T01', 'Three issuance coupling checks', healthy.checks.length === 3, 'ok');
+  record(
+    'SICB-T02',
+    'Within issuance coupling band',
+    healthy.withinIssuanceCouplingBand,
+    `gap=${healthy.bridgeCouplingGapPoints}`
+  );
+  record(
+    'SICB-T03',
+    'Aligned with debt service',
+    healthy.alignedWithDebtService,
     healthy.narrative
   );
 

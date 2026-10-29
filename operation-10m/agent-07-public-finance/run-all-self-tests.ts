@@ -59,6 +59,8 @@ import { runContingentLiabilityForwardBridgeSelfTests } from './modules/continge
 import { runCostRecoveryRevenueCoherenceSelfTests } from './modules/cost-recovery-revenue-coherence/self-tests';
 import { runGrantClawbackForwardCoherenceSelfTests } from './modules/grant-clawback-forward-coherence/self-tests';
 import { runBalanceSheetFiscalCoherenceSelfTests } from './modules/balance-sheet-fiscal-coherence/self-tests';
+import { runFiscalRiskStressCoherenceSelfTests } from './modules/fiscal-risk-stress-coherence/self-tests';
+import { runSovereignIssuanceCouplingBridgeSelfTests } from './modules/sovereign-issuance-coupling-bridge/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -127,6 +129,8 @@ ok = runSuite('Contingent liability forward bridge', runContingentLiabilityForwa
 ok = runSuite('Cost recovery revenue coherence', runCostRecoveryRevenueCoherenceSelfTests) && ok;
 ok = runSuite('Grant clawback forward coherence', runGrantClawbackForwardCoherenceSelfTests) && ok;
 ok = runSuite('Balance sheet fiscal coherence', runBalanceSheetFiscalCoherenceSelfTests) && ok;
+ok = runSuite('Fiscal risk stress coherence', runFiscalRiskStressCoherenceSelfTests) && ok;
+ok = runSuite('Sovereign issuance coupling bridge', runSovereignIssuanceCouplingBridgeSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);

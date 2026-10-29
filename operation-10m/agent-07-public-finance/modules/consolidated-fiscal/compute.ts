@@ -51,6 +51,8 @@ import { buildContingentLiabilityForwardBridgeReport } from '../contingent-liabi
 import { buildCostRecoveryRevenueCoherenceReport } from '../cost-recovery-revenue-coherence/compute';
 import { buildGrantClawbackForwardCoherenceReport } from '../grant-clawback-forward-coherence/compute';
 import { buildBalanceSheetFiscalCoherenceReport } from '../balance-sheet-fiscal-coherence/compute';
+import { buildFiscalRiskStressCoherenceReport } from '../fiscal-risk-stress-coherence/compute';
+import { buildSovereignIssuanceCouplingBridgeReport } from '../sovereign-issuance-coupling-bridge/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -320,6 +322,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     publicBalanceSheet,
     statutory,
     cashMgmt
+  );
+  const fiscalRiskStressCoherence = buildFiscalRiskStressCoherenceReport(
+    turn,
+    v1012,
+    riskRegister,
+    fiscalStress,
+    contingentLiabilityForwardBridge
+  );
+  const sovereignIssuanceCouplingBridge = buildSovereignIssuanceCouplingBridgeReport(
+    turn,
+    v1012,
+    issuance,
+    debtFiscalCouplingRegister,
+    debtServiceCoverage
   );
 
   checks.push({
@@ -1010,12 +1026,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `netWorth=${publicBalanceSheet.netWorthPoints}, fiscalBalance=${statutory.fiscalBalance}`
   });
 
+  checks.push({
+    id: 'CF97',
+    label: 'Fiscal risk stress coherence within band',
+    passed: fiscalRiskStressCoherence.withinRiskStressBand || v1012.pressure === 'critical',
+    detail: `gap=${fiscalRiskStressCoherence.aggregateRiskStressGapPoints}, checks=${fiscalRiskStressCoherence.checks.filter(c => c.passed).length}/${fiscalRiskStressCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF98',
+    label: 'Sovereign issuance coupling within band',
+    passed: sovereignIssuanceCouplingBridge.withinIssuanceCouplingBand || v1012.pressure === 'critical',
+    detail: `gap=${sovereignIssuanceCouplingBridge.bridgeCouplingGapPoints}, checks=${sovereignIssuanceCouplingBridge.checks.filter(c => c.passed).length}/${sovereignIssuanceCouplingBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF99',
+    label: 'Risk stress aligned with contingent bridge',
+    passed: fiscalRiskStressCoherence.alignedWithContingentBridge,
+    detail: `heat=${riskRegister.aggregateHeat}, contingentGap=${contingentLiabilityForwardBridge.bridgeExposureGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF100',
+    label: 'Issuance coupling aligned with debt service',
+    passed: sovereignIssuanceCouplingBridge.alignedWithDebtService,
+    detail: `coverage=${debtServiceCoverage.coverageRatio}, issued=${issuance.totalIssued}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 76
+    layerCount: 78
   };
 }
