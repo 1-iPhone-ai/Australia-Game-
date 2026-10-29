@@ -177164,6 +177164,55 @@ function scoreToEmploymentBand(score: number): EmploymentOpportunityBand {
   return 'scarce';
 }
 
+/** O111 Agent 37: read authoritative V10.10 regional workforce signals for employment/housing (legacy field fallbacks). */
+function resolveRegionalLaborSignals(
+  wfReg: RegionalWorkforceProfile | Record<string, unknown> | undefined,
+  expReg: Record<string, unknown> | undefined
+): {
+  highLaborDemand: boolean;
+  severeWorkforceBottleneck: boolean;
+  employmentSupportBoost: number;
+} {
+  const legacyPressure = typeof wfReg?.overallPressure === 'string' ? String(wfReg.overallPressure) : '';
+  const strain = typeof expReg?.workforceStrain === 'string' ? String(expReg.workforceStrain) : '';
+  const pressureBand =
+    (typeof wfReg?.pressureBand === 'string' ? (wfReg.pressureBand as WorkforcePressureBand) : null) ||
+    (legacyPressure === 'critical_bottleneck' || legacyPressure === 'shortage'
+      ? 'critical'
+      : legacyPressure === 'tight' || legacyPressure === 'strained' || legacyPressure === 'critical'
+      ? (legacyPressure as WorkforcePressureBand)
+      : null) ||
+    (strain === 'severe'
+      ? 'critical'
+      : strain === 'strained'
+      ? 'strained'
+      : strain === 'tight'
+      ? 'tight'
+      : null);
+
+  const demand = Number(wfReg?.workforceDemand ?? wfReg?.demandScore ?? 0);
+  const capacity = Number(wfReg?.workforceCapacity ?? wfReg?.capacityScore ?? 0);
+  const pressureRatio = capacity > 0 ? demand / Math.max(20, capacity) : demand >= 65 ? 1.2 : 0;
+
+  const highLaborDemand =
+    pressureBand === 'tight' ||
+    pressureBand === 'strained' ||
+    (demand >= 65 && pressureRatio >= 1.05);
+
+  const severeWorkforceBottleneck = pressureBand === 'critical' || strain === 'severe';
+
+  let employmentSupportBoost = 0;
+  if (expReg?.employmentSupportScore === undefined && wfReg) {
+    const depth = Number(wfReg.specialistDepth ?? 0);
+    if (depth >= 70) employmentSupportBoost += 6;
+    else if (depth >= 55) employmentSupportBoost += 3;
+    if (highLaborDemand) employmentSupportBoost += 4;
+    if (severeWorkforceBottleneck) employmentSupportBoost -= 5;
+  }
+
+  return { highLaborDemand, severeWorkforceBottleneck, employmentSupportBoost };
+}
+
 function scoreToEssentialAccessBand(score: number): EssentialAccessBand {
   if (score >= 80) return 'excellent';
   if (score >= 65) return 'strong';
@@ -177432,17 +177481,9 @@ export function computeNationalHouseholdEconomy(
 
     // V10.10 Workforce conditions in this region (Parts 41–44)
     const wfReg: any = wfAny?.regions?.[regionId];
-    const wfTightOrHighDemand =
-      expReg?.workforceStrain === 'tight' ||
-      expReg?.workforceStrain === 'strained' ||
-      (wfReg &&
-        (wfReg.overallPressure === 'tight' ||
-          wfReg.overallPressure === 'strained' ||
-          Number(wfReg.demandScore || 0) >= 65));
-    const wfSevereBottleneck =
-      expReg?.workforceStrain === 'severe' ||
-      wfReg?.overallPressure === 'critical_bottleneck' ||
-      wfReg?.overallPressure === 'shortage';
+    const laborSignals = resolveRegionalLaborSignals(wfReg, expReg);
+    const wfTightOrHighDemand = laborSignals.highLaborDemand;
+    const wfSevereBottleneck = laborSignals.severeWorkforceBottleneck;
 
     // Regional Crises (Parts 73–76)
     const regCrises = activeCrises.filter(c => (c.regionIds || []).includes(regionId));
@@ -177490,6 +177531,9 @@ export function computeNationalHouseholdEconomy(
       expReg?.employmentSupportScore !== undefined
         ? expReg.employmentSupportScore * 0.52 + econScore * 0.34 + devScore * 0.14
         : econScore * 0.62 + devScore * 0.25 + 10;
+    if (laborSignals.employmentSupportBoost !== 0) {
+      employmentScore += laborSignals.employmentSupportBoost;
+    }
     if (rawEconBand === 'booming') {
       employmentScore += 12;
       pushEv('living_regions', 'economy_booming', `${regionId} booming regional economy expands job opportunities`, 12);
@@ -181888,6 +181932,53 @@ export function runV1013HouseholdsLivingStandardsSelfTests(): {
       'TEST 50 — PERFORMANCE',
       elapsedMs < 250 && prev?.revision === 1,
       `25 evaluations with input-hash cache took ${elapsedMs}ms (revision=${prev?.revision})`
+    );
+  }
+
+
+  // TEST 51 — V10.10 EMPLOYMENT BRIDGE (O111 Agent 37)
+  {
+    const baselineInp = makeDefaultV1013TestInputs({}, { QLD: { economyBand: 'strong', developmentBand: 'developed' } });
+    const bridgedInp = makeDefaultV1013TestInputs(
+      {
+        workforce: {
+          version: '10.10.0',
+          turn: 4,
+          regions: {
+            QLD: {
+              regionId: 'QLD',
+              name: 'Queensland',
+              workforceCapacity: 58,
+              workforceDemand: 72,
+              pressureRatio: 1.24,
+              pressureBand: 'strained',
+              specialistDepth: 56,
+              depthBand: 'established',
+              talentAccess: 54,
+              trainingCapacity: 50,
+              mobilitySupport: 48,
+              deliveryCapacity: 52,
+              strongestDomains: ['logistics'],
+              constrainedDomains: ['construction'],
+              isTalentHub: false,
+              concentrationShare: 0.32,
+              summary: 'Strained logistics and construction demand.',
+              evidence: []
+            }
+          }
+        } as any
+      },
+      { QLD: { economyBand: 'strong', developmentBand: 'developed', employmentSupportScore: undefined } }
+    );
+    const baseOut = computeNationalHouseholdEconomy(baselineInp, createInitialHouseholdEconomyPersisted(), null);
+    const bridgeOut = computeNationalHouseholdEconomy(bridgedInp, createInitialHouseholdEconomyPersisted(), null);
+    const baseRank = V1013_EMPLOYMENT_RANK[baseOut.state.regions['QLD'].employmentOpportunity];
+    const bridgeRank = V1013_EMPLOYMENT_RANK[bridgeOut.state.regions['QLD'].employmentOpportunity];
+    const hasWorkforceEvidence = bridgeOut.state.regions['QLD'].evidence?.some((ev: any) => ev.sourceSystem === 'workforce');
+    check(
+      'TEST 51 — V10.10 EMPLOYMENT BRIDGE',
+      bridgeRank > baseRank && Boolean(hasWorkforceEvidence),
+      `QLD employment rank ${baseRank} -> ${bridgeRank}, workforceEvidence=${Boolean(hasWorkforceEvidence)}`
     );
   }
 
