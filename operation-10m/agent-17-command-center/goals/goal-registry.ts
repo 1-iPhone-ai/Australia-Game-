@@ -569,6 +569,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Ruptured alliance or dissolved federation yields coalitionAccordBlocksAlliance.',
     severity: 'major',
   },
+  {
+    id: 'G17-082',
+    title: 'Pact index on planning depth',
+    category: 'telemetry',
+    acceptance: 'pactIndex reports pactScore 0–100 with binding/provisional/void band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-083',
+    title: 'Unity accord tenets complete',
+    category: 'telemetry',
+    acceptance: 'unityAccord exposes ≥5 tenets and unityScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-084',
+    title: 'Void pact shatters unity accord',
+    category: 'integration',
+    acceptance: 'Void pact or broken coalition yields unityAccordBlocksPact.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

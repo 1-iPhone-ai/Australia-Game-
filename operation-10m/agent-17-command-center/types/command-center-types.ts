@@ -221,6 +221,8 @@ export interface Agent17PlanningDepthSnapshot {
   federationAccord: Agent17FederationAccordSnapshot;
   allianceIndex: Agent17AllianceIndexSnapshot;
   coalitionAccord: Agent17CoalitionAccordSnapshot;
+  pactIndex: Agent17PactIndexSnapshot;
+  unityAccord: Agent17UnityAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -859,6 +861,40 @@ export interface Agent17CoalitionAccordSnapshot {
   allianceBand: Agent17AllianceIndexSnapshot['band'];
   mobilizationBand: Agent17MobilizationIndexSnapshot['band'];
   coalitionSealed: boolean;
+  headline: string;
+}
+
+export interface Agent17PactClause {
+  id: string;
+  label: string;
+  binding: boolean;
+  weight: number;
+}
+
+export interface Agent17PactIndexSnapshot {
+  pactScore: number;
+  band: 'binding' | 'provisional' | 'void';
+  clauses: Agent17PactClause[];
+  coalitionBand: Agent17CoalitionAccordSnapshot['band'];
+  theaterBand: Agent17TheaterCommitmentSnapshot['band'];
+  pactBinding: boolean;
+  headline: string;
+}
+
+export interface Agent17UnityTenet {
+  id: string;
+  label: string;
+  affirmed: boolean;
+  weight: number;
+}
+
+export interface Agent17UnityAccordSnapshot {
+  unityScore: number;
+  band: 'unified' | 'partial' | 'shattered';
+  tenets: Agent17UnityTenet[];
+  pactBand: Agent17PactIndexSnapshot['band'];
+  strategicBand: Agent17StrategicIndexSnapshot['band'];
+  unityAchieved: boolean;
   headline: string;
 }
 

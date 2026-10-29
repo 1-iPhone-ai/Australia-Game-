@@ -61,6 +61,8 @@ import { buildAgent17CommandIndex } from './command-index.ts';
 import { buildAgent17FederationAccord } from './federation-accord.ts';
 import { buildAgent17AllianceIndex } from './alliance-index.ts';
 import { buildAgent17CoalitionAccord } from './coalition-accord.ts';
+import { buildAgent17PactIndex } from './pact-index.ts';
+import { buildAgent17UnityAccord } from './unity-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -355,6 +357,16 @@ export function buildAgent17PlanningDepthSnapshot(
     federationAccord,
     mobilizationIndex,
   });
+  const pactIndex = buildAgent17PactIndex({
+    coalitionAccord,
+    theaterCommitment,
+    executionSummons,
+  });
+  const unityAccord = buildAgent17UnityAccord({
+    pactIndex,
+    coalitionAccord,
+    strategicIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -398,6 +410,8 @@ export function buildAgent17PlanningDepthSnapshot(
     federationAccord,
     allianceIndex,
     coalitionAccord,
+    pactIndex,
+    unityAccord,
   };
 }
 

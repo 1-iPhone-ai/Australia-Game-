@@ -158,6 +158,14 @@ import {
   coalitionAccordBlocksAlliance,
 } from '../planning/coalition-accord.ts';
 import {
+  buildAgent17PactIndex,
+  pactIndexBlocksUnity,
+} from '../planning/pact-index.ts';
+import {
+  buildAgent17UnityAccord,
+  unityAccordBlocksPact,
+} from '../planning/unity-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -1374,6 +1382,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const pactIndex = depthEval.snapshot.planningDepth?.pactIndex;
+  goalResults.push(
+    result(
+      'G17-082',
+      !!pactIndex &&
+        pactIndex.clauses.length >= 5 &&
+        pactIndex.pactScore >= 0 &&
+        pactIndex.pactScore <= 100 &&
+        (pactIndex.band === 'binding' ||
+          pactIndex.band === 'provisional' ||
+          pactIndex.band === 'void'),
+      `clauses=${pactIndex?.clauses.length} score=${pactIndex?.pactScore}`
+    )
+  );
+
+  const unityAccord = depthEval.snapshot.planningDepth?.unityAccord;
+  goalResults.push(
+    result(
+      'G17-083',
+      !!unityAccord &&
+        unityAccord.tenets.length >= 5 &&
+        unityAccord.unityScore >= 0 &&
+        unityAccord.unityScore <= 100,
+      `tenets=${unityAccord?.tenets.length} score=${unityAccord?.unityScore}`
+    )
+  );
+
+  const voidPact = buildAgent17PactIndex({
+    coalitionAccord: brokenCoalition,
+    theaterCommitment: withdrawnTheater,
+    executionSummons: revokedSummons,
+  });
+  const shatteredUnity = buildAgent17UnityAccord({
+    pactIndex: voidPact,
+    coalitionAccord: brokenCoalition,
+    strategicIndex: fracturedStrategic,
+  });
+  goalResults.push(
+    result(
+      'G17-084',
+      coalitionAccordBlocksAlliance(brokenCoalition) ||
+        pactIndexBlocksUnity(voidPact) ||
+        unityAccordBlocksPact(shatteredUnity),
+      `${voidPact.band}/${shatteredUnity.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -1485,6 +1540,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-079',
     'G17-080',
     'G17-081',
+    'G17-082',
+    'G17-083',
+    'G17-084',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
