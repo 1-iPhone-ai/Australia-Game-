@@ -156,4 +156,7 @@ export * from './pressure-fusion-convergence-index.ts';
 export * from './resonance-convergence-synthesis-index.ts';
 export * from './synthesis-pressure-fusion-index.ts';
 export * from './convergence-synthesis-resonance-index.ts';
+export * from './synthesis-convergence-pressure-index.ts';
+export * from './convergence-pressure-synthesis-index.ts';
+export * from './pressure-synthesis-convergence-index.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';
