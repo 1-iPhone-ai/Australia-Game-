@@ -41,6 +41,8 @@ Insert at or replace duplicate of Section **20AG** (V10.14 macroeconomy):
 | `reconcileRegionalContributionShares` | Regional reconciliation (shares sum to 1) |
 | `runV1014_MACRO_MacroEconomySelfTests` | SECTION 21B regression |
 | `runAgent06AllSelfTests` | Full module test bundle |
+| `detectMacroEconomyQuestion` / `composeMacroEconomyGiAnswer` | GI macro Q&A |
+| `readMacroFiscalSpilloverFromV1012` | V10.12 read-only spillover |
 | `evaluateMacroEconomyGuardianContext` | Guardian warn-only hooks |
 | `MacroEconomyInspectorLab` | LAB inspector |
 

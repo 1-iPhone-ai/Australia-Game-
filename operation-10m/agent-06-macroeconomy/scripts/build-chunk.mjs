@@ -18,6 +18,7 @@ const FILES = [
   'constants.ts',
   'boundaries.ts',
   'catalog/regional-sector-deltas.ts',
+  'shock-composition.ts',
   'catalog/cyclical-shocks.ts',
   'catalog/cyclical-shocks-self-tests.ts',
   'math.ts',
@@ -30,10 +31,15 @@ const FILES = [
   'accounting/validate-state.ts',
   'persisted.ts',
   'inputs.ts',
+  'bridge-v1012-fiscal.ts',
+  'cycle-memory.ts',
+  'sector-decomposition.ts',
+  'gi-queries.ts',
   'compute.ts',
   'integration.ts',
   'accounting/reconciliation-tests.ts',
   'accounting/regional-reconciliation.ts',
+  'depth-self-tests.ts',
   'self-tests.ts',
   'react/MacroEconomyInspectorLab.tsx'
 ];

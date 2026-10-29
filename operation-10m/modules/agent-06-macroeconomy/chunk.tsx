@@ -84,6 +84,10 @@ export interface NationalMacroEconomyState {
   regionalContributions: RegionalMacroContribution[];
   accounting: NationalAccountingLedger;
   sectorProductivity: Record<string, number>;
+  /** Share-weighted national sector mix (sums to ~1). */
+  sectorOutputMix: Record<string, number>;
+  activeCyclicalShockIds: string[];
+  fiscalSpilloverSummary: string | null;
   evidence: MacroEconomyEvidence[];
   outlook: {
     phase: BusinessCyclePhase;
@@ -374,6 +378,34 @@ export const V1014_MACRO_REGION_SECTOR_DELTAS: Record<string, Partial<Record<Mac
 };
 
 
+// --- source: shock-composition.ts ---
+
+/** Diminishing stacking when multiple negative shocks hit the same turn. */
+export function composeStackedShockDeltas(
+  activeIds: string[],
+  catalog: Record<string, CyclicalMacroShockDefinition>
+): { productivityDelta: number; investmentDelta: number; cycleDelta: number } {
+  let productivityDelta = 0;
+  let investmentDelta = 0;
+  let cycleDelta = 0;
+  let negativeStack = 0;
+  for (const id of activeIds) {
+    const shock = catalog[id];
+    if (!shock) continue;
+    const neg =
+      (shock.productivityDelta < 0 ? 1 : 0) +
+      (shock.investmentDelta < 0 ? 1 : 0) +
+      (shock.cycleDelta < 0 ? 1 : 0);
+    const stackFactor = neg > 0 ? Math.max(0.55, 1 - negativeStack * 0.12) : 1;
+    if (neg > 0) negativeStack += 1;
+    productivityDelta += shock.productivityDelta * (shock.productivityDelta < 0 ? stackFactor : 1);
+    investmentDelta += shock.investmentDelta * (shock.investmentDelta < 0 ? stackFactor : 1);
+    cycleDelta += shock.cycleDelta * (shock.cycleDelta < 0 ? stackFactor : 1);
+  }
+  return { productivityDelta, investmentDelta, cycleDelta };
+}
+
+
 // --- source: catalog/cyclical-shocks.ts ---
 
 export type CyclicalShockKind =
@@ -553,13 +585,10 @@ export function applyCyclicalShockLibrary(
   base: MacroScoreBundle,
   pushEv: MacroEvidenceSink
 ): MacroScoreBundle {
-  let { productivityScore, investmentScore, cycleScore } = base;
+  const stacked = composeStackedShockDeltas(activeIds, CYCLICAL_MACRO_SHOCK_CATALOG);
   for (const id of activeIds) {
     const shock = CYCLICAL_MACRO_SHOCK_CATALOG[id];
     if (!shock) continue;
-    productivityScore += shock.productivityDelta;
-    investmentScore += shock.investmentDelta;
-    cycleScore += shock.cycleDelta;
     pushEv(
       shock.evidenceFactor,
       shock.evidenceContribution,
@@ -568,7 +597,11 @@ export function applyCyclicalShockLibrary(
       shock.biasedRegionIds
     );
   }
-  return { productivityScore, investmentScore, cycleScore };
+  return {
+    productivityScore: base.productivityScore + stacked.productivityDelta,
+    investmentScore: base.investmentScore + stacked.investmentDelta,
+    cycleScore: base.cycleScore + stacked.cycleDelta
+  };
 }
 
 export function cyclicalShockRegionalWeightMultiplier(
@@ -1143,6 +1176,183 @@ export function makeDefaultV1014_MACRO_TestInputs(overrides: Partial<MacroEconom
 }
 
 
+// --- source: bridge-v1012-fiscal.ts ---
+
+export interface MacroFiscalSpillover {
+  investmentNudge: number;
+  cycleNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.12 fiscal spillover into macro scores (warn-only cross-check; never mutates treasury). */
+export function readMacroFiscalSpilloverFromV1012(inputs: MacroEconomyInputs): MacroFiscalSpillover {
+  const pf: any = inputs.publicFinance;
+  if (!pf) {
+    return { investmentNudge: 0, cycleNudge: 0, productivityNudge: 0, summary: null };
+  }
+  const pressure = String(pf.pressure ?? pf.fiscalPosition?.pressure ?? pf.fiscalPressure ?? 'healthy');
+  const headroom = Number(pf.fiscalHeadroom ?? pf.fiscalPosition?.fiscalHeadroom ?? 0);
+  let investmentNudge = 0;
+  let cycleNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  if (pressure === 'critical' || pressure === 'strained') {
+    investmentNudge -= pressure === 'critical' ? 4 : 2;
+    cycleNudge -= 2;
+    summary = `Public fiscal pressure (${pressure}) tightens macro investment climate read-only.`;
+  } else if (pressure === 'healthy' && headroom > 6) {
+    investmentNudge += 1;
+    summary = 'Comfortable fiscal headroom supports macro investment climate (interpretation only).';
+  }
+  if (headroom < -4) {
+    cycleNudge -= 2;
+    productivityNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Negative fiscal headroom weighs on cycle momentum.';
+  }
+
+  return {
+    investmentNudge: v1014macroClamp(investmentNudge, -8, 4),
+    cycleNudge: v1014macroClamp(cycleNudge, -6, 4),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 2),
+    summary
+  };
+}
+
+export function applyMacroFiscalSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroFiscalSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: cycle-memory.ts ---
+
+export function appendMacroCycleTransitionMemory(
+  persisted: MacroEconomyPersisted,
+  params: { turn: number; previousPhase: BusinessCyclePhase; nextPhase: BusinessCyclePhase }
+): MacroEconomyPersisted {
+  if (params.previousPhase === params.nextPhase) {
+    return persisted;
+  }
+  const transition = {
+    id: `me_tr:${params.turn}:${params.previousPhase}->${params.nextPhase}`,
+    turn: params.turn,
+    kind: 'cycle_phase_transition',
+    summary: `${BUSINESS_CYCLE_LABEL[params.previousPhase]} → ${BUSINESS_CYCLE_LABEL[params.nextPhase]}`
+  };
+  const historyEntry = {
+    id: `me_hist:${params.turn}:cycle`,
+    turn: params.turn,
+    summary: `National cycle entered ${BUSINESS_CYCLE_LABEL[params.nextPhase]}`
+  };
+  return {
+    ...persisted,
+    transitions: [...persisted.transitions, transition].slice(-V1014_MACRO_LIMITS.maxTransitions),
+    history: [...persisted.history, historyEntry].slice(-V1014_MACRO_LIMITS.maxHistory)
+  };
+}
+
+export function macroCycleTransitionCount(persisted: MacroEconomyPersisted): number {
+  return persisted.transitions.filter(t => t.kind === 'cycle_phase_transition').length;
+}
+
+
+// --- source: sector-decomposition.ts ---
+
+/** Derive national sector output mix from regional shares × regional sector productivity weights. */
+export function computeNationalSectorOutputMix(
+  contributions: RegionalMacroContribution[]
+): Record<string, number> {
+  const mix: Record<string, number> = Object.fromEntries(V1014_MACRO_SECTOR_KEYS.map(k => [k, 0]));
+  for (const row of contributions) {
+    const sectors = v1014macroComposeSectorProductivity(row.regionId);
+    const sectorTotal = Object.values(sectors).reduce((a, b) => a + b, 0) || 1;
+    for (const key of V1014_MACRO_SECTOR_KEYS) {
+      mix[key] += row.share * ((sectors[key] ?? 0) / sectorTotal);
+    }
+  }
+  const sum = Object.values(mix).reduce((a, b) => a + b, 0) || 1;
+  for (const k of Object.keys(mix)) mix[k] = mix[k] / sum;
+  return mix;
+}
+
+export function dominantNationalSector(mix: Record<string, number>): string {
+  return Object.entries(mix).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'services';
+}
+
+
+// --- source: gi-queries.ts ---
+
+export type MacroGiTopic =
+  | 'business_cycle'
+  | 'productivity'
+  | 'investment_climate'
+  | 'regional_contribution'
+  | 'accounting_identity'
+  | 'sector_mix';
+
+export interface MacroGiMatch {
+  topic: MacroGiTopic;
+  regionId?: string;
+}
+
+export function detectMacroEconomyQuestion(text: string): MacroGiMatch | null {
+  const q = text.toLowerCase();
+  if (!q.includes('macro') && !q.includes('business cycle') && !q.includes('productivity') && !q.includes('investment climate')) {
+    if (!q.includes('regional share') && !q.includes('gross output')) return null;
+  }
+  const regionMatch = q.match(/\b(nsw|vic|qld|wa|sa|tas|nt|act)\b/i);
+  const regionId = regionMatch ? regionMatch[1].toUpperCase() : undefined;
+  if (q.includes('business cycle') || q.includes('cycle phase')) return { topic: 'business_cycle', regionId };
+  if (q.includes('productivity')) return { topic: 'productivity', regionId };
+  if (q.includes('investment climate') || q.includes('gross investment')) return { topic: 'investment_climate', regionId };
+  if (q.includes('regional share') || (q.includes('contribution') && regionId)) {
+    return { topic: 'regional_contribution', regionId };
+  }
+  if (q.includes('accounting') || q.includes('identity')) return { topic: 'accounting_identity', regionId };
+  if (q.includes('sector mix') || q.includes('dominant sector')) return { topic: 'sector_mix', regionId };
+  if (q.includes('macro economy') || q.includes('macroeconomy')) return { topic: 'business_cycle', regionId };
+  return null;
+}
+
+export function composeMacroEconomyGiAnswer(state: NationalMacroEconomyState, match: MacroGiMatch): string {
+  switch (match.topic) {
+    case 'business_cycle':
+      return `National business cycle: ${BUSINESS_CYCLE_LABEL[state.cyclePhase]} (momentum ${state.cycleMomentum.toFixed(2)}, duration ${state.cycleDurationTurns} turns).`;
+    case 'productivity':
+      return `Macro productivity: ${V1014_MACRO_PRODUCTIVITY_LABEL[state.productivityBand]} (index ${state.productivityIndex.toFixed(1)}).`;
+    case 'investment_climate':
+      return `Macro investment climate: ${V1014_MACRO_INVESTMENT_LABEL[state.investmentClimate]} (gross investment index ${state.grossInvestmentIndex.toFixed(1)}).`;
+    case 'regional_contribution': {
+      const row = match.regionId
+        ? state.regionalContributions.find(r => r.regionId === match.regionId)
+        : state.regionalContributions[0];
+      if (!row) return 'No regional macro contribution row available.';
+      return `${row.regionId} contributes ${(row.share * 100).toFixed(1)}% of national output mix (${row.role}, primary ${row.primarySector}).`;
+    }
+    case 'accounting_identity':
+      return state.accounting.identityOk
+        ? `Macro accounting identity holds (residual ${state.accounting.identityResidual.toExponential(2)}). Gross output index ${state.accounting.grossOutputIndex.toFixed(1)}.`
+        : `Macro accounting identity drift detected (residual ${state.accounting.identityResidual.toFixed(6)}). Review regional share normalization.`;
+    case 'sector_mix': {
+      const top = Object.entries(state.sectorOutputMix).sort((a, b) => b[1] - a[1])[0];
+      return top
+        ? `National sector mix is led by ${top[0]} (${(top[1] * 100).toFixed(1)}% share-weighted).`
+        : 'Sector mix unavailable.';
+    }
+    default:
+      return 'Macro economy state is active.';
+  }
+}
+
+
 // --- source: compute.ts ---
   v1014macroBandInvestment,
   v1014macroBandProductivity,
@@ -1178,6 +1388,7 @@ export function computeNationalMacroEconomy(
 
   const evList: MacroEconomyEvidence[] = [];
   const pushEv = createMacroEvidencePush(evList, inputs.turn);
+  const activeShockIds = resolveActiveCyclicalShockIds(inputs);
 
   let productivityScore = persisted.productivityScore;
   let investmentScore = persisted.investmentScore;
@@ -1192,7 +1403,9 @@ export function computeNationalMacroEconomy(
     { productivityScore, investmentScore, cycleScore },
     pushEv
   );
-  const shocked = applyMacroShockAdjustments(inputs, structural, pushEv);
+  const fiscalSpillover = readMacroFiscalSpilloverFromV1012(inputs);
+  const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withFiscal, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -1217,8 +1430,9 @@ export function computeNationalMacroEconomy(
   });
 
   const sectorProductivity = nationalSectorProductivityFromScore(productivityScore);
+  const sectorOutputMix = computeNationalSectorOutputMix(regionalContributions);
 
-  const nextPersisted: MacroEconomyPersisted = {
+  let nextPersisted: MacroEconomyPersisted = {
     ...persisted,
     revision: persisted.revision + 1,
     initializedTurn: persisted.initializedTurn ?? inputs.turn,
@@ -1231,6 +1445,12 @@ export function computeNationalMacroEconomy(
     investmentHysteresis: investmentClimate,
     investmentScore
   };
+
+  nextPersisted = appendMacroCycleTransitionMemory(nextPersisted, {
+    turn: inputs.turn,
+    previousPhase: persisted.cycleHysteresis,
+    nextPhase: cyclePhase
+  });
 
   const state: NationalMacroEconomyState = {
     schemaVersion: V1014_MACRO_SCHEMA_VERSION,
@@ -1249,6 +1469,9 @@ export function computeNationalMacroEconomy(
     regionalContributions,
     accounting,
     sectorProductivity,
+    sectorOutputMix,
+    activeCyclicalShockIds: activeShockIds,
+    fiscalSpilloverSummary: fiscalSpillover.summary,
     evidence: evList.slice(0, V1014_MACRO_LIMITS.maxEvidence),
     outlook: { phase: cyclePhase, productivity: productivityBand, investment: investmentClimate }
   };
@@ -1569,6 +1792,87 @@ export function runRegionalReconciliationSelfTests(): {
 }
 
 
+// --- source: depth-self-tests.ts ---
+
+export function runAgent06DepthSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: MacroSelfTestResult[];
+} {
+  const results: MacroSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const fiscal = readMacroFiscalSpilloverFromV1012(
+    makeDefaultV1014_MACRO_TestInputs({
+      publicFinance: { pressure: 'critical', fiscalHeadroom: -5 }
+    })
+  );
+  record('DP01', 'Fiscal critical spillover negative investment nudge', fiscal.investmentNudge < 0, String(fiscal.investmentNudge));
+
+  const stacked = composeStackedShockDeltas(['commodity_bust', 'global_slowdown'], CYCLICAL_MACRO_SHOCK_CATALOG);
+  const naive = CYCLICAL_MACRO_SHOCK_CATALOG.commodity_bust.cycleDelta + CYCLICAL_MACRO_SHOCK_CATALOG.global_slowdown.cycleDelta;
+  record('DP02', 'Stacked shocks diminish cycle drag vs naive sum', stacked.cycleDelta > naive, `${stacked.cycleDelta} vs ${naive}`);
+
+  const baselineState = computeNationalMacroEconomy(makeDefaultV1014_MACRO_TestInputs(), null, null).state;
+  const withFiscal = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({ publicFinance: { pressure: 'critical', fiscalHeadroom: -8 } }),
+    null,
+    null
+  );
+
+  record(
+    'DP03',
+    'Compute appends cycle transition when phase changes',
+    macroCycleTransitionCount(
+      appendMacroCycleTransitionMemory(withFiscal.persisted, {
+        turn: 3,
+        previousPhase: 'expansion',
+        nextPhase: 'contraction'
+      })
+    ) >= 1,
+    'ok'
+  );
+
+  const mix = computeNationalSectorOutputMix(baselineState.regionalContributions);
+  const mixSum = Object.values(mix).reduce((a, b) => a + b, 0);
+  record('DP04', 'Sector output mix sums to 1', Math.abs(mixSum - 1) < 1e-5, String(mixSum));
+  record('DP05', 'Dominant sector resolved', dominantNationalSector(mix).length > 2, dominantNationalSector(mix));
+
+  const match = detectMacroEconomyQuestion('What is the national business cycle phase?');
+  const answer = match ? composeMacroEconomyGiAnswer(baselineState, match) : '';
+  record('DP06', 'GI cycle question answered', Boolean(match && answer.includes('cycle')), answer.slice(0, 40));
+
+  const regMatch = detectMacroEconomyQuestion('NSW regional share of macro economy');
+  record('DP07', 'GI detects regional topic', regMatch?.topic === 'regional_contribution' && regMatch.regionId === 'NSW', String(regMatch?.topic));
+
+  record(
+    'DP08',
+    'State exposes fiscal spillover summary',
+    typeof withFiscal.state.fiscalSpilloverSummary === 'string' && withFiscal.state.fiscalSpilloverSummary!.length > 5,
+    String(withFiscal.state.fiscalSpilloverSummary)
+  );
+
+  record(
+    'DP09',
+    'State exposes active shock ids',
+    Array.isArray(withFiscal.state.activeCyclicalShockIds),
+    withFiscal.state.activeCyclicalShockIds.join(',')
+  );
+
+  const mem = appendMacroCycleTransitionMemory(
+    withFiscal.persisted,
+    { turn: 2, previousPhase: 'expansion', nextPhase: 'slowdown' }
+  );
+  record('DP10', 'Manual transition append bounded', mem.transitions.length <= 16, String(mem.transitions.length));
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
 // --- source: self-tests.ts ---
 
 export function runV1014_MACRO_MacroEconomySelfTests(): {
@@ -1657,6 +1961,11 @@ export function runV1014_MACRO_MacroEconomySelfTests(): {
 
   const shocks = runCyclicalShockLibrarySelfTests();
   for (const r of shocks.results) {
+    check(r.id, r.name, r.passed, r.detail);
+  }
+
+  const depth = runAgent06DepthSelfTests();
+  for (const r of depth.results) {
     check(r.id, r.name, r.passed, r.detail);
   }
 

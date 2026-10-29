@@ -7,6 +7,7 @@ import { V1014_MACRO_SCHEMA_VERSION } from './types.ts';
 import { runAccountingReconciliationSelfTests } from './accounting/reconciliation-tests.ts';
 import { runRegionalReconciliationSelfTests } from './accounting/regional-reconciliation.ts';
 import { runCyclicalShockLibrarySelfTests } from './catalog/cyclical-shocks-self-tests.ts';
+import { runAgent06DepthSelfTests } from './depth-self-tests.ts';
 
 export function runV1014_MACRO_MacroEconomySelfTests(): {
   passed: number;
@@ -94,6 +95,11 @@ export function runV1014_MACRO_MacroEconomySelfTests(): {
 
   const shocks = runCyclicalShockLibrarySelfTests();
   for (const r of shocks.results) {
+    check(r.id, r.name, r.passed, r.detail);
+  }
+
+  const depth = runAgent06DepthSelfTests();
+  for (const r of depth.results) {
     check(r.id, r.name, r.passed, r.detail);
   }
 

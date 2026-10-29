@@ -1,5 +1,8 @@
 import { buildNationalAccountingLedger } from './accounting/ledger.ts';
+import { applyMacroFiscalSpillover, readMacroFiscalSpilloverFromV1012 } from './bridge-v1012-fiscal.ts';
+import { appendMacroCycleTransitionMemory } from './cycle-memory.ts';
 import { V1014_MACRO_LIMITS } from './constants.ts';
+import { resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
 import { clampMacroScores } from './investment.ts';
 import {
   v1014macroBandInvestment,
@@ -15,6 +18,7 @@ import {
   computeRegionalWeightRows,
   v1014macroNormalizeRegionalShares
 } from './regional-aggregation.ts';
+import { computeNationalSectorOutputMix } from './sector-decomposition.ts';
 import { macroEconomyInputHash, sanitizeMacroEconomyPersisted } from './persisted.ts';
 import {
   applyMacroShockAdjustments,
@@ -42,6 +46,7 @@ export function computeNationalMacroEconomy(
 
   const evList: MacroEconomyEvidence[] = [];
   const pushEv = createMacroEvidencePush(evList, inputs.turn);
+  const activeShockIds = resolveActiveCyclicalShockIds(inputs);
 
   let productivityScore = persisted.productivityScore;
   let investmentScore = persisted.investmentScore;
@@ -56,7 +61,9 @@ export function computeNationalMacroEconomy(
     { productivityScore, investmentScore, cycleScore },
     pushEv
   );
-  const shocked = applyMacroShockAdjustments(inputs, structural, pushEv);
+  const fiscalSpillover = readMacroFiscalSpilloverFromV1012(inputs);
+  const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withFiscal, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -81,8 +88,9 @@ export function computeNationalMacroEconomy(
   });
 
   const sectorProductivity = nationalSectorProductivityFromScore(productivityScore);
+  const sectorOutputMix = computeNationalSectorOutputMix(regionalContributions);
 
-  const nextPersisted: MacroEconomyPersisted = {
+  let nextPersisted: MacroEconomyPersisted = {
     ...persisted,
     revision: persisted.revision + 1,
     initializedTurn: persisted.initializedTurn ?? inputs.turn,
@@ -95,6 +103,12 @@ export function computeNationalMacroEconomy(
     investmentHysteresis: investmentClimate,
     investmentScore
   };
+
+  nextPersisted = appendMacroCycleTransitionMemory(nextPersisted, {
+    turn: inputs.turn,
+    previousPhase: persisted.cycleHysteresis,
+    nextPhase: cyclePhase
+  });
 
   const state: NationalMacroEconomyState = {
     schemaVersion: V1014_MACRO_SCHEMA_VERSION,
@@ -113,6 +127,9 @@ export function computeNationalMacroEconomy(
     regionalContributions,
     accounting,
     sectorProductivity,
+    sectorOutputMix,
+    activeCyclicalShockIds: activeShockIds,
+    fiscalSpilloverSummary: fiscalSpillover.summary,
     evidence: evList.slice(0, V1014_MACRO_LIMITS.maxEvidence),
     outlook: { phase: cyclePhase, productivity: productivityBand, investment: investmentClimate }
   };

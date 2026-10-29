@@ -1,5 +1,6 @@
 import type { BusinessCyclePhase } from '../types.ts';
 import type { MacroEvidenceSink, MacroScoreBundle } from '../shocks.ts';
+import { composeStackedShockDeltas } from '../shock-composition.ts';
 
 export type CyclicalShockKind =
   | 'demand'
@@ -178,13 +179,10 @@ export function applyCyclicalShockLibrary(
   base: MacroScoreBundle,
   pushEv: MacroEvidenceSink
 ): MacroScoreBundle {
-  let { productivityScore, investmentScore, cycleScore } = base;
+  const stacked = composeStackedShockDeltas(activeIds, CYCLICAL_MACRO_SHOCK_CATALOG);
   for (const id of activeIds) {
     const shock = CYCLICAL_MACRO_SHOCK_CATALOG[id];
     if (!shock) continue;
-    productivityScore += shock.productivityDelta;
-    investmentScore += shock.investmentDelta;
-    cycleScore += shock.cycleDelta;
     pushEv(
       shock.evidenceFactor,
       shock.evidenceContribution,
@@ -193,7 +191,11 @@ export function applyCyclicalShockLibrary(
       shock.biasedRegionIds
     );
   }
-  return { productivityScore, investmentScore, cycleScore };
+  return {
+    productivityScore: base.productivityScore + stacked.productivityDelta,
+    investmentScore: base.investmentScore + stacked.investmentDelta,
+    cycleScore: base.cycleScore + stacked.cycleDelta
+  };
 }
 
 export function cyclicalShockRegionalWeightMultiplier(

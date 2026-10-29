@@ -80,6 +80,10 @@ export interface NationalMacroEconomyState {
   regionalContributions: RegionalMacroContribution[];
   accounting: NationalAccountingLedger;
   sectorProductivity: Record<string, number>;
+  /** Share-weighted national sector mix (sums to ~1). */
+  sectorOutputMix: Record<string, number>;
+  activeCyclicalShockIds: string[];
+  fiscalSpilloverSummary: string | null;
   evidence: MacroEconomyEvidence[];
   outlook: {
     phase: BusinessCyclePhase;
