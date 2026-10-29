@@ -65,4 +65,8 @@ export * from './forecast-full-chunks-dry-run-readiness';
 export * from './forecast-wave16-projection-sync';
 export * from './forecast-integration-dry-run-attestation';
 export * from './forecast-round16-console';
+export * from './forecast-full-chunks-dry-run-execution';
+export * from './forecast-wave17-projection-sync';
+export * from './forecast-integration-dry-run-closure';
+export * from './forecast-round17-console';
 export * from './strategic-forecast-policy-lab';
