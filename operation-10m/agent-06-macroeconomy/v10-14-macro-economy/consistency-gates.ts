@@ -744,5 +744,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Tilted transmission imbalance — restrictive mass dominates supportive spillover.'
     });
   }
+  const gp: any = inputs.strategicGameplay ?? inputs.strategicCapital?.gameplayCadence;
+  const pacing = String(gp?.pacingBand ?? gp?.cadenceBand ?? '');
+  if (
+    (pacing === 'gridlocked' || pacing === 'critical') &&
+    (state.investmentClimate === 'frozen' || state.cyclePhase === 'contraction')
+  ) {
+    gates.push({
+      id: 'strategic_gameplay_gridlocked',
+      triggered: true,
+      severity: 'info',
+      summary: 'Gridlocked strategic gameplay aligns with contractionary or frozen macro read.'
+    });
+  }
+  const arch: any = inputs.historyArchiveIntegrity ?? inputs.replayArchive?.integrity;
+  const integrity = String(arch?.integrityBand ?? arch?.checksumBand ?? '');
+  if (
+    (integrity === 'corrupt' || integrity === 'compromised') &&
+    (state.archiveIntegritySpilloverSummary != null || state.replaySpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'history_archive_corrupt',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Corrupt history archive integrity reinforces fragile macro evidence read.'
+    });
+  }
+  if (state.transmissionHarmonic?.band === 'dissonant' || state.transmissionHarmonic?.band === 'mixed') {
+    gates.push({
+      id: 'transmission_harmonic_dissonant',
+      triggered: true,
+      severity: 'info',
+      summary: 'Dissonant cross-channel transmission harmonic — layer nudges disagree across cycle/investment/productivity.'
+    });
+  }
   return gates;
 }

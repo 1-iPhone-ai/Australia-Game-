@@ -40,6 +40,8 @@ import type { MacroAccessibilitySpillover } from './bridge-v1022-accessibility.t
 import type { MacroTimelineSpillover } from './bridge-v1024-timeline.ts';
 import type { MacroLiquiditySpillover } from './bridge-v1016-liquidity.ts';
 import type { MacroMapsTelemetrySpillover } from './bridge-v1023-maps-telemetry.ts';
+import type { MacroStrategicGameplaySpillover } from './bridge-v1001-strategic-gameplay.ts';
+import type { MacroArchiveIntegritySpillover } from './bridge-v1024-archive-integrity.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -88,6 +90,8 @@ export function buildMacroTransmissionReport(params: {
   timeline?: MacroTimelineSpillover;
   liquidity?: MacroLiquiditySpillover;
   mapsTelemetry?: MacroMapsTelemetrySpillover;
+  strategicGameplay?: MacroStrategicGameplaySpillover;
+  archiveIntegrity?: MacroArchiveIntegritySpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -121,6 +125,8 @@ export function buildMacroTransmissionReport(params: {
   const timeline = params.timeline ?? ZERO_SPILLOVER;
   const liquidity = params.liquidity ?? ZERO_SPILLOVER;
   const mapsTelemetry = params.mapsTelemetry ?? ZERO_SPILLOVER;
+  const strategicGameplay = params.strategicGameplay ?? ZERO_SPILLOVER;
+  const archiveIntegrity = params.archiveIntegrity ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -429,6 +435,22 @@ export function buildMacroTransmissionReport(params: {
       mapsTelemetry.investmentNudge,
       mapsTelemetry.productivityNudge,
       mapsTelemetry.summary
+    ),
+    layer(
+      'v10.01_strategic_gameplay',
+      'Strategic gameplay cadence',
+      strategicGameplay.cycleNudge,
+      strategicGameplay.investmentNudge,
+      strategicGameplay.productivityNudge,
+      strategicGameplay.summary
+    ),
+    layer(
+      'v10.24_archive',
+      'History archive integrity',
+      archiveIntegrity.cycleNudge,
+      archiveIntegrity.investmentNudge,
+      archiveIntegrity.productivityNudge,
+      archiveIntegrity.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

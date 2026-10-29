@@ -74,6 +74,8 @@ const FILES = [
   'bridge-v1024-timeline.ts',
   'bridge-v1016-liquidity.ts',
   'bridge-v1023-maps-telemetry.ts',
+  'bridge-v1001-strategic-gameplay.ts',
+  'bridge-v1024-archive-integrity.ts',
   'macro-transmission.ts',
   'macro-stress-index.ts',
   'policy-stance-snapshot.ts',
@@ -96,6 +98,7 @@ const FILES = [
   'macro-transmission-polarization.ts',
   'macro-transmission-coupling.ts',
   'macro-transmission-imbalance.ts',
+  'macro-transmission-harmonic.ts',
   'scenario-compare.ts',
   'scenario-ranking.ts',
   'scenario-elasticity.ts',
@@ -114,6 +117,7 @@ const FILES = [
   'scenario-adaptation-rank.ts',
   'scenario-containment-rank.ts',
   'scenario-rebalance-rank.ts',
+  'scenario-restoration-rank.ts',
   'regression-harness.ts',
   'cycle-memory.ts',
   'sector-decomposition.ts',
@@ -150,6 +154,7 @@ const FILES = [
   'round21-self-tests.ts',
   'round22-self-tests.ts',
   'round23-self-tests.ts',
+  'round24-self-tests.ts',
   'self-tests.ts',
   'react/MacroEconomyInspectorLab.tsx'
 ];

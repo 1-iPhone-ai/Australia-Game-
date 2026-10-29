@@ -40,6 +40,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   includeClimateForecastStress?: boolean;
   includeAccessibilityTimelineStress?: boolean;
   includeLiquidityMapsStress?: boolean;
+  includeGameplayArchiveStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
@@ -62,6 +63,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   const includeClimateForecastStress = Boolean(options?.includeClimateForecastStress);
   const includeAccessibilityTimelineStress = Boolean(options?.includeAccessibilityTimelineStress);
   const includeLiquidityMapsStress = Boolean(options?.includeLiquidityMapsStress);
+  const includeGameplayArchiveStress = Boolean(options?.includeGameplayArchiveStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -326,6 +328,20 @@ export function runMacroEconomyRegressionHarness(options?: {
             tileLatencyBand: t % 5 === 0 ? 'stale' : 'realtime',
             coverageBand: t % 7 === 0 ? 'gaps' : 'complete'
           }
+        : undefined,
+      strategicGameplay: includeGameplayArchiveStress
+        ? {
+            pacingBand: t % 6 === 0 ? 'gridlocked' : 'fluid',
+            coherenceBand: t % 5 === 0 ? 'fragmented' : 'aligned',
+            frictionBand: t % 7 === 0 ? 'severe' : 'low'
+          }
+        : undefined,
+      historyArchiveIntegrity: includeGameplayArchiveStress
+        ? {
+            integrityBand: t % 6 === 0 ? 'corrupt' : 'verified',
+            lineageBand: t % 5 === 0 ? 'broken' : 'continuous',
+            retentionBand: t % 7 === 0 ? 'truncated' : 'durable'
+          }
         : undefined
     });
     const { state, persisted: nextP } = computeNationalMacroEconomy(inputs, persisted, prev);
@@ -567,7 +583,19 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'forty_two_transmission_layers_liquidity',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 42,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 44,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeGameplayArchiveStress && prev) {
+    checks.push({
+      id: 'transmission_harmonic_finite',
+      passed: Number.isFinite(prev.transmissionHarmonic.harmonicIndex),
+      detail: String(prev.transmissionHarmonic.harmonicIndex)
+    });
+    checks.push({
+      id: 'forty_four_transmission_layers_gameplay',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 44,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }

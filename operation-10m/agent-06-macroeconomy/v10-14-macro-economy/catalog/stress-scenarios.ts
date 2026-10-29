@@ -150,6 +150,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Liquidity & maps stress',
     shockIds: ['credit_contraction', 'global_slowdown'],
     description: 'Frozen system liquidity with distorted maps telemetry (harness overlay).'
+  },
+  {
+    id: 'gameplay_archive_stress',
+    label: 'Gameplay & archive stress',
+    shockIds: ['global_slowdown', 'credit_contraction'],
+    description: 'Gridlocked strategic gameplay with corrupt history archive integrity (harness overlay).'
   }
 ];
 

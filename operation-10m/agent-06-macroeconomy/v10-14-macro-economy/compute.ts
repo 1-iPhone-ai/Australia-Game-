@@ -41,6 +41,14 @@ import { applyMacroAccessibilitySpillover, readMacroAccessibilitySpilloverFromV1
 import { applyMacroTimelineSpillover, readMacroTimelineSpilloverFromV1024 } from './bridge-v1024-timeline.ts';
 import { applyMacroLiquiditySpillover, readMacroLiquiditySpilloverFromV1016Liquidity } from './bridge-v1016-liquidity.ts';
 import { applyMacroMapsTelemetrySpillover, readMacroMapsTelemetrySpilloverFromV1023 } from './bridge-v1023-maps-telemetry.ts';
+import {
+  applyMacroStrategicGameplaySpillover,
+  readMacroStrategicGameplaySpilloverFromV1001
+} from './bridge-v1001-strategic-gameplay.ts';
+import {
+  applyMacroArchiveIntegritySpillover,
+  readMacroArchiveIntegritySpilloverFromV1024
+} from './bridge-v1024-archive-integrity.ts';
 import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
 import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { buildMacroTransmissionReport } from './macro-transmission.ts';
@@ -64,6 +72,7 @@ import { buildMacroTransmissionIntensitySnapshot } from './macro-transmission-in
 import { buildMacroTransmissionPolarizationSnapshot } from './macro-transmission-polarization.ts';
 import { buildMacroTransmissionCouplingSnapshot } from './macro-transmission-coupling.ts';
 import { buildMacroTransmissionImbalanceSnapshot } from './macro-transmission-imbalance.ts';
+import { buildMacroTransmissionHarmonicSnapshot } from './macro-transmission-harmonic.ts';
 import { appendMacroCycleTransitionMemory } from './cycle-memory.ts';
 import { V1014_MACRO_LIMITS } from './constants.ts';
 import { resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
@@ -169,6 +178,8 @@ export function computeNationalMacroEconomy(
   const timelineSpillover = readMacroTimelineSpilloverFromV1024(inputs);
   const liquiditySpillover = readMacroLiquiditySpilloverFromV1016Liquidity(inputs);
   const mapsTelemetrySpillover = readMacroMapsTelemetrySpilloverFromV1023(inputs);
+  const strategicGameplaySpillover = readMacroStrategicGameplaySpilloverFromV1001(inputs);
+  const archiveIntegritySpillover = readMacroArchiveIntegritySpilloverFromV1024(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -211,7 +222,9 @@ export function computeNationalMacroEconomy(
   const withTimeline = applyMacroTimelineSpillover(withAccessibility, timelineSpillover);
   const withLiquidity = applyMacroLiquiditySpillover(withTimeline, liquiditySpillover);
   const withMapsTelemetry = applyMacroMapsTelemetrySpillover(withLiquidity, mapsTelemetrySpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withMapsTelemetry, pushEv);
+  const withStrategicGameplay = applyMacroStrategicGameplaySpillover(withMapsTelemetry, strategicGameplaySpillover);
+  const withArchiveIntegrity = applyMacroArchiveIntegritySpillover(withStrategicGameplay, archiveIntegritySpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withArchiveIntegrity, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -281,7 +294,9 @@ export function computeNationalMacroEconomy(
     accessibility: accessibilitySpillover,
     timeline: timelineSpillover,
     liquidity: liquiditySpillover,
-    mapsTelemetry: mapsTelemetrySpillover
+    mapsTelemetry: mapsTelemetrySpillover,
+    strategicGameplay: strategicGameplaySpillover,
+    archiveIntegrity: archiveIntegritySpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
@@ -301,6 +316,7 @@ export function computeNationalMacroEconomy(
   const transmissionPolarization = buildMacroTransmissionPolarizationSnapshot(transmissionReport);
   const transmissionCoupling = buildMacroTransmissionCouplingSnapshot(transmissionReport);
   const transmissionImbalance = buildMacroTransmissionImbalanceSnapshot(transmissionReport);
+  const transmissionHarmonic = buildMacroTransmissionHarmonicSnapshot(transmissionReport);
 
   const capacitySnapshot = buildMacroCapacitySnapshot({
     state: {
@@ -393,6 +409,8 @@ export function computeNationalMacroEconomy(
     timelineSpilloverSummary: timelineSpillover.summary,
     liquiditySpilloverSummary: liquiditySpillover.summary,
     mapsTelemetrySpilloverSummary: mapsTelemetrySpillover.summary,
+    strategicGameplaySpilloverSummary: strategicGameplaySpillover.summary,
+    archiveIntegritySpilloverSummary: archiveIntegritySpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,
@@ -411,6 +429,7 @@ export function computeNationalMacroEconomy(
     transmissionPolarization,
     transmissionCoupling,
     transmissionImbalance,
+    transmissionHarmonic,
     transmissionReport,
     stressIndex: {
       score: 0,
