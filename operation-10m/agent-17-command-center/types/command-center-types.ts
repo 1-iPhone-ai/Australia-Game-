@@ -219,6 +219,8 @@ export interface Agent17PlanningDepthSnapshot {
   doctrineAccord: Agent17DoctrineAccordSnapshot;
   commandIndex: Agent17CommandIndexSnapshot;
   federationAccord: Agent17FederationAccordSnapshot;
+  allianceIndex: Agent17AllianceIndexSnapshot;
+  coalitionAccord: Agent17CoalitionAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -823,6 +825,40 @@ export interface Agent17FederationAccordSnapshot {
   commandBand: Agent17CommandIndexSnapshot['band'];
   latticeBand: Agent17CommitLatticeSnapshot['band'];
   federationUnified: boolean;
+  headline: string;
+}
+
+export interface Agent17AllianceTie {
+  id: string;
+  label: string;
+  secured: boolean;
+  weight: number;
+}
+
+export interface Agent17AllianceIndexSnapshot {
+  allianceScore: number;
+  band: 'allied' | 'forming' | 'ruptured';
+  ties: Agent17AllianceTie[];
+  federationBand: Agent17FederationAccordSnapshot['band'];
+  dispatchBand: Agent17DispatchAccordSnapshot['band'];
+  allianceReady: boolean;
+  headline: string;
+}
+
+export interface Agent17CoalitionCompact {
+  id: string;
+  label: string;
+  sealed: boolean;
+  weight: number;
+}
+
+export interface Agent17CoalitionAccordSnapshot {
+  coalitionScore: number;
+  band: 'sealed' | 'draft' | 'broken';
+  compacts: Agent17CoalitionCompact[];
+  allianceBand: Agent17AllianceIndexSnapshot['band'];
+  mobilizationBand: Agent17MobilizationIndexSnapshot['band'];
+  coalitionSealed: boolean;
   headline: string;
 }
 

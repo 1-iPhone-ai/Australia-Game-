@@ -548,6 +548,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Degraded command or fragmented lattice yields federationAccordBlocksOps.',
     severity: 'major',
   },
+  {
+    id: 'G17-079',
+    title: 'Alliance index on planning depth',
+    category: 'telemetry',
+    acceptance: 'allianceIndex reports allianceScore 0–100 with allied/forming/ruptured band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-080',
+    title: 'Coalition accord compacts complete',
+    category: 'telemetry',
+    acceptance: 'coalitionAccord exposes ≥5 compacts and coalitionScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-081',
+    title: 'Ruptured alliance breaks coalition accord',
+    category: 'integration',
+    acceptance: 'Ruptured alliance or dissolved federation yields coalitionAccordBlocksAlliance.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

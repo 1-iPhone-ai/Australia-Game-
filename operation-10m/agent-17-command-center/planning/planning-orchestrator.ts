@@ -59,6 +59,8 @@ import { buildAgent17StrategicIndex } from './strategic-index.ts';
 import { buildAgent17DoctrineAccord } from './doctrine-accord.ts';
 import { buildAgent17CommandIndex } from './command-index.ts';
 import { buildAgent17FederationAccord } from './federation-accord.ts';
+import { buildAgent17AllianceIndex } from './alliance-index.ts';
+import { buildAgent17CoalitionAccord } from './coalition-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -343,6 +345,16 @@ export function buildAgent17PlanningDepthSnapshot(
     doctrineAccord,
     commitLattice,
   });
+  const allianceIndex = buildAgent17AllianceIndex({
+    federationAccord,
+    dispatchAccord,
+    authorityCharter,
+  });
+  const coalitionAccord = buildAgent17CoalitionAccord({
+    allianceIndex,
+    federationAccord,
+    mobilizationIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -384,6 +396,8 @@ export function buildAgent17PlanningDepthSnapshot(
     doctrineAccord,
     commandIndex,
     federationAccord,
+    allianceIndex,
+    coalitionAccord,
   };
 }
 

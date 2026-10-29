@@ -150,6 +150,14 @@ import {
   federationAccordBlocksOps,
 } from '../planning/federation-accord.ts';
 import {
+  buildAgent17AllianceIndex,
+  allianceIndexBlocksCoalition,
+} from '../planning/alliance-index.ts';
+import {
+  buildAgent17CoalitionAccord,
+  coalitionAccordBlocksAlliance,
+} from '../planning/coalition-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -1319,6 +1327,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const allianceIndex = depthEval.snapshot.planningDepth?.allianceIndex;
+  goalResults.push(
+    result(
+      'G17-079',
+      !!allianceIndex &&
+        allianceIndex.ties.length >= 5 &&
+        allianceIndex.allianceScore >= 0 &&
+        allianceIndex.allianceScore <= 100 &&
+        (allianceIndex.band === 'allied' ||
+          allianceIndex.band === 'forming' ||
+          allianceIndex.band === 'ruptured'),
+      `ties=${allianceIndex?.ties.length} score=${allianceIndex?.allianceScore}`
+    )
+  );
+
+  const coalitionAccord = depthEval.snapshot.planningDepth?.coalitionAccord;
+  goalResults.push(
+    result(
+      'G17-080',
+      !!coalitionAccord &&
+        coalitionAccord.compacts.length >= 5 &&
+        coalitionAccord.coalitionScore >= 0 &&
+        coalitionAccord.coalitionScore <= 100,
+      `compacts=${coalitionAccord?.compacts.length} score=${coalitionAccord?.coalitionScore}`
+    )
+  );
+
+  const rupturedAlliance = buildAgent17AllianceIndex({
+    federationAccord: dissolvedFederation,
+    dispatchAccord: voidAccord,
+    authorityCharter: revokedCharter,
+  });
+  const brokenCoalition = buildAgent17CoalitionAccord({
+    allianceIndex: rupturedAlliance,
+    federationAccord: dissolvedFederation,
+    mobilizationIndex: stalledMobilization,
+  });
+  goalResults.push(
+    result(
+      'G17-081',
+      federationAccordBlocksOps(dissolvedFederation) ||
+        allianceIndexBlocksCoalition(rupturedAlliance) ||
+        coalitionAccordBlocksAlliance(brokenCoalition),
+      `${rupturedAlliance.band}/${brokenCoalition.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -1427,6 +1482,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-076',
     'G17-077',
     'G17-078',
+    'G17-079',
+    'G17-080',
+    'G17-081',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
