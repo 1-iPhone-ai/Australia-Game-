@@ -136484,6 +136484,194 @@ export function formatReleaseDiagnosticSummary(r: ReleaseReadinessReport): strin
   return lines.join('\n');
 }
 
+
+// ---- Operation 111 / Agent 95: cross-cutting AI evaluation contracts (determinism, parity, bounds) ---------
+export function runO111AiEvaluationContractSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  const canon = (v: unknown) =>
+    JSON.stringify(v, (_k, x) =>
+      x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(k => [k, (x as any)[k]])) : x
+    );
+
+  const cashDeal = (amount: number, turns: number, region = 'NSW', timing: DNPaymentTiming = 'on_acceptance') =>
+    createDiplomaticDeal({
+      initiatorActorId: 'player',
+      recipientActorIds: ['ai'],
+      turn: 7,
+      duration: { kind: 'turns', turns },
+      terms: [
+        makeDiplomaticTerm({ actorId: 'player', kind: 'pay_cash', targetActorId: 'ai', amount, timing }),
+        makeDiplomaticTerm({ actorId: 'ai', kind: 'do_not_challenge_region', regionId: region })
+      ]
+    });
+
+  check('o111_a95_diplo_deterministic', 'Diplomacy: identical deal/world/state yields identical evaluation', () => {
+    const run = () => {
+      const { world, state } = createDiplomacyFixture({ viewerId: 'ai', rivalTargets: ['NSW'] });
+      const ev = evaluateDiplomaticDeal(cashDeal(8000, 5, 'NSW'), 'ai', world, state);
+      return canon({ band: ev.band, response: ev.response, utility: ev.utility, ratio: ev.ratio, threshold: ev.threshold });
+    };
+    return run() === run() || 'evaluation differed between runs';
+  });
+
+  check('o111_a95_diplo_immutable', 'Diplomacy: evaluateDiplomaticDeal does not mutate deal or diplomacy state', () => {
+    const { world, state } = createDiplomacyFixture({ viewerId: 'ai' });
+    const deal = cashDeal(6000, 4, 'VIC');
+    const dealBefore = canon(deal);
+    const stateBefore = canon(state);
+    evaluateDiplomaticDeal(deal, 'ai', world, state);
+    return dealBefore === canon(deal) && stateBefore === canon(state) || 'inputs mutated';
+  });
+
+  check('o111_a95_diplo_fog_explanations', 'Diplomacy: fog-mode explanations never leak hidden rival cash figures', () => {
+    const deal = cashDeal(8000, 3, 'NSW');
+    const ev = evaluateDiplomaticDeal(deal, 'ai', createDiplomacyFixture({ fog: true, rivalMoney: 42000, viewerId: 'ai' }).world, createEmptyDiplomacyState());
+    const text = ev.reasons.join(' ');
+    return createDiplomacyFixture({ fog: true, rivalMoney: 42000, viewerId: 'ai' }).world.actors.player.money === null
+      && !/42,?000/.test(text)
+      || text;
+  });
+
+  check('o111_a95_tuning_weights_stable', 'Strategy Lab: gameSettingsToWeights is stable for the same settings snapshot', () => {
+    const settings = createDefaultGameSettings();
+    const a = gameSettingsToWeights(settings);
+    const b = gameSettingsToWeights(JSON.parse(JSON.stringify(settings)));
+    return canon(a) === canon(b) || 'weights differ';
+  });
+
+  check('o111_a95_tuning_roundtrip_clamp', 'Strategy Lab: weightsToGameSettings clamps out-of-range genome weights to spec bounds', () => {
+    const base = createDefaultGameSettings();
+    const insane: Record<string, number> = {};
+    for (const item of CURRENT_WEIGHT_SPEC) insane[item.name] = item.max + 50;
+    const next = weightsToGameSettings(base, insane);
+    const mapped = gameSettingsToWeights(next);
+    const ok = CURRENT_WEIGHT_SPEC.every(item => mapped[item.name] <= item.max && mapped[item.name] >= item.min);
+    return ok || canon(mapped);
+  });
+
+  check('o111_a95_capacity_human_ai_parity', 'State capacity: human and AI viewers share the same public capacity and load', () => {
+    const persisted = createInitialStateCapacityPersisted(1);
+    const inputs: StateCapacitySystemInputs = {
+      turn: 5,
+      viewerId: 'player',
+      programs: [
+        {
+          id: 'national_high_speed_rail',
+          kind: 'national_high_speed_rail',
+          title: 'East Coast High-Speed Rail',
+          subjectType: 'megaproject',
+          status: 'active',
+          regionIds: ['NSW', 'VIC', 'QLD', 'ACT'],
+          systemsInvolved: ['freight', 'trade', 'infrastructure'],
+          stageIndex: 1,
+          totalStages: 4,
+          completedStages: 1,
+          capitalCost: 90000,
+          remainingCost: 60000,
+          deliveryApproach: 'central_coordination'
+        }
+      ],
+      crises: [],
+      stakeholders: [],
+      publicStability: { nationalScore: 76, regionalScores: { NSW: 78, VIC: 76, QLD: 74, WA: 75, SA: 74, TAS: 77, ACT: 82, NT: 70 } }
+    };
+    const fair = verifyAIStateCapacityFairness(inputs, persisted);
+    return fair.fair === true && fair.humanCapacity === fair.aiCapacity && fair.humanLoad === fair.aiLoad
+      || `fair=${fair.fair} cap=${fair.humanCapacity}/${fair.aiCapacity} load=${fair.humanLoad}/${fair.aiLoad}`;
+  });
+
+  check('o111_a95_capacity_candidate_sensitivity', 'Rival AI: overloaded state capacity yields a lower candidate score than healthy capacity', () => {
+    const persisted = createInitialStateCapacityPersisted(1);
+    const program = {
+      id: 'national_high_speed_rail',
+      kind: 'national_high_speed_rail',
+      title: 'East Coast High-Speed Rail',
+      subjectType: 'megaproject' as const,
+      status: 'active' as const,
+      regionIds: ['NSW', 'VIC', 'QLD', 'ACT'],
+      systemsInvolved: ['freight', 'trade', 'infrastructure'],
+      stageIndex: 1,
+      totalStages: 4,
+      completedStages: 1,
+      capitalCost: 90000,
+      remainingCost: 60000,
+      deliveryApproach: 'central_coordination' as const
+    };
+    const baseInputs: StateCapacitySystemInputs = {
+      turn: 8,
+      viewerId: 'ai',
+      programs: [program],
+      crises: [],
+      stakeholders: [],
+      publicStability: { nationalScore: 76, regionalScores: { NSW: 78, VIC: 76, QLD: 74, WA: 75, SA: 74, TAS: 77, ACT: 82, NT: 70 } }
+    };
+    const comfort = computeNationalStateCapacity(baseInputs, persisted).state;
+    const overloaded = computeNationalStateCapacity(
+      {
+        ...baseInputs,
+        crises: [
+          {
+            id: 'c_severe',
+            title: 'East Coast Blackout & Flood',
+            severity: 'critical',
+            status: 'active',
+            regionIds: ['NSW', 'VIC', 'QLD'],
+            domainsAffected: ['emergency_response', 'national_coordination']
+          }
+        ]
+      },
+      persisted
+    ).state;
+    const comfortScore = evaluateAIStateCapacityCandidate({
+      actionType: 'commit_program',
+      targetId: 'national_high_speed_rail',
+      isComplexNationalProgram: true,
+      stateCapacity: comfort
+    }).scoreDelta;
+    const overloadScore = evaluateAIStateCapacityCandidate({
+      actionType: 'commit_program',
+      targetId: 'national_high_speed_rail',
+      isComplexNationalProgram: true,
+      stateCapacity: overloaded
+    }).scoreDelta;
+    return overloadScore < comfortScore || `comfort=${comfortScore} overload=${overloadScore}`;
+  });
+
+  check('o111_a95_workforce_modifier_cap', 'Workforce AI: candidate score modifiers stay within V10.10 public cap', () => {
+    const wfRes = computeNationalWorkforce(createWorkforceFixture(), null);
+    const train = evaluateAIWorkforceCandidate(wfRes.worldView, { id: 'c1', category: 'education training', isTrainingOrEducation: true });
+    const build = evaluateAIWorkforceCandidate(wfRes.worldView, { id: 'c2', category: 'construction engineering', regionId: 'NSW' });
+    return Math.abs(train.scoreModifier) <= V1010_LIMITS.aiCandidateModCap
+      && Math.abs(build.scoreModifier) <= V1010_LIMITS.aiCandidateModCap
+      || `train=${train.scoreModifier} build=${build.scoreModifier}`;
+  });
+
+  check('o111_a95_background_pure', 'Background AI: evaluation never mutates the GI world snapshot', () => {
+    const { world: gw0 } = createGIFixtureWorld({ money: 12000 });
+    const before = canon({ ...gw0, tools: null });
+    evaluateBackgroundAI(null, gw0, { force: true });
+    return canon({ ...gw0, tools: null }) === before && BACKGROUND_AI_CAN_EXECUTE === false || 'world mutated or execute flag wrong';
+  });
+
+  check('o111_a95_tuning_choose_action_deterministic', 'AI Tuning Lab: chooseAction is deterministic for fixed seed and genome', () => {
+    const genome = createSeedGenome('o111_a95');
+    const snap = createTuningMatchState(77, false);
+    const a = chooseAction(snap, 'ai', genome.weights, createSeededRng(77));
+    const b = chooseAction(snap, 'ai', genome.weights, createSeededRng(77));
+    return Boolean(a && b && a.type === b.type && canon(a.data) === canon(b.data)) || `${a?.type} vs ${b?.type}`;
+  });
+
+  return results;
+}
+
 // ---- Existing-suite orchestration (reuses every suite; never re-implements them) ---------------------------
 export interface V95SuiteSpec { id: string; label: string; tier: 'quick' | 'full'; section: V95ReleaseSection; severity: V95Severity; run: () => unknown; knownFailures?: string[] }
 
@@ -136534,6 +136722,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'copilot', label: 'Co-Pilot', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runCoPilotDevSelfTests() },
   { id: 'reliability', label: 'Reliability upgrade regressions', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runReliabilityUpgradeSelfTests() },
   { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
+  { id: 'o111_a95', label: 'O111 AI Evaluation Contract', tier: 'quick', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runO111AiEvaluationContractSelfTests() },
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
     ...runAiMemoryPhase1SelfTests().results, ...runAiMemoryPhase2SelfTests().results, ...runAiMemoryPhase3SelfTests().results,
     ...runAiMemoryPhase4SelfTests().results, ...runAiMemoryPhase5SelfTests().results, ...runAiMemoryPhase6SelfTests().results, ...runAiMemoryPhase61SelfTests().results
