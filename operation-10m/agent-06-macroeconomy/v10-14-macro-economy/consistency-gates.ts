@@ -432,5 +432,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Restrictive transmission amplification — downside nudges dominate supportive layers.'
     });
   }
+  const ti: any = inputs.teamIntelligence ?? inputs.teamAi ?? inputs.nationalTeamAi;
+  const cohesion = String(ti?.cohesionBand ?? ti?.teamCohesion?.band ?? '');
+  if (
+    (cohesion === 'fractured' || cohesion === 'critical') &&
+    state.transmissionCoherence?.band === 'contradictory'
+  ) {
+    gates.push({
+      id: 'team_transmission_incoherence',
+      triggered: true,
+      severity: 'info',
+      summary: 'Fractured team AI cohesion aligns with contradictory transmission phase read.'
+    });
+  }
+  const rp: any = inputs.historyReplay ?? inputs.replayArchive ?? inputs.nationalHistory;
+  const stressMemory = String(rp?.stressMemory?.band ?? rp?.priorShockMemory?.band ?? '');
+  if (
+    (stressMemory === 'persistent' || stressMemory === 'scarring') &&
+    (state.cyclePhase === 'contraction' || state.cyclePhase === 'trough')
+  ) {
+    gates.push({
+      id: 'replay_stress_memory',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Persistent replay stress memory reinforces macro downturn interpretation.'
+    });
+  }
+  if (state.transmissionTension?.band === 'acute' || state.transmissionTension?.band === 'elevated') {
+    gates.push({
+      id: 'transmission_tension_elevated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Elevated transmission tension — restrictive layer mass dominates supportive nudges.'
+    });
+  }
   return gates;
 }

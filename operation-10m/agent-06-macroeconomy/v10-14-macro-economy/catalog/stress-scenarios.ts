@@ -96,6 +96,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Command & automation stress',
     shockIds: ['credit_contraction', 'global_slowdown'],
     description: 'Crisis command posture with stalled automation throughput (harness overlay).'
+  },
+  {
+    id: 'team_replay_stress',
+    label: 'Team AI & replay stress',
+    shockIds: ['global_slowdown', 'credit_contraction'],
+    description: 'Fractured team cohesion with persistent replay stress memory (harness overlay).'
   }
 ];
 

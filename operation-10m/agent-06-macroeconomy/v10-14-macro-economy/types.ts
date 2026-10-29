@@ -109,6 +109,8 @@ export interface NationalMacroEconomyState {
   forecastingSpilloverSummary: string | null;
   commandSpilloverSummary: string | null;
   automationSpilloverSummary: string | null;
+  teamAiSpilloverSummary: string | null;
+  replaySpilloverSummary: string | null;
   capacitySnapshot: MacroCapacitySnapshot;
   transmissionBalance: MacroTransmissionBalanceSnapshot;
   transmissionCoherence: MacroTransmissionCoherenceSnapshot;
@@ -118,6 +120,7 @@ export interface NationalMacroEconomyState {
   transmissionResilience: MacroTransmissionResilienceSnapshot;
   transmissionCoverage: MacroTransmissionCoverageSnapshot;
   transmissionAmplification: MacroTransmissionAmplificationSnapshot;
+  transmissionTension: MacroTransmissionTensionSnapshot;
   transmissionReport: MacroTransmissionReport;
   stressIndex: MacroStressIndexSnapshot;
   policyStance: MacroPolicyStanceSnapshot;
@@ -274,6 +277,16 @@ export interface MacroTransmissionAmplificationSnapshot {
   summary: string;
 }
 
+export type MacroTransmissionTensionBand = 'supportive' | 'balanced' | 'elevated' | 'acute';
+
+export interface MacroTransmissionTensionSnapshot {
+  tensionIndex: number;
+  band: MacroTransmissionTensionBand;
+  supportiveMass: number;
+  restrictiveMass: number;
+  summary: string;
+}
+
 export type MacroStressBand = 'calm' | 'elevated' | 'acute';
 
 export interface MacroStressIndexSnapshot {
@@ -365,6 +378,12 @@ export interface MacroEconomyInputs {
   idleAutomation?: any;
   automation?: any;
   nationalAutomation?: any;
+  teamIntelligence?: any;
+  teamAi?: any;
+  nationalTeamAi?: any;
+  historyReplay?: any;
+  replayArchive?: any;
+  nationalHistory?: any;
   highInflationScenarioActive?: boolean;
   creditShockActive?: boolean;
   /** Additional catalog shock ids (see catalog/cyclical-shocks.ts). Legacy flags merge in. */

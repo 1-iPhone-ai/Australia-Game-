@@ -23,6 +23,8 @@ import { applyMacroCitiesSpillover, readMacroCitiesSpilloverFromV1011Cities } fr
 import { applyMacroForecastingSpillover, readMacroForecastingSpilloverFromV1021 } from './bridge-v1021-forecasting.ts';
 import { applyMacroCommandSpillover, readMacroCommandSpilloverFromV1017Command } from './bridge-v1017-command.ts';
 import { applyMacroAutomationSpillover, readMacroAutomationSpilloverFromV1020 } from './bridge-v1020-automation.ts';
+import { applyMacroTeamAiSpillover, readMacroTeamAiSpilloverFromV1018Team } from './bridge-v1018-team-ai.ts';
+import { applyMacroReplaySpillover, readMacroReplaySpilloverFromV1024 } from './bridge-v1024-replay.ts';
 import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
 import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { buildMacroTransmissionReport } from './macro-transmission.ts';
@@ -37,6 +39,7 @@ import { buildMacroTransmissionVolatilitySnapshot } from './macro-transmission-v
 import { buildMacroTransmissionResilienceSnapshot } from './macro-transmission-resilience.ts';
 import { buildMacroTransmissionCoverageSnapshot } from './macro-transmission-coverage.ts';
 import { buildMacroTransmissionAmplificationSnapshot } from './macro-transmission-amplification.ts';
+import { buildMacroTransmissionTensionSnapshot } from './macro-transmission-tension.ts';
 import { appendMacroCycleTransitionMemory } from './cycle-memory.ts';
 import { V1014_MACRO_LIMITS } from './constants.ts';
 import { resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
@@ -124,6 +127,8 @@ export function computeNationalMacroEconomy(
   const forecastingSpillover = readMacroForecastingSpilloverFromV1021(inputs);
   const commandSpillover = readMacroCommandSpilloverFromV1017Command(inputs);
   const automationSpillover = readMacroAutomationSpilloverFromV1020(inputs);
+  const teamAiSpillover = readMacroTeamAiSpilloverFromV1018Team(inputs);
+  const replaySpillover = readMacroReplaySpilloverFromV1024(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -148,7 +153,9 @@ export function computeNationalMacroEconomy(
   const withForecasting = applyMacroForecastingSpillover(withCities, forecastingSpillover);
   const withCommand = applyMacroCommandSpillover(withForecasting, commandSpillover);
   const withAutomation = applyMacroAutomationSpillover(withCommand, automationSpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withAutomation, pushEv);
+  const withTeamAi = applyMacroTeamAiSpillover(withAutomation, teamAiSpillover);
+  const withReplay = applyMacroReplaySpillover(withTeamAi, replaySpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withReplay, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -200,7 +207,9 @@ export function computeNationalMacroEconomy(
     cities: citiesSpillover,
     forecasting: forecastingSpillover,
     command: commandSpillover,
-    automation: automationSpillover
+    automation: automationSpillover,
+    teamAi: teamAiSpillover,
+    replay: replaySpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
@@ -211,6 +220,7 @@ export function computeNationalMacroEconomy(
   const transmissionResilience = buildMacroTransmissionResilienceSnapshot(transmissionReport);
   const transmissionCoverage = buildMacroTransmissionCoverageSnapshot(transmissionReport);
   const transmissionAmplification = buildMacroTransmissionAmplificationSnapshot(transmissionReport);
+  const transmissionTension = buildMacroTransmissionTensionSnapshot(transmissionReport);
 
   const capacitySnapshot = buildMacroCapacitySnapshot({
     state: {
@@ -285,6 +295,8 @@ export function computeNationalMacroEconomy(
     forecastingSpilloverSummary: forecastingSpillover.summary,
     commandSpilloverSummary: commandSpillover.summary,
     automationSpilloverSummary: automationSpillover.summary,
+    teamAiSpilloverSummary: teamAiSpillover.summary,
+    replaySpilloverSummary: replaySpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,
@@ -294,6 +306,7 @@ export function computeNationalMacroEconomy(
     transmissionResilience,
     transmissionCoverage,
     transmissionAmplification,
+    transmissionTension,
     transmissionReport,
     stressIndex: {
       score: 0,
