@@ -152,6 +152,7 @@ export function attachSiegeSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,

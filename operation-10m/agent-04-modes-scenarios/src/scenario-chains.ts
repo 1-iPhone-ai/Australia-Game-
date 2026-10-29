@@ -1674,6 +1674,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_receivership_route',
+    title: 'Receivership Route',
+    description:
+      'Three-phase receivership arc with score accrual between legs — round-49 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_receivership_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_receivership_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File receivership petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 590 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_receivership_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, VIC: 5 },
+          forcedSettingsPatch: { o10mReceivershipMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_receivership_estate_finale',
+        title: 'Estate Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainReceivershipRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

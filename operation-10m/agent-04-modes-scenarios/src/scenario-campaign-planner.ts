@@ -127,6 +127,11 @@ import {
   sanitizeSequestrationSession,
 } from './save-format-sequestration.js';
 import {
+  getReceivershipScenarioAtCursor,
+  receivershipSessionSummary,
+  sanitizeReceivershipSession,
+} from './save-format-receivership.js';
+import {
   getInjunctionScenarioAtCursor,
   injunctionSessionSummary,
   sanitizeInjunctionSession,
@@ -263,6 +268,7 @@ import type {
   O10mInjunctionPhase,
   O10mContemptPhase,
   O10mSequestrationPhase,
+  O10mReceivershipPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -441,9 +447,31 @@ const emptyQueuePlan = {
   sequestrationCursor: null as number | null,
   sequestrationPhase: null as O10mSequestrationPhase | null,
   sequestrationScore: null as number | null,
+  receivershipId: null as string | null,
+  receivershipCursor: null as number | null,
+  receivershipPhase: null as O10mReceivershipPhase | null,
+  receivershipScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const receivership = sanitizeReceivershipSession(state.receivershipSession);
+  const receivershipScenario = getReceivershipScenarioAtCursor(receivership);
+  if (receivership && receivership.active && receivershipScenario) {
+    return {
+      kind: 'receivership_step',
+      scenarioId: receivershipScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      receivershipId: receivership.receivershipId,
+      receivershipCursor: receivership.cursor,
+      receivershipPhase: receivership.phaseTag,
+      receivershipScore: receivership.receivershipScore,
+      reason: `Receivership "${receivership.label}" ${receivership.phaseTag} phase ${receivership.cursor + 1}/${receivership.scenarioIds.length} (score ${receivership.receivershipScore}).`,
+    };
+  }
+
   const sequestration = sanitizeSequestrationSession(state.sequestrationSession);
   const sequestrationScenario = getSequestrationScenarioAtCursor(sequestration);
   if (sequestration && sequestration.active && sequestrationScenario) {
@@ -1345,6 +1373,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   injunctionActive: boolean;
   contemptActive: boolean;
   sequestrationActive: boolean;
+  receivershipActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -1396,6 +1425,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const injunction = injunctionSessionSummary(state);
   const contempt = contemptSessionSummary(state);
   const sequestration = sequestrationSessionSummary(state);
+  const receivership = receivershipSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -1445,6 +1475,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     injunctionActive: injunction.active,
     contemptActive: contempt.active,
     sequestrationActive: sequestration.active,
+    receivershipActive: receivership.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

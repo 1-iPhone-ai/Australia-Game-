@@ -130,6 +130,7 @@ export function attachQuowarrantoSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     habeasSession: null,
     prohibitionSession: null,
     mandamusSession: null,

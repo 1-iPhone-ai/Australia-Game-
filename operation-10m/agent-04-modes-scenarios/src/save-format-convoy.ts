@@ -151,6 +151,7 @@ export function attachConvoySessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,

@@ -158,6 +158,7 @@ export function attachExpeditionSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,

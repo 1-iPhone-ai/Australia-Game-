@@ -406,6 +406,8 @@ export type O10mContemptPhase = 'filing' | 'review' | 'contempt';
 
 export type O10mSequestrationPhase = 'filing' | 'review' | 'sequestration';
 
+export type O10mReceivershipPhase = 'filing' | 'review' | 'receivership';
+
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
   circuitId: string;
@@ -857,6 +859,17 @@ export interface O10mSequestrationSession {
   phaseTag: O10mSequestrationPhase;
 }
 
+/** Schema v49 — receivership arc with score accrual between phases. */
+export interface O10mReceivershipSession {
+  receivershipId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  receivershipScore: number;
+  phaseTag: O10mReceivershipPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -881,6 +894,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'receivership_step'
     | 'sequestration_step'
     | 'contempt_step'
     | 'injunction_step'
@@ -1100,6 +1114,10 @@ export interface O10mCampaignPlan {
   sequestrationCursor: number | null;
   sequestrationPhase: O10mSequestrationPhase | null;
   sequestrationScore: number | null;
+  receivershipId: string | null;
+  receivershipCursor: number | null;
+  receivershipPhase: O10mReceivershipPhase | null;
+  receivershipScore: number | null;
   contemptId: string | null;
   contemptCursor: number | null;
   contemptPhase: O10mContemptPhase | null;
@@ -1221,8 +1239,10 @@ export interface O10mModesPersistedState {
   injunctionSession?: O10mInjunctionSession | null;
   /** Schema v47 — active contempt arc (mutually exclusive with sequestration / injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   contemptSession?: O10mContemptSession | null;
-  /** Schema v48 — active sequestration arc (mutually exclusive with contempt / injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v48 — active sequestration arc (mutually exclusive with receivership / contempt / injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   sequestrationSession?: O10mSequestrationSession | null;
+  /** Schema v49 — active receivership arc (mutually exclusive with sequestration / contempt / injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  receivershipSession?: O10mReceivershipSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -6426,6 +6446,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Sequestration finales', 'Score ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_receivership_filing_docket',
+    title: 'Receivership Filing Docket',
+    description: 'Open a receivership arc with low-pressure score pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100556,
+    startingMoney: 4250,
+    startingRegions: ['NT', 'QLD'],
+    badgeId: 'badge_o10m_receivership_filing_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100556),
+      o10mReceivershipFilingDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_rfd_obj_day',
+        label: 'Filing Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Receivership arcs', 'Score pacing', 'Filing phase'],
+  },
+  {
+    id: 'o10m_receivership_review_chamber',
+    title: 'Receivership Review Chamber',
+    description: 'Mid receivership review with accrued score bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100557,
+    startingMoney: 4800,
+    startingRegions: ['WA', 'SA'],
+    startingStanding: { WA: 72, SA: 70 },
+    badgeId: 'badge_o10m_receivership_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100557),
+      regionalStandingEnabled: true,
+      o10mReceivershipReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_rrc_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 75',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 75,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Score carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_receivership_estate_finale',
+    title: 'Receivership Estate Finale',
+    description: 'Finale receivership stage — net worth gate with full score bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100558,
+    startingMoney: 5250,
+    startingRegions: ['ACT', 'NSW', 'VIC'],
+    badgeId: 'badge_o10m_receivership_estate_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100558),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mReceivershipEstateFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_ref_obj_net',
+        label: 'Estate Net Worth',
+        description: 'Reach $23,400 net worth',
+        targetType: 'netWorth',
+        targetValue: 23400,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Receivership finales', 'Score ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -8540,6 +8657,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_receivership_route',
+    title: 'Receivership Route',
+    description:
+      'Three-phase receivership arc with score accrual between legs — round-49 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_receivership_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_receivership_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File receivership petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 590 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_receivership_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, VIC: 5 },
+          forcedSettingsPatch: { o10mReceivershipMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_receivership_estate_finale',
+        title: 'Estate Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainReceivershipRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -9366,7 +9517,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 48;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 49;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -9513,6 +9664,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
   };
 }
 
@@ -9580,6 +9732,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       injunctionSession: merged.injunctionSession ?? null,
       contemptSession: merged.contemptSession ?? null,
       sequestrationSession: merged.sequestrationSession ?? null,
+      receivershipSession: merged.receivershipSession ?? null,
     };
     return upgraded;
   }
@@ -9671,6 +9824,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     injunctionSession: sanitizeInjunctionSession(o.injunctionSession),
     contemptSession: sanitizeContemptSession(o.contemptSession),
     sequestrationSession: sanitizeSequestrationSession(o.sequestrationSession),
+    receivershipSession: sanitizeReceivershipSession(o.receivershipSession),
   };
 }
 
@@ -10015,6 +10169,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Sequestration cursor out of range; clamp on next sanitize.');
   }
 
+  const receivership = sanitizeReceivershipSession(state.receivershipSession);
+  if (state.receivershipSession && !receivership) {
+    warnings.push('Receivership session failed sanitization; planner will ignore it.');
+  } else if (receivership && receivership.cursor >= receivership.scenarioIds.length) {
+    warnings.push('Receivership cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -10166,6 +10327,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'injunctionSession',
   'contemptSession',
   'sequestrationSession',
+  'receivershipSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -10712,6 +10874,7 @@ export function attachMarathonQueueToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -10829,6 +10992,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceReceivershipSessionAfterRun(next, run);
   next = advanceSequestrationSessionAfterRun(next, run);
   next = advanceContemptSessionAfterRun(next, run);
   next = advanceInjunctionSessionAfterRun(next, run);
@@ -11041,6 +11205,7 @@ export function attachGauntletSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -11311,6 +11476,7 @@ export function attachRelaySessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -11541,6 +11707,7 @@ export function attachCircuitSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -11789,6 +11956,7 @@ export function attachExpeditionSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -12035,6 +12203,7 @@ export function attachOdysseySessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -12280,6 +12449,7 @@ export function attachPilgrimageSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -12526,6 +12696,7 @@ export function attachCaravanSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -12766,6 +12937,7 @@ export function attachVoyageSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -13006,6 +13178,7 @@ export function attachSiegeSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -13246,6 +13419,7 @@ export function attachConvoySessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -13486,6 +13660,7 @@ export function attachEscortSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -13735,6 +13910,7 @@ export function attachExtractionSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -13992,6 +14168,7 @@ export function attachSubjectSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -14249,6 +14426,7 @@ export function attachWitnessSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -14506,6 +14684,7 @@ export function attachTribunalSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -14763,6 +14942,7 @@ export function attachIndictmentSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -15020,6 +15200,7 @@ export function attachAppealSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,
@@ -15277,6 +15458,7 @@ export function attachClemencySessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     appealSession: null,
     indictmentSession: null,
     tribunalSession: null,
@@ -15534,6 +15716,7 @@ export function attachPardonSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     clemencySession: null,
     appealSession: null,
     indictmentSession: null,
@@ -15791,6 +15974,7 @@ export function attachAmnestySessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     pardonSession: null,
     clemencySession: null,
     appealSession: null,
@@ -16048,6 +16232,7 @@ export function attachReprieveSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     amnestySession: null,
     pardonSession: null,
     clemencySession: null,
@@ -16305,6 +16490,7 @@ export function attachParoleSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     reprieveSession: null,
     amnestySession: null,
     pardonSession: null,
@@ -16562,6 +16748,7 @@ export function attachProbationSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     paroleSession: null,
     reprieveSession: null,
     amnestySession: null,
@@ -16819,6 +17006,7 @@ export function attachCommutationSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     probationSession: null,
     paroleSession: null,
     reprieveSession: null,
@@ -17076,6 +17264,7 @@ export function attachAcquittalSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     commutationSession: null,
     probationSession: null,
     paroleSession: null,
@@ -17333,6 +17522,7 @@ export function attachExonerationSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     acquittalSession: null,
     commutationSession: null,
     probationSession: null,
@@ -17590,6 +17780,7 @@ export function attachExpungementSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     exonerationSession: null,
     acquittalSession: null,
     commutationSession: null,
@@ -17847,6 +18038,7 @@ export function attachVacaturSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     expungementSession: null,
     exonerationSession: null,
     acquittalSession: null,
@@ -18104,6 +18296,7 @@ export function attachRemandSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     vacaturSession: null,
     expungementSession: null,
     exonerationSession: null,
@@ -18361,6 +18554,7 @@ export function attachReversalSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     remandSession: null,
     vacaturSession: null,
     expungementSession: null,
@@ -18618,6 +18812,7 @@ export function attachAnnulmentSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     reversalSession: null,
     remandSession: null,
     vacaturSession: null,
@@ -18877,6 +19072,7 @@ export function attachReinstatementSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     annulmentSession: null,
     reversalSession: null,
     remandSession: null,
@@ -19136,6 +19332,7 @@ export function attachSetAsideSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     reinstatementSession: null,
     annulmentSession: null,
     reversalSession: null,
@@ -19393,6 +19590,7 @@ export function attachQuashSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     setAsideSession: null,
     reinstatementSession: null,
     annulmentSession: null,
@@ -19652,6 +19850,7 @@ export function attachSupersedeSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     quashSession: null,
     setAsideSession: null,
     reinstatementSession: null,
@@ -20925,6 +21124,7 @@ export function attachQuowarrantoSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     habeasSession: null,
     prohibitionSession: null,
     mandamusSession: null,
@@ -21184,6 +21384,7 @@ export function attachInjunctionSessionToState(
     injunctionSession: sanitized,
     contemptSession: null,
     sequestrationSession: null,
+    receivershipSession: null,
     quowarrantoSession: null,
     habeasSession: null,
     prohibitionSession: null,
@@ -21840,6 +22041,267 @@ export function sequestrationSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-receivership.ts ---
+export const O10M_RECEIVERSHIP_SCENARIO_CAP = 6;
+export const O10M_RECEIVERSHIP_SCORE_CAP = 1138;
+export const O10M_RECEIVERSHIP_SCORE_MONEY_CAP = 1224;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mReceivershipPhase>(['filing', 'review', 'receivership']);
+
+export function unlockTokenForReceivershipId(receivershipId: string): string | null {
+  if (!receivershipId.startsWith('o10m_receivership_')) return null;
+  return `o10m_unlock_${receivershipId.slice('o10m_receivership_'.length)}`;
+}
+
+export function receivershipPhaseForCursor(cursor: number, scenarioCount: number): O10mReceivershipPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'receivership';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'filing';
+}
+
+export function receivershipScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(148, Math.max(36, Math.floor(run.playerNetWorth / 112) + standingSlice));
+}
+
+export function sanitizeReceivershipSession(raw: unknown): O10mReceivershipSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const receivershipId =
+    typeof o.receivershipId === 'string' && o.receivershipId.startsWith('o10m_receivership_')
+      ? o.receivershipId
+      : null;
+  if (!receivershipId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : receivershipId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_RECEIVERSHIP_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const receivershipScore = Math.min(
+    O10M_RECEIVERSHIP_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.receivershipScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mReceivershipPhase)
+      ? (phaseRaw as O10mReceivershipPhase)
+      : receivershipPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    receivershipId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    receivershipScore,
+    phaseTag,
+  };
+}
+
+export function createReceivershipSession(params: {
+  receivershipId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mReceivershipSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.receivershipId.startsWith('o10m_receivership_')) {
+    return { session: null, warnings: ['Receivership ids must start with o10m_receivership_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_RECEIVERSHIP_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Receivership arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      receivershipId: params.receivershipId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      receivershipScore: 0,
+      phaseTag: receivershipPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachReceivershipSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mReceivershipSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeReceivershipSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    receivershipSession: sanitized,
+    sequestrationSession: null,
+    contemptSession: null,
+    injunctionSession: null,
+    quowarrantoSession: null,
+    habeasSession: null,
+    prohibitionSession: null,
+    mandamusSession: null,
+    certiorariSession: null,
+    supersedeSession: null,
+    quashSession: null,
+    setAsideSession: null,
+    reinstatementSession: null,
+    annulmentSession: null,
+    reversalSession: null,
+    remandSession: null,
+    vacaturSession: null,
+    expungementSession: null,
+    exonerationSession: null,
+    acquittalSession: null,
+    commutationSession: null,
+    probationSession: null,
+    paroleSession: null,
+    reprieveSession: null,
+    amnestySession: null,
+    pardonSession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearReceivershipSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, receivershipSession: null };
+}
+
+export function getReceivershipScenarioAtCursor(
+  session: O10mReceivershipSession | null | undefined,
+): string | null {
+  const receivership = sanitizeReceivershipSession(session);
+  if (!receivership || !receivership.active) return null;
+  return receivership.scenarioIds[receivership.cursor] ?? null;
+}
+
+export function buildReceivershipScenarioStartOverrides(
+  session: O10mReceivershipSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const receivership = sanitizeReceivershipSession(session);
+  if (!receivership) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_RECEIVERSHIP_SCORE_MONEY_CAP,
+    Math.floor(receivership.receivershipScore * 0.94),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveReceivershipId: receivership.receivershipId,
+      o10mActiveReceivershipStep: receivership.cursor,
+      o10mActiveReceivershipPhase: receivership.phaseTag,
+      o10mReceivershipScore: receivership.receivershipScore,
+    },
+  };
+}
+
+export function advanceReceivershipSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeReceivershipSession(state.receivershipSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const receivershipScore = Math.min(
+    O10M_RECEIVERSHIP_SCORE_CAP,
+    session.receivershipScore + receivershipScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      receivershipSession: {
+        ...session,
+        cursor,
+        receivershipScore,
+        phaseTag: receivershipPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForReceivershipId(session.receivershipId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    receivershipSession: { ...session, active: false, receivershipScore, phaseTag: 'receivership' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function receivershipSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  receivershipScore: number;
+  phase: O10mReceivershipPhase | null;
+} {
+  const session = sanitizeReceivershipSession(state.receivershipSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    receivershipScore: session?.receivershipScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -22014,9 +22476,31 @@ const emptyQueuePlan = {
   sequestrationCursor: null as number | null,
   sequestrationPhase: null as O10mSequestrationPhase | null,
   sequestrationScore: null as number | null,
+  receivershipId: null as string | null,
+  receivershipCursor: null as number | null,
+  receivershipPhase: null as O10mReceivershipPhase | null,
+  receivershipScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const receivership = sanitizeReceivershipSession(state.receivershipSession);
+  const receivershipScenario = getReceivershipScenarioAtCursor(receivership);
+  if (receivership && receivership.active && receivershipScenario) {
+    return {
+      kind: 'receivership_step',
+      scenarioId: receivershipScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      receivershipId: receivership.receivershipId,
+      receivershipCursor: receivership.cursor,
+      receivershipPhase: receivership.phaseTag,
+      receivershipScore: receivership.receivershipScore,
+      reason: `Receivership "${receivership.label}" ${receivership.phaseTag} phase ${receivership.cursor + 1}/${receivership.scenarioIds.length} (score ${receivership.receivershipScore}).`,
+    };
+  }
+
   const sequestration = sanitizeSequestrationSession(state.sequestrationSession);
   const sequestrationScenario = getSequestrationScenarioAtCursor(sequestration);
   if (sequestration && sequestration.active && sequestrationScenario) {
@@ -22918,6 +23402,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   injunctionActive: boolean;
   contemptActive: boolean;
   sequestrationActive: boolean;
+  receivershipActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -22969,6 +23454,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const injunction = injunctionSessionSummary(state);
   const contempt = contemptSessionSummary(state);
   const sequestration = sequestrationSessionSummary(state);
+  const receivership = receivershipSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -23018,6 +23504,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     injunctionActive: injunction.active,
     contemptActive: contempt.active,
     sequestrationActive: sequestration.active,
+    receivershipActive: receivership.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -23036,7 +23523,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 49, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 50, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -23416,16 +23903,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const sequestrationState = sequestration ? attachSequestrationSessionToState(createEmptyO10mModesPersistedState(), sequestration) : null;
   push('agent04_chunk_56', sequestrationState !== null && planNextCampaignAction(sequestrationState!).kind === 'sequestration_step');
 
+  const receivership = createReceivershipSession({
+    receivershipId: 'o10m_receivership_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_receivership_filing_docket'],
+  }).session;
+  const receivershipState = receivership ? attachReceivershipSessionToState(createEmptyO10mModesPersistedState(), receivership) : null;
+  push('agent04_chunk_57', receivershipState !== null && planNextCampaignAction(receivershipState!).kind === 'receivership_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v49',
+  schemaVersion: 'op10m-agent04-v50',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 48,
+  saveSchemaVersion: 49,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;
