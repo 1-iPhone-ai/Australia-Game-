@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 5173"
+    "preview": "vite preview --host 0.0.0.0 --port 5173",
+    "test:forecast-contracts": "node src/strategic-forecasting/o111-agent-101-baseline-locks.mjs"
   },
   "dependencies": {
     "react": "19.3.1",
