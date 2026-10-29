@@ -409,6 +409,7 @@ export type O10mSequestrationPhase = 'filing' | 'review' | 'sequestration';
 export type O10mReceivershipPhase = 'filing' | 'review' | 'receivership';
 
 export type O10mLiquidationPhase = 'filing' | 'review' | 'liquidation';
+export type O10mLiquidationDepthPhase = 'filing' | 'review' | 'depth';
 export type O10mDissolutionPhase = 'filing' | 'review' | 'dissolution';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
@@ -884,6 +885,17 @@ export interface O10mLiquidationSession {
   phaseTag: O10mLiquidationPhase;
 }
 
+/** Schema v52 — liquidation depth arc with score accrual between phases. */
+export interface O10mLiquidationDepthSession {
+  liquidationDepthId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  liquidationDepthScore: number;
+  phaseTag: O10mLiquidationDepthPhase;
+}
+
 /** Schema v51 — dissolution arc with score accrual between phases. */
 export interface O10mDissolutionSession {
   dissolutionId: string;
@@ -919,6 +931,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'liquidation_depth_step'
     | 'dissolution_step'
     | 'liquidation_step'
     | 'receivership_step'
@@ -1145,6 +1158,10 @@ export interface O10mCampaignPlan {
   receivershipCursor: number | null;
   receivershipPhase: O10mReceivershipPhase | null;
   receivershipScore: number | null;
+  liquidationDepthId: string | null;
+  liquidationDepthCursor: number | null;
+  liquidationDepthPhase: O10mLiquidationDepthPhase | null;
+  liquidationDepthScore: number | null;
   dissolutionId: string | null;
   dissolutionCursor: number | null;
   dissolutionPhase: O10mDissolutionPhase | null;
@@ -1280,6 +1297,8 @@ export interface O10mModesPersistedState {
   receivershipSession?: O10mReceivershipSession | null;
   /** Schema v50 — active liquidation arc (mutually exclusive with receivership / sequestration / contempt / injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   liquidationSession?: O10mLiquidationSession | null;
+  /** Schema v52 — active liquidation depth arc (mutually exclusive with dissolution / liquidation / receivership / sequestration / contempt / injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  liquidationDepthSession?: O10mLiquidationDepthSession | null;
   /** Schema v51 — active dissolution arc (mutually exclusive with liquidation / receivership / sequestration / contempt / injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   dissolutionSession?: O10mDissolutionSession | null;
 }
@@ -6680,6 +6699,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     youWillLearn: ['Liquidation finales', 'Score ledger', 'Unlock tokens'],
   },
   {
+    id: 'o10m_liquidation_depth_filing_docket',
+    title: 'Liquidation depth Filing Docket',
+    description: 'Open a dissolution arc with low-pressure score pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100562,
+    startingMoney: 4350,
+    startingRegions: ['NT', 'QLD'],
+    badgeId: 'badge_o10m_liquidation_depth_filing_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100562),
+      o10mLiquidationDepthFilingDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_dfd_obj_day',
+        label: 'Filing Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Liquidation depth arcs', 'Score pacing', 'Filing phase'],
+  },
+  {
+    id: 'o10m_liquidation_depth_review_chamber',
+    title: 'Liquidation depth Review Chamber',
+    description: 'Mid dissolution review with accrued score bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100563,
+    startingMoney: 4900,
+    startingRegions: ['WA', 'SA'],
+    startingStanding: { WA: 72, SA: 70 },
+    badgeId: 'badge_o10m_liquidation_depth_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100563),
+      regionalStandingEnabled: true,
+      o10mLiquidationDepthReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_drc_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 75',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 75,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Score carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_liquidation_depth_estate_finale',
+    title: 'Liquidation depth Estate Finale',
+    description: 'Finale dissolution stage — net worth gate with full score bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100564,
+    startingMoney: 5350,
+    startingRegions: ['ACT', 'NSW', 'VIC'],
+    badgeId: 'badge_o10m_liquidation_depth_estate_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100564),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mLiquidationDepthEstateFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_def_obj_net',
+        label: 'Estate Net Worth',
+        description: 'Reach $23,800 net worth',
+        targetType: 'netWorth',
+        targetValue: 23800,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Liquidation depth finales', 'Score ledger', 'Unlock tokens'],
+  },
+  {
     id: 'o10m_dissolution_filing_docket',
     title: 'Dissolution Filing Docket',
     description: 'Open a dissolution arc with low-pressure score pacing before review.',
@@ -9818,7 +9934,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 51;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 52;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -9967,6 +10083,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     sequestrationSession: null,
     receivershipSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
   };
 }
@@ -10037,6 +10154,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       sequestrationSession: merged.sequestrationSession ?? null,
       receivershipSession: merged.receivershipSession ?? null,
       liquidationSession: merged.liquidationSession ?? null,
+      liquidationDepthSession: merged.liquidationDepthSession ?? null,
       dissolutionSession: merged.dissolutionSession ?? null,
     };
     return upgraded;
@@ -10131,6 +10249,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     sequestrationSession: sanitizeSequestrationSession(o.sequestrationSession),
     receivershipSession: sanitizeReceivershipSession(o.receivershipSession),
     liquidationSession: sanitizeLiquidationSession(o.liquidationSession),
+    liquidationDepthSession: sanitizeLiquidationDepthSession(o.liquidationDepthSession),
     dissolutionSession: sanitizeDissolutionSession(o.dissolutionSession),
   };
 }
@@ -10488,6 +10607,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Liquidation session failed sanitization; planner will ignore it.');
   } else if (liquidation && liquidation.cursor >= liquidation.scenarioIds.length) {
     warnings.push('Liquidation cursor out of range; clamp on next sanitize.');
+  }
+
+  const liquidationDepth = sanitizeLiquidationDepthSession(state.liquidationDepthSession);
+  if (state.liquidationDepthSession && !liquidationDepth) {
+    warnings.push('Liquidation depth session failed sanitization; planner will ignore it.');
+  } else if (liquidationDepth && liquidationDepth.cursor >= liquidationDepth.scenarioIds.length) {
+    warnings.push('Liquidation depth cursor out of range; clamp on next sanitize.');
   }
 
   const dissolution = sanitizeDissolutionSession(state.dissolutionSession);
@@ -11196,6 +11322,7 @@ export function attachMarathonQueueToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     scenarioId,
@@ -11315,6 +11442,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceLiquidationDepthSessionAfterRun(next, run);
   next = advanceDissolutionSessionAfterRun(next, run);
   next = advanceLiquidationSessionAfterRun(next, run);
   next = advanceReceivershipSessionAfterRun(next, run);
@@ -11531,6 +11659,7 @@ export function attachGauntletSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     scenarioId,
@@ -11804,6 +11933,7 @@ export function attachRelaySessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     scenarioId,
@@ -12037,6 +12167,7 @@ export function attachCircuitSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     expeditionSession: null,
@@ -12288,6 +12419,7 @@ export function attachExpeditionSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     circuitSession: null,
@@ -12537,6 +12669,7 @@ export function attachOdysseySessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     expeditionSession: null,
@@ -12785,6 +12918,7 @@ export function attachPilgrimageSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     odysseySession: null,
@@ -13034,6 +13168,7 @@ export function attachCaravanSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     pilgrimageSession: null,
@@ -13277,6 +13412,7 @@ export function attachVoyageSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     caravanSession: null,
@@ -13520,6 +13656,7 @@ export function attachSiegeSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     voyageSession: null,
@@ -13763,6 +13900,7 @@ export function attachConvoySessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     siegeSession: null,
@@ -14006,6 +14144,7 @@ export function attachEscortSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     convoySession: null,
@@ -14258,6 +14397,7 @@ export function attachExtractionSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     escortSession: null,
@@ -14518,6 +14658,7 @@ export function attachSubjectSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     extractionSession: null,
@@ -14778,6 +14919,7 @@ export function attachWitnessSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     subjectSession: null,
@@ -15038,6 +15180,7 @@ export function attachTribunalSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     witnessSession: null,
@@ -15298,6 +15441,7 @@ export function attachIndictmentSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     tribunalSession: null,
@@ -15558,6 +15702,7 @@ export function attachAppealSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     indictmentSession: null,
@@ -15818,6 +15963,7 @@ export function attachClemencySessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     appealSession: null,
@@ -16078,6 +16224,7 @@ export function attachPardonSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     clemencySession: null,
@@ -16338,6 +16485,7 @@ export function attachAmnestySessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     pardonSession: null,
@@ -16598,6 +16746,7 @@ export function attachReprieveSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     amnestySession: null,
@@ -16858,6 +17007,7 @@ export function attachParoleSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     reprieveSession: null,
@@ -17118,6 +17268,7 @@ export function attachProbationSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     paroleSession: null,
@@ -17378,6 +17529,7 @@ export function attachCommutationSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     probationSession: null,
@@ -17638,6 +17790,7 @@ export function attachAcquittalSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     commutationSession: null,
@@ -17898,6 +18051,7 @@ export function attachExonerationSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     acquittalSession: null,
@@ -18158,6 +18312,7 @@ export function attachExpungementSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     exonerationSession: null,
@@ -18418,6 +18573,7 @@ export function attachVacaturSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     expungementSession: null,
@@ -18678,6 +18834,7 @@ export function attachRemandSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     vacaturSession: null,
@@ -18938,6 +19095,7 @@ export function attachReversalSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     remandSession: null,
@@ -19198,6 +19356,7 @@ export function attachAnnulmentSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     reversalSession: null,
@@ -19460,6 +19619,7 @@ export function attachReinstatementSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     annulmentSession: null,
@@ -19722,6 +19882,7 @@ export function attachSetAsideSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     reinstatementSession: null,
@@ -19982,6 +20143,7 @@ export function attachQuashSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     setAsideSession: null,
@@ -20244,6 +20406,7 @@ export function attachSupersedeSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     quashSession: null,
@@ -21520,6 +21683,7 @@ export function attachQuowarrantoSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     habeasSession: null,
@@ -21782,6 +21946,7 @@ export function attachInjunctionSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     quowarrantoSession: null,
@@ -22561,7 +22726,9 @@ export function attachReceivershipSessionToState(
   return {
     ...state,
     receivershipSession: sanitized,
+    liquidationDepthSession: null,
     dissolutionSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     liquidationSession: null,
     sequestrationSession: null,
@@ -22825,6 +22992,7 @@ export function attachLiquidationSessionToState(
   return {
     ...state,
     liquidationSession: sanitized,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     sequestrationSession: null,
@@ -23088,6 +23256,7 @@ export function attachDissolutionSessionToState(
   return {
     ...state,
     dissolutionSession: sanitized,
+    liquidationDepthSession: null,
     liquidationSession: null,
     receivershipSession: null,
     sequestrationSession: null,
@@ -23408,6 +23577,10 @@ const emptyQueuePlan = {
   receivershipCursor: null as number | null,
   receivershipPhase: null as O10mReceivershipPhase | null,
   receivershipScore: null as number | null,
+  liquidationDepthId: null as string | null,
+  liquidationDepthCursor: null as number | null,
+  liquidationDepthPhase: null as O10mLiquidationDepthPhase | null,
+  liquidationDepthScore: null as number | null,
   dissolutionId: null as string | null,
   dissolutionCursor: null as number | null,
   dissolutionPhase: null as O10mDissolutionPhase | null,
@@ -23419,6 +23592,24 @@ const emptyQueuePlan = {
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const liquidationDepth = sanitizeLiquidationDepthSession(state.liquidationDepthSession);
+  const liquidationDepthScenario = getLiquidationDepthScenarioAtCursor(liquidationDepth);
+  if (liquidationDepth && liquidationDepth.active && liquidationDepthScenario) {
+    return {
+      kind: 'liquidation_depth_step',
+      scenarioId: liquidationDepthScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      liquidationDepthId: liquidationDepth.liquidationDepthId,
+      liquidationDepthCursor: liquidationDepth.cursor,
+      liquidationDepthPhase: liquidationDepth.phaseTag,
+      liquidationDepthScore: liquidationDepth.liquidationDepthScore,
+      reason: `Liquidation depth "${liquidationDepth.label}" ${liquidationDepth.phaseTag} phase ${liquidationDepth.cursor + 1}/${liquidationDepth.scenarioIds.length} (score ${liquidationDepth.liquidationDepthScore}).`,
+    };
+  }
+
   const dissolution = sanitizeDissolutionSession(state.dissolutionSession);
   const dissolutionScenario = getDissolutionScenarioAtCursor(dissolution);
   if (dissolution && dissolution.active && dissolutionScenario) {
@@ -24376,6 +24567,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   sequestrationActive: boolean;
   receivershipActive: boolean;
   liquidationActive: boolean;
+  liquidationDepthActive: boolean;
   dissolutionActive: boolean;
   replayTracked: number;
   unlockTokens: number;
@@ -24430,6 +24622,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const sequestration = sequestrationSessionSummary(state);
   const receivership = receivershipSessionSummary(state);
   const liquidation = liquidationSessionSummary(state);
+  const liquidationDepth = liquidationDepthSessionSummary(state);
   const dissolution = dissolutionSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
@@ -24482,6 +24675,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     sequestrationActive: sequestration.active,
     receivershipActive: receivership.active,
     liquidationActive: liquidation.active,
+    liquidationDepthActive: liquidationDepth.active,
     dissolutionActive: dissolution.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
@@ -24911,7 +25105,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v51',
+  schemaVersion: 'op10m-agent04-v52',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
   saveSchemaVersion: 51,

@@ -172,6 +172,7 @@ export function attachGauntletSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     scenarioId,

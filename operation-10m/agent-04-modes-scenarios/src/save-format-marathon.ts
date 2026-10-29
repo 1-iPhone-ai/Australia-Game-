@@ -27,6 +27,7 @@ import { advanceQuashSessionAfterRun } from './save-format-quash.js';
 import { advanceSupersedeSessionAfterRun } from './save-format-supersede.js';
 import { advanceLiquidationSessionAfterRun } from './save-format-liquidation.js';
 import { advanceDissolutionSessionAfterRun } from './save-format-dissolution.js';
+import { advanceLiquidationDepthSessionAfterRun } from './save-format-liquidation-depth.js';
 import { advanceReceivershipSessionAfterRun } from './save-format-receivership.js';
 import { advanceSequestrationSessionAfterRun } from './save-format-sequestration.js';
 import { advanceContemptSessionAfterRun } from './save-format-contempt.js';
@@ -191,6 +192,7 @@ export function attachMarathonQueueToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     scenarioId,
@@ -310,6 +312,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceLiquidationDepthSessionAfterRun(next, run);
   next = advanceDissolutionSessionAfterRun(next, run);
   next = advanceLiquidationSessionAfterRun(next, run);
   next = advanceReceivershipSessionAfterRun(next, run);

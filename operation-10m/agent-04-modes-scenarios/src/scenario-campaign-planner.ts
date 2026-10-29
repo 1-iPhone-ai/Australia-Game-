@@ -137,6 +137,11 @@ import {
   sanitizeDissolutionSession,
 } from './save-format-dissolution.js';
 import {
+  getLiquidationDepthScenarioAtCursor,
+  liquidationDepthSessionSummary,
+  sanitizeLiquidationDepthSession,
+} from './save-format-liquidation-depth.js';
+import {
   getReceivershipScenarioAtCursor,
   receivershipSessionSummary,
   sanitizeReceivershipSession,
@@ -280,6 +285,7 @@ import type {
   O10mSequestrationPhase,
   O10mReceivershipPhase,
   O10mLiquidationPhase,
+  O10mLiquidationDepthPhase,
   O10mDissolutionPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
@@ -463,6 +469,10 @@ const emptyQueuePlan = {
   receivershipCursor: null as number | null,
   receivershipPhase: null as O10mReceivershipPhase | null,
   receivershipScore: null as number | null,
+  liquidationDepthId: null as string | null,
+  liquidationDepthCursor: null as number | null,
+  liquidationDepthPhase: null as O10mLiquidationDepthPhase | null,
+  liquidationDepthScore: null as number | null,
   dissolutionId: null as string | null,
   dissolutionCursor: null as number | null,
   dissolutionPhase: null as O10mDissolutionPhase | null,
@@ -474,6 +484,24 @@ const emptyQueuePlan = {
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const liquidationDepth = sanitizeLiquidationDepthSession(state.liquidationDepthSession);
+  const liquidationDepthScenario = getLiquidationDepthScenarioAtCursor(liquidationDepth);
+  if (liquidationDepth && liquidationDepth.active && liquidationDepthScenario) {
+    return {
+      kind: 'liquidation_depth_step',
+      scenarioId: liquidationDepthScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      liquidationDepthId: liquidationDepth.liquidationDepthId,
+      liquidationDepthCursor: liquidationDepth.cursor,
+      liquidationDepthPhase: liquidationDepth.phaseTag,
+      liquidationDepthScore: liquidationDepth.liquidationDepthScore,
+      reason: `Liquidation depth "${liquidationDepth.label}" ${liquidationDepth.phaseTag} phase ${liquidationDepth.cursor + 1}/${liquidationDepth.scenarioIds.length} (score ${liquidationDepth.liquidationDepthScore}).`,
+    };
+  }
+
   const dissolution = sanitizeDissolutionSession(state.dissolutionSession);
   const dissolutionScenario = getDissolutionScenarioAtCursor(dissolution);
   if (dissolution && dissolution.active && dissolutionScenario) {
@@ -1431,6 +1459,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   sequestrationActive: boolean;
   receivershipActive: boolean;
   liquidationActive: boolean;
+  liquidationDepthActive: boolean;
   dissolutionActive: boolean;
   replayTracked: number;
   unlockTokens: number;
@@ -1485,6 +1514,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const sequestration = sequestrationSessionSummary(state);
   const receivership = receivershipSessionSummary(state);
   const liquidation = liquidationSessionSummary(state);
+  const liquidationDepth = liquidationDepthSessionSummary(state);
   const dissolution = dissolutionSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
@@ -1537,6 +1567,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     sequestrationActive: sequestration.active,
     receivershipActive: receivership.active,
     liquidationActive: liquidation.active,
+    liquidationDepthActive: liquidationDepth.active,
     dissolutionActive: dissolution.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,

@@ -135,6 +135,7 @@ export function attachQuashSessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     setAsideSession: null,

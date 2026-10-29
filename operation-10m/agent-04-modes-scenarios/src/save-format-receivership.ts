@@ -127,7 +127,9 @@ export function attachReceivershipSessionToState(
   return {
     ...state,
     receivershipSession: sanitized,
+    liquidationDepthSession: null,
     dissolutionSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     liquidationSession: null,
     sequestrationSession: null,

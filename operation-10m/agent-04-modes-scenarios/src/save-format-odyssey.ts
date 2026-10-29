@@ -157,6 +157,7 @@ export function attachOdysseySessionToState(
     contemptSession: null,
     sequestrationSession: null,
     liquidationSession: null,
+    liquidationDepthSession: null,
     dissolutionSession: null,
     receivershipSession: null,
     expeditionSession: null,

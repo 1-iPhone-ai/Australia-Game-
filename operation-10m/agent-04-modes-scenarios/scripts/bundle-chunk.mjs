@@ -521,7 +521,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: '${MODULE_ID}',
-  schemaVersion: 'op10m-agent04-v51',
+  schemaVersion: 'op10m-agent04-v52',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
   saveSchemaVersion: 51,
