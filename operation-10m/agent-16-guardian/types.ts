@@ -147,6 +147,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   warrantStrainIndex: number;
   warrantIntegrityScore: number;
   governanceConstancyScore: number;
+  clearanceStrainIndex: number;
+  clearanceIntegrityScore: number;
+  governancePerseveranceScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
