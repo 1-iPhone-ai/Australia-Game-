@@ -1,0 +1,31 @@
+import type { V1027WsecAquiferReserveEdge } from '../../types/core.ts';
+
+/** Aquifer reserve graph shard 033 (surface/ground/aquifer corridor coupling). */
+export const V1027_WSEC_AQUIFER_RESERVE_SHARD_033: readonly V1027WsecAquiferReserveEdge[] = [
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.676, lagTurns: 8, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.682, lagTurns: 9, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.688, lagTurns: 10, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.694, lagTurns: 11, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.7, lagTurns: 8, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.706, lagTurns: 9, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.712, lagTurns: 10, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.718, lagTurns: 11, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.724, lagTurns: 8, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.73, lagTurns: 9, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.736, lagTurns: 10, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.742, lagTurns: 11, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.748, lagTurns: 8, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.652, lagTurns: 9, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.658, lagTurns: 10, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.664, lagTurns: 11, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.67, lagTurns: 8, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.676, lagTurns: 9, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.682, lagTurns: 10, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.688, lagTurns: 11, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.694, lagTurns: 8, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.7, lagTurns: 9, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.706, lagTurns: 10, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.712, lagTurns: 11, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.718, lagTurns: 8, nodeId: 'distribution_network_09' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.724, lagTurns: 9, nodeId: 'distribution_network_09' },
+];
