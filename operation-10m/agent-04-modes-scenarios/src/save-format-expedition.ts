@@ -123,6 +123,7 @@ export function attachExpeditionSessionToState(
     pilgrimageSession: null,
     caravanSession: null,
     voyageSession: null,
+    siegeSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,

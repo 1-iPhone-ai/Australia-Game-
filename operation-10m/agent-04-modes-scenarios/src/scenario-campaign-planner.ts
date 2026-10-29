@@ -42,6 +42,11 @@ import {
   sanitizeCaravanSession,
 } from './save-format-caravan.js';
 import {
+  getSiegeScenarioAtCursor,
+  siegeSessionSummary,
+  sanitizeSiegeSession,
+} from './save-format-siege.js';
+import {
   getVoyageScenarioAtCursor,
   voyageSessionSummary,
   sanitizeVoyageSession,
@@ -54,6 +59,7 @@ import type {
   O10mExpeditionLeg,
   O10mOdysseyAct,
   O10mPilgrimageStage,
+  O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
 } from './types.js';
@@ -91,9 +97,31 @@ const emptyQueuePlan = {
   voyageCursor: null as number | null,
   voyageSegment: null as O10mVoyageSegment | null,
   voyageChart: null as number | null,
+  siegeId: null as string | null,
+  siegeCursor: null as number | null,
+  siegePhase: null as O10mSiegePhase | null,
+  siegeMorale: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const siege = sanitizeSiegeSession(state.siegeSession);
+  const siegeScenario = getSiegeScenarioAtCursor(siege);
+  if (siege && siege.active && siegeScenario) {
+    return {
+      kind: 'siege_step',
+      scenarioId: siegeScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      siegeId: siege.siegeId,
+      siegeCursor: siege.cursor,
+      siegePhase: siege.phaseTag,
+      siegeMorale: siege.moraleScore,
+      reason: `Siege "${siege.label}" ${siege.phaseTag} phase ${siege.cursor + 1}/${siege.scenarioIds.length} (morale ${siege.moraleScore}).`,
+    };
+  }
+
   const voyage = sanitizeVoyageSession(state.voyageSession);
   const voyageScenario = getVoyageScenarioAtCursor(voyage);
   if (voyage && voyage.active && voyageScenario) {
@@ -330,6 +358,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   pilgrimageActive: boolean;
   caravanActive: boolean;
   voyageActive: boolean;
+  siegeActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -346,6 +375,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const pilgrimage = pilgrimageSessionSummary(state);
   const caravan = caravanSessionSummary(state);
   const voyage = voyageSessionSummary(state);
+  const siege = siegeSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -360,6 +390,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     pilgrimageActive: pilgrimage.active,
     caravanActive: caravan.active,
     voyageActive: voyage.active,
+    siegeActive: siege.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

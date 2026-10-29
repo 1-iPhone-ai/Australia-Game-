@@ -367,6 +367,8 @@ export type O10mCaravanLeg = 'assembly' | 'crossing' | 'bazaar';
 
 export type O10mVoyageSegment = 'embark' | 'open_sea' | 'port_call';
 
+export type O10mSiegePhase = 'mustering' | 'breach' | 'relief';
+
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
   circuitId: string;
@@ -433,6 +435,17 @@ export interface O10mVoyageSession {
   segmentTag: O10mVoyageSegment;
 }
 
+/** Schema v14 — staged fortress siege with morale accrual between phases. */
+export interface O10mSiegeSession {
+  siegeId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  moraleScore: number;
+  phaseTag: O10mSiegePhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -457,6 +470,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'siege_step'
     | 'voyage_step'
     | 'caravan_step'
     | 'pilgrimage_step'
@@ -505,6 +519,10 @@ export interface O10mCampaignPlan {
   voyageCursor: number | null;
   voyageSegment: O10mVoyageSegment | null;
   voyageChart: number | null;
+  siegeId: string | null;
+  siegeCursor: number | null;
+  siegePhase: O10mSiegePhase | null;
+  siegeMorale: number | null;
   reason: string;
 }
 
@@ -554,6 +572,8 @@ export interface O10mModesPersistedState {
   caravanSession?: O10mCaravanSession | null;
   /** Schema v13 — active coastal voyage (mutually exclusive with caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   voyageSession?: O10mVoyageSession | null;
+  /** Schema v14 — active fortress siege (mutually exclusive with voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  siegeSession?: O10mSiegeSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -2362,6 +2382,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Voyage finales', 'Chart ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_siege_mustering_yard',
+    title: 'Siege Mustering Yard',
+    description: 'Gather siege morale with low-pressure mustering before the breach phase.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100444,
+    startingMoney: 2500,
+    startingRegions: ['NSW', 'ACT'],
+    badgeId: 'badge_o10m_siege_mustering_yard',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100444),
+      o10mSiegeMusteringYard: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_smy_obj_day',
+        label: 'Muster Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Fortress sieges', 'Morale pacing', 'Mustering phase'],
+  },
+  {
+    id: 'o10m_siege_breach_wall',
+    title: 'Siege Breach Wall',
+    description: 'Mid-siege breach with accrued morale bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100445,
+    startingMoney: 3050,
+    startingRegions: ['VIC', 'SA'],
+    startingStanding: { VIC: 47, SA: 45 },
+    badgeId: 'badge_o10m_siege_breach_wall',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100445),
+      regionalStandingEnabled: true,
+      o10mSiegeBreachWall: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_sbw_obj_avg',
+        label: 'Breach Threshold',
+        description: 'Average standing of 53',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 53,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Siege breach', 'Morale carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_siege_relief_finale',
+    title: 'Siege Relief Finale',
+    description: 'Finale relief phase — net worth gate with full morale bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100446,
+    startingMoney: 3500,
+    startingRegions: ['QLD', 'NT', 'WA'],
+    badgeId: 'badge_o10m_siege_relief_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100446),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mSiegeReliefFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_srf_obj_net',
+        label: 'Relief Net Worth',
+        description: 'Reach $16,000 net worth',
+        targetType: 'netWorth',
+        targetValue: 16000,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Siege finales', 'Morale ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -3286,6 +3403,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_siege_arc',
+    title: 'Siege Arc',
+    description:
+      'Three-phase fortress siege with morale accrual between legs — round-14 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_siege_arc',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_siege_mustering_yard',
+        title: 'Mustering Yard',
+        narrativeBridge: 'Rally morale before the breach wall assault.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 240 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_siege_breach_wall',
+        title: 'Breach Wall',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, VIC: 5 },
+          forcedSettingsPatch: { o10mSiegeMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_siege_relief_finale',
+        title: 'Relief Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainSiegeArcComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -4112,7 +4263,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 13;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 14;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -4224,6 +4375,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     pilgrimageSession: null,
     caravanSession: null,
     voyageSession: null,
+    siegeSession: null,
   };
 }
 
@@ -4256,6 +4408,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       pilgrimageSession: merged.pilgrimageSession ?? null,
       caravanSession: merged.caravanSession ?? null,
       voyageSession: merged.voyageSession ?? null,
+      siegeSession: merged.siegeSession ?? null,
     };
     return upgraded;
   }
@@ -4312,6 +4465,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     pilgrimageSession: sanitizePilgrimageSession(o.pilgrimageSession),
     caravanSession: sanitizeCaravanSession(o.caravanSession),
     voyageSession: sanitizeVoyageSession(o.voyageSession),
+    siegeSession: sanitizeSiegeSession(o.siegeSession),
   };
 }
 
@@ -4409,6 +4563,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Voyage session failed sanitization; planner will ignore it.');
   } else if (voyage && voyage.cursor >= voyage.scenarioIds.length) {
     warnings.push('Voyage cursor out of range; clamp on next sanitize.');
+  }
+
+  const siege = sanitizeSiegeSession(state.siegeSession);
+  if (state.siegeSession && !siege) {
+    warnings.push('Siege session failed sanitization; planner will ignore it.');
+  } else if (siege && siege.cursor >= siege.scenarioIds.length) {
+    warnings.push('Siege cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
@@ -4527,6 +4688,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'pilgrimageSession',
   'caravanSession',
   'voyageSession',
+  'siegeSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -5038,6 +5200,7 @@ export function attachMarathonQueueToState(
     pilgrimageSession: null,
     caravanSession: null,
     voyageSession: null,
+    siegeSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -5155,6 +5318,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceSiegeSessionAfterRun(next, run);
   next = advanceVoyageSessionAfterRun(next, run);
   next = advanceCaravanSessionAfterRun(next, run);
   next = advancePilgrimageSessionAfterRun(next, run);
@@ -5297,6 +5461,7 @@ export function attachGauntletSessionToState(
     pilgrimageSession: null,
     caravanSession: null,
     voyageSession: null,
+    siegeSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -5532,6 +5697,7 @@ export function attachRelaySessionToState(
     pilgrimageSession: null,
     caravanSession: null,
     voyageSession: null,
+    siegeSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -5727,6 +5893,7 @@ export function attachCircuitSessionToState(
     pilgrimageSession: null,
     caravanSession: null,
     voyageSession: null,
+    siegeSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -5940,6 +6107,7 @@ export function attachExpeditionSessionToState(
     pilgrimageSession: null,
     caravanSession: null,
     voyageSession: null,
+    siegeSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -6151,6 +6319,7 @@ export function attachOdysseySessionToState(
     pilgrimageSession: null,
     caravanSession: null,
     voyageSession: null,
+    siegeSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -6361,6 +6530,7 @@ export function attachPilgrimageSessionToState(
     pilgrimageSession: sanitized,
     caravanSession: null,
     voyageSession: null,
+    siegeSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -6572,6 +6742,7 @@ export function attachCaravanSessionToState(
     ...state,
     caravanSession: sanitized,
     voyageSession: null,
+    siegeSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -6777,6 +6948,7 @@ export function attachVoyageSessionToState(
   return {
     ...state,
     voyageSession: sanitized,
+    siegeSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -6871,6 +7043,213 @@ export function voyageSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-siege.ts ---
+export const O10M_SIEGE_SCENARIO_CAP = 6;
+export const O10M_SIEGE_MORALE_CAP = 640;
+export const O10M_SIEGE_MORALE_MONEY_CAP = 720;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mSiegePhase>(['mustering', 'breach', 'relief']);
+
+export function unlockTokenForSiegeId(siegeId: string): string | null {
+  if (!siegeId.startsWith('o10m_siege_')) return null;
+  return `o10m_unlock_${siegeId.slice('o10m_siege_'.length)}`;
+}
+
+export function siegePhaseForCursor(cursor: number, scenarioCount: number): O10mSiegePhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'relief';
+  if (clamped >= Math.floor(total / 2)) return 'breach';
+  return 'mustering';
+}
+
+export function siegeMoraleFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const rivalPenalty = Math.min(14, Math.floor(run.rivalNetWorth / 180));
+  return Math.min(92, Math.max(12, Math.floor(run.playerNetWorth / 210) + rivalPenalty));
+}
+
+export function sanitizeSiegeSession(raw: unknown): O10mSiegeSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const siegeId =
+    typeof o.siegeId === 'string' && o.siegeId.startsWith('o10m_siege_') ? o.siegeId : null;
+  if (!siegeId) return null;
+  const label = typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : siegeId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_SIEGE_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const moraleScore = Math.min(O10M_SIEGE_MORALE_CAP, Math.max(0, Math.floor(num(o.moraleScore, 0))));
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mSiegePhase)
+      ? (phaseRaw as O10mSiegePhase)
+      : siegePhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    siegeId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    moraleScore,
+    phaseTag,
+  };
+}
+
+export function createSiegeSession(params: {
+  siegeId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mSiegeSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.siegeId.startsWith('o10m_siege_')) {
+    return { session: null, warnings: ['Siege ids must start with o10m_siege_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_SIEGE_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return { session: null, warnings: [...warnings, 'Siege requires at least one valid scenario.'] };
+  }
+  return {
+    session: {
+      siegeId: params.siegeId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      moraleScore: 0,
+      phaseTag: siegePhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachSiegeSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mSiegeSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeSiegeSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    siegeSession: sanitized,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearSiegeSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, siegeSession: null };
+}
+
+export function getSiegeScenarioAtCursor(session: O10mSiegeSession | null | undefined): string | null {
+  const siege = sanitizeSiegeSession(session);
+  if (!siege || !siege.active) return null;
+  return siege.scenarioIds[siege.cursor] ?? null;
+}
+
+export function buildSiegeScenarioStartOverrides(session: O10mSiegeSession | null | undefined): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const siege = sanitizeSiegeSession(session);
+  if (!siege) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(O10M_SIEGE_MORALE_MONEY_CAP, Math.floor(siege.moraleScore * 0.74));
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveSiegeId: siege.siegeId,
+      o10mActiveSiegeStep: siege.cursor,
+      o10mActiveSiegePhase: siege.phaseTag,
+      o10mSiegeMorale: siege.moraleScore,
+    },
+  };
+}
+
+export function advanceSiegeSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeSiegeSession(state.siegeSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const moraleScore = Math.min(O10M_SIEGE_MORALE_CAP, session.moraleScore + siegeMoraleFromRun(run));
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      siegeSession: {
+        ...session,
+        cursor,
+        moraleScore,
+        phaseTag: siegePhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForSiegeId(session.siegeId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    siegeSession: { ...session, active: false, moraleScore, phaseTag: 'relief' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function siegeSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  morale: number;
+  phase: O10mSiegePhase | null;
+} {
+  const session = sanitizeSiegeSession(state.siegeSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    morale: session?.moraleScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -6905,9 +7284,31 @@ const emptyQueuePlan = {
   voyageCursor: null as number | null,
   voyageSegment: null as O10mVoyageSegment | null,
   voyageChart: null as number | null,
+  siegeId: null as string | null,
+  siegeCursor: null as number | null,
+  siegePhase: null as O10mSiegePhase | null,
+  siegeMorale: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const siege = sanitizeSiegeSession(state.siegeSession);
+  const siegeScenario = getSiegeScenarioAtCursor(siege);
+  if (siege && siege.active && siegeScenario) {
+    return {
+      kind: 'siege_step',
+      scenarioId: siegeScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      siegeId: siege.siegeId,
+      siegeCursor: siege.cursor,
+      siegePhase: siege.phaseTag,
+      siegeMorale: siege.moraleScore,
+      reason: `Siege "${siege.label}" ${siege.phaseTag} phase ${siege.cursor + 1}/${siege.scenarioIds.length} (morale ${siege.moraleScore}).`,
+    };
+  }
+
   const voyage = sanitizeVoyageSession(state.voyageSession);
   const voyageScenario = getVoyageScenarioAtCursor(voyage);
   if (voyage && voyage.active && voyageScenario) {
@@ -7144,6 +7545,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   pilgrimageActive: boolean;
   caravanActive: boolean;
   voyageActive: boolean;
+  siegeActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -7160,6 +7562,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const pilgrimage = pilgrimageSessionSummary(state);
   const caravan = caravanSessionSummary(state);
   const voyage = voyageSessionSummary(state);
+  const siege = siegeSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -7174,6 +7577,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     pilgrimageActive: pilgrimage.active,
     caravanActive: caravan.active,
     voyageActive: voyage.active,
+    siegeActive: siege.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -7192,7 +7596,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 14, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 15, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -7292,16 +7696,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const voyageState = voyage ? attachVoyageSessionToState(createEmptyO10mModesPersistedState(), voyage) : null;
   push('agent04_chunk_21', voyageState !== null && planNextCampaignAction(voyageState!).kind === 'voyage_step');
 
+  const siege = createSiegeSession({
+    siegeId: 'o10m_siege_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_siege_mustering_yard'],
+  }).session;
+  const siegeState = siege ? attachSiegeSessionToState(createEmptyO10mModesPersistedState(), siege) : null;
+  push('agent04_chunk_22', siegeState !== null && planNextCampaignAction(siegeState!).kind === 'siege_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v14',
+  schemaVersion: 'op10m-agent04-v15',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 13,
+  saveSchemaVersion: 14,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

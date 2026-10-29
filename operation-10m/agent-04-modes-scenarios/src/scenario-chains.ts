@@ -484,6 +484,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_siege_arc',
+    title: 'Siege Arc',
+    description:
+      'Three-phase fortress siege with morale accrual between legs — round-14 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_siege_arc',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_siege_mustering_yard',
+        title: 'Mustering Yard',
+        narrativeBridge: 'Rally morale before the breach wall assault.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 240 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_siege_breach_wall',
+        title: 'Breach Wall',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, VIC: 5 },
+          forcedSettingsPatch: { o10mSiegeMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_siege_relief_finale',
+        title: 'Relief Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainSiegeArcComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

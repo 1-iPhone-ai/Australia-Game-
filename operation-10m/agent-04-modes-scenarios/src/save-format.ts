@@ -13,6 +13,7 @@ import { sanitizeOdysseySession } from './save-format-odyssey.js';
 import { sanitizePilgrimageSession } from './save-format-pilgrimage.js';
 import { sanitizeCaravanSession } from './save-format-caravan.js';
 import { sanitizeVoyageSession } from './save-format-voyage.js';
+import { sanitizeSiegeSession } from './save-format-siege.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -31,7 +32,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 13;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 14;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -143,6 +144,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     pilgrimageSession: null,
     caravanSession: null,
     voyageSession: null,
+    siegeSession: null,
   };
 }
 
@@ -175,6 +177,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       pilgrimageSession: merged.pilgrimageSession ?? null,
       caravanSession: merged.caravanSession ?? null,
       voyageSession: merged.voyageSession ?? null,
+      siegeSession: merged.siegeSession ?? null,
     };
     return upgraded;
   }
@@ -231,6 +234,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     pilgrimageSession: sanitizePilgrimageSession(o.pilgrimageSession),
     caravanSession: sanitizeCaravanSession(o.caravanSession),
     voyageSession: sanitizeVoyageSession(o.voyageSession),
+    siegeSession: sanitizeSiegeSession(o.siegeSession),
   };
 }
 
@@ -328,6 +332,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Voyage session failed sanitization; planner will ignore it.');
   } else if (voyage && voyage.cursor >= voyage.scenarioIds.length) {
     warnings.push('Voyage cursor out of range; clamp on next sanitize.');
+  }
+
+  const siege = sanitizeSiegeSession(state.siegeSession);
+  if (state.siegeSession && !siege) {
+    warnings.push('Siege session failed sanitization; planner will ignore it.');
+  } else if (siege && siege.cursor >= siege.scenarioIds.length) {
+    warnings.push('Siege cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
