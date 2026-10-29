@@ -99,8 +99,11 @@ export interface NationalMacroEconomyState {
   workforceSpilloverSummary: string | null;
   strategicSpilloverSummary: string | null;
   housingSpilloverSummary: string | null;
+  inflationSpilloverSummary: string | null;
+  energySpilloverSummary: string | null;
   capacitySnapshot: MacroCapacitySnapshot;
   transmissionBalance: MacroTransmissionBalanceSnapshot;
+  transmissionCoherence: MacroTransmissionCoherenceSnapshot;
   transmissionReport: MacroTransmissionReport;
   stressIndex: MacroStressIndexSnapshot;
   policyStance: MacroPolicyStanceSnapshot;
@@ -180,6 +183,16 @@ export interface MacroTransmissionBalanceSnapshot {
   summary: string;
 }
 
+export type MacroTransmissionCoherenceBand = 'coherent' | 'partial' | 'mixed' | 'contradictory';
+
+export interface MacroTransmissionCoherenceSnapshot {
+  coherenceIndex: number;
+  band: MacroTransmissionCoherenceBand;
+  alignedLayerCount: number;
+  consideredLayerCount: number;
+  summary: string;
+}
+
 export type MacroStressBand = 'calm' | 'elevated' | 'acute';
 
 export interface MacroStressIndexSnapshot {
@@ -233,6 +246,8 @@ export interface MacroEconomyInputs {
   creditMarkets?: any;
   monetaryPolicy?: any;
   nationalFinance?: any;
+  industrialEnergy?: any;
+  energyEnvironment?: any;
   highInflationScenarioActive?: boolean;
   creditShockActive?: boolean;
   /** Additional catalog shock ids (see catalog/cyclical-shocks.ts). Legacy flags merge in. */
@@ -856,6 +871,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Housing & strategic stress',
     shockIds: ['housing_correction', 'credit_contraction'],
     description: 'Domestic housing correction with strategic capital and credit tension (harness overlay).'
+  },
+  {
+    id: 'inflation_energy_stress',
+    label: 'Inflation & energy stress',
+    shockIds: ['high_inflation', 'commodity_bust'],
+    description: 'Price-pressure and energy cost shock combination (harness overlay).'
   }
 ];
 
@@ -1336,6 +1357,8 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
     creditMarkets: params?.creditMarkets ?? params?.gameState?.creditMarketsState,
     monetaryPolicy: params?.monetaryPolicy,
     nationalFinance: params?.nationalFinance,
+    industrialEnergy: params?.industrialEnergy ?? params?.energyEnvironment ?? params?.nationalSystems?.industrialEnergy,
+    energyEnvironment: params?.energyEnvironment,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };
@@ -1998,7 +2021,166 @@ export function applyMacroHousingSpillover(
 }
 
 
+// --- source: bridge-v1010-inflation.ts ---
+
+export interface MacroInflationSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.10 finance / inflation spillover (never mutates finance state). */
+export function readMacroInflationSpilloverFromV1010(inputs: MacroEconomyInputs): MacroInflationSpillover {
+  const nf: any = inputs.nationalFinance ?? inputs.monetaryPolicy;
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  if (inputs.highInflationScenarioActive) {
+    cycleNudge -= 2;
+    investmentNudge -= 2;
+    productivityNudge -= 2;
+    summary = 'High-inflation scenario flag drags macro cycle and productivity read.';
+  }
+
+  if (!nf && !inputs.highInflationScenarioActive) {
+    return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+  }
+
+  const headline = String(
+    nf?.inflation?.band ?? nf?.inflationBand ?? nf?.cpiBand ?? nf?.headlineInflation?.band ?? ''
+  );
+  const core = String(nf?.coreInflation?.band ?? nf?.coreInflationBand ?? nf?.underlyingInflation?.band ?? '');
+  const expectations = String(nf?.inflationExpectations?.band ?? nf?.expectationsBand ?? '');
+
+  if (headline === 'elevated' || headline === 'high' || headline === 'very_high') {
+    cycleNudge -= headline === 'very_high' ? 3 : 2;
+    investmentNudge -= 2;
+    productivityNudge -= 1;
+    summary = `Headline inflation band (${headline}) tightens macro cycle interpretation.`;
+  } else if (headline === 'moderate' || headline === 'target') {
+    cycleNudge += 0.5;
+    summary = 'Inflation near target supports stable macro read.';
+  } else if (headline === 'disinflation' || headline === 'low') {
+    cycleNudge += 1;
+    investmentNudge += 1;
+    summary = 'Disinflationary conditions support macro investment interpretation.';
+  }
+
+  if (core === 'sticky' || core === 'elevated' || core === 'high') {
+    productivityNudge -= 2;
+    cycleNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Sticky core inflation weighs on productivity read.';
+  }
+
+  if (expectations === 'unanchored' || expectations === 'rising' || expectations === 'elevated') {
+    investmentNudge -= 2;
+    cycleNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Unanchored inflation expectations cap investment upside.';
+  } else if (expectations === 'anchored' || expectations === 'stable') {
+    investmentNudge += 0.5;
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroInflationSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroInflationSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: bridge-v1018-energy.ts ---
+
+export interface MacroEnergySpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.18 industrial energy / environment spillover (never mutates energy state). */
+export function readMacroEnergySpilloverFromV1018(inputs: MacroEconomyInputs): MacroEnergySpillover {
+  const en: any =
+    inputs.industrialEnergy ?? inputs.energyEnvironment ?? inputs.nationalSystems?.industrialEnergy ?? inputs.nationalSystems?.energy;
+  if (!en) return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const supply = String(en.supplyReliability?.band ?? en.reliabilityBand ?? en.gridBand ?? en.supplyBand ?? '');
+  const transition = String(en.transition?.band ?? en.decarbonizationBand ?? en.netZeroBand ?? '');
+  const cost = String(en.energyCost?.band ?? en.inputCostBand ?? en.priceShockBand ?? '');
+
+  if (supply === 'critical' || supply === 'fragile' || supply === 'stressed') {
+    cycleNudge -= supply === 'critical' ? 3 : 2;
+    productivityNudge -= 2;
+    investmentNudge -= 1;
+    summary = `Energy supply band (${supply}) drags macro productivity and cycle read.`;
+  } else if (supply === 'robust' || supply === 'secure' || supply === 'strong') {
+    productivityNudge += 1;
+    cycleNudge += 0.5;
+    summary = 'Secure energy supply supports macro productivity interpretation.';
+  }
+
+  if (transition === 'accelerating' || transition === 'rapid') {
+    investmentNudge += 2;
+    cycleNudge += 1;
+    summary = (summary ? summary + ' ' : '') + 'Accelerating energy transition lifts capex-heavy macro investment read.';
+  } else if (transition === 'stalled' || transition === 'blocked') {
+    investmentNudge -= 2;
+    productivityNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Stalled transition pipeline caps green-investment macro upside.';
+  }
+
+  if (cost === 'spike' || cost === 'severe' || cost === 'elevated') {
+    cycleNudge -= cost === 'severe' ? 3 : 2;
+    investmentNudge -= 1;
+    productivityNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Energy cost shock tightens macro cycle read.';
+  } else if (cost === 'favorable' || cost === 'low') {
+    cycleNudge += 1;
+    productivityNudge += 0.5;
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -6, 6),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroEnergySpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroEnergySpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
 // --- source: macro-transmission.ts ---
+
+const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
 
 export function buildMacroTransmissionReport(params: {
   turn: number;
@@ -2012,7 +2194,11 @@ export function buildMacroTransmissionReport(params: {
   workforce: MacroWorkforceSpillover;
   strategic: MacroStrategicSpillover;
   housing: MacroHousingSpillover;
+  inflation?: MacroInflationSpillover;
+  energy?: MacroEnergySpillover;
 }): MacroTransmissionReport {
+  const inflation = params.inflation ?? ZERO_SPILLOVER;
+  const energy = params.energy ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -2065,6 +2251,22 @@ export function buildMacroTransmissionReport(params: {
       params.housing.investmentNudge,
       params.housing.productivityNudge,
       params.housing.summary
+    ),
+    layer(
+      'v10.10_inflation',
+      'Finance & inflation',
+      inflation.cycleNudge,
+      inflation.investmentNudge,
+      inflation.productivityNudge,
+      inflation.summary
+    ),
+    layer(
+      'v10.18_energy',
+      'Energy & environment',
+      energy.cycleNudge,
+      energy.investmentNudge,
+      energy.productivityNudge,
+      energy.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);
@@ -2311,6 +2513,52 @@ function stdDev(values: number[]): number {
 }
 
 
+// --- source: macro-transmission-coherence.ts ---
+  BusinessCyclePhase,
+  MacroTransmissionCoherenceBand,
+  MacroTransmissionCoherenceSnapshot,
+  MacroTransmissionReport
+} from './types.ts';
+
+export type { MacroTransmissionCoherenceBand, MacroTransmissionCoherenceSnapshot };
+
+/** Share of transmission layers whose net nudge aligns with the current cycle phase read. */
+export function buildMacroTransmissionCoherenceSnapshot(
+  report: MacroTransmissionReport,
+  cyclePhase: BusinessCyclePhase
+): MacroTransmissionCoherenceSnapshot {
+  const expectUp = cyclePhase === 'expansion' || cyclePhase === 'recovery' || cyclePhase === 'peak';
+  const expectDown = cyclePhase === 'contraction' || cyclePhase === 'trough' || cyclePhase === 'slowdown';
+
+  let aligned = 0;
+  let considered = 0;
+  for (const layer of report.layers) {
+    const net = layer.cycleContribution + layer.investmentContribution * 0.35 + layer.productivityContribution * 0.2;
+    if (Math.abs(net) < 0.05) continue;
+    considered++;
+    const sign = Math.sign(net);
+    if (expectUp && sign > 0) aligned++;
+    else if (expectDown && sign < 0) aligned++;
+    else if (!expectUp && !expectDown) aligned++;
+  }
+
+  const ratio = considered > 0 ? aligned / considered : 1;
+  const coherenceIndex = Math.round(v1014macroClamp(ratio, 0, 1) * 1000) / 10;
+
+  let band: MacroTransmissionCoherenceBand = 'coherent';
+  if (coherenceIndex < 45) band = 'contradictory';
+  else if (coherenceIndex < 62) band = 'mixed';
+  else if (coherenceIndex < 78) band = 'partial';
+
+  let summary = `Transmission coherence ${coherenceIndex.toFixed(1)} (${band}) for ${cyclePhase} phase across ${report.layers.length} layers.`;
+  if (band === 'contradictory' || band === 'mixed') {
+    summary += ' Layer nudges partially oppose the headline cycle phase.';
+  }
+
+  return { coherenceIndex, band, alignedLayerCount: aligned, consideredLayerCount: considered, summary };
+}
+
+
 // --- source: scenario-compare.ts ---
 
 export interface MacroScenarioCompareRow {
@@ -2359,6 +2607,26 @@ export function scenarioNetScore(row: MacroScenarioCompareRow): number {
 }
 
 
+// --- source: scenario-elasticity.ts ---
+
+export interface MacroScenarioElasticityRow {
+  scenarioId: string;
+  netScore: number;
+  elasticity: number;
+}
+
+/** Rank scenario overlays by absolute net-outcome sensitivity (lab prioritization). */
+export function rankMacroScenarioElasticity(rows: MacroScenarioCompareRow[]): MacroScenarioElasticityRow[] {
+  return rows
+    .map(row => ({
+      scenarioId: row.scenarioId,
+      netScore: scenarioNetScore(row),
+      elasticity: Math.round(Math.abs(scenarioNetScore(row)) * 100) / 100
+    }))
+    .sort((a, b) => b.elasticity - a.elasticity);
+}
+
+
 // --- source: regression-harness.ts ---
 
 export interface MacroRegressionCheck {
@@ -2381,12 +2649,14 @@ export function runMacroEconomyRegressionHarness(options?: {
   includeCreditStress?: boolean;
   includeLaborInnovationStress?: boolean;
   includeHousingStrategicStress?: boolean;
+  includeInflationEnergyStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
   const includeCreditStress = Boolean(options?.includeCreditStress);
   const includeLaborInnovationStress = Boolean(options?.includeLaborInnovationStress);
   const includeHousingStrategicStress = Boolean(options?.includeHousingStrategicStress);
+  const includeInflationEnergyStress = Boolean(options?.includeInflationEnergyStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -2424,6 +2694,19 @@ export function runMacroEconomyRegressionHarness(options?: {
         ? {
             affordability: { band: t % 7 === 0 ? 'stressed' : 'balanced' },
             construction: { band: t % 5 === 0 ? 'correction' : 'strong' }
+          }
+        : undefined,
+      nationalFinance: includeInflationEnergyStress
+        ? {
+            inflation: { band: t % 6 === 0 ? 'elevated' : 'moderate' },
+            inflationExpectations: { band: t % 8 === 0 ? 'rising' : 'anchored' }
+          }
+        : undefined,
+      industrialEnergy: includeInflationEnergyStress
+        ? {
+            supplyReliability: { band: t % 5 === 0 ? 'stressed' : 'robust' },
+            energyCost: { band: t % 7 === 0 ? 'elevated' : 'favorable' },
+            transition: { band: t % 9 === 0 ? 'accelerating' : 'steady' }
           }
         : undefined
     });
@@ -2476,6 +2759,18 @@ export function runMacroEconomyRegressionHarness(options?: {
       id: 'transmission_balance_finite',
       passed: Number.isFinite(prev.transmissionBalance.dispersionIndex),
       detail: String(prev.transmissionBalance.dispersionIndex)
+    });
+  }
+  if (includeInflationEnergyStress && prev) {
+    checks.push({
+      id: 'transmission_coherence_finite',
+      passed: Number.isFinite(prev.transmissionCoherence.coherenceIndex),
+      detail: String(prev.transmissionCoherence.coherenceIndex)
+    });
+    checks.push({
+      id: 'twelve_transmission_layers',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 12,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
   checks.push({
@@ -2853,6 +3148,55 @@ export function evaluateMacroConsistencyGates(
       summary: 'Cross-current transmission layers — headline macro scores may mask offsetting sector forces.'
     });
   }
+  const nf: any = inputs.nationalFinance ?? inputs.monetaryPolicy;
+  const inflBand = String(nf?.inflation?.band ?? nf?.inflationBand ?? nf?.cpiBand ?? '');
+  if (
+    (inflBand === 'elevated' || inflBand === 'high' || inflBand === 'very_high' || inputs.highInflationScenarioActive) &&
+    (state.cyclePhase === 'contraction' || state.cyclePhase === 'slowdown' || state.cyclePhase === 'trough')
+  ) {
+    gates.push({
+      id: 'inflation_cycle_drag',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Elevated inflation coincides with macro downturn — stagflation-style read elevated.'
+    });
+  }
+  const en: any = inputs.industrialEnergy ?? inputs.energyEnvironment ?? inputs.nationalSystems?.industrialEnergy;
+  const supply = String(en?.supplyReliability?.band ?? en?.reliabilityBand ?? en?.gridBand ?? '');
+  if (
+    (supply === 'critical' || supply === 'fragile' || supply === 'stressed') &&
+    (state.utilizationBand === 'tight' || state.utilizationBand === 'overextended')
+  ) {
+    gates.push({
+      id: 'energy_transition_bind',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Fragile energy supply with tight utilization — physical energy constraint may bind capacity.'
+    });
+  }
+  const energyCost = String(en?.energyCost?.band ?? en?.inputCostBand ?? '');
+  if (
+    (energyCost === 'spike' || energyCost === 'severe' || energyCost === 'elevated') &&
+    (inflBand === 'elevated' || inflBand === 'high' || inflBand === 'very_high' || inputs.highInflationScenarioActive)
+  ) {
+    gates.push({
+      id: 'inflation_energy_stagflation',
+      triggered: true,
+      severity: 'info',
+      summary: 'Energy cost shock aligns with elevated inflation — composite price-pressure macro risk.'
+    });
+  }
+  if (
+    state.transmissionCoherence?.band === 'contradictory' ||
+    state.transmissionCoherence?.band === 'mixed'
+  ) {
+    gates.push({
+      id: 'transmission_phase_incoherence',
+      triggered: true,
+      severity: 'info',
+      summary: 'Transmission layer nudges partially contradict the headline cycle phase.'
+    });
+  }
   return gates;
 }
 
@@ -3044,6 +3388,8 @@ export function computeNationalMacroEconomy(
   const workforceSpillover = readMacroWorkforceSpilloverFromV107(inputs);
   const strategicSpillover = readMacroStrategicSpilloverFromV109(inputs);
   const housingSpillover = readMacroHousingSpilloverFromV1014Housing(inputs);
+  const inflationSpillover = readMacroInflationSpilloverFromV1010(inputs);
+  const energySpillover = readMacroEnergySpilloverFromV1018(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -3054,7 +3400,9 @@ export function computeNationalMacroEconomy(
   const withWorkforce = applyMacroWorkforceSpillover(withInnovation, workforceSpillover);
   const withStrategic = applyMacroStrategicSpillover(withWorkforce, strategicSpillover);
   const withHousing = applyMacroHousingSpillover(withStrategic, housingSpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withHousing, pushEv);
+  const withInflation = applyMacroInflationSpillover(withHousing, inflationSpillover);
+  const withEnergy = applyMacroEnergySpillover(withInflation, energySpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withEnergy, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -3092,10 +3440,13 @@ export function computeNationalMacroEconomy(
     innovation: innovationSpillover,
     workforce: workforceSpillover,
     strategic: strategicSpillover,
-    housing: housingSpillover
+    housing: housingSpillover,
+    inflation: inflationSpillover,
+    energy: energySpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
+  const transmissionCoherence = buildMacroTransmissionCoherenceSnapshot(transmissionReport, cyclePhase);
 
   const capacitySnapshot = buildMacroCapacitySnapshot({
     state: {
@@ -3156,8 +3507,11 @@ export function computeNationalMacroEconomy(
     workforceSpilloverSummary: workforceSpillover.summary,
     strategicSpilloverSummary: strategicSpillover.summary,
     housingSpilloverSummary: housingSpillover.summary,
+    inflationSpilloverSummary: inflationSpillover.summary,
+    energySpilloverSummary: energySpillover.summary,
     capacitySnapshot,
     transmissionBalance,
+    transmissionCoherence,
     transmissionReport,
     stressIndex: {
       score: 0,
@@ -3818,7 +4172,7 @@ export function runAgent06Round4SelfTests(): {
     strategic: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null },
     housing: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null }
   });
-  record('R4-03', 'Transmission report has ten layers', report.layers.length === 10, String(report.layers.length));
+  record('R4-03', 'Transmission report has twelve layers', report.layers.length === 12, String(report.layers.length));
   record('R4-04', 'Net cycle nudge finite', Number.isFinite(report.netCycleNudge), String(report.netCycleNudge));
 
   const integrated = computeNationalMacroEconomy(
@@ -3829,7 +4183,7 @@ export function runAgent06Round4SelfTests(): {
     null,
     null
   );
-  record('R4-05', 'State carries transmission report', integrated.state.transmissionReport.layers.length === 10, 'ok');
+  record('R4-05', 'State carries transmission report', integrated.state.transmissionReport.layers.length === 12, 'ok');
   record('R4-06', 'Trade summary on state', integrated.state.tradeSpilloverSummary != null, String(integrated.state.tradeSpilloverSummary));
 
   const stress = computeNationalMacroEconomy(
@@ -3972,7 +4326,7 @@ export function runAgent06Round6SelfTests(): {
   );
   record('R6-03', 'State exposes innovation summary', integrated.state.innovationSpilloverSummary != null, 'ok');
   record('R6-04', 'State exposes workforce summary', integrated.state.workforceSpilloverSummary != null, 'ok');
-  record('R6-05', 'Ten transmission layers', integrated.state.transmissionReport.layers.length === 10, String(integrated.state.transmissionReport.layers.length));
+  record('R6-05', 'Twelve transmission layers', integrated.state.transmissionReport.layers.length === 12, String(integrated.state.transmissionReport.layers.length));
 
   const capacity = buildMacroCapacitySnapshot({
     state: integrated.state,
@@ -4056,8 +4410,8 @@ export function runAgent06Round7SelfTests(): {
   record('R7-04', 'State exposes housing summary', integrated.state.housingSpilloverSummary != null, 'ok');
   record(
     'R7-05',
-    'Ten transmission layers',
-    integrated.state.transmissionReport.layers.length === 10,
+    'Twelve transmission layers',
+    integrated.state.transmissionReport.layers.length === 12,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -4096,6 +4450,95 @@ export function runAgent06Round7SelfTests(): {
   record(
     'R7-10',
     'Housing/strategic regression harness',
+    harness.allPassed,
+    harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: round8-self-tests.ts ---
+
+export function runAgent06Round8SelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: MacroSelfTestResult[];
+} {
+  const results: MacroSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const inflation = readMacroInflationSpilloverFromV1010(
+    makeDefaultV1014_MACRO_TestInputs({
+      nationalFinance: { inflation: { band: 'elevated' }, inflationExpectations: { band: 'rising' } }
+    })
+  );
+  record('R8-01', 'Elevated inflation drags cycle read', inflation.cycleNudge < -1, String(inflation.cycleNudge));
+
+  const energy = readMacroEnergySpilloverFromV1018(
+    makeDefaultV1014_MACRO_TestInputs({
+      industrialEnergy: { supplyReliability: { band: 'critical' }, energyCost: { band: 'severe' } }
+    })
+  );
+  record('R8-02', 'Critical energy supply drags productivity', energy.productivityNudge < -1, String(energy.productivityNudge));
+
+  const integrated = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({
+      nationalFinance: { inflation: { band: 'moderate' } },
+      industrialEnergy: { transition: { band: 'accelerating' }, supplyReliability: { band: 'robust' } }
+    }),
+    null,
+    null
+  );
+  record('R8-03', 'State exposes inflation summary', integrated.state.inflationSpilloverSummary != null, 'ok');
+  record('R8-04', 'State exposes energy summary', integrated.state.energySpilloverSummary != null, 'ok');
+  record(
+    'R8-05',
+    'Twelve transmission layers',
+    integrated.state.transmissionReport.layers.length === 12,
+    String(integrated.state.transmissionReport.layers.length)
+  );
+
+  const coherence = buildMacroTransmissionCoherenceSnapshot(integrated.state.transmissionReport, integrated.state.cyclePhase);
+  record('R8-06', 'Transmission coherence finite', Number.isFinite(coherence.coherenceIndex), String(coherence.coherenceIndex));
+  record(
+    'R8-07',
+    'Transmission includes inflation layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.10_inflation'),
+    integrated.state.transmissionReport.layers.map(l => l.systemId).join(',')
+  );
+
+  const compare = compareMacroEconomyScenarios(
+    makeDefaultV1014_MACRO_TestInputs({ turn: 14 }),
+    [
+      { id: 'energy_cost_shock', overlay: { industrialEnergy: { energyCost: { band: 'severe' } } } },
+      { id: 'disinflation', overlay: { nationalFinance: { inflation: { band: 'disinflation' } } } }
+    ],
+    null,
+    null
+  );
+  const ranked = rankMacroEconomyScenariosByNetOutcome(compare);
+  const elasticity = rankMacroScenarioElasticity(compare);
+  record('R8-08', 'Scenario elasticity preserves row count', elasticity.length === 2, String(elasticity.length));
+  record(
+    'R8-09',
+    'Disinflation ranks above energy cost shock',
+    ranked[0].scenarioId === 'disinflation',
+    ranked.map(r => r.scenarioId).join('>')
+  );
+
+  const harness = runMacroEconomyRegressionHarness({
+    turns: 10,
+    scenarioId: 'inflation_energy_stress',
+    includeInflationEnergyStress: true
+  });
+  record(
+    'R8-10',
+    'Inflation/energy regression harness',
     harness.allPassed,
     harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
   );
@@ -4228,6 +4671,11 @@ export function runV1014_MACRO_MacroEconomySelfTests(): {
 
   const round7 = runAgent06Round7SelfTests();
   for (const r of round7.results) {
+    check(r.id, r.name, r.passed, r.detail);
+  }
+
+  const round8 = runAgent06Round8SelfTests();
+  for (const r of round8.results) {
     check(r.id, r.name, r.passed, r.detail);
   }
 

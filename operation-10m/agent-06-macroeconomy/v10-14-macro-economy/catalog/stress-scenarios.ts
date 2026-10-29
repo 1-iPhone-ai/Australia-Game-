@@ -54,6 +54,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Housing & strategic stress',
     shockIds: ['housing_correction', 'credit_contraction'],
     description: 'Domestic housing correction with strategic capital and credit tension (harness overlay).'
+  },
+  {
+    id: 'inflation_energy_stress',
+    label: 'Inflation & energy stress',
+    shockIds: ['high_inflation', 'commodity_bust'],
+    description: 'Price-pressure and energy cost shock combination (harness overlay).'
   }
 ];
 

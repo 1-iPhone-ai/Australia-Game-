@@ -168,5 +168,54 @@ export function evaluateMacroConsistencyGates(
       summary: 'Cross-current transmission layers — headline macro scores may mask offsetting sector forces.'
     });
   }
+  const nf: any = inputs.nationalFinance ?? inputs.monetaryPolicy;
+  const inflBand = String(nf?.inflation?.band ?? nf?.inflationBand ?? nf?.cpiBand ?? '');
+  if (
+    (inflBand === 'elevated' || inflBand === 'high' || inflBand === 'very_high' || inputs.highInflationScenarioActive) &&
+    (state.cyclePhase === 'contraction' || state.cyclePhase === 'slowdown' || state.cyclePhase === 'trough')
+  ) {
+    gates.push({
+      id: 'inflation_cycle_drag',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Elevated inflation coincides with macro downturn — stagflation-style read elevated.'
+    });
+  }
+  const en: any = inputs.industrialEnergy ?? inputs.energyEnvironment ?? inputs.nationalSystems?.industrialEnergy;
+  const supply = String(en?.supplyReliability?.band ?? en?.reliabilityBand ?? en?.gridBand ?? '');
+  if (
+    (supply === 'critical' || supply === 'fragile' || supply === 'stressed') &&
+    (state.utilizationBand === 'tight' || state.utilizationBand === 'overextended')
+  ) {
+    gates.push({
+      id: 'energy_transition_bind',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Fragile energy supply with tight utilization — physical energy constraint may bind capacity.'
+    });
+  }
+  const energyCost = String(en?.energyCost?.band ?? en?.inputCostBand ?? '');
+  if (
+    (energyCost === 'spike' || energyCost === 'severe' || energyCost === 'elevated') &&
+    (inflBand === 'elevated' || inflBand === 'high' || inflBand === 'very_high' || inputs.highInflationScenarioActive)
+  ) {
+    gates.push({
+      id: 'inflation_energy_stagflation',
+      triggered: true,
+      severity: 'info',
+      summary: 'Energy cost shock aligns with elevated inflation — composite price-pressure macro risk.'
+    });
+  }
+  if (
+    state.transmissionCoherence?.band === 'contradictory' ||
+    state.transmissionCoherence?.band === 'mixed'
+  ) {
+    gates.push({
+      id: 'transmission_phase_incoherence',
+      triggered: true,
+      severity: 'info',
+      summary: 'Transmission layer nudges partially contradict the headline cycle phase.'
+    });
+  }
   return gates;
 }

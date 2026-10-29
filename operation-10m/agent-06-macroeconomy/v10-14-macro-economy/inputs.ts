@@ -22,6 +22,8 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
     creditMarkets: params?.creditMarkets ?? params?.gameState?.creditMarketsState,
     monetaryPolicy: params?.monetaryPolicy,
     nationalFinance: params?.nationalFinance,
+    industrialEnergy: params?.industrialEnergy ?? params?.energyEnvironment ?? params?.nationalSystems?.industrialEnergy,
+    energyEnvironment: params?.energyEnvironment,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };

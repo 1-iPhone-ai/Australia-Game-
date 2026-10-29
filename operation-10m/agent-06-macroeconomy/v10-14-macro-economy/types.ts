@@ -95,8 +95,11 @@ export interface NationalMacroEconomyState {
   workforceSpilloverSummary: string | null;
   strategicSpilloverSummary: string | null;
   housingSpilloverSummary: string | null;
+  inflationSpilloverSummary: string | null;
+  energySpilloverSummary: string | null;
   capacitySnapshot: MacroCapacitySnapshot;
   transmissionBalance: MacroTransmissionBalanceSnapshot;
+  transmissionCoherence: MacroTransmissionCoherenceSnapshot;
   transmissionReport: MacroTransmissionReport;
   stressIndex: MacroStressIndexSnapshot;
   policyStance: MacroPolicyStanceSnapshot;
@@ -176,6 +179,16 @@ export interface MacroTransmissionBalanceSnapshot {
   summary: string;
 }
 
+export type MacroTransmissionCoherenceBand = 'coherent' | 'partial' | 'mixed' | 'contradictory';
+
+export interface MacroTransmissionCoherenceSnapshot {
+  coherenceIndex: number;
+  band: MacroTransmissionCoherenceBand;
+  alignedLayerCount: number;
+  consideredLayerCount: number;
+  summary: string;
+}
+
 export type MacroStressBand = 'calm' | 'elevated' | 'acute';
 
 export interface MacroStressIndexSnapshot {
@@ -229,6 +242,8 @@ export interface MacroEconomyInputs {
   creditMarkets?: any;
   monetaryPolicy?: any;
   nationalFinance?: any;
+  industrialEnergy?: any;
+  energyEnvironment?: any;
   highInflationScenarioActive?: boolean;
   creditShockActive?: boolean;
   /** Additional catalog shock ids (see catalog/cyclical-shocks.ts). Legacy flags merge in. */

@@ -24,12 +24,14 @@ export function runMacroEconomyRegressionHarness(options?: {
   includeCreditStress?: boolean;
   includeLaborInnovationStress?: boolean;
   includeHousingStrategicStress?: boolean;
+  includeInflationEnergyStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
   const includeCreditStress = Boolean(options?.includeCreditStress);
   const includeLaborInnovationStress = Boolean(options?.includeLaborInnovationStress);
   const includeHousingStrategicStress = Boolean(options?.includeHousingStrategicStress);
+  const includeInflationEnergyStress = Boolean(options?.includeInflationEnergyStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -67,6 +69,19 @@ export function runMacroEconomyRegressionHarness(options?: {
         ? {
             affordability: { band: t % 7 === 0 ? 'stressed' : 'balanced' },
             construction: { band: t % 5 === 0 ? 'correction' : 'strong' }
+          }
+        : undefined,
+      nationalFinance: includeInflationEnergyStress
+        ? {
+            inflation: { band: t % 6 === 0 ? 'elevated' : 'moderate' },
+            inflationExpectations: { band: t % 8 === 0 ? 'rising' : 'anchored' }
+          }
+        : undefined,
+      industrialEnergy: includeInflationEnergyStress
+        ? {
+            supplyReliability: { band: t % 5 === 0 ? 'stressed' : 'robust' },
+            energyCost: { band: t % 7 === 0 ? 'elevated' : 'favorable' },
+            transition: { band: t % 9 === 0 ? 'accelerating' : 'steady' }
           }
         : undefined
     });
@@ -119,6 +134,18 @@ export function runMacroEconomyRegressionHarness(options?: {
       id: 'transmission_balance_finite',
       passed: Number.isFinite(prev.transmissionBalance.dispersionIndex),
       detail: String(prev.transmissionBalance.dispersionIndex)
+    });
+  }
+  if (includeInflationEnergyStress && prev) {
+    checks.push({
+      id: 'transmission_coherence_finite',
+      passed: Number.isFinite(prev.transmissionCoherence.coherenceIndex),
+      detail: String(prev.transmissionCoherence.coherenceIndex)
+    });
+    checks.push({
+      id: 'twelve_transmission_layers',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 12,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
   checks.push({

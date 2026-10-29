@@ -9,6 +9,8 @@ import { applyMacroInnovationSpillover, readMacroInnovationSpilloverFromV104 } f
 import { applyMacroWorkforceSpillover, readMacroWorkforceSpilloverFromV107 } from './bridge-v107-workforce.ts';
 import { applyMacroStrategicSpillover, readMacroStrategicSpilloverFromV109 } from './bridge-v109-strategic.ts';
 import { applyMacroHousingSpillover, readMacroHousingSpilloverFromV1014Housing } from './bridge-v1014-housing.ts';
+import { applyMacroInflationSpillover, readMacroInflationSpilloverFromV1010 } from './bridge-v1010-inflation.ts';
+import { applyMacroEnergySpillover, readMacroEnergySpilloverFromV1018 } from './bridge-v1018-energy.ts';
 import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
 import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { buildMacroTransmissionReport } from './macro-transmission.ts';
@@ -16,6 +18,7 @@ import { buildMacroStressIndexSnapshot } from './macro-stress-index.ts';
 import { buildMacroPolicyStanceSnapshot } from './policy-stance-snapshot.ts';
 import { buildMacroCapacitySnapshot } from './macro-capacity-snapshot.ts';
 import { buildMacroTransmissionBalanceSnapshot } from './macro-transmission-balance.ts';
+import { buildMacroTransmissionCoherenceSnapshot } from './macro-transmission-coherence.ts';
 import { appendMacroCycleTransitionMemory } from './cycle-memory.ts';
 import { V1014_MACRO_LIMITS } from './constants.ts';
 import { resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
@@ -89,6 +92,8 @@ export function computeNationalMacroEconomy(
   const workforceSpillover = readMacroWorkforceSpilloverFromV107(inputs);
   const strategicSpillover = readMacroStrategicSpilloverFromV109(inputs);
   const housingSpillover = readMacroHousingSpilloverFromV1014Housing(inputs);
+  const inflationSpillover = readMacroInflationSpilloverFromV1010(inputs);
+  const energySpillover = readMacroEnergySpilloverFromV1018(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -99,7 +104,9 @@ export function computeNationalMacroEconomy(
   const withWorkforce = applyMacroWorkforceSpillover(withInnovation, workforceSpillover);
   const withStrategic = applyMacroStrategicSpillover(withWorkforce, strategicSpillover);
   const withHousing = applyMacroHousingSpillover(withStrategic, housingSpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withHousing, pushEv);
+  const withInflation = applyMacroInflationSpillover(withHousing, inflationSpillover);
+  const withEnergy = applyMacroEnergySpillover(withInflation, energySpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withEnergy, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -137,10 +144,13 @@ export function computeNationalMacroEconomy(
     innovation: innovationSpillover,
     workforce: workforceSpillover,
     strategic: strategicSpillover,
-    housing: housingSpillover
+    housing: housingSpillover,
+    inflation: inflationSpillover,
+    energy: energySpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
+  const transmissionCoherence = buildMacroTransmissionCoherenceSnapshot(transmissionReport, cyclePhase);
 
   const capacitySnapshot = buildMacroCapacitySnapshot({
     state: {
@@ -201,8 +211,11 @@ export function computeNationalMacroEconomy(
     workforceSpilloverSummary: workforceSpillover.summary,
     strategicSpilloverSummary: strategicSpillover.summary,
     housingSpilloverSummary: housingSpillover.summary,
+    inflationSpilloverSummary: inflationSpillover.summary,
+    energySpilloverSummary: energySpillover.summary,
     capacitySnapshot,
     transmissionBalance,
+    transmissionCoherence,
     transmissionReport,
     stressIndex: {
       score: 0,
