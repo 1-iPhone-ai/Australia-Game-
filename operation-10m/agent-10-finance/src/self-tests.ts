@@ -78,6 +78,14 @@ import {
   termPremiumTighteningBias,
 } from './rates/term-premium-inflation-signal.js';
 import {
+  assessEnergyPricePassThrough,
+  energyPassThroughInflationScoreAdjustment,
+} from './inflation/energy-price-pass-through.js';
+import {
+  assessShelterRentInflation,
+  shelterRentInflationScoreAdjustment,
+} from './inflation/shelter-rent-inflation.js';
+import {
   mergeAgent15IntoMacroFinancialInputs,
   agent15TradeBridgeIntegrationNote,
 } from './integration/agent15-trade-bridge.js';
@@ -85,6 +93,14 @@ import {
   mergeAgent08IntoMacroFinancialInputs,
   agent08CorporateBridgeIntegrationNote,
 } from './integration/agent08-corporate-bridge.js';
+import {
+  mergeAgent11IntoMacroFinancialInputs,
+  agent11CitiesBridgeIntegrationNote,
+} from './integration/agent11-cities-bridge.js';
+import {
+  mergeAgent13IntoMacroFinancialInputs,
+  agent13EnergyBridgeIntegrationNote,
+} from './integration/agent13-energy-bridge.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -483,7 +499,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r7');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r8');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -630,7 +646,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r7' &&
+      bundle.schemaVersion === '10.14.agent10.r8' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -657,6 +673,98 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'corporate_pricing_power_spike');
       return (inp?.inflationSettingMultiplier ?? 1) > 1.3;
+    })(),
+  );
+
+  // --- Round 8 scale wave ---
+  {
+    const energy = assessEnergyPricePassThrough({
+      wholesaleEnergyStress: 'crisis',
+      retailTariffShock: true,
+      gridReliabilityBand: 'fragile',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check('a10_r8_01', 'energy pass-through sharp or crisis', energy.passThroughBand === 'sharp' || energy.passThroughBand === 'crisis');
+    check('a10_r8_02', 'energy score adj', energyPassThroughInflationScoreAdjustment(energy.passThroughBand) >= 3);
+  }
+  {
+    const shelter = assessShelterRentInflation({
+      vacancyBand: 'critical',
+      rentGrowthBand: 'surging',
+      urbanizationPressure: 'high',
+      inflationBand: 'elevated',
+      turn: 3,
+    });
+    check('a10_r8_03', 'shelter rent hot or overheated', shelter.pressureBand === 'hot' || shelter.pressureBand === 'overheated');
+    check('a10_r8_04', 'shelter score adj', shelterRentInflationScoreAdjustment(shelter.pressureBand) >= 3);
+  }
+  {
+    const merged11 = mergeAgent11IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      vacancyBand: 'critical',
+      rentGrowthBand: 'surging',
+      urbanizationPressure: 'high',
+      regionalDispersionScore: 0.62,
+    });
+    check('a10_r8_05', 'agent11 cities merge', merged11.householdInflationScenarioActive === true);
+    check('a10_r8_06', 'agent11 bridge note', agent11CitiesBridgeIntegrationNote().includes('Agent 11'));
+  }
+  {
+    const merged13 = mergeAgent13IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      wholesaleEnergyStress: 'crisis',
+      retailTariffShock: true,
+      gridReliabilityBand: 'fragile',
+      emissionsTransitionCostBand: 'high',
+    });
+    check('a10_r8_07', 'agent13 energy merge', merged13.highInflationScenario === true);
+    check('a10_r8_08', 'agent13 bridge note', agent13EnergyBridgeIntegrationNote().includes('Agent 13'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r8_09',
+      'forecast energy and shelter fields',
+      path.points.every((p) => !!p.energyPassThroughBand && !!p.shelterRentPressureBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r8_10',
+      'agent21 r8 fields',
+      bundle.schemaVersion === '10.14.agent10.r8' &&
+        bundle.terminalEnergyPassThrough !== undefined &&
+        bundle.terminalShelterRentPressure !== undefined,
+    );
+  }
+  check(
+    'a10_r8_11',
+    'round8 preset energy grid crisis',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'energy_grid_crisis_pass_through');
+      return inp?.highInflationScenario === true && inp.systemicLiquidityBand === 'critical';
+    })(),
+  );
+  check(
+    'a10_r8_12',
+    'round8 preset urban shelter',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'urban_shelter_rent_overheat');
+      return inp?.householdAffordability === 'severe_pressure' && inp.householdInflationScenarioActive === true;
+    })(),
+  );
+  check(
+    'a10_r8_13',
+    'round8 preset energy transition',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'energy_transition_cost_stack');
+      return inp?.fiscalPressure === 'critical' && (inp.inflationSettingMultiplier ?? 1) > 1.15;
     })(),
   );
 

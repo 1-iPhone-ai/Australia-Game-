@@ -23,6 +23,14 @@ import {
   assessTermPremiumInflationSignal,
   type TermPremiumSignalBand,
 } from '../rates/term-premium-inflation-signal.js';
+import {
+  assessEnergyPricePassThrough,
+  type EnergyPassThroughBand,
+} from '../inflation/energy-price-pass-through.js';
+import {
+  assessShelterRentInflation,
+  type ShelterRentPressureBand,
+} from '../inflation/shelter-rent-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -37,6 +45,8 @@ export interface InflationForecastPoint {
   momentumDirection: InflationMomentumSnapshot['direction'];
   importPassThroughBand: ImportPassThroughBand;
   termPremiumSignalBand: TermPremiumSignalBand;
+  energyPassThroughBand: EnergyPassThroughBand;
+  shelterRentPressureBand: ShelterRentPressureBand;
 }
 
 export interface InflationForecastPath {
@@ -97,6 +107,25 @@ export function projectInflationForecastPath(
       sovereignDebtPressure: inputs.sovereignDebtPressure,
       highInflationScenario: inputs.highInflationScenario,
     });
+    const energyPass = assessEnergyPricePassThrough({
+      wholesaleEnergyStress: inputs.highInflationScenario ? 'severe' : 'elevated',
+      retailTariffShock: inputs.fiscalPressure === 'critical',
+      gridReliabilityBand: inputs.systemicLiquidityBand === 'critical' ? 'fragile' : 'strained',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const shelterRent = assessShelterRentInflation({
+      vacancyBand:
+        inputs.householdAffordability === 'severe_pressure'
+          ? 'critical'
+          : inputs.householdAffordability === 'strained'
+            ? 'tight'
+            : 'balanced',
+      rentGrowthBand: inputs.householdInflationScenarioActive ? 'strong' : 'moderate',
+      urbanizationPressure: inputs.highInflationScenario ? 'high' : 'medium',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -111,6 +140,8 @@ export function projectInflationForecastPath(
       momentumDirection: mom.snapshot.direction,
       importPassThroughBand: importPass.passThroughBand,
       termPremiumSignalBand: termPrem.signalBand,
+      energyPassThroughBand: energyPass.passThroughBand,
+      shelterRentPressureBand: shelterRent.pressureBand,
     });
   }
 

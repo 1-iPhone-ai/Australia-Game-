@@ -41,6 +41,8 @@ const FILES = [
   'inflation/inflation-momentum.ts',
   'inflation/disinflation-sacrifice.ts',
   'inflation/import-price-pass-through.ts',
+  'inflation/energy-price-pass-through.ts',
+  'inflation/shelter-rent-inflation.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
@@ -55,6 +57,8 @@ const FILES = [
   'integration/agent09-household-bridge.ts',
   'integration/agent15-trade-bridge.ts',
   'integration/agent08-corporate-bridge.ts',
+  'integration/agent11-cities-bridge.ts',
+  'integration/agent13-energy-bridge.ts',
   'integration/inflation-forecast.ts',
   'integration/inflation-regime-tracker.ts',
   'integration/agent21-forecast-bridge.ts',
@@ -66,6 +70,7 @@ const FILES = [
   'react/InflationRegimePanel.tsx',
   'react/InflationMomentumPanel.tsx',
   'react/ImportInflationPanel.tsx',
+  'react/UrbanEnergyInflationPanel.tsx',
 ];
 
 function stripModulePreamble(source) {

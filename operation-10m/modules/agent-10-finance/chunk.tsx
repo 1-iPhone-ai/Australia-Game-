@@ -1816,6 +1816,143 @@ export function importPassThroughInflationScoreAdjustment(band: ImportPassThroug
 }
 
 
+// --- source: inflation/energy-price-pass-through.ts ---
+
+export type EnergyPassThroughBand = 'subdued' | 'firming' | 'sharp' | 'crisis';
+
+export interface EnergyPricePassThroughAssessment {
+  passThroughBand: EnergyPassThroughBand;
+  energyCostIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Utility and transport fuel channel into macro CPI metadata (not commodity resourcePrices). */
+export function assessEnergyPricePassThrough(input: {
+  wholesaleEnergyStress: 'calm' | 'elevated' | 'severe' | 'crisis';
+  retailTariffShock: boolean;
+  gridReliabilityBand: 'stable' | 'strained' | 'fragile';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): EnergyPricePassThroughAssessment {
+  let pressure = 0;
+  if (input.wholesaleEnergyStress === 'crisis') pressure += 0.62;
+  else if (input.wholesaleEnergyStress === 'severe') pressure += 0.4;
+  else if (input.wholesaleEnergyStress === 'elevated') pressure += 0.22;
+
+  if (input.retailTariffShock) pressure += 0.18;
+  if (input.gridReliabilityBand === 'fragile') pressure += 0.14;
+  else if (input.gridReliabilityBand === 'strained') pressure += 0.08;
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.1;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.006, 0, 1.05);
+  const energyCostIndex = finRound(100 + pressure * 22, 1);
+
+  let passThroughBand: EnergyPassThroughBand = 'subdued';
+  if (pressure >= 0.68) passThroughBand = 'crisis';
+  else if (pressure >= 0.42) passThroughBand = 'sharp';
+  else if (pressure >= 0.2) passThroughBand = 'firming';
+
+  const inflationScoreNudge =
+    passThroughBand === 'crisis'
+      ? 0.12
+      : passThroughBand === 'sharp'
+        ? 0.08
+        : passThroughBand === 'firming'
+          ? 0.04
+          : 0;
+
+  const narrative =
+    passThroughBand === 'crisis' || passThroughBand === 'sharp'
+      ? 'Energy costs are pushing macro CPI through utilities and transport fuel.'
+      : passThroughBand === 'firming'
+        ? 'Energy pass-through firming — monitor wholesale and grid stress.'
+        : 'Energy pass-through subdued relative to domestic services.';
+
+  return { passThroughBand, energyCostIndex, inflationScoreNudge, narrative };
+}
+
+export function energyPassThroughInflationScoreAdjustment(band: EnergyPassThroughBand): number {
+  if (band === 'crisis') return 5;
+  if (band === 'sharp') return 3;
+  if (band === 'firming') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/shelter-rent-inflation.ts ---
+
+export type ShelterRentPressureBand = 'soft' | 'building' | 'hot' | 'overheated';
+
+export interface ShelterRentInflationAssessment {
+  pressureBand: ShelterRentPressureBand;
+  shelterIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Shelter and rent share of macro CPI basket (metadata; not housing asset prices). */
+export function assessShelterRentInflation(input: {
+  vacancyBand: 'loose' | 'balanced' | 'tight' | 'critical';
+  rentGrowthBand: 'subdued' | 'moderate' | 'strong' | 'surging';
+  urbanizationPressure: 'low' | 'medium' | 'high';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): ShelterRentInflationAssessment {
+  let pressure = 0;
+  if (input.vacancyBand === 'critical') pressure += 0.38;
+  else if (input.vacancyBand === 'tight') pressure += 0.24;
+  else if (input.vacancyBand === 'balanced') pressure += 0.08;
+
+  if (input.rentGrowthBand === 'surging') pressure += 0.35;
+  else if (input.rentGrowthBand === 'strong') pressure += 0.22;
+  else if (input.rentGrowthBand === 'moderate') pressure += 0.1;
+
+  if (input.urbanizationPressure === 'high') pressure += 0.12;
+  else if (input.urbanizationPressure === 'medium') pressure += 0.06;
+
+  if (input.inflationBand === 'elevated' || input.inflationBand === 'high') {
+    pressure += 0.08;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.005, 0, 1);
+  const shelterIndex = finRound(100 + pressure * 16, 1);
+
+  let pressureBand: ShelterRentPressureBand = 'soft';
+  if (pressure >= 0.62) pressureBand = 'overheated';
+  else if (pressure >= 0.4) pressureBand = 'hot';
+  else if (pressure >= 0.22) pressureBand = 'building';
+
+  const inflationScoreNudge =
+    pressureBand === 'overheated'
+      ? 0.11
+      : pressureBand === 'hot'
+        ? 0.07
+        : pressureBand === 'building'
+          ? 0.03
+          : 0;
+
+  const narrative =
+    pressureBand === 'overheated' || pressureBand === 'hot'
+      ? 'Shelter and rent are a dominant macro CPI contributor in urban markets.'
+      : pressureBand === 'building'
+        ? 'Shelter inflation building — vacancy and rent growth elevated.'
+        : 'Shelter rent pressure soft relative to services basket.';
+
+  return { pressureBand, shelterIndex, inflationScoreNudge, narrative };
+}
+
+export function shelterRentInflationScoreAdjustment(band: ShelterRentPressureBand): number {
+  if (band === 'overheated') return 5;
+  if (band === 'hot') return 3;
+  if (band === 'building') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -2253,6 +2390,42 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
       publicStability: 48,
     },
     tags: ['inflation', 'corporate', 'round7'],
+  },
+  {
+    id: 'energy_grid_crisis_pass_through',
+    label: 'Energy grid crisis pass-through',
+    description: 'Wholesale energy crisis with fragile grid — utility CPI channel.',
+    patch: {
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.26,
+      systemicLiquidityBand: 'critical',
+      fiscalPressure: 'strained',
+    },
+    tags: ['inflation', 'energy', 'round8'],
+  },
+  {
+    id: 'urban_shelter_rent_overheat',
+    label: 'Urban shelter rent overheat',
+    description: 'Critical vacancy with surging rents — shelter CPI dominance.',
+    patch: {
+      householdAffordability: 'severe_pressure',
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.22,
+      highInflationScenario: true,
+    },
+    tags: ['inflation', 'cities', 'round8'],
+  },
+  {
+    id: 'energy_transition_cost_stack',
+    label: 'Energy transition cost stack',
+    description: 'Elevated transition costs with tariff shock and fiscal strain.',
+    patch: {
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.19,
+      highInflationScenario: true,
+      publicStability: 42,
+    },
+    tags: ['inflation', 'energy', 'round8'],
   },
 ] as const;
 
@@ -3246,6 +3419,113 @@ export function agent08CorporateBridgeIntegrationNote(): string {
 }
 
 
+// --- source: integration/agent11-cities-bridge.ts ---
+
+/** Read-only cities / regions snapshot from Agent 11 (contract only). */
+export interface Agent11CitiesSnapshot {
+  turn: number;
+  vacancyBand: 'loose' | 'balanced' | 'tight' | 'critical';
+  rentGrowthBand: 'subdued' | 'moderate' | 'strong' | 'surging';
+  urbanizationPressure: 'low' | 'medium' | 'high';
+  regionalDispersionScore: number;
+}
+
+export function mergeAgent11IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent11CitiesSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.vacancyBand === 'critical' || snapshot.rentGrowthBand === 'surging') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.09, 0.85, 1.45);
+  } else if (snapshot.vacancyBand === 'tight' || snapshot.rentGrowthBand === 'strong') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  }
+
+  if (snapshot.urbanizationPressure === 'high' && snapshot.regionalDispersionScore > 0.55) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
+  let householdAffordability = base.householdAffordability;
+  if (snapshot.vacancyBand === 'critical' && snapshot.rentGrowthBand !== 'subdued') {
+    householdAffordability = 'severe_pressure';
+  } else if (snapshot.rentGrowthBand === 'strong' || snapshot.rentGrowthBand === 'surging') {
+    householdAffordability = householdAffordability === 'healthy' ? 'strained' : householdAffordability;
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    householdAffordability,
+    householdInflationScenarioActive:
+      base.householdInflationScenarioActive ||
+      snapshot.rentGrowthBand === 'surging' ||
+      snapshot.vacancyBand === 'critical',
+  };
+}
+
+export function agent11CitiesBridgeIntegrationNote(): string {
+  return 'Agent 11 cities snapshot adjusts shelter-side inflation and affordability flags; no land price writes.';
+}
+
+
+// --- source: integration/agent13-energy-bridge.ts ---
+
+/** Read-only energy / environment snapshot from Agent 13 (contract only). */
+export interface Agent13EnergySnapshot {
+  turn: number;
+  wholesaleEnergyStress: 'calm' | 'elevated' | 'severe' | 'crisis';
+  retailTariffShock: boolean;
+  gridReliabilityBand: 'stable' | 'strained' | 'fragile';
+  emissionsTransitionCostBand: 'low' | 'medium' | 'high';
+}
+
+export function mergeAgent13IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent13EnergySnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.wholesaleEnergyStress === 'crisis' || snapshot.wholesaleEnergyStress === 'severe') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.1, 0.85, 1.45);
+  } else if (snapshot.wholesaleEnergyStress === 'elevated') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  }
+
+  if (snapshot.retailTariffShock) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  }
+  if (snapshot.gridReliabilityBand === 'fragile') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+  if (snapshot.emissionsTransitionCostBand === 'high') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  let highInflationScenario = base.highInflationScenario;
+  if (
+    snapshot.wholesaleEnergyStress === 'crisis' &&
+    (snapshot.retailTariffShock || snapshot.gridReliabilityBand === 'fragile')
+  ) {
+    highInflationScenario = true;
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    highInflationScenario,
+  };
+}
+
+export function agent13EnergyBridgeIntegrationNote(): string {
+  return 'Agent 13 energy snapshot adjusts utility-side inflation multiplier flags; no emissions ledger writes.';
+}
+
+
 // --- source: integration/inflation-forecast.ts ---
   stepInflationRegimeTracker,
   createInitialInflationRegimeTracker,
@@ -3261,6 +3541,12 @@ export function agent08CorporateBridgeIntegrationNote(): string {
   assessTermPremiumInflationSignal,
   type TermPremiumSignalBand,
 } from '../rates/term-premium-inflation-signal.js';
+  assessEnergyPricePassThrough,
+  type EnergyPassThroughBand,
+} from '../inflation/energy-price-pass-through.js';
+  assessShelterRentInflation,
+  type ShelterRentPressureBand,
+} from '../inflation/shelter-rent-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -3275,6 +3561,8 @@ export interface InflationForecastPoint {
   momentumDirection: InflationMomentumSnapshot['direction'];
   importPassThroughBand: ImportPassThroughBand;
   termPremiumSignalBand: TermPremiumSignalBand;
+  energyPassThroughBand: EnergyPassThroughBand;
+  shelterRentPressureBand: ShelterRentPressureBand;
 }
 
 export interface InflationForecastPath {
@@ -3335,6 +3623,25 @@ export function projectInflationForecastPath(
       sovereignDebtPressure: inputs.sovereignDebtPressure,
       highInflationScenario: inputs.highInflationScenario,
     });
+    const energyPass = assessEnergyPricePassThrough({
+      wholesaleEnergyStress: inputs.highInflationScenario ? 'severe' : 'elevated',
+      retailTariffShock: inputs.fiscalPressure === 'critical',
+      gridReliabilityBand: inputs.systemicLiquidityBand === 'critical' ? 'fragile' : 'strained',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const shelterRent = assessShelterRentInflation({
+      vacancyBand:
+        inputs.householdAffordability === 'severe_pressure'
+          ? 'critical'
+          : inputs.householdAffordability === 'strained'
+            ? 'tight'
+            : 'balanced',
+      rentGrowthBand: inputs.householdInflationScenarioActive ? 'strong' : 'moderate',
+      urbanizationPressure: inputs.highInflationScenario ? 'high' : 'medium',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -3349,6 +3656,8 @@ export function projectInflationForecastPath(
       momentumDirection: mom.snapshot.direction,
       importPassThroughBand: importPass.passThroughBand,
       termPremiumSignalBand: termPrem.signalBand,
+      energyPassThroughBand: energyPass.passThroughBand,
+      shelterRentPressureBand: shelterRent.pressureBand,
     });
   }
 
@@ -3454,7 +3763,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r7';
+  schemaVersion: '10.14.agent10.r8';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -3464,6 +3773,8 @@ export interface Agent21InflationForecastBundle {
   creditInflationFeedback: CreditInflationFeedbackAssessment['feedbackLoop'];
   terminalImportPassThrough: ImportPassThroughBand;
   terminalTermPremiumSignal: TermPremiumSignalBand;
+  terminalEnergyPassThrough: EnergyPassThroughBand;
+  terminalShelterRentPressure: ShelterRentPressureBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -3492,7 +3803,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r7',
+    schemaVersion: '10.14.agent10.r8',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -3502,6 +3813,8 @@ export function buildAgent21InflationForecastBundle(input: {
     creditInflationFeedback: input.creditFeedback?.feedbackLoop ?? 'neutral',
     terminalImportPassThrough: lastPoint?.importPassThroughBand ?? 'muted',
     terminalTermPremiumSignal: lastPoint?.termPremiumSignalBand ?? 'anchored',
+    terminalEnergyPassThrough: lastPoint?.energyPassThroughBand ?? 'subdued',
+    terminalShelterRentPressure: lastPoint?.shelterRentPressureBand ?? 'soft',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -3593,12 +3906,24 @@ export function effectiveTierLoanRate(
   assessTermPremiumInflationSignal,
   termPremiumTighteningBias,
 } from './rates/term-premium-inflation-signal.js';
+  assessEnergyPricePassThrough,
+  energyPassThroughInflationScoreAdjustment,
+} from './inflation/energy-price-pass-through.js';
+  assessShelterRentInflation,
+  shelterRentInflationScoreAdjustment,
+} from './inflation/shelter-rent-inflation.js';
   mergeAgent15IntoMacroFinancialInputs,
   agent15TradeBridgeIntegrationNote,
 } from './integration/agent15-trade-bridge.js';
   mergeAgent08IntoMacroFinancialInputs,
   agent08CorporateBridgeIntegrationNote,
 } from './integration/agent08-corporate-bridge.js';
+  mergeAgent11IntoMacroFinancialInputs,
+  agent11CitiesBridgeIntegrationNote,
+} from './integration/agent11-cities-bridge.js';
+  mergeAgent13IntoMacroFinancialInputs,
+  agent13EnergyBridgeIntegrationNote,
+} from './integration/agent13-energy-bridge.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -3997,7 +4322,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r7');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r8');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -4144,7 +4469,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r7' &&
+      bundle.schemaVersion === '10.14.agent10.r8' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -4171,6 +4496,98 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'corporate_pricing_power_spike');
       return (inp?.inflationSettingMultiplier ?? 1) > 1.3;
+    })(),
+  );
+
+  // --- Round 8 scale wave ---
+  {
+    const energy = assessEnergyPricePassThrough({
+      wholesaleEnergyStress: 'crisis',
+      retailTariffShock: true,
+      gridReliabilityBand: 'fragile',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check('a10_r8_01', 'energy pass-through sharp or crisis', energy.passThroughBand === 'sharp' || energy.passThroughBand === 'crisis');
+    check('a10_r8_02', 'energy score adj', energyPassThroughInflationScoreAdjustment(energy.passThroughBand) >= 3);
+  }
+  {
+    const shelter = assessShelterRentInflation({
+      vacancyBand: 'critical',
+      rentGrowthBand: 'surging',
+      urbanizationPressure: 'high',
+      inflationBand: 'elevated',
+      turn: 3,
+    });
+    check('a10_r8_03', 'shelter rent hot or overheated', shelter.pressureBand === 'hot' || shelter.pressureBand === 'overheated');
+    check('a10_r8_04', 'shelter score adj', shelterRentInflationScoreAdjustment(shelter.pressureBand) >= 3);
+  }
+  {
+    const merged11 = mergeAgent11IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      vacancyBand: 'critical',
+      rentGrowthBand: 'surging',
+      urbanizationPressure: 'high',
+      regionalDispersionScore: 0.62,
+    });
+    check('a10_r8_05', 'agent11 cities merge', merged11.householdInflationScenarioActive === true);
+    check('a10_r8_06', 'agent11 bridge note', agent11CitiesBridgeIntegrationNote().includes('Agent 11'));
+  }
+  {
+    const merged13 = mergeAgent13IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      wholesaleEnergyStress: 'crisis',
+      retailTariffShock: true,
+      gridReliabilityBand: 'fragile',
+      emissionsTransitionCostBand: 'high',
+    });
+    check('a10_r8_07', 'agent13 energy merge', merged13.highInflationScenario === true);
+    check('a10_r8_08', 'agent13 bridge note', agent13EnergyBridgeIntegrationNote().includes('Agent 13'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r8_09',
+      'forecast energy and shelter fields',
+      path.points.every((p) => !!p.energyPassThroughBand && !!p.shelterRentPressureBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r8_10',
+      'agent21 r8 fields',
+      bundle.schemaVersion === '10.14.agent10.r8' &&
+        bundle.terminalEnergyPassThrough !== undefined &&
+        bundle.terminalShelterRentPressure !== undefined,
+    );
+  }
+  check(
+    'a10_r8_11',
+    'round8 preset energy grid crisis',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'energy_grid_crisis_pass_through');
+      return inp?.highInflationScenario === true && inp.systemicLiquidityBand === 'critical';
+    })(),
+  );
+  check(
+    'a10_r8_12',
+    'round8 preset urban shelter',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'urban_shelter_rent_overheat');
+      return inp?.householdAffordability === 'severe_pressure' && inp.householdInflationScenarioActive === true;
+    })(),
+  );
+  check(
+    'a10_r8_13',
+    'round8 preset energy transition',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'energy_transition_cost_stack');
+      return inp?.fiscalPressure === 'critical' && (inp.inflationSettingMultiplier ?? 1) > 1.15;
     })(),
   );
 
@@ -4457,6 +4874,72 @@ export function ImportInflationPanel(props: ImportInflationPanelProps) {
       </p>
       <p>{imports.narrative}</p>
       <p data-testid="import-inflation-corp">{corpNote}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/UrbanEnergyInflationPanel.tsx ---
+  assessEnergyPricePassThrough,
+  energyPassThroughInflationScoreAdjustment,
+} from '../inflation/energy-price-pass-through.js';
+  assessShelterRentInflation,
+  shelterRentInflationScoreAdjustment,
+} from '../inflation/shelter-rent-inflation.js';
+
+export interface UrbanEnergyInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent11?: Agent11CitiesSnapshot | null;
+  agent13?: Agent13EnergySnapshot | null;
+}
+
+export function UrbanEnergyInflationPanel(props: UrbanEnergyInflationPanelProps) {
+  const cities = props.agent11 ?? {
+    turn: props.inputs.turn,
+    vacancyBand: 'tight' as const,
+    rentGrowthBand: 'moderate' as const,
+    urbanizationPressure: 'medium' as const,
+    regionalDispersionScore: 0.4,
+  };
+
+  const energy = props.agent13 ?? {
+    turn: props.inputs.turn,
+    wholesaleEnergyStress: 'elevated' as const,
+    retailTariffShock: props.inputs.fiscalPressure === 'critical',
+    gridReliabilityBand: 'strained' as const,
+    emissionsTransitionCostBand: 'medium' as const,
+  };
+
+  const shelter = assessShelterRentInflation({
+    vacancyBand: cities.vacancyBand,
+    rentGrowthBand: cities.rentGrowthBand,
+    urbanizationPressure: cities.urbanizationPressure,
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const energyPass = assessEnergyPricePassThrough({
+    wholesaleEnergyStress: energy.wholesaleEnergyStress,
+    retailTariffShock: energy.retailTariffShock,
+    gridReliabilityBand: energy.gridReliabilityBand,
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-urban-energy-inflation" data-testid="urban-energy-inflation-panel">
+      <h4>Urban shelter & energy (round 8)</h4>
+      <p>
+        Shelter {shelter.pressureBand} · index {shelter.shelterIndex.toFixed(0)} · score adj{' '}
+        {shelterRentInflationScoreAdjustment(shelter.pressureBand)}
+      </p>
+      <p>
+        Energy {energyPass.passThroughBand} · index {energyPass.energyCostIndex.toFixed(0)} · score adj{' '}
+        {energyPassThroughInflationScoreAdjustment(energyPass.passThroughBand)}
+      </p>
+      <p>{shelter.narrative}</p>
+      <p data-testid="urban-energy-energy-note">{energyPass.narrative}</p>
     </div>
   );
 }

@@ -8,11 +8,13 @@ import type { RealRateGapAssessment } from '../rates/real-rate-gap.js';
 import type { CreditInflationFeedbackAssessment } from '../credit/credit-inflation-feedback.js';
 import type { ImportPassThroughBand } from '../inflation/import-price-pass-through.js';
 import type { TermPremiumSignalBand } from '../rates/term-premium-inflation-signal.js';
+import type { EnergyPassThroughBand } from '../inflation/energy-price-pass-through.js';
+import type { ShelterRentPressureBand } from '../inflation/shelter-rent-inflation.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r7';
+  schemaVersion: '10.14.agent10.r8';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -22,6 +24,8 @@ export interface Agent21InflationForecastBundle {
   creditInflationFeedback: CreditInflationFeedbackAssessment['feedbackLoop'];
   terminalImportPassThrough: ImportPassThroughBand;
   terminalTermPremiumSignal: TermPremiumSignalBand;
+  terminalEnergyPassThrough: EnergyPassThroughBand;
+  terminalShelterRentPressure: ShelterRentPressureBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -50,7 +54,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r7',
+    schemaVersion: '10.14.agent10.r8',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -60,6 +64,8 @@ export function buildAgent21InflationForecastBundle(input: {
     creditInflationFeedback: input.creditFeedback?.feedbackLoop ?? 'neutral',
     terminalImportPassThrough: lastPoint?.importPassThroughBand ?? 'muted',
     terminalTermPremiumSignal: lastPoint?.termPremiumSignalBand ?? 'anchored',
+    terminalEnergyPassThrough: lastPoint?.energyPassThroughBand ?? 'subdued',
+    terminalShelterRentPressure: lastPoint?.shelterRentPressureBand ?? 'soft',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

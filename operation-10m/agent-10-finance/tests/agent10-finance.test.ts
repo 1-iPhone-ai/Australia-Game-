@@ -61,6 +61,10 @@ import { assessImportPricePassThrough } from '../src/inflation/import-price-pass
 import { assessTermPremiumInflationSignal } from '../src/rates/term-premium-inflation-signal.js';
 import { mergeAgent15IntoMacroFinancialInputs } from '../src/integration/agent15-trade-bridge.js';
 import { mergeAgent08IntoMacroFinancialInputs } from '../src/integration/agent08-corporate-bridge.js';
+import { mergeAgent11IntoMacroFinancialInputs } from '../src/integration/agent11-cities-bridge.js';
+import { mergeAgent13IntoMacroFinancialInputs } from '../src/integration/agent13-energy-bridge.js';
+import { assessEnergyPricePassThrough } from '../src/inflation/energy-price-pass-through.js';
+import { assessShelterRentInflation } from '../src/inflation/shelter-rent-inflation.js';
 
 describe('Agent 10 glossary & boundaries', () => {
   it('defines coherent finance terms', () => {
@@ -426,7 +430,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r7');
+    assert.equal(b.schemaVersion, '10.14.agent10.r8');
   });
 
   it('round-6 scenario preset credit vicious loop', () => {
@@ -489,7 +493,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r7');
+    assert.equal(b.schemaVersion, '10.14.agent10.r8');
     assert.ok(b.terminalImportPassThrough);
   });
 
@@ -501,5 +505,78 @@ describe('Agent 10 scale-wave extensions', () => {
   it('round-7 scenario preset corporate pricing', () => {
     const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'corporate_pricing_power_spike');
     assert.ok((inp?.inflationSettingMultiplier ?? 0) > 1.3);
+  });
+
+  it('round-8 energy price pass-through', () => {
+    const e = assessEnergyPricePassThrough({
+      wholesaleEnergyStress: 'crisis',
+      retailTariffShock: true,
+      gridReliabilityBand: 'fragile',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    assert.ok(e.passThroughBand === 'sharp' || e.passThroughBand === 'crisis');
+  });
+
+  it('round-8 shelter rent inflation', () => {
+    const s = assessShelterRentInflation({
+      vacancyBand: 'critical',
+      rentGrowthBand: 'surging',
+      urbanizationPressure: 'high',
+      inflationBand: 'elevated',
+      turn: 2,
+    });
+    assert.ok(s.pressureBand === 'hot' || s.pressureBand === 'overheated');
+  });
+
+  it('round-8 agent11 cities bridge', () => {
+    const m = mergeAgent11IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      vacancyBand: 'critical',
+      rentGrowthBand: 'surging',
+      urbanizationPressure: 'high',
+      regionalDispersionScore: 0.7,
+    });
+    assert.equal(m.householdInflationScenarioActive, true);
+  });
+
+  it('round-8 agent13 energy bridge', () => {
+    const m = mergeAgent13IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      wholesaleEnergyStress: 'crisis',
+      retailTariffShock: true,
+      gridReliabilityBand: 'fragile',
+      emissionsTransitionCostBand: 'high',
+    });
+    assert.equal(m.highInflationScenario, true);
+  });
+
+  it('round-8 forecast energy and shelter on path', () => {
+    const p = projectInflationForecastPath(3);
+    assert.ok(p.points.every((pt) => pt.energyPassThroughBand && pt.shelterRentPressureBand));
+  });
+
+  it('round-8 agent21 bundle r8', () => {
+    const path = projectInflationForecastPath(2);
+    const b = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('high', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(80),
+    });
+    assert.equal(b.schemaVersion, '10.14.agent10.r8');
+    assert.ok(b.terminalEnergyPassThrough);
+    assert.ok(b.terminalShelterRentPressure);
+  });
+
+  it('round-8 scenario preset urban shelter', () => {
+    const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'urban_shelter_rent_overheat');
+    assert.ok(inp?.householdAffordability === 'severe_pressure');
+  });
+
+  it('round-8 scenario preset energy grid crisis', () => {
+    const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'energy_grid_crisis_pass_through');
+    assert.ok(inp?.systemicLiquidityBand === 'critical');
   });
 });

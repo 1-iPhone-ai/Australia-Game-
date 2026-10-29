@@ -200,6 +200,42 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'corporate', 'round7'],
   },
+  {
+    id: 'energy_grid_crisis_pass_through',
+    label: 'Energy grid crisis pass-through',
+    description: 'Wholesale energy crisis with fragile grid — utility CPI channel.',
+    patch: {
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.26,
+      systemicLiquidityBand: 'critical',
+      fiscalPressure: 'strained',
+    },
+    tags: ['inflation', 'energy', 'round8'],
+  },
+  {
+    id: 'urban_shelter_rent_overheat',
+    label: 'Urban shelter rent overheat',
+    description: 'Critical vacancy with surging rents — shelter CPI dominance.',
+    patch: {
+      householdAffordability: 'severe_pressure',
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.22,
+      highInflationScenario: true,
+    },
+    tags: ['inflation', 'cities', 'round8'],
+  },
+  {
+    id: 'energy_transition_cost_stack',
+    label: 'Energy transition cost stack',
+    description: 'Elevated transition costs with tariff shock and fiscal strain.',
+    patch: {
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.19,
+      highInflationScenario: true,
+      publicStability: 42,
+    },
+    tags: ['inflation', 'energy', 'round8'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
