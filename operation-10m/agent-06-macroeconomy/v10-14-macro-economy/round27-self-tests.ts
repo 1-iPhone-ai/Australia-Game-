@@ -52,7 +52,7 @@ export function runAgent06Round27SelfTests(): {
   record(
     'R27-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 84,
+    integrated.state.transmissionReport.layers.length === 86,
     String(integrated.state.transmissionReport.layers.length)
   );
 
