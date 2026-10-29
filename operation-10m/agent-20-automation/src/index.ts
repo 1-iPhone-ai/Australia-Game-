@@ -141,6 +141,9 @@ export * from './automation-idle-governance-program-wave-round45-capstone.js';
 export * from './automation-idle-governance-program-wave-round45-capstone-compare.js';
 export * from './automation-idle-governance-program-wave-round46-export.js';
 export * from './automation-idle-governance-program-wave-round46-capstone.js';
+export * from './automation-idle-governance-program-wave-round46-capstone-compare.js';
+export * from './automation-idle-governance-program-wave-round47-export.js';
+export * from './automation-idle-governance-program-wave-round47-capstone.js';
 
 import type { O10SelfTestResult } from './types.js';
 import { runO10Agent20NationalStewardSelfTests } from './national-steward.js';
@@ -282,6 +285,9 @@ import { runO10Agent20IdleGovernanceProgramWaveRound45CapstoneSelfTests } from '
 import { runO10Agent20IdleGovernanceProgramWaveRound45CapstoneCompareSelfTests } from './automation-idle-governance-program-wave-round45-capstone-compare.js';
 import { runO10Agent20IdleGovernanceProgramWaveRound46ExportSelfTests } from './automation-idle-governance-program-wave-round46-export.js';
 import { runO10Agent20IdleGovernanceProgramWaveRound46CapstoneSelfTests } from './automation-idle-governance-program-wave-round46-capstone.js';
+import { runO10Agent20IdleGovernanceProgramWaveRound46CapstoneCompareSelfTests } from './automation-idle-governance-program-wave-round46-capstone-compare.js';
+import { runO10Agent20IdleGovernanceProgramWaveRound47ExportSelfTests } from './automation-idle-governance-program-wave-round47-export.js';
+import { runO10Agent20IdleGovernanceProgramWaveRound47CapstoneSelfTests } from './automation-idle-governance-program-wave-round47-capstone.js';
 
 /** Full module self-test bundle for Agent 25 dev lab registration. */
 export function runO10Agent20ModuleSelfTests(): {
@@ -453,6 +459,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceProgramWaveRound45CapstoneCompareSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveRound46ExportSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveRound46CapstoneSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveRound46CapstoneCompareSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveRound47ExportSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveRound47CapstoneSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }
