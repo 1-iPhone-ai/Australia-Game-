@@ -131589,6 +131589,32 @@ export function resolveContentDilemma(stateIn: MatchContentState, choiceId: stri
   return { state: st, effects: c.effects, error: null, choice: c };
 }
 
+/** Canonical match-memory record for a resolved V9.3 content dilemma (World Reaction action attribution + AI Memory). */
+export function buildContentDilemmaCommittedAction(d: ActiveDilemma, choice: DilemmaChoiceDef, actorId: string, turn: number, regionId: string): CommittedMemoryAction {
+  const cash = choice.effects.filter((e): e is Extract<DilemmaEffect, { k: 'cash' }> => e.k === 'cash').reduce((s, e) => s + Math.abs(e.amount), 0);
+  return {
+    actionType: 'content_dilemma',
+    actorId,
+    regionId,
+    success: true,
+    turn,
+    amount: cash || undefined,
+    summary: `${d.title}: ${choice.label}`,
+    stableKey: `content_dilemma:${d.id}:${choice.id}:${turn}`,
+  };
+}
+
+/** Faction debrief / history: every content dilemma choice is a consequential stakeholder decision. */
+export function appendContentDilemmaFactionDecision(st: RegionalFactionsState, d: ActiveDilemma, choice: DilemmaChoiceDef, actorId: string, turn: number, regionId: string): RegionalFactionsState {
+  const winners = choice.factions?.winners || [];
+  const losers = choice.factions?.losers || [];
+  return {
+    ...st,
+    decisions: [...st.decisions, { turn, actorId, regionId, label: `${d.title}: ${choice.label}`, winners, losers }].slice(-RF_LIMITS.decisions),
+    revision: st.revision + 1,
+  };
+}
+
 
 // ============================================================================
 // V9.3 REGIONAL CONTRACT CONTENT — hand-authored strategic concepts (not noun soup)
@@ -133196,6 +133222,15 @@ export function runV93ContentReplayabilitySelfTests(): V9SelfTestResult[] {
     const rich = (day: number) => ctx0(c => { Object.values(c.regions).forEach(r => { r.sectors = { mining: 30, technology: 30, renewables: 30 }; r.devTier = 'emerging'; r.momentum = 'growing'; r.economy = 'weak'; r.conditions = ['commodity_boom']; r.opportunities = ['development_potential']; }); c.crises = [{ id: 'crisis_x', category: 'economic', status: 'active', stageIndex: 1, affectedRegions: ['NSW'], v93: false }]; c.factionInfluence = { regional_labor_coalition: 60 }; }, 13, day);
     for (let day = 1; day <= 60; day++) { events = events.map(e => ({ ...e, remainingDays: e.remainingDays - 1 })).filter(e => e.remainingDays > 0); const p = planContentDay(rich(day), st, {}, events); st = p.state; p.newEvents.forEach(e => { events.push(e); if (e.v93.kind === 'rare') rare += 1; }); }
     return (rare <= p0.budgets.rare + p0.budgets.exceptional && st.used.exceptional <= 1) || J({ rare, budget: p0.budgets });
+  });
+  check('v93_dilemma_consequence_wiring', 'Resolved content dilemmas produce canonical memory + faction debrief records', () => {
+    const t = DILEMMA_TEMPLATE_BY_ID.qld_export_capacity_crunch;
+    const d: ActiveDilemma = { id: 'd1', templateId: t.id, regionId: 'QLD', openedDay: 4, expiresDay: 7, title: t.title, prompt: t.prompt, evidence: [], choices: scaleDilemmaChoices(t, 4) };
+    const choice = d.choices.find(c => c.id === 'partnership')!;
+    const mem = buildContentDilemmaCommittedAction(d, choice, 'player', 12, 'QLD');
+    const rf = appendContentDilemmaFactionDecision(createEmptyRegionalFactionsState(), d, choice, 'player', 12, 'QLD');
+    const debrief = buildFactionDebrief(rf, 'player');
+    return (mem.actionType === 'content_dilemma' && mem.stableKey === 'content_dilemma:d1:partnership:12' && rf.decisions.length === 1 && debrief.some(l => /Most consequential decision/.test(l))) || J({ mem, debrief });
   });
   check('v93_cooldown', 'A resolved template respects its cooldown', () => {
     const c = ctx0(x => { x.regions.QLD.momentum = 'growing'; x.regions.QLD.needs = [{ category: 'transport', severity: 'high' }]; });
@@ -215045,16 +215080,17 @@ function dispatchGameSettingsChange(
         return out;
       }
     });
-    // Stakeholders remember: recorded through the canonical faction decision log (winners / losers).
-    if (res.choice.factions && rfStateRef.current) {
-      const f = res.choice.factions;
-      const rfD: RFDilemma = { id: d.id, regionId: region, title: d.title, need: d.prompt, options: [{ id: res.choice.id, kind: 'fund', label: res.choice.label, projectId: null, contractId: null, cost: null, stances: [...f.winners.map(id => ({ factionId: id, stance: 'supports' as RFStance })), ...f.losers.map(id => ({ factionId: id, stance: 'opposes' as RFStance }))], effect: res.choice.pros, risk: res.choice.cons }] };
-      persistRegionalFactions(rfChooseDilemmaOption(sanitizeRegionalFactionsState(rfStateRef.current)!, rfD, res.choice.id, String(pl?.id || 'player'), dnRound));
+    // Stakeholders remember + World Reaction / AI Memory attribute follow-on effects to this choice.
+    const actorId = String(pl?.id || 'player');
+    commitMatchMemory(buildContentDilemmaCommittedAction(d, res.choice, actorId, Number(gs.turnCounter || 0), region));
+    if (rfStateRef.current) {
+      persistRegionalFactions(appendContentDilemmaFactionDecision(sanitizeRegionalFactionsState(rfStateRef.current)!, d, res.choice, actorId, dnRound, region));
     }
-    appendGameActivityLedgerEvent('decision', { actorId: String(pl?.id || 'player'), eventType: 'content_dilemma_choice', summary: `${d.title}: ${res.choice.label}` } as any);
+    appendGameActivityLedgerEvent('decision', { actorId, eventType: 'content_dilemma_choice', summary: `${d.title}: ${res.choice.label}` } as any);
+    appendReplayCheckpoint(`Strategic decision: ${d.title} — ${res.choice.label}`, { kind: 'major_action', relatedId: d.id });
     addNotification(`⚖️ ${d.title}: ${res.choice.label}`, 'success', true);
     return null;
-  }, [gameState, player, dispatchPlayer, dispatchGameState, addNotification, persistRegionalFactions, appendGameActivityLedgerEvent, dnRound, gameSettings.regionalContractsEnabled]);
+  }, [gameState, player, dispatchPlayer, dispatchGameState, addNotification, persistRegionalFactions, appendGameActivityLedgerEvent, appendReplayCheckpoint, commitMatchMemory, dnRound, gameSettings.regionalContractsEnabled]);
   const dismissContentOpportunity = useCallback((id: string) => {
     dispatchGameState({ type: 'APPLY_CONTENT_STEP', payload: (state: any) => { const st = sanitizeMatchContentState(state.contentState); return st ? { contentState: { ...st, opportunities: st.opportunities.filter(o => o.id !== id), revision: st.revision + 1 } } : {}; } });
   }, [dispatchGameState]);
