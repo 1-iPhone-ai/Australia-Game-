@@ -22,4 +22,13 @@ Constraints: **NO V9.4** · **no promote-tranche** · **no PR triage** (depth-on
 
 Gate subject (feat): **O10-233 · wave 51 · round 51**
 
+## SHA (origin tip)
+
+**`09d410f0`** (`09d410f0…` pending docs handoff)
+
+| Commit | Subject |
+|--------|---------|
+| **5fcd5473** | `merge(op10m): integrate O10-232 baseline a32b2b15 for wave 51` |
+| **09d410f0** | `feat(op10m): O10-233 · wave 51 · round 51` |
+
 Prior: [agent-17-scale-wave-round50.md](./agent-17-scale-wave-round50.md)
