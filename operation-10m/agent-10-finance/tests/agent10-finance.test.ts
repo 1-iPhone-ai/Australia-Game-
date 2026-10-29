@@ -77,6 +77,10 @@ import { assessEducationTuitionInflation } from '../src/inflation/education-tuit
 import { assessCommunicationsServicesInflation } from '../src/inflation/communications-services-inflation.js';
 import { mergeAgent04IntoMacroFinancialInputs } from '../src/integration/agent04-modes-bridge.js';
 import { mergeAgent16IntoMacroFinancialInputs } from '../src/integration/agent16-guardian-bridge.js';
+import { assessRecreationLeisureInflation } from '../src/inflation/recreation-leisure-inflation.js';
+import { assessProfessionalServicesFeeInflation } from '../src/inflation/professional-services-fee-inflation.js';
+import { mergeAgent17IntoMacroFinancialInputs } from '../src/integration/agent17-command-bridge.js';
+import { mergeAgent18IntoMacroFinancialInputs } from '../src/integration/agent18-team-bridge.js';
 
 describe('Agent 10 glossary & boundaries', () => {
   it('defines coherent finance terms', () => {
@@ -442,7 +446,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r11');
+    assert.equal(b.schemaVersion, '10.14.agent10.r12');
   });
 
   it('round-6 scenario preset credit vicious loop', () => {
@@ -505,7 +509,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r11');
+    assert.equal(b.schemaVersion, '10.14.agent10.r12');
     assert.ok(b.terminalImportPassThrough);
   });
 
@@ -577,7 +581,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r11');
+    assert.equal(b.schemaVersion, '10.14.agent10.r12');
     assert.ok(b.terminalEnergyPassThrough);
     assert.ok(b.terminalShelterRentPressure);
   });
@@ -649,7 +653,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r11');
+    assert.equal(b.schemaVersion, '10.14.agent10.r12');
     assert.ok(b.terminalFoodGroceryPassThrough);
     assert.ok(b.terminalTransportLogisticsPressure);
   });
@@ -720,7 +724,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r11');
+    assert.equal(b.schemaVersion, '10.14.agent10.r12');
     assert.ok(b.terminalHealthcareServicesPressure);
     assert.ok(b.terminalInsurancePremiumPassThrough);
   });
@@ -791,7 +795,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r11');
+    assert.equal(b.schemaVersion, '10.14.agent10.r12');
     assert.ok(b.terminalEducationTuitionPressure);
     assert.ok(b.terminalCommunicationsServicesPressure);
   });
@@ -804,5 +808,76 @@ describe('Agent 10 scale-wave extensions', () => {
   it('round-11 scenario preset comms tariff', () => {
     const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'comms_tariff_platform_spike');
     assert.ok(inp?.systemicLiquidityBand === 'critical');
+  });
+
+  it('round-12 recreation leisure inflation', () => {
+    const r = assessRecreationLeisureInflation({
+      tourismDemandBand: 'surge',
+      laborCostPassThrough: 'high',
+      discretionarySpendPressure: true,
+      inflationBand: 'high',
+      turn: 2,
+    });
+    assert.ok(r.pressureBand === 'hot' || r.pressureBand === 'boom');
+  });
+
+  it('round-12 professional services fee inflation', () => {
+    const p = assessProfessionalServicesFeeInflation({
+      billingRatePressure: 'extreme',
+      complianceCostStack: true,
+      corporateDemandBand: 'strong',
+      inflationBand: 'elevated',
+      turn: 2,
+    });
+    assert.ok(p.feeBand === 'sharp' || p.feeBand === 'squeeze');
+  });
+
+  it('round-12 agent17 command bridge', () => {
+    const m = mergeAgent17IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      macroAlertLevel: 'red',
+      inflationFusionScore: 0.8,
+      coordinatedTighteningSuggested: true,
+    });
+    assert.equal(m.highInflationScenario, true);
+  });
+
+  it('round-12 agent18 team bridge', () => {
+    const m = mergeAgent18IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      consensusInflationOutlook: 'upside_risk',
+      briefingUrgencyBand: 'critical',
+      crossDomainStressScore: 0.75,
+    });
+    assert.equal(m.highInflationScenario, true);
+  });
+
+  it('round-12 forecast recreation and professional on path', () => {
+    const path = projectInflationForecastPath(3);
+    assert.ok(path.points.every((pt) => pt.recreationLeisurePressureBand && pt.professionalServicesFeeBand));
+  });
+
+  it('round-12 agent21 bundle r12', () => {
+    const path = projectInflationForecastPath(2);
+    const b = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('high', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(80),
+    });
+    assert.equal(b.schemaVersion, '10.14.agent10.r12');
+    assert.ok(b.terminalRecreationLeisurePressure);
+    assert.ok(b.terminalProfessionalServicesFee);
+  });
+
+  it('round-12 scenario preset tourism leisure', () => {
+    const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'tourism_leisure_boom_pass_through');
+    assert.ok(inp?.highInflationScenario);
+  });
+
+  it('round-12 scenario preset professional fees', () => {
+    const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'professional_fee_compliance_stack');
+    assert.ok(inp?.creditShockActive);
   });
 });

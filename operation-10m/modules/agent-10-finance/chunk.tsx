@@ -2354,6 +2354,140 @@ export function communicationsServicesInflationScoreAdjustment(band: Communicati
 }
 
 
+// --- source: inflation/recreation-leisure-inflation.ts ---
+
+export type RecreationLeisurePressureBand = 'soft' | 'firming' | 'hot' | 'boom';
+
+export interface RecreationLeisureInflationAssessment {
+  pressureBand: RecreationLeisurePressureBand;
+  leisureIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Recreation, dining-out, and leisure services in macro CPI metadata. */
+export function assessRecreationLeisureInflation(input: {
+  tourismDemandBand: 'weak' | 'normal' | 'strong' | 'surge';
+  laborCostPassThrough: 'low' | 'medium' | 'high';
+  discretionarySpendPressure: boolean;
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): RecreationLeisureInflationAssessment {
+  let pressure = 0;
+  if (input.tourismDemandBand === 'surge') pressure += 0.38;
+  else if (input.tourismDemandBand === 'strong') pressure += 0.24;
+  else if (input.tourismDemandBand === 'normal') pressure += 0.08;
+
+  if (input.laborCostPassThrough === 'high') pressure += 0.22;
+  else if (input.laborCostPassThrough === 'medium') pressure += 0.12;
+
+  if (input.discretionarySpendPressure) pressure += 0.16;
+
+  if (input.inflationBand === 'elevated' || input.inflationBand === 'high') {
+    pressure += 0.07;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.005, 0, 1.05);
+  const leisureIndex = finRound(100 + pressure * 14, 1);
+
+  let pressureBand: RecreationLeisurePressureBand = 'soft';
+  if (pressure >= 0.58) pressureBand = 'boom';
+  else if (pressure >= 0.38) pressureBand = 'hot';
+  else if (pressure >= 0.2) pressureBand = 'firming';
+
+  const inflationScoreNudge =
+    pressureBand === 'boom'
+      ? 0.07
+      : pressureBand === 'hot'
+        ? 0.05
+        : pressureBand === 'firming'
+          ? 0.03
+          : 0;
+
+  const narrative =
+    pressureBand === 'boom' || pressureBand === 'hot'
+      ? 'Recreation and leisure services are adding to discretionary CPI momentum.'
+      : pressureBand === 'firming'
+        ? 'Leisure inflation firming — tourism and labor pass-through elevated.'
+        : 'Recreation leisure inflation soft versus headline goods.';
+
+  return { pressureBand, leisureIndex, inflationScoreNudge, narrative };
+}
+
+export function recreationLeisureInflationScoreAdjustment(band: RecreationLeisurePressureBand): number {
+  if (band === 'boom') return 4;
+  if (band === 'hot') return 3;
+  if (band === 'firming') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/professional-services-fee-inflation.ts ---
+
+export type ProfessionalServicesFeeBand = 'stable' | 'rising' | 'sharp' | 'squeeze';
+
+export interface ProfessionalServicesFeeInflationAssessment {
+  feeBand: ProfessionalServicesFeeBand;
+  feeIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Legal, accounting, and consulting fee pass-through in macro CPI metadata. */
+export function assessProfessionalServicesFeeInflation(input: {
+  billingRatePressure: 'muted' | 'normal' | 'elevated' | 'extreme';
+  complianceCostStack: boolean;
+  corporateDemandBand: 'soft' | 'steady' | 'strong';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): ProfessionalServicesFeeInflationAssessment {
+  let pressure = 0;
+  if (input.billingRatePressure === 'extreme') pressure += 0.44;
+  else if (input.billingRatePressure === 'elevated') pressure += 0.28;
+  else if (input.billingRatePressure === 'normal') pressure += 0.1;
+
+  if (input.complianceCostStack) pressure += 0.2;
+  if (input.corporateDemandBand === 'strong') pressure += 0.14;
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.06;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.004, 0, 1.05);
+  const feeIndex = finRound(100 + pressure * 13, 1);
+
+  let feeBand: ProfessionalServicesFeeBand = 'stable';
+  if (pressure >= 0.62) feeBand = 'squeeze';
+  else if (pressure >= 0.4) feeBand = 'sharp';
+  else if (pressure >= 0.22) feeBand = 'rising';
+
+  const inflationScoreNudge =
+    feeBand === 'squeeze'
+      ? 0.08
+      : feeBand === 'sharp'
+        ? 0.05
+        : feeBand === 'rising'
+          ? 0.03
+          : 0;
+
+  const narrative =
+    feeBand === 'squeeze' || feeBand === 'sharp'
+      ? 'Professional services fees are lifting core services CPI through billing and compliance stacks.'
+      : feeBand === 'rising'
+        ? 'Professional fee inflation rising — corporate demand and rate pressure building.'
+        : 'Professional services fee inflation stable relative to goods basket.';
+
+  return { feeBand, feeIndex, inflationScoreNudge, narrative };
+}
+
+export function professionalServicesFeeInflationScoreAdjustment(band: ProfessionalServicesFeeBand): number {
+  if (band === 'squeeze') return 4;
+  if (band === 'sharp') return 3;
+  if (band === 'rising') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -2934,6 +3068,42 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
       activeCrises: 1,
     },
     tags: ['inflation', 'modes', 'round11'],
+  },
+  {
+    id: 'tourism_leisure_boom_pass_through',
+    label: 'Tourism leisure boom pass-through',
+    description: 'Surging tourism with discretionary pressure — recreation CPI.',
+    patch: {
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.23,
+      householdInflationScenarioActive: true,
+      publicStability: 46,
+    },
+    tags: ['inflation', 'leisure', 'round12'],
+  },
+  {
+    id: 'professional_fee_compliance_stack',
+    label: 'Professional fee compliance stack',
+    description: 'Elevated billing and compliance — professional services CPI.',
+    patch: {
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.26,
+      creditShockActive: true,
+      highInflationScenario: true,
+    },
+    tags: ['inflation', 'professional', 'round12'],
+  },
+  {
+    id: 'command_team_upside_risk_brief',
+    label: 'Command team upside risk brief',
+    description: 'Fused macro alert with team upside consensus — inflation flags.',
+    patch: {
+      inflationSettingMultiplier: 1.3,
+      highInflationScenario: true,
+      publicStability: 36,
+      activeCrises: 2,
+    },
+    tags: ['inflation', 'command', 'round12'],
   },
 ] as const;
 
@@ -4345,6 +4515,99 @@ export function agent16GuardianBridgeIntegrationNote(): string {
 }
 
 
+// --- source: integration/agent17-command-bridge.ts ---
+
+/** Read-only AI command center snapshot from Agent 17 (contract only). */
+export interface Agent17CommandSnapshot {
+  turn: number;
+  macroAlertLevel: 'green' | 'amber' | 'red';
+  inflationFusionScore: number;
+  coordinatedTighteningSuggested: boolean;
+}
+
+export function mergeAgent17IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent17CommandSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.macroAlertLevel === 'red') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.11, 0.85, 1.45);
+  } else if (snapshot.macroAlertLevel === 'amber') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  }
+
+  if (snapshot.inflationFusionScore > 0.72) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
+  let highInflationScenario = base.highInflationScenario;
+  if (snapshot.macroAlertLevel === 'red' && snapshot.inflationFusionScore > 0.65) {
+    highInflationScenario = true;
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    highInflationScenario,
+  };
+}
+
+export function agent17CommandBridgeIntegrationNote(): string {
+  return 'Agent 17 command snapshot reflects fused macro alert state; no command queue writes.';
+}
+
+
+// --- source: integration/agent18-team-bridge.ts ---
+
+/** Read-only team intelligence snapshot from Agent 18 (contract only). */
+export interface Agent18TeamSnapshot {
+  turn: number;
+  consensusInflationOutlook: 'disinflation' | 'stable' | 'reacceleration' | 'upside_risk';
+  briefingUrgencyBand: 'routine' | 'elevated' | 'critical';
+  crossDomainStressScore: number;
+}
+
+export function mergeAgent18IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent18TeamSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.consensusInflationOutlook === 'upside_risk' || snapshot.consensusInflationOutlook === 'reacceleration') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.08, 0.85, 1.45);
+  } else if (snapshot.consensusInflationOutlook === 'disinflation') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier - 0.04, 0.85, 1.45);
+  }
+
+  if (snapshot.crossDomainStressScore > 0.7) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  }
+
+  let highInflationScenario = base.highInflationScenario;
+  if (
+    snapshot.consensusInflationOutlook === 'upside_risk' &&
+    snapshot.briefingUrgencyBand === 'critical'
+  ) {
+    highInflationScenario = true;
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    highInflationScenario,
+  };
+}
+
+export function agent18TeamBridgeIntegrationNote(): string {
+  return 'Agent 18 team snapshot adjusts consensus inflation outlook flags; no briefing ledger writes.';
+}
+
+
 // --- source: integration/inflation-forecast.ts ---
   stepInflationRegimeTracker,
   createInitialInflationRegimeTracker,
@@ -4384,6 +4647,12 @@ export function agent16GuardianBridgeIntegrationNote(): string {
   assessCommunicationsServicesInflation,
   type CommunicationsServicesPressureBand,
 } from '../inflation/communications-services-inflation.js';
+  assessRecreationLeisureInflation,
+  type RecreationLeisurePressureBand,
+} from '../inflation/recreation-leisure-inflation.js';
+  assessProfessionalServicesFeeInflation,
+  type ProfessionalServicesFeeBand,
+} from '../inflation/professional-services-fee-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -4406,6 +4675,8 @@ export interface InflationForecastPoint {
   insurancePremiumPassThroughBand: InsurancePremiumPassThroughBand;
   educationTuitionPressureBand: EducationTuitionPressureBand;
   communicationsServicesPressureBand: CommunicationsServicesPressureBand;
+  recreationLeisurePressureBand: RecreationLeisurePressureBand;
+  professionalServicesFeeBand: ProfessionalServicesFeeBand;
 }
 
 export interface InflationForecastPath {
@@ -4533,6 +4804,20 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const recreation = assessRecreationLeisureInflation({
+      tourismDemandBand: inputs.highInflationScenario ? 'surge' : 'normal',
+      laborCostPassThrough: inputs.fiscalPressure === 'critical' ? 'high' : 'medium',
+      discretionarySpendPressure: inputs.householdInflationScenarioActive,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const professionalFees = assessProfessionalServicesFeeInflation({
+      billingRatePressure: inputs.highInflationScenario ? 'elevated' : 'normal',
+      complianceCostStack: inputs.fiscalPressure === 'critical' || inputs.creditShockActive,
+      corporateDemandBand: inputs.capitalPressure === 'high' || inputs.capitalPressure === 'critical' ? 'strong' : 'steady',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -4555,6 +4840,8 @@ export function projectInflationForecastPath(
       insurancePremiumPassThroughBand: insurancePrem.passThroughBand,
       educationTuitionPressureBand: educationTuition.pressureBand,
       communicationsServicesPressureBand: commsServices.pressureBand,
+      recreationLeisurePressureBand: recreation.pressureBand,
+      professionalServicesFeeBand: professionalFees.feeBand,
     });
   }
 
@@ -4660,7 +4947,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r11';
+  schemaVersion: '10.14.agent10.r12';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -4678,6 +4965,8 @@ export interface Agent21InflationForecastBundle {
   terminalInsurancePremiumPassThrough: InsurancePremiumPassThroughBand;
   terminalEducationTuitionPressure: EducationTuitionPressureBand;
   terminalCommunicationsServicesPressure: CommunicationsServicesPressureBand;
+  terminalRecreationLeisurePressure: RecreationLeisurePressureBand;
+  terminalProfessionalServicesFee: ProfessionalServicesFeeBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -4706,7 +4995,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r11',
+    schemaVersion: '10.14.agent10.r12',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -4724,6 +5013,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalInsurancePremiumPassThrough: lastPoint?.insurancePremiumPassThroughBand ?? 'stable',
     terminalEducationTuitionPressure: lastPoint?.educationTuitionPressureBand ?? 'stable',
     terminalCommunicationsServicesPressure: lastPoint?.communicationsServicesPressureBand ?? 'soft',
+    terminalRecreationLeisurePressure: lastPoint?.recreationLeisurePressureBand ?? 'soft',
+    terminalProfessionalServicesFee: lastPoint?.professionalServicesFeeBand ?? 'stable',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -4869,6 +5160,18 @@ export function effectiveTierLoanRate(
   mergeAgent16IntoMacroFinancialInputs,
   agent16GuardianBridgeIntegrationNote,
 } from './integration/agent16-guardian-bridge.js';
+  assessRecreationLeisureInflation,
+  recreationLeisureInflationScoreAdjustment,
+} from './inflation/recreation-leisure-inflation.js';
+  assessProfessionalServicesFeeInflation,
+  professionalServicesFeeInflationScoreAdjustment,
+} from './inflation/professional-services-fee-inflation.js';
+  mergeAgent17IntoMacroFinancialInputs,
+  agent17CommandBridgeIntegrationNote,
+} from './integration/agent17-command-bridge.js';
+  mergeAgent18IntoMacroFinancialInputs,
+  agent18TeamBridgeIntegrationNote,
+} from './integration/agent18-team-bridge.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -5267,7 +5570,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r11');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r12');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -5414,7 +5717,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r11' &&
+      bundle.schemaVersion === '10.14.agent10.r12' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -5506,7 +5809,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r11' &&
+      bundle.schemaVersion === '10.14.agent10.r12' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -5605,7 +5908,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r11' &&
+      bundle.schemaVersion === '10.14.agent10.r12' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -5703,7 +6006,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r11' &&
+      bundle.schemaVersion === '10.14.agent10.r12' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -5801,7 +6104,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r11' &&
+      bundle.schemaVersion === '10.14.agent10.r12' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -5828,6 +6131,96 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'modes_extreme_inflation_sandbox');
       return (inp?.inflationSettingMultiplier ?? 1) > 1.3 && inp.publicStability === 38;
+    })(),
+  );
+
+  // --- Round 12 scale wave ---
+  {
+    const leisure = assessRecreationLeisureInflation({
+      tourismDemandBand: 'surge',
+      laborCostPassThrough: 'high',
+      discretionarySpendPressure: true,
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check('a10_r12_01', 'recreation hot or boom', leisure.pressureBand === 'hot' || leisure.pressureBand === 'boom');
+    check('a10_r12_02', 'recreation score adj', recreationLeisureInflationScoreAdjustment(leisure.pressureBand) >= 3);
+  }
+  {
+    const prof = assessProfessionalServicesFeeInflation({
+      billingRatePressure: 'extreme',
+      complianceCostStack: true,
+      corporateDemandBand: 'strong',
+      inflationBand: 'elevated',
+      turn: 3,
+    });
+    check('a10_r12_03', 'professional sharp or squeeze', prof.feeBand === 'sharp' || prof.feeBand === 'squeeze');
+    check('a10_r12_04', 'professional score adj', professionalServicesFeeInflationScoreAdjustment(prof.feeBand) >= 3);
+  }
+  {
+    const merged17 = mergeAgent17IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      macroAlertLevel: 'red',
+      inflationFusionScore: 0.78,
+      coordinatedTighteningSuggested: true,
+    });
+    check('a10_r12_05', 'agent17 command merge', merged17.highInflationScenario === true);
+    check('a10_r12_06', 'agent17 bridge note', agent17CommandBridgeIntegrationNote().includes('Agent 17'));
+  }
+  {
+    const merged18 = mergeAgent18IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      consensusInflationOutlook: 'upside_risk',
+      briefingUrgencyBand: 'critical',
+      crossDomainStressScore: 0.82,
+    });
+    check('a10_r12_07', 'agent18 team merge', merged18.highInflationScenario === true);
+    check('a10_r12_08', 'agent18 bridge note', agent18TeamBridgeIntegrationNote().includes('Agent 18'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r12_09',
+      'forecast recreation and professional fields',
+      path.points.every((p) => !!p.recreationLeisurePressureBand && !!p.professionalServicesFeeBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r12_10',
+      'agent21 r12 fields',
+      bundle.schemaVersion === '10.14.agent10.r12' &&
+        bundle.terminalRecreationLeisurePressure !== undefined &&
+        bundle.terminalProfessionalServicesFee !== undefined,
+    );
+  }
+  check(
+    'a10_r12_11',
+    'round12 preset tourism leisure',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'tourism_leisure_boom_pass_through');
+      return inp?.householdInflationScenarioActive === true && inp.highInflationScenario === true;
+    })(),
+  );
+  check(
+    'a10_r12_12',
+    'round12 preset professional fees',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'professional_fee_compliance_stack');
+      return inp?.fiscalPressure === 'critical' && inp.creditShockActive === true;
+    })(),
+  );
+  check(
+    'a10_r12_13',
+    'round12 preset command team brief',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'command_team_upside_risk_brief');
+      return (inp?.inflationSettingMultiplier ?? 1) > 1.28 && (inp.activeCrises ?? 0) >= 2;
     })(),
   );
 
@@ -6378,6 +6771,70 @@ export function EducationCommunicationsInflationPanel(props: EducationCommunicat
       </p>
       <p data-testid="education-comms-edu-note">{education.narrative}</p>
       <p>{comms.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/RecreationProfessionalInflationPanel.tsx ---
+  assessRecreationLeisureInflation,
+  recreationLeisureInflationScoreAdjustment,
+} from '../inflation/recreation-leisure-inflation.js';
+  assessProfessionalServicesFeeInflation,
+  professionalServicesFeeInflationScoreAdjustment,
+} from '../inflation/professional-services-fee-inflation.js';
+
+export interface RecreationProfessionalInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent17?: Agent17CommandSnapshot | null;
+  agent18?: Agent18TeamSnapshot | null;
+}
+
+export function RecreationProfessionalInflationPanel(props: RecreationProfessionalInflationPanelProps) {
+  const command = props.agent17 ?? {
+    turn: props.inputs.turn,
+    macroAlertLevel: props.inputs.highInflationScenario ? ('red' as const) : ('amber' as const),
+    inflationFusionScore: 0.55,
+    coordinatedTighteningSuggested: props.inputs.fiscalPressure === 'critical',
+  };
+
+  const team = props.agent18 ?? {
+    turn: props.inputs.turn,
+    consensusInflationOutlook: props.inputs.highInflationScenario ? ('reacceleration' as const) : ('stable' as const),
+    briefingUrgencyBand: props.inputs.publicStability < 45 ? ('critical' as const) : ('elevated' as const),
+    crossDomainStressScore: 0.5,
+  };
+
+  const leisure = assessRecreationLeisureInflation({
+    tourismDemandBand: command.macroAlertLevel === 'red' ? 'surge' : 'strong',
+    laborCostPassThrough: team.briefingUrgencyBand === 'critical' ? 'high' : 'medium',
+    discretionarySpendPressure: props.inputs.householdInflationScenarioActive,
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const professional = assessProfessionalServicesFeeInflation({
+    billingRatePressure: team.consensusInflationOutlook === 'upside_risk' ? 'extreme' : 'elevated',
+    complianceCostStack: command.coordinatedTighteningSuggested,
+    corporateDemandBand: props.inputs.highInflationScenario ? 'strong' : 'steady',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-recreation-professional-inflation" data-testid="recreation-professional-inflation-panel">
+      <h4>Recreation, professional fees & command (round 12)</h4>
+      <p>
+        Leisure {leisure.pressureBand} · index {leisure.leisureIndex.toFixed(0)} · score adj{' '}
+        {recreationLeisureInflationScoreAdjustment(leisure.pressureBand)}
+      </p>
+      <p>
+        Professional {professional.feeBand} · index {professional.feeIndex.toFixed(0)} · score adj{' '}
+        {professionalServicesFeeInflationScoreAdjustment(professional.feeBand)}
+      </p>
+      <p data-testid="recreation-prof-leisure-note">{leisure.narrative}</p>
+      <p>{professional.narrative}</p>
     </div>
   );
 }

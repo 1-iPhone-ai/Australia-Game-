@@ -149,6 +149,22 @@ import {
   mergeAgent16IntoMacroFinancialInputs,
   agent16GuardianBridgeIntegrationNote,
 } from './integration/agent16-guardian-bridge.js';
+import {
+  assessRecreationLeisureInflation,
+  recreationLeisureInflationScoreAdjustment,
+} from './inflation/recreation-leisure-inflation.js';
+import {
+  assessProfessionalServicesFeeInflation,
+  professionalServicesFeeInflationScoreAdjustment,
+} from './inflation/professional-services-fee-inflation.js';
+import {
+  mergeAgent17IntoMacroFinancialInputs,
+  agent17CommandBridgeIntegrationNote,
+} from './integration/agent17-command-bridge.js';
+import {
+  mergeAgent18IntoMacroFinancialInputs,
+  agent18TeamBridgeIntegrationNote,
+} from './integration/agent18-team-bridge.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -547,7 +563,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r11');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r12');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -694,7 +710,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r11' &&
+      bundle.schemaVersion === '10.14.agent10.r12' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -786,7 +802,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r11' &&
+      bundle.schemaVersion === '10.14.agent10.r12' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -885,7 +901,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r11' &&
+      bundle.schemaVersion === '10.14.agent10.r12' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -983,7 +999,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r11' &&
+      bundle.schemaVersion === '10.14.agent10.r12' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -1081,7 +1097,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r11' &&
+      bundle.schemaVersion === '10.14.agent10.r12' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -1108,6 +1124,96 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'modes_extreme_inflation_sandbox');
       return (inp?.inflationSettingMultiplier ?? 1) > 1.3 && inp.publicStability === 38;
+    })(),
+  );
+
+  // --- Round 12 scale wave ---
+  {
+    const leisure = assessRecreationLeisureInflation({
+      tourismDemandBand: 'surge',
+      laborCostPassThrough: 'high',
+      discretionarySpendPressure: true,
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check('a10_r12_01', 'recreation hot or boom', leisure.pressureBand === 'hot' || leisure.pressureBand === 'boom');
+    check('a10_r12_02', 'recreation score adj', recreationLeisureInflationScoreAdjustment(leisure.pressureBand) >= 3);
+  }
+  {
+    const prof = assessProfessionalServicesFeeInflation({
+      billingRatePressure: 'extreme',
+      complianceCostStack: true,
+      corporateDemandBand: 'strong',
+      inflationBand: 'elevated',
+      turn: 3,
+    });
+    check('a10_r12_03', 'professional sharp or squeeze', prof.feeBand === 'sharp' || prof.feeBand === 'squeeze');
+    check('a10_r12_04', 'professional score adj', professionalServicesFeeInflationScoreAdjustment(prof.feeBand) >= 3);
+  }
+  {
+    const merged17 = mergeAgent17IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      macroAlertLevel: 'red',
+      inflationFusionScore: 0.78,
+      coordinatedTighteningSuggested: true,
+    });
+    check('a10_r12_05', 'agent17 command merge', merged17.highInflationScenario === true);
+    check('a10_r12_06', 'agent17 bridge note', agent17CommandBridgeIntegrationNote().includes('Agent 17'));
+  }
+  {
+    const merged18 = mergeAgent18IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      consensusInflationOutlook: 'upside_risk',
+      briefingUrgencyBand: 'critical',
+      crossDomainStressScore: 0.82,
+    });
+    check('a10_r12_07', 'agent18 team merge', merged18.highInflationScenario === true);
+    check('a10_r12_08', 'agent18 bridge note', agent18TeamBridgeIntegrationNote().includes('Agent 18'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r12_09',
+      'forecast recreation and professional fields',
+      path.points.every((p) => !!p.recreationLeisurePressureBand && !!p.professionalServicesFeeBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r12_10',
+      'agent21 r12 fields',
+      bundle.schemaVersion === '10.14.agent10.r12' &&
+        bundle.terminalRecreationLeisurePressure !== undefined &&
+        bundle.terminalProfessionalServicesFee !== undefined,
+    );
+  }
+  check(
+    'a10_r12_11',
+    'round12 preset tourism leisure',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'tourism_leisure_boom_pass_through');
+      return inp?.householdInflationScenarioActive === true && inp.highInflationScenario === true;
+    })(),
+  );
+  check(
+    'a10_r12_12',
+    'round12 preset professional fees',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'professional_fee_compliance_stack');
+      return inp?.fiscalPressure === 'critical' && inp.creditShockActive === true;
+    })(),
+  );
+  check(
+    'a10_r12_13',
+    'round12 preset command team brief',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'command_team_upside_risk_brief');
+      return (inp?.inflationSettingMultiplier ?? 1) > 1.28 && (inp.activeCrises ?? 0) >= 2;
     })(),
   );
 

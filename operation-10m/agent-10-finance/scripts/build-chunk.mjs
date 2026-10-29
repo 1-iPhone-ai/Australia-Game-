@@ -49,6 +49,8 @@ const FILES = [
   'inflation/insurance-premium-pass-through.ts',
   'inflation/education-tuition-inflation.ts',
   'inflation/communications-services-inflation.ts',
+  'inflation/recreation-leisure-inflation.ts',
+  'inflation/professional-services-fee-inflation.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
@@ -71,6 +73,8 @@ const FILES = [
   'integration/agent05-events-bridge.ts',
   'integration/agent04-modes-bridge.ts',
   'integration/agent16-guardian-bridge.ts',
+  'integration/agent17-command-bridge.ts',
+  'integration/agent18-team-bridge.ts',
   'integration/inflation-forecast.ts',
   'integration/inflation-regime-tracker.ts',
   'integration/agent21-forecast-bridge.ts',
@@ -86,6 +90,7 @@ const FILES = [
   'react/TransportFoodInflationPanel.tsx',
   'react/HealthcareInsuranceInflationPanel.tsx',
   'react/EducationCommunicationsInflationPanel.tsx',
+  'react/RecreationProfessionalInflationPanel.tsx',
 ];
 
 function stripModulePreamble(source) {

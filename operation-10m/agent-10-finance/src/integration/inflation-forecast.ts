@@ -55,6 +55,14 @@ import {
   assessCommunicationsServicesInflation,
   type CommunicationsServicesPressureBand,
 } from '../inflation/communications-services-inflation.js';
+import {
+  assessRecreationLeisureInflation,
+  type RecreationLeisurePressureBand,
+} from '../inflation/recreation-leisure-inflation.js';
+import {
+  assessProfessionalServicesFeeInflation,
+  type ProfessionalServicesFeeBand,
+} from '../inflation/professional-services-fee-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -77,6 +85,8 @@ export interface InflationForecastPoint {
   insurancePremiumPassThroughBand: InsurancePremiumPassThroughBand;
   educationTuitionPressureBand: EducationTuitionPressureBand;
   communicationsServicesPressureBand: CommunicationsServicesPressureBand;
+  recreationLeisurePressureBand: RecreationLeisurePressureBand;
+  professionalServicesFeeBand: ProfessionalServicesFeeBand;
 }
 
 export interface InflationForecastPath {
@@ -204,6 +214,20 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const recreation = assessRecreationLeisureInflation({
+      tourismDemandBand: inputs.highInflationScenario ? 'surge' : 'normal',
+      laborCostPassThrough: inputs.fiscalPressure === 'critical' ? 'high' : 'medium',
+      discretionarySpendPressure: inputs.householdInflationScenarioActive,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const professionalFees = assessProfessionalServicesFeeInflation({
+      billingRatePressure: inputs.highInflationScenario ? 'elevated' : 'normal',
+      complianceCostStack: inputs.fiscalPressure === 'critical' || inputs.creditShockActive,
+      corporateDemandBand: inputs.capitalPressure === 'high' || inputs.capitalPressure === 'critical' ? 'strong' : 'steady',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -226,6 +250,8 @@ export function projectInflationForecastPath(
       insurancePremiumPassThroughBand: insurancePrem.passThroughBand,
       educationTuitionPressureBand: educationTuition.pressureBand,
       communicationsServicesPressureBand: commsServices.pressureBand,
+      recreationLeisurePressureBand: recreation.pressureBand,
+      professionalServicesFeeBand: professionalFees.feeBand,
     });
   }
 

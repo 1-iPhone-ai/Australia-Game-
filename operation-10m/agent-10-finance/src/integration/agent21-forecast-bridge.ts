@@ -16,11 +16,13 @@ import type { HealthcareServicesPressureBand } from '../inflation/healthcare-ser
 import type { InsurancePremiumPassThroughBand } from '../inflation/insurance-premium-pass-through.js';
 import type { EducationTuitionPressureBand } from '../inflation/education-tuition-inflation.js';
 import type { CommunicationsServicesPressureBand } from '../inflation/communications-services-inflation.js';
+import type { RecreationLeisurePressureBand } from '../inflation/recreation-leisure-inflation.js';
+import type { ProfessionalServicesFeeBand } from '../inflation/professional-services-fee-inflation.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r11';
+  schemaVersion: '10.14.agent10.r12';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -38,6 +40,8 @@ export interface Agent21InflationForecastBundle {
   terminalInsurancePremiumPassThrough: InsurancePremiumPassThroughBand;
   terminalEducationTuitionPressure: EducationTuitionPressureBand;
   terminalCommunicationsServicesPressure: CommunicationsServicesPressureBand;
+  terminalRecreationLeisurePressure: RecreationLeisurePressureBand;
+  terminalProfessionalServicesFee: ProfessionalServicesFeeBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -66,7 +70,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r11',
+    schemaVersion: '10.14.agent10.r12',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -84,6 +88,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalInsurancePremiumPassThrough: lastPoint?.insurancePremiumPassThroughBand ?? 'stable',
     terminalEducationTuitionPressure: lastPoint?.educationTuitionPressureBand ?? 'stable',
     terminalCommunicationsServicesPressure: lastPoint?.communicationsServicesPressureBand ?? 'soft',
+    terminalRecreationLeisurePressure: lastPoint?.recreationLeisurePressureBand ?? 'soft',
+    terminalProfessionalServicesFee: lastPoint?.professionalServicesFeeBand ?? 'stable',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

@@ -343,6 +343,42 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'modes', 'round11'],
   },
+  {
+    id: 'tourism_leisure_boom_pass_through',
+    label: 'Tourism leisure boom pass-through',
+    description: 'Surging tourism with discretionary pressure — recreation CPI.',
+    patch: {
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.23,
+      householdInflationScenarioActive: true,
+      publicStability: 46,
+    },
+    tags: ['inflation', 'leisure', 'round12'],
+  },
+  {
+    id: 'professional_fee_compliance_stack',
+    label: 'Professional fee compliance stack',
+    description: 'Elevated billing and compliance — professional services CPI.',
+    patch: {
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.26,
+      creditShockActive: true,
+      highInflationScenario: true,
+    },
+    tags: ['inflation', 'professional', 'round12'],
+  },
+  {
+    id: 'command_team_upside_risk_brief',
+    label: 'Command team upside risk brief',
+    description: 'Fused macro alert with team upside consensus — inflation flags.',
+    patch: {
+      inflationSettingMultiplier: 1.3,
+      highInflationScenario: true,
+      publicStability: 36,
+      activeCrises: 2,
+    },
+    tags: ['inflation', 'command', 'round12'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
