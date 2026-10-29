@@ -1,7 +1,7 @@
 /** Operation 10M · Agent 05 — dynamic events & narrative (standalone contract). */
 
 export const OP10M_AGENT05_MODULE_ID = 'op10m_agent05_dynamic_events';
-export const OP10M_AGENT05_MODULE_VERSION = '1.7.0';
+export const OP10M_AGENT05_MODULE_VERSION = '1.8.0';
 export const OP10M_TURN_COMPUTE_DIGEST_FLAG = 'op10m_turn_compute_digest';
 
 export type Op10mChainPhase = 'signal' | 'pressure' | 'rupture' | 'recovery';
@@ -257,6 +257,14 @@ export interface Op10mTriggerRequirePostQueueCalm {
   k: 'post_queue_calm';
 }
 
+export interface Op10mTriggerRequireStabilizationClosureWave {
+  k: 'stabilization_closure_wave';
+}
+
+export interface Op10mTriggerRequireDigestClosureLatch {
+  k: 'digest_closure_latch';
+}
+
 export type Op10mComputeTurnStage =
   | 'pre_simulation'
   | 'post_simulation'
@@ -313,7 +321,9 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequirePendingQueueClear
   | Op10mTriggerRequireNoPendingBacklog
   | Op10mTriggerRequirePendingStabilizationWave
-  | Op10mTriggerRequirePostQueueCalm;
+  | Op10mTriggerRequirePostQueueCalm
+  | Op10mTriggerRequireStabilizationClosureWave
+  | Op10mTriggerRequireDigestClosureLatch;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
@@ -407,6 +417,8 @@ export interface Op10mNarrativeEngineState {
     pendingQueueClears: number;
     pendingStabilizationWaves: number;
     postQueueCalmPasses: number;
+    stabilizationClosureWaves: number;
+    digestClosureLatches: number;
   };
   regional?: Op10mRegionalContagionLedger;
   turnCompute?: Op10mTurnComputeLedger;

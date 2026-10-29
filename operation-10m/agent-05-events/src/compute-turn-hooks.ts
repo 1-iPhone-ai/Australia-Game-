@@ -18,6 +18,7 @@ import {
 import { evaluatePendingResponseOrchestration } from './pending-response-orchestrator.ts';
 import { evaluatePendingResponseExpiryCoordination } from './pending-response-expiry-coordinator.ts';
 import { evaluatePendingResponseStabilizationCoordination } from './pending-response-stabilization-coordinator.ts';
+import { evaluatePendingStabilizationClosureCoordination } from './pending-stabilization-closure-coordinator.ts';
 import type {
   Op10mChainDescriptor,
   Op10mComputeTurnStage,
@@ -190,6 +191,15 @@ export function executeOp10mNarrativeComputeTurnHook(
   };
   log.push(`digest ${digest}`);
   stagesRun.push('finalize');
+
+  const closurePass = evaluatePendingStabilizationClosureCoordination(
+    simulation,
+    narrative,
+    params.day
+  );
+  simulation = closurePass.simulation;
+  narrative = closurePass.narrative;
+  log.push(...closurePass.log);
 
   const postSettle = settleOp10mComputeTurnDriftAfterReconcile(simulation, narrative);
   simulation = postSettle.simulation;

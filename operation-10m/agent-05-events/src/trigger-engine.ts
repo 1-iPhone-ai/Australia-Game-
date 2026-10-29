@@ -28,6 +28,10 @@ import {
   OP10M_PENDING_STABILIZATION_WAVE_FLAG,
   OP10M_POST_QUEUE_CALM_FLAG,
 } from './pending-response-stabilization-coordinator.ts';
+import {
+  OP10M_DIGEST_CLOSURE_LATCH_FLAG,
+  OP10M_STABILIZATION_CLOSURE_WAVE_FLAG,
+} from './pending-stabilization-closure-coordinator.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -248,6 +252,16 @@ export function evaluateRequirements(
       case 'post_queue_calm':
         if (!sim.flags[OP10M_POST_QUEUE_CALM_FLAG]) {
           return { ok: false, reason: 'post queue not calm' };
+        }
+        break;
+      case 'stabilization_closure_wave':
+        if (!sim.flags[OP10M_STABILIZATION_CLOSURE_WAVE_FLAG]) {
+          return { ok: false, reason: 'no stabilization closure wave' };
+        }
+        break;
+      case 'digest_closure_latch':
+        if (!sim.flags[OP10M_DIGEST_CLOSURE_LATCH_FLAG]) {
+          return { ok: false, reason: 'digest closure not latched' };
         }
         break;
       default:
