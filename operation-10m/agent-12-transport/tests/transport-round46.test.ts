@@ -37,13 +37,13 @@ describe('Agent 12 round 46 catalog', () => {
 });
 
 describe('Agent 12 round 46 systems', () => {
-  it('returns agent12/50 with recycled steel, pathology, drone cargo', () => {
+  it('returns agent12/51 with recycled steel, pathology, drone cargo', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(700), {
       recycledSteelExportPolicy: 'accelerate',
       remotePathologySupplyStagingPolicy: 'surge',
       airportDroneCargoLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/50');
+    assert.equal(state.schemaVersion, 'agent12/51');
     assert.ok(state.nationalRecycledSteelExportIndex >= 5);
     assert.ok(state.nationalRemotePathologySupplyStagingIndex >= 6);
     assert.ok(state.airportDroneCargoLogisticsShare >= 0.03);

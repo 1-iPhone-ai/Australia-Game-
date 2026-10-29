@@ -25,11 +25,11 @@ describe('Agent 12 round 4 catalog', () => {
 });
 
 describe('Agent 12 round 4 systems', () => {
-  it('returns agent12/50 with latency, SCRI, and recovery', () => {
+  it('returns agent12/51 with latency, SCRI, and recovery', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(20), {
       seasonalDemandBand: 'normal',
     });
-    assert.equal(state.schemaVersion, 'agent12/50');
+    assert.equal(state.schemaVersion, 'agent12/51');
     assert.ok(state.nationalFreightLatencyMedian > 0 && state.nationalFreightLatencyMedian < 40);
     assert.ok(state.supplyChainResilienceIndex >= 0.2);
     assert.ok(state.disruptionRecoveryFactor >= 0.15);
