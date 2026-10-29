@@ -40,4 +40,7 @@ export * from './strategic-alignment-outlook.ts';
 export * from './diffusion-forecast-band-log.ts';
 export * from './diffusion-forecast-snapshot.ts';
 export * from './horizon-convergence-outlook.ts';
+export * from './horizon-convergence-band-log.ts';
+export * from './horizon-convergence-snapshot.ts';
+export * from './research-execution-outlook.ts';
 export * from './compute.ts';

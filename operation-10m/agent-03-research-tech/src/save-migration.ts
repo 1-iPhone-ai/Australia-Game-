@@ -29,6 +29,8 @@ import type {
   ResearchPortfolioBalanceSnapshot,
   ResearchDiffusionForecastBandEvent,
   ResearchDiffusionForecastSnapshot,
+  ResearchHorizonConvergenceBandEvent,
+  ResearchHorizonConvergenceSnapshot,
 } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { appendUnlockEvents, rebuildUnlockEventLogFromNodes, emptyUnlockEventLog } from './unlock-event-log.ts';
@@ -87,6 +89,12 @@ import {
   RESEARCH_DIFFUSION_FORECAST_BAND_LOG_CAP,
 } from './diffusion-forecast-band-log.ts';
 import { computeDiffusionForecastSnapshot, mergeDiffusionForecastSnapshots } from './diffusion-forecast-snapshot.ts';
+import {
+  appendHorizonConvergenceBandEvents,
+  emptyHorizonConvergenceBandLog,
+  RESEARCH_HORIZON_CONVERGENCE_BAND_LOG_CAP,
+} from './horizon-convergence-band-log.ts';
+import { computeHorizonConvergenceSnapshot, mergeHorizonConvergenceSnapshots } from './horizon-convergence-snapshot.ts';
 import { INSTITUTION_UPGRADE_TIER_RANK } from './institution-upgrades.ts';
 
 export type { ResearchProgressSchemaVersion, ResearchBranchEmphasisState, ResearchProgramEmphasis } from './types.ts';
@@ -165,6 +173,10 @@ export interface ResearchProgressPersistedCore {
   diffusionForecastBandLog: ResearchDiffusionForecastBandEvent[];
   /** Diffusion forecast digest at last persist seal (round 13). */
   diffusionForecastSnapshot: ResearchDiffusionForecastSnapshot | null;
+  /** Bounded horizon convergence band audit trail (round 14). */
+  horizonConvergenceBandLog: ResearchHorizonConvergenceBandEvent[];
+  /** Horizon convergence digest at last persist seal (round 14). */
+  horizonConvergenceSnapshot: ResearchHorizonConvergenceSnapshot | null;
 }
 
 export type { ResearchSaveMigrationEntry } from './types.ts';
@@ -181,6 +193,7 @@ const LEGACY_V9 = 'op10m-agent03-v9' as const;
 const LEGACY_V10 = 'op10m-agent03-v10' as const;
 const LEGACY_V11 = 'op10m-agent03-v11' as const;
 const LEGACY_V12 = 'op10m-agent03-v12' as const;
+const LEGACY_V13 = 'op10m-agent03-v13' as const;
 
 /** Keys that must never appear on persisted save blobs (Agent 25 guard). */
 export const RESEARCH_SAVE_DERIVED_KEYS = [
@@ -201,6 +214,7 @@ export const RESEARCH_SAVE_DERIVED_KEYS = [
   'nationalCoherenceOutlook',
   'strategicAlignmentOutlook',
   'horizonConvergenceOutlook',
+  'researchExecutionOutlook',
 ] as const;
 
 function finalizeCoreForPersist(
@@ -240,6 +254,8 @@ function finalizeCoreForPersist(
     portfolioBalanceSnapshot: partial.portfolioBalanceSnapshot ?? null,
     diffusionForecastBandLog: partial.diffusionForecastBandLog ?? emptyDiffusionForecastBandLog(),
     diffusionForecastSnapshot: partial.diffusionForecastSnapshot ?? null,
+    horizonConvergenceBandLog: partial.horizonConvergenceBandLog ?? emptyHorizonConvergenceBandLog(),
+    horizonConvergenceSnapshot: partial.horizonConvergenceSnapshot ?? null,
   };
   return { ...draft, coreFingerprint: computePersistedCoreFingerprint(draft) };
 }
@@ -285,6 +301,8 @@ export function computePersistedCoreFingerprint(
     portfolioBalanceSnapshot: core.portfolioBalanceSnapshot,
     diffusionForecastBandLog: core.diffusionForecastBandLog,
     diffusionForecastSnapshot: core.diffusionForecastSnapshot,
+    horizonConvergenceBandLog: core.horizonConvergenceBandLog,
+    horizonConvergenceSnapshot: core.horizonConvergenceSnapshot,
   });
   for (let i = 0; i < payload.length; i++) {
     h ^= payload.charCodeAt(i);
@@ -314,6 +332,8 @@ function upgradeToCurrentCore(
     portfolioBalanceSnapshot?: ResearchPortfolioBalanceSnapshot | null;
     diffusionForecastBandLog?: ResearchDiffusionForecastBandEvent[];
     diffusionForecastSnapshot?: ResearchDiffusionForecastSnapshot | null;
+    horizonConvergenceBandLog?: ResearchHorizonConvergenceBandEvent[];
+    horizonConvergenceSnapshot?: ResearchHorizonConvergenceSnapshot | null;
     unlockEventLog?: ResearchUnlockEvent[];
     lastReconciledAtTurn?: number;
   },
@@ -354,6 +374,8 @@ function upgradeToCurrentCore(
     portfolioBalanceSnapshot: base.portfolioBalanceSnapshot ?? null,
     diffusionForecastBandLog: base.diffusionForecastBandLog ?? emptyDiffusionForecastBandLog(),
     diffusionForecastSnapshot: base.diffusionForecastSnapshot ?? null,
+    horizonConvergenceBandLog: base.horizonConvergenceBandLog ?? emptyHorizonConvergenceBandLog(),
+    horizonConvergenceSnapshot: base.horizonConvergenceSnapshot ?? null,
     unlockEventLog: base.unlockEventLog ?? rebuildUnlockEventLogFromNodes(base.unlockedNodes ?? []),
     lastReconciledAtTurn: base.lastReconciledAtTurn ?? base.turn,
   });
@@ -398,6 +420,8 @@ function emptyCore(turn = 0): ResearchProgressPersistedCore {
     portfolioBalanceSnapshot: null,
     diffusionForecastBandLog: emptyDiffusionForecastBandLog(),
     diffusionForecastSnapshot: null,
+    horizonConvergenceBandLog: emptyHorizonConvergenceBandLog(),
+    horizonConvergenceSnapshot: null,
   });
 }
 
@@ -795,6 +819,42 @@ function sanitizeDiffusionForecastSnapshot(raw: unknown, turn: number): Research
   };
 }
 
+function sanitizeHorizonConvergenceBandLog(raw: unknown): ResearchHorizonConvergenceBandEvent[] {
+  if (!Array.isArray(raw)) return emptyHorizonConvergenceBandLog();
+  const bands = new Set([25, 40, 55, 70]);
+  const out: ResearchHorizonConvergenceBandEvent[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const o = item as ResearchHorizonConvergenceBandEvent;
+    if (!bands.has(Number(o.band))) continue;
+    if (o.phase !== 'escalation' && o.phase !== 'de-escalation') continue;
+    out.push({
+      seq: Number(o.seq) || out.length + 1,
+      turn: Number(o.turn) || 0,
+      band: o.band,
+      nationalConvergenceScore: Number(o.nationalConvergenceScore) || 0,
+      horizonTurns: Number(o.horizonTurns) || 0,
+      phase: o.phase,
+    });
+  }
+  return out.sort((a, b) => a.seq - b.seq).slice(-RESEARCH_HORIZON_CONVERGENCE_BAND_LOG_CAP);
+}
+
+function sanitizeHorizonConvergenceSnapshot(raw: unknown, turn: number): ResearchHorizonConvergenceSnapshot | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as ResearchHorizonConvergenceSnapshot;
+  if (typeof o.digest !== 'string') return null;
+  return {
+    capturedAtTurn: Number(o.capturedAtTurn) || turn,
+    nationalConvergenceScore: Number(o.nationalConvergenceScore) || 0,
+    projectedConvergenceScore: Number(o.projectedConvergenceScore) || 0,
+    horizonTurns: Number(o.horizonTurns) || 0,
+    peakRegionId: o.peakRegionId ?? null,
+    peakBand: (Number(o.peakBand) || 0) as ResearchHorizonConvergenceSnapshot['peakBand'],
+    digest: o.digest,
+  };
+}
+
 function snapshotFromUpgrades(
   upgrades: InstitutionUpgradeState[],
   turn: number
@@ -868,11 +928,92 @@ export function migrateResearchProgressSave(raw: unknown): ResearchProgressPersi
         ? sanitizeDiffusionForecastBandLog(o.diffusionForecastBandLog)
         : emptyDiffusionForecastBandLog(),
       diffusionForecastSnapshot: sanitizeDiffusionForecastSnapshot(o.diffusionForecastSnapshot, turn),
+      horizonConvergenceBandLog: sanitizeHorizonConvergenceBandLog(o.horizonConvergenceBandLog).length
+        ? sanitizeHorizonConvergenceBandLog(o.horizonConvergenceBandLog)
+        : emptyHorizonConvergenceBandLog(),
+      horizonConvergenceSnapshot: sanitizeHorizonConvergenceSnapshot(o.horizonConvergenceSnapshot, turn),
     });
     if (typeof o.coreFingerprint === 'string' && o.coreFingerprint !== draft.coreFingerprint) {
       return draft;
     }
     return draft;
+  }
+
+  if (ver === LEGACY_V13) {
+    const nodes = sanitizeUnlockedNodes(o.unlockedNodes);
+    const upgrades = sanitizeInstitutionUpgrades(o.institutionUpgrades);
+    const turn = Number(o.turn) || 0;
+    const branchEmphasis = sanitizeBranchEmphasis(o.branchEmphasis);
+    const emphasisRevision = Number(o.emphasisRevision) || 0;
+    const institutionTierSnapshot =
+      sanitizeInstitutionTierSnapshot(o.institutionTierSnapshot, turn) ??
+      snapshotFromUpgrades(upgrades, turn);
+    const readinessBranchSnapshot = sanitizeReadinessBranchSnapshot(o.readinessBranchSnapshot, turn);
+    const integrationRiskSnapshot = sanitizeIntegrationRiskSnapshot(o.integrationRiskSnapshot, turn);
+    const scaleWaveSnapshot = sanitizeScaleWaveSnapshot(o.scaleWaveSnapshot, turn);
+    const synergySnapshot = sanitizeSynergySnapshot(o.synergySnapshot, turn);
+    const commercializationSnapshot = sanitizeCommercializationSnapshot(o.commercializationSnapshot, turn);
+    const diffusionIntegrationSnapshot = sanitizeDiffusionIntegrationSnapshot(o.diffusionIntegrationSnapshot, turn);
+    const portfolioBalanceSnapshot = sanitizePortfolioBalanceSnapshot(o.portfolioBalanceSnapshot, turn);
+    const diffusionForecastSnapshot = sanitizeDiffusionForecastSnapshot(o.diffusionForecastSnapshot, turn);
+    return upgradeToCurrentCore(
+      {
+        schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+        revision: Number(o.revision) || 0,
+        turn,
+        unlockedNodes: nodes,
+        institutionUpgrades: upgrades,
+        leadingResearchRegion: (o.leadingResearchRegion as ResearchProgressPersistedCore['leadingResearchRegion']) ?? null,
+        unlockSeq: Number(o.unlockSeq) || computeUnlockSeq(nodes),
+        branchEmphasis,
+        emphasisRevision,
+        migrationLog: Array.isArray(o.migrationLog) ? (o.migrationLog as ResearchSaveMigrationEntry[]) : [],
+        saveKind: (o.saveKind as ResearchSaveKind) || 'manual',
+        updatedAtTurn: Number(o.updatedAtTurn) || turn,
+        sessionId: typeof o.sessionId === 'string' ? o.sessionId : `o10m_r03_${turn}`,
+        persistRevision: Number(o.persistRevision) || 0,
+        unlockEventLog: sanitizeUnlockEventLog(o.unlockEventLog).length
+          ? sanitizeUnlockEventLog(o.unlockEventLog)
+          : rebuildUnlockEventLogFromNodes(nodes),
+        lastReconciledAtTurn: Number(o.lastReconciledAtTurn) || turn,
+        emphasisChangeLog: sanitizeEmphasisChangeLog(o.emphasisChangeLog).length
+          ? sanitizeEmphasisChangeLog(o.emphasisChangeLog)
+          : rebuildEmphasisChangeLogFromBranchEmphasis(branchEmphasis, emphasisRevision, turn),
+        institutionTierSnapshot,
+        readinessMilestoneLog: sanitizeReadinessMilestoneLog(o.readinessMilestoneLog).length
+          ? sanitizeReadinessMilestoneLog(o.readinessMilestoneLog)
+          : rebuildReadinessMilestoneLogFromSnapshot(readinessBranchSnapshot, turn),
+        readinessBranchSnapshot,
+        integrationRiskLog: sanitizeIntegrationRiskLog(o.integrationRiskLog).length
+          ? sanitizeIntegrationRiskLog(o.integrationRiskLog)
+          : emptyIntegrationRiskLog(),
+        integrationRiskSnapshot,
+        scaleWaveSnapshot,
+        synergyThresholdLog: sanitizeSynergyThresholdLog(o.synergyThresholdLog).length
+          ? sanitizeSynergyThresholdLog(o.synergyThresholdLog)
+          : emptySynergyThresholdLog(),
+        synergySnapshot,
+        commercializationMilestoneLog: sanitizeCommercializationMilestoneLog(o.commercializationMilestoneLog).length
+          ? sanitizeCommercializationMilestoneLog(o.commercializationMilestoneLog)
+          : emptyCommercializationMilestoneLog(),
+        commercializationSnapshot,
+        diffusionIntegrationLog: sanitizeDiffusionIntegrationLog(o.diffusionIntegrationLog).length
+          ? sanitizeDiffusionIntegrationLog(o.diffusionIntegrationLog)
+          : emptyDiffusionIntegrationLog(),
+        diffusionIntegrationSnapshot,
+        portfolioBalanceLog: sanitizePortfolioBalanceLog(o.portfolioBalanceLog).length
+          ? sanitizePortfolioBalanceLog(o.portfolioBalanceLog)
+          : emptyPortfolioBalanceLog(),
+        portfolioBalanceSnapshot,
+        diffusionForecastBandLog: sanitizeDiffusionForecastBandLog(o.diffusionForecastBandLog).length
+          ? sanitizeDiffusionForecastBandLog(o.diffusionForecastBandLog)
+          : emptyDiffusionForecastBandLog(),
+        diffusionForecastSnapshot,
+        horizonConvergenceBandLog: emptyHorizonConvergenceBandLog(),
+        horizonConvergenceSnapshot: null,
+      },
+      LEGACY_V13
+    );
   }
 
   if (ver === LEGACY_V12) {
@@ -1453,6 +1594,8 @@ export function extractPersistedCore(state: ResearchProgressState): ResearchProg
     portfolioBalanceSnapshot: state.portfolioBalanceSnapshot ?? null,
     diffusionForecastBandLog: state.diffusionForecastBandLog ?? emptyDiffusionForecastBandLog(),
     diffusionForecastSnapshot: state.diffusionForecastSnapshot ?? null,
+    horizonConvergenceBandLog: state.horizonConvergenceBandLog ?? emptyHorizonConvergenceBandLog(),
+    horizonConvergenceSnapshot: state.horizonConvergenceSnapshot ?? null,
   });
 }
 
@@ -1500,6 +1643,8 @@ export function hydrateResearchProgressCore(core: ResearchProgressPersistedCore 
     portfolioBalanceSnapshot: core.portfolioBalanceSnapshot,
     diffusionForecastBandLog: core.diffusionForecastBandLog,
     diffusionForecastSnapshot: core.diffusionForecastSnapshot,
+    horizonConvergenceBandLog: core.horizonConvergenceBandLog,
+    horizonConvergenceSnapshot: core.horizonConvergenceSnapshot,
     diffusion: V94_REGION_CODES.map(regionId => ({
       regionId,
       score: 0,
@@ -1615,6 +1760,24 @@ export function mergeComputedResearchState(
     diffusionForecast,
     computed.turn
   );
+  const horizonConvergenceOutlook =
+    computed.horizonConvergenceOutlook ??
+    ({
+      active: false,
+      baseTurn: computed.turn,
+      horizonTurns: 6,
+      nationalConvergenceScore: 0,
+      projectedConvergenceScore: 0,
+      peakRegionId: null,
+      forecastMomentum: 0,
+      links: [],
+    } as const);
+  const horizonConvergenceBandLog = appendHorizonConvergenceBandEvents(
+    core.horizonConvergenceBandLog ?? emptyHorizonConvergenceBandLog(),
+    core.horizonConvergenceSnapshot ?? null,
+    horizonConvergenceOutlook,
+    computed.turn
+  );
   return {
     ...computed,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
@@ -1658,6 +1821,8 @@ export function mergeComputedResearchState(
     portfolioBalanceSnapshot: computePortfolioBalanceSnapshot(portfolioBalance, computed.turn),
     diffusionForecastBandLog,
     diffusionForecastSnapshot: computeDiffusionForecastSnapshot(diffusionForecast, computed.turn),
+    horizonConvergenceBandLog,
+    horizonConvergenceSnapshot: computeHorizonConvergenceSnapshot(horizonConvergenceOutlook, computed.turn),
   };
 }
 
@@ -1726,6 +1891,7 @@ export function assertResearchProgressSaveIntegrity(state: ResearchProgressState
     state.schemaVersion !== LEGACY_V10 &&
     state.schemaVersion !== LEGACY_V11 &&
     state.schemaVersion !== LEGACY_V12 &&
+    state.schemaVersion !== LEGACY_V13 &&
     state.schemaVersion !== LEGACY_V5 &&
     state.schemaVersion !== LEGACY_V3 &&
     state.schemaVersion !== LEGACY_V4 &&

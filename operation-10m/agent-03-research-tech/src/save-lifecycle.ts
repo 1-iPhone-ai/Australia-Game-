@@ -17,6 +17,7 @@ import type {
   ResearchDiffusionIntegrationMilestoneEvent,
   ResearchPortfolioBalanceBandEvent,
   ResearchDiffusionForecastBandEvent,
+  ResearchHorizonConvergenceBandEvent,
 } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { RESEARCH_UNLOCK_EVENT_LOG_CAP } from './unlock-event-log.ts';
@@ -30,6 +31,7 @@ import { RESEARCH_COMMERCIALIZATION_MILESTONE_LOG_CAP } from './commercializatio
 import { RESEARCH_DIFFUSION_INTEGRATION_LOG_CAP } from './diffusion-integration-log.ts';
 import { RESEARCH_PORTFOLIO_BALANCE_LOG_CAP } from './portfolio-balance-log.ts';
 import { RESEARCH_DIFFUSION_FORECAST_BAND_LOG_CAP } from './diffusion-forecast-band-log.ts';
+import { RESEARCH_HORIZON_CONVERGENCE_BAND_LOG_CAP } from './horizon-convergence-band-log.ts';
 import { mergeIntegrationRiskSnapshots } from './integration-risk-snapshot.ts';
 import { mergeScaleWaveSnapshots } from './scale-wave-snapshot.ts';
 import { mergeSynergySnapshots } from './synergy-snapshot.ts';
@@ -37,6 +39,7 @@ import { mergeCommercializationSnapshots } from './commercialization-snapshot.ts
 import { mergeDiffusionIntegrationSnapshots } from './diffusion-integration-snapshot.ts';
 import { mergePortfolioBalanceSnapshots } from './portfolio-balance-snapshot.ts';
 import { mergeDiffusionForecastSnapshots } from './diffusion-forecast-snapshot.ts';
+import { mergeHorizonConvergenceSnapshots } from './horizon-convergence-snapshot.ts';
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
@@ -158,6 +161,18 @@ function mergeDiffusionForecastBandLogs(
     byKey.set(key, ev);
   }
   return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_DIFFUSION_FORECAST_BAND_LOG_CAP);
+}
+
+function mergeHorizonConvergenceBandLogs(
+  local: ResearchHorizonConvergenceBandEvent[] | undefined,
+  remote: ResearchHorizonConvergenceBandEvent[] | undefined
+): ResearchHorizonConvergenceBandEvent[] {
+  const byKey = new Map<string, ResearchHorizonConvergenceBandEvent>();
+  for (const ev of [...(local ?? []), ...(remote ?? [])]) {
+    const key = `${ev.seq}:${ev.band}:${ev.phase}`;
+    byKey.set(key, ev);
+  }
+  return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_HORIZON_CONVERGENCE_BAND_LOG_CAP);
 }
 
 function stableCoreSnapshot(core: ResearchProgressPersistedCore): Record<string, unknown> {
@@ -295,6 +310,15 @@ export function mergeResearchPersistedCores(
         local.diffusionForecastSnapshot ?? undefined,
         remote.diffusionForecastSnapshot ?? undefined
       ) ?? null,
+    horizonConvergenceBandLog: mergeHorizonConvergenceBandLogs(
+      local.horizonConvergenceBandLog,
+      remote.horizonConvergenceBandLog
+    ),
+    horizonConvergenceSnapshot:
+      mergeHorizonConvergenceSnapshots(
+        local.horizonConvergenceSnapshot ?? undefined,
+        remote.horizonConvergenceSnapshot ?? undefined
+      ) ?? null,
     lastReconciledAtTurn: Math.max(local.lastReconciledAtTurn ?? 0, remote.lastReconciledAtTurn ?? 0),
   });
 }
@@ -337,6 +361,8 @@ export function reconcileResearchProgressOnLoad(
         portfolioBalanceSnapshot: persist.portfolioBalanceSnapshot,
         diffusionForecastBandLog: persist.diffusionForecastBandLog,
         diffusionForecastSnapshot: persist.diffusionForecastSnapshot,
+        horizonConvergenceBandLog: persist.horizonConvergenceBandLog,
+        horizonConvergenceSnapshot: persist.horizonConvergenceSnapshot,
       },
       persist,
     };
@@ -371,6 +397,8 @@ export function reconcileResearchProgressOnLoad(
     portfolioBalanceSnapshot: mergedCore.portfolioBalanceSnapshot,
     diffusionForecastBandLog: mergedCore.diffusionForecastBandLog,
     diffusionForecastSnapshot: mergedCore.diffusionForecastSnapshot,
+    horizonConvergenceBandLog: mergedCore.horizonConvergenceBandLog,
+    horizonConvergenceSnapshot: mergedCore.horizonConvergenceSnapshot,
     lastReconciledAtTurn: ctx.turn,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
   };
@@ -406,6 +434,8 @@ export function reconcileResearchProgressOnLoad(
       portfolioBalanceSnapshot: persist.portfolioBalanceSnapshot,
       diffusionForecastBandLog: persist.diffusionForecastBandLog,
       diffusionForecastSnapshot: persist.diffusionForecastSnapshot,
+      horizonConvergenceBandLog: persist.horizonConvergenceBandLog,
+      horizonConvergenceSnapshot: persist.horizonConvergenceSnapshot,
     },
     persist,
   };
