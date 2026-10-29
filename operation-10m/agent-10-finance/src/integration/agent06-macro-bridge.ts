@@ -20,6 +20,10 @@ export interface Agent06MacroSnapshot {
   wave47MacroOutputGapLatch?: boolean;
   /** Round 47: output-gap escalation band. */
   outputGapEscalationBand?: 'stable' | 'elevated' | 'critical';
+  /** Round 51: macro transmission coherence reconciliation latch. */
+  wave51MacroTransmissionCoherenceLatch?: boolean;
+  /** Round 51: transmission coherence escalation band. */
+  transmissionCoherenceEscalationBand?: 'stable' | 'elevated' | 'critical';
 }
 
 export function mergeAgent06IntoMacroFinancialInputs(
@@ -65,6 +69,16 @@ export function mergeAgent06IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   } else if (snapshot.outputGapEscalationBand === 'elevated' && snapshot.outputGap > 0.35) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave51MacroTransmissionCoherenceLatch && snapshot.transmissionCoherenceEscalationBand === 'critical') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (
+    snapshot.transmissionCoherenceEscalationBand === 'elevated' &&
+    snapshot.transmissionSlippageBand === 'dislocated'
+  ) {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 

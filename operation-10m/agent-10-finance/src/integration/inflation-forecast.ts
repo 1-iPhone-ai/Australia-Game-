@@ -376,6 +376,14 @@ import {
   assessTransportCorridorFreightInflationSurgeLatch,
   type TransportCorridorFreightInflationSurgeLatchBand,
 } from '../inflation/transport-corridor-freight-inflation-surge-latch.js';
+import {
+  assessMacroTransmissionCoherenceInflationReconciliationLatch,
+  type MacroTransmissionCoherenceInflationReconciliationLatchBand,
+} from '../inflation/macro-transmission-coherence-inflation-reconciliation-latch.js';
+import {
+  assessPublicFinanceChargesIndexationInflationSurgeLatch,
+  type PublicFinanceChargesIndexationInflationSurgeLatchBand,
+} from '../inflation/public-finance-charges-indexation-inflation-surge-latch.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -478,6 +486,8 @@ export interface InflationForecastPoint {
   guardianEntrustmentEnvelopeInflationPressureSurgeBand: GuardianEntrustmentEnvelopeInflationPressureSurgeBand;
   housingWellbeingMortgageInflationEscalationLatchBand: HousingWellbeingMortgageInflationEscalationLatchBand;
   transportCorridorFreightInflationSurgeLatchBand: TransportCorridorFreightInflationSurgeLatchBand;
+  macroTransmissionCoherenceInflationReconciliationLatchBand: MacroTransmissionCoherenceInflationReconciliationLatchBand;
+  publicFinanceChargesIndexationInflationSurgeLatchBand: PublicFinanceChargesIndexationInflationSurgeLatchBand;
 }
 
 export interface InflationForecastPath {
@@ -1405,6 +1415,29 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const macroTransmissionCoherence = assessMacroTransmissionCoherenceInflationReconciliationLatch({
+      gdpGrowthBand: inputs.highInflationScenario ? 'strong' : inputs.creditShockActive ? 'steady' : 'slow',
+      nominalDemandPressure: inputs.householdInflationScenarioActive ? 0.5 : inputs.highInflationScenario ? 0.34 : 0.1,
+      wave51MacroTransmissionCoherenceLatch: inputs.householdInflationScenarioActive,
+      transmissionCoherenceEscalationBand:
+        inputs.systemicLiquidityBand === 'critical' ? 'critical' : inputs.fiscalPressure === 'critical' ? 'elevated' : 'stable',
+      transmissionSlippageBand:
+        inputs.fiscalPressure === 'critical' ? 'dislocated' : inputs.creditShockActive ? 'slipping' : 'stable',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const publicFinanceIndexationSurge = assessPublicFinanceChargesIndexationInflationSurgeLatch({
+      consolidatedDeficitBand:
+        inputs.fiscalPressure === 'critical' ? 'large_deficit' : inputs.creditShockActive ? 'moderate_deficit' : 'balanced',
+      debtServicePressure:
+        inputs.fiscalPressure === 'critical' ? 'critical' : inputs.systemicLiquidityBand === 'critical' ? 'elevated' : 'moderate',
+      wave51PublicFinanceIndexationSurgeLatch: inputs.creditShockActive,
+      chargesIndexationSurgeBand:
+        inputs.systemicLiquidityBand === 'critical' ? 'ruptured' : inputs.fiscalPressure === 'critical' ? 'building' : 'contained',
+      indexedChargesInflationPassThrough: inputs.creditShockActive || inputs.householdInflationScenarioActive,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -1507,6 +1540,8 @@ export function projectInflationForecastPath(
       guardianEntrustmentEnvelopeInflationPressureSurgeBand: guardianEntrustmentEnvelope.surgeBand,
       housingWellbeingMortgageInflationEscalationLatchBand: housingWellbeingMortgageEscalation.latchBand,
       transportCorridorFreightInflationSurgeLatchBand: transportCorridorFreightSurge.surgeBand,
+      macroTransmissionCoherenceInflationReconciliationLatchBand: macroTransmissionCoherence.latchBand,
+      publicFinanceChargesIndexationInflationSurgeLatchBand: publicFinanceIndexationSurge.surgeBand,
     });
   }
 

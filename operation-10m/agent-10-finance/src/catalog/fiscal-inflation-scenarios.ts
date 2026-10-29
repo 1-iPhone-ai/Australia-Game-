@@ -1916,6 +1916,49 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'housing', 'transport', 'round50'],
   },
+  {
+    id: 'macro_transmission_coherence_reconciliation_latch_stack',
+    label: 'Macro transmission coherence reconciliation latch stack',
+    description: 'Transmission coherence reconciliation under dislocated slippage.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.55,
+      fiscalPressure: 'critical',
+      publicStability: 23,
+    },
+    tags: ['inflation', 'macro', 'round51'],
+  },
+  {
+    id: 'public_finance_charges_indexation_surge_stress',
+    label: 'Public finance charges indexation surge stress',
+    description: 'Indexed charges pass-through under ruptured debt-service stress.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.52,
+      fiscalPressure: 'critical',
+      publicStability: 21,
+    },
+    tags: ['inflation', 'fiscal', 'round51'],
+  },
+  {
+    id: 'macro_fiscal_wave51_fusion_stress',
+    label: 'Macro & fiscal wave 51 fusion stress',
+    description: 'Transmission coherence reconciliation colliding with charges indexation surge.',
+    patch: {
+      inflationSettingMultiplier: 1.62,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 9,
+    },
+    tags: ['inflation', 'macro', 'fiscal', 'round51'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

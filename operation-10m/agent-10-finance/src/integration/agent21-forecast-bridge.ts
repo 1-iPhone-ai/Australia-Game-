@@ -96,11 +96,13 @@ import type { TradeClearedForwardArcInflationHandoffLatchBand } from '../inflati
 import type { GuardianEntrustmentEnvelopeInflationPressureSurgeBand } from '../inflation/guardian-entrustment-envelope-inflation-pressure-surge.js';
 import type { HousingWellbeingMortgageInflationEscalationLatchBand } from '../inflation/housing-wellbeing-mortgage-inflation-escalation-latch.js';
 import type { TransportCorridorFreightInflationSurgeLatchBand } from '../inflation/transport-corridor-freight-inflation-surge-latch.js';
+import type { MacroTransmissionCoherenceInflationReconciliationLatchBand } from '../inflation/macro-transmission-coherence-inflation-reconciliation-latch.js';
+import type { PublicFinanceChargesIndexationInflationSurgeLatchBand } from '../inflation/public-finance-charges-indexation-inflation-surge-latch.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r50';
+  schemaVersion: '10.14.agent10.r51';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -198,6 +200,8 @@ export interface Agent21InflationForecastBundle {
   terminalGuardianEntrustmentEnvelopeInflationPressureSurge: GuardianEntrustmentEnvelopeInflationPressureSurgeBand;
   terminalHousingWellbeingMortgageInflationEscalationLatch: HousingWellbeingMortgageInflationEscalationLatchBand;
   terminalTransportCorridorFreightInflationSurgeLatch: TransportCorridorFreightInflationSurgeLatchBand;
+  terminalMacroTransmissionCoherenceInflationReconciliationLatch: MacroTransmissionCoherenceInflationReconciliationLatchBand;
+  terminalPublicFinanceChargesIndexationInflationSurgeLatch: PublicFinanceChargesIndexationInflationSurgeLatchBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -226,7 +230,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r50',
+    schemaVersion: '10.14.agent10.r51',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -334,6 +338,10 @@ export function buildAgent21InflationForecastBundle(input: {
       lastPoint?.housingWellbeingMortgageInflationEscalationLatchBand ?? 'subdued',
     terminalTransportCorridorFreightInflationSurgeLatch:
       lastPoint?.transportCorridorFreightInflationSurgeLatchBand ?? 'clear',
+    terminalMacroTransmissionCoherenceInflationReconciliationLatch:
+      lastPoint?.macroTransmissionCoherenceInflationReconciliationLatchBand ?? 'subdued',
+    terminalPublicFinanceChargesIndexationInflationSurgeLatch:
+      lastPoint?.publicFinanceChargesIndexationInflationSurgeLatchBand ?? 'contained',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

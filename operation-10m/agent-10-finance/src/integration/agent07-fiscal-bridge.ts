@@ -23,6 +23,10 @@ export interface Agent07FiscalSnapshot {
   wave46FiscalPressureLatch?: boolean;
   /** Round 46: consolidated deficit escalation band. */
   consolidatedDeficitEscalationBand?: 'stable' | 'elevated' | 'critical';
+  /** Round 51: public finance indexation surge latch. */
+  wave51PublicFinanceIndexationSurgeLatch?: boolean;
+  /** Round 51: charges indexation surge band. */
+  chargesIndexationSurgeBand?: 'contained' | 'building' | 'ruptured';
 }
 
 export function mergeAgent07IntoMacroFinancialInputs(
@@ -87,6 +91,13 @@ export function mergeAgent07IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   } else if (snapshot.consolidatedDeficitEscalationBand === 'elevated' && snapshot.debtServicePressure === 'critical') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave51PublicFinanceIndexationSurgeLatch && snapshot.chargesIndexationSurgeBand === 'ruptured') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.chargesIndexationSurgeBand === 'building' && snapshot.indexedChargesInflationPassThrough) {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
