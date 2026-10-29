@@ -215,7 +215,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.14' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.15' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -263,7 +263,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'adaptive_capacity_ceiling'
   | 'fiscal_governance_coupling_strain'
   | 'network_equity_tension'
-  | 'resilience_frontier_pressure';
+  | 'resilience_frontier_pressure'
+  | 'meta_governance_coordination_fatigue'
+  | 'capital_mobility_asymmetry'
+  | 'compound_shock_saturation';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -600,6 +603,36 @@ export interface OP10M_A11_ResilienceFrontierRow {
   narrative: string;
 }
 
+export type OP10M_A11_MetaGovernanceFatigueBand = 'rested' | 'tiring' | 'fatigued' | 'exhausted';
+
+export interface OP10M_A11_MetaGovernanceFatigueRow {
+  regionId: OP10M_A11_RegionId;
+  fatigueScore: number;
+  band: OP10M_A11_MetaGovernanceFatigueBand;
+  signals: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_CapitalMobilityAsymmetryBand = 'balanced' | 'skewed' | 'polarized' | 'locked';
+
+export interface OP10M_A11_CapitalMobilityAsymmetryRow {
+  regionId: OP10M_A11_RegionId;
+  asymmetryScore: number;
+  band: OP10M_A11_CapitalMobilityAsymmetryBand;
+  drivers: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_CompoundShockSaturationBand = 'buffered' | 'loading' | 'saturated' | 'overwhelmed';
+
+export interface OP10M_A11_CompoundShockSaturationRow {
+  regionId: OP10M_A11_RegionId;
+  saturationScore: number;
+  band: OP10M_A11_CompoundShockSaturationBand;
+  shocks: string[];
+  narrative: string;
+}
+
 export type OP10M_A11_MigrationPressureBand = 'stable' | 'elevated' | 'high' | 'surge';
 
 export interface OP10M_A11_MigrationPressureRow {
@@ -776,6 +809,12 @@ export interface OP10M_A11_CompositeState {
   nationalNetworkEquityTensionIndex: number;
   resilienceFrontier: OP10M_A11_ResilienceFrontierRow[];
   nationalResilienceFrontierIndex: number;
+  metaGovernanceFatigue: OP10M_A11_MetaGovernanceFatigueRow[];
+  nationalMetaGovernanceFatigueIndex: number;
+  capitalMobilityAsymmetry: OP10M_A11_CapitalMobilityAsymmetryRow[];
+  nationalCapitalMobilityAsymmetryIndex: number;
+  compoundShockSaturation: OP10M_A11_CompoundShockSaturationRow[];
+  nationalCompoundShockSaturationIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -818,5 +857,8 @@ export interface OP10M_A11_CompositePersisted {
   lastFiscalGovernanceCouplingIndex: number;
   lastNetworkEquityTensionIndex: number;
   lastResilienceFrontierIndex: number;
+  lastMetaGovernanceFatigueIndex: number;
+  lastCapitalMobilityAsymmetryIndex: number;
+  lastCompoundShockSaturationIndex: number;
   inputHash: string;
 }

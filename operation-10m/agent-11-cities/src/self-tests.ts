@@ -87,6 +87,9 @@ import { op10mA11ComputeSettlementAdaptiveCapacityCeiling } from './settlement-a
 import { op10mA11ComputeRegionalFiscalGovernanceCouplingStrain } from './regional-fiscal-governance-coupling-strain.ts';
 import { op10mA11ComputeInterregionalNetworkEquityTension } from './interregional-network-equity-tension.ts';
 import { op10mA11ComputeSettlementResilienceFrontierPressure } from './settlement-resilience-frontier-pressure.ts';
+import { op10mA11ComputeRegionalMetaGovernanceCoordinationFatigue } from './regional-meta-governance-coordination-fatigue.ts';
+import { op10mA11ComputeInterregionalCapitalMobilityAsymmetry } from './interregional-capital-mobility-asymmetry.ts';
+import { op10mA11ComputeSettlementCompoundShockSaturation } from './settlement-compound-shock-saturation.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -413,7 +416,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.14',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.15',
     composite.state.schemaVersion,
   );
 
@@ -531,7 +534,10 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastAdaptiveCapacityCeilingIndex === composite.state.nationalAdaptiveCapacityCeilingIndex &&
       composite.persisted.lastFiscalGovernanceCouplingIndex === composite.state.nationalFiscalGovernanceCouplingIndex &&
       composite.persisted.lastNetworkEquityTensionIndex === composite.state.nationalNetworkEquityTensionIndex &&
-      composite.persisted.lastResilienceFrontierIndex === composite.state.nationalResilienceFrontierIndex,
+      composite.persisted.lastResilienceFrontierIndex === composite.state.nationalResilienceFrontierIndex &&
+      composite.persisted.lastMetaGovernanceFatigueIndex === composite.state.nationalMetaGovernanceFatigueIndex &&
+      composite.persisted.lastCapitalMobilityAsymmetryIndex === composite.state.nationalCapitalMobilityAsymmetryIndex &&
+      composite.persisted.lastCompoundShockSaturationIndex === composite.state.nationalCompoundShockSaturationIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -1426,6 +1432,90 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_131',
     composite.state.resilienceFrontier.every((r) => r.narrative.includes('resilience frontier')),
     composite.state.resilienceFrontier[0]?.band ?? 'none',
+  );
+
+  const metaGovernanceFatigue = op10mA11ComputeRegionalMetaGovernanceCoordinationFatigue({
+    fiscalGovernanceCoupling: composite.state.fiscalGovernanceCoupling,
+    governanceFriction: composite.state.governanceFriction,
+    reliefOverhead: composite.state.reliefOverhead,
+  });
+  push(
+    out,
+    'a11_132',
+    composite.state.metaGovernanceFatigue.length === 8 &&
+      composite.state.nationalMetaGovernanceFatigueIndex === metaGovernanceFatigue.nationalIndex,
+    `meta-governance fatigue ${composite.state.nationalMetaGovernanceFatigueIndex}`,
+  );
+
+  const capitalMobilityAsymmetry = op10mA11ComputeInterregionalCapitalMobilityAsymmetry({
+    networkEquityTension: composite.state.networkEquityTension,
+    fiscalGovernanceCoupling: composite.state.fiscalGovernanceCoupling,
+    corridorEquityDrift: composite.state.corridorEquityDrift,
+  });
+  push(
+    out,
+    'a11_133',
+    composite.state.capitalMobilityAsymmetry.length === 8 &&
+      composite.state.nationalCapitalMobilityAsymmetryIndex === capitalMobilityAsymmetry.nationalIndex,
+    `capital mobility ${composite.state.nationalCapitalMobilityAsymmetryIndex}`,
+  );
+
+  const compoundShockSaturation = op10mA11ComputeSettlementCompoundShockSaturation({
+    resilienceFrontier: composite.state.resilienceFrontier,
+    systemicFragility: composite.state.systemicFragility,
+    migrationStabilityErosion: composite.state.migrationStabilityErosion,
+  });
+  push(
+    out,
+    'a11_134',
+    composite.state.compoundShockSaturation.length === 8 &&
+      composite.state.nationalCompoundShockSaturationIndex === compoundShockSaturation.nationalIndex,
+    `compound shocks ${composite.state.nationalCompoundShockSaturationIndex}`,
+  );
+
+  push(
+    out,
+    'a11_135',
+    composite.state.metaGovernanceFatigue.every((m) => m.narrative.includes('meta-governance coordination')),
+    composite.state.metaGovernanceFatigue[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_136',
+    composite.derived.some((d) => d.kind === 'meta_governance_coordination_fatigue') ||
+      composite.state.metaGovernanceFatigue.some((m) => m.band === 'fatigued' || m.band === 'exhausted'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_137',
+    composite.derived.some((d) => d.kind === 'capital_mobility_asymmetry') ||
+      composite.state.capitalMobilityAsymmetry.some((c) => c.band === 'polarized' || c.band === 'locked'),
+    composite.state.capitalMobilityAsymmetry[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_138',
+    composite.persisted.lastCompoundShockSaturationIndex === composite.state.nationalCompoundShockSaturationIndex,
+    `persisted compound shocks ${composite.persisted.lastCompoundShockSaturationIndex}`,
+  );
+
+  push(
+    out,
+    'a11_139',
+    composite.derived.some((d) => d.kind === 'compound_shock_saturation') ||
+      composite.state.compoundShockSaturation.some((s) => s.band === 'saturated' || s.band === 'overwhelmed'),
+    composite.state.compoundShockSaturation[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_140',
+    composite.state.capitalMobilityAsymmetry.every((c) => c.narrative.includes('capital mobility asymmetry')),
+    composite.state.capitalMobilityAsymmetry[0]?.band ?? 'none',
   );
 
   return out;

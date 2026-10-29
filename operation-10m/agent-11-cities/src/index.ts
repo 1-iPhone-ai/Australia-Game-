@@ -49,5 +49,8 @@ export * from './settlement-adaptive-capacity-ceiling.ts';
 export * from './regional-fiscal-governance-coupling-strain.ts';
 export * from './interregional-network-equity-tension.ts';
 export * from './settlement-resilience-frontier-pressure.ts';
+export * from './regional-meta-governance-coordination-fatigue.ts';
+export * from './interregional-capital-mobility-asymmetry.ts';
+export * from './settlement-compound-shock-saturation.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';

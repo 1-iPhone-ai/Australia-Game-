@@ -2,6 +2,8 @@
 
 Urban growth balance, regional inequality metrics, and national–local spillover links. Standalone TypeScript until Agent 25 assembly into V9.4.
 
+**Scale wave round 16:** regional meta-governance coordination fatigue, interregional capital mobility asymmetry, settlement compound shock saturation (schema `10m.a11.composite.15`).
+
 **Scale wave round 15:** regional fiscal–governance coupling strain, interregional network equity tension, settlement resilience frontier pressure (schema `10m.a11.composite.14`).
 
 **Scale wave round 14:** regional governance resilience decay, interregional migration stability erosion, settlement adaptive capacity ceiling (schema `10m.a11.composite.13`).
