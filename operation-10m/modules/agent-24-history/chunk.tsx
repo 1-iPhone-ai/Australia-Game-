@@ -8965,7 +8965,7 @@ export function runAgent24ReplayScaleWaveProjectionHandoffSealSelfTests(): Array
       name: 'handoff_ready_at_projection_baseline',
       passed:
         seal.handoffReady &&
-        seal.projectionBaselineSha === O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
+        seal.projectionBaselineSha === O6K_AGENT24_WAVE37_INTEGRATION_BASELINE_SHA,
     },
     { name: 'wave_round_pinned', passed: seal.waveRound === 37 },
     {
@@ -9470,7 +9470,7 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
     reportId: 'pv',
     matchId: 'self',
     waveRound: 37,
-    projectionBaselineSha: O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
+    projectionBaselineSha: O6K_AGENT24_WAVE37_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -9500,7 +9500,7 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
       name: 'dryrun_handoff_complete_at_wave32_baseline',
       passed:
         report.handoffComplete &&
-        report.dryrunBaselineSha === O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
+        report.dryrunBaselineSha === O6K_AGENT24_WAVE37_INTEGRATION_BASELINE_SHA,
     },
     { name: 'wave_round_pinned', passed: report.waveRound === 37 },
     {
@@ -9988,7 +9988,7 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
     reportId: 'dv',
     matchId: 'self',
     waveRound: 37,
-    dryrunBaselineSha: O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
+    dryrunBaselineSha: O6K_AGENT24_WAVE37_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -10018,7 +10018,7 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
       name: 'handoff_ready_at_full_chunks_baseline',
       passed:
         seal.handoffReady &&
-        seal.fullChunksBaselineSha === O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
+        seal.fullChunksBaselineSha === O6K_AGENT24_WAVE37_INTEGRATION_BASELINE_SHA,
     },
     { name: 'wave_round_pinned', passed: seal.waveRound === 37 },
     {
