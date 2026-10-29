@@ -66,6 +66,9 @@ export const O6K_AGENT24_WAVE38_INTEGRATION_BASELINE_SHA = 'b44b36fe';
 /** O10-209 integration baseline anchor (wave 39 roster). */
 export const O6K_AGENT24_WAVE39_INTEGRATION_BASELINE_SHA = '6134c6ae';
 
+/** O10-211 integration baseline anchor (wave 40 roster). */
+export const O6K_AGENT24_WAVE40_INTEGRATION_BASELINE_SHA = '6f7fa49e';
+
 export interface Agent24ReplayScaleWaveIntegrationCloseoutCheckpoint {
   checkpointId: string;
   label: string;
@@ -100,7 +103,9 @@ export function buildAgent24ReplayScaleWaveIntegrationCloseoutReport(
   const waveRound = input.replayScaleWaveAttestationVerification.waveRound;
   const integrationBaselineSha =
     input.integrationBaselineSha ??
-    (waveRound >= 39
+    (waveRound >= 40
+      ? O6K_AGENT24_WAVE40_INTEGRATION_BASELINE_SHA
+      : waveRound >= 39
       ? O6K_AGENT24_WAVE39_INTEGRATION_BASELINE_SHA
       : waveRound >= 38
       ? O6K_AGENT24_WAVE38_INTEGRATION_BASELINE_SHA
@@ -218,7 +223,7 @@ export function runAgent24ReplayScaleWaveIntegrationCloseoutSelfTests(): Array<{
   const closeout = {
     reportId: 'co',
     matchId: 'self',
-    waveRound: 39,
+    waveRound: 40,
     closeoutComplete: true,
     checkpointCount: 3,
     satisfiedCheckpointCount: 3,
@@ -229,7 +234,7 @@ export function runAgent24ReplayScaleWaveIntegrationCloseoutSelfTests(): Array<{
   const attestationVerification = {
     reportId: 'av',
     matchId: 'self',
-    waveRound: 39,
+    waveRound: 40,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -240,7 +245,7 @@ export function runAgent24ReplayScaleWaveIntegrationCloseoutSelfTests(): Array<{
   const handoffGate = {
     reportId: 'hg',
     matchId: 'self',
-    waveRound: 39,
+    waveRound: 40,
     handoffAllowed: true,
     blockerCount: 0,
     blockers: [],
@@ -258,9 +263,9 @@ export function runAgent24ReplayScaleWaveIntegrationCloseoutSelfTests(): Array<{
   return [
     {
       name: 'integration_closeout_complete_when_wave_stack_ready',
-      passed: report.closeoutComplete && report.integrationBaselineSha === O6K_AGENT24_WAVE39_INTEGRATION_BASELINE_SHA,
+      passed: report.closeoutComplete && report.integrationBaselineSha === O6K_AGENT24_WAVE40_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: report.waveRound === 39 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 40 },
     {
       name: 'deterministic_fingerprint',
       passed:
