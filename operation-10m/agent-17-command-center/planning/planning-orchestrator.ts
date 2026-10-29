@@ -111,6 +111,8 @@ import { buildAgent17FiduciaryIndex } from './fiduciary-index.ts';
 import { buildAgent17TrusteeAccord } from './trustee-accord.ts';
 import { buildAgent17ExecutorshipIndex } from './executorship-index.ts';
 import { buildAgent17ExecutorAccord } from './executor-accord.ts';
+import { buildAgent17AdministrationIndex } from './administration-index.ts';
+import { buildAgent17AdministratorAccord } from './administrator-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -655,6 +657,16 @@ export function buildAgent17PlanningDepthSnapshot(
     trusteeAccord,
     fiduciaryIndex,
   });
+  const administrationIndex = buildAgent17AdministrationIndex({
+    executorAccord,
+    executorshipIndex,
+    trusteeAccord,
+  });
+  const administratorAccord = buildAgent17AdministratorAccord({
+    administrationIndex,
+    executorAccord,
+    executorshipIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -748,6 +760,8 @@ export function buildAgent17PlanningDepthSnapshot(
     trusteeAccord,
     executorshipIndex,
     executorAccord,
+    administrationIndex,
+    administratorAccord,
   };
 }
 

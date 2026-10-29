@@ -275,6 +275,8 @@ export interface Agent17PlanningDepthSnapshot {
   trusteeAccord: Agent17TrusteeAccordSnapshot;
   executorshipIndex: Agent17ExecutorshipIndexSnapshot;
   executorAccord: Agent17ExecutorAccordSnapshot;
+  administrationIndex: Agent17AdministrationIndexSnapshot;
+  administratorAccord: Agent17AdministratorAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1763,6 +1765,40 @@ export interface Agent17ExecutorAccordSnapshot {
   executorshipBand: Agent17ExecutorshipIndexSnapshot['band'];
   trusteeBand: Agent17TrusteeAccordSnapshot['band'];
   executorAppointed: boolean;
+  headline: string;
+}
+
+export interface Agent17AdministrationMandate {
+  id: string;
+  label: string;
+  seated: boolean;
+  weight: number;
+}
+
+export interface Agent17AdministrationIndexSnapshot {
+  administrationScore: number;
+  band: 'seated' | 'provisional' | 'dissolved';
+  mandates: Agent17AdministrationMandate[];
+  executorshipBand: Agent17ExecutorshipIndexSnapshot['band'];
+  executorBand: Agent17ExecutorAccordSnapshot['band'];
+  administrationSeated: boolean;
+  headline: string;
+}
+
+export interface Agent17AdministratorCommission {
+  id: string;
+  label: string;
+  delegated: boolean;
+  weight: number;
+}
+
+export interface Agent17AdministratorAccordSnapshot {
+  administratorScore: number;
+  band: 'commissioned' | 'acting' | 'revoked';
+  commissions: Agent17AdministratorCommission[];
+  administrationBand: Agent17AdministrationIndexSnapshot['band'];
+  executorBand: Agent17ExecutorAccordSnapshot['band'];
+  administratorCommissioned: boolean;
   headline: string;
 }
 
@@ -12552,6 +12588,215 @@ export function executorAccordBlocksTrustee(snapshot: Agent17ExecutorAccordSnaps
 }
 
 
+// --- source: planning/administration-index.ts ---
+  Agent17AdministrationIndexSnapshot,
+  Agent17ExecutorAccordSnapshot,
+  Agent17ExecutorshipIndexSnapshot,
+  Agent17TrusteeAccordSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17AdministrationIndexInputs {
+  executorAccord: Agent17ExecutorAccordSnapshot;
+  executorshipIndex: Agent17ExecutorshipIndexSnapshot;
+  trusteeAccord: Agent17TrusteeAccordSnapshot;
+}
+
+export function buildAgent17AdministrationIndex(
+  inputs: Agent17AdministrationIndexInputs
+): Agent17AdministrationIndexSnapshot {
+  const mandates: Agent17AdministrationIndexSnapshot['mandates'] = [];
+
+  mandates.push({
+    id: 'executor_appointed',
+    label: 'Executor accord executor-appointed',
+    seated:
+      inputs.executorAccord.executorAppointed &&
+      !executorAccordBlocksTrustee(inputs.executorAccord),
+    weight: 30,
+  });
+
+  mandates.push({
+    id: 'executor_band',
+    label: 'Executor appointed or acting',
+    seated:
+      inputs.executorAccord.band === 'appointed' || inputs.executorAccord.band === 'acting',
+    weight: 25,
+  });
+
+  mandates.push({
+    id: 'executorship_empowered',
+    label: 'Executorship index executorship-empowered',
+    seated:
+      inputs.executorshipIndex.executorshipEmpowered &&
+      !executorshipIndexBlocksExecutor(inputs.executorshipIndex),
+    weight: 20,
+  });
+
+  mandates.push({
+    id: 'trustee_clear',
+    label: 'Trustee accord not blocking fiduciary',
+    seated: !trusteeAccordBlocksFiduciary(inputs.trusteeAccord),
+    weight: 15,
+  });
+
+  mandates.push({
+    id: 'executor_score',
+    label: 'Executor score headroom',
+    seated: inputs.executorAccord.executorScore >= 3,
+    weight: 10,
+  });
+
+  const weighted = mandates.reduce(
+    (n, m) => n + (m.seated ? 100 : 1) * (m.weight / 100),
+    0
+  );
+  const totalWeight = mandates.reduce((n, m) => n + m.weight, 0);
+  const administrationScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const dissolvedSignals =
+    executorAccordBlocksTrustee(inputs.executorAccord) ||
+    executorshipIndexBlocksExecutor(inputs.executorshipIndex) ||
+    trusteeAccordBlocksFiduciary(inputs.trusteeAccord);
+
+  const band: Agent17AdministrationIndexSnapshot['band'] = dissolvedSignals
+    ? 'dissolved'
+    : administrationScore >= 43 &&
+        inputs.executorAccord.band === 'appointed' &&
+        inputs.executorshipIndex.band === 'empowered'
+      ? 'seated'
+      : 'provisional';
+
+  const administrationSeated =
+    band === 'seated' &&
+    inputs.executorAccord.executorAppointed &&
+    !executorAccordBlocksTrustee(inputs.executorAccord);
+
+  return {
+    administrationScore,
+    band,
+    mandates,
+    executorshipBand: inputs.executorshipIndex.band,
+    executorBand: inputs.executorAccord.band,
+    administrationSeated,
+    headline: `Administration ${band} (${administrationScore}/100) · ${mandates.filter(m => m.seated).length}/${mandates.length} mandates`,
+  };
+}
+
+export function administrationIndexBlocksAdministrator(
+  snapshot: Agent17AdministrationIndexSnapshot
+): boolean {
+  return snapshot.band === 'dissolved' || !snapshot.administrationSeated;
+}
+
+
+// --- source: planning/administrator-accord.ts ---
+  Agent17AdministrationIndexSnapshot,
+  Agent17AdministratorAccordSnapshot,
+  Agent17ExecutorAccordSnapshot,
+  Agent17ExecutorshipIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17AdministratorAccordInputs {
+  administrationIndex: Agent17AdministrationIndexSnapshot;
+  executorAccord: Agent17ExecutorAccordSnapshot;
+  executorshipIndex: Agent17ExecutorshipIndexSnapshot;
+}
+
+export function buildAgent17AdministratorAccord(
+  inputs: Agent17AdministratorAccordInputs
+): Agent17AdministratorAccordSnapshot {
+  const commissions: Agent17AdministratorAccordSnapshot['commissions'] = [];
+
+  commissions.push({
+    id: 'administration_seated',
+    label: 'Administration index administration-seated',
+    delegated:
+      inputs.administrationIndex.administrationSeated &&
+      !administrationIndexBlocksAdministrator(inputs.administrationIndex),
+    weight: 30,
+  });
+
+  commissions.push({
+    id: 'administration_band',
+    label: 'Administration seated or provisional',
+    delegated:
+      inputs.administrationIndex.band === 'seated' ||
+      inputs.administrationIndex.band === 'provisional',
+    weight: 25,
+  });
+
+  commissions.push({
+    id: 'executor_appointed',
+    label: 'Executor accord executor-ready',
+    delegated:
+      inputs.executorAccord.executorAppointed &&
+      !executorAccordBlocksTrustee(inputs.executorAccord),
+    weight: 20,
+  });
+
+  commissions.push({
+    id: 'executorship_clear',
+    label: 'Executorship index not blocking executor',
+    delegated: !executorshipIndexBlocksExecutor(inputs.executorshipIndex),
+    weight: 15,
+  });
+
+  commissions.push({
+    id: 'administration_score',
+    label: 'Administration score headroom',
+    delegated: inputs.administrationIndex.administrationScore >= 2,
+    weight: 10,
+  });
+
+  const weighted = commissions.reduce(
+    (n, c) => n + (c.delegated ? 100 : 1) * (c.weight / 100),
+    0
+  );
+  const totalWeight = commissions.reduce((n, c) => n + c.weight, 0);
+  const administratorScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const revokedSignals =
+    administrationIndexBlocksAdministrator(inputs.administrationIndex) ||
+    executorAccordBlocksTrustee(inputs.executorAccord) ||
+    executorshipIndexBlocksExecutor(inputs.executorshipIndex);
+
+  const band: Agent17AdministratorAccordSnapshot['band'] = revokedSignals
+    ? 'revoked'
+    : administratorScore >= 40 &&
+        inputs.administrationIndex.band === 'seated' &&
+        inputs.executorAccord.band === 'appointed'
+      ? 'commissioned'
+      : 'acting';
+
+  const administratorCommissioned =
+    band === 'commissioned' &&
+    inputs.administrationIndex.administrationSeated &&
+    !administrationIndexBlocksAdministrator(inputs.administrationIndex);
+
+  return {
+    administratorScore,
+    band,
+    commissions,
+    administrationBand: inputs.administrationIndex.band,
+    executorBand: inputs.executorAccord.band,
+    administratorCommissioned,
+    headline: `Administrator ${band} (${administratorScore}/100) · ${commissions.filter(c => c.delegated).length}/${commissions.length} commissions`,
+  };
+}
+
+export function administratorAccordBlocksExecutor(
+  snapshot: Agent17AdministratorAccordSnapshot
+): boolean {
+  return snapshot.band === 'revoked' || !snapshot.administratorCommissioned;
+}
+
+
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
   Acc17DelegateTargetKind,
@@ -13111,6 +13356,16 @@ export function buildAgent17PlanningDepthSnapshot(
     trusteeAccord,
     fiduciaryIndex,
   });
+  const administrationIndex = buildAgent17AdministrationIndex({
+    executorAccord,
+    executorshipIndex,
+    trusteeAccord,
+  });
+  const administratorAccord = buildAgent17AdministratorAccord({
+    administrationIndex,
+    executorAccord,
+    executorshipIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -13204,6 +13459,8 @@ export function buildAgent17PlanningDepthSnapshot(
     trusteeAccord,
     executorshipIndex,
     executorAccord,
+    administrationIndex,
+    administratorAccord,
   };
 }
 
@@ -14601,6 +14858,30 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Removed trustee or vacated executorship yields executorAccordBlocksTrustee.',
     severity: 'major',
   },
+  {
+    id: 'G17-157',
+    title: 'Administration index on planning depth',
+    category: 'telemetry',
+    acceptance:
+      'administrationIndex reports administrationScore 0–100 with seated/provisional/dissolved band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-158',
+    title: 'Administrator accord commissions complete',
+    category: 'telemetry',
+    acceptance:
+      'administratorAccord exposes ≥5 commissions and administratorScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-159',
+    title: 'Discharged executor dissolves administrator accord',
+    category: 'integration',
+    acceptance:
+      'Discharged executor or dissolved administration yields administratorAccordBlocksExecutor.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -14881,6 +15162,12 @@ export function listAgent17GoalIds(): string[] {
   buildAgent17ExecutorAccord,
   executorAccordBlocksTrustee,
 } from '../planning/executor-accord.ts';
+  buildAgent17AdministrationIndex,
+  administrationIndexBlocksAdministrator,
+} from '../planning/administration-index.ts';
+  buildAgent17AdministratorAccord,
+  administratorAccordBlocksExecutor,
+} from '../planning/administrator-accord.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -17272,6 +17559,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const administrationIndex = depthEval.snapshot.planningDepth?.administrationIndex;
+  goalResults.push(
+    result(
+      'G17-157',
+      !!administrationIndex &&
+        administrationIndex.mandates.length >= 5 &&
+        administrationIndex.administrationScore >= 0 &&
+        administrationIndex.administrationScore <= 100 &&
+        (administrationIndex.band === 'seated' ||
+          administrationIndex.band === 'provisional' ||
+          administrationIndex.band === 'dissolved'),
+      `mandates=${administrationIndex?.mandates.length} score=${administrationIndex?.administrationScore}`
+    )
+  );
+
+  const administratorAccord = depthEval.snapshot.planningDepth?.administratorAccord;
+  goalResults.push(
+    result(
+      'G17-158',
+      !!administratorAccord &&
+        administratorAccord.commissions.length >= 5 &&
+        administratorAccord.administratorScore >= 0 &&
+        administratorAccord.administratorScore <= 100,
+      `commissions=${administratorAccord?.commissions.length} score=${administratorAccord?.administratorScore}`
+    )
+  );
+
+  const dissolvedAdministration = buildAgent17AdministrationIndex({
+    executorAccord: dischargedExecutor,
+    executorshipIndex: vacatedExecutorship,
+    trusteeAccord: removedTrustee,
+  });
+  const revokedAdministrator = buildAgent17AdministratorAccord({
+    administrationIndex: dissolvedAdministration,
+    executorAccord: dischargedExecutor,
+    executorshipIndex: vacatedExecutorship,
+  });
+  goalResults.push(
+    result(
+      'G17-159',
+      executorAccordBlocksTrustee(dischargedExecutor) ||
+        administrationIndexBlocksAdministrator(dissolvedAdministration) ||
+        administratorAccordBlocksExecutor(revokedAdministrator),
+      `${dissolvedAdministration.band}/${revokedAdministrator.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -17458,6 +17792,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-154',
     'G17-155',
     'G17-156',
+    'G17-157',
+    'G17-158',
+    'G17-159',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

@@ -48,6 +48,7 @@ import { runAgent17EndowmentDepthTests } from '../harness/run-endowment-depth-te
 import { runAgent17StewardshipDepthTests } from '../harness/run-stewardship-depth-tests.ts';
 import { runAgent17FiduciaryDepthTests } from '../harness/run-fiduciary-depth-tests.ts';
 import { runAgent17ExecutorshipDepthTests } from '../harness/run-executorship-depth-tests.ts';
+import { runAgent17AdministrationDepthTests } from '../harness/run-administration-depth-tests.ts';
 import { verifyAgent17Goals, validateGoalRegistryCoverage } from '../validation/goal-verification.ts';
 import { createAgent17RollbackController } from '../rollback/rollback-controller.ts';
 
@@ -101,6 +102,7 @@ const reports = [
   runAgent17StewardshipDepthTests(),
   runAgent17FiduciaryDepthTests(),
   runAgent17ExecutorshipDepthTests(),
+  runAgent17AdministrationDepthTests(),
 ];
 
 const combinedSuccess = reports.every(r => r.success);
@@ -173,6 +175,7 @@ const payload = {
   stewardshipReport: reports[46],
   fiduciaryReport: reports[47],
   executorshipReport: reports[48],
+  administrationReport: reports[49],
   validationReport,
   goalRegistryCoverage: coverage,
   exitCode,

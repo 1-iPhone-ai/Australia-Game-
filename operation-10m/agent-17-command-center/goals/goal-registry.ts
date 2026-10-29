@@ -1107,6 +1107,30 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Removed trustee or vacated executorship yields executorAccordBlocksTrustee.',
     severity: 'major',
   },
+  {
+    id: 'G17-157',
+    title: 'Administration index on planning depth',
+    category: 'telemetry',
+    acceptance:
+      'administrationIndex reports administrationScore 0–100 with seated/provisional/dissolved band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-158',
+    title: 'Administrator accord commissions complete',
+    category: 'telemetry',
+    acceptance:
+      'administratorAccord exposes ≥5 commissions and administratorScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-159',
+    title: 'Discharged executor dissolves administrator accord',
+    category: 'integration',
+    acceptance:
+      'Discharged executor or dissolved administration yields administratorAccordBlocksExecutor.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

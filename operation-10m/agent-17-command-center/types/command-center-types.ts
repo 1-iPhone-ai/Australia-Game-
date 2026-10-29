@@ -271,6 +271,8 @@ export interface Agent17PlanningDepthSnapshot {
   trusteeAccord: Agent17TrusteeAccordSnapshot;
   executorshipIndex: Agent17ExecutorshipIndexSnapshot;
   executorAccord: Agent17ExecutorAccordSnapshot;
+  administrationIndex: Agent17AdministrationIndexSnapshot;
+  administratorAccord: Agent17AdministratorAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1759,6 +1761,40 @@ export interface Agent17ExecutorAccordSnapshot {
   executorshipBand: Agent17ExecutorshipIndexSnapshot['band'];
   trusteeBand: Agent17TrusteeAccordSnapshot['band'];
   executorAppointed: boolean;
+  headline: string;
+}
+
+export interface Agent17AdministrationMandate {
+  id: string;
+  label: string;
+  seated: boolean;
+  weight: number;
+}
+
+export interface Agent17AdministrationIndexSnapshot {
+  administrationScore: number;
+  band: 'seated' | 'provisional' | 'dissolved';
+  mandates: Agent17AdministrationMandate[];
+  executorshipBand: Agent17ExecutorshipIndexSnapshot['band'];
+  executorBand: Agent17ExecutorAccordSnapshot['band'];
+  administrationSeated: boolean;
+  headline: string;
+}
+
+export interface Agent17AdministratorCommission {
+  id: string;
+  label: string;
+  delegated: boolean;
+  weight: number;
+}
+
+export interface Agent17AdministratorAccordSnapshot {
+  administratorScore: number;
+  band: 'commissioned' | 'acting' | 'revoked';
+  commissions: Agent17AdministratorCommission[];
+  administrationBand: Agent17AdministrationIndexSnapshot['band'];
+  executorBand: Agent17ExecutorAccordSnapshot['band'];
+  administratorCommissioned: boolean;
   headline: string;
 }
 

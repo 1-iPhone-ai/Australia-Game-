@@ -369,6 +369,14 @@ import {
   executorAccordBlocksTrustee,
 } from '../planning/executor-accord.ts';
 import {
+  buildAgent17AdministrationIndex,
+  administrationIndexBlocksAdministrator,
+} from '../planning/administration-index.ts';
+import {
+  buildAgent17AdministratorAccord,
+  administratorAccordBlocksExecutor,
+} from '../planning/administrator-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -2760,6 +2768,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const administrationIndex = depthEval.snapshot.planningDepth?.administrationIndex;
+  goalResults.push(
+    result(
+      'G17-157',
+      !!administrationIndex &&
+        administrationIndex.mandates.length >= 5 &&
+        administrationIndex.administrationScore >= 0 &&
+        administrationIndex.administrationScore <= 100 &&
+        (administrationIndex.band === 'seated' ||
+          administrationIndex.band === 'provisional' ||
+          administrationIndex.band === 'dissolved'),
+      `mandates=${administrationIndex?.mandates.length} score=${administrationIndex?.administrationScore}`
+    )
+  );
+
+  const administratorAccord = depthEval.snapshot.planningDepth?.administratorAccord;
+  goalResults.push(
+    result(
+      'G17-158',
+      !!administratorAccord &&
+        administratorAccord.commissions.length >= 5 &&
+        administratorAccord.administratorScore >= 0 &&
+        administratorAccord.administratorScore <= 100,
+      `commissions=${administratorAccord?.commissions.length} score=${administratorAccord?.administratorScore}`
+    )
+  );
+
+  const dissolvedAdministration = buildAgent17AdministrationIndex({
+    executorAccord: dischargedExecutor,
+    executorshipIndex: vacatedExecutorship,
+    trusteeAccord: removedTrustee,
+  });
+  const revokedAdministrator = buildAgent17AdministratorAccord({
+    administrationIndex: dissolvedAdministration,
+    executorAccord: dischargedExecutor,
+    executorshipIndex: vacatedExecutorship,
+  });
+  goalResults.push(
+    result(
+      'G17-159',
+      executorAccordBlocksTrustee(dischargedExecutor) ||
+        administrationIndexBlocksAdministrator(dissolvedAdministration) ||
+        administratorAccordBlocksExecutor(revokedAdministrator),
+      `${dissolvedAdministration.band}/${revokedAdministrator.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -2946,6 +3001,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-154',
     'G17-155',
     'G17-156',
+    'G17-157',
+    'G17-158',
+    'G17-159',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
