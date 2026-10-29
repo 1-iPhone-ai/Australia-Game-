@@ -90294,10 +90294,11 @@ const AUDITOR_DASHBOARD_TAB_LABELS: Record<AuditorDashboardTabId, string> = {
   settings: 'Settings'
 };
 
+// O6K_AGENT24_INTEGRATION_ANCHOR — Agent 25: inline `expansion/o6k-agent-24/o6k-agent-24-historical-replay-analytics.tsx` above this line (see agent-24-integration-contract.md).
 // RP4: tab order/labels for the Replay Dashboard (renderReplayViewer upgraded from a flat viewer
 // into a tabbed dashboard), mirroring AUDITOR_DASHBOARD_TAB_ORDER/_LABELS's own const-pair convention.
-type ReplayDashboardTabId = 'watch' | 'timeline' | 'decisions' | 'compare' | 'branches' | 'integrity' | 'developer';
-const REPLAY_DASHBOARD_TAB_ORDER: ReplayDashboardTabId[] = ['watch', 'timeline', 'decisions', 'compare', 'branches', 'integrity', 'developer'];
+type ReplayDashboardTabId = 'watch' | 'timeline' | 'decisions' | 'compare' | 'branches' | 'integrity' | 'developer' | 'historical';
+const REPLAY_DASHBOARD_TAB_ORDER: ReplayDashboardTabId[] = ['watch', 'timeline', 'decisions', 'compare', 'branches', 'integrity', 'historical', 'developer'];
 const REPLAY_DASHBOARD_TAB_LABELS: Record<ReplayDashboardTabId, string> = {
   watch: 'Watch',
   timeline: 'Timeline',
@@ -90305,6 +90306,7 @@ const REPLAY_DASHBOARD_TAB_LABELS: Record<ReplayDashboardTabId, string> = {
   compare: 'Compare',
   branches: 'Branches',
   integrity: 'Integrity',
+  historical: 'Historical Analytics',
   developer: 'Developer'
 };
 const resolveCheckpointKind = (cp: ReplayCheckpoint): ReplayCheckpointKind => cp.kind || 'day';
