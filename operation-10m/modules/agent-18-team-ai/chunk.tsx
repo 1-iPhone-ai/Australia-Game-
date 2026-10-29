@@ -8372,6 +8372,162 @@ export function combineDualTeamPressureResonanceConvergence(friendly: number, en
 }
 
 
+// --- source: synthesis-convergence-harmony-index.ts ---
+export interface SynthesisConvergenceHarmonyReport {
+  pressureIndex: number;
+  notes: string[];
+}
+
+/** Convergence–synthesis pressure pressuring with synthesis–convergence resonance under escalation. */
+export function computeSynthesisConvergenceHarmonyIndex(
+  convergencePressureSynthesisIndex: number,
+  synthesisConvergencePressureIndex: number,
+  coordinationEscalationTier: number,
+): SynthesisConvergenceHarmonyReport {
+  const notes: string[] = [];
+  if (convergencePressureSynthesisIndex >= 44 && synthesisConvergencePressureIndex >= 44) {
+    notes.push('Synthesis pressure and convergence synthesis both elevated');
+  }
+  if (coordinationEscalationTier >= 2 && synthesisConvergencePressureIndex >= 46) {
+    notes.push('Convergence–synthesis pressure under active escalation');
+  }
+
+  const pressureIndex = Math.round(
+    Math.min(
+      100,
+      convergencePressureSynthesisIndex * 0.38 +
+        synthesisConvergencePressureIndex * 0.38 +
+        coordinationEscalationTier * 5 +
+        (convergencePressureSynthesisIndex >= 48 && synthesisConvergencePressureIndex >= 46 ? 14 : 0),
+    ),
+  );
+
+  return { pressureIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamSynthesisConvergenceHarmony(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: harmony-resonance-synthesis-index.ts ---
+export interface HarmonyResonanceSynthesisReport {
+  convergenceIndex: number;
+  notes: string[];
+}
+
+/** Pressure–resonance synthesis converging with convergence–synthesis pressure under escalation. */
+export function computeHarmonyResonanceSynthesisIndex(
+  pressureSynthesisConvergenceIndex: number,
+  convergenceSynthesisPressureIndex: number,
+  coordinationEscalationTier: number,
+): HarmonyResonanceSynthesisReport {
+  const notes: string[] = [];
+  if (pressureSynthesisConvergenceIndex >= 44 && convergenceSynthesisPressureIndex >= 44) {
+    notes.push('Resonance convergence and synthesis pressure both elevated');
+  }
+  if (coordinationEscalationTier >= 2 && convergenceSynthesisPressureIndex >= 46) {
+    notes.push('Pressure–resonance convergence under active escalation');
+  }
+
+  const convergenceIndex = Math.round(
+    Math.min(
+      100,
+      pressureSynthesisConvergenceIndex * 0.38 +
+        convergenceSynthesisPressureIndex * 0.38 +
+        coordinationEscalationTier * 5 +
+        (pressureSynthesisConvergenceIndex >= 48 && convergenceSynthesisPressureIndex >= 46 ? 14 : 0),
+    ),
+  );
+
+  return { convergenceIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamHarmonyResonanceSynthesis(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: harmony-resonance-convergence-index.ts ---
+export interface HarmonyResonanceConvergenceReport {
+  synthesisIndex: number;
+  notes: string[];
+}
+
+/** Synthesis–convergence harmony converging with harmony–resonance synthesis under escalation. */
+export function computeHarmonyResonanceConvergenceIndex(
+  synthesisConvergenceHarmonyIndex: number,
+  harmonyResonanceSynthesisIndex: number,
+  coordinationEscalationTier: number,
+): HarmonyResonanceConvergenceReport {
+  const notes: string[] = [];
+  if (synthesisConvergenceHarmonyIndex >= 44 && harmonyResonanceSynthesisIndex >= 44) {
+    notes.push('Harmony pressure and resonance convergence both elevated');
+  }
+  if (coordinationEscalationTier >= 2 && harmonyResonanceSynthesisIndex >= 46) {
+    notes.push('Harmony–resonance convergence under active escalation');
+  }
+
+  const synthesisIndex = Math.round(
+    Math.min(
+      100,
+      synthesisConvergenceHarmonyIndex * 0.38 +
+        harmonyResonanceSynthesisIndex * 0.38 +
+        coordinationEscalationTier * 5 +
+        (synthesisConvergenceHarmonyIndex >= 48 && harmonyResonanceSynthesisIndex >= 46 ? 14 : 0),
+    ),
+  );
+
+  return { synthesisIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamHarmonyResonanceConvergence(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: resonance-harmony-convergence-index.ts ---
+export interface ResonanceHarmonyConvergenceReport {
+  harmonyIndex: number;
+  notes: string[];
+}
+
+/** Harmony–resonance synthesis harmonizing with synthesis–convergence harmony under escalation. */
+export function computeResonanceHarmonyConvergenceIndex(
+  harmonyResonanceSynthesisIndex: number,
+  synthesisConvergenceHarmonyIndex: number,
+  coordinationEscalationTier: number,
+): ResonanceHarmonyConvergenceReport {
+  const notes: string[] = [];
+  if (harmonyResonanceSynthesisIndex >= 44 && synthesisConvergenceHarmonyIndex >= 44) {
+    notes.push('Resonance synthesis and convergence harmony both elevated');
+  }
+  if (coordinationEscalationTier >= 2 && synthesisConvergenceHarmonyIndex >= 46) {
+    notes.push('Resonance–harmony convergence under active escalation');
+  }
+
+  const harmonyIndex = Math.round(
+    Math.min(
+      100,
+      harmonyResonanceSynthesisIndex * 0.38 +
+        synthesisConvergenceHarmonyIndex * 0.38 +
+        coordinationEscalationTier * 5 +
+        (harmonyResonanceSynthesisIndex >= 48 && synthesisConvergenceHarmonyIndex >= 46 ? 14 : 0),
+    ),
+  );
+
+  return { harmonyIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamResonanceHarmonyConvergence(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
 // --- source: coordination-audit.ts ---
   AGENT18_LIMITS,
   CoordinationAuditFinding,
