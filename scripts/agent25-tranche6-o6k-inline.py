@@ -168,6 +168,24 @@ PUBSVC_DAY_HOOK = """
 """
 
 
+def wire_pubsvc_day_hook(text: str) -> str:
+    marker = "V1014_PUBSVC_patchSection6Slice(mergedGameState, cross.persisted)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:15000]
+    if marker in day_slice:
+        print("skip pubsvc day hook (present)")
+        return text
+    trade_tail = """      if (typeof runV1014TradeDepthTurn === 'function') {
+        try {
+          const tdIn = buildV1014TradeDepthTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          const tdOut = runV1014TradeDepthTurn(tdIn);
+          mergedGameState = { ...mergedGameState, v1014TradeDepth: tdOut.persisted };
+        } catch (_) { /* isolated */ }
+      }"""
+    if trade_tail not in text:
+        raise SystemExit("trade day hook anchor missing for pubsvc hook")
+    return text.replace(trade_tail, trade_tail + PUBSVC_DAY_HOOK, 1)
+
+
 def wire_day_hooks(text: str, extra_hook: str, hook_id: str) -> str:
     anchor = "        v1014SupplyChain: supplyOut?.persisted ?? mergedGameState?.v1014SupplyChain,\n      };"
     runtime_marker = extra_hook.strip().split("\n", 1)[0].strip()
@@ -265,7 +283,7 @@ def push_replay(text: str) -> str:
 def push_pubsvc(text: str) -> str:
     block = PUBSVC_SECTION + bundle_local_files(public_services_paths()) + PUBSVC_HELPERS
     text = insert_before(text, block, PUBSVC_MARKER, "T6 push #4 public-services (PR #310)")
-    text = wire_day_hooks(text, PUBSVC_DAY_HOOK, "V1014_PUBSVC_computePublicServicesCrosswalk")
+    text = wire_pubsvc_day_hook(text)
     text = wire_pubsvc_migration(text)
     lab = """  { id: 'v1014_public_services_v2', label: 'V10.14 Public services crosswalk v2 (20AZ)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014PublicServicesV2SelfTests().results.map((r) => ({ id: r.id, name: r.name, passed: r.passed, detail: r.detail })) },
 """

@@ -75960,6 +75960,16 @@ export function executeAgent02SingleDayBoundary(
           mergedGameState = { ...mergedGameState, v1014TradeDepth: tdOut.persisted };
         } catch (_) { /* isolated */ }
       }
+      if (typeof V1014_PUBSVC_computePublicServicesCrosswalk === 'function') {
+        try {
+          const inputs = buildV1014PubsSvcCrosswalkInputsFromGameState(mergedGameState, passCtx.turnCounter);
+          const prev6 = V1014_PUBSVC_readSection6Slice(mergedGameState);
+          const cross = V1014_PUBSVC_computePublicServicesCrosswalk(inputs, prev6);
+          mergedGameState = V1014_PUBSVC_patchSection6Slice(mergedGameState, cross.persisted);
+          mergedGameState = { ...mergedGameState, v1014PublicServicesCrosswalk: cross.snapshot };
+        } catch (_) { /* isolated */ }
+      }
+
     } catch (_) { /* isolated */ }
   }
   agentState = agent02RecordStage(agentState, 'DIAGNOSTICS_COMMIT', ctx, passIndex, AGENT_02_PIPELINE_STAGE_ORDER.length, ['commit']);
@@ -118753,6 +118763,15 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   // V1015 / V10.1 supply depth (Operation 600K T6): null-default on old saves.
   if (migrated.gameState) migrated.gameState.v1015Orchestrator = sanitizeV1015OrchestratorPersisted(migrated.gameState.v1015Orchestrator);
   if (migrated.gameState) migrated.gameState.v1014SupplyChain = sanitizeV1014SupplyChainPersisted(migrated.gameState.v1014SupplyChain);
+  if (migrated.gameState) {
+    const pubsRaw = (migrated.gameState as any)?.save?.meta?.v1014?.public_services_v2;
+    if (pubsRaw && typeof V1014_PUBSVC_migrateSection6Persisted === 'function') {
+      migrated.gameState = V1014_PUBSVC_patchSection6Slice(
+        migrated.gameState,
+        V1014_PUBSVC_migrateSection6Persisted(pubsRaw),
+      );
+    }
+  }
   if (migrated.gameState && typeof V1014_REPLAY_readPersistenceSlice === 'function') {
     const replaySlice = V1014_REPLAY_readPersistenceSlice(migrated.gameState);
     if (replaySlice) migrated.gameState = V1014_REPLAY_patchPersistenceSlice(migrated.gameState, replaySlice);
@@ -194355,6 +194374,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1014_supply_chain', label: 'V10.1 supply chain depth', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => { const r = runV1014SupplyChainSelfTests(); return r.results.map(x => ({ id: x.id, name: x.name, passed: x.passed, detail: x.detail || (x.passed ? 'ok' : 'fail') })); } },
   { id: 'v1014_trade_depth', label: 'V10.14 Trade depth (T6-6 tariffs/sanctions/capital)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014TradeDepthSelfTestsForLab() },
   { id: 'o6k_agent24_v2', label: 'Agent 24 replay counterfactual v2 (T6-3)', tier: 'quick', section: 'Replay Integrity', severity: 'MAJOR', run: () => { const r = runV1014ReplayCounterfactualSelfTests(); return r.results.map(x => ({ id: x.id, name: x.name, passed: x.passed, detail: x.detail || (x.passed ? 'ok' : 'fail') })); } },
+  { id: 'v1014_public_services_v2', label: 'V10.14 Public services crosswalk v2 (20AZ)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014PublicServicesV2SelfTests().results.map((r) => ({ id: r.id, name: r.name, passed: r.passed, detail: r.detail })) },
   { id: 'v1014_fiscal', label: 'V10.14 Fiscal outcomes (Agent 07)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014FiscalOutcomesSelfTests() },
   { id: 'a03_innovation', label: 'Agent 03 innovation commercialization', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runAgent03InnovationSelfTests() },
   { id: 'agent05_events', label: 'Agent 05 dynamic events & chains', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => { const r = runAgent05ConditionalSelfTests(); return [{ id: 'agent05', name: 'Agent 05 self-tests', passed: r.failures.length === 0, detail: r.failures.join('; ') || 'ok' }]; } },
@@ -384946,6 +384966,23312 @@ export function formatV1014ReplaySelfTestReport(summary: ReturnType<typeof runV1
   return `V1014 replay counterfactual: ${summary.passed}/${summary.total} passed\n` +
     summary.results.map(r => `  [${r.passed ? 'OK' : 'FAIL'}] ${r.caseName}: ${r.detail}`).join('\n');
 }
+
+// ============================================================================
+// Agent 25 tranche 6 — T6 push #4 public-services (PR #310)
+// ============================================================================
+// ============================================================================
+// SECTION 20AZ: V10.14 PUBLIC SERVICES CROSSWALK v2 (T6-5)
+// ============================================================================
+/** SECTION 20AZ — V1014 public services v2 crosswalk types (expansion shard). */
+
+export const V1014_PUBSVC_SCHEMA_VERSION = '10.14.2' as const;
+
+export const V1014_PUBSVC_CORE_REGIONS = [
+  'NSW',
+  'VIC',
+  'QLD',
+  'WA',
+  'SA',
+  'TAS',
+  'NT',
+  'ACT',
+] as const;
+
+export type V1014PubsSvcRegionId = (typeof V1014_PUBSVC_CORE_REGIONS)[number];
+
+export type V1014PubsSvcPillar = 'housing' | 'healthcare' | 'education';
+
+export type V1014PubsSvcQueueBand =
+  | 'clearing'
+  | 'stable'
+  | 'building'
+  | 'severe'
+  | 'critical';
+
+export type V1014PubsSvcSkillGapBand =
+  | 'aligned'
+  | 'mild_gap'
+  | 'moderate_gap'
+  | 'severe_gap'
+  | 'crisis_gap';
+
+export type V1014PubsSvcMigrationFeedbackBand =
+  | 'dampening'
+  | 'neutral'
+  | 'amplifying'
+  | 'runaway_pressure';
+
+export interface V1014PubsSvcQueueSlot {
+  id: string;
+  pillar: V1014PubsSvcPillar;
+  regionId: V1014PubsSvcRegionId;
+  waitTurns: number;
+  demandPressure: number;
+  throughputCapacity: number;
+  staffingCoverage: number;
+  band: V1014PubsSvcQueueBand;
+}
+
+export interface V1014PubsSvcSkillMismatchSlice {
+  regionId: V1014PubsSvcRegionId;
+  pillar: V1014PubsSvcPillar;
+  requiredSkillIndex: number;
+  availableSkillIndex: number;
+  gapScore: number;
+  band: V1014PubsSvcSkillGapBand;
+  workforcePipelineTurns: number;
+}
+
+export interface V1014PubsSvcMigrationFeedbackSlice {
+  regionId: V1014PubsSvcRegionId;
+  inflowPressure: number;
+  serviceAbsorption: number;
+  housingQueueDelta: number;
+  healthQueueDelta: number;
+  educationQueueDelta: number;
+  band: V1014PubsSvcMigrationFeedbackBand;
+  loopGain: number;
+}
+
+export interface V1014PubsSvcRegionalAggregate {
+  regionId: V1014PubsSvcRegionId;
+  turn: number;
+  queuePressureIndex: number;
+  skillMismatchIndex: number;
+  migrationLoopIndex: number;
+  compositeKpi: number;
+  pillars: Record<
+    V1014PubsSvcPillar,
+    {
+      waitTurns: number;
+      backlogBand: V1014PubsSvcQueueBand;
+      skillGapBand: V1014PubsSvcSkillGapBand;
+    }
+  >;
+}
+
+export interface V1014PubsSvcNationalSnapshot {
+  turn: number;
+  schemaVersion: typeof V1014_PUBSVC_SCHEMA_VERSION;
+  nationalQueuePressure: number;
+  nationalSkillMismatch: number;
+  nationalMigrationLoop: number;
+  nationalCompositeKpi: number;
+  regions: Record<V1014PubsSvcRegionId, V1014PubsSvcRegionalAggregate>;
+  queues: V1014PubsSvcQueueSlot[];
+  skillSlices: V1014PubsSvcSkillMismatchSlice[];
+  migrationSlices: V1014PubsSvcMigrationFeedbackSlice[];
+}
+
+/** Read-only adapter surfaces for canonical §20AP / §20AC / §20AJ / §20AF. */
+export interface V1014PubsSvcAdapter20AP {
+  turn: number;
+  nationalOutcomeIndex: number;
+  regionalOutcome: Partial<
+    Record<
+      V1014PubsSvcRegionId,
+      Partial<Record<V1014PubsSvcPillar, { accessScore: number; backlogPressure: number; staffingBand: string }>>
+    >
+  >;
+}
+
+export interface V1014PubsSvcAdapter20AC {
+  turn: number;
+  nationalReadiness: number;
+  specialistGap: number;
+  regionalSkillSupply: Partial<Record<V1014PubsSvcRegionId, number>>;
+}
+
+export interface V1014PubsSvcAdapter20AJ {
+  turn: number;
+  migrationFlowBand: string;
+  regionalAttractiveness: Partial<Record<V1014PubsSvcRegionId, number>>;
+  wagePressureIndex: number;
+}
+
+export interface V1014PubsSvcAdapter20AF {
+  turn: number;
+  affordabilityStress: number;
+  regionalLivingStandard: Partial<Record<V1014PubsSvcRegionId, number>>;
+  domesticDemandPull: number;
+}
+
+export interface V1014PubsSvcCrosswalkInputs {
+  turn: number;
+  ap20: V1014PubsSvcAdapter20AP;
+  ac20: V1014PubsSvcAdapter20AC;
+  aj20: V1014PubsSvcAdapter20AJ;
+  af20: V1014PubsSvcAdapter20AF;
+  policyFocus: Partial<Record<V1014PubsSvcPillar, number>>;
+  fiscalHeadroom: number;
+}
+
+export interface V1014PubsSvcSection6Persisted {
+  schemaVersion: typeof V1014_PUBSVC_SCHEMA_VERSION;
+  lastTurn: number;
+  regionalAggregates: Record<V1014PubsSvcRegionId, V1014PubsSvcRegionalAggregate>;
+  historyTail: V1014PubsSvcRegionalAggregate[][];
+}
+
+export interface V1014PubsSvcTickResult {
+  snapshot: V1014PubsSvcNationalSnapshot;
+  persisted: V1014PubsSvcSection6Persisted;
+  events: string[];
+}
+
+
+export const V1014_PUBSVC_REGION_WEIGHT: Record<V1014PubsSvcRegionId, number> = {
+  NSW: 0.24,
+  VIC: 0.22,
+  QLD: 0.18,
+  WA: 0.13,
+  SA: 0.09,
+  ACT: 0.06,
+  TAS: 0.04,
+  NT: 0.04,
+};
+
+export const V1014_PUBSVC_PILLAR_WEIGHT: Record<V1014PubsSvcPillar, number> = {
+  housing: 0.34,
+  healthcare: 0.38,
+  education: 0.28,
+};
+
+export const V1014_PUBSVC_SKILL_DOMAIN_FOR_PILLAR: Record<V1014PubsSvcPillar, string[]> = {
+  housing: ['construction', 'planning', 'trades'],
+  healthcare: ['clinical', 'nursing', 'allied_health'],
+  education: ['teaching', 'early_learning', 'vocational'],
+};
+
+export const V1014_PUBSVC_LIMITS = {
+  maxQueueHistory: 32,
+  maxMigrationLoopGain: 1.85,
+  minCompositeKpi: 0,
+  maxCompositeKpi: 100,
+  hysteresisDeadband: 1.75,
+  section6HistoryDepth: 8,
+} as const;
+
+export const V1014_PUBSVC_LAB_SUITE_ID = 'v1014_public_services_v2' as const;
+
+export function V1014_PUBSVC_clamp(value: number, min: number, max: number): number {
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+}
+
+export function V1014_PUBSVC_lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+export function V1014_PUBSVC_deadband(prev: number, next: number, band: number): number {
+  if (Math.abs(next - prev) < band) return prev;
+  return next;
+}
+
+export function V1014_PUBSVC_weightedMean(pairs: Array<{ weight: number; value: number }>): number {
+  let wSum = 0;
+  let vSum = 0;
+  for (const p of pairs) {
+    wSum += p.weight;
+    vSum += p.weight * p.value;
+  }
+  if (wSum <= 0) return 0;
+  return vSum / wSum;
+}
+
+export function V1014_PUBSVC_deterministicJitter(seed: number, amplitude: number): number {
+  const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+  const frac = x - Math.floor(x);
+  return (frac - 0.5) * 2 * amplitude;
+}
+
+export function V1014_PUBSVC_bandFromThresholds(
+  value: number,
+  thresholds: readonly number[],
+  labels: readonly string[],
+): string {
+  for (let i = thresholds.length - 1; i >= 0; i--) {
+    if (value >= thresholds[i]) return labels[i + 1] ?? labels[labels.length - 1];
+  }
+  return labels[0];
+}
+
+
+const QUEUE_BAND_THRESHOLDS = [18, 32, 48, 64] as const;
+const QUEUE_BANDS: V1014PubsSvcQueueBand[] = ['clearing', 'stable', 'building', 'severe', 'critical'];
+
+export function V1014_PUBSVC_queueBandFromPressure(pressure: number): V1014PubsSvcQueueBand {
+  if (pressure >= QUEUE_BAND_THRESHOLDS[3]) return 'critical';
+  if (pressure >= QUEUE_BAND_THRESHOLDS[2]) return 'severe';
+  if (pressure >= QUEUE_BAND_THRESHOLDS[1]) return 'building';
+  if (pressure >= QUEUE_BAND_THRESHOLDS[0]) return 'stable';
+  return 'clearing';
+}
+
+export interface V1014PubsSvcQueueStepInput {
+  turn: number;
+  regionId: V1014PubsSvcRegionId;
+  pillar: V1014PubsSvcPillar;
+  demandPressure: number;
+  throughputCapacity: number;
+  staffingCoverage: number;
+  policyFocus: number;
+  fiscalHeadroom: number;
+  priorWaitTurns: number;
+}
+
+export function V1014_PUBSVC_computeQueueStep(input: V1014PubsSvcQueueStepInput): V1014PubsSvcQueueSlot {
+  const cap = V1014_PUBSVC_clamp(input.throughputCapacity, 5, 120);
+  const staff = V1014_PUBSVC_clamp(input.staffingCoverage, 5, 120);
+  const demand = V1014_PUBSVC_clamp(input.demandPressure, 0, 120);
+  const focus = V1014_PUBSVC_clamp(input.policyFocus, 0, 100);
+  const fiscal = V1014_PUBSVC_clamp(input.fiscalHeadroom, 0, 100);
+
+  const effectiveThroughput =
+    cap * (0.55 + staff / 200) * (0.7 + fiscal / 250) * (0.75 + focus / 400);
+  const netFlow = demand - effectiveThroughput;
+  const jitter = V1014_PUBSVC_deterministicJitter(
+    input.turn * 17 + input.regionId.charCodeAt(0) + input.pillar.length * 3,
+    0.6,
+  );
+  const rawWait = V1014_PUBSVC_clamp(input.priorWaitTurns + netFlow * 0.12 + jitter, 0, 240);
+  const waitTurns = V1014_PUBSVC_deadband(input.priorWaitTurns, rawWait, 0.85);
+  const pressure = waitTurns * 0.42 + demand * 0.35 - effectiveThroughput * 0.18;
+
+  return {
+    id: `${input.regionId}_${input.pillar}_q`,
+    pillar: input.pillar,
+    regionId: input.regionId,
+    waitTurns,
+    demandPressure: demand,
+    throughputCapacity: cap,
+    staffingCoverage: staff,
+    band: V1014_PUBSVC_queueBandFromPressure(pressure),
+  };
+}
+
+export function V1014_PUBSVC_nationalQueuePressure(slots: V1014PubsSvcQueueSlot[]): number {
+  const pairs = slots.map((s) => ({
+    weight: (V1014_PUBSVC_REGION_WEIGHT[s.regionId] ?? 0.1) * (V1014_PUBSVC_PILLAR_WEIGHT[s.pillar] ?? 0.33),
+    value: s.waitTurns * 0.55 + (s.demandPressure - s.throughputCapacity) * 0.25,
+  }));
+  return V1014_PUBSVC_clamp(V1014_PUBSVC_weightedMean(pairs), 0, 100);
+}
+
+export function V1014_PUBSVC_buildInitialQueueGrid(
+  turn: number,
+  baselines: Partial<Record<V1014PubsSvcRegionId, Partial<Record<V1014PubsSvcPillar, number>>>>,
+): V1014PubsSvcQueueSlot[] {
+  const pillars: V1014PubsSvcPillar[] = ['housing', 'healthcare', 'education'];
+  const regions = Object.keys(V1014_PUBSVC_REGION_WEIGHT) as V1014PubsSvcRegionId[];
+  const out: V1014PubsSvcQueueSlot[] = [];
+  for (const regionId of regions) {
+    for (const pillar of pillars) {
+      const base = baselines[regionId]?.[pillar] ?? 42;
+      out.push(
+        V1014_PUBSVC_computeQueueStep({
+          demandPressure: base + 8,
+          throughputCapacity: base,
+          staffingCoverage: base - 4,
+          policyFocus: 50,
+          fiscalHeadroom: 55,
+          priorWaitTurns: base * 0.35,
+        }),
+      );
+    }
+  }
+  return out;
+}
+
+
+const GAP_BANDS: V1014PubsSvcSkillGapBand[] = [
+  'aligned',
+  'mild_gap',
+  'moderate_gap',
+  'severe_gap',
+  'crisis_gap',
+];
+
+export function V1014_PUBSVC_skillGapBand(gapScore: number): V1014PubsSvcSkillGapBand {
+  if (gapScore >= 72) return 'crisis_gap';
+  if (gapScore >= 52) return 'severe_gap';
+  if (gapScore >= 34) return 'moderate_gap';
+  if (gapScore >= 16) return 'mild_gap';
+  return 'aligned';
+}
+
+export interface V1014PubsSvcSkillMismatchInput {
+  regionId: V1014PubsSvcRegionId;
+  pillar: V1014PubsSvcPillar;
+  ac: V1014PubsSvcAdapter20AC;
+  serviceDemandIndex: number;
+}
+
+export function V1014_PUBSVC_computeSkillMismatchSlice(
+  input: V1014PubsSvcSkillMismatchInput,
+): V1014PubsSvcSkillMismatchSlice {
+  const supply = input.ac.regionalSkillSupply[input.regionId] ?? input.ac.nationalReadiness;
+  const domains = V1014_PUBSVC_SKILL_DOMAIN_FOR_PILLAR[input.pillar];
+  const domainBoost = domains.length * 2.4;
+  const requiredSkillIndex = V1014_PUBSVC_clamp(
+    input.serviceDemandIndex * 0.82 + domainBoost + input.ac.specialistGap * 0.15,
+  );
+  const availableSkillIndex = V1014_PUBSVC_clamp(supply - input.ac.specialistGap * 0.22, 0, 100);
+  const gapScore = V1014_PUBSVC_clamp(requiredSkillIndex - availableSkillIndex, 0, 100);
+  const pipelineTurns = Math.round(4 + gapScore / 8 + (100 - input.ac.nationalReadiness) / 25);
+
+  return {
+    regionId: input.regionId,
+    pillar: input.pillar,
+    band: V1014_PUBSVC_skillGapBand(gapScore),
+    workforcePipelineTurns: pipelineTurns,
+  };
+}
+
+export function V1014_PUBSVC_nationalSkillMismatch(slices: V1014PubsSvcSkillMismatchSlice[]): number {
+  if (!slices.length) return 0;
+  return V1014_PUBSVC_clamp(
+    V1014_PUBSVC_weightedMean(slices.map((s) => ({ weight: 1, value: s.gapScore }))),
+  );
+}
+
+export function V1014_PUBSVC_buildSkillMismatchGrid(
+  ac: V1014PubsSvcAdapter20AC,
+  demandByRegionPillar: Partial<
+    Record<V1014PubsSvcRegionId, Partial<Record<V1014PubsSvcPillar, number>>>
+  >,
+): V1014PubsSvcSkillMismatchSlice[] {
+  const pillars: V1014PubsSvcPillar[] = ['housing', 'healthcare', 'education'];
+  const out: V1014PubsSvcSkillMismatchSlice[] = [];
+  for (const regionId of V1014_PUBSVC_CORE_REGIONS) {
+    for (const pillar of pillars) {
+      out.push(
+        V1014_PUBSVC_computeSkillMismatchSlice({
+          serviceDemandIndex: demandByRegionPillar[regionId]?.[pillar] ?? 45,
+        }),
+      );
+    }
+  }
+  return out;
+}
+
+
+
+const MIGRATION_BANDS: V1014PubsSvcMigrationFeedbackBand[] = [
+  'dampening',
+  'neutral',
+  'amplifying',
+  'runaway_pressure',
+];
+
+export function V1014_PUBSVC_migrationFeedbackBand(loopGain: number): V1014PubsSvcMigrationFeedbackBand {
+  if (loopGain >= 1.45) return 'runaway_pressure';
+  if (loopGain >= 1.05) return 'amplifying';
+  if (loopGain >= 0.75) return 'neutral';
+  return 'dampening';
+}
+
+export interface V1014PubsSvcMigrationFeedbackInput {
+  regionId: V1014PubsSvcRegionId;
+  aj: V1014PubsSvcAdapter20AJ;
+  af: V1014PubsSvcAdapter20AF;
+  queuePressureIndex: number;
+}
+
+export function V1014_PUBSVC_computeMigrationFeedbackSlice(
+  input: V1014PubsSvcMigrationFeedbackInput,
+): V1014PubsSvcMigrationFeedbackSlice {
+  const attract = input.aj.regionalAttractiveness[input.regionId] ?? 50;
+  const living = input.af.regionalLivingStandard[input.regionId] ?? 50;
+  const inflowPressure = V1014_PUBSVC_clamp(
+    attract * 0.55 + (100 - input.af.affordabilityStress) * 0.2 + input.aj.wagePressureIndex * 0.15,
+  );
+  const serviceAbsorption = V1014_PUBSVC_clamp(
+    living * 0.4 + (100 - input.queuePressureIndex) * 0.35,
+  );
+  const strain = inflowPressure - serviceAbsorption;
+  const housingQueueDelta = strain * 0.14;
+  const healthQueueDelta = strain * 0.11;
+  const educationQueueDelta = strain * 0.09;
+  const inflowBoost = input.aj.migrationFlowBand.includes('inflow') ? 0.18 : 0;
+  const loopGain = V1014_PUBSVC_clamp(
+    0.55 + strain / 120 + inflowBoost,
+    0.2,
+    V1014_PUBSVC_LIMITS.maxMigrationLoopGain,
+  );
+
+  return {
+    regionId: input.regionId,
+    band: V1014_PUBSVC_migrationFeedbackBand(loopGain),
+    loopGain,
+  };
+}
+
+export function V1014_PUBSVC_nationalMigrationLoop(slices: V1014PubsSvcMigrationFeedbackSlice[]): number {
+  const pairs = slices.map((s) => ({
+    weight: V1014_PUBSVC_REGION_WEIGHT[s.regionId] ?? 0.1,
+    value: s.loopGain * 50,
+  }));
+  return V1014_PUBSVC_clamp(V1014_PUBSVC_weightedMean(pairs), 0, 100);
+}
+
+export function V1014_PUBSVC_buildMigrationFeedbackGrid(
+  aj: V1014PubsSvcAdapter20AJ,
+  af: V1014PubsSvcAdapter20AF,
+  queuePressureByRegion: Partial<Record<V1014PubsSvcRegionId, number>>,
+): V1014PubsSvcMigrationFeedbackSlice[] {
+  const regions = Object.keys(V1014_PUBSVC_REGION_WEIGHT) as V1014PubsSvcRegionId[];
+  return regions.map((regionId) =>
+    V1014_PUBSVC_computeMigrationFeedbackSlice({
+      queuePressureIndex: queuePressureByRegion[regionId] ?? 45,
+    }),
+  );
+}
+
+
+
+export function V1014_PUBSVC_normalizeAdapter20AP(raw: Partial<V1014PubsSvcAdapter20AP>): V1014PubsSvcAdapter20AP {
+  return {
+    turn: raw.turn ?? 0,
+    nationalOutcomeIndex: raw.nationalOutcomeIndex ?? 55,
+    regionalOutcome: raw.regionalOutcome ?? {},
+  };
+}
+
+export function V1014_PUBSVC_normalizeAdapter20AC(raw: Partial<V1014PubsSvcAdapter20AC>): V1014PubsSvcAdapter20AC {
+  return {
+    turn: raw.turn ?? 0,
+    nationalReadiness: raw.nationalReadiness ?? 58,
+    specialistGap: raw.specialistGap ?? 28,
+    regionalSkillSupply: raw.regionalSkillSupply ?? {},
+  };
+}
+
+export function V1014_PUBSVC_normalizeAdapter20AJ(raw: Partial<V1014PubsSvcAdapter20AJ>): V1014PubsSvcAdapter20AJ {
+  return {
+    turn: raw.turn ?? 0,
+    migrationFlowBand: raw.migrationFlowBand ?? 'balanced',
+    regionalAttractiveness: raw.regionalAttractiveness ?? {},
+    wagePressureIndex: raw.wagePressureIndex ?? 48,
+  };
+}
+
+export function V1014_PUBSVC_normalizeAdapter20AF(raw: Partial<V1014PubsSvcAdapter20AF>): V1014PubsSvcAdapter20AF {
+  return {
+    turn: raw.turn ?? 0,
+    affordabilityStress: raw.affordabilityStress ?? 42,
+    regionalLivingStandard: raw.regionalLivingStandard ?? {},
+    domesticDemandPull: raw.domesticDemandPull ?? 50,
+  };
+}
+
+export function V1014_PUBSVC_mergeCrosswalkInputs(
+  partial: Partial<V1014PubsSvcCrosswalkInputs>,
+): V1014PubsSvcCrosswalkInputs {
+  return {
+    turn: partial.turn ?? 1,
+    ap20: V1014_PUBSVC_normalizeAdapter20AP(partial.ap20 ?? {}),
+    ac20: V1014_PUBSVC_normalizeAdapter20AC(partial.ac20 ?? {}),
+    aj20: V1014_PUBSVC_normalizeAdapter20AJ(partial.aj20 ?? {}),
+    af20: V1014_PUBSVC_normalizeAdapter20AF(partial.af20 ?? {}),
+    policyFocus: partial.policyFocus ?? { housing: 50, healthcare: 52, education: 54 },
+    fiscalHeadroom: partial.fiscalHeadroom ?? 55,
+  };
+}
+
+const PUBSVC_ADAPTER_PILLARS: V1014PubsSvcPillar[] = ['housing', 'healthcare', 'education'];
+
+export function V1014_PUBSVC_extractDemandFrom20AP(
+  ap: V1014PubsSvcAdapter20AP,
+): Partial<Record<V1014PubsSvcRegionId, Partial<Record<V1014PubsSvcPillar, number>>>> {
+  const out: Partial<Record<V1014PubsSvcRegionId, Partial<Record<V1014PubsSvcPillar, number>>>> = {};
+  for (const regionId of V1014_PUBSVC_CORE_REGIONS) {
+    const row = ap.regionalOutcome[regionId];
+    if (!row) continue;
+    out[regionId] = {};
+    for (const pillar of PUBSVC_ADAPTER_PILLARS) {
+      const cell = row[pillar];
+      if (!cell) continue;
+      out[regionId]![pillar] = V1014_PUBSVC_clamp(
+        (100 - cell.accessScore) * 0.45 + cell.backlogPressure * 0.55,
+      );
+    }
+  }
+  return out;
+}
+
+export function V1014_PUBSVC_extractQueueBaselinesFrom20AP(
+  ap: V1014PubsSvcAdapter20AP,
+): Partial<Record<V1014PubsSvcRegionId, Partial<Record<V1014PubsSvcPillar, number>>>> {
+  const out: Partial<Record<V1014PubsSvcRegionId, Partial<Record<V1014PubsSvcPillar, number>>>> = {};
+  for (const regionId of V1014_PUBSVC_CORE_REGIONS) {
+    out[regionId] = {};
+    for (const pillar of PUBSVC_ADAPTER_PILLARS) {
+      const cell = ap.regionalOutcome[regionId]?.[pillar];
+      const base = cell ? cell.accessScore * 0.65 + cell.backlogPressure * 0.35 : ap.nationalOutcomeIndex;
+      out[regionId]![pillar] = V1014_PUBSVC_clamp(base, 10, 95);
+    }
+  }
+  return out;
+}
+
+export function V1014_PUBSVC_apply20AFStressToFiscal(
+  fiscalHeadroom: number,
+  af: V1014PubsSvcAdapter20AF,
+): number {
+  return V1014_PUBSVC_clamp(fiscalHeadroom - af.affordabilityStress * 0.12 + af.domesticDemandPull * 0.04, 0, 100);
+}
+
+export function V1014_PUBSVC_apply20AJToPolicyFocus(
+  policyFocus: Partial<Record<V1014PubsSvcPillar, number>>,
+  aj: V1014PubsSvcAdapter20AJ,
+): Partial<Record<V1014PubsSvcPillar, number>> {
+  const wageShift = aj.wagePressureIndex * 0.08;
+  return {
+    housing: V1014_PUBSVC_clamp((policyFocus.housing ?? 50) + wageShift * 0.4, 0, 100),
+    healthcare: V1014_PUBSVC_clamp((policyFocus.healthcare ?? 50) + wageShift * 0.35, 0, 100),
+    education: V1014_PUBSVC_clamp((policyFocus.education ?? 50) + wageShift * 0.25, 0, 100),
+  };
+}
+
+
+export const V1014_PUBSVC_SECTION6_KEY = 'save.meta.v1014.public_services_v2' as const;
+
+export function V1014_PUBSVC_createInitialSection6Persisted(): V1014PubsSvcSection6Persisted {
+  const regionalAggregates = {} as Record<V1014PubsSvcRegionId, V1014PubsSvcRegionalAggregate>;
+  for (const regionId of V1014_PUBSVC_CORE_REGIONS) {
+    regionalAggregates[regionId] = V1014_PUBSVC_emptyRegionalAggregate(regionId, 0);
+  }
+  return {
+    schemaVersion: V1014_PUBSVC_SCHEMA_VERSION,
+    lastTurn: 0,
+    regionalAggregates,
+    historyTail: [],
+  };
+}
+
+export function V1014_PUBSVC_emptyRegionalAggregate(
+  regionId: V1014PubsSvcRegionId,
+  turn: number,
+): V1014PubsSvcRegionalAggregate {
+  return {
+    queuePressureIndex: 40,
+    skillMismatchIndex: 32,
+    migrationLoopIndex: 38,
+    compositeKpi: 45,
+    pillars: {
+      housing: { waitTurns: 18, backlogBand: 'stable', skillGapBand: 'mild_gap' },
+      healthcare: { waitTurns: 22, backlogBand: 'building', skillGapBand: 'moderate_gap' },
+      education: { waitTurns: 16, backlogBand: 'stable', skillGapBand: 'mild_gap' },
+    },
+  };
+}
+
+export function V1014_PUBSVC_migrateSection6Persisted(
+  raw: Partial<V1014PubsSvcSection6Persisted> | null | undefined,
+): V1014PubsSvcSection6Persisted {
+  if (!raw || typeof raw !== 'object') return V1014_PUBSVC_createInitialSection6Persisted();
+  const base = V1014_PUBSVC_createInitialSection6Persisted();
+  base.lastTurn = typeof raw.lastTurn === 'number' ? raw.lastTurn : 0;
+  if (raw.regionalAggregates && typeof raw.regionalAggregates === 'object') {
+    for (const regionId of V1014_PUBSVC_CORE_REGIONS) {
+      const slice = raw.regionalAggregates[regionId];
+      if (slice) base.regionalAggregates[regionId] = { ...base.regionalAggregates[regionId], ...slice };
+    }
+  }
+  if (Array.isArray(raw.historyTail)) {
+    base.historyTail = raw.historyTail.slice(-V1014_PUBSVC_LIMITS.section6HistoryDepth);
+  }
+  return base;
+}
+
+export function V1014_PUBSVC_rollSection6History(
+  persisted: V1014PubsSvcSection6Persisted,
+  snapshot: V1014PubsSvcNationalSnapshot,
+): V1014PubsSvcSection6Persisted {
+  const regionalAggregates = { ...persisted.regionalAggregates };
+  for (const regionId of V1014_PUBSVC_CORE_REGIONS) {
+    regionalAggregates[regionId] = snapshot.regions[regionId];
+  }
+  const historyTail = [...persisted.historyTail, V1014_PUBSVC_CORE_REGIONS.map((r) => regionalAggregates[r])];
+  while (historyTail.length > V1014_PUBSVC_LIMITS.section6HistoryDepth) historyTail.shift();
+  return {
+    schemaVersion: V1014_PUBSVC_SCHEMA_VERSION,
+    lastTurn: snapshot.turn,
+  };
+}
+
+export function V1014_PUBSVC_section6RegionalAggregateMeans(
+  persisted: V1014PubsSvcSection6Persisted,
+): { queue: number; skill: number; migration: number; composite: number } {
+  const regions = V1014_PUBSVC_CORE_REGIONS.map((r) => persisted.regionalAggregates[r]);
+  const mean = (pick: (a: V1014PubsSvcRegionalAggregate) => number) =>
+    regions.reduce((s, a) => s + pick(a), 0) / regions.length;
+  return {
+    queue: V1014_PUBSVC_clamp(mean((a) => a.queuePressureIndex), 0, 100),
+    skill: V1014_PUBSVC_clamp(mean((a) => a.skillMismatchIndex), 0, 100),
+    migration: V1014_PUBSVC_clamp(mean((a) => a.migrationLoopIndex), 0, 100),
+    composite: V1014_PUBSVC_clamp(mean((a) => a.compositeKpi), 0, 100),
+  };
+}
+
+export function V1014_PUBSVC_encodeSection6Blob(persisted: V1014PubsSvcSection6Persisted): string {
+  return JSON.stringify({ key: V1014_PUBSVC_SECTION6_KEY, persisted });
+}
+
+export function V1014_PUBSVC_decodeSection6Blob(blob: string): V1014PubsSvcSection6Persisted {
+  try {
+    const parsed = JSON.parse(blob) as { persisted?: V1014PubsSvcSection6Persisted };
+    return V1014_PUBSVC_migrateSection6Persisted(parsed.persisted);
+  } catch {
+    return V1014_PUBSVC_createInitialSection6Persisted();
+  }
+}
+
+
+const PUBSVC_ENGINE_PILLARS: V1014PubsSvcPillar[] = ['housing', 'healthcare', 'education'];
+
+function V1014_PUBSVC_buildRegionalAggregate(
+  regionId: V1014PubsSvcRegionId,
+  turn: number,
+  queuePressureIndex: number,
+  skillMismatchIndex: number,
+  migrationLoopIndex: number,
+  queues: ReturnType<typeof V1014_PUBSVC_buildInitialQueueGrid>,
+  skillSlices: ReturnType<typeof V1014_PUBSVC_buildSkillMismatchGrid>,
+): V1014PubsSvcRegionalAggregate {
+  const pillars = {} as V1014PubsSvcRegionalAggregate['pillars'];
+  for (const pillar of PUBSVC_ENGINE_PILLARS) {
+    const q = queues.find((s) => s.regionId === regionId && s.pillar === pillar);
+    const sk = skillSlices.find((s) => s.regionId === regionId && s.pillar === pillar);
+    pillars[pillar] = {
+      waitTurns: q?.waitTurns ?? 20,
+      backlogBand: q?.band ?? 'stable',
+      skillGapBand: sk?.band ?? 'mild_gap',
+    };
+  }
+  const compositeKpi = V1014_PUBSVC_clamp(
+    100 -
+      queuePressureIndex * 0.38 -
+      skillMismatchIndex * 0.32 -
+      migrationLoopIndex * 0.22,
+    V1014_PUBSVC_LIMITS.minCompositeKpi,
+    V1014_PUBSVC_LIMITS.maxCompositeKpi,
+  );
+  return {
+  };
+}
+
+export function V1014_PUBSVC_computePublicServicesCrosswalk(
+  rawInputs: Partial<V1014PubsSvcCrosswalkInputs>,
+  rawPersisted?: Partial<V1014PubsSvcSection6Persisted> | null,
+): V1014PubsSvcTickResult {
+  const inputs = V1014_PUBSVC_mergeCrosswalkInputs(rawInputs);
+  const persisted = V1014_PUBSVC_migrateSection6Persisted(rawPersisted);
+  const fiscal = V1014_PUBSVC_apply20AFStressToFiscal(inputs.fiscalHeadroom, inputs.af20);
+  const policyFocus = V1014_PUBSVC_apply20AJToPolicyFocus(inputs.policyFocus, inputs.aj20);
+  const demandMap = V1014_PUBSVC_extractDemandFrom20AP(inputs.ap20);
+  const baselineMap = V1014_PUBSVC_extractQueueBaselinesFrom20AP(inputs.ap20);
+
+  const queues = V1014_PUBSVC_CORE_REGIONS.flatMap((regionId) =>
+    PUBSVC_ENGINE_PILLARS.map((pillar) => {
+      const prior = persisted.regionalAggregates[regionId]?.pillars[pillar]?.waitTurns ?? 18;
+      return V1014_PUBSVC_computeQueueStep({
+        turn: inputs.turn,
+        demandPressure: demandMap[regionId]?.[pillar] ?? baselineMap[regionId]?.[pillar] ?? 45,
+        throughputCapacity: baselineMap[regionId]?.[pillar] ?? 48,
+        staffingCoverage: inputs.ac20.regionalSkillSupply[regionId] ?? inputs.ac20.nationalReadiness,
+        policyFocus: policyFocus[pillar] ?? 50,
+        fiscalHeadroom: fiscal,
+        priorWaitTurns: prior,
+      });
+    }),
+  );
+
+  const skillSlices = V1014_PUBSVC_buildSkillMismatchGrid(inputs.ac20, demandMap);
+  const queuePressureByRegion: Partial<Record<V1014PubsSvcRegionId, number>> = {};
+  for (const regionId of V1014_PUBSVC_CORE_REGIONS) {
+    const regionalQueues = queues.filter((q) => q.regionId === regionId);
+    queuePressureByRegion[regionId] = V1014_PUBSVC_nationalQueuePressure(regionalQueues);
+  }
+
+  const migrationSlices = V1014_PUBSVC_buildMigrationFeedbackGrid(
+    inputs.aj20,
+    inputs.af20,
+    queuePressureByRegion,
+  );
+
+  for (const m of migrationSlices) {
+    for (const q of queues) {
+      if (q.regionId !== m.regionId) continue;
+      if (q.pillar === 'housing') q.waitTurns = V1014_PUBSVC_clamp(q.waitTurns + m.housingQueueDelta, 0, 240);
+      if (q.pillar === 'healthcare') q.waitTurns = V1014_PUBSVC_clamp(q.waitTurns + m.healthQueueDelta, 0, 240);
+      if (q.pillar === 'education') q.waitTurns = V1014_PUBSVC_clamp(q.waitTurns + m.educationQueueDelta, 0, 240);
+      q.band = q.waitTurns > 64 ? 'critical' : q.waitTurns > 48 ? 'severe' : q.band;
+    }
+  }
+
+  const nationalQueuePressure = V1014_PUBSVC_nationalQueuePressure(queues);
+  const nationalSkillMismatch = V1014_PUBSVC_nationalSkillMismatch(skillSlices);
+  const nationalMigrationLoop = V1014_PUBSVC_nationalMigrationLoop(migrationSlices);
+
+  const regions = {} as V1014PubsSvcNationalSnapshot['regions'];
+  for (const regionId of V1014_PUBSVC_CORE_REGIONS) {
+    const rq = queues.filter((q) => q.regionId === regionId);
+    const rs = skillSlices.filter((s) => s.regionId === regionId);
+    const rm = migrationSlices.find((s) => s.regionId === regionId);
+    regions[regionId] = V1014_PUBSVC_buildRegionalAggregate(
+      regionId,
+      inputs.turn,
+      V1014_PUBSVC_nationalQueuePressure(rq),
+      V1014_PUBSVC_clamp(
+        V1014_PUBSVC_weightedMean(rs.map((s) => ({ weight: V1014_PUBSVC_PILLAR_WEIGHT[s.pillar], value: s.gapScore }))),
+      ),
+      rm ? rm.loopGain * 50 : 40,
+    );
+  }
+
+  const nationalCompositeKpi = V1014_PUBSVC_clamp(
+    V1014_PUBSVC_weightedMean(
+      V1014_PUBSVC_CORE_REGIONS.map((r) => ({
+        weight: V1014_PUBSVC_REGION_WEIGHT[r],
+        value: regions[r].compositeKpi,
+      })),
+    ),
+  );
+
+  const snapshot: V1014PubsSvcNationalSnapshot = {
+    turn: inputs.turn,
+    schemaVersion: V1014_PUBSVC_SCHEMA_VERSION,
+  };
+
+  const nextPersisted = V1014_PUBSVC_rollSection6History(persisted, snapshot);
+  const events: string[] = [];
+  if (nationalQueuePressure > 45) events.push('V1014_PUBSVC_EVENT_QUEUE_PRESSURE_ELEVATED');
+  if (nationalSkillMismatch > 40) events.push('V1014_PUBSVC_EVENT_SKILL_MISMATCH_ELEVATED');
+  if (nationalMigrationLoop > 32) events.push('V1014_PUBSVC_EVENT_MIGRATION_LOOP_AMPLIFYING');
+
+  return { snapshot, persisted: nextPersisted, events };
+}
+
+export function V1014_PUBSVC_makeDefaultCrosswalkInputs(
+  overrides: Partial<V1014PubsSvcCrosswalkInputs> = {},
+): V1014PubsSvcCrosswalkInputs {
+  return V1014_PUBSVC_mergeCrosswalkInputs({
+    turn: 3,
+    fiscalHeadroom: 58,
+    policyFocus: { housing: 54, healthcare: 56, education: 58 },
+    ap20: {
+      turn: 3,
+      nationalOutcomeIndex: 62,
+      regionalOutcome: {
+        NT: {
+          healthcare: { accessScore: 38, backlogPressure: 72, staffingBand: 'shortage' },
+          housing: { accessScore: 42, backlogPressure: 65, staffingBand: 'shortage' },
+        },
+      },
+    },
+    ac20: { turn: 3, nationalReadiness: 56, specialistGap: 34 },
+    aj20: { turn: 3, migrationFlowBand: 'inflow', wagePressureIndex: 52 },
+    af20: { turn: 3, affordabilityStress: 48, domesticDemandPull: 54 },
+    ...overrides,
+  });
+}
+
+
+/** Auto-generated KPI scenario 000 — NSW/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_000_META = {
+  id: 'kpi_000',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 17,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_000_COEF = {
+  c0: 5.1000,
+  c1: 6.8000,
+  c2: 8.5000,
+  c3: 10.2000,
+  c4: 11.9000,
+  c5: 13.6000,
+  c6: 15.3000,
+  c7: 17.0000,
+  c8: 18.7000,
+  c9: 20.4000,
+  c10: 22.1000,
+  c11: 23.8000,
+  c12: 25.5000,
+  c13: 27.2000,
+  c14: 28.9000,
+  c15: 30.6000,
+  c16: 32.3000,
+  c17: 34.0000,
+  c18: 35.7000,
+  c19: 37.4000,
+  c20: 39.1000,
+  c21: 40.8000,
+  c22: 42.5000,
+  c23: 44.2000,
+  c24: 45.9000,
+  c25: 47.6000,
+  c26: 49.3000,
+  c27: 51.0000,
+  c28: 52.7000,
+  c29: 54.4000,
+  c30: 56.1000,
+  c31: 57.8000,
+  c32: 59.5000,
+  c33: 61.2000,
+  c34: 62.9000,
+  c35: 64.6000,
+  c36: 66.3000,
+  c37: 68.0000,
+  c38: 69.7000,
+  c39: 71.4000,
+  c40: 73.1000,
+  c41: 74.8000,
+  c42: 76.5000,
+  c43: 78.2000,
+  c44: 79.9000,
+  c45: 81.6000,
+  c46: 83.3000,
+  c47: 85.0000,
+  c48: 86.7000,
+  c49: 88.4000,
+  c50: 90.1000,
+  c51: 91.8000,
+  c52: 93.5000,
+  c53: 95.2000,
+  c54: 96.9000,
+  c55: 98.6000,
+  c56: 0.6000,
+  c57: 2.3000,
+  c58: 4.0000,
+  c59: 5.7000,
+  c60: 7.4000,
+  c61: 9.1000,
+  c62: 10.8000,
+  c63: 12.5000,
+  c64: 14.2000,
+  c65: 15.9000,
+  c66: 17.6000,
+  c67: 19.3000,
+  c68: 21.0000,
+  c69: 22.7000,
+  c70: 24.4000,
+  c71: 26.1000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_000_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_000_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_000_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_000_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_000_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_000_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_000_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_000_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_000_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_000_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 001 — VIC/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_001_META = {
+  id: 'kpi_001',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 1008,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_001_COEF = {
+  c0: 3.3000,
+  c1: 4.4000,
+  c2: 5.5000,
+  c3: 6.6000,
+  c4: 7.7000,
+  c5: 8.8000,
+  c6: 9.9000,
+  c7: 11.0000,
+  c8: 12.1000,
+  c9: 13.2000,
+  c10: 14.3000,
+  c11: 15.4000,
+  c12: 16.5000,
+  c13: 17.6000,
+  c14: 18.7000,
+  c15: 19.8000,
+  c16: 20.9000,
+  c17: 22.0000,
+  c18: 23.1000,
+  c19: 24.2000,
+  c20: 25.3000,
+  c21: 26.4000,
+  c22: 27.5000,
+  c23: 28.6000,
+  c24: 29.7000,
+  c25: 30.8000,
+  c26: 31.9000,
+  c27: 33.0000,
+  c28: 34.1000,
+  c29: 35.2000,
+  c30: 36.3000,
+  c31: 37.4000,
+  c32: 38.5000,
+  c33: 39.6000,
+  c34: 40.7000,
+  c35: 41.8000,
+  c36: 42.9000,
+  c37: 44.0000,
+  c38: 45.1000,
+  c39: 46.2000,
+  c40: 47.3000,
+  c41: 48.4000,
+  c42: 49.5000,
+  c43: 50.6000,
+  c44: 51.7000,
+  c45: 52.8000,
+  c46: 53.9000,
+  c47: 55.0000,
+  c48: 56.1000,
+  c49: 57.2000,
+  c50: 58.3000,
+  c51: 59.4000,
+  c52: 60.5000,
+  c53: 61.6000,
+  c54: 62.7000,
+  c55: 63.8000,
+  c56: 64.9000,
+  c57: 66.0000,
+  c58: 67.1000,
+  c59: 68.2000,
+  c60: 69.3000,
+  c61: 70.4000,
+  c62: 71.5000,
+  c63: 72.6000,
+  c64: 73.7000,
+  c65: 74.8000,
+  c66: 75.9000,
+  c67: 77.0000,
+  c68: 78.1000,
+  c69: 79.2000,
+  c70: 80.3000,
+  c71: 81.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_001_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_001_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_001_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_001_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_001_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_001_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_001_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_001_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_001_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_001_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 002 — QLD/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_002_META = {
+  id: 'kpi_002',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 1999,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_002_COEF = {
+  c0: 1.5000,
+  c1: 2.0000,
+  c2: 2.5000,
+  c3: 3.0000,
+  c4: 3.5000,
+  c5: 4.0000,
+  c6: 4.5000,
+  c7: 5.0000,
+  c8: 5.5000,
+  c9: 6.0000,
+  c10: 6.5000,
+  c11: 7.0000,
+  c12: 7.5000,
+  c13: 8.0000,
+  c14: 8.5000,
+  c15: 9.0000,
+  c16: 9.5000,
+  c17: 10.0000,
+  c18: 10.5000,
+  c19: 11.0000,
+  c20: 11.5000,
+  c21: 12.0000,
+  c22: 12.5000,
+  c23: 13.0000,
+  c24: 13.5000,
+  c25: 14.0000,
+  c26: 14.5000,
+  c27: 15.0000,
+  c28: 15.5000,
+  c29: 16.0000,
+  c30: 16.5000,
+  c31: 17.0000,
+  c32: 17.5000,
+  c33: 18.0000,
+  c34: 18.5000,
+  c35: 19.0000,
+  c36: 19.5000,
+  c37: 20.0000,
+  c38: 20.5000,
+  c39: 21.0000,
+  c40: 21.5000,
+  c41: 22.0000,
+  c42: 22.5000,
+  c43: 23.0000,
+  c44: 23.5000,
+  c45: 24.0000,
+  c46: 24.5000,
+  c47: 25.0000,
+  c48: 25.5000,
+  c49: 26.0000,
+  c50: 26.5000,
+  c51: 27.0000,
+  c52: 27.5000,
+  c53: 28.0000,
+  c54: 28.5000,
+  c55: 29.0000,
+  c56: 29.5000,
+  c57: 30.0000,
+  c58: 30.5000,
+  c59: 31.0000,
+  c60: 31.5000,
+  c61: 32.0000,
+  c62: 32.5000,
+  c63: 33.0000,
+  c64: 33.5000,
+  c65: 34.0000,
+  c66: 34.5000,
+  c67: 35.0000,
+  c68: 35.5000,
+  c69: 36.0000,
+  c70: 36.5000,
+  c71: 37.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_002_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_002_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_002_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_002_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_002_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_002_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_002_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_002_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_002_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_002_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 003 — WA/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_003_META = {
+  id: 'kpi_003',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 2990,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_003_COEF = {
+  c0: 99.4000,
+  c1: 99.3000,
+  c2: 99.2000,
+  c3: 99.1000,
+  c4: 99.0000,
+  c5: 98.9000,
+  c6: 98.8000,
+  c7: 98.7000,
+  c8: 98.6000,
+  c9: 98.5000,
+  c10: 98.4000,
+  c11: 98.3000,
+  c12: 98.2000,
+  c13: 98.1000,
+  c14: 98.0000,
+  c15: 97.9000,
+  c16: 97.8000,
+  c17: 97.7000,
+  c18: 97.6000,
+  c19: 97.5000,
+  c20: 97.4000,
+  c21: 97.3000,
+  c22: 97.2000,
+  c23: 97.1000,
+  c24: 97.0000,
+  c25: 96.9000,
+  c26: 96.8000,
+  c27: 96.7000,
+  c28: 96.6000,
+  c29: 96.5000,
+  c30: 96.4000,
+  c31: 96.3000,
+  c32: 96.2000,
+  c33: 96.1000,
+  c34: 96.0000,
+  c35: 95.9000,
+  c36: 95.8000,
+  c37: 95.7000,
+  c38: 95.6000,
+  c39: 95.5000,
+  c40: 95.4000,
+  c41: 95.3000,
+  c42: 95.2000,
+  c43: 95.1000,
+  c44: 95.0000,
+  c45: 94.9000,
+  c46: 94.8000,
+  c47: 94.7000,
+  c48: 94.6000,
+  c49: 94.5000,
+  c50: 94.4000,
+  c51: 94.3000,
+  c52: 94.2000,
+  c53: 94.1000,
+  c54: 94.0000,
+  c55: 93.9000,
+  c56: 93.8000,
+  c57: 93.7000,
+  c58: 93.6000,
+  c59: 93.5000,
+  c60: 93.4000,
+  c61: 93.3000,
+  c62: 93.2000,
+  c63: 93.1000,
+  c64: 93.0000,
+  c65: 92.9000,
+  c66: 92.8000,
+  c67: 92.7000,
+  c68: 92.6000,
+  c69: 92.5000,
+  c70: 92.4000,
+  c71: 92.3000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_003_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_003_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_003_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_003_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_003_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_003_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_003_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_003_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_003_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_003_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 004 — SA/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_004_META = {
+  id: 'kpi_004',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 3981,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_004_COEF = {
+  c0: 97.6000,
+  c1: 96.9000,
+  c2: 96.2000,
+  c3: 95.5000,
+  c4: 94.8000,
+  c5: 94.1000,
+  c6: 93.4000,
+  c7: 92.7000,
+  c8: 92.0000,
+  c9: 91.3000,
+  c10: 90.6000,
+  c11: 89.9000,
+  c12: 89.2000,
+  c13: 88.5000,
+  c14: 87.8000,
+  c15: 87.1000,
+  c16: 86.4000,
+  c17: 85.7000,
+  c18: 85.0000,
+  c19: 84.3000,
+  c20: 83.6000,
+  c21: 82.9000,
+  c22: 82.2000,
+  c23: 81.5000,
+  c24: 80.8000,
+  c25: 80.1000,
+  c26: 79.4000,
+  c27: 78.7000,
+  c28: 78.0000,
+  c29: 77.3000,
+  c30: 76.6000,
+  c31: 75.9000,
+  c32: 75.2000,
+  c33: 74.5000,
+  c34: 73.8000,
+  c35: 73.1000,
+  c36: 72.4000,
+  c37: 71.7000,
+  c38: 71.0000,
+  c39: 70.3000,
+  c40: 69.6000,
+  c41: 68.9000,
+  c42: 68.2000,
+  c43: 67.5000,
+  c44: 66.8000,
+  c45: 66.1000,
+  c46: 65.4000,
+  c47: 64.7000,
+  c48: 64.0000,
+  c49: 63.3000,
+  c50: 62.6000,
+  c51: 61.9000,
+  c52: 61.2000,
+  c53: 60.5000,
+  c54: 59.8000,
+  c55: 59.1000,
+  c56: 58.4000,
+  c57: 57.7000,
+  c58: 57.0000,
+  c59: 56.3000,
+  c60: 55.6000,
+  c61: 54.9000,
+  c62: 54.2000,
+  c63: 53.5000,
+  c64: 52.8000,
+  c65: 52.1000,
+  c66: 51.4000,
+  c67: 50.7000,
+  c68: 50.0000,
+  c69: 49.3000,
+  c70: 48.6000,
+  c71: 47.9000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_004_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_004_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_004_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_004_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_004_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_004_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_004_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_004_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_004_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_004_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 005 — TAS/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_005_META = {
+  id: 'kpi_005',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 4972,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_005_COEF = {
+  c0: 95.8000,
+  c1: 94.5000,
+  c2: 93.2000,
+  c3: 91.9000,
+  c4: 90.6000,
+  c5: 89.3000,
+  c6: 88.0000,
+  c7: 86.7000,
+  c8: 85.4000,
+  c9: 84.1000,
+  c10: 82.8000,
+  c11: 81.5000,
+  c12: 80.2000,
+  c13: 78.9000,
+  c14: 77.6000,
+  c15: 76.3000,
+  c16: 75.0000,
+  c17: 73.7000,
+  c18: 72.4000,
+  c19: 71.1000,
+  c20: 69.8000,
+  c21: 68.5000,
+  c22: 67.2000,
+  c23: 65.9000,
+  c24: 64.6000,
+  c25: 63.3000,
+  c26: 62.0000,
+  c27: 60.7000,
+  c28: 59.4000,
+  c29: 58.1000,
+  c30: 56.8000,
+  c31: 55.5000,
+  c32: 54.2000,
+  c33: 52.9000,
+  c34: 51.6000,
+  c35: 50.3000,
+  c36: 49.0000,
+  c37: 47.7000,
+  c38: 46.4000,
+  c39: 45.1000,
+  c40: 43.8000,
+  c41: 42.5000,
+  c42: 41.2000,
+  c43: 39.9000,
+  c44: 38.6000,
+  c45: 37.3000,
+  c46: 36.0000,
+  c47: 34.7000,
+  c48: 33.4000,
+  c49: 32.1000,
+  c50: 30.8000,
+  c51: 29.5000,
+  c52: 28.2000,
+  c53: 26.9000,
+  c54: 25.6000,
+  c55: 24.3000,
+  c56: 23.0000,
+  c57: 21.7000,
+  c58: 20.4000,
+  c59: 19.1000,
+  c60: 17.8000,
+  c61: 16.5000,
+  c62: 15.2000,
+  c63: 13.9000,
+  c64: 12.6000,
+  c65: 11.3000,
+  c66: 10.0000,
+  c67: 8.7000,
+  c68: 7.4000,
+  c69: 6.1000,
+  c70: 4.8000,
+  c71: 3.5000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_005_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_005_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_005_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_005_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_005_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_005_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_005_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_005_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_005_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_005_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 006 — NT/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_006_META = {
+  id: 'kpi_006',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 5963,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_006_COEF = {
+  c0: 94.0000,
+  c1: 92.1000,
+  c2: 90.2000,
+  c3: 88.3000,
+  c4: 86.4000,
+  c5: 84.5000,
+  c6: 82.6000,
+  c7: 80.7000,
+  c8: 78.8000,
+  c9: 76.9000,
+  c10: 75.0000,
+  c11: 73.1000,
+  c12: 71.2000,
+  c13: 69.3000,
+  c14: 67.4000,
+  c15: 65.5000,
+  c16: 63.6000,
+  c17: 61.7000,
+  c18: 59.8000,
+  c19: 57.9000,
+  c20: 56.0000,
+  c21: 54.1000,
+  c22: 52.2000,
+  c23: 50.3000,
+  c24: 48.4000,
+  c25: 46.5000,
+  c26: 44.6000,
+  c27: 42.7000,
+  c28: 40.8000,
+  c29: 38.9000,
+  c30: 37.0000,
+  c31: 35.1000,
+  c32: 33.2000,
+  c33: 31.3000,
+  c34: 29.4000,
+  c35: 27.5000,
+  c36: 25.6000,
+  c37: 23.7000,
+  c38: 21.8000,
+  c39: 19.9000,
+  c40: 18.0000,
+  c41: 16.1000,
+  c42: 14.2000,
+  c43: 12.3000,
+  c44: 10.4000,
+  c45: 8.5000,
+  c46: 6.6000,
+  c47: 4.7000,
+  c48: 2.8000,
+  c49: 0.9000,
+  c50: 98.7000,
+  c51: 96.8000,
+  c52: 94.9000,
+  c53: 93.0000,
+  c54: 91.1000,
+  c55: 89.2000,
+  c56: 87.3000,
+  c57: 85.4000,
+  c58: 83.5000,
+  c59: 81.6000,
+  c60: 79.7000,
+  c61: 77.8000,
+  c62: 75.9000,
+  c63: 74.0000,
+  c64: 72.1000,
+  c65: 70.2000,
+  c66: 68.3000,
+  c67: 66.4000,
+  c68: 64.5000,
+  c69: 62.6000,
+  c70: 60.7000,
+  c71: 58.8000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_006_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_006_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_006_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_006_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_006_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_006_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_006_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_006_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_006_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_006_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 007 — ACT/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_007_META = {
+  id: 'kpi_007',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 6954,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_007_COEF = {
+  c0: 92.2000,
+  c1: 89.7000,
+  c2: 87.2000,
+  c3: 84.7000,
+  c4: 82.2000,
+  c5: 79.7000,
+  c6: 77.2000,
+  c7: 74.7000,
+  c8: 72.2000,
+  c9: 69.7000,
+  c10: 67.2000,
+  c11: 64.7000,
+  c12: 62.2000,
+  c13: 59.7000,
+  c14: 57.2000,
+  c15: 54.7000,
+  c16: 52.2000,
+  c17: 49.7000,
+  c18: 47.2000,
+  c19: 44.7000,
+  c20: 42.2000,
+  c21: 39.7000,
+  c22: 37.2000,
+  c23: 34.7000,
+  c24: 32.2000,
+  c25: 29.7000,
+  c26: 27.2000,
+  c27: 24.7000,
+  c28: 22.2000,
+  c29: 19.7000,
+  c30: 17.2000,
+  c31: 14.7000,
+  c32: 12.2000,
+  c33: 9.7000,
+  c34: 7.2000,
+  c35: 4.7000,
+  c36: 2.2000,
+  c37: 99.4000,
+  c38: 96.9000,
+  c39: 94.4000,
+  c40: 91.9000,
+  c41: 89.4000,
+  c42: 86.9000,
+  c43: 84.4000,
+  c44: 81.9000,
+  c45: 79.4000,
+  c46: 76.9000,
+  c47: 74.4000,
+  c48: 71.9000,
+  c49: 69.4000,
+  c50: 66.9000,
+  c51: 64.4000,
+  c52: 61.9000,
+  c53: 59.4000,
+  c54: 56.9000,
+  c55: 54.4000,
+  c56: 51.9000,
+  c57: 49.4000,
+  c58: 46.9000,
+  c59: 44.4000,
+  c60: 41.9000,
+  c61: 39.4000,
+  c62: 36.9000,
+  c63: 34.4000,
+  c64: 31.9000,
+  c65: 29.4000,
+  c66: 26.9000,
+  c67: 24.4000,
+  c68: 21.9000,
+  c69: 19.4000,
+  c70: 16.9000,
+  c71: 14.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_007_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_007_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_007_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_007_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_007_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_007_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_007_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_007_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_007_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_007_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 008 — NSW/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_008_META = {
+  id: 'kpi_008',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 7945,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_008_COEF = {
+  c0: 90.4000,
+  c1: 87.3000,
+  c2: 84.2000,
+  c3: 81.1000,
+  c4: 78.0000,
+  c5: 74.9000,
+  c6: 71.8000,
+  c7: 68.7000,
+  c8: 65.6000,
+  c9: 62.5000,
+  c10: 59.4000,
+  c11: 56.3000,
+  c12: 53.2000,
+  c13: 50.1000,
+  c14: 47.0000,
+  c15: 43.9000,
+  c16: 40.8000,
+  c17: 37.7000,
+  c18: 34.6000,
+  c19: 31.5000,
+  c20: 28.4000,
+  c21: 25.3000,
+  c22: 22.2000,
+  c23: 19.1000,
+  c24: 16.0000,
+  c25: 12.9000,
+  c26: 9.8000,
+  c27: 6.7000,
+  c28: 3.6000,
+  c29: 0.5000,
+  c30: 97.1000,
+  c31: 94.0000,
+  c32: 90.9000,
+  c33: 87.8000,
+  c34: 84.7000,
+  c35: 81.6000,
+  c36: 78.5000,
+  c37: 75.4000,
+  c38: 72.3000,
+  c39: 69.2000,
+  c40: 66.1000,
+  c41: 63.0000,
+  c42: 59.9000,
+  c43: 56.8000,
+  c44: 53.7000,
+  c45: 50.6000,
+  c46: 47.5000,
+  c47: 44.4000,
+  c48: 41.3000,
+  c49: 38.2000,
+  c50: 35.1000,
+  c51: 32.0000,
+  c52: 28.9000,
+  c53: 25.8000,
+  c54: 22.7000,
+  c55: 19.6000,
+  c56: 16.5000,
+  c57: 13.4000,
+  c58: 10.3000,
+  c59: 7.2000,
+  c60: 4.1000,
+  c61: 1.0000,
+  c62: 97.6000,
+  c63: 94.5000,
+  c64: 91.4000,
+  c65: 88.3000,
+  c66: 85.2000,
+  c67: 82.1000,
+  c68: 79.0000,
+  c69: 75.9000,
+  c70: 72.8000,
+  c71: 69.7000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_008_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_008_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_008_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_008_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_008_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_008_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_008_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_008_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_008_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_008_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 009 — VIC/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_009_META = {
+  id: 'kpi_009',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 8936,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_009_COEF = {
+  c0: 88.6000,
+  c1: 84.9000,
+  c2: 81.2000,
+  c3: 77.5000,
+  c4: 73.8000,
+  c5: 70.1000,
+  c6: 66.4000,
+  c7: 62.7000,
+  c8: 59.0000,
+  c9: 55.3000,
+  c10: 51.6000,
+  c11: 47.9000,
+  c12: 44.2000,
+  c13: 40.5000,
+  c14: 36.8000,
+  c15: 33.1000,
+  c16: 29.4000,
+  c17: 25.7000,
+  c18: 22.0000,
+  c19: 18.3000,
+  c20: 14.6000,
+  c21: 10.9000,
+  c22: 7.2000,
+  c23: 3.5000,
+  c24: 99.5000,
+  c25: 95.8000,
+  c26: 92.1000,
+  c27: 88.4000,
+  c28: 84.7000,
+  c29: 81.0000,
+  c30: 77.3000,
+  c31: 73.6000,
+  c32: 69.9000,
+  c33: 66.2000,
+  c34: 62.5000,
+  c35: 58.8000,
+  c36: 55.1000,
+  c37: 51.4000,
+  c38: 47.7000,
+  c39: 44.0000,
+  c40: 40.3000,
+  c41: 36.6000,
+  c42: 32.9000,
+  c43: 29.2000,
+  c44: 25.5000,
+  c45: 21.8000,
+  c46: 18.1000,
+  c47: 14.4000,
+  c48: 10.7000,
+  c49: 7.0000,
+  c50: 3.3000,
+  c51: 99.3000,
+  c52: 95.6000,
+  c53: 91.9000,
+  c54: 88.2000,
+  c55: 84.5000,
+  c56: 80.8000,
+  c57: 77.1000,
+  c58: 73.4000,
+  c59: 69.7000,
+  c60: 66.0000,
+  c61: 62.3000,
+  c62: 58.6000,
+  c63: 54.9000,
+  c64: 51.2000,
+  c65: 47.5000,
+  c66: 43.8000,
+  c67: 40.1000,
+  c68: 36.4000,
+  c69: 32.7000,
+  c70: 29.0000,
+  c71: 25.3000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_009_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_009_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_009_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_009_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_009_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_009_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_009_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_009_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_009_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_009_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 010 — QLD/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_010_META = {
+  id: 'kpi_010',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 9927,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_010_COEF = {
+  c0: 86.8000,
+  c1: 82.5000,
+  c2: 78.2000,
+  c3: 73.9000,
+  c4: 69.6000,
+  c5: 65.3000,
+  c6: 61.0000,
+  c7: 56.7000,
+  c8: 52.4000,
+  c9: 48.1000,
+  c10: 43.8000,
+  c11: 39.5000,
+  c12: 35.2000,
+  c13: 30.9000,
+  c14: 26.6000,
+  c15: 22.3000,
+  c16: 18.0000,
+  c17: 13.7000,
+  c18: 9.4000,
+  c19: 5.1000,
+  c20: 0.8000,
+  c21: 96.2000,
+  c22: 91.9000,
+  c23: 87.6000,
+  c24: 83.3000,
+  c25: 79.0000,
+  c26: 74.7000,
+  c27: 70.4000,
+  c28: 66.1000,
+  c29: 61.8000,
+  c30: 57.5000,
+  c31: 53.2000,
+  c32: 48.9000,
+  c33: 44.6000,
+  c34: 40.3000,
+  c35: 36.0000,
+  c36: 31.7000,
+  c37: 27.4000,
+  c38: 23.1000,
+  c39: 18.8000,
+  c40: 14.5000,
+  c41: 10.2000,
+  c42: 5.9000,
+  c43: 1.6000,
+  c44: 97.0000,
+  c45: 92.7000,
+  c46: 88.4000,
+  c47: 84.1000,
+  c48: 79.8000,
+  c49: 75.5000,
+  c50: 71.2000,
+  c51: 66.9000,
+  c52: 62.6000,
+  c53: 58.3000,
+  c54: 54.0000,
+  c55: 49.7000,
+  c56: 45.4000,
+  c57: 41.1000,
+  c58: 36.8000,
+  c59: 32.5000,
+  c60: 28.2000,
+  c61: 23.9000,
+  c62: 19.6000,
+  c63: 15.3000,
+  c64: 11.0000,
+  c65: 6.7000,
+  c66: 2.4000,
+  c67: 97.8000,
+  c68: 93.5000,
+  c69: 89.2000,
+  c70: 84.9000,
+  c71: 80.6000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_010_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_010_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_010_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_010_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_010_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_010_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_010_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_010_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_010_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_010_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 011 — WA/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_011_META = {
+  id: 'kpi_011',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 10918,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_011_COEF = {
+  c0: 85.0000,
+  c1: 80.1000,
+  c2: 75.2000,
+  c3: 70.3000,
+  c4: 65.4000,
+  c5: 60.5000,
+  c6: 55.6000,
+  c7: 50.7000,
+  c8: 45.8000,
+  c9: 40.9000,
+  c10: 36.0000,
+  c11: 31.1000,
+  c12: 26.2000,
+  c13: 21.3000,
+  c14: 16.4000,
+  c15: 11.5000,
+  c16: 6.6000,
+  c17: 1.7000,
+  c18: 96.5000,
+  c19: 91.6000,
+  c20: 86.7000,
+  c21: 81.8000,
+  c22: 76.9000,
+  c23: 72.0000,
+  c24: 67.1000,
+  c25: 62.2000,
+  c26: 57.3000,
+  c27: 52.4000,
+  c28: 47.5000,
+  c29: 42.6000,
+  c30: 37.7000,
+  c31: 32.8000,
+  c32: 27.9000,
+  c33: 23.0000,
+  c34: 18.1000,
+  c35: 13.2000,
+  c36: 8.3000,
+  c37: 3.4000,
+  c38: 98.2000,
+  c39: 93.3000,
+  c40: 88.4000,
+  c41: 83.5000,
+  c42: 78.6000,
+  c43: 73.7000,
+  c44: 68.8000,
+  c45: 63.9000,
+  c46: 59.0000,
+  c47: 54.1000,
+  c48: 49.2000,
+  c49: 44.3000,
+  c50: 39.4000,
+  c51: 34.5000,
+  c52: 29.6000,
+  c53: 24.7000,
+  c54: 19.8000,
+  c55: 14.9000,
+  c56: 10.0000,
+  c57: 5.1000,
+  c58: 0.2000,
+  c59: 95.0000,
+  c60: 90.1000,
+  c61: 85.2000,
+  c62: 80.3000,
+  c63: 75.4000,
+  c64: 70.5000,
+  c65: 65.6000,
+  c66: 60.7000,
+  c67: 55.8000,
+  c68: 50.9000,
+  c69: 46.0000,
+  c70: 41.1000,
+  c71: 36.2000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_011_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_011_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_011_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_011_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_011_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_011_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_011_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_011_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_011_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_011_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 012 — SA/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_012_META = {
+  id: 'kpi_012',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 11909,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_012_COEF = {
+  c0: 83.2000,
+  c1: 77.7000,
+  c2: 72.2000,
+  c3: 66.7000,
+  c4: 61.2000,
+  c5: 55.7000,
+  c6: 50.2000,
+  c7: 44.7000,
+  c8: 39.2000,
+  c9: 33.7000,
+  c10: 28.2000,
+  c11: 22.7000,
+  c12: 17.2000,
+  c13: 11.7000,
+  c14: 6.2000,
+  c15: 0.7000,
+  c16: 94.9000,
+  c17: 89.4000,
+  c18: 83.9000,
+  c19: 78.4000,
+  c20: 72.9000,
+  c21: 67.4000,
+  c22: 61.9000,
+  c23: 56.4000,
+  c24: 50.9000,
+  c25: 45.4000,
+  c26: 39.9000,
+  c27: 34.4000,
+  c28: 28.9000,
+  c29: 23.4000,
+  c30: 17.9000,
+  c31: 12.4000,
+  c32: 6.9000,
+  c33: 1.4000,
+  c34: 95.6000,
+  c35: 90.1000,
+  c36: 84.6000,
+  c37: 79.1000,
+  c38: 73.6000,
+  c39: 68.1000,
+  c40: 62.6000,
+  c41: 57.1000,
+  c42: 51.6000,
+  c43: 46.1000,
+  c44: 40.6000,
+  c45: 35.1000,
+  c46: 29.6000,
+  c47: 24.1000,
+  c48: 18.6000,
+  c49: 13.1000,
+  c50: 7.6000,
+  c51: 2.1000,
+  c52: 96.3000,
+  c53: 90.8000,
+  c54: 85.3000,
+  c55: 79.8000,
+  c56: 74.3000,
+  c57: 68.8000,
+  c58: 63.3000,
+  c59: 57.8000,
+  c60: 52.3000,
+  c61: 46.8000,
+  c62: 41.3000,
+  c63: 35.8000,
+  c64: 30.3000,
+  c65: 24.8000,
+  c66: 19.3000,
+  c67: 13.8000,
+  c68: 8.3000,
+  c69: 2.8000,
+  c70: 97.0000,
+  c71: 91.5000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_012_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_012_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_012_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_012_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_012_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_012_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_012_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_012_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_012_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_012_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 013 — TAS/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_013_META = {
+  id: 'kpi_013',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 12900,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_013_COEF = {
+  c0: 81.4000,
+  c1: 75.3000,
+  c2: 69.2000,
+  c3: 63.1000,
+  c4: 57.0000,
+  c5: 50.9000,
+  c6: 44.8000,
+  c7: 38.7000,
+  c8: 32.6000,
+  c9: 26.5000,
+  c10: 20.4000,
+  c11: 14.3000,
+  c12: 8.2000,
+  c13: 2.1000,
+  c14: 95.7000,
+  c15: 89.6000,
+  c16: 83.5000,
+  c17: 77.4000,
+  c18: 71.3000,
+  c19: 65.2000,
+  c20: 59.1000,
+  c21: 53.0000,
+  c22: 46.9000,
+  c23: 40.8000,
+  c24: 34.7000,
+  c25: 28.6000,
+  c26: 22.5000,
+  c27: 16.4000,
+  c28: 10.3000,
+  c29: 4.2000,
+  c30: 97.8000,
+  c31: 91.7000,
+  c32: 85.6000,
+  c33: 79.5000,
+  c34: 73.4000,
+  c35: 67.3000,
+  c36: 61.2000,
+  c37: 55.1000,
+  c38: 49.0000,
+  c39: 42.9000,
+  c40: 36.8000,
+  c41: 30.7000,
+  c42: 24.6000,
+  c43: 18.5000,
+  c44: 12.4000,
+  c45: 6.3000,
+  c46: 0.2000,
+  c47: 93.8000,
+  c48: 87.7000,
+  c49: 81.6000,
+  c50: 75.5000,
+  c51: 69.4000,
+  c52: 63.3000,
+  c53: 57.2000,
+  c54: 51.1000,
+  c55: 45.0000,
+  c56: 38.9000,
+  c57: 32.8000,
+  c58: 26.7000,
+  c59: 20.6000,
+  c60: 14.5000,
+  c61: 8.4000,
+  c62: 2.3000,
+  c63: 95.9000,
+  c64: 89.8000,
+  c65: 83.7000,
+  c66: 77.6000,
+  c67: 71.5000,
+  c68: 65.4000,
+  c69: 59.3000,
+  c70: 53.2000,
+  c71: 47.1000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_013_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_013_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_013_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_013_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_013_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_013_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_013_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_013_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_013_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_013_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 014 — NT/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_014_META = {
+  id: 'kpi_014',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 13891,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_014_COEF = {
+  c0: 79.6000,
+  c1: 72.9000,
+  c2: 66.2000,
+  c3: 59.5000,
+  c4: 52.8000,
+  c5: 46.1000,
+  c6: 39.4000,
+  c7: 32.7000,
+  c8: 26.0000,
+  c9: 19.3000,
+  c10: 12.6000,
+  c11: 5.9000,
+  c12: 98.9000,
+  c13: 92.2000,
+  c14: 85.5000,
+  c15: 78.8000,
+  c16: 72.1000,
+  c17: 65.4000,
+  c18: 58.7000,
+  c19: 52.0000,
+  c20: 45.3000,
+  c21: 38.6000,
+  c22: 31.9000,
+  c23: 25.2000,
+  c24: 18.5000,
+  c25: 11.8000,
+  c26: 5.1000,
+  c27: 98.1000,
+  c28: 91.4000,
+  c29: 84.7000,
+  c30: 78.0000,
+  c31: 71.3000,
+  c32: 64.6000,
+  c33: 57.9000,
+  c34: 51.2000,
+  c35: 44.5000,
+  c36: 37.8000,
+  c37: 31.1000,
+  c38: 24.4000,
+  c39: 17.7000,
+  c40: 11.0000,
+  c41: 4.3000,
+  c42: 97.3000,
+  c43: 90.6000,
+  c44: 83.9000,
+  c45: 77.2000,
+  c46: 70.5000,
+  c47: 63.8000,
+  c48: 57.1000,
+  c49: 50.4000,
+  c50: 43.7000,
+  c51: 37.0000,
+  c52: 30.3000,
+  c53: 23.6000,
+  c54: 16.9000,
+  c55: 10.2000,
+  c56: 3.5000,
+  c57: 96.5000,
+  c58: 89.8000,
+  c59: 83.1000,
+  c60: 76.4000,
+  c61: 69.7000,
+  c62: 63.0000,
+  c63: 56.3000,
+  c64: 49.6000,
+  c65: 42.9000,
+  c66: 36.2000,
+  c67: 29.5000,
+  c68: 22.8000,
+  c69: 16.1000,
+  c70: 9.4000,
+  c71: 2.7000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_014_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_014_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_014_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_014_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_014_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_014_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_014_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_014_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_014_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_014_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 015 — ACT/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_015_META = {
+  id: 'kpi_015',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 14882,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_015_COEF = {
+  c0: 77.8000,
+  c1: 70.5000,
+  c2: 63.2000,
+  c3: 55.9000,
+  c4: 48.6000,
+  c5: 41.3000,
+  c6: 34.0000,
+  c7: 26.7000,
+  c8: 19.4000,
+  c9: 12.1000,
+  c10: 4.8000,
+  c11: 97.2000,
+  c12: 89.9000,
+  c13: 82.6000,
+  c14: 75.3000,
+  c15: 68.0000,
+  c16: 60.7000,
+  c17: 53.4000,
+  c18: 46.1000,
+  c19: 38.8000,
+  c20: 31.5000,
+  c21: 24.2000,
+  c22: 16.9000,
+  c23: 9.6000,
+  c24: 2.3000,
+  c25: 94.7000,
+  c26: 87.4000,
+  c27: 80.1000,
+  c28: 72.8000,
+  c29: 65.5000,
+  c30: 58.2000,
+  c31: 50.9000,
+  c32: 43.6000,
+  c33: 36.3000,
+  c34: 29.0000,
+  c35: 21.7000,
+  c36: 14.4000,
+  c37: 7.1000,
+  c38: 99.5000,
+  c39: 92.2000,
+  c40: 84.9000,
+  c41: 77.6000,
+  c42: 70.3000,
+  c43: 63.0000,
+  c44: 55.7000,
+  c45: 48.4000,
+  c46: 41.1000,
+  c47: 33.8000,
+  c48: 26.5000,
+  c49: 19.2000,
+  c50: 11.9000,
+  c51: 4.6000,
+  c52: 97.0000,
+  c53: 89.7000,
+  c54: 82.4000,
+  c55: 75.1000,
+  c56: 67.8000,
+  c57: 60.5000,
+  c58: 53.2000,
+  c59: 45.9000,
+  c60: 38.6000,
+  c61: 31.3000,
+  c62: 24.0000,
+  c63: 16.7000,
+  c64: 9.4000,
+  c65: 2.1000,
+  c66: 94.5000,
+  c67: 87.2000,
+  c68: 79.9000,
+  c69: 72.6000,
+  c70: 65.3000,
+  c71: 58.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_015_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_015_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_015_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_015_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_015_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_015_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_015_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_015_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_015_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_015_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 016 — NSW/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_016_META = {
+  id: 'kpi_016',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 15873,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_016_COEF = {
+  c0: 76.0000,
+  c1: 68.1000,
+  c2: 60.2000,
+  c3: 52.3000,
+  c4: 44.4000,
+  c5: 36.5000,
+  c6: 28.6000,
+  c7: 20.7000,
+  c8: 12.8000,
+  c9: 4.9000,
+  c10: 96.7000,
+  c11: 88.8000,
+  c12: 80.9000,
+  c13: 73.0000,
+  c14: 65.1000,
+  c15: 57.2000,
+  c16: 49.3000,
+  c17: 41.4000,
+  c18: 33.5000,
+  c19: 25.6000,
+  c20: 17.7000,
+  c21: 9.8000,
+  c22: 1.9000,
+  c23: 93.7000,
+  c24: 85.8000,
+  c25: 77.9000,
+  c26: 70.0000,
+  c27: 62.1000,
+  c28: 54.2000,
+  c29: 46.3000,
+  c30: 38.4000,
+  c31: 30.5000,
+  c32: 22.6000,
+  c33: 14.7000,
+  c34: 6.8000,
+  c35: 98.6000,
+  c36: 90.7000,
+  c37: 82.8000,
+  c38: 74.9000,
+  c39: 67.0000,
+  c40: 59.1000,
+  c41: 51.2000,
+  c42: 43.3000,
+  c43: 35.4000,
+  c44: 27.5000,
+  c45: 19.6000,
+  c46: 11.7000,
+  c47: 3.8000,
+  c48: 95.6000,
+  c49: 87.7000,
+  c50: 79.8000,
+  c51: 71.9000,
+  c52: 64.0000,
+  c53: 56.1000,
+  c54: 48.2000,
+  c55: 40.3000,
+  c56: 32.4000,
+  c57: 24.5000,
+  c58: 16.6000,
+  c59: 8.7000,
+  c60: 0.8000,
+  c61: 92.6000,
+  c62: 84.7000,
+  c63: 76.8000,
+  c64: 68.9000,
+  c65: 61.0000,
+  c66: 53.1000,
+  c67: 45.2000,
+  c68: 37.3000,
+  c69: 29.4000,
+  c70: 21.5000,
+  c71: 13.6000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_016_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_016_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_016_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_016_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_016_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_016_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_016_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_016_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_016_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_016_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 017 — VIC/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_017_META = {
+  id: 'kpi_017',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 16864,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_017_COEF = {
+  c0: 74.2000,
+  c1: 65.7000,
+  c2: 57.2000,
+  c3: 48.7000,
+  c4: 40.2000,
+  c5: 31.7000,
+  c6: 23.2000,
+  c7: 14.7000,
+  c8: 6.2000,
+  c9: 97.4000,
+  c10: 88.9000,
+  c11: 80.4000,
+  c12: 71.9000,
+  c13: 63.4000,
+  c14: 54.9000,
+  c15: 46.4000,
+  c16: 37.9000,
+  c17: 29.4000,
+  c18: 20.9000,
+  c19: 12.4000,
+  c20: 3.9000,
+  c21: 95.1000,
+  c22: 86.6000,
+  c23: 78.1000,
+  c24: 69.6000,
+  c25: 61.1000,
+  c26: 52.6000,
+  c27: 44.1000,
+  c28: 35.6000,
+  c29: 27.1000,
+  c30: 18.6000,
+  c31: 10.1000,
+  c32: 1.6000,
+  c33: 92.8000,
+  c34: 84.3000,
+  c35: 75.8000,
+  c36: 67.3000,
+  c37: 58.8000,
+  c38: 50.3000,
+  c39: 41.8000,
+  c40: 33.3000,
+  c41: 24.8000,
+  c42: 16.3000,
+  c43: 7.8000,
+  c44: 99.0000,
+  c45: 90.5000,
+  c46: 82.0000,
+  c47: 73.5000,
+  c48: 65.0000,
+  c49: 56.5000,
+  c50: 48.0000,
+  c51: 39.5000,
+  c52: 31.0000,
+  c53: 22.5000,
+  c54: 14.0000,
+  c55: 5.5000,
+  c56: 96.7000,
+  c57: 88.2000,
+  c58: 79.7000,
+  c59: 71.2000,
+  c60: 62.7000,
+  c61: 54.2000,
+  c62: 45.7000,
+  c63: 37.2000,
+  c64: 28.7000,
+  c65: 20.2000,
+  c66: 11.7000,
+  c67: 3.2000,
+  c68: 94.4000,
+  c69: 85.9000,
+  c70: 77.4000,
+  c71: 68.9000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_017_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_017_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_017_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_017_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_017_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_017_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_017_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_017_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_017_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_017_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 018 — QLD/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_018_META = {
+  id: 'kpi_018',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 17855,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_018_COEF = {
+  c0: 72.4000,
+  c1: 63.3000,
+  c2: 54.2000,
+  c3: 45.1000,
+  c4: 36.0000,
+  c5: 26.9000,
+  c6: 17.8000,
+  c7: 8.7000,
+  c8: 99.3000,
+  c9: 90.2000,
+  c10: 81.1000,
+  c11: 72.0000,
+  c12: 62.9000,
+  c13: 53.8000,
+  c14: 44.7000,
+  c15: 35.6000,
+  c16: 26.5000,
+  c17: 17.4000,
+  c18: 8.3000,
+  c19: 98.9000,
+  c20: 89.8000,
+  c21: 80.7000,
+  c22: 71.6000,
+  c23: 62.5000,
+  c24: 53.4000,
+  c25: 44.3000,
+  c26: 35.2000,
+  c27: 26.1000,
+  c28: 17.0000,
+  c29: 7.9000,
+  c30: 98.5000,
+  c31: 89.4000,
+  c32: 80.3000,
+  c33: 71.2000,
+  c34: 62.1000,
+  c35: 53.0000,
+  c36: 43.9000,
+  c37: 34.8000,
+  c38: 25.7000,
+  c39: 16.6000,
+  c40: 7.5000,
+  c41: 98.1000,
+  c42: 89.0000,
+  c43: 79.9000,
+  c44: 70.8000,
+  c45: 61.7000,
+  c46: 52.6000,
+  c47: 43.5000,
+  c48: 34.4000,
+  c49: 25.3000,
+  c50: 16.2000,
+  c51: 7.1000,
+  c52: 97.7000,
+  c53: 88.6000,
+  c54: 79.5000,
+  c55: 70.4000,
+  c56: 61.3000,
+  c57: 52.2000,
+  c58: 43.1000,
+  c59: 34.0000,
+  c60: 24.9000,
+  c61: 15.8000,
+  c62: 6.7000,
+  c63: 97.3000,
+  c64: 88.2000,
+  c65: 79.1000,
+  c66: 70.0000,
+  c67: 60.9000,
+  c68: 51.8000,
+  c69: 42.7000,
+  c70: 33.6000,
+  c71: 24.5000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_018_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_018_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_018_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_018_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_018_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_018_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_018_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_018_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_018_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_018_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 019 — WA/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_019_META = {
+  id: 'kpi_019',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 18846,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_019_COEF = {
+  c0: 70.6000,
+  c1: 60.9000,
+  c2: 51.2000,
+  c3: 41.5000,
+  c4: 31.8000,
+  c5: 22.1000,
+  c6: 12.4000,
+  c7: 2.7000,
+  c8: 92.7000,
+  c9: 83.0000,
+  c10: 73.3000,
+  c11: 63.6000,
+  c12: 53.9000,
+  c13: 44.2000,
+  c14: 34.5000,
+  c15: 24.8000,
+  c16: 15.1000,
+  c17: 5.4000,
+  c18: 95.4000,
+  c19: 85.7000,
+  c20: 76.0000,
+  c21: 66.3000,
+  c22: 56.6000,
+  c23: 46.9000,
+  c24: 37.2000,
+  c25: 27.5000,
+  c26: 17.8000,
+  c27: 8.1000,
+  c28: 98.1000,
+  c29: 88.4000,
+  c30: 78.7000,
+  c31: 69.0000,
+  c32: 59.3000,
+  c33: 49.6000,
+  c34: 39.9000,
+  c35: 30.2000,
+  c36: 20.5000,
+  c37: 10.8000,
+  c38: 1.1000,
+  c39: 91.1000,
+  c40: 81.4000,
+  c41: 71.7000,
+  c42: 62.0000,
+  c43: 52.3000,
+  c44: 42.6000,
+  c45: 32.9000,
+  c46: 23.2000,
+  c47: 13.5000,
+  c48: 3.8000,
+  c49: 93.8000,
+  c50: 84.1000,
+  c51: 74.4000,
+  c52: 64.7000,
+  c53: 55.0000,
+  c54: 45.3000,
+  c55: 35.6000,
+  c56: 25.9000,
+  c57: 16.2000,
+  c58: 6.5000,
+  c59: 96.5000,
+  c60: 86.8000,
+  c61: 77.1000,
+  c62: 67.4000,
+  c63: 57.7000,
+  c64: 48.0000,
+  c65: 38.3000,
+  c66: 28.6000,
+  c67: 18.9000,
+  c68: 9.2000,
+  c69: 99.2000,
+  c70: 89.5000,
+  c71: 79.8000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_019_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_019_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_019_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_019_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_019_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_019_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_019_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_019_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_019_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_019_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 020 — SA/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_020_META = {
+  id: 'kpi_020',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 19837,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_020_COEF = {
+  c0: 68.8000,
+  c1: 58.5000,
+  c2: 48.2000,
+  c3: 37.9000,
+  c4: 27.6000,
+  c5: 17.3000,
+  c6: 7.0000,
+  c7: 96.4000,
+  c8: 86.1000,
+  c9: 75.8000,
+  c10: 65.5000,
+  c11: 55.2000,
+  c12: 44.9000,
+  c13: 34.6000,
+  c14: 24.3000,
+  c15: 14.0000,
+  c16: 3.7000,
+  c17: 93.1000,
+  c18: 82.8000,
+  c19: 72.5000,
+  c20: 62.2000,
+  c21: 51.9000,
+  c22: 41.6000,
+  c23: 31.3000,
+  c24: 21.0000,
+  c25: 10.7000,
+  c26: 0.4000,
+  c27: 89.8000,
+  c28: 79.5000,
+  c29: 69.2000,
+  c30: 58.9000,
+  c31: 48.6000,
+  c32: 38.3000,
+  c33: 28.0000,
+  c34: 17.7000,
+  c35: 7.4000,
+  c36: 96.8000,
+  c37: 86.5000,
+  c38: 76.2000,
+  c39: 65.9000,
+  c40: 55.6000,
+  c41: 45.3000,
+  c42: 35.0000,
+  c43: 24.7000,
+  c44: 14.4000,
+  c45: 4.1000,
+  c46: 93.5000,
+  c47: 83.2000,
+  c48: 72.9000,
+  c49: 62.6000,
+  c50: 52.3000,
+  c51: 42.0000,
+  c52: 31.7000,
+  c53: 21.4000,
+  c54: 11.1000,
+  c55: 0.8000,
+  c56: 90.2000,
+  c57: 79.9000,
+  c58: 69.6000,
+  c59: 59.3000,
+  c60: 49.0000,
+  c61: 38.7000,
+  c62: 28.4000,
+  c63: 18.1000,
+  c64: 7.8000,
+  c65: 97.2000,
+  c66: 86.9000,
+  c67: 76.6000,
+  c68: 66.3000,
+  c69: 56.0000,
+  c70: 45.7000,
+  c71: 35.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_020_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_020_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_020_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_020_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_020_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_020_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_020_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_020_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_020_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_020_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 021 — TAS/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_021_META = {
+  id: 'kpi_021',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 20828,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_021_COEF = {
+  c0: 67.0000,
+  c1: 56.1000,
+  c2: 45.2000,
+  c3: 34.3000,
+  c4: 23.4000,
+  c5: 12.5000,
+  c6: 1.6000,
+  c7: 90.4000,
+  c8: 79.5000,
+  c9: 68.6000,
+  c10: 57.7000,
+  c11: 46.8000,
+  c12: 35.9000,
+  c13: 25.0000,
+  c14: 14.1000,
+  c15: 3.2000,
+  c16: 92.0000,
+  c17: 81.1000,
+  c18: 70.2000,
+  c19: 59.3000,
+  c20: 48.4000,
+  c21: 37.5000,
+  c22: 26.6000,
+  c23: 15.7000,
+  c24: 4.8000,
+  c25: 93.6000,
+  c26: 82.7000,
+  c27: 71.8000,
+  c28: 60.9000,
+  c29: 50.0000,
+  c30: 39.1000,
+  c31: 28.2000,
+  c32: 17.3000,
+  c33: 6.4000,
+  c34: 95.2000,
+  c35: 84.3000,
+  c36: 73.4000,
+  c37: 62.5000,
+  c38: 51.6000,
+  c39: 40.7000,
+  c40: 29.8000,
+  c41: 18.9000,
+  c42: 8.0000,
+  c43: 96.8000,
+  c44: 85.9000,
+  c45: 75.0000,
+  c46: 64.1000,
+  c47: 53.2000,
+  c48: 42.3000,
+  c49: 31.4000,
+  c50: 20.5000,
+  c51: 9.6000,
+  c52: 98.4000,
+  c53: 87.5000,
+  c54: 76.6000,
+  c55: 65.7000,
+  c56: 54.8000,
+  c57: 43.9000,
+  c58: 33.0000,
+  c59: 22.1000,
+  c60: 11.2000,
+  c61: 0.3000,
+  c62: 89.1000,
+  c63: 78.2000,
+  c64: 67.3000,
+  c65: 56.4000,
+  c66: 45.5000,
+  c67: 34.6000,
+  c68: 23.7000,
+  c69: 12.8000,
+  c70: 1.9000,
+  c71: 90.7000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_021_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_021_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_021_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_021_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_021_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_021_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_021_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_021_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_021_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_021_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 022 — NT/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_022_META = {
+  id: 'kpi_022',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 21819,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_022_COEF = {
+  c0: 65.2000,
+  c1: 53.7000,
+  c2: 42.2000,
+  c3: 30.7000,
+  c4: 19.2000,
+  c5: 7.7000,
+  c6: 95.9000,
+  c7: 84.4000,
+  c8: 72.9000,
+  c9: 61.4000,
+  c10: 49.9000,
+  c11: 38.4000,
+  c12: 26.9000,
+  c13: 15.4000,
+  c14: 3.9000,
+  c15: 92.1000,
+  c16: 80.6000,
+  c17: 69.1000,
+  c18: 57.6000,
+  c19: 46.1000,
+  c20: 34.6000,
+  c21: 23.1000,
+  c22: 11.6000,
+  c23: 0.1000,
+  c24: 88.3000,
+  c25: 76.8000,
+  c26: 65.3000,
+  c27: 53.8000,
+  c28: 42.3000,
+  c29: 30.8000,
+  c30: 19.3000,
+  c31: 7.8000,
+  c32: 96.0000,
+  c33: 84.5000,
+  c34: 73.0000,
+  c35: 61.5000,
+  c36: 50.0000,
+  c37: 38.5000,
+  c38: 27.0000,
+  c39: 15.5000,
+  c40: 4.0000,
+  c41: 92.2000,
+  c42: 80.7000,
+  c43: 69.2000,
+  c44: 57.7000,
+  c45: 46.2000,
+  c46: 34.7000,
+  c47: 23.2000,
+  c48: 11.7000,
+  c49: 0.2000,
+  c50: 88.4000,
+  c51: 76.9000,
+  c52: 65.4000,
+  c53: 53.9000,
+  c54: 42.4000,
+  c55: 30.9000,
+  c56: 19.4000,
+  c57: 7.9000,
+  c58: 96.1000,
+  c59: 84.6000,
+  c60: 73.1000,
+  c61: 61.6000,
+  c62: 50.1000,
+  c63: 38.6000,
+  c64: 27.1000,
+  c65: 15.6000,
+  c66: 4.1000,
+  c67: 92.3000,
+  c68: 80.8000,
+  c69: 69.3000,
+  c70: 57.8000,
+  c71: 46.3000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_022_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_022_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_022_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_022_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_022_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_022_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_022_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_022_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_022_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_022_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 023 — ACT/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_023_META = {
+  id: 'kpi_023',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 22810,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_023_COEF = {
+  c0: 63.4000,
+  c1: 51.3000,
+  c2: 39.2000,
+  c3: 27.1000,
+  c4: 15.0000,
+  c5: 2.9000,
+  c6: 90.5000,
+  c7: 78.4000,
+  c8: 66.3000,
+  c9: 54.2000,
+  c10: 42.1000,
+  c11: 30.0000,
+  c12: 17.9000,
+  c13: 5.8000,
+  c14: 93.4000,
+  c15: 81.3000,
+  c16: 69.2000,
+  c17: 57.1000,
+  c18: 45.0000,
+  c19: 32.9000,
+  c20: 20.8000,
+  c21: 8.7000,
+  c22: 96.3000,
+  c23: 84.2000,
+  c24: 72.1000,
+  c25: 60.0000,
+  c26: 47.9000,
+  c27: 35.8000,
+  c28: 23.7000,
+  c29: 11.6000,
+  c30: 99.2000,
+  c31: 87.1000,
+  c32: 75.0000,
+  c33: 62.9000,
+  c34: 50.8000,
+  c35: 38.7000,
+  c36: 26.6000,
+  c37: 14.5000,
+  c38: 2.4000,
+  c39: 90.0000,
+  c40: 77.9000,
+  c41: 65.8000,
+  c42: 53.7000,
+  c43: 41.6000,
+  c44: 29.5000,
+  c45: 17.4000,
+  c46: 5.3000,
+  c47: 92.9000,
+  c48: 80.8000,
+  c49: 68.7000,
+  c50: 56.6000,
+  c51: 44.5000,
+  c52: 32.4000,
+  c53: 20.3000,
+  c54: 8.2000,
+  c55: 95.8000,
+  c56: 83.7000,
+  c57: 71.6000,
+  c58: 59.5000,
+  c59: 47.4000,
+  c60: 35.3000,
+  c61: 23.2000,
+  c62: 11.1000,
+  c63: 98.7000,
+  c64: 86.6000,
+  c65: 74.5000,
+  c66: 62.4000,
+  c67: 50.3000,
+  c68: 38.2000,
+  c69: 26.1000,
+  c70: 14.0000,
+  c71: 1.9000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_023_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_023_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_023_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_023_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_023_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_023_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_023_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_023_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_023_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_023_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 024 — NSW/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_024_META = {
+  id: 'kpi_024',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 23801,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_024_COEF = {
+  c0: 61.6000,
+  c1: 48.9000,
+  c2: 36.2000,
+  c3: 23.5000,
+  c4: 10.8000,
+  c5: 97.8000,
+  c6: 85.1000,
+  c7: 72.4000,
+  c8: 59.7000,
+  c9: 47.0000,
+  c10: 34.3000,
+  c11: 21.6000,
+  c12: 8.9000,
+  c13: 95.9000,
+  c14: 83.2000,
+  c15: 70.5000,
+  c16: 57.8000,
+  c17: 45.1000,
+  c18: 32.4000,
+  c19: 19.7000,
+  c20: 7.0000,
+  c21: 94.0000,
+  c22: 81.3000,
+  c23: 68.6000,
+  c24: 55.9000,
+  c25: 43.2000,
+  c26: 30.5000,
+  c27: 17.8000,
+  c28: 5.1000,
+  c29: 92.1000,
+  c30: 79.4000,
+  c31: 66.7000,
+  c32: 54.0000,
+  c33: 41.3000,
+  c34: 28.6000,
+  c35: 15.9000,
+  c36: 3.2000,
+  c37: 90.2000,
+  c38: 77.5000,
+  c39: 64.8000,
+  c40: 52.1000,
+  c41: 39.4000,
+  c42: 26.7000,
+  c43: 14.0000,
+  c44: 1.3000,
+  c45: 88.3000,
+  c46: 75.6000,
+  c47: 62.9000,
+  c48: 50.2000,
+  c49: 37.5000,
+  c50: 24.8000,
+  c51: 12.1000,
+  c52: 99.1000,
+  c53: 86.4000,
+  c54: 73.7000,
+  c55: 61.0000,
+  c56: 48.3000,
+  c57: 35.6000,
+  c58: 22.9000,
+  c59: 10.2000,
+  c60: 97.2000,
+  c61: 84.5000,
+  c62: 71.8000,
+  c63: 59.1000,
+  c64: 46.4000,
+  c65: 33.7000,
+  c66: 21.0000,
+  c67: 8.3000,
+  c68: 95.3000,
+  c69: 82.6000,
+  c70: 69.9000,
+  c71: 57.2000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_024_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_024_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_024_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_024_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_024_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_024_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_024_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_024_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_024_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_024_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 025 — VIC/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_025_META = {
+  id: 'kpi_025',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 24792,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_025_COEF = {
+  c0: 59.8000,
+  c1: 46.5000,
+  c2: 33.2000,
+  c3: 19.9000,
+  c4: 6.6000,
+  c5: 93.0000,
+  c6: 79.7000,
+  c7: 66.4000,
+  c8: 53.1000,
+  c9: 39.8000,
+  c10: 26.5000,
+  c11: 13.2000,
+  c12: 99.6000,
+  c13: 86.3000,
+  c14: 73.0000,
+  c15: 59.7000,
+  c16: 46.4000,
+  c17: 33.1000,
+  c18: 19.8000,
+  c19: 6.5000,
+  c20: 92.9000,
+  c21: 79.6000,
+  c22: 66.3000,
+  c23: 53.0000,
+  c24: 39.7000,
+  c25: 26.4000,
+  c26: 13.1000,
+  c27: 99.5000,
+  c28: 86.2000,
+  c29: 72.9000,
+  c30: 59.6000,
+  c31: 46.3000,
+  c32: 33.0000,
+  c33: 19.7000,
+  c34: 6.4000,
+  c35: 92.8000,
+  c36: 79.5000,
+  c37: 66.2000,
+  c38: 52.9000,
+  c39: 39.6000,
+  c40: 26.3000,
+  c41: 13.0000,
+  c42: 99.4000,
+  c43: 86.1000,
+  c44: 72.8000,
+  c45: 59.5000,
+  c46: 46.2000,
+  c47: 32.9000,
+  c48: 19.6000,
+  c49: 6.3000,
+  c50: 92.7000,
+  c51: 79.4000,
+  c52: 66.1000,
+  c53: 52.8000,
+  c54: 39.5000,
+  c55: 26.2000,
+  c56: 12.9000,
+  c57: 99.3000,
+  c58: 86.0000,
+  c59: 72.7000,
+  c60: 59.4000,
+  c61: 46.1000,
+  c62: 32.8000,
+  c63: 19.5000,
+  c64: 6.2000,
+  c65: 92.6000,
+  c66: 79.3000,
+  c67: 66.0000,
+  c68: 52.7000,
+  c69: 39.4000,
+  c70: 26.1000,
+  c71: 12.8000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_025_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_025_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_025_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_025_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_025_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_025_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_025_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_025_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_025_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_025_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 026 — QLD/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_026_META = {
+  id: 'kpi_026',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 25783,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_026_COEF = {
+  c0: 58.0000,
+  c1: 44.1000,
+  c2: 30.2000,
+  c3: 16.3000,
+  c4: 2.4000,
+  c5: 88.2000,
+  c6: 74.3000,
+  c7: 60.4000,
+  c8: 46.5000,
+  c9: 32.6000,
+  c10: 18.7000,
+  c11: 4.8000,
+  c12: 90.6000,
+  c13: 76.7000,
+  c14: 62.8000,
+  c15: 48.9000,
+  c16: 35.0000,
+  c17: 21.1000,
+  c18: 7.2000,
+  c19: 93.0000,
+  c20: 79.1000,
+  c21: 65.2000,
+  c22: 51.3000,
+  c23: 37.4000,
+  c24: 23.5000,
+  c25: 9.6000,
+  c26: 95.4000,
+  c27: 81.5000,
+  c28: 67.6000,
+  c29: 53.7000,
+  c30: 39.8000,
+  c31: 25.9000,
+  c32: 12.0000,
+  c33: 97.8000,
+  c34: 83.9000,
+  c35: 70.0000,
+  c36: 56.1000,
+  c37: 42.2000,
+  c38: 28.3000,
+  c39: 14.4000,
+  c40: 0.5000,
+  c41: 86.3000,
+  c42: 72.4000,
+  c43: 58.5000,
+  c44: 44.6000,
+  c45: 30.7000,
+  c46: 16.8000,
+  c47: 2.9000,
+  c48: 88.7000,
+  c49: 74.8000,
+  c50: 60.9000,
+  c51: 47.0000,
+  c52: 33.1000,
+  c53: 19.2000,
+  c54: 5.3000,
+  c55: 91.1000,
+  c56: 77.2000,
+  c57: 63.3000,
+  c58: 49.4000,
+  c59: 35.5000,
+  c60: 21.6000,
+  c61: 7.7000,
+  c62: 93.5000,
+  c63: 79.6000,
+  c64: 65.7000,
+  c65: 51.8000,
+  c66: 37.9000,
+  c67: 24.0000,
+  c68: 10.1000,
+  c69: 95.9000,
+  c70: 82.0000,
+  c71: 68.1000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_026_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_026_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_026_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_026_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_026_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_026_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_026_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_026_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_026_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_026_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 027 — WA/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_027_META = {
+  id: 'kpi_027',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 26774,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_027_COEF = {
+  c0: 56.2000,
+  c1: 41.7000,
+  c2: 27.2000,
+  c3: 12.7000,
+  c4: 97.9000,
+  c5: 83.4000,
+  c6: 68.9000,
+  c7: 54.4000,
+  c8: 39.9000,
+  c9: 25.4000,
+  c10: 10.9000,
+  c11: 96.1000,
+  c12: 81.6000,
+  c13: 67.1000,
+  c14: 52.6000,
+  c15: 38.1000,
+  c16: 23.6000,
+  c17: 9.1000,
+  c18: 94.3000,
+  c19: 79.8000,
+  c20: 65.3000,
+  c21: 50.8000,
+  c22: 36.3000,
+  c23: 21.8000,
+  c24: 7.3000,
+  c25: 92.5000,
+  c26: 78.0000,
+  c27: 63.5000,
+  c28: 49.0000,
+  c29: 34.5000,
+  c30: 20.0000,
+  c31: 5.5000,
+  c32: 90.7000,
+  c33: 76.2000,
+  c34: 61.7000,
+  c35: 47.2000,
+  c36: 32.7000,
+  c37: 18.2000,
+  c38: 3.7000,
+  c39: 88.9000,
+  c40: 74.4000,
+  c41: 59.9000,
+  c42: 45.4000,
+  c43: 30.9000,
+  c44: 16.4000,
+  c45: 1.9000,
+  c46: 87.1000,
+  c47: 72.6000,
+  c48: 58.1000,
+  c49: 43.6000,
+  c50: 29.1000,
+  c51: 14.6000,
+  c52: 0.1000,
+  c53: 85.3000,
+  c54: 70.8000,
+  c55: 56.3000,
+  c56: 41.8000,
+  c57: 27.3000,
+  c58: 12.8000,
+  c59: 98.0000,
+  c60: 83.5000,
+  c61: 69.0000,
+  c62: 54.5000,
+  c63: 40.0000,
+  c64: 25.5000,
+  c65: 11.0000,
+  c66: 96.2000,
+  c67: 81.7000,
+  c68: 67.2000,
+  c69: 52.7000,
+  c70: 38.2000,
+  c71: 23.7000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_027_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_027_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_027_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_027_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_027_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_027_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_027_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_027_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_027_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_027_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 028 — SA/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_028_META = {
+  id: 'kpi_028',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 27765,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_028_COEF = {
+  c0: 54.4000,
+  c1: 39.3000,
+  c2: 24.2000,
+  c3: 9.1000,
+  c4: 93.7000,
+  c5: 78.6000,
+  c6: 63.5000,
+  c7: 48.4000,
+  c8: 33.3000,
+  c9: 18.2000,
+  c10: 3.1000,
+  c11: 87.7000,
+  c12: 72.6000,
+  c13: 57.5000,
+  c14: 42.4000,
+  c15: 27.3000,
+  c16: 12.2000,
+  c17: 96.8000,
+  c18: 81.7000,
+  c19: 66.6000,
+  c20: 51.5000,
+  c21: 36.4000,
+  c22: 21.3000,
+  c23: 6.2000,
+  c24: 90.8000,
+  c25: 75.7000,
+  c26: 60.6000,
+  c27: 45.5000,
+  c28: 30.4000,
+  c29: 15.3000,
+  c30: 0.2000,
+  c31: 84.8000,
+  c32: 69.7000,
+  c33: 54.6000,
+  c34: 39.5000,
+  c35: 24.4000,
+  c36: 9.3000,
+  c37: 93.9000,
+  c38: 78.8000,
+  c39: 63.7000,
+  c40: 48.6000,
+  c41: 33.5000,
+  c42: 18.4000,
+  c43: 3.3000,
+  c44: 87.9000,
+  c45: 72.8000,
+  c46: 57.7000,
+  c47: 42.6000,
+  c48: 27.5000,
+  c49: 12.4000,
+  c50: 97.0000,
+  c51: 81.9000,
+  c52: 66.8000,
+  c53: 51.7000,
+  c54: 36.6000,
+  c55: 21.5000,
+  c56: 6.4000,
+  c57: 91.0000,
+  c58: 75.9000,
+  c59: 60.8000,
+  c60: 45.7000,
+  c61: 30.6000,
+  c62: 15.5000,
+  c63: 0.4000,
+  c64: 85.0000,
+  c65: 69.9000,
+  c66: 54.8000,
+  c67: 39.7000,
+  c68: 24.6000,
+  c69: 9.5000,
+  c70: 94.1000,
+  c71: 79.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_028_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_028_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_028_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_028_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_028_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_028_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_028_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_028_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_028_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_028_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 029 — TAS/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_029_META = {
+  id: 'kpi_029',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 28756,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_029_COEF = {
+  c0: 52.6000,
+  c1: 36.9000,
+  c2: 21.2000,
+  c3: 5.5000,
+  c4: 89.5000,
+  c5: 73.8000,
+  c6: 58.1000,
+  c7: 42.4000,
+  c8: 26.7000,
+  c9: 11.0000,
+  c10: 95.0000,
+  c11: 79.3000,
+  c12: 63.6000,
+  c13: 47.9000,
+  c14: 32.2000,
+  c15: 16.5000,
+  c16: 0.8000,
+  c17: 84.8000,
+  c18: 69.1000,
+  c19: 53.4000,
+  c20: 37.7000,
+  c21: 22.0000,
+  c22: 6.3000,
+  c23: 90.3000,
+  c24: 74.6000,
+  c25: 58.9000,
+  c26: 43.2000,
+  c27: 27.5000,
+  c28: 11.8000,
+  c29: 95.8000,
+  c30: 80.1000,
+  c31: 64.4000,
+  c32: 48.7000,
+  c33: 33.0000,
+  c34: 17.3000,
+  c35: 1.6000,
+  c36: 85.6000,
+  c37: 69.9000,
+  c38: 54.2000,
+  c39: 38.5000,
+  c40: 22.8000,
+  c41: 7.1000,
+  c42: 91.1000,
+  c43: 75.4000,
+  c44: 59.7000,
+  c45: 44.0000,
+  c46: 28.3000,
+  c47: 12.6000,
+  c48: 96.6000,
+  c49: 80.9000,
+  c50: 65.2000,
+  c51: 49.5000,
+  c52: 33.8000,
+  c53: 18.1000,
+  c54: 2.4000,
+  c55: 86.4000,
+  c56: 70.7000,
+  c57: 55.0000,
+  c58: 39.3000,
+  c59: 23.6000,
+  c60: 7.9000,
+  c61: 91.9000,
+  c62: 76.2000,
+  c63: 60.5000,
+  c64: 44.8000,
+  c65: 29.1000,
+  c66: 13.4000,
+  c67: 97.4000,
+  c68: 81.7000,
+  c69: 66.0000,
+  c70: 50.3000,
+  c71: 34.6000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_029_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_029_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_029_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_029_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_029_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_029_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_029_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_029_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_029_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_029_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 030 — NT/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_030_META = {
+  id: 'kpi_030',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 29747,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_030_COEF = {
+  c0: 50.8000,
+  c1: 34.5000,
+  c2: 18.2000,
+  c3: 1.9000,
+  c4: 85.3000,
+  c5: 69.0000,
+  c6: 52.7000,
+  c7: 36.4000,
+  c8: 20.1000,
+  c9: 3.8000,
+  c10: 87.2000,
+  c11: 70.9000,
+  c12: 54.6000,
+  c13: 38.3000,
+  c14: 22.0000,
+  c15: 5.7000,
+  c16: 89.1000,
+  c17: 72.8000,
+  c18: 56.5000,
+  c19: 40.2000,
+  c20: 23.9000,
+  c21: 7.6000,
+  c22: 91.0000,
+  c23: 74.7000,
+  c24: 58.4000,
+  c25: 42.1000,
+  c26: 25.8000,
+  c27: 9.5000,
+  c28: 92.9000,
+  c29: 76.6000,
+  c30: 60.3000,
+  c31: 44.0000,
+  c32: 27.7000,
+  c33: 11.4000,
+  c34: 94.8000,
+  c35: 78.5000,
+  c36: 62.2000,
+  c37: 45.9000,
+  c38: 29.6000,
+  c39: 13.3000,
+  c40: 96.7000,
+  c41: 80.4000,
+  c42: 64.1000,
+  c43: 47.8000,
+  c44: 31.5000,
+  c45: 15.2000,
+  c46: 98.6000,
+  c47: 82.3000,
+  c48: 66.0000,
+  c49: 49.7000,
+  c50: 33.4000,
+  c51: 17.1000,
+  c52: 0.8000,
+  c53: 84.2000,
+  c54: 67.9000,
+  c55: 51.6000,
+  c56: 35.3000,
+  c57: 19.0000,
+  c58: 2.7000,
+  c59: 86.1000,
+  c60: 69.8000,
+  c61: 53.5000,
+  c62: 37.2000,
+  c63: 20.9000,
+  c64: 4.6000,
+  c65: 88.0000,
+  c66: 71.7000,
+  c67: 55.4000,
+  c68: 39.1000,
+  c69: 22.8000,
+  c70: 6.5000,
+  c71: 89.9000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_030_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_030_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_030_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_030_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_030_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_030_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_030_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_030_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_030_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_030_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 031 — ACT/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_031_META = {
+  id: 'kpi_031',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 30738,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_031_COEF = {
+  c0: 49.0000,
+  c1: 32.1000,
+  c2: 15.2000,
+  c3: 98.0000,
+  c4: 81.1000,
+  c5: 64.2000,
+  c6: 47.3000,
+  c7: 30.4000,
+  c8: 13.5000,
+  c9: 96.3000,
+  c10: 79.4000,
+  c11: 62.5000,
+  c12: 45.6000,
+  c13: 28.7000,
+  c14: 11.8000,
+  c15: 94.6000,
+  c16: 77.7000,
+  c17: 60.8000,
+  c18: 43.9000,
+  c19: 27.0000,
+  c20: 10.1000,
+  c21: 92.9000,
+  c22: 76.0000,
+  c23: 59.1000,
+  c24: 42.2000,
+  c25: 25.3000,
+  c26: 8.4000,
+  c27: 91.2000,
+  c28: 74.3000,
+  c29: 57.4000,
+  c30: 40.5000,
+  c31: 23.6000,
+  c32: 6.7000,
+  c33: 89.5000,
+  c34: 72.6000,
+  c35: 55.7000,
+  c36: 38.8000,
+  c37: 21.9000,
+  c38: 5.0000,
+  c39: 87.8000,
+  c40: 70.9000,
+  c41: 54.0000,
+  c42: 37.1000,
+  c43: 20.2000,
+  c44: 3.3000,
+  c45: 86.1000,
+  c46: 69.2000,
+  c47: 52.3000,
+  c48: 35.4000,
+  c49: 18.5000,
+  c50: 1.6000,
+  c51: 84.4000,
+  c52: 67.5000,
+  c53: 50.6000,
+  c54: 33.7000,
+  c55: 16.8000,
+  c56: 99.6000,
+  c57: 82.7000,
+  c58: 65.8000,
+  c59: 48.9000,
+  c60: 32.0000,
+  c61: 15.1000,
+  c62: 97.9000,
+  c63: 81.0000,
+  c64: 64.1000,
+  c65: 47.2000,
+  c66: 30.3000,
+  c67: 13.4000,
+  c68: 96.2000,
+  c69: 79.3000,
+  c70: 62.4000,
+  c71: 45.5000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_031_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_031_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_031_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_031_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_031_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_031_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_031_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_031_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_031_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_031_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 032 — NSW/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_032_META = {
+  id: 'kpi_032',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 31729,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_032_COEF = {
+  c0: 47.2000,
+  c1: 29.7000,
+  c2: 12.2000,
+  c3: 94.4000,
+  c4: 76.9000,
+  c5: 59.4000,
+  c6: 41.9000,
+  c7: 24.4000,
+  c8: 6.9000,
+  c9: 89.1000,
+  c10: 71.6000,
+  c11: 54.1000,
+  c12: 36.6000,
+  c13: 19.1000,
+  c14: 1.6000,
+  c15: 83.8000,
+  c16: 66.3000,
+  c17: 48.8000,
+  c18: 31.3000,
+  c19: 13.8000,
+  c20: 96.0000,
+  c21: 78.5000,
+  c22: 61.0000,
+  c23: 43.5000,
+  c24: 26.0000,
+  c25: 8.5000,
+  c26: 90.7000,
+  c27: 73.2000,
+  c28: 55.7000,
+  c29: 38.2000,
+  c30: 20.7000,
+  c31: 3.2000,
+  c32: 85.4000,
+  c33: 67.9000,
+  c34: 50.4000,
+  c35: 32.9000,
+  c36: 15.4000,
+  c37: 97.6000,
+  c38: 80.1000,
+  c39: 62.6000,
+  c40: 45.1000,
+  c41: 27.6000,
+  c42: 10.1000,
+  c43: 92.3000,
+  c44: 74.8000,
+  c45: 57.3000,
+  c46: 39.8000,
+  c47: 22.3000,
+  c48: 4.8000,
+  c49: 87.0000,
+  c50: 69.5000,
+  c51: 52.0000,
+  c52: 34.5000,
+  c53: 17.0000,
+  c54: 99.2000,
+  c55: 81.7000,
+  c56: 64.2000,
+  c57: 46.7000,
+  c58: 29.2000,
+  c59: 11.7000,
+  c60: 93.9000,
+  c61: 76.4000,
+  c62: 58.9000,
+  c63: 41.4000,
+  c64: 23.9000,
+  c65: 6.4000,
+  c66: 88.6000,
+  c67: 71.1000,
+  c68: 53.6000,
+  c69: 36.1000,
+  c70: 18.6000,
+  c71: 1.1000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_032_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_032_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_032_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_032_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_032_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_032_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_032_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_032_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_032_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_032_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 033 — VIC/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_033_META = {
+  id: 'kpi_033',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 32720,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_033_COEF = {
+  c0: 45.4000,
+  c1: 27.3000,
+  c2: 9.2000,
+  c3: 90.8000,
+  c4: 72.7000,
+  c5: 54.6000,
+  c6: 36.5000,
+  c7: 18.4000,
+  c8: 0.3000,
+  c9: 81.9000,
+  c10: 63.8000,
+  c11: 45.7000,
+  c12: 27.6000,
+  c13: 9.5000,
+  c14: 91.1000,
+  c15: 73.0000,
+  c16: 54.9000,
+  c17: 36.8000,
+  c18: 18.7000,
+  c19: 0.6000,
+  c20: 82.2000,
+  c21: 64.1000,
+  c22: 46.0000,
+  c23: 27.9000,
+  c24: 9.8000,
+  c25: 91.4000,
+  c26: 73.3000,
+  c27: 55.2000,
+  c28: 37.1000,
+  c29: 19.0000,
+  c30: 0.9000,
+  c31: 82.5000,
+  c32: 64.4000,
+  c33: 46.3000,
+  c34: 28.2000,
+  c35: 10.1000,
+  c36: 91.7000,
+  c37: 73.6000,
+  c38: 55.5000,
+  c39: 37.4000,
+  c40: 19.3000,
+  c41: 1.2000,
+  c42: 82.8000,
+  c43: 64.7000,
+  c44: 46.6000,
+  c45: 28.5000,
+  c46: 10.4000,
+  c47: 92.0000,
+  c48: 73.9000,
+  c49: 55.8000,
+  c50: 37.7000,
+  c51: 19.6000,
+  c52: 1.5000,
+  c53: 83.1000,
+  c54: 65.0000,
+  c55: 46.9000,
+  c56: 28.8000,
+  c57: 10.7000,
+  c58: 92.3000,
+  c59: 74.2000,
+  c60: 56.1000,
+  c61: 38.0000,
+  c62: 19.9000,
+  c63: 1.8000,
+  c64: 83.4000,
+  c65: 65.3000,
+  c66: 47.2000,
+  c67: 29.1000,
+  c68: 11.0000,
+  c69: 92.6000,
+  c70: 74.5000,
+  c71: 56.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_033_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_033_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_033_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_033_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_033_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_033_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_033_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_033_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_033_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_033_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 034 — QLD/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_034_META = {
+  id: 'kpi_034',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 33711,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_034_COEF = {
+  c0: 43.6000,
+  c1: 24.9000,
+  c2: 6.2000,
+  c3: 87.2000,
+  c4: 68.5000,
+  c5: 49.8000,
+  c6: 31.1000,
+  c7: 12.4000,
+  c8: 93.4000,
+  c9: 74.7000,
+  c10: 56.0000,
+  c11: 37.3000,
+  c12: 18.6000,
+  c13: 99.6000,
+  c14: 80.9000,
+  c15: 62.2000,
+  c16: 43.5000,
+  c17: 24.8000,
+  c18: 6.1000,
+  c19: 87.1000,
+  c20: 68.4000,
+  c21: 49.7000,
+  c22: 31.0000,
+  c23: 12.3000,
+  c24: 93.3000,
+  c25: 74.6000,
+  c26: 55.9000,
+  c27: 37.2000,
+  c28: 18.5000,
+  c29: 99.5000,
+  c30: 80.8000,
+  c31: 62.1000,
+  c32: 43.4000,
+  c33: 24.7000,
+  c34: 6.0000,
+  c35: 87.0000,
+  c36: 68.3000,
+  c37: 49.6000,
+  c38: 30.9000,
+  c39: 12.2000,
+  c40: 93.2000,
+  c41: 74.5000,
+  c42: 55.8000,
+  c43: 37.1000,
+  c44: 18.4000,
+  c45: 99.4000,
+  c46: 80.7000,
+  c47: 62.0000,
+  c48: 43.3000,
+  c49: 24.6000,
+  c50: 5.9000,
+  c51: 86.9000,
+  c52: 68.2000,
+  c53: 49.5000,
+  c54: 30.8000,
+  c55: 12.1000,
+  c56: 93.1000,
+  c57: 74.4000,
+  c58: 55.7000,
+  c59: 37.0000,
+  c60: 18.3000,
+  c61: 99.3000,
+  c62: 80.6000,
+  c63: 61.9000,
+  c64: 43.2000,
+  c65: 24.5000,
+  c66: 5.8000,
+  c67: 86.8000,
+  c68: 68.1000,
+  c69: 49.4000,
+  c70: 30.7000,
+  c71: 12.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_034_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_034_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_034_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_034_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_034_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_034_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_034_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_034_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_034_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_034_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 035 — WA/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_035_META = {
+  id: 'kpi_035',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 34702,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_035_COEF = {
+  c0: 41.8000,
+  c1: 22.5000,
+  c2: 3.2000,
+  c3: 83.6000,
+  c4: 64.3000,
+  c5: 45.0000,
+  c6: 25.7000,
+  c7: 6.4000,
+  c8: 86.8000,
+  c9: 67.5000,
+  c10: 48.2000,
+  c11: 28.9000,
+  c12: 9.6000,
+  c13: 90.0000,
+  c14: 70.7000,
+  c15: 51.4000,
+  c16: 32.1000,
+  c17: 12.8000,
+  c18: 93.2000,
+  c19: 73.9000,
+  c20: 54.6000,
+  c21: 35.3000,
+  c22: 16.0000,
+  c23: 96.4000,
+  c24: 77.1000,
+  c25: 57.8000,
+  c26: 38.5000,
+  c27: 19.2000,
+  c28: 99.6000,
+  c29: 80.3000,
+  c30: 61.0000,
+  c31: 41.7000,
+  c32: 22.4000,
+  c33: 3.1000,
+  c34: 83.5000,
+  c35: 64.2000,
+  c36: 44.9000,
+  c37: 25.6000,
+  c38: 6.3000,
+  c39: 86.7000,
+  c40: 67.4000,
+  c41: 48.1000,
+  c42: 28.8000,
+  c43: 9.5000,
+  c44: 89.9000,
+  c45: 70.6000,
+  c46: 51.3000,
+  c47: 32.0000,
+  c48: 12.7000,
+  c49: 93.1000,
+  c50: 73.8000,
+  c51: 54.5000,
+  c52: 35.2000,
+  c53: 15.9000,
+  c54: 96.3000,
+  c55: 77.0000,
+  c56: 57.7000,
+  c57: 38.4000,
+  c58: 19.1000,
+  c59: 99.5000,
+  c60: 80.2000,
+  c61: 60.9000,
+  c62: 41.6000,
+  c63: 22.3000,
+  c64: 3.0000,
+  c65: 83.4000,
+  c66: 64.1000,
+  c67: 44.8000,
+  c68: 25.5000,
+  c69: 6.2000,
+  c70: 86.6000,
+  c71: 67.3000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_035_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_035_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_035_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_035_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_035_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_035_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_035_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_035_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_035_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_035_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 036 — SA/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_036_META = {
+  id: 'kpi_036',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 35693,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_036_COEF = {
+  c0: 40.0000,
+  c1: 20.1000,
+  c2: 0.2000,
+  c3: 80.0000,
+  c4: 60.1000,
+  c5: 40.2000,
+  c6: 20.3000,
+  c7: 0.4000,
+  c8: 80.2000,
+  c9: 60.3000,
+  c10: 40.4000,
+  c11: 20.5000,
+  c12: 0.6000,
+  c13: 80.4000,
+  c14: 60.5000,
+  c15: 40.6000,
+  c16: 20.7000,
+  c17: 0.8000,
+  c18: 80.6000,
+  c19: 60.7000,
+  c20: 40.8000,
+  c21: 20.9000,
+  c22: 1.0000,
+  c23: 80.8000,
+  c24: 60.9000,
+  c25: 41.0000,
+  c26: 21.1000,
+  c27: 1.2000,
+  c28: 81.0000,
+  c29: 61.1000,
+  c30: 41.2000,
+  c31: 21.3000,
+  c32: 1.4000,
+  c33: 81.2000,
+  c34: 61.3000,
+  c35: 41.4000,
+  c36: 21.5000,
+  c37: 1.6000,
+  c38: 81.4000,
+  c39: 61.5000,
+  c40: 41.6000,
+  c41: 21.7000,
+  c42: 1.8000,
+  c43: 81.6000,
+  c44: 61.7000,
+  c45: 41.8000,
+  c46: 21.9000,
+  c47: 2.0000,
+  c48: 81.8000,
+  c49: 61.9000,
+  c50: 42.0000,
+  c51: 22.1000,
+  c52: 2.2000,
+  c53: 82.0000,
+  c54: 62.1000,
+  c55: 42.2000,
+  c56: 22.3000,
+  c57: 2.4000,
+  c58: 82.2000,
+  c59: 62.3000,
+  c60: 42.4000,
+  c61: 22.5000,
+  c62: 2.6000,
+  c63: 82.4000,
+  c64: 62.5000,
+  c65: 42.6000,
+  c66: 22.7000,
+  c67: 2.8000,
+  c68: 82.6000,
+  c69: 62.7000,
+  c70: 42.8000,
+  c71: 22.9000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_036_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_036_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_036_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_036_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_036_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_036_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_036_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_036_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_036_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_036_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 037 — TAS/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_037_META = {
+  id: 'kpi_037',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 36684,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_037_COEF = {
+  c0: 38.2000,
+  c1: 17.7000,
+  c2: 96.9000,
+  c3: 76.4000,
+  c4: 55.9000,
+  c5: 35.4000,
+  c6: 14.9000,
+  c7: 94.1000,
+  c8: 73.6000,
+  c9: 53.1000,
+  c10: 32.6000,
+  c11: 12.1000,
+  c12: 91.3000,
+  c13: 70.8000,
+  c14: 50.3000,
+  c15: 29.8000,
+  c16: 9.3000,
+  c17: 88.5000,
+  c18: 68.0000,
+  c19: 47.5000,
+  c20: 27.0000,
+  c21: 6.5000,
+  c22: 85.7000,
+  c23: 65.2000,
+  c24: 44.7000,
+  c25: 24.2000,
+  c26: 3.7000,
+  c27: 82.9000,
+  c28: 62.4000,
+  c29: 41.9000,
+  c30: 21.4000,
+  c31: 0.9000,
+  c32: 80.1000,
+  c33: 59.6000,
+  c34: 39.1000,
+  c35: 18.6000,
+  c36: 97.8000,
+  c37: 77.3000,
+  c38: 56.8000,
+  c39: 36.3000,
+  c40: 15.8000,
+  c41: 95.0000,
+  c42: 74.5000,
+  c43: 54.0000,
+  c44: 33.5000,
+  c45: 13.0000,
+  c46: 92.2000,
+  c47: 71.7000,
+  c48: 51.2000,
+  c49: 30.7000,
+  c50: 10.2000,
+  c51: 89.4000,
+  c52: 68.9000,
+  c53: 48.4000,
+  c54: 27.9000,
+  c55: 7.4000,
+  c56: 86.6000,
+  c57: 66.1000,
+  c58: 45.6000,
+  c59: 25.1000,
+  c60: 4.6000,
+  c61: 83.8000,
+  c62: 63.3000,
+  c63: 42.8000,
+  c64: 22.3000,
+  c65: 1.8000,
+  c66: 81.0000,
+  c67: 60.5000,
+  c68: 40.0000,
+  c69: 19.5000,
+  c70: 98.7000,
+  c71: 78.2000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_037_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_037_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_037_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_037_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_037_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_037_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_037_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_037_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_037_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_037_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 038 — NT/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_038_META = {
+  id: 'kpi_038',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 37675,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_038_COEF = {
+  c0: 36.4000,
+  c1: 15.3000,
+  c2: 93.9000,
+  c3: 72.8000,
+  c4: 51.7000,
+  c5: 30.6000,
+  c6: 9.5000,
+  c7: 88.1000,
+  c8: 67.0000,
+  c9: 45.9000,
+  c10: 24.8000,
+  c11: 3.7000,
+  c12: 82.3000,
+  c13: 61.2000,
+  c14: 40.1000,
+  c15: 19.0000,
+  c16: 97.6000,
+  c17: 76.5000,
+  c18: 55.4000,
+  c19: 34.3000,
+  c20: 13.2000,
+  c21: 91.8000,
+  c22: 70.7000,
+  c23: 49.6000,
+  c24: 28.5000,
+  c25: 7.4000,
+  c26: 86.0000,
+  c27: 64.9000,
+  c28: 43.8000,
+  c29: 22.7000,
+  c30: 1.6000,
+  c31: 80.2000,
+  c32: 59.1000,
+  c33: 38.0000,
+  c34: 16.9000,
+  c35: 95.5000,
+  c36: 74.4000,
+  c37: 53.3000,
+  c38: 32.2000,
+  c39: 11.1000,
+  c40: 89.7000,
+  c41: 68.6000,
+  c42: 47.5000,
+  c43: 26.4000,
+  c44: 5.3000,
+  c45: 83.9000,
+  c46: 62.8000,
+  c47: 41.7000,
+  c48: 20.6000,
+  c49: 99.2000,
+  c50: 78.1000,
+  c51: 57.0000,
+  c52: 35.9000,
+  c53: 14.8000,
+  c54: 93.4000,
+  c55: 72.3000,
+  c56: 51.2000,
+  c57: 30.1000,
+  c58: 9.0000,
+  c59: 87.6000,
+  c60: 66.5000,
+  c61: 45.4000,
+  c62: 24.3000,
+  c63: 3.2000,
+  c64: 81.8000,
+  c65: 60.7000,
+  c66: 39.6000,
+  c67: 18.5000,
+  c68: 97.1000,
+  c69: 76.0000,
+  c70: 54.9000,
+  c71: 33.8000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_038_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_038_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_038_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_038_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_038_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_038_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_038_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_038_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_038_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_038_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 039 — ACT/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_039_META = {
+  id: 'kpi_039',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 38666,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_039_COEF = {
+  c0: 34.6000,
+  c1: 12.9000,
+  c2: 90.9000,
+  c3: 69.2000,
+  c4: 47.5000,
+  c5: 25.8000,
+  c6: 4.1000,
+  c7: 82.1000,
+  c8: 60.4000,
+  c9: 38.7000,
+  c10: 17.0000,
+  c11: 95.0000,
+  c12: 73.3000,
+  c13: 51.6000,
+  c14: 29.9000,
+  c15: 8.2000,
+  c16: 86.2000,
+  c17: 64.5000,
+  c18: 42.8000,
+  c19: 21.1000,
+  c20: 99.1000,
+  c21: 77.4000,
+  c22: 55.7000,
+  c23: 34.0000,
+  c24: 12.3000,
+  c25: 90.3000,
+  c26: 68.6000,
+  c27: 46.9000,
+  c28: 25.2000,
+  c29: 3.5000,
+  c30: 81.5000,
+  c31: 59.8000,
+  c32: 38.1000,
+  c33: 16.4000,
+  c34: 94.4000,
+  c35: 72.7000,
+  c36: 51.0000,
+  c37: 29.3000,
+  c38: 7.6000,
+  c39: 85.6000,
+  c40: 63.9000,
+  c41: 42.2000,
+  c42: 20.5000,
+  c43: 98.5000,
+  c44: 76.8000,
+  c45: 55.1000,
+  c46: 33.4000,
+  c47: 11.7000,
+  c48: 89.7000,
+  c49: 68.0000,
+  c50: 46.3000,
+  c51: 24.6000,
+  c52: 2.9000,
+  c53: 80.9000,
+  c54: 59.2000,
+  c55: 37.5000,
+  c56: 15.8000,
+  c57: 93.8000,
+  c58: 72.1000,
+  c59: 50.4000,
+  c60: 28.7000,
+  c61: 7.0000,
+  c62: 85.0000,
+  c63: 63.3000,
+  c64: 41.6000,
+  c65: 19.9000,
+  c66: 97.9000,
+  c67: 76.2000,
+  c68: 54.5000,
+  c69: 32.8000,
+  c70: 11.1000,
+  c71: 89.1000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_039_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_039_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_039_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_039_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_039_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_039_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_039_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_039_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_039_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_039_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 040 — NSW/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_040_META = {
+  id: 'kpi_040',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 39657,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_040_COEF = {
+  c0: 32.8000,
+  c1: 10.5000,
+  c2: 87.9000,
+  c3: 65.6000,
+  c4: 43.3000,
+  c5: 21.0000,
+  c6: 98.4000,
+  c7: 76.1000,
+  c8: 53.8000,
+  c9: 31.5000,
+  c10: 9.2000,
+  c11: 86.6000,
+  c12: 64.3000,
+  c13: 42.0000,
+  c14: 19.7000,
+  c15: 97.1000,
+  c16: 74.8000,
+  c17: 52.5000,
+  c18: 30.2000,
+  c19: 7.9000,
+  c20: 85.3000,
+  c21: 63.0000,
+  c22: 40.7000,
+  c23: 18.4000,
+  c24: 95.8000,
+  c25: 73.5000,
+  c26: 51.2000,
+  c27: 28.9000,
+  c28: 6.6000,
+  c29: 84.0000,
+  c30: 61.7000,
+  c31: 39.4000,
+  c32: 17.1000,
+  c33: 94.5000,
+  c34: 72.2000,
+  c35: 49.9000,
+  c36: 27.6000,
+  c37: 5.3000,
+  c38: 82.7000,
+  c39: 60.4000,
+  c40: 38.1000,
+  c41: 15.8000,
+  c42: 93.2000,
+  c43: 70.9000,
+  c44: 48.6000,
+  c45: 26.3000,
+  c46: 4.0000,
+  c47: 81.4000,
+  c48: 59.1000,
+  c49: 36.8000,
+  c50: 14.5000,
+  c51: 91.9000,
+  c52: 69.6000,
+  c53: 47.3000,
+  c54: 25.0000,
+  c55: 2.7000,
+  c56: 80.1000,
+  c57: 57.8000,
+  c58: 35.5000,
+  c59: 13.2000,
+  c60: 90.6000,
+  c61: 68.3000,
+  c62: 46.0000,
+  c63: 23.7000,
+  c64: 1.4000,
+  c65: 78.8000,
+  c66: 56.5000,
+  c67: 34.2000,
+  c68: 11.9000,
+  c69: 89.3000,
+  c70: 67.0000,
+  c71: 44.7000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_040_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_040_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_040_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_040_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_040_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_040_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_040_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_040_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_040_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_040_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 041 — VIC/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_041_META = {
+  id: 'kpi_041',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 40648,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_041_COEF = {
+  c0: 31.0000,
+  c1: 8.1000,
+  c2: 84.9000,
+  c3: 62.0000,
+  c4: 39.1000,
+  c5: 16.2000,
+  c6: 93.0000,
+  c7: 70.1000,
+  c8: 47.2000,
+  c9: 24.3000,
+  c10: 1.4000,
+  c11: 78.2000,
+  c12: 55.3000,
+  c13: 32.4000,
+  c14: 9.5000,
+  c15: 86.3000,
+  c16: 63.4000,
+  c17: 40.5000,
+  c18: 17.6000,
+  c19: 94.4000,
+  c20: 71.5000,
+  c21: 48.6000,
+  c22: 25.7000,
+  c23: 2.8000,
+  c24: 79.6000,
+  c25: 56.7000,
+  c26: 33.8000,
+  c27: 10.9000,
+  c28: 87.7000,
+  c29: 64.8000,
+  c30: 41.9000,
+  c31: 19.0000,
+  c32: 95.8000,
+  c33: 72.9000,
+  c34: 50.0000,
+  c35: 27.1000,
+  c36: 4.2000,
+  c37: 81.0000,
+  c38: 58.1000,
+  c39: 35.2000,
+  c40: 12.3000,
+  c41: 89.1000,
+  c42: 66.2000,
+  c43: 43.3000,
+  c44: 20.4000,
+  c45: 97.2000,
+  c46: 74.3000,
+  c47: 51.4000,
+  c48: 28.5000,
+  c49: 5.6000,
+  c50: 82.4000,
+  c51: 59.5000,
+  c52: 36.6000,
+  c53: 13.7000,
+  c54: 90.5000,
+  c55: 67.6000,
+  c56: 44.7000,
+  c57: 21.8000,
+  c58: 98.6000,
+  c59: 75.7000,
+  c60: 52.8000,
+  c61: 29.9000,
+  c62: 7.0000,
+  c63: 83.8000,
+  c64: 60.9000,
+  c65: 38.0000,
+  c66: 15.1000,
+  c67: 91.9000,
+  c68: 69.0000,
+  c69: 46.1000,
+  c70: 23.2000,
+  c71: 0.3000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_041_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_041_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_041_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_041_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_041_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_041_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_041_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_041_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_041_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_041_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 042 — QLD/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_042_META = {
+  id: 'kpi_042',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 41639,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_042_COEF = {
+  c0: 29.2000,
+  c1: 5.7000,
+  c2: 81.9000,
+  c3: 58.4000,
+  c4: 34.9000,
+  c5: 11.4000,
+  c6: 87.6000,
+  c7: 64.1000,
+  c8: 40.6000,
+  c9: 17.1000,
+  c10: 93.3000,
+  c11: 69.8000,
+  c12: 46.3000,
+  c13: 22.8000,
+  c14: 99.0000,
+  c15: 75.5000,
+  c16: 52.0000,
+  c17: 28.5000,
+  c18: 5.0000,
+  c19: 81.2000,
+  c20: 57.7000,
+  c21: 34.2000,
+  c22: 10.7000,
+  c23: 86.9000,
+  c24: 63.4000,
+  c25: 39.9000,
+  c26: 16.4000,
+  c27: 92.6000,
+  c28: 69.1000,
+  c29: 45.6000,
+  c30: 22.1000,
+  c31: 98.3000,
+  c32: 74.8000,
+  c33: 51.3000,
+  c34: 27.8000,
+  c35: 4.3000,
+  c36: 80.5000,
+  c37: 57.0000,
+  c38: 33.5000,
+  c39: 10.0000,
+  c40: 86.2000,
+  c41: 62.7000,
+  c42: 39.2000,
+  c43: 15.7000,
+  c44: 91.9000,
+  c45: 68.4000,
+  c46: 44.9000,
+  c47: 21.4000,
+  c48: 97.6000,
+  c49: 74.1000,
+  c50: 50.6000,
+  c51: 27.1000,
+  c52: 3.6000,
+  c53: 79.8000,
+  c54: 56.3000,
+  c55: 32.8000,
+  c56: 9.3000,
+  c57: 85.5000,
+  c58: 62.0000,
+  c59: 38.5000,
+  c60: 15.0000,
+  c61: 91.2000,
+  c62: 67.7000,
+  c63: 44.2000,
+  c64: 20.7000,
+  c65: 96.9000,
+  c66: 73.4000,
+  c67: 49.9000,
+  c68: 26.4000,
+  c69: 2.9000,
+  c70: 79.1000,
+  c71: 55.6000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_042_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_042_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_042_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_042_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_042_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_042_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_042_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_042_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_042_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_042_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 043 — WA/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_043_META = {
+  id: 'kpi_043',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 42630,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_043_COEF = {
+  c0: 27.4000,
+  c1: 3.3000,
+  c2: 78.9000,
+  c3: 54.8000,
+  c4: 30.7000,
+  c5: 6.6000,
+  c6: 82.2000,
+  c7: 58.1000,
+  c8: 34.0000,
+  c9: 9.9000,
+  c10: 85.5000,
+  c11: 61.4000,
+  c12: 37.3000,
+  c13: 13.2000,
+  c14: 88.8000,
+  c15: 64.7000,
+  c16: 40.6000,
+  c17: 16.5000,
+  c18: 92.1000,
+  c19: 68.0000,
+  c20: 43.9000,
+  c21: 19.8000,
+  c22: 95.4000,
+  c23: 71.3000,
+  c24: 47.2000,
+  c25: 23.1000,
+  c26: 98.7000,
+  c27: 74.6000,
+  c28: 50.5000,
+  c29: 26.4000,
+  c30: 2.3000,
+  c31: 77.9000,
+  c32: 53.8000,
+  c33: 29.7000,
+  c34: 5.6000,
+  c35: 81.2000,
+  c36: 57.1000,
+  c37: 33.0000,
+  c38: 8.9000,
+  c39: 84.5000,
+  c40: 60.4000,
+  c41: 36.3000,
+  c42: 12.2000,
+  c43: 87.8000,
+  c44: 63.7000,
+  c45: 39.6000,
+  c46: 15.5000,
+  c47: 91.1000,
+  c48: 67.0000,
+  c49: 42.9000,
+  c50: 18.8000,
+  c51: 94.4000,
+  c52: 70.3000,
+  c53: 46.2000,
+  c54: 22.1000,
+  c55: 97.7000,
+  c56: 73.6000,
+  c57: 49.5000,
+  c58: 25.4000,
+  c59: 1.3000,
+  c60: 76.9000,
+  c61: 52.8000,
+  c62: 28.7000,
+  c63: 4.6000,
+  c64: 80.2000,
+  c65: 56.1000,
+  c66: 32.0000,
+  c67: 7.9000,
+  c68: 83.5000,
+  c69: 59.4000,
+  c70: 35.3000,
+  c71: 11.2000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_043_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_043_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_043_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_043_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_043_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_043_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_043_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_043_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_043_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_043_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 044 — SA/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_044_META = {
+  id: 'kpi_044',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 43621,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_044_COEF = {
+  c0: 25.6000,
+  c1: 0.9000,
+  c2: 75.9000,
+  c3: 51.2000,
+  c4: 26.5000,
+  c5: 1.8000,
+  c6: 76.8000,
+  c7: 52.1000,
+  c8: 27.4000,
+  c9: 2.7000,
+  c10: 77.7000,
+  c11: 53.0000,
+  c12: 28.3000,
+  c13: 3.6000,
+  c14: 78.6000,
+  c15: 53.9000,
+  c16: 29.2000,
+  c17: 4.5000,
+  c18: 79.5000,
+  c19: 54.8000,
+  c20: 30.1000,
+  c21: 5.4000,
+  c22: 80.4000,
+  c23: 55.7000,
+  c24: 31.0000,
+  c25: 6.3000,
+  c26: 81.3000,
+  c27: 56.6000,
+  c28: 31.9000,
+  c29: 7.2000,
+  c30: 82.2000,
+  c31: 57.5000,
+  c32: 32.8000,
+  c33: 8.1000,
+  c34: 83.1000,
+  c35: 58.4000,
+  c36: 33.7000,
+  c37: 9.0000,
+  c38: 84.0000,
+  c39: 59.3000,
+  c40: 34.6000,
+  c41: 9.9000,
+  c42: 84.9000,
+  c43: 60.2000,
+  c44: 35.5000,
+  c45: 10.8000,
+  c46: 85.8000,
+  c47: 61.1000,
+  c48: 36.4000,
+  c49: 11.7000,
+  c50: 86.7000,
+  c51: 62.0000,
+  c52: 37.3000,
+  c53: 12.6000,
+  c54: 87.6000,
+  c55: 62.9000,
+  c56: 38.2000,
+  c57: 13.5000,
+  c58: 88.5000,
+  c59: 63.8000,
+  c60: 39.1000,
+  c61: 14.4000,
+  c62: 89.4000,
+  c63: 64.7000,
+  c64: 40.0000,
+  c65: 15.3000,
+  c66: 90.3000,
+  c67: 65.6000,
+  c68: 40.9000,
+  c69: 16.2000,
+  c70: 91.2000,
+  c71: 66.5000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_044_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_044_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_044_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_044_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_044_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_044_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_044_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_044_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_044_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_044_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 045 — TAS/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_045_META = {
+  id: 'kpi_045',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 44612,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_045_COEF = {
+  c0: 23.8000,
+  c1: 98.2000,
+  c2: 72.9000,
+  c3: 47.6000,
+  c4: 22.3000,
+  c5: 96.7000,
+  c6: 71.4000,
+  c7: 46.1000,
+  c8: 20.8000,
+  c9: 95.2000,
+  c10: 69.9000,
+  c11: 44.6000,
+  c12: 19.3000,
+  c13: 93.7000,
+  c14: 68.4000,
+  c15: 43.1000,
+  c16: 17.8000,
+  c17: 92.2000,
+  c18: 66.9000,
+  c19: 41.6000,
+  c20: 16.3000,
+  c21: 90.7000,
+  c22: 65.4000,
+  c23: 40.1000,
+  c24: 14.8000,
+  c25: 89.2000,
+  c26: 63.9000,
+  c27: 38.6000,
+  c28: 13.3000,
+  c29: 87.7000,
+  c30: 62.4000,
+  c31: 37.1000,
+  c32: 11.8000,
+  c33: 86.2000,
+  c34: 60.9000,
+  c35: 35.6000,
+  c36: 10.3000,
+  c37: 84.7000,
+  c38: 59.4000,
+  c39: 34.1000,
+  c40: 8.8000,
+  c41: 83.2000,
+  c42: 57.9000,
+  c43: 32.6000,
+  c44: 7.3000,
+  c45: 81.7000,
+  c46: 56.4000,
+  c47: 31.1000,
+  c48: 5.8000,
+  c49: 80.2000,
+  c50: 54.9000,
+  c51: 29.6000,
+  c52: 4.3000,
+  c53: 78.7000,
+  c54: 53.4000,
+  c55: 28.1000,
+  c56: 2.8000,
+  c57: 77.2000,
+  c58: 51.9000,
+  c59: 26.6000,
+  c60: 1.3000,
+  c61: 75.7000,
+  c62: 50.4000,
+  c63: 25.1000,
+  c64: 99.5000,
+  c65: 74.2000,
+  c66: 48.9000,
+  c67: 23.6000,
+  c68: 98.0000,
+  c69: 72.7000,
+  c70: 47.4000,
+  c71: 22.1000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_045_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_045_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_045_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_045_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_045_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_045_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_045_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_045_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_045_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_045_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 046 — NT/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_046_META = {
+  id: 'kpi_046',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 45603,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_046_COEF = {
+  c0: 22.0000,
+  c1: 95.8000,
+  c2: 69.9000,
+  c3: 44.0000,
+  c4: 18.1000,
+  c5: 91.9000,
+  c6: 66.0000,
+  c7: 40.1000,
+  c8: 14.2000,
+  c9: 88.0000,
+  c10: 62.1000,
+  c11: 36.2000,
+  c12: 10.3000,
+  c13: 84.1000,
+  c14: 58.2000,
+  c15: 32.3000,
+  c16: 6.4000,
+  c17: 80.2000,
+  c18: 54.3000,
+  c19: 28.4000,
+  c20: 2.5000,
+  c21: 76.3000,
+  c22: 50.4000,
+  c23: 24.5000,
+  c24: 98.3000,
+  c25: 72.4000,
+  c26: 46.5000,
+  c27: 20.6000,
+  c28: 94.4000,
+  c29: 68.5000,
+  c30: 42.6000,
+  c31: 16.7000,
+  c32: 90.5000,
+  c33: 64.6000,
+  c34: 38.7000,
+  c35: 12.8000,
+  c36: 86.6000,
+  c37: 60.7000,
+  c38: 34.8000,
+  c39: 8.9000,
+  c40: 82.7000,
+  c41: 56.8000,
+  c42: 30.9000,
+  c43: 5.0000,
+  c44: 78.8000,
+  c45: 52.9000,
+  c46: 27.0000,
+  c47: 1.1000,
+  c48: 74.9000,
+  c49: 49.0000,
+  c50: 23.1000,
+  c51: 96.9000,
+  c52: 71.0000,
+  c53: 45.1000,
+  c54: 19.2000,
+  c55: 93.0000,
+  c56: 67.1000,
+  c57: 41.2000,
+  c58: 15.3000,
+  c59: 89.1000,
+  c60: 63.2000,
+  c61: 37.3000,
+  c62: 11.4000,
+  c63: 85.2000,
+  c64: 59.3000,
+  c65: 33.4000,
+  c66: 7.5000,
+  c67: 81.3000,
+  c68: 55.4000,
+  c69: 29.5000,
+  c70: 3.6000,
+  c71: 77.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_046_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_046_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_046_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_046_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_046_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_046_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_046_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_046_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_046_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_046_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 047 — ACT/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_047_META = {
+  id: 'kpi_047',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 46594,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_047_COEF = {
+  c0: 20.2000,
+  c1: 93.4000,
+  c2: 66.9000,
+  c3: 40.4000,
+  c4: 13.9000,
+  c5: 87.1000,
+  c6: 60.6000,
+  c7: 34.1000,
+  c8: 7.6000,
+  c9: 80.8000,
+  c10: 54.3000,
+  c11: 27.8000,
+  c12: 1.3000,
+  c13: 74.5000,
+  c14: 48.0000,
+  c15: 21.5000,
+  c16: 94.7000,
+  c17: 68.2000,
+  c18: 41.7000,
+  c19: 15.2000,
+  c20: 88.4000,
+  c21: 61.9000,
+  c22: 35.4000,
+  c23: 8.9000,
+  c24: 82.1000,
+  c25: 55.6000,
+  c26: 29.1000,
+  c27: 2.6000,
+  c28: 75.8000,
+  c29: 49.3000,
+  c30: 22.8000,
+  c31: 96.0000,
+  c32: 69.5000,
+  c33: 43.0000,
+  c34: 16.5000,
+  c35: 89.7000,
+  c36: 63.2000,
+  c37: 36.7000,
+  c38: 10.2000,
+  c39: 83.4000,
+  c40: 56.9000,
+  c41: 30.4000,
+  c42: 3.9000,
+  c43: 77.1000,
+  c44: 50.6000,
+  c45: 24.1000,
+  c46: 97.3000,
+  c47: 70.8000,
+  c48: 44.3000,
+  c49: 17.8000,
+  c50: 91.0000,
+  c51: 64.5000,
+  c52: 38.0000,
+  c53: 11.5000,
+  c54: 84.7000,
+  c55: 58.2000,
+  c56: 31.7000,
+  c57: 5.2000,
+  c58: 78.4000,
+  c59: 51.9000,
+  c60: 25.4000,
+  c61: 98.6000,
+  c62: 72.1000,
+  c63: 45.6000,
+  c64: 19.1000,
+  c65: 92.3000,
+  c66: 65.8000,
+  c67: 39.3000,
+  c68: 12.8000,
+  c69: 86.0000,
+  c70: 59.5000,
+  c71: 33.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_047_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_047_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_047_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_047_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_047_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_047_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_047_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_047_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_047_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_047_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 048 — NSW/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_048_META = {
+  id: 'kpi_048',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 47585,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_048_COEF = {
+  c0: 18.4000,
+  c1: 91.0000,
+  c2: 63.9000,
+  c3: 36.8000,
+  c4: 9.7000,
+  c5: 82.3000,
+  c6: 55.2000,
+  c7: 28.1000,
+  c8: 1.0000,
+  c9: 73.6000,
+  c10: 46.5000,
+  c11: 19.4000,
+  c12: 92.0000,
+  c13: 64.9000,
+  c14: 37.8000,
+  c15: 10.7000,
+  c16: 83.3000,
+  c17: 56.2000,
+  c18: 29.1000,
+  c19: 2.0000,
+  c20: 74.6000,
+  c21: 47.5000,
+  c22: 20.4000,
+  c23: 93.0000,
+  c24: 65.9000,
+  c25: 38.8000,
+  c26: 11.7000,
+  c27: 84.3000,
+  c28: 57.2000,
+  c29: 30.1000,
+  c30: 3.0000,
+  c31: 75.6000,
+  c32: 48.5000,
+  c33: 21.4000,
+  c34: 94.0000,
+  c35: 66.9000,
+  c36: 39.8000,
+  c37: 12.7000,
+  c38: 85.3000,
+  c39: 58.2000,
+  c40: 31.1000,
+  c41: 4.0000,
+  c42: 76.6000,
+  c43: 49.5000,
+  c44: 22.4000,
+  c45: 95.0000,
+  c46: 67.9000,
+  c47: 40.8000,
+  c48: 13.7000,
+  c49: 86.3000,
+  c50: 59.2000,
+  c51: 32.1000,
+  c52: 5.0000,
+  c53: 77.6000,
+  c54: 50.5000,
+  c55: 23.4000,
+  c56: 96.0000,
+  c57: 68.9000,
+  c58: 41.8000,
+  c59: 14.7000,
+  c60: 87.3000,
+  c61: 60.2000,
+  c62: 33.1000,
+  c63: 6.0000,
+  c64: 78.6000,
+  c65: 51.5000,
+  c66: 24.4000,
+  c67: 97.0000,
+  c68: 69.9000,
+  c69: 42.8000,
+  c70: 15.7000,
+  c71: 88.3000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_048_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_048_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_048_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_048_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_048_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_048_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_048_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_048_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_048_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_048_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 049 — VIC/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_049_META = {
+  id: 'kpi_049',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 48576,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_049_COEF = {
+  c0: 16.6000,
+  c1: 88.6000,
+  c2: 60.9000,
+  c3: 33.2000,
+  c4: 5.5000,
+  c5: 77.5000,
+  c6: 49.8000,
+  c7: 22.1000,
+  c8: 94.1000,
+  c9: 66.4000,
+  c10: 38.7000,
+  c11: 11.0000,
+  c12: 83.0000,
+  c13: 55.3000,
+  c14: 27.6000,
+  c15: 99.6000,
+  c16: 71.9000,
+  c17: 44.2000,
+  c18: 16.5000,
+  c19: 88.5000,
+  c20: 60.8000,
+  c21: 33.1000,
+  c22: 5.4000,
+  c23: 77.4000,
+  c24: 49.7000,
+  c25: 22.0000,
+  c26: 94.0000,
+  c27: 66.3000,
+  c28: 38.6000,
+  c29: 10.9000,
+  c30: 82.9000,
+  c31: 55.2000,
+  c32: 27.5000,
+  c33: 99.5000,
+  c34: 71.8000,
+  c35: 44.1000,
+  c36: 16.4000,
+  c37: 88.4000,
+  c38: 60.7000,
+  c39: 33.0000,
+  c40: 5.3000,
+  c41: 77.3000,
+  c42: 49.6000,
+  c43: 21.9000,
+  c44: 93.9000,
+  c45: 66.2000,
+  c46: 38.5000,
+  c47: 10.8000,
+  c48: 82.8000,
+  c49: 55.1000,
+  c50: 27.4000,
+  c51: 99.4000,
+  c52: 71.7000,
+  c53: 44.0000,
+  c54: 16.3000,
+  c55: 88.3000,
+  c56: 60.6000,
+  c57: 32.9000,
+  c58: 5.2000,
+  c59: 77.2000,
+  c60: 49.5000,
+  c61: 21.8000,
+  c62: 93.8000,
+  c63: 66.1000,
+  c64: 38.4000,
+  c65: 10.7000,
+  c66: 82.7000,
+  c67: 55.0000,
+  c68: 27.3000,
+  c69: 99.3000,
+  c70: 71.6000,
+  c71: 43.9000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_049_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_049_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_049_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_049_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_049_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_049_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_049_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_049_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_049_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_049_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 050 — QLD/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_050_META = {
+  id: 'kpi_050',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 49567,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_050_COEF = {
+  c0: 14.8000,
+  c1: 86.2000,
+  c2: 57.9000,
+  c3: 29.6000,
+  c4: 1.3000,
+  c5: 72.7000,
+  c6: 44.4000,
+  c7: 16.1000,
+  c8: 87.5000,
+  c9: 59.2000,
+  c10: 30.9000,
+  c11: 2.6000,
+  c12: 74.0000,
+  c13: 45.7000,
+  c14: 17.4000,
+  c15: 88.8000,
+  c16: 60.5000,
+  c17: 32.2000,
+  c18: 3.9000,
+  c19: 75.3000,
+  c20: 47.0000,
+  c21: 18.7000,
+  c22: 90.1000,
+  c23: 61.8000,
+  c24: 33.5000,
+  c25: 5.2000,
+  c26: 76.6000,
+  c27: 48.3000,
+  c28: 20.0000,
+  c29: 91.4000,
+  c30: 63.1000,
+  c31: 34.8000,
+  c32: 6.5000,
+  c33: 77.9000,
+  c34: 49.6000,
+  c35: 21.3000,
+  c36: 92.7000,
+  c37: 64.4000,
+  c38: 36.1000,
+  c39: 7.8000,
+  c40: 79.2000,
+  c41: 50.9000,
+  c42: 22.6000,
+  c43: 94.0000,
+  c44: 65.7000,
+  c45: 37.4000,
+  c46: 9.1000,
+  c47: 80.5000,
+  c48: 52.2000,
+  c49: 23.9000,
+  c50: 95.3000,
+  c51: 67.0000,
+  c52: 38.7000,
+  c53: 10.4000,
+  c54: 81.8000,
+  c55: 53.5000,
+  c56: 25.2000,
+  c57: 96.6000,
+  c58: 68.3000,
+  c59: 40.0000,
+  c60: 11.7000,
+  c61: 83.1000,
+  c62: 54.8000,
+  c63: 26.5000,
+  c64: 97.9000,
+  c65: 69.6000,
+  c66: 41.3000,
+  c67: 13.0000,
+  c68: 84.4000,
+  c69: 56.1000,
+  c70: 27.8000,
+  c71: 99.2000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_050_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_050_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_050_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_050_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_050_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_050_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_050_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_050_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_050_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_050_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 051 — WA/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_051_META = {
+  id: 'kpi_051',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 50558,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_051_COEF = {
+  c0: 13.0000,
+  c1: 83.8000,
+  c2: 54.9000,
+  c3: 26.0000,
+  c4: 96.8000,
+  c5: 67.9000,
+  c6: 39.0000,
+  c7: 10.1000,
+  c8: 80.9000,
+  c9: 52.0000,
+  c10: 23.1000,
+  c11: 93.9000,
+  c12: 65.0000,
+  c13: 36.1000,
+  c14: 7.2000,
+  c15: 78.0000,
+  c16: 49.1000,
+  c17: 20.2000,
+  c18: 91.0000,
+  c19: 62.1000,
+  c20: 33.2000,
+  c21: 4.3000,
+  c22: 75.1000,
+  c23: 46.2000,
+  c24: 17.3000,
+  c25: 88.1000,
+  c26: 59.2000,
+  c27: 30.3000,
+  c28: 1.4000,
+  c29: 72.2000,
+  c30: 43.3000,
+  c31: 14.4000,
+  c32: 85.2000,
+  c33: 56.3000,
+  c34: 27.4000,
+  c35: 98.2000,
+  c36: 69.3000,
+  c37: 40.4000,
+  c38: 11.5000,
+  c39: 82.3000,
+  c40: 53.4000,
+  c41: 24.5000,
+  c42: 95.3000,
+  c43: 66.4000,
+  c44: 37.5000,
+  c45: 8.6000,
+  c46: 79.4000,
+  c47: 50.5000,
+  c48: 21.6000,
+  c49: 92.4000,
+  c50: 63.5000,
+  c51: 34.6000,
+  c52: 5.7000,
+  c53: 76.5000,
+  c54: 47.6000,
+  c55: 18.7000,
+  c56: 89.5000,
+  c57: 60.6000,
+  c58: 31.7000,
+  c59: 2.8000,
+  c60: 73.6000,
+  c61: 44.7000,
+  c62: 15.8000,
+  c63: 86.6000,
+  c64: 57.7000,
+  c65: 28.8000,
+  c66: 99.6000,
+  c67: 70.7000,
+  c68: 41.8000,
+  c69: 12.9000,
+  c70: 83.7000,
+  c71: 54.8000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_051_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_051_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_051_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_051_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_051_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_051_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_051_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_051_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_051_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_051_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 052 — SA/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_052_META = {
+  id: 'kpi_052',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 51549,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_052_COEF = {
+  c0: 11.2000,
+  c1: 81.4000,
+  c2: 51.9000,
+  c3: 22.4000,
+  c4: 92.6000,
+  c5: 63.1000,
+  c6: 33.6000,
+  c7: 4.1000,
+  c8: 74.3000,
+  c9: 44.8000,
+  c10: 15.3000,
+  c11: 85.5000,
+  c12: 56.0000,
+  c13: 26.5000,
+  c14: 96.7000,
+  c15: 67.2000,
+  c16: 37.7000,
+  c17: 8.2000,
+  c18: 78.4000,
+  c19: 48.9000,
+  c20: 19.4000,
+  c21: 89.6000,
+  c22: 60.1000,
+  c23: 30.6000,
+  c24: 1.1000,
+  c25: 71.3000,
+  c26: 41.8000,
+  c27: 12.3000,
+  c28: 82.5000,
+  c29: 53.0000,
+  c30: 23.5000,
+  c31: 93.7000,
+  c32: 64.2000,
+  c33: 34.7000,
+  c34: 5.2000,
+  c35: 75.4000,
+  c36: 45.9000,
+  c37: 16.4000,
+  c38: 86.6000,
+  c39: 57.1000,
+  c40: 27.6000,
+  c41: 97.8000,
+  c42: 68.3000,
+  c43: 38.8000,
+  c44: 9.3000,
+  c45: 79.5000,
+  c46: 50.0000,
+  c47: 20.5000,
+  c48: 90.7000,
+  c49: 61.2000,
+  c50: 31.7000,
+  c51: 2.2000,
+  c52: 72.4000,
+  c53: 42.9000,
+  c54: 13.4000,
+  c55: 83.6000,
+  c56: 54.1000,
+  c57: 24.6000,
+  c58: 94.8000,
+  c59: 65.3000,
+  c60: 35.8000,
+  c61: 6.3000,
+  c62: 76.5000,
+  c63: 47.0000,
+  c64: 17.5000,
+  c65: 87.7000,
+  c66: 58.2000,
+  c67: 28.7000,
+  c68: 98.9000,
+  c69: 69.4000,
+  c70: 39.9000,
+  c71: 10.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_052_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_052_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_052_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_052_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_052_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_052_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_052_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_052_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_052_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_052_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 053 — TAS/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_053_META = {
+  id: 'kpi_053',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 52540,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_053_COEF = {
+  c0: 9.4000,
+  c1: 79.0000,
+  c2: 48.9000,
+  c3: 18.8000,
+  c4: 88.4000,
+  c5: 58.3000,
+  c6: 28.2000,
+  c7: 97.8000,
+  c8: 67.7000,
+  c9: 37.6000,
+  c10: 7.5000,
+  c11: 77.1000,
+  c12: 47.0000,
+  c13: 16.9000,
+  c14: 86.5000,
+  c15: 56.4000,
+  c16: 26.3000,
+  c17: 95.9000,
+  c18: 65.8000,
+  c19: 35.7000,
+  c20: 5.6000,
+  c21: 75.2000,
+  c22: 45.1000,
+  c23: 15.0000,
+  c24: 84.6000,
+  c25: 54.5000,
+  c26: 24.4000,
+  c27: 94.0000,
+  c28: 63.9000,
+  c29: 33.8000,
+  c30: 3.7000,
+  c31: 73.3000,
+  c32: 43.2000,
+  c33: 13.1000,
+  c34: 82.7000,
+  c35: 52.6000,
+  c36: 22.5000,
+  c37: 92.1000,
+  c38: 62.0000,
+  c39: 31.9000,
+  c40: 1.8000,
+  c41: 71.4000,
+  c42: 41.3000,
+  c43: 11.2000,
+  c44: 80.8000,
+  c45: 50.7000,
+  c46: 20.6000,
+  c47: 90.2000,
+  c48: 60.1000,
+  c49: 30.0000,
+  c50: 99.6000,
+  c51: 69.5000,
+  c52: 39.4000,
+  c53: 9.3000,
+  c54: 78.9000,
+  c55: 48.8000,
+  c56: 18.7000,
+  c57: 88.3000,
+  c58: 58.2000,
+  c59: 28.1000,
+  c60: 97.7000,
+  c61: 67.6000,
+  c62: 37.5000,
+  c63: 7.4000,
+  c64: 77.0000,
+  c65: 46.9000,
+  c66: 16.8000,
+  c67: 86.4000,
+  c68: 56.3000,
+  c69: 26.2000,
+  c70: 95.8000,
+  c71: 65.7000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_053_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_053_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_053_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_053_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_053_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_053_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_053_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_053_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_053_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_053_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 054 — NT/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_054_META = {
+  id: 'kpi_054',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 53531,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_054_COEF = {
+  c0: 7.6000,
+  c1: 76.6000,
+  c2: 45.9000,
+  c3: 15.2000,
+  c4: 84.2000,
+  c5: 53.5000,
+  c6: 22.8000,
+  c7: 91.8000,
+  c8: 61.1000,
+  c9: 30.4000,
+  c10: 99.4000,
+  c11: 68.7000,
+  c12: 38.0000,
+  c13: 7.3000,
+  c14: 76.3000,
+  c15: 45.6000,
+  c16: 14.9000,
+  c17: 83.9000,
+  c18: 53.2000,
+  c19: 22.5000,
+  c20: 91.5000,
+  c21: 60.8000,
+  c22: 30.1000,
+  c23: 99.1000,
+  c24: 68.4000,
+  c25: 37.7000,
+  c26: 7.0000,
+  c27: 76.0000,
+  c28: 45.3000,
+  c29: 14.6000,
+  c30: 83.6000,
+  c31: 52.9000,
+  c32: 22.2000,
+  c33: 91.2000,
+  c34: 60.5000,
+  c35: 29.8000,
+  c36: 98.8000,
+  c37: 68.1000,
+  c38: 37.4000,
+  c39: 6.7000,
+  c40: 75.7000,
+  c41: 45.0000,
+  c42: 14.3000,
+  c43: 83.3000,
+  c44: 52.6000,
+  c45: 21.9000,
+  c46: 90.9000,
+  c47: 60.2000,
+  c48: 29.5000,
+  c49: 98.5000,
+  c50: 67.8000,
+  c51: 37.1000,
+  c52: 6.4000,
+  c53: 75.4000,
+  c54: 44.7000,
+  c55: 14.0000,
+  c56: 83.0000,
+  c57: 52.3000,
+  c58: 21.6000,
+  c59: 90.6000,
+  c60: 59.9000,
+  c61: 29.2000,
+  c62: 98.2000,
+  c63: 67.5000,
+  c64: 36.8000,
+  c65: 6.1000,
+  c66: 75.1000,
+  c67: 44.4000,
+  c68: 13.7000,
+  c69: 82.7000,
+  c70: 52.0000,
+  c71: 21.3000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_054_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_054_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_054_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_054_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_054_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_054_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_054_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_054_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_054_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_054_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 055 — ACT/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_055_META = {
+  id: 'kpi_055',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 54522,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_055_COEF = {
+  c0: 5.8000,
+  c1: 74.2000,
+  c2: 42.9000,
+  c3: 11.6000,
+  c4: 80.0000,
+  c5: 48.7000,
+  c6: 17.4000,
+  c7: 85.8000,
+  c8: 54.5000,
+  c9: 23.2000,
+  c10: 91.6000,
+  c11: 60.3000,
+  c12: 29.0000,
+  c13: 97.4000,
+  c14: 66.1000,
+  c15: 34.8000,
+  c16: 3.5000,
+  c17: 71.9000,
+  c18: 40.6000,
+  c19: 9.3000,
+  c20: 77.7000,
+  c21: 46.4000,
+  c22: 15.1000,
+  c23: 83.5000,
+  c24: 52.2000,
+  c25: 20.9000,
+  c26: 89.3000,
+  c27: 58.0000,
+  c28: 26.7000,
+  c29: 95.1000,
+  c30: 63.8000,
+  c31: 32.5000,
+  c32: 1.2000,
+  c33: 69.6000,
+  c34: 38.3000,
+  c35: 7.0000,
+  c36: 75.4000,
+  c37: 44.1000,
+  c38: 12.8000,
+  c39: 81.2000,
+  c40: 49.9000,
+  c41: 18.6000,
+  c42: 87.0000,
+  c43: 55.7000,
+  c44: 24.4000,
+  c45: 92.8000,
+  c46: 61.5000,
+  c47: 30.2000,
+  c48: 98.6000,
+  c49: 67.3000,
+  c50: 36.0000,
+  c51: 4.7000,
+  c52: 73.1000,
+  c53: 41.8000,
+  c54: 10.5000,
+  c55: 78.9000,
+  c56: 47.6000,
+  c57: 16.3000,
+  c58: 84.7000,
+  c59: 53.4000,
+  c60: 22.1000,
+  c61: 90.5000,
+  c62: 59.2000,
+  c63: 27.9000,
+  c64: 96.3000,
+  c65: 65.0000,
+  c66: 33.7000,
+  c67: 2.4000,
+  c68: 70.8000,
+  c69: 39.5000,
+  c70: 8.2000,
+  c71: 76.6000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_055_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_055_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_055_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_055_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_055_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_055_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_055_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_055_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_055_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_055_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 056 — NSW/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_056_META = {
+  id: 'kpi_056',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 55513,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_056_COEF = {
+  c0: 4.0000,
+  c1: 71.8000,
+  c2: 39.9000,
+  c3: 8.0000,
+  c4: 75.8000,
+  c5: 43.9000,
+  c6: 12.0000,
+  c7: 79.8000,
+  c8: 47.9000,
+  c9: 16.0000,
+  c10: 83.8000,
+  c11: 51.9000,
+  c12: 20.0000,
+  c13: 87.8000,
+  c14: 55.9000,
+  c15: 24.0000,
+  c16: 91.8000,
+  c17: 59.9000,
+  c18: 28.0000,
+  c19: 95.8000,
+  c20: 63.9000,
+  c21: 32.0000,
+  c22: 0.1000,
+  c23: 67.9000,
+  c24: 36.0000,
+  c25: 4.1000,
+  c26: 71.9000,
+  c27: 40.0000,
+  c28: 8.1000,
+  c29: 75.9000,
+  c30: 44.0000,
+  c31: 12.1000,
+  c32: 79.9000,
+  c33: 48.0000,
+  c34: 16.1000,
+  c35: 83.9000,
+  c36: 52.0000,
+  c37: 20.1000,
+  c38: 87.9000,
+  c39: 56.0000,
+  c40: 24.1000,
+  c41: 91.9000,
+  c42: 60.0000,
+  c43: 28.1000,
+  c44: 95.9000,
+  c45: 64.0000,
+  c46: 32.1000,
+  c47: 0.2000,
+  c48: 68.0000,
+  c49: 36.1000,
+  c50: 4.2000,
+  c51: 72.0000,
+  c52: 40.1000,
+  c53: 8.2000,
+  c54: 76.0000,
+  c55: 44.1000,
+  c56: 12.2000,
+  c57: 80.0000,
+  c58: 48.1000,
+  c59: 16.2000,
+  c60: 84.0000,
+  c61: 52.1000,
+  c62: 20.2000,
+  c63: 88.0000,
+  c64: 56.1000,
+  c65: 24.2000,
+  c66: 92.0000,
+  c67: 60.1000,
+  c68: 28.2000,
+  c69: 96.0000,
+  c70: 64.1000,
+  c71: 32.2000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_056_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_056_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_056_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_056_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_056_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_056_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_056_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_056_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_056_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_056_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 057 — VIC/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_057_META = {
+  id: 'kpi_057',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 56504,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_057_COEF = {
+  c0: 2.2000,
+  c1: 69.4000,
+  c2: 36.9000,
+  c3: 4.4000,
+  c4: 71.6000,
+  c5: 39.1000,
+  c6: 6.6000,
+  c7: 73.8000,
+  c8: 41.3000,
+  c9: 8.8000,
+  c10: 76.0000,
+  c11: 43.5000,
+  c12: 11.0000,
+  c13: 78.2000,
+  c14: 45.7000,
+  c15: 13.2000,
+  c16: 80.4000,
+  c17: 47.9000,
+  c18: 15.4000,
+  c19: 82.6000,
+  c20: 50.1000,
+  c21: 17.6000,
+  c22: 84.8000,
+  c23: 52.3000,
+  c24: 19.8000,
+  c25: 87.0000,
+  c26: 54.5000,
+  c27: 22.0000,
+  c28: 89.2000,
+  c29: 56.7000,
+  c30: 24.2000,
+  c31: 91.4000,
+  c32: 58.9000,
+  c33: 26.4000,
+  c34: 93.6000,
+  c35: 61.1000,
+  c36: 28.6000,
+  c37: 95.8000,
+  c38: 63.3000,
+  c39: 30.8000,
+  c40: 98.0000,
+  c41: 65.5000,
+  c42: 33.0000,
+  c43: 0.5000,
+  c44: 67.7000,
+  c45: 35.2000,
+  c46: 2.7000,
+  c47: 69.9000,
+  c48: 37.4000,
+  c49: 4.9000,
+  c50: 72.1000,
+  c51: 39.6000,
+  c52: 7.1000,
+  c53: 74.3000,
+  c54: 41.8000,
+  c55: 9.3000,
+  c56: 76.5000,
+  c57: 44.0000,
+  c58: 11.5000,
+  c59: 78.7000,
+  c60: 46.2000,
+  c61: 13.7000,
+  c62: 80.9000,
+  c63: 48.4000,
+  c64: 15.9000,
+  c65: 83.1000,
+  c66: 50.6000,
+  c67: 18.1000,
+  c68: 85.3000,
+  c69: 52.8000,
+  c70: 20.3000,
+  c71: 87.5000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_057_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_057_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_057_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_057_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_057_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_057_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_057_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_057_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_057_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_057_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 058 — QLD/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_058_META = {
+  id: 'kpi_058',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 57495,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_058_COEF = {
+  c0: 0.4000,
+  c1: 67.0000,
+  c2: 33.9000,
+  c3: 0.8000,
+  c4: 67.4000,
+  c5: 34.3000,
+  c6: 1.2000,
+  c7: 67.8000,
+  c8: 34.7000,
+  c9: 1.6000,
+  c10: 68.2000,
+  c11: 35.1000,
+  c12: 2.0000,
+  c13: 68.6000,
+  c14: 35.5000,
+  c15: 2.4000,
+  c16: 69.0000,
+  c17: 35.9000,
+  c18: 2.8000,
+  c19: 69.4000,
+  c20: 36.3000,
+  c21: 3.2000,
+  c22: 69.8000,
+  c23: 36.7000,
+  c24: 3.6000,
+  c25: 70.2000,
+  c26: 37.1000,
+  c27: 4.0000,
+  c28: 70.6000,
+  c29: 37.5000,
+  c30: 4.4000,
+  c31: 71.0000,
+  c32: 37.9000,
+  c33: 4.8000,
+  c34: 71.4000,
+  c35: 38.3000,
+  c36: 5.2000,
+  c37: 71.8000,
+  c38: 38.7000,
+  c39: 5.6000,
+  c40: 72.2000,
+  c41: 39.1000,
+  c42: 6.0000,
+  c43: 72.6000,
+  c44: 39.5000,
+  c45: 6.4000,
+  c46: 73.0000,
+  c47: 39.9000,
+  c48: 6.8000,
+  c49: 73.4000,
+  c50: 40.3000,
+  c51: 7.2000,
+  c52: 73.8000,
+  c53: 40.7000,
+  c54: 7.6000,
+  c55: 74.2000,
+  c56: 41.1000,
+  c57: 8.0000,
+  c58: 74.6000,
+  c59: 41.5000,
+  c60: 8.4000,
+  c61: 75.0000,
+  c62: 41.9000,
+  c63: 8.8000,
+  c64: 75.4000,
+  c65: 42.3000,
+  c66: 9.2000,
+  c67: 75.8000,
+  c68: 42.7000,
+  c69: 9.6000,
+  c70: 76.2000,
+  c71: 43.1000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_058_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_058_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_058_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_058_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_058_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_058_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_058_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_058_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_058_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_058_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 059 — WA/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_059_META = {
+  id: 'kpi_059',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 58486,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_059_COEF = {
+  c0: 98.3000,
+  c1: 64.6000,
+  c2: 30.9000,
+  c3: 96.9000,
+  c4: 63.2000,
+  c5: 29.5000,
+  c6: 95.5000,
+  c7: 61.8000,
+  c8: 28.1000,
+  c9: 94.1000,
+  c10: 60.4000,
+  c11: 26.7000,
+  c12: 92.7000,
+  c13: 59.0000,
+  c14: 25.3000,
+  c15: 91.3000,
+  c16: 57.6000,
+  c17: 23.9000,
+  c18: 89.9000,
+  c19: 56.2000,
+  c20: 22.5000,
+  c21: 88.5000,
+  c22: 54.8000,
+  c23: 21.1000,
+  c24: 87.1000,
+  c25: 53.4000,
+  c26: 19.7000,
+  c27: 85.7000,
+  c28: 52.0000,
+  c29: 18.3000,
+  c30: 84.3000,
+  c31: 50.6000,
+  c32: 16.9000,
+  c33: 82.9000,
+  c34: 49.2000,
+  c35: 15.5000,
+  c36: 81.5000,
+  c37: 47.8000,
+  c38: 14.1000,
+  c39: 80.1000,
+  c40: 46.4000,
+  c41: 12.7000,
+  c42: 78.7000,
+  c43: 45.0000,
+  c44: 11.3000,
+  c45: 77.3000,
+  c46: 43.6000,
+  c47: 9.9000,
+  c48: 75.9000,
+  c49: 42.2000,
+  c50: 8.5000,
+  c51: 74.5000,
+  c52: 40.8000,
+  c53: 7.1000,
+  c54: 73.1000,
+  c55: 39.4000,
+  c56: 5.7000,
+  c57: 71.7000,
+  c58: 38.0000,
+  c59: 4.3000,
+  c60: 70.3000,
+  c61: 36.6000,
+  c62: 2.9000,
+  c63: 68.9000,
+  c64: 35.2000,
+  c65: 1.5000,
+  c66: 67.5000,
+  c67: 33.8000,
+  c68: 0.1000,
+  c69: 66.1000,
+  c70: 32.4000,
+  c71: 98.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_059_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_059_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_059_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_059_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_059_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_059_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_059_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_059_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_059_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_059_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 060 — SA/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_060_META = {
+  id: 'kpi_060',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 59477,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_060_COEF = {
+  c0: 96.5000,
+  c1: 62.2000,
+  c2: 27.9000,
+  c3: 93.3000,
+  c4: 59.0000,
+  c5: 24.7000,
+  c6: 90.1000,
+  c7: 55.8000,
+  c8: 21.5000,
+  c9: 86.9000,
+  c10: 52.6000,
+  c11: 18.3000,
+  c12: 83.7000,
+  c13: 49.4000,
+  c14: 15.1000,
+  c15: 80.5000,
+  c16: 46.2000,
+  c17: 11.9000,
+  c18: 77.3000,
+  c19: 43.0000,
+  c20: 8.7000,
+  c21: 74.1000,
+  c22: 39.8000,
+  c23: 5.5000,
+  c24: 70.9000,
+  c25: 36.6000,
+  c26: 2.3000,
+  c27: 67.7000,
+  c28: 33.4000,
+  c29: 98.8000,
+  c30: 64.5000,
+  c31: 30.2000,
+  c32: 95.6000,
+  c33: 61.3000,
+  c34: 27.0000,
+  c35: 92.4000,
+  c36: 58.1000,
+  c37: 23.8000,
+  c38: 89.2000,
+  c39: 54.9000,
+  c40: 20.6000,
+  c41: 86.0000,
+  c42: 51.7000,
+  c43: 17.4000,
+  c44: 82.8000,
+  c45: 48.5000,
+  c46: 14.2000,
+  c47: 79.6000,
+  c48: 45.3000,
+  c49: 11.0000,
+  c50: 76.4000,
+  c51: 42.1000,
+  c52: 7.8000,
+  c53: 73.2000,
+  c54: 38.9000,
+  c55: 4.6000,
+  c56: 70.0000,
+  c57: 35.7000,
+  c58: 1.4000,
+  c59: 66.8000,
+  c60: 32.5000,
+  c61: 97.9000,
+  c62: 63.6000,
+  c63: 29.3000,
+  c64: 94.7000,
+  c65: 60.4000,
+  c66: 26.1000,
+  c67: 91.5000,
+  c68: 57.2000,
+  c69: 22.9000,
+  c70: 88.3000,
+  c71: 54.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_060_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_060_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_060_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_060_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_060_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_060_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_060_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_060_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_060_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_060_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 061 — TAS/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_061_META = {
+  id: 'kpi_061',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 60468,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_061_COEF = {
+  c0: 94.7000,
+  c1: 59.8000,
+  c2: 24.9000,
+  c3: 89.7000,
+  c4: 54.8000,
+  c5: 19.9000,
+  c6: 84.7000,
+  c7: 49.8000,
+  c8: 14.9000,
+  c9: 79.7000,
+  c10: 44.8000,
+  c11: 9.9000,
+  c12: 74.7000,
+  c13: 39.8000,
+  c14: 4.9000,
+  c15: 69.7000,
+  c16: 34.8000,
+  c17: 99.6000,
+  c18: 64.7000,
+  c19: 29.8000,
+  c20: 94.6000,
+  c21: 59.7000,
+  c22: 24.8000,
+  c23: 89.6000,
+  c24: 54.7000,
+  c25: 19.8000,
+  c26: 84.6000,
+  c27: 49.7000,
+  c28: 14.8000,
+  c29: 79.6000,
+  c30: 44.7000,
+  c31: 9.8000,
+  c32: 74.6000,
+  c33: 39.7000,
+  c34: 4.8000,
+  c35: 69.6000,
+  c36: 34.7000,
+  c37: 99.5000,
+  c38: 64.6000,
+  c39: 29.7000,
+  c40: 94.5000,
+  c41: 59.6000,
+  c42: 24.7000,
+  c43: 89.5000,
+  c44: 54.6000,
+  c45: 19.7000,
+  c46: 84.5000,
+  c47: 49.6000,
+  c48: 14.7000,
+  c49: 79.5000,
+  c50: 44.6000,
+  c51: 9.7000,
+  c52: 74.5000,
+  c53: 39.6000,
+  c54: 4.7000,
+  c55: 69.5000,
+  c56: 34.6000,
+  c57: 99.4000,
+  c58: 64.5000,
+  c59: 29.6000,
+  c60: 94.4000,
+  c61: 59.5000,
+  c62: 24.6000,
+  c63: 89.4000,
+  c64: 54.5000,
+  c65: 19.6000,
+  c66: 84.4000,
+  c67: 49.5000,
+  c68: 14.6000,
+  c69: 79.4000,
+  c70: 44.5000,
+  c71: 9.6000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_061_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_061_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_061_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_061_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_061_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_061_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_061_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_061_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_061_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_061_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 062 — NT/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_062_META = {
+  id: 'kpi_062',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 61459,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_062_COEF = {
+  c0: 92.9000,
+  c1: 57.4000,
+  c2: 21.9000,
+  c3: 86.1000,
+  c4: 50.6000,
+  c5: 15.1000,
+  c6: 79.3000,
+  c7: 43.8000,
+  c8: 8.3000,
+  c9: 72.5000,
+  c10: 37.0000,
+  c11: 1.5000,
+  c12: 65.7000,
+  c13: 30.2000,
+  c14: 94.4000,
+  c15: 58.9000,
+  c16: 23.4000,
+  c17: 87.6000,
+  c18: 52.1000,
+  c19: 16.6000,
+  c20: 80.8000,
+  c21: 45.3000,
+  c22: 9.8000,
+  c23: 74.0000,
+  c24: 38.5000,
+  c25: 3.0000,
+  c26: 67.2000,
+  c27: 31.7000,
+  c28: 95.9000,
+  c29: 60.4000,
+  c30: 24.9000,
+  c31: 89.1000,
+  c32: 53.6000,
+  c33: 18.1000,
+  c34: 82.3000,
+  c35: 46.8000,
+  c36: 11.3000,
+  c37: 75.5000,
+  c38: 40.0000,
+  c39: 4.5000,
+  c40: 68.7000,
+  c41: 33.2000,
+  c42: 97.4000,
+  c43: 61.9000,
+  c44: 26.4000,
+  c45: 90.6000,
+  c46: 55.1000,
+  c47: 19.6000,
+  c48: 83.8000,
+  c49: 48.3000,
+  c50: 12.8000,
+  c51: 77.0000,
+  c52: 41.5000,
+  c53: 6.0000,
+  c54: 70.2000,
+  c55: 34.7000,
+  c56: 98.9000,
+  c57: 63.4000,
+  c58: 27.9000,
+  c59: 92.1000,
+  c60: 56.6000,
+  c61: 21.1000,
+  c62: 85.3000,
+  c63: 49.8000,
+  c64: 14.3000,
+  c65: 78.5000,
+  c66: 43.0000,
+  c67: 7.5000,
+  c68: 71.7000,
+  c69: 36.2000,
+  c70: 0.7000,
+  c71: 64.9000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_062_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_062_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_062_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_062_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_062_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_062_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_062_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_062_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_062_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_062_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 063 — ACT/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_063_META = {
+  id: 'kpi_063',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 62450,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_063_COEF = {
+  c0: 91.1000,
+  c1: 55.0000,
+  c2: 18.9000,
+  c3: 82.5000,
+  c4: 46.4000,
+  c5: 10.3000,
+  c6: 73.9000,
+  c7: 37.8000,
+  c8: 1.7000,
+  c9: 65.3000,
+  c10: 29.2000,
+  c11: 92.8000,
+  c12: 56.7000,
+  c13: 20.6000,
+  c14: 84.2000,
+  c15: 48.1000,
+  c16: 12.0000,
+  c17: 75.6000,
+  c18: 39.5000,
+  c19: 3.4000,
+  c20: 67.0000,
+  c21: 30.9000,
+  c22: 94.5000,
+  c23: 58.4000,
+  c24: 22.3000,
+  c25: 85.9000,
+  c26: 49.8000,
+  c27: 13.7000,
+  c28: 77.3000,
+  c29: 41.2000,
+  c30: 5.1000,
+  c31: 68.7000,
+  c32: 32.6000,
+  c33: 96.2000,
+  c34: 60.1000,
+  c35: 24.0000,
+  c36: 87.6000,
+  c37: 51.5000,
+  c38: 15.4000,
+  c39: 79.0000,
+  c40: 42.9000,
+  c41: 6.8000,
+  c42: 70.4000,
+  c43: 34.3000,
+  c44: 97.9000,
+  c45: 61.8000,
+  c46: 25.7000,
+  c47: 89.3000,
+  c48: 53.2000,
+  c49: 17.1000,
+  c50: 80.7000,
+  c51: 44.6000,
+  c52: 8.5000,
+  c53: 72.1000,
+  c54: 36.0000,
+  c55: 99.6000,
+  c56: 63.5000,
+  c57: 27.4000,
+  c58: 91.0000,
+  c59: 54.9000,
+  c60: 18.8000,
+  c61: 82.4000,
+  c62: 46.3000,
+  c63: 10.2000,
+  c64: 73.8000,
+  c65: 37.7000,
+  c66: 1.6000,
+  c67: 65.2000,
+  c68: 29.1000,
+  c69: 92.7000,
+  c70: 56.6000,
+  c71: 20.5000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_063_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_063_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_063_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_063_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_063_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_063_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_063_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_063_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_063_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_063_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 064 — NSW/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_064_META = {
+  id: 'kpi_064',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 63441,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_064_COEF = {
+  c0: 89.3000,
+  c1: 52.6000,
+  c2: 15.9000,
+  c3: 78.9000,
+  c4: 42.2000,
+  c5: 5.5000,
+  c6: 68.5000,
+  c7: 31.8000,
+  c8: 94.8000,
+  c9: 58.1000,
+  c10: 21.4000,
+  c11: 84.4000,
+  c12: 47.7000,
+  c13: 11.0000,
+  c14: 74.0000,
+  c15: 37.3000,
+  c16: 0.6000,
+  c17: 63.6000,
+  c18: 26.9000,
+  c19: 89.9000,
+  c20: 53.2000,
+  c21: 16.5000,
+  c22: 79.5000,
+  c23: 42.8000,
+  c24: 6.1000,
+  c25: 69.1000,
+  c26: 32.4000,
+  c27: 95.4000,
+  c28: 58.7000,
+  c29: 22.0000,
+  c30: 85.0000,
+  c31: 48.3000,
+  c32: 11.6000,
+  c33: 74.6000,
+  c34: 37.9000,
+  c35: 1.2000,
+  c36: 64.2000,
+  c37: 27.5000,
+  c38: 90.5000,
+  c39: 53.8000,
+  c40: 17.1000,
+  c41: 80.1000,
+  c42: 43.4000,
+  c43: 6.7000,
+  c44: 69.7000,
+  c45: 33.0000,
+  c46: 96.0000,
+  c47: 59.3000,
+  c48: 22.6000,
+  c49: 85.6000,
+  c50: 48.9000,
+  c51: 12.2000,
+  c52: 75.2000,
+  c53: 38.5000,
+  c54: 1.8000,
+  c55: 64.8000,
+  c56: 28.1000,
+  c57: 91.1000,
+  c58: 54.4000,
+  c59: 17.7000,
+  c60: 80.7000,
+  c61: 44.0000,
+  c62: 7.3000,
+  c63: 70.3000,
+  c64: 33.6000,
+  c65: 96.6000,
+  c66: 59.9000,
+  c67: 23.2000,
+  c68: 86.2000,
+  c69: 49.5000,
+  c70: 12.8000,
+  c71: 75.8000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_064_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_064_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_064_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_064_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_064_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_064_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_064_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_064_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_064_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_064_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 065 — VIC/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_065_META = {
+  id: 'kpi_065',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 64432,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_065_COEF = {
+  c0: 87.5000,
+  c1: 50.2000,
+  c2: 12.9000,
+  c3: 75.3000,
+  c4: 38.0000,
+  c5: 0.7000,
+  c6: 63.1000,
+  c7: 25.8000,
+  c8: 88.2000,
+  c9: 50.9000,
+  c10: 13.6000,
+  c11: 76.0000,
+  c12: 38.7000,
+  c13: 1.4000,
+  c14: 63.8000,
+  c15: 26.5000,
+  c16: 88.9000,
+  c17: 51.6000,
+  c18: 14.3000,
+  c19: 76.7000,
+  c20: 39.4000,
+  c21: 2.1000,
+  c22: 64.5000,
+  c23: 27.2000,
+  c24: 89.6000,
+  c25: 52.3000,
+  c26: 15.0000,
+  c27: 77.4000,
+  c28: 40.1000,
+  c29: 2.8000,
+  c30: 65.2000,
+  c31: 27.9000,
+  c32: 90.3000,
+  c33: 53.0000,
+  c34: 15.7000,
+  c35: 78.1000,
+  c36: 40.8000,
+  c37: 3.5000,
+  c38: 65.9000,
+  c39: 28.6000,
+  c40: 91.0000,
+  c41: 53.7000,
+  c42: 16.4000,
+  c43: 78.8000,
+  c44: 41.5000,
+  c45: 4.2000,
+  c46: 66.6000,
+  c47: 29.3000,
+  c48: 91.7000,
+  c49: 54.4000,
+  c50: 17.1000,
+  c51: 79.5000,
+  c52: 42.2000,
+  c53: 4.9000,
+  c54: 67.3000,
+  c55: 30.0000,
+  c56: 92.4000,
+  c57: 55.1000,
+  c58: 17.8000,
+  c59: 80.2000,
+  c60: 42.9000,
+  c61: 5.6000,
+  c62: 68.0000,
+  c63: 30.7000,
+  c64: 93.1000,
+  c65: 55.8000,
+  c66: 18.5000,
+  c67: 80.9000,
+  c68: 43.6000,
+  c69: 6.3000,
+  c70: 68.7000,
+  c71: 31.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_065_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_065_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_065_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_065_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_065_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_065_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_065_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_065_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_065_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_065_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 066 — QLD/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_066_META = {
+  id: 'kpi_066',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 65423,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_066_COEF = {
+  c0: 85.7000,
+  c1: 47.8000,
+  c2: 9.9000,
+  c3: 71.7000,
+  c4: 33.8000,
+  c5: 95.6000,
+  c6: 57.7000,
+  c7: 19.8000,
+  c8: 81.6000,
+  c9: 43.7000,
+  c10: 5.8000,
+  c11: 67.6000,
+  c12: 29.7000,
+  c13: 91.5000,
+  c14: 53.6000,
+  c15: 15.7000,
+  c16: 77.5000,
+  c17: 39.6000,
+  c18: 1.7000,
+  c19: 63.5000,
+  c20: 25.6000,
+  c21: 87.4000,
+  c22: 49.5000,
+  c23: 11.6000,
+  c24: 73.4000,
+  c25: 35.5000,
+  c26: 97.3000,
+  c27: 59.4000,
+  c28: 21.5000,
+  c29: 83.3000,
+  c30: 45.4000,
+  c31: 7.5000,
+  c32: 69.3000,
+  c33: 31.4000,
+  c34: 93.2000,
+  c35: 55.3000,
+  c36: 17.4000,
+  c37: 79.2000,
+  c38: 41.3000,
+  c39: 3.4000,
+  c40: 65.2000,
+  c41: 27.3000,
+  c42: 89.1000,
+  c43: 51.2000,
+  c44: 13.3000,
+  c45: 75.1000,
+  c46: 37.2000,
+  c47: 99.0000,
+  c48: 61.1000,
+  c49: 23.2000,
+  c50: 85.0000,
+  c51: 47.1000,
+  c52: 9.2000,
+  c53: 71.0000,
+  c54: 33.1000,
+  c55: 94.9000,
+  c56: 57.0000,
+  c57: 19.1000,
+  c58: 80.9000,
+  c59: 43.0000,
+  c60: 5.1000,
+  c61: 66.9000,
+  c62: 29.0000,
+  c63: 90.8000,
+  c64: 52.9000,
+  c65: 15.0000,
+  c66: 76.8000,
+  c67: 38.9000,
+  c68: 1.0000,
+  c69: 62.8000,
+  c70: 24.9000,
+  c71: 86.7000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_066_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_066_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_066_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_066_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_066_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_066_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_066_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_066_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_066_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_066_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 067 — WA/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_067_META = {
+  id: 'kpi_067',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 66414,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_067_COEF = {
+  c0: 83.9000,
+  c1: 45.4000,
+  c2: 6.9000,
+  c3: 68.1000,
+  c4: 29.6000,
+  c5: 90.8000,
+  c6: 52.3000,
+  c7: 13.8000,
+  c8: 75.0000,
+  c9: 36.5000,
+  c10: 97.7000,
+  c11: 59.2000,
+  c12: 20.7000,
+  c13: 81.9000,
+  c14: 43.4000,
+  c15: 4.9000,
+  c16: 66.1000,
+  c17: 27.6000,
+  c18: 88.8000,
+  c19: 50.3000,
+  c20: 11.8000,
+  c21: 73.0000,
+  c22: 34.5000,
+  c23: 95.7000,
+  c24: 57.2000,
+  c25: 18.7000,
+  c26: 79.9000,
+  c27: 41.4000,
+  c28: 2.9000,
+  c29: 64.1000,
+  c30: 25.6000,
+  c31: 86.8000,
+  c32: 48.3000,
+  c33: 9.8000,
+  c34: 71.0000,
+  c35: 32.5000,
+  c36: 93.7000,
+  c37: 55.2000,
+  c38: 16.7000,
+  c39: 77.9000,
+  c40: 39.4000,
+  c41: 0.9000,
+  c42: 62.1000,
+  c43: 23.6000,
+  c44: 84.8000,
+  c45: 46.3000,
+  c46: 7.8000,
+  c47: 69.0000,
+  c48: 30.5000,
+  c49: 91.7000,
+  c50: 53.2000,
+  c51: 14.7000,
+  c52: 75.9000,
+  c53: 37.4000,
+  c54: 98.6000,
+  c55: 60.1000,
+  c56: 21.6000,
+  c57: 82.8000,
+  c58: 44.3000,
+  c59: 5.8000,
+  c60: 67.0000,
+  c61: 28.5000,
+  c62: 89.7000,
+  c63: 51.2000,
+  c64: 12.7000,
+  c65: 73.9000,
+  c66: 35.4000,
+  c67: 96.6000,
+  c68: 58.1000,
+  c69: 19.6000,
+  c70: 80.8000,
+  c71: 42.3000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_067_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_067_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_067_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_067_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_067_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_067_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_067_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_067_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_067_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_067_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 068 — SA/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_068_META = {
+  id: 'kpi_068',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 67405,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_068_COEF = {
+  c0: 82.1000,
+  c1: 43.0000,
+  c2: 3.9000,
+  c3: 64.5000,
+  c4: 25.4000,
+  c5: 86.0000,
+  c6: 46.9000,
+  c7: 7.8000,
+  c8: 68.4000,
+  c9: 29.3000,
+  c10: 89.9000,
+  c11: 50.8000,
+  c12: 11.7000,
+  c13: 72.3000,
+  c14: 33.2000,
+  c15: 93.8000,
+  c16: 54.7000,
+  c17: 15.6000,
+  c18: 76.2000,
+  c19: 37.1000,
+  c20: 97.7000,
+  c21: 58.6000,
+  c22: 19.5000,
+  c23: 80.1000,
+  c24: 41.0000,
+  c25: 1.9000,
+  c26: 62.5000,
+  c27: 23.4000,
+  c28: 84.0000,
+  c29: 44.9000,
+  c30: 5.8000,
+  c31: 66.4000,
+  c32: 27.3000,
+  c33: 87.9000,
+  c34: 48.8000,
+  c35: 9.7000,
+  c36: 70.3000,
+  c37: 31.2000,
+  c38: 91.8000,
+  c39: 52.7000,
+  c40: 13.6000,
+  c41: 74.2000,
+  c42: 35.1000,
+  c43: 95.7000,
+  c44: 56.6000,
+  c45: 17.5000,
+  c46: 78.1000,
+  c47: 39.0000,
+  c48: 99.6000,
+  c49: 60.5000,
+  c50: 21.4000,
+  c51: 82.0000,
+  c52: 42.9000,
+  c53: 3.8000,
+  c54: 64.4000,
+  c55: 25.3000,
+  c56: 85.9000,
+  c57: 46.8000,
+  c58: 7.7000,
+  c59: 68.3000,
+  c60: 29.2000,
+  c61: 89.8000,
+  c62: 50.7000,
+  c63: 11.6000,
+  c64: 72.2000,
+  c65: 33.1000,
+  c66: 93.7000,
+  c67: 54.6000,
+  c68: 15.5000,
+  c69: 76.1000,
+  c70: 37.0000,
+  c71: 97.6000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_068_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_068_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_068_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_068_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_068_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_068_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_068_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_068_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_068_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_068_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 069 — TAS/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_069_META = {
+  id: 'kpi_069',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 68396,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_069_COEF = {
+  c0: 80.3000,
+  c1: 40.6000,
+  c2: 0.9000,
+  c3: 60.9000,
+  c4: 21.2000,
+  c5: 81.2000,
+  c6: 41.5000,
+  c7: 1.8000,
+  c8: 61.8000,
+  c9: 22.1000,
+  c10: 82.1000,
+  c11: 42.4000,
+  c12: 2.7000,
+  c13: 62.7000,
+  c14: 23.0000,
+  c15: 83.0000,
+  c16: 43.3000,
+  c17: 3.6000,
+  c18: 63.6000,
+  c19: 23.9000,
+  c20: 83.9000,
+  c21: 44.2000,
+  c22: 4.5000,
+  c23: 64.5000,
+  c24: 24.8000,
+  c25: 84.8000,
+  c26: 45.1000,
+  c27: 5.4000,
+  c28: 65.4000,
+  c29: 25.7000,
+  c30: 85.7000,
+  c31: 46.0000,
+  c32: 6.3000,
+  c33: 66.3000,
+  c34: 26.6000,
+  c35: 86.6000,
+  c36: 46.9000,
+  c37: 7.2000,
+  c38: 67.2000,
+  c39: 27.5000,
+  c40: 87.5000,
+  c41: 47.8000,
+  c42: 8.1000,
+  c43: 68.1000,
+  c44: 28.4000,
+  c45: 88.4000,
+  c46: 48.7000,
+  c47: 9.0000,
+  c48: 69.0000,
+  c49: 29.3000,
+  c50: 89.3000,
+  c51: 49.6000,
+  c52: 9.9000,
+  c53: 69.9000,
+  c54: 30.2000,
+  c55: 90.2000,
+  c56: 50.5000,
+  c57: 10.8000,
+  c58: 70.8000,
+  c59: 31.1000,
+  c60: 91.1000,
+  c61: 51.4000,
+  c62: 11.7000,
+  c63: 71.7000,
+  c64: 32.0000,
+  c65: 92.0000,
+  c66: 52.3000,
+  c67: 12.6000,
+  c68: 72.6000,
+  c69: 32.9000,
+  c70: 92.9000,
+  c71: 53.2000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_069_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_069_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_069_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_069_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_069_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_069_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_069_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_069_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_069_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_069_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 070 — NT/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_070_META = {
+  id: 'kpi_070',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 69387,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_070_COEF = {
+  c0: 78.5000,
+  c1: 38.2000,
+  c2: 97.6000,
+  c3: 57.3000,
+  c4: 17.0000,
+  c5: 76.4000,
+  c6: 36.1000,
+  c7: 95.5000,
+  c8: 55.2000,
+  c9: 14.9000,
+  c10: 74.3000,
+  c11: 34.0000,
+  c12: 93.4000,
+  c13: 53.1000,
+  c14: 12.8000,
+  c15: 72.2000,
+  c16: 31.9000,
+  c17: 91.3000,
+  c18: 51.0000,
+  c19: 10.7000,
+  c20: 70.1000,
+  c21: 29.8000,
+  c22: 89.2000,
+  c23: 48.9000,
+  c24: 8.6000,
+  c25: 68.0000,
+  c26: 27.7000,
+  c27: 87.1000,
+  c28: 46.8000,
+  c29: 6.5000,
+  c30: 65.9000,
+  c31: 25.6000,
+  c32: 85.0000,
+  c33: 44.7000,
+  c34: 4.4000,
+  c35: 63.8000,
+  c36: 23.5000,
+  c37: 82.9000,
+  c38: 42.6000,
+  c39: 2.3000,
+  c40: 61.7000,
+  c41: 21.4000,
+  c42: 80.8000,
+  c43: 40.5000,
+  c44: 0.2000,
+  c45: 59.6000,
+  c46: 19.3000,
+  c47: 78.7000,
+  c48: 38.4000,
+  c49: 97.8000,
+  c50: 57.5000,
+  c51: 17.2000,
+  c52: 76.6000,
+  c53: 36.3000,
+  c54: 95.7000,
+  c55: 55.4000,
+  c56: 15.1000,
+  c57: 74.5000,
+  c58: 34.2000,
+  c59: 93.6000,
+  c60: 53.3000,
+  c61: 13.0000,
+  c62: 72.4000,
+  c63: 32.1000,
+  c64: 91.5000,
+  c65: 51.2000,
+  c66: 10.9000,
+  c67: 70.3000,
+  c68: 30.0000,
+  c69: 89.4000,
+  c70: 49.1000,
+  c71: 8.8000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_070_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_070_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_070_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_070_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_070_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_070_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_070_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_070_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_070_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_070_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 071 — ACT/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_071_META = {
+  id: 'kpi_071',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 70378,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_071_COEF = {
+  c0: 76.7000,
+  c1: 35.8000,
+  c2: 94.6000,
+  c3: 53.7000,
+  c4: 12.8000,
+  c5: 71.6000,
+  c6: 30.7000,
+  c7: 89.5000,
+  c8: 48.6000,
+  c9: 7.7000,
+  c10: 66.5000,
+  c11: 25.6000,
+  c12: 84.4000,
+  c13: 43.5000,
+  c14: 2.6000,
+  c15: 61.4000,
+  c16: 20.5000,
+  c17: 79.3000,
+  c18: 38.4000,
+  c19: 97.2000,
+  c20: 56.3000,
+  c21: 15.4000,
+  c22: 74.2000,
+  c23: 33.3000,
+  c24: 92.1000,
+  c25: 51.2000,
+  c26: 10.3000,
+  c27: 69.1000,
+  c28: 28.2000,
+  c29: 87.0000,
+  c30: 46.1000,
+  c31: 5.2000,
+  c32: 64.0000,
+  c33: 23.1000,
+  c34: 81.9000,
+  c35: 41.0000,
+  c36: 0.1000,
+  c37: 58.9000,
+  c38: 18.0000,
+  c39: 76.8000,
+  c40: 35.9000,
+  c41: 94.7000,
+  c42: 53.8000,
+  c43: 12.9000,
+  c44: 71.7000,
+  c45: 30.8000,
+  c46: 89.6000,
+  c47: 48.7000,
+  c48: 7.8000,
+  c49: 66.6000,
+  c50: 25.7000,
+  c51: 84.5000,
+  c52: 43.6000,
+  c53: 2.7000,
+  c54: 61.5000,
+  c55: 20.6000,
+  c56: 79.4000,
+  c57: 38.5000,
+  c58: 97.3000,
+  c59: 56.4000,
+  c60: 15.5000,
+  c61: 74.3000,
+  c62: 33.4000,
+  c63: 92.2000,
+  c64: 51.3000,
+  c65: 10.4000,
+  c66: 69.2000,
+  c67: 28.3000,
+  c68: 87.1000,
+  c69: 46.2000,
+  c70: 5.3000,
+  c71: 64.1000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_071_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_071_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_071_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_071_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_071_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_071_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_071_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_071_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_071_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_071_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 072 — NSW/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_072_META = {
+  id: 'kpi_072',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 71369,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_072_COEF = {
+  c0: 74.9000,
+  c1: 33.4000,
+  c2: 91.6000,
+  c3: 50.1000,
+  c4: 8.6000,
+  c5: 66.8000,
+  c6: 25.3000,
+  c7: 83.5000,
+  c8: 42.0000,
+  c9: 0.5000,
+  c10: 58.7000,
+  c11: 17.2000,
+  c12: 75.4000,
+  c13: 33.9000,
+  c14: 92.1000,
+  c15: 50.6000,
+  c16: 9.1000,
+  c17: 67.3000,
+  c18: 25.8000,
+  c19: 84.0000,
+  c20: 42.5000,
+  c21: 1.0000,
+  c22: 59.2000,
+  c23: 17.7000,
+  c24: 75.9000,
+  c25: 34.4000,
+  c26: 92.6000,
+  c27: 51.1000,
+  c28: 9.6000,
+  c29: 67.8000,
+  c30: 26.3000,
+  c31: 84.5000,
+  c32: 43.0000,
+  c33: 1.5000,
+  c34: 59.7000,
+  c35: 18.2000,
+  c36: 76.4000,
+  c37: 34.9000,
+  c38: 93.1000,
+  c39: 51.6000,
+  c40: 10.1000,
+  c41: 68.3000,
+  c42: 26.8000,
+  c43: 85.0000,
+  c44: 43.5000,
+  c45: 2.0000,
+  c46: 60.2000,
+  c47: 18.7000,
+  c48: 76.9000,
+  c49: 35.4000,
+  c50: 93.6000,
+  c51: 52.1000,
+  c52: 10.6000,
+  c53: 68.8000,
+  c54: 27.3000,
+  c55: 85.5000,
+  c56: 44.0000,
+  c57: 2.5000,
+  c58: 60.7000,
+  c59: 19.2000,
+  c60: 77.4000,
+  c61: 35.9000,
+  c62: 94.1000,
+  c63: 52.6000,
+  c64: 11.1000,
+  c65: 69.3000,
+  c66: 27.8000,
+  c67: 86.0000,
+  c68: 44.5000,
+  c69: 3.0000,
+  c70: 61.2000,
+  c71: 19.7000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_072_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_072_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_072_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_072_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_072_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_072_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_072_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_072_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_072_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_072_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 073 — VIC/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_073_META = {
+  id: 'kpi_073',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 72360,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_073_COEF = {
+  c0: 73.1000,
+  c1: 31.0000,
+  c2: 88.6000,
+  c3: 46.5000,
+  c4: 4.4000,
+  c5: 62.0000,
+  c6: 19.9000,
+  c7: 77.5000,
+  c8: 35.4000,
+  c9: 93.0000,
+  c10: 50.9000,
+  c11: 8.8000,
+  c12: 66.4000,
+  c13: 24.3000,
+  c14: 81.9000,
+  c15: 39.8000,
+  c16: 97.4000,
+  c17: 55.3000,
+  c18: 13.2000,
+  c19: 70.8000,
+  c20: 28.7000,
+  c21: 86.3000,
+  c22: 44.2000,
+  c23: 2.1000,
+  c24: 59.7000,
+  c25: 17.6000,
+  c26: 75.2000,
+  c27: 33.1000,
+  c28: 90.7000,
+  c29: 48.6000,
+  c30: 6.5000,
+  c31: 64.1000,
+  c32: 22.0000,
+  c33: 79.6000,
+  c34: 37.5000,
+  c35: 95.1000,
+  c36: 53.0000,
+  c37: 10.9000,
+  c38: 68.5000,
+  c39: 26.4000,
+  c40: 84.0000,
+  c41: 41.9000,
+  c42: 99.5000,
+  c43: 57.4000,
+  c44: 15.3000,
+  c45: 72.9000,
+  c46: 30.8000,
+  c47: 88.4000,
+  c48: 46.3000,
+  c49: 4.2000,
+  c50: 61.8000,
+  c51: 19.7000,
+  c52: 77.3000,
+  c53: 35.2000,
+  c54: 92.8000,
+  c55: 50.7000,
+  c56: 8.6000,
+  c57: 66.2000,
+  c58: 24.1000,
+  c59: 81.7000,
+  c60: 39.6000,
+  c61: 97.2000,
+  c62: 55.1000,
+  c63: 13.0000,
+  c64: 70.6000,
+  c65: 28.5000,
+  c66: 86.1000,
+  c67: 44.0000,
+  c68: 1.9000,
+  c69: 59.5000,
+  c70: 17.4000,
+  c71: 75.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_073_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_073_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_073_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_073_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_073_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_073_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_073_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_073_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_073_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_073_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 074 — QLD/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_074_META = {
+  id: 'kpi_074',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 73351,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_074_COEF = {
+  c0: 71.3000,
+  c1: 28.6000,
+  c2: 85.6000,
+  c3: 42.9000,
+  c4: 0.2000,
+  c5: 57.2000,
+  c6: 14.5000,
+  c7: 71.5000,
+  c8: 28.8000,
+  c9: 85.8000,
+  c10: 43.1000,
+  c11: 0.4000,
+  c12: 57.4000,
+  c13: 14.7000,
+  c14: 71.7000,
+  c15: 29.0000,
+  c16: 86.0000,
+  c17: 43.3000,
+  c18: 0.6000,
+  c19: 57.6000,
+  c20: 14.9000,
+  c21: 71.9000,
+  c22: 29.2000,
+  c23: 86.2000,
+  c24: 43.5000,
+  c25: 0.8000,
+  c26: 57.8000,
+  c27: 15.1000,
+  c28: 72.1000,
+  c29: 29.4000,
+  c30: 86.4000,
+  c31: 43.7000,
+  c32: 1.0000,
+  c33: 58.0000,
+  c34: 15.3000,
+  c35: 72.3000,
+  c36: 29.6000,
+  c37: 86.6000,
+  c38: 43.9000,
+  c39: 1.2000,
+  c40: 58.2000,
+  c41: 15.5000,
+  c42: 72.5000,
+  c43: 29.8000,
+  c44: 86.8000,
+  c45: 44.1000,
+  c46: 1.4000,
+  c47: 58.4000,
+  c48: 15.7000,
+  c49: 72.7000,
+  c50: 30.0000,
+  c51: 87.0000,
+  c52: 44.3000,
+  c53: 1.6000,
+  c54: 58.6000,
+  c55: 15.9000,
+  c56: 72.9000,
+  c57: 30.2000,
+  c58: 87.2000,
+  c59: 44.5000,
+  c60: 1.8000,
+  c61: 58.8000,
+  c62: 16.1000,
+  c63: 73.1000,
+  c64: 30.4000,
+  c65: 87.4000,
+  c66: 44.7000,
+  c67: 2.0000,
+  c68: 59.0000,
+  c69: 16.3000,
+  c70: 73.3000,
+  c71: 30.6000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_074_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_074_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_074_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_074_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_074_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_074_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_074_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_074_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_074_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_074_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 075 — WA/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_075_META = {
+  id: 'kpi_075',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 74342,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_075_COEF = {
+  c0: 69.5000,
+  c1: 26.2000,
+  c2: 82.6000,
+  c3: 39.3000,
+  c4: 95.7000,
+  c5: 52.4000,
+  c6: 9.1000,
+  c7: 65.5000,
+  c8: 22.2000,
+  c9: 78.6000,
+  c10: 35.3000,
+  c11: 91.7000,
+  c12: 48.4000,
+  c13: 5.1000,
+  c14: 61.5000,
+  c15: 18.2000,
+  c16: 74.6000,
+  c17: 31.3000,
+  c18: 87.7000,
+  c19: 44.4000,
+  c20: 1.1000,
+  c21: 57.5000,
+  c22: 14.2000,
+  c23: 70.6000,
+  c24: 27.3000,
+  c25: 83.7000,
+  c26: 40.4000,
+  c27: 96.8000,
+  c28: 53.5000,
+  c29: 10.2000,
+  c30: 66.6000,
+  c31: 23.3000,
+  c32: 79.7000,
+  c33: 36.4000,
+  c34: 92.8000,
+  c35: 49.5000,
+  c36: 6.2000,
+  c37: 62.6000,
+  c38: 19.3000,
+  c39: 75.7000,
+  c40: 32.4000,
+  c41: 88.8000,
+  c42: 45.5000,
+  c43: 2.2000,
+  c44: 58.6000,
+  c45: 15.3000,
+  c46: 71.7000,
+  c47: 28.4000,
+  c48: 84.8000,
+  c49: 41.5000,
+  c50: 97.9000,
+  c51: 54.6000,
+  c52: 11.3000,
+  c53: 67.7000,
+  c54: 24.4000,
+  c55: 80.8000,
+  c56: 37.5000,
+  c57: 93.9000,
+  c58: 50.6000,
+  c59: 7.3000,
+  c60: 63.7000,
+  c61: 20.4000,
+  c62: 76.8000,
+  c63: 33.5000,
+  c64: 89.9000,
+  c65: 46.6000,
+  c66: 3.3000,
+  c67: 59.7000,
+  c68: 16.4000,
+  c69: 72.8000,
+  c70: 29.5000,
+  c71: 85.9000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_075_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_075_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_075_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_075_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_075_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_075_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_075_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_075_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_075_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_075_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 076 — SA/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_076_META = {
+  id: 'kpi_076',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 75333,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_076_COEF = {
+  c0: 67.7000,
+  c1: 23.8000,
+  c2: 79.6000,
+  c3: 35.7000,
+  c4: 91.5000,
+  c5: 47.6000,
+  c6: 3.7000,
+  c7: 59.5000,
+  c8: 15.6000,
+  c9: 71.4000,
+  c10: 27.5000,
+  c11: 83.3000,
+  c12: 39.4000,
+  c13: 95.2000,
+  c14: 51.3000,
+  c15: 7.4000,
+  c16: 63.2000,
+  c17: 19.3000,
+  c18: 75.1000,
+  c19: 31.2000,
+  c20: 87.0000,
+  c21: 43.1000,
+  c22: 98.9000,
+  c23: 55.0000,
+  c24: 11.1000,
+  c25: 66.9000,
+  c26: 23.0000,
+  c27: 78.8000,
+  c28: 34.9000,
+  c29: 90.7000,
+  c30: 46.8000,
+  c31: 2.9000,
+  c32: 58.7000,
+  c33: 14.8000,
+  c34: 70.6000,
+  c35: 26.7000,
+  c36: 82.5000,
+  c37: 38.6000,
+  c38: 94.4000,
+  c39: 50.5000,
+  c40: 6.6000,
+  c41: 62.4000,
+  c42: 18.5000,
+  c43: 74.3000,
+  c44: 30.4000,
+  c45: 86.2000,
+  c46: 42.3000,
+  c47: 98.1000,
+  c48: 54.2000,
+  c49: 10.3000,
+  c50: 66.1000,
+  c51: 22.2000,
+  c52: 78.0000,
+  c53: 34.1000,
+  c54: 89.9000,
+  c55: 46.0000,
+  c56: 2.1000,
+  c57: 57.9000,
+  c58: 14.0000,
+  c59: 69.8000,
+  c60: 25.9000,
+  c61: 81.7000,
+  c62: 37.8000,
+  c63: 93.6000,
+  c64: 49.7000,
+  c65: 5.8000,
+  c66: 61.6000,
+  c67: 17.7000,
+  c68: 73.5000,
+  c69: 29.6000,
+  c70: 85.4000,
+  c71: 41.5000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_076_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_076_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_076_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_076_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_076_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_076_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_076_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_076_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_076_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_076_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 077 — TAS/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_077_META = {
+  id: 'kpi_077',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 76324,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_077_COEF = {
+  c0: 65.9000,
+  c1: 21.4000,
+  c2: 76.6000,
+  c3: 32.1000,
+  c4: 87.3000,
+  c5: 42.8000,
+  c6: 98.0000,
+  c7: 53.5000,
+  c8: 9.0000,
+  c9: 64.2000,
+  c10: 19.7000,
+  c11: 74.9000,
+  c12: 30.4000,
+  c13: 85.6000,
+  c14: 41.1000,
+  c15: 96.3000,
+  c16: 51.8000,
+  c17: 7.3000,
+  c18: 62.5000,
+  c19: 18.0000,
+  c20: 73.2000,
+  c21: 28.7000,
+  c22: 83.9000,
+  c23: 39.4000,
+  c24: 94.6000,
+  c25: 50.1000,
+  c26: 5.6000,
+  c27: 60.8000,
+  c28: 16.3000,
+  c29: 71.5000,
+  c30: 27.0000,
+  c31: 82.2000,
+  c32: 37.7000,
+  c33: 92.9000,
+  c34: 48.4000,
+  c35: 3.9000,
+  c36: 59.1000,
+  c37: 14.6000,
+  c38: 69.8000,
+  c39: 25.3000,
+  c40: 80.5000,
+  c41: 36.0000,
+  c42: 91.2000,
+  c43: 46.7000,
+  c44: 2.2000,
+  c45: 57.4000,
+  c46: 12.9000,
+  c47: 68.1000,
+  c48: 23.6000,
+  c49: 78.8000,
+  c50: 34.3000,
+  c51: 89.5000,
+  c52: 45.0000,
+  c53: 0.5000,
+  c54: 55.7000,
+  c55: 11.2000,
+  c56: 66.4000,
+  c57: 21.9000,
+  c58: 77.1000,
+  c59: 32.6000,
+  c60: 87.8000,
+  c61: 43.3000,
+  c62: 98.5000,
+  c63: 54.0000,
+  c64: 9.5000,
+  c65: 64.7000,
+  c66: 20.2000,
+  c67: 75.4000,
+  c68: 30.9000,
+  c69: 86.1000,
+  c70: 41.6000,
+  c71: 96.8000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_077_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_077_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_077_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_077_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_077_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_077_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_077_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_077_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_077_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_077_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 078 — NT/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_078_META = {
+  id: 'kpi_078',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 77315,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_078_COEF = {
+  c0: 64.1000,
+  c1: 19.0000,
+  c2: 73.6000,
+  c3: 28.5000,
+  c4: 83.1000,
+  c5: 38.0000,
+  c6: 92.6000,
+  c7: 47.5000,
+  c8: 2.4000,
+  c9: 57.0000,
+  c10: 11.9000,
+  c11: 66.5000,
+  c12: 21.4000,
+  c13: 76.0000,
+  c14: 30.9000,
+  c15: 85.5000,
+  c16: 40.4000,
+  c17: 95.0000,
+  c18: 49.9000,
+  c19: 4.8000,
+  c20: 59.4000,
+  c21: 14.3000,
+  c22: 68.9000,
+  c23: 23.8000,
+  c24: 78.4000,
+  c25: 33.3000,
+  c26: 87.9000,
+  c27: 42.8000,
+  c28: 97.4000,
+  c29: 52.3000,
+  c30: 7.2000,
+  c31: 61.8000,
+  c32: 16.7000,
+  c33: 71.3000,
+  c34: 26.2000,
+  c35: 80.8000,
+  c36: 35.7000,
+  c37: 90.3000,
+  c38: 45.2000,
+  c39: 0.1000,
+  c40: 54.7000,
+  c41: 9.6000,
+  c42: 64.2000,
+  c43: 19.1000,
+  c44: 73.7000,
+  c45: 28.6000,
+  c46: 83.2000,
+  c47: 38.1000,
+  c48: 92.7000,
+  c49: 47.6000,
+  c50: 2.5000,
+  c51: 57.1000,
+  c52: 12.0000,
+  c53: 66.6000,
+  c54: 21.5000,
+  c55: 76.1000,
+  c56: 31.0000,
+  c57: 85.6000,
+  c58: 40.5000,
+  c59: 95.1000,
+  c60: 50.0000,
+  c61: 4.9000,
+  c62: 59.5000,
+  c63: 14.4000,
+  c64: 69.0000,
+  c65: 23.9000,
+  c66: 78.5000,
+  c67: 33.4000,
+  c68: 88.0000,
+  c69: 42.9000,
+  c70: 97.5000,
+  c71: 52.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_078_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_078_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_078_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_078_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_078_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_078_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_078_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_078_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_078_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_078_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 079 — ACT/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_079_META = {
+  id: 'kpi_079',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 78306,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_079_COEF = {
+  c0: 62.3000,
+  c1: 16.6000,
+  c2: 70.6000,
+  c3: 24.9000,
+  c4: 78.9000,
+  c5: 33.2000,
+  c6: 87.2000,
+  c7: 41.5000,
+  c8: 95.5000,
+  c9: 49.8000,
+  c10: 4.1000,
+  c11: 58.1000,
+  c12: 12.4000,
+  c13: 66.4000,
+  c14: 20.7000,
+  c15: 74.7000,
+  c16: 29.0000,
+  c17: 83.0000,
+  c18: 37.3000,
+  c19: 91.3000,
+  c20: 45.6000,
+  c21: 99.6000,
+  c22: 53.9000,
+  c23: 8.2000,
+  c24: 62.2000,
+  c25: 16.5000,
+  c26: 70.5000,
+  c27: 24.8000,
+  c28: 78.8000,
+  c29: 33.1000,
+  c30: 87.1000,
+  c31: 41.4000,
+  c32: 95.4000,
+  c33: 49.7000,
+  c34: 4.0000,
+  c35: 58.0000,
+  c36: 12.3000,
+  c37: 66.3000,
+  c38: 20.6000,
+  c39: 74.6000,
+  c40: 28.9000,
+  c41: 82.9000,
+  c42: 37.2000,
+  c43: 91.2000,
+  c44: 45.5000,
+  c45: 99.5000,
+  c46: 53.8000,
+  c47: 8.1000,
+  c48: 62.1000,
+  c49: 16.4000,
+  c50: 70.4000,
+  c51: 24.7000,
+  c52: 78.7000,
+  c53: 33.0000,
+  c54: 87.0000,
+  c55: 41.3000,
+  c56: 95.3000,
+  c57: 49.6000,
+  c58: 3.9000,
+  c59: 57.9000,
+  c60: 12.2000,
+  c61: 66.2000,
+  c62: 20.5000,
+  c63: 74.5000,
+  c64: 28.8000,
+  c65: 82.8000,
+  c66: 37.1000,
+  c67: 91.1000,
+  c68: 45.4000,
+  c69: 99.4000,
+  c70: 53.7000,
+  c71: 8.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_079_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_079_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_079_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_079_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_079_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_079_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_079_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_079_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_079_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_079_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 080 — NSW/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_080_META = {
+  id: 'kpi_080',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 79297,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_080_COEF = {
+  c0: 60.5000,
+  c1: 14.2000,
+  c2: 67.6000,
+  c3: 21.3000,
+  c4: 74.7000,
+  c5: 28.4000,
+  c6: 81.8000,
+  c7: 35.5000,
+  c8: 88.9000,
+  c9: 42.6000,
+  c10: 96.0000,
+  c11: 49.7000,
+  c12: 3.4000,
+  c13: 56.8000,
+  c14: 10.5000,
+  c15: 63.9000,
+  c16: 17.6000,
+  c17: 71.0000,
+  c18: 24.7000,
+  c19: 78.1000,
+  c20: 31.8000,
+  c21: 85.2000,
+  c22: 38.9000,
+  c23: 92.3000,
+  c24: 46.0000,
+  c25: 99.4000,
+  c26: 53.1000,
+  c27: 6.8000,
+  c28: 60.2000,
+  c29: 13.9000,
+  c30: 67.3000,
+  c31: 21.0000,
+  c32: 74.4000,
+  c33: 28.1000,
+  c34: 81.5000,
+  c35: 35.2000,
+  c36: 88.6000,
+  c37: 42.3000,
+  c38: 95.7000,
+  c39: 49.4000,
+  c40: 3.1000,
+  c41: 56.5000,
+  c42: 10.2000,
+  c43: 63.6000,
+  c44: 17.3000,
+  c45: 70.7000,
+  c46: 24.4000,
+  c47: 77.8000,
+  c48: 31.5000,
+  c49: 84.9000,
+  c50: 38.6000,
+  c51: 92.0000,
+  c52: 45.7000,
+  c53: 99.1000,
+  c54: 52.8000,
+  c55: 6.5000,
+  c56: 59.9000,
+  c57: 13.6000,
+  c58: 67.0000,
+  c59: 20.7000,
+  c60: 74.1000,
+  c61: 27.8000,
+  c62: 81.2000,
+  c63: 34.9000,
+  c64: 88.3000,
+  c65: 42.0000,
+  c66: 95.4000,
+  c67: 49.1000,
+  c68: 2.8000,
+  c69: 56.2000,
+  c70: 9.9000,
+  c71: 63.3000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_080_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_080_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_080_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_080_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_080_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_080_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_080_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_080_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_080_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_080_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 081 — VIC/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_081_META = {
+  id: 'kpi_081',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 80288,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_081_COEF = {
+  c0: 58.7000,
+  c1: 11.8000,
+  c2: 64.6000,
+  c3: 17.7000,
+  c4: 70.5000,
+  c5: 23.6000,
+  c6: 76.4000,
+  c7: 29.5000,
+  c8: 82.3000,
+  c9: 35.4000,
+  c10: 88.2000,
+  c11: 41.3000,
+  c12: 94.1000,
+  c13: 47.2000,
+  c14: 0.3000,
+  c15: 53.1000,
+  c16: 6.2000,
+  c17: 59.0000,
+  c18: 12.1000,
+  c19: 64.9000,
+  c20: 18.0000,
+  c21: 70.8000,
+  c22: 23.9000,
+  c23: 76.7000,
+  c24: 29.8000,
+  c25: 82.6000,
+  c26: 35.7000,
+  c27: 88.5000,
+  c28: 41.6000,
+  c29: 94.4000,
+  c30: 47.5000,
+  c31: 0.6000,
+  c32: 53.4000,
+  c33: 6.5000,
+  c34: 59.3000,
+  c35: 12.4000,
+  c36: 65.2000,
+  c37: 18.3000,
+  c38: 71.1000,
+  c39: 24.2000,
+  c40: 77.0000,
+  c41: 30.1000,
+  c42: 82.9000,
+  c43: 36.0000,
+  c44: 88.8000,
+  c45: 41.9000,
+  c46: 94.7000,
+  c47: 47.8000,
+  c48: 0.9000,
+  c49: 53.7000,
+  c50: 6.8000,
+  c51: 59.6000,
+  c52: 12.7000,
+  c53: 65.5000,
+  c54: 18.6000,
+  c55: 71.4000,
+  c56: 24.5000,
+  c57: 77.3000,
+  c58: 30.4000,
+  c59: 83.2000,
+  c60: 36.3000,
+  c61: 89.1000,
+  c62: 42.2000,
+  c63: 95.0000,
+  c64: 48.1000,
+  c65: 1.2000,
+  c66: 54.0000,
+  c67: 7.1000,
+  c68: 59.9000,
+  c69: 13.0000,
+  c70: 65.8000,
+  c71: 18.9000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_081_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_081_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_081_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_081_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_081_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_081_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_081_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_081_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_081_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_081_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 082 — QLD/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_082_META = {
+  id: 'kpi_082',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 81279,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_082_COEF = {
+  c0: 56.9000,
+  c1: 9.4000,
+  c2: 61.6000,
+  c3: 14.1000,
+  c4: 66.3000,
+  c5: 18.8000,
+  c6: 71.0000,
+  c7: 23.5000,
+  c8: 75.7000,
+  c9: 28.2000,
+  c10: 80.4000,
+  c11: 32.9000,
+  c12: 85.1000,
+  c13: 37.6000,
+  c14: 89.8000,
+  c15: 42.3000,
+  c16: 94.5000,
+  c17: 47.0000,
+  c18: 99.2000,
+  c19: 51.7000,
+  c20: 4.2000,
+  c21: 56.4000,
+  c22: 8.9000,
+  c23: 61.1000,
+  c24: 13.6000,
+  c25: 65.8000,
+  c26: 18.3000,
+  c27: 70.5000,
+  c28: 23.0000,
+  c29: 75.2000,
+  c30: 27.7000,
+  c31: 79.9000,
+  c32: 32.4000,
+  c33: 84.6000,
+  c34: 37.1000,
+  c35: 89.3000,
+  c36: 41.8000,
+  c37: 94.0000,
+  c38: 46.5000,
+  c39: 98.7000,
+  c40: 51.2000,
+  c41: 3.7000,
+  c42: 55.9000,
+  c43: 8.4000,
+  c44: 60.6000,
+  c45: 13.1000,
+  c46: 65.3000,
+  c47: 17.8000,
+  c48: 70.0000,
+  c49: 22.5000,
+  c50: 74.7000,
+  c51: 27.2000,
+  c52: 79.4000,
+  c53: 31.9000,
+  c54: 84.1000,
+  c55: 36.6000,
+  c56: 88.8000,
+  c57: 41.3000,
+  c58: 93.5000,
+  c59: 46.0000,
+  c60: 98.2000,
+  c61: 50.7000,
+  c62: 3.2000,
+  c63: 55.4000,
+  c64: 7.9000,
+  c65: 60.1000,
+  c66: 12.6000,
+  c67: 64.8000,
+  c68: 17.3000,
+  c69: 69.5000,
+  c70: 22.0000,
+  c71: 74.2000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_082_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_082_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_082_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_082_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_082_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_082_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_082_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_082_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_082_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_082_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 083 — WA/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_083_META = {
+  id: 'kpi_083',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 82270,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_083_COEF = {
+  c0: 55.1000,
+  c1: 7.0000,
+  c2: 58.6000,
+  c3: 10.5000,
+  c4: 62.1000,
+  c5: 14.0000,
+  c6: 65.6000,
+  c7: 17.5000,
+  c8: 69.1000,
+  c9: 21.0000,
+  c10: 72.6000,
+  c11: 24.5000,
+  c12: 76.1000,
+  c13: 28.0000,
+  c14: 79.6000,
+  c15: 31.5000,
+  c16: 83.1000,
+  c17: 35.0000,
+  c18: 86.6000,
+  c19: 38.5000,
+  c20: 90.1000,
+  c21: 42.0000,
+  c22: 93.6000,
+  c23: 45.5000,
+  c24: 97.1000,
+  c25: 49.0000,
+  c26: 0.9000,
+  c27: 52.5000,
+  c28: 4.4000,
+  c29: 56.0000,
+  c30: 7.9000,
+  c31: 59.5000,
+  c32: 11.4000,
+  c33: 63.0000,
+  c34: 14.9000,
+  c35: 66.5000,
+  c36: 18.4000,
+  c37: 70.0000,
+  c38: 21.9000,
+  c39: 73.5000,
+  c40: 25.4000,
+  c41: 77.0000,
+  c42: 28.9000,
+  c43: 80.5000,
+  c44: 32.4000,
+  c45: 84.0000,
+  c46: 35.9000,
+  c47: 87.5000,
+  c48: 39.4000,
+  c49: 91.0000,
+  c50: 42.9000,
+  c51: 94.5000,
+  c52: 46.4000,
+  c53: 98.0000,
+  c54: 49.9000,
+  c55: 1.8000,
+  c56: 53.4000,
+  c57: 5.3000,
+  c58: 56.9000,
+  c59: 8.8000,
+  c60: 60.4000,
+  c61: 12.3000,
+  c62: 63.9000,
+  c63: 15.8000,
+  c64: 67.4000,
+  c65: 19.3000,
+  c66: 70.9000,
+  c67: 22.8000,
+  c68: 74.4000,
+  c69: 26.3000,
+  c70: 77.9000,
+  c71: 29.8000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_083_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_083_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_083_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_083_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_083_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_083_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_083_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_083_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_083_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_083_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 084 — SA/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_084_META = {
+  id: 'kpi_084',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 83261,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_084_COEF = {
+  c0: 53.3000,
+  c1: 4.6000,
+  c2: 55.6000,
+  c3: 6.9000,
+  c4: 57.9000,
+  c5: 9.2000,
+  c6: 60.2000,
+  c7: 11.5000,
+  c8: 62.5000,
+  c9: 13.8000,
+  c10: 64.8000,
+  c11: 16.1000,
+  c12: 67.1000,
+  c13: 18.4000,
+  c14: 69.4000,
+  c15: 20.7000,
+  c16: 71.7000,
+  c17: 23.0000,
+  c18: 74.0000,
+  c19: 25.3000,
+  c20: 76.3000,
+  c21: 27.6000,
+  c22: 78.6000,
+  c23: 29.9000,
+  c24: 80.9000,
+  c25: 32.2000,
+  c26: 83.2000,
+  c27: 34.5000,
+  c28: 85.5000,
+  c29: 36.8000,
+  c30: 87.8000,
+  c31: 39.1000,
+  c32: 90.1000,
+  c33: 41.4000,
+  c34: 92.4000,
+  c35: 43.7000,
+  c36: 94.7000,
+  c37: 46.0000,
+  c38: 97.0000,
+  c39: 48.3000,
+  c40: 99.3000,
+  c41: 50.6000,
+  c42: 1.9000,
+  c43: 52.9000,
+  c44: 4.2000,
+  c45: 55.2000,
+  c46: 6.5000,
+  c47: 57.5000,
+  c48: 8.8000,
+  c49: 59.8000,
+  c50: 11.1000,
+  c51: 62.1000,
+  c52: 13.4000,
+  c53: 64.4000,
+  c54: 15.7000,
+  c55: 66.7000,
+  c56: 18.0000,
+  c57: 69.0000,
+  c58: 20.3000,
+  c59: 71.3000,
+  c60: 22.6000,
+  c61: 73.6000,
+  c62: 24.9000,
+  c63: 75.9000,
+  c64: 27.2000,
+  c65: 78.2000,
+  c66: 29.5000,
+  c67: 80.5000,
+  c68: 31.8000,
+  c69: 82.8000,
+  c70: 34.1000,
+  c71: 85.1000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_084_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_084_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_084_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_084_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_084_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_084_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_084_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_084_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_084_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_084_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 085 — TAS/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_085_META = {
+  id: 'kpi_085',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 84252,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_085_COEF = {
+  c0: 51.5000,
+  c1: 2.2000,
+  c2: 52.6000,
+  c3: 3.3000,
+  c4: 53.7000,
+  c5: 4.4000,
+  c6: 54.8000,
+  c7: 5.5000,
+  c8: 55.9000,
+  c9: 6.6000,
+  c10: 57.0000,
+  c11: 7.7000,
+  c12: 58.1000,
+  c13: 8.8000,
+  c14: 59.2000,
+  c15: 9.9000,
+  c16: 60.3000,
+  c17: 11.0000,
+  c18: 61.4000,
+  c19: 12.1000,
+  c20: 62.5000,
+  c21: 13.2000,
+  c22: 63.6000,
+  c23: 14.3000,
+  c24: 64.7000,
+  c25: 15.4000,
+  c26: 65.8000,
+  c27: 16.5000,
+  c28: 66.9000,
+  c29: 17.6000,
+  c30: 68.0000,
+  c31: 18.7000,
+  c32: 69.1000,
+  c33: 19.8000,
+  c34: 70.2000,
+  c35: 20.9000,
+  c36: 71.3000,
+  c37: 22.0000,
+  c38: 72.4000,
+  c39: 23.1000,
+  c40: 73.5000,
+  c41: 24.2000,
+  c42: 74.6000,
+  c43: 25.3000,
+  c44: 75.7000,
+  c45: 26.4000,
+  c46: 76.8000,
+  c47: 27.5000,
+  c48: 77.9000,
+  c49: 28.6000,
+  c50: 79.0000,
+  c51: 29.7000,
+  c52: 80.1000,
+  c53: 30.8000,
+  c54: 81.2000,
+  c55: 31.9000,
+  c56: 82.3000,
+  c57: 33.0000,
+  c58: 83.4000,
+  c59: 34.1000,
+  c60: 84.5000,
+  c61: 35.2000,
+  c62: 85.6000,
+  c63: 36.3000,
+  c64: 86.7000,
+  c65: 37.4000,
+  c66: 87.8000,
+  c67: 38.5000,
+  c68: 88.9000,
+  c69: 39.6000,
+  c70: 90.0000,
+  c71: 40.7000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_085_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_085_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_085_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_085_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_085_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_085_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_085_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_085_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_085_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_085_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 086 — NT/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_086_META = {
+  id: 'kpi_086',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 85243,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_086_COEF = {
+  c0: 49.7000,
+  c1: 99.5000,
+  c2: 49.6000,
+  c3: 99.4000,
+  c4: 49.5000,
+  c5: 99.3000,
+  c6: 49.4000,
+  c7: 99.2000,
+  c8: 49.3000,
+  c9: 99.1000,
+  c10: 49.2000,
+  c11: 99.0000,
+  c12: 49.1000,
+  c13: 98.9000,
+  c14: 49.0000,
+  c15: 98.8000,
+  c16: 48.9000,
+  c17: 98.7000,
+  c18: 48.8000,
+  c19: 98.6000,
+  c20: 48.7000,
+  c21: 98.5000,
+  c22: 48.6000,
+  c23: 98.4000,
+  c24: 48.5000,
+  c25: 98.3000,
+  c26: 48.4000,
+  c27: 98.2000,
+  c28: 48.3000,
+  c29: 98.1000,
+  c30: 48.2000,
+  c31: 98.0000,
+  c32: 48.1000,
+  c33: 97.9000,
+  c34: 48.0000,
+  c35: 97.8000,
+  c36: 47.9000,
+  c37: 97.7000,
+  c38: 47.8000,
+  c39: 97.6000,
+  c40: 47.7000,
+  c41: 97.5000,
+  c42: 47.6000,
+  c43: 97.4000,
+  c44: 47.5000,
+  c45: 97.3000,
+  c46: 47.4000,
+  c47: 97.2000,
+  c48: 47.3000,
+  c49: 97.1000,
+  c50: 47.2000,
+  c51: 97.0000,
+  c52: 47.1000,
+  c53: 96.9000,
+  c54: 47.0000,
+  c55: 96.8000,
+  c56: 46.9000,
+  c57: 96.7000,
+  c58: 46.8000,
+  c59: 96.6000,
+  c60: 46.7000,
+  c61: 96.5000,
+  c62: 46.6000,
+  c63: 96.4000,
+  c64: 46.5000,
+  c65: 96.3000,
+  c66: 46.4000,
+  c67: 96.2000,
+  c68: 46.3000,
+  c69: 96.1000,
+  c70: 46.2000,
+  c71: 96.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_086_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_086_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_086_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_086_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_086_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_086_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_086_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_086_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_086_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_086_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 087 — ACT/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_087_META = {
+  id: 'kpi_087',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 86234,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_087_COEF = {
+  c0: 47.9000,
+  c1: 97.1000,
+  c2: 46.6000,
+  c3: 95.8000,
+  c4: 45.3000,
+  c5: 94.5000,
+  c6: 44.0000,
+  c7: 93.2000,
+  c8: 42.7000,
+  c9: 91.9000,
+  c10: 41.4000,
+  c11: 90.6000,
+  c12: 40.1000,
+  c13: 89.3000,
+  c14: 38.8000,
+  c15: 88.0000,
+  c16: 37.5000,
+  c17: 86.7000,
+  c18: 36.2000,
+  c19: 85.4000,
+  c20: 34.9000,
+  c21: 84.1000,
+  c22: 33.6000,
+  c23: 82.8000,
+  c24: 32.3000,
+  c25: 81.5000,
+  c26: 31.0000,
+  c27: 80.2000,
+  c28: 29.7000,
+  c29: 78.9000,
+  c30: 28.4000,
+  c31: 77.6000,
+  c32: 27.1000,
+  c33: 76.3000,
+  c34: 25.8000,
+  c35: 75.0000,
+  c36: 24.5000,
+  c37: 73.7000,
+  c38: 23.2000,
+  c39: 72.4000,
+  c40: 21.9000,
+  c41: 71.1000,
+  c42: 20.6000,
+  c43: 69.8000,
+  c44: 19.3000,
+  c45: 68.5000,
+  c46: 18.0000,
+  c47: 67.2000,
+  c48: 16.7000,
+  c49: 65.9000,
+  c50: 15.4000,
+  c51: 64.6000,
+  c52: 14.1000,
+  c53: 63.3000,
+  c54: 12.8000,
+  c55: 62.0000,
+  c56: 11.5000,
+  c57: 60.7000,
+  c58: 10.2000,
+  c59: 59.4000,
+  c60: 8.9000,
+  c61: 58.1000,
+  c62: 7.6000,
+  c63: 56.8000,
+  c64: 6.3000,
+  c65: 55.5000,
+  c66: 5.0000,
+  c67: 54.2000,
+  c68: 3.7000,
+  c69: 52.9000,
+  c70: 2.4000,
+  c71: 51.6000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_087_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_087_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_087_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_087_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_087_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_087_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_087_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_087_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_087_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_087_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 088 — NSW/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_088_META = {
+  id: 'kpi_088',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 87225,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_088_COEF = {
+  c0: 46.1000,
+  c1: 94.7000,
+  c2: 43.6000,
+  c3: 92.2000,
+  c4: 41.1000,
+  c5: 89.7000,
+  c6: 38.6000,
+  c7: 87.2000,
+  c8: 36.1000,
+  c9: 84.7000,
+  c10: 33.6000,
+  c11: 82.2000,
+  c12: 31.1000,
+  c13: 79.7000,
+  c14: 28.6000,
+  c15: 77.2000,
+  c16: 26.1000,
+  c17: 74.7000,
+  c18: 23.6000,
+  c19: 72.2000,
+  c20: 21.1000,
+  c21: 69.7000,
+  c22: 18.6000,
+  c23: 67.2000,
+  c24: 16.1000,
+  c25: 64.7000,
+  c26: 13.6000,
+  c27: 62.2000,
+  c28: 11.1000,
+  c29: 59.7000,
+  c30: 8.6000,
+  c31: 57.2000,
+  c32: 6.1000,
+  c33: 54.7000,
+  c34: 3.6000,
+  c35: 52.2000,
+  c36: 1.1000,
+  c37: 49.7000,
+  c38: 98.3000,
+  c39: 47.2000,
+  c40: 95.8000,
+  c41: 44.7000,
+  c42: 93.3000,
+  c43: 42.2000,
+  c44: 90.8000,
+  c45: 39.7000,
+  c46: 88.3000,
+  c47: 37.2000,
+  c48: 85.8000,
+  c49: 34.7000,
+  c50: 83.3000,
+  c51: 32.2000,
+  c52: 80.8000,
+  c53: 29.7000,
+  c54: 78.3000,
+  c55: 27.2000,
+  c56: 75.8000,
+  c57: 24.7000,
+  c58: 73.3000,
+  c59: 22.2000,
+  c60: 70.8000,
+  c61: 19.7000,
+  c62: 68.3000,
+  c63: 17.2000,
+  c64: 65.8000,
+  c65: 14.7000,
+  c66: 63.3000,
+  c67: 12.2000,
+  c68: 60.8000,
+  c69: 9.7000,
+  c70: 58.3000,
+  c71: 7.2000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_088_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_088_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_088_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_088_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_088_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_088_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_088_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_088_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_088_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_088_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 089 — VIC/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_089_META = {
+  id: 'kpi_089',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 88216,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_089_COEF = {
+  c0: 44.3000,
+  c1: 92.3000,
+  c2: 40.6000,
+  c3: 88.6000,
+  c4: 36.9000,
+  c5: 84.9000,
+  c6: 33.2000,
+  c7: 81.2000,
+  c8: 29.5000,
+  c9: 77.5000,
+  c10: 25.8000,
+  c11: 73.8000,
+  c12: 22.1000,
+  c13: 70.1000,
+  c14: 18.4000,
+  c15: 66.4000,
+  c16: 14.7000,
+  c17: 62.7000,
+  c18: 11.0000,
+  c19: 59.0000,
+  c20: 7.3000,
+  c21: 55.3000,
+  c22: 3.6000,
+  c23: 51.6000,
+  c24: 99.6000,
+  c25: 47.9000,
+  c26: 95.9000,
+  c27: 44.2000,
+  c28: 92.2000,
+  c29: 40.5000,
+  c30: 88.5000,
+  c31: 36.8000,
+  c32: 84.8000,
+  c33: 33.1000,
+  c34: 81.1000,
+  c35: 29.4000,
+  c36: 77.4000,
+  c37: 25.7000,
+  c38: 73.7000,
+  c39: 22.0000,
+  c40: 70.0000,
+  c41: 18.3000,
+  c42: 66.3000,
+  c43: 14.6000,
+  c44: 62.6000,
+  c45: 10.9000,
+  c46: 58.9000,
+  c47: 7.2000,
+  c48: 55.2000,
+  c49: 3.5000,
+  c50: 51.5000,
+  c51: 99.5000,
+  c52: 47.8000,
+  c53: 95.8000,
+  c54: 44.1000,
+  c55: 92.1000,
+  c56: 40.4000,
+  c57: 88.4000,
+  c58: 36.7000,
+  c59: 84.7000,
+  c60: 33.0000,
+  c61: 81.0000,
+  c62: 29.3000,
+  c63: 77.3000,
+  c64: 25.6000,
+  c65: 73.6000,
+  c66: 21.9000,
+  c67: 69.9000,
+  c68: 18.2000,
+  c69: 66.2000,
+  c70: 14.5000,
+  c71: 62.5000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_089_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_089_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_089_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_089_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_089_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_089_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_089_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_089_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_089_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_089_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 090 — QLD/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_090_META = {
+  id: 'kpi_090',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 89207,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_090_COEF = {
+  c0: 42.5000,
+  c1: 89.9000,
+  c2: 37.6000,
+  c3: 85.0000,
+  c4: 32.7000,
+  c5: 80.1000,
+  c6: 27.8000,
+  c7: 75.2000,
+  c8: 22.9000,
+  c9: 70.3000,
+  c10: 18.0000,
+  c11: 65.4000,
+  c12: 13.1000,
+  c13: 60.5000,
+  c14: 8.2000,
+  c15: 55.6000,
+  c16: 3.3000,
+  c17: 50.7000,
+  c18: 98.1000,
+  c19: 45.8000,
+  c20: 93.2000,
+  c21: 40.9000,
+  c22: 88.3000,
+  c23: 36.0000,
+  c24: 83.4000,
+  c25: 31.1000,
+  c26: 78.5000,
+  c27: 26.2000,
+  c28: 73.6000,
+  c29: 21.3000,
+  c30: 68.7000,
+  c31: 16.4000,
+  c32: 63.8000,
+  c33: 11.5000,
+  c34: 58.9000,
+  c35: 6.6000,
+  c36: 54.0000,
+  c37: 1.7000,
+  c38: 49.1000,
+  c39: 96.5000,
+  c40: 44.2000,
+  c41: 91.6000,
+  c42: 39.3000,
+  c43: 86.7000,
+  c44: 34.4000,
+  c45: 81.8000,
+  c46: 29.5000,
+  c47: 76.9000,
+  c48: 24.6000,
+  c49: 72.0000,
+  c50: 19.7000,
+  c51: 67.1000,
+  c52: 14.8000,
+  c53: 62.2000,
+  c54: 9.9000,
+  c55: 57.3000,
+  c56: 5.0000,
+  c57: 52.4000,
+  c58: 0.1000,
+  c59: 47.5000,
+  c60: 94.9000,
+  c61: 42.6000,
+  c62: 90.0000,
+  c63: 37.7000,
+  c64: 85.1000,
+  c65: 32.8000,
+  c66: 80.2000,
+  c67: 27.9000,
+  c68: 75.3000,
+  c69: 23.0000,
+  c70: 70.4000,
+  c71: 18.1000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_090_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_090_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_090_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_090_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_090_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_090_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_090_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_090_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_090_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_090_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 091 — WA/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_091_META = {
+  id: 'kpi_091',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 90198,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_091_COEF = {
+  c0: 40.7000,
+  c1: 87.5000,
+  c2: 34.6000,
+  c3: 81.4000,
+  c4: 28.5000,
+  c5: 75.3000,
+  c6: 22.4000,
+  c7: 69.2000,
+  c8: 16.3000,
+  c9: 63.1000,
+  c10: 10.2000,
+  c11: 57.0000,
+  c12: 4.1000,
+  c13: 50.9000,
+  c14: 97.7000,
+  c15: 44.8000,
+  c16: 91.6000,
+  c17: 38.7000,
+  c18: 85.5000,
+  c19: 32.6000,
+  c20: 79.4000,
+  c21: 26.5000,
+  c22: 73.3000,
+  c23: 20.4000,
+  c24: 67.2000,
+  c25: 14.3000,
+  c26: 61.1000,
+  c27: 8.2000,
+  c28: 55.0000,
+  c29: 2.1000,
+  c30: 48.9000,
+  c31: 95.7000,
+  c32: 42.8000,
+  c33: 89.6000,
+  c34: 36.7000,
+  c35: 83.5000,
+  c36: 30.6000,
+  c37: 77.4000,
+  c38: 24.5000,
+  c39: 71.3000,
+  c40: 18.4000,
+  c41: 65.2000,
+  c42: 12.3000,
+  c43: 59.1000,
+  c44: 6.2000,
+  c45: 53.0000,
+  c46: 0.1000,
+  c47: 46.9000,
+  c48: 93.7000,
+  c49: 40.8000,
+  c50: 87.6000,
+  c51: 34.7000,
+  c52: 81.5000,
+  c53: 28.6000,
+  c54: 75.4000,
+  c55: 22.5000,
+  c56: 69.3000,
+  c57: 16.4000,
+  c58: 63.2000,
+  c59: 10.3000,
+  c60: 57.1000,
+  c61: 4.2000,
+  c62: 51.0000,
+  c63: 97.8000,
+  c64: 44.9000,
+  c65: 91.7000,
+  c66: 38.8000,
+  c67: 85.6000,
+  c68: 32.7000,
+  c69: 79.5000,
+  c70: 26.6000,
+  c71: 73.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_091_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_091_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_091_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_091_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_091_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_091_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_091_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_091_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_091_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_091_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 092 — SA/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_092_META = {
+  id: 'kpi_092',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 91189,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_092_COEF = {
+  c0: 38.9000,
+  c1: 85.1000,
+  c2: 31.6000,
+  c3: 77.8000,
+  c4: 24.3000,
+  c5: 70.5000,
+  c6: 17.0000,
+  c7: 63.2000,
+  c8: 9.7000,
+  c9: 55.9000,
+  c10: 2.4000,
+  c11: 48.6000,
+  c12: 94.8000,
+  c13: 41.3000,
+  c14: 87.5000,
+  c15: 34.0000,
+  c16: 80.2000,
+  c17: 26.7000,
+  c18: 72.9000,
+  c19: 19.4000,
+  c20: 65.6000,
+  c21: 12.1000,
+  c22: 58.3000,
+  c23: 4.8000,
+  c24: 51.0000,
+  c25: 97.2000,
+  c26: 43.7000,
+  c27: 89.9000,
+  c28: 36.4000,
+  c29: 82.6000,
+  c30: 29.1000,
+  c31: 75.3000,
+  c32: 21.8000,
+  c33: 68.0000,
+  c34: 14.5000,
+  c35: 60.7000,
+  c36: 7.2000,
+  c37: 53.4000,
+  c38: 99.6000,
+  c39: 46.1000,
+  c40: 92.3000,
+  c41: 38.8000,
+  c42: 85.0000,
+  c43: 31.5000,
+  c44: 77.7000,
+  c45: 24.2000,
+  c46: 70.4000,
+  c47: 16.9000,
+  c48: 63.1000,
+  c49: 9.6000,
+  c50: 55.8000,
+  c51: 2.3000,
+  c52: 48.5000,
+  c53: 94.7000,
+  c54: 41.2000,
+  c55: 87.4000,
+  c56: 33.9000,
+  c57: 80.1000,
+  c58: 26.6000,
+  c59: 72.8000,
+  c60: 19.3000,
+  c61: 65.5000,
+  c62: 12.0000,
+  c63: 58.2000,
+  c64: 4.7000,
+  c65: 50.9000,
+  c66: 97.1000,
+  c67: 43.6000,
+  c68: 89.8000,
+  c69: 36.3000,
+  c70: 82.5000,
+  c71: 29.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_092_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_092_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_092_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_092_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_092_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_092_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_092_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_092_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_092_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_092_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 093 — TAS/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_093_META = {
+  id: 'kpi_093',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 92180,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_093_COEF = {
+  c0: 37.1000,
+  c1: 82.7000,
+  c2: 28.6000,
+  c3: 74.2000,
+  c4: 20.1000,
+  c5: 65.7000,
+  c6: 11.6000,
+  c7: 57.2000,
+  c8: 3.1000,
+  c9: 48.7000,
+  c10: 94.3000,
+  c11: 40.2000,
+  c12: 85.8000,
+  c13: 31.7000,
+  c14: 77.3000,
+  c15: 23.2000,
+  c16: 68.8000,
+  c17: 14.7000,
+  c18: 60.3000,
+  c19: 6.2000,
+  c20: 51.8000,
+  c21: 97.4000,
+  c22: 43.3000,
+  c23: 88.9000,
+  c24: 34.8000,
+  c25: 80.4000,
+  c26: 26.3000,
+  c27: 71.9000,
+  c28: 17.8000,
+  c29: 63.4000,
+  c30: 9.3000,
+  c31: 54.9000,
+  c32: 0.8000,
+  c33: 46.4000,
+  c34: 92.0000,
+  c35: 37.9000,
+  c36: 83.5000,
+  c37: 29.4000,
+  c38: 75.0000,
+  c39: 20.9000,
+  c40: 66.5000,
+  c41: 12.4000,
+  c42: 58.0000,
+  c43: 3.9000,
+  c44: 49.5000,
+  c45: 95.1000,
+  c46: 41.0000,
+  c47: 86.6000,
+  c48: 32.5000,
+  c49: 78.1000,
+  c50: 24.0000,
+  c51: 69.6000,
+  c52: 15.5000,
+  c53: 61.1000,
+  c54: 7.0000,
+  c55: 52.6000,
+  c56: 98.2000,
+  c57: 44.1000,
+  c58: 89.7000,
+  c59: 35.6000,
+  c60: 81.2000,
+  c61: 27.1000,
+  c62: 72.7000,
+  c63: 18.6000,
+  c64: 64.2000,
+  c65: 10.1000,
+  c66: 55.7000,
+  c67: 1.6000,
+  c68: 47.2000,
+  c69: 92.8000,
+  c70: 38.7000,
+  c71: 84.3000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_093_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_093_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_093_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_093_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_093_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_093_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_093_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_093_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_093_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_093_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 094 — NT/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_094_META = {
+  id: 'kpi_094',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 93171,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_094_COEF = {
+  c0: 35.3000,
+  c1: 80.3000,
+  c2: 25.6000,
+  c3: 70.6000,
+  c4: 15.9000,
+  c5: 60.9000,
+  c6: 6.2000,
+  c7: 51.2000,
+  c8: 96.2000,
+  c9: 41.5000,
+  c10: 86.5000,
+  c11: 31.8000,
+  c12: 76.8000,
+  c13: 22.1000,
+  c14: 67.1000,
+  c15: 12.4000,
+  c16: 57.4000,
+  c17: 2.7000,
+  c18: 47.7000,
+  c19: 92.7000,
+  c20: 38.0000,
+  c21: 83.0000,
+  c22: 28.3000,
+  c23: 73.3000,
+  c24: 18.6000,
+  c25: 63.6000,
+  c26: 8.9000,
+  c27: 53.9000,
+  c28: 98.9000,
+  c29: 44.2000,
+  c30: 89.2000,
+  c31: 34.5000,
+  c32: 79.5000,
+  c33: 24.8000,
+  c34: 69.8000,
+  c35: 15.1000,
+  c36: 60.1000,
+  c37: 5.4000,
+  c38: 50.4000,
+  c39: 95.4000,
+  c40: 40.7000,
+  c41: 85.7000,
+  c42: 31.0000,
+  c43: 76.0000,
+  c44: 21.3000,
+  c45: 66.3000,
+  c46: 11.6000,
+  c47: 56.6000,
+  c48: 1.9000,
+  c49: 46.9000,
+  c50: 91.9000,
+  c51: 37.2000,
+  c52: 82.2000,
+  c53: 27.5000,
+  c54: 72.5000,
+  c55: 17.8000,
+  c56: 62.8000,
+  c57: 8.1000,
+  c58: 53.1000,
+  c59: 98.1000,
+  c60: 43.4000,
+  c61: 88.4000,
+  c62: 33.7000,
+  c63: 78.7000,
+  c64: 24.0000,
+  c65: 69.0000,
+  c66: 14.3000,
+  c67: 59.3000,
+  c68: 4.6000,
+  c69: 49.6000,
+  c70: 94.6000,
+  c71: 39.9000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_094_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_094_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_094_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_094_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_094_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_094_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_094_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_094_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_094_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_094_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 095 — ACT/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_095_META = {
+  id: 'kpi_095',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 94162,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_095_COEF = {
+  c0: 33.5000,
+  c1: 77.9000,
+  c2: 22.6000,
+  c3: 67.0000,
+  c4: 11.7000,
+  c5: 56.1000,
+  c6: 0.8000,
+  c7: 45.2000,
+  c8: 89.6000,
+  c9: 34.3000,
+  c10: 78.7000,
+  c11: 23.4000,
+  c12: 67.8000,
+  c13: 12.5000,
+  c14: 56.9000,
+  c15: 1.6000,
+  c16: 46.0000,
+  c17: 90.4000,
+  c18: 35.1000,
+  c19: 79.5000,
+  c20: 24.2000,
+  c21: 68.6000,
+  c22: 13.3000,
+  c23: 57.7000,
+  c24: 2.4000,
+  c25: 46.8000,
+  c26: 91.2000,
+  c27: 35.9000,
+  c28: 80.3000,
+  c29: 25.0000,
+  c30: 69.4000,
+  c31: 14.1000,
+  c32: 58.5000,
+  c33: 3.2000,
+  c34: 47.6000,
+  c35: 92.0000,
+  c36: 36.7000,
+  c37: 81.1000,
+  c38: 25.8000,
+  c39: 70.2000,
+  c40: 14.9000,
+  c41: 59.3000,
+  c42: 4.0000,
+  c43: 48.4000,
+  c44: 92.8000,
+  c45: 37.5000,
+  c46: 81.9000,
+  c47: 26.6000,
+  c48: 71.0000,
+  c49: 15.7000,
+  c50: 60.1000,
+  c51: 4.8000,
+  c52: 49.2000,
+  c53: 93.6000,
+  c54: 38.3000,
+  c55: 82.7000,
+  c56: 27.4000,
+  c57: 71.8000,
+  c58: 16.5000,
+  c59: 60.9000,
+  c60: 5.6000,
+  c61: 50.0000,
+  c62: 94.4000,
+  c63: 39.1000,
+  c64: 83.5000,
+  c65: 28.2000,
+  c66: 72.6000,
+  c67: 17.3000,
+  c68: 61.7000,
+  c69: 6.4000,
+  c70: 50.8000,
+  c71: 95.2000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_095_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_095_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_095_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_095_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_095_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_095_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_095_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_095_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_095_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_095_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 096 — NSW/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_096_META = {
+  id: 'kpi_096',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 95153,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_096_COEF = {
+  c0: 31.7000,
+  c1: 75.5000,
+  c2: 19.6000,
+  c3: 63.4000,
+  c4: 7.5000,
+  c5: 51.3000,
+  c6: 95.1000,
+  c7: 39.2000,
+  c8: 83.0000,
+  c9: 27.1000,
+  c10: 70.9000,
+  c11: 15.0000,
+  c12: 58.8000,
+  c13: 2.9000,
+  c14: 46.7000,
+  c15: 90.5000,
+  c16: 34.6000,
+  c17: 78.4000,
+  c18: 22.5000,
+  c19: 66.3000,
+  c20: 10.4000,
+  c21: 54.2000,
+  c22: 98.0000,
+  c23: 42.1000,
+  c24: 85.9000,
+  c25: 30.0000,
+  c26: 73.8000,
+  c27: 17.9000,
+  c28: 61.7000,
+  c29: 5.8000,
+  c30: 49.6000,
+  c31: 93.4000,
+  c32: 37.5000,
+  c33: 81.3000,
+  c34: 25.4000,
+  c35: 69.2000,
+  c36: 13.3000,
+  c37: 57.1000,
+  c38: 1.2000,
+  c39: 45.0000,
+  c40: 88.8000,
+  c41: 32.9000,
+  c42: 76.7000,
+  c43: 20.8000,
+  c44: 64.6000,
+  c45: 8.7000,
+  c46: 52.5000,
+  c47: 96.3000,
+  c48: 40.4000,
+  c49: 84.2000,
+  c50: 28.3000,
+  c51: 72.1000,
+  c52: 16.2000,
+  c53: 60.0000,
+  c54: 4.1000,
+  c55: 47.9000,
+  c56: 91.7000,
+  c57: 35.8000,
+  c58: 79.6000,
+  c59: 23.7000,
+  c60: 67.5000,
+  c61: 11.6000,
+  c62: 55.4000,
+  c63: 99.2000,
+  c64: 43.3000,
+  c65: 87.1000,
+  c66: 31.2000,
+  c67: 75.0000,
+  c68: 19.1000,
+  c69: 62.9000,
+  c70: 7.0000,
+  c71: 50.8000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_096_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_096_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_096_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_096_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_096_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_096_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_096_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_096_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_096_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_096_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 097 — VIC/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_097_META = {
+  id: 'kpi_097',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 96144,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_097_COEF = {
+  c0: 29.9000,
+  c1: 73.1000,
+  c2: 16.6000,
+  c3: 59.8000,
+  c4: 3.3000,
+  c5: 46.5000,
+  c6: 89.7000,
+  c7: 33.2000,
+  c8: 76.4000,
+  c9: 19.9000,
+  c10: 63.1000,
+  c11: 6.6000,
+  c12: 49.8000,
+  c13: 93.0000,
+  c14: 36.5000,
+  c15: 79.7000,
+  c16: 23.2000,
+  c17: 66.4000,
+  c18: 9.9000,
+  c19: 53.1000,
+  c20: 96.3000,
+  c21: 39.8000,
+  c22: 83.0000,
+  c23: 26.5000,
+  c24: 69.7000,
+  c25: 13.2000,
+  c26: 56.4000,
+  c27: 99.6000,
+  c28: 43.1000,
+  c29: 86.3000,
+  c30: 29.8000,
+  c31: 73.0000,
+  c32: 16.5000,
+  c33: 59.7000,
+  c34: 3.2000,
+  c35: 46.4000,
+  c36: 89.6000,
+  c37: 33.1000,
+  c38: 76.3000,
+  c39: 19.8000,
+  c40: 63.0000,
+  c41: 6.5000,
+  c42: 49.7000,
+  c43: 92.9000,
+  c44: 36.4000,
+  c45: 79.6000,
+  c46: 23.1000,
+  c47: 66.3000,
+  c48: 9.8000,
+  c49: 53.0000,
+  c50: 96.2000,
+  c51: 39.7000,
+  c52: 82.9000,
+  c53: 26.4000,
+  c54: 69.6000,
+  c55: 13.1000,
+  c56: 56.3000,
+  c57: 99.5000,
+  c58: 43.0000,
+  c59: 86.2000,
+  c60: 29.7000,
+  c61: 72.9000,
+  c62: 16.4000,
+  c63: 59.6000,
+  c64: 3.1000,
+  c65: 46.3000,
+  c66: 89.5000,
+  c67: 33.0000,
+  c68: 76.2000,
+  c69: 19.7000,
+  c70: 62.9000,
+  c71: 6.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_097_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_097_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_097_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_097_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_097_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_097_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_097_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_097_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_097_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_097_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 098 — QLD/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_098_META = {
+  id: 'kpi_098',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 97135,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_098_COEF = {
+  c0: 28.1000,
+  c1: 70.7000,
+  c2: 13.6000,
+  c3: 56.2000,
+  c4: 98.8000,
+  c5: 41.7000,
+  c6: 84.3000,
+  c7: 27.2000,
+  c8: 69.8000,
+  c9: 12.7000,
+  c10: 55.3000,
+  c11: 97.9000,
+  c12: 40.8000,
+  c13: 83.4000,
+  c14: 26.3000,
+  c15: 68.9000,
+  c16: 11.8000,
+  c17: 54.4000,
+  c18: 97.0000,
+  c19: 39.9000,
+  c20: 82.5000,
+  c21: 25.4000,
+  c22: 68.0000,
+  c23: 10.9000,
+  c24: 53.5000,
+  c25: 96.1000,
+  c26: 39.0000,
+  c27: 81.6000,
+  c28: 24.5000,
+  c29: 67.1000,
+  c30: 10.0000,
+  c31: 52.6000,
+  c32: 95.2000,
+  c33: 38.1000,
+  c34: 80.7000,
+  c35: 23.6000,
+  c36: 66.2000,
+  c37: 9.1000,
+  c38: 51.7000,
+  c39: 94.3000,
+  c40: 37.2000,
+  c41: 79.8000,
+  c42: 22.7000,
+  c43: 65.3000,
+  c44: 8.2000,
+  c45: 50.8000,
+  c46: 93.4000,
+  c47: 36.3000,
+  c48: 78.9000,
+  c49: 21.8000,
+  c50: 64.4000,
+  c51: 7.3000,
+  c52: 49.9000,
+  c53: 92.5000,
+  c54: 35.4000,
+  c55: 78.0000,
+  c56: 20.9000,
+  c57: 63.5000,
+  c58: 6.4000,
+  c59: 49.0000,
+  c60: 91.6000,
+  c61: 34.5000,
+  c62: 77.1000,
+  c63: 20.0000,
+  c64: 62.6000,
+  c65: 5.5000,
+  c66: 48.1000,
+  c67: 90.7000,
+  c68: 33.6000,
+  c69: 76.2000,
+  c70: 19.1000,
+  c71: 61.7000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_098_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_098_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_098_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_098_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_098_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_098_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_098_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_098_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_098_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_098_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 099 — WA/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_099_META = {
+  id: 'kpi_099',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 98126,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_099_COEF = {
+  c0: 26.3000,
+  c1: 68.3000,
+  c2: 10.6000,
+  c3: 52.6000,
+  c4: 94.6000,
+  c5: 36.9000,
+  c6: 78.9000,
+  c7: 21.2000,
+  c8: 63.2000,
+  c9: 5.5000,
+  c10: 47.5000,
+  c11: 89.5000,
+  c12: 31.8000,
+  c13: 73.8000,
+  c14: 16.1000,
+  c15: 58.1000,
+  c16: 0.4000,
+  c17: 42.4000,
+  c18: 84.4000,
+  c19: 26.7000,
+  c20: 68.7000,
+  c21: 11.0000,
+  c22: 53.0000,
+  c23: 95.0000,
+  c24: 37.3000,
+  c25: 79.3000,
+  c26: 21.6000,
+  c27: 63.6000,
+  c28: 5.9000,
+  c29: 47.9000,
+  c30: 89.9000,
+  c31: 32.2000,
+  c32: 74.2000,
+  c33: 16.5000,
+  c34: 58.5000,
+  c35: 0.8000,
+  c36: 42.8000,
+  c37: 84.8000,
+  c38: 27.1000,
+  c39: 69.1000,
+  c40: 11.4000,
+  c41: 53.4000,
+  c42: 95.4000,
+  c43: 37.7000,
+  c44: 79.7000,
+  c45: 22.0000,
+  c46: 64.0000,
+  c47: 6.3000,
+  c48: 48.3000,
+  c49: 90.3000,
+  c50: 32.6000,
+  c51: 74.6000,
+  c52: 16.9000,
+  c53: 58.9000,
+  c54: 1.2000,
+  c55: 43.2000,
+  c56: 85.2000,
+  c57: 27.5000,
+  c58: 69.5000,
+  c59: 11.8000,
+  c60: 53.8000,
+  c61: 95.8000,
+  c62: 38.1000,
+  c63: 80.1000,
+  c64: 22.4000,
+  c65: 64.4000,
+  c66: 6.7000,
+  c67: 48.7000,
+  c68: 90.7000,
+  c69: 33.0000,
+  c70: 75.0000,
+  c71: 17.3000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_099_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_099_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_099_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_099_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_099_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_099_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_099_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_099_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_099_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_099_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 100 — SA/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_100_META = {
+  id: 'kpi_100',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 99117,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_100_COEF = {
+  c0: 24.5000,
+  c1: 65.9000,
+  c2: 7.6000,
+  c3: 49.0000,
+  c4: 90.4000,
+  c5: 32.1000,
+  c6: 73.5000,
+  c7: 15.2000,
+  c8: 56.6000,
+  c9: 98.0000,
+  c10: 39.7000,
+  c11: 81.1000,
+  c12: 22.8000,
+  c13: 64.2000,
+  c14: 5.9000,
+  c15: 47.3000,
+  c16: 88.7000,
+  c17: 30.4000,
+  c18: 71.8000,
+  c19: 13.5000,
+  c20: 54.9000,
+  c21: 96.3000,
+  c22: 38.0000,
+  c23: 79.4000,
+  c24: 21.1000,
+  c25: 62.5000,
+  c26: 4.2000,
+  c27: 45.6000,
+  c28: 87.0000,
+  c29: 28.7000,
+  c30: 70.1000,
+  c31: 11.8000,
+  c32: 53.2000,
+  c33: 94.6000,
+  c34: 36.3000,
+  c35: 77.7000,
+  c36: 19.4000,
+  c37: 60.8000,
+  c38: 2.5000,
+  c39: 43.9000,
+  c40: 85.3000,
+  c41: 27.0000,
+  c42: 68.4000,
+  c43: 10.1000,
+  c44: 51.5000,
+  c45: 92.9000,
+  c46: 34.6000,
+  c47: 76.0000,
+  c48: 17.7000,
+  c49: 59.1000,
+  c50: 0.8000,
+  c51: 42.2000,
+  c52: 83.6000,
+  c53: 25.3000,
+  c54: 66.7000,
+  c55: 8.4000,
+  c56: 49.8000,
+  c57: 91.2000,
+  c58: 32.9000,
+  c59: 74.3000,
+  c60: 16.0000,
+  c61: 57.4000,
+  c62: 98.8000,
+  c63: 40.5000,
+  c64: 81.9000,
+  c65: 23.6000,
+  c66: 65.0000,
+  c67: 6.7000,
+  c68: 48.1000,
+  c69: 89.5000,
+  c70: 31.2000,
+  c71: 72.6000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_100_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_100_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_100_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_100_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_100_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_100_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_100_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_100_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_100_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_100_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 101 — TAS/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_101_META = {
+  id: 'kpi_101',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 100108,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_101_COEF = {
+  c0: 22.7000,
+  c1: 63.5000,
+  c2: 4.6000,
+  c3: 45.4000,
+  c4: 86.2000,
+  c5: 27.3000,
+  c6: 68.1000,
+  c7: 9.2000,
+  c8: 50.0000,
+  c9: 90.8000,
+  c10: 31.9000,
+  c11: 72.7000,
+  c12: 13.8000,
+  c13: 54.6000,
+  c14: 95.4000,
+  c15: 36.5000,
+  c16: 77.3000,
+  c17: 18.4000,
+  c18: 59.2000,
+  c19: 0.3000,
+  c20: 41.1000,
+  c21: 81.9000,
+  c22: 23.0000,
+  c23: 63.8000,
+  c24: 4.9000,
+  c25: 45.7000,
+  c26: 86.5000,
+  c27: 27.6000,
+  c28: 68.4000,
+  c29: 9.5000,
+  c30: 50.3000,
+  c31: 91.1000,
+  c32: 32.2000,
+  c33: 73.0000,
+  c34: 14.1000,
+  c35: 54.9000,
+  c36: 95.7000,
+  c37: 36.8000,
+  c38: 77.6000,
+  c39: 18.7000,
+  c40: 59.5000,
+  c41: 0.6000,
+  c42: 41.4000,
+  c43: 82.2000,
+  c44: 23.3000,
+  c45: 64.1000,
+  c46: 5.2000,
+  c47: 46.0000,
+  c48: 86.8000,
+  c49: 27.9000,
+  c50: 68.7000,
+  c51: 9.8000,
+  c52: 50.6000,
+  c53: 91.4000,
+  c54: 32.5000,
+  c55: 73.3000,
+  c56: 14.4000,
+  c57: 55.2000,
+  c58: 96.0000,
+  c59: 37.1000,
+  c60: 77.9000,
+  c61: 19.0000,
+  c62: 59.8000,
+  c63: 0.9000,
+  c64: 41.7000,
+  c65: 82.5000,
+  c66: 23.6000,
+  c67: 64.4000,
+  c68: 5.5000,
+  c69: 46.3000,
+  c70: 87.1000,
+  c71: 28.2000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_101_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_101_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_101_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_101_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_101_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_101_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_101_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_101_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_101_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_101_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 102 — NT/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_102_META = {
+  id: 'kpi_102',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 101099,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_102_COEF = {
+  c0: 20.9000,
+  c1: 61.1000,
+  c2: 1.6000,
+  c3: 41.8000,
+  c4: 82.0000,
+  c5: 22.5000,
+  c6: 62.7000,
+  c7: 3.2000,
+  c8: 43.4000,
+  c9: 83.6000,
+  c10: 24.1000,
+  c11: 64.3000,
+  c12: 4.8000,
+  c13: 45.0000,
+  c14: 85.2000,
+  c15: 25.7000,
+  c16: 65.9000,
+  c17: 6.4000,
+  c18: 46.6000,
+  c19: 86.8000,
+  c20: 27.3000,
+  c21: 67.5000,
+  c22: 8.0000,
+  c23: 48.2000,
+  c24: 88.4000,
+  c25: 28.9000,
+  c26: 69.1000,
+  c27: 9.6000,
+  c28: 49.8000,
+  c29: 90.0000,
+  c30: 30.5000,
+  c31: 70.7000,
+  c32: 11.2000,
+  c33: 51.4000,
+  c34: 91.6000,
+  c35: 32.1000,
+  c36: 72.3000,
+  c37: 12.8000,
+  c38: 53.0000,
+  c39: 93.2000,
+  c40: 33.7000,
+  c41: 73.9000,
+  c42: 14.4000,
+  c43: 54.6000,
+  c44: 94.8000,
+  c45: 35.3000,
+  c46: 75.5000,
+  c47: 16.0000,
+  c48: 56.2000,
+  c49: 96.4000,
+  c50: 36.9000,
+  c51: 77.1000,
+  c52: 17.6000,
+  c53: 57.8000,
+  c54: 98.0000,
+  c55: 38.5000,
+  c56: 78.7000,
+  c57: 19.2000,
+  c58: 59.4000,
+  c59: 99.6000,
+  c60: 40.1000,
+  c61: 80.3000,
+  c62: 20.8000,
+  c63: 61.0000,
+  c64: 1.5000,
+  c65: 41.7000,
+  c66: 81.9000,
+  c67: 22.4000,
+  c68: 62.6000,
+  c69: 3.1000,
+  c70: 43.3000,
+  c71: 83.5000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_102_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_102_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_102_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_102_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_102_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_102_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_102_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_102_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_102_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_102_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 103 — ACT/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_103_META = {
+  id: 'kpi_103',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 102090,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_103_COEF = {
+  c0: 19.1000,
+  c1: 58.7000,
+  c2: 98.3000,
+  c3: 38.2000,
+  c4: 77.8000,
+  c5: 17.7000,
+  c6: 57.3000,
+  c7: 96.9000,
+  c8: 36.8000,
+  c9: 76.4000,
+  c10: 16.3000,
+  c11: 55.9000,
+  c12: 95.5000,
+  c13: 35.4000,
+  c14: 75.0000,
+  c15: 14.9000,
+  c16: 54.5000,
+  c17: 94.1000,
+  c18: 34.0000,
+  c19: 73.6000,
+  c20: 13.5000,
+  c21: 53.1000,
+  c22: 92.7000,
+  c23: 32.6000,
+  c24: 72.2000,
+  c25: 12.1000,
+  c26: 51.7000,
+  c27: 91.3000,
+  c28: 31.2000,
+  c29: 70.8000,
+  c30: 10.7000,
+  c31: 50.3000,
+  c32: 89.9000,
+  c33: 29.8000,
+  c34: 69.4000,
+  c35: 9.3000,
+  c36: 48.9000,
+  c37: 88.5000,
+  c38: 28.4000,
+  c39: 68.0000,
+  c40: 7.9000,
+  c41: 47.5000,
+  c42: 87.1000,
+  c43: 27.0000,
+  c44: 66.6000,
+  c45: 6.5000,
+  c46: 46.1000,
+  c47: 85.7000,
+  c48: 25.6000,
+  c49: 65.2000,
+  c50: 5.1000,
+  c51: 44.7000,
+  c52: 84.3000,
+  c53: 24.2000,
+  c54: 63.8000,
+  c55: 3.7000,
+  c56: 43.3000,
+  c57: 82.9000,
+  c58: 22.8000,
+  c59: 62.4000,
+  c60: 2.3000,
+  c61: 41.9000,
+  c62: 81.5000,
+  c63: 21.4000,
+  c64: 61.0000,
+  c65: 0.9000,
+  c66: 40.5000,
+  c67: 80.1000,
+  c68: 20.0000,
+  c69: 59.6000,
+  c70: 99.2000,
+  c71: 39.1000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_103_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_103_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_103_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_103_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_103_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_103_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_103_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_103_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_103_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_103_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 104 — NSW/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_104_META = {
+  id: 'kpi_104',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 103081,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_104_COEF = {
+  c0: 17.3000,
+  c1: 56.3000,
+  c2: 95.3000,
+  c3: 34.6000,
+  c4: 73.6000,
+  c5: 12.9000,
+  c6: 51.9000,
+  c7: 90.9000,
+  c8: 30.2000,
+  c9: 69.2000,
+  c10: 8.5000,
+  c11: 47.5000,
+  c12: 86.5000,
+  c13: 25.8000,
+  c14: 64.8000,
+  c15: 4.1000,
+  c16: 43.1000,
+  c17: 82.1000,
+  c18: 21.4000,
+  c19: 60.4000,
+  c20: 99.4000,
+  c21: 38.7000,
+  c22: 77.7000,
+  c23: 17.0000,
+  c24: 56.0000,
+  c25: 95.0000,
+  c26: 34.3000,
+  c27: 73.3000,
+  c28: 12.6000,
+  c29: 51.6000,
+  c30: 90.6000,
+  c31: 29.9000,
+  c32: 68.9000,
+  c33: 8.2000,
+  c34: 47.2000,
+  c35: 86.2000,
+  c36: 25.5000,
+  c37: 64.5000,
+  c38: 3.8000,
+  c39: 42.8000,
+  c40: 81.8000,
+  c41: 21.1000,
+  c42: 60.1000,
+  c43: 99.1000,
+  c44: 38.4000,
+  c45: 77.4000,
+  c46: 16.7000,
+  c47: 55.7000,
+  c48: 94.7000,
+  c49: 34.0000,
+  c50: 73.0000,
+  c51: 12.3000,
+  c52: 51.3000,
+  c53: 90.3000,
+  c54: 29.6000,
+  c55: 68.6000,
+  c56: 7.9000,
+  c57: 46.9000,
+  c58: 85.9000,
+  c59: 25.2000,
+  c60: 64.2000,
+  c61: 3.5000,
+  c62: 42.5000,
+  c63: 81.5000,
+  c64: 20.8000,
+  c65: 59.8000,
+  c66: 98.8000,
+  c67: 38.1000,
+  c68: 77.1000,
+  c69: 16.4000,
+  c70: 55.4000,
+  c71: 94.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_104_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_104_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_104_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_104_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_104_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_104_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_104_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_104_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_104_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_104_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 105 — VIC/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_105_META = {
+  id: 'kpi_105',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 104072,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_105_COEF = {
+  c0: 15.5000,
+  c1: 53.9000,
+  c2: 92.3000,
+  c3: 31.0000,
+  c4: 69.4000,
+  c5: 8.1000,
+  c6: 46.5000,
+  c7: 84.9000,
+  c8: 23.6000,
+  c9: 62.0000,
+  c10: 0.7000,
+  c11: 39.1000,
+  c12: 77.5000,
+  c13: 16.2000,
+  c14: 54.6000,
+  c15: 93.0000,
+  c16: 31.7000,
+  c17: 70.1000,
+  c18: 8.8000,
+  c19: 47.2000,
+  c20: 85.6000,
+  c21: 24.3000,
+  c22: 62.7000,
+  c23: 1.4000,
+  c24: 39.8000,
+  c25: 78.2000,
+  c26: 16.9000,
+  c27: 55.3000,
+  c28: 93.7000,
+  c29: 32.4000,
+  c30: 70.8000,
+  c31: 9.5000,
+  c32: 47.9000,
+  c33: 86.3000,
+  c34: 25.0000,
+  c35: 63.4000,
+  c36: 2.1000,
+  c37: 40.5000,
+  c38: 78.9000,
+  c39: 17.6000,
+  c40: 56.0000,
+  c41: 94.4000,
+  c42: 33.1000,
+  c43: 71.5000,
+  c44: 10.2000,
+  c45: 48.6000,
+  c46: 87.0000,
+  c47: 25.7000,
+  c48: 64.1000,
+  c49: 2.8000,
+  c50: 41.2000,
+  c51: 79.6000,
+  c52: 18.3000,
+  c53: 56.7000,
+  c54: 95.1000,
+  c55: 33.8000,
+  c56: 72.2000,
+  c57: 10.9000,
+  c58: 49.3000,
+  c59: 87.7000,
+  c60: 26.4000,
+  c61: 64.8000,
+  c62: 3.5000,
+  c63: 41.9000,
+  c64: 80.3000,
+  c65: 19.0000,
+  c66: 57.4000,
+  c67: 95.8000,
+  c68: 34.5000,
+  c69: 72.9000,
+  c70: 11.6000,
+  c71: 50.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_105_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_105_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_105_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_105_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_105_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_105_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_105_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_105_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_105_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_105_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 106 — QLD/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_106_META = {
+  id: 'kpi_106',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 105063,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_106_COEF = {
+  c0: 13.7000,
+  c1: 51.5000,
+  c2: 89.3000,
+  c3: 27.4000,
+  c4: 65.2000,
+  c5: 3.3000,
+  c6: 41.1000,
+  c7: 78.9000,
+  c8: 17.0000,
+  c9: 54.8000,
+  c10: 92.6000,
+  c11: 30.7000,
+  c12: 68.5000,
+  c13: 6.6000,
+  c14: 44.4000,
+  c15: 82.2000,
+  c16: 20.3000,
+  c17: 58.1000,
+  c18: 95.9000,
+  c19: 34.0000,
+  c20: 71.8000,
+  c21: 9.9000,
+  c22: 47.7000,
+  c23: 85.5000,
+  c24: 23.6000,
+  c25: 61.4000,
+  c26: 99.2000,
+  c27: 37.3000,
+  c28: 75.1000,
+  c29: 13.2000,
+  c30: 51.0000,
+  c31: 88.8000,
+  c32: 26.9000,
+  c33: 64.7000,
+  c34: 2.8000,
+  c35: 40.6000,
+  c36: 78.4000,
+  c37: 16.5000,
+  c38: 54.3000,
+  c39: 92.1000,
+  c40: 30.2000,
+  c41: 68.0000,
+  c42: 6.1000,
+  c43: 43.9000,
+  c44: 81.7000,
+  c45: 19.8000,
+  c46: 57.6000,
+  c47: 95.4000,
+  c48: 33.5000,
+  c49: 71.3000,
+  c50: 9.4000,
+  c51: 47.2000,
+  c52: 85.0000,
+  c53: 23.1000,
+  c54: 60.9000,
+  c55: 98.7000,
+  c56: 36.8000,
+  c57: 74.6000,
+  c58: 12.7000,
+  c59: 50.5000,
+  c60: 88.3000,
+  c61: 26.4000,
+  c62: 64.2000,
+  c63: 2.3000,
+  c64: 40.1000,
+  c65: 77.9000,
+  c66: 16.0000,
+  c67: 53.8000,
+  c68: 91.6000,
+  c69: 29.7000,
+  c70: 67.5000,
+  c71: 5.6000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_106_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_106_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_106_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_106_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_106_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_106_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_106_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_106_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_106_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_106_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 107 — WA/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_107_META = {
+  id: 'kpi_107',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 106054,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_107_COEF = {
+  c0: 11.9000,
+  c1: 49.1000,
+  c2: 86.3000,
+  c3: 23.8000,
+  c4: 61.0000,
+  c5: 98.2000,
+  c6: 35.7000,
+  c7: 72.9000,
+  c8: 10.4000,
+  c9: 47.6000,
+  c10: 84.8000,
+  c11: 22.3000,
+  c12: 59.5000,
+  c13: 96.7000,
+  c14: 34.2000,
+  c15: 71.4000,
+  c16: 8.9000,
+  c17: 46.1000,
+  c18: 83.3000,
+  c19: 20.8000,
+  c20: 58.0000,
+  c21: 95.2000,
+  c22: 32.7000,
+  c23: 69.9000,
+  c24: 7.4000,
+  c25: 44.6000,
+  c26: 81.8000,
+  c27: 19.3000,
+  c28: 56.5000,
+  c29: 93.7000,
+  c30: 31.2000,
+  c31: 68.4000,
+  c32: 5.9000,
+  c33: 43.1000,
+  c34: 80.3000,
+  c35: 17.8000,
+  c36: 55.0000,
+  c37: 92.2000,
+  c38: 29.7000,
+  c39: 66.9000,
+  c40: 4.4000,
+  c41: 41.6000,
+  c42: 78.8000,
+  c43: 16.3000,
+  c44: 53.5000,
+  c45: 90.7000,
+  c46: 28.2000,
+  c47: 65.4000,
+  c48: 2.9000,
+  c49: 40.1000,
+  c50: 77.3000,
+  c51: 14.8000,
+  c52: 52.0000,
+  c53: 89.2000,
+  c54: 26.7000,
+  c55: 63.9000,
+  c56: 1.4000,
+  c57: 38.6000,
+  c58: 75.8000,
+  c59: 13.3000,
+  c60: 50.5000,
+  c61: 87.7000,
+  c62: 25.2000,
+  c63: 62.4000,
+  c64: 99.6000,
+  c65: 37.1000,
+  c66: 74.3000,
+  c67: 11.8000,
+  c68: 49.0000,
+  c69: 86.2000,
+  c70: 23.7000,
+  c71: 60.9000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_107_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_107_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_107_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_107_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_107_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_107_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_107_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_107_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_107_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_107_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 108 — SA/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_108_META = {
+  id: 'kpi_108',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 107045,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_108_COEF = {
+  c0: 10.1000,
+  c1: 46.7000,
+  c2: 83.3000,
+  c3: 20.2000,
+  c4: 56.8000,
+  c5: 93.4000,
+  c6: 30.3000,
+  c7: 66.9000,
+  c8: 3.8000,
+  c9: 40.4000,
+  c10: 77.0000,
+  c11: 13.9000,
+  c12: 50.5000,
+  c13: 87.1000,
+  c14: 24.0000,
+  c15: 60.6000,
+  c16: 97.2000,
+  c17: 34.1000,
+  c18: 70.7000,
+  c19: 7.6000,
+  c20: 44.2000,
+  c21: 80.8000,
+  c22: 17.7000,
+  c23: 54.3000,
+  c24: 90.9000,
+  c25: 27.8000,
+  c26: 64.4000,
+  c27: 1.3000,
+  c28: 37.9000,
+  c29: 74.5000,
+  c30: 11.4000,
+  c31: 48.0000,
+  c32: 84.6000,
+  c33: 21.5000,
+  c34: 58.1000,
+  c35: 94.7000,
+  c36: 31.6000,
+  c37: 68.2000,
+  c38: 5.1000,
+  c39: 41.7000,
+  c40: 78.3000,
+  c41: 15.2000,
+  c42: 51.8000,
+  c43: 88.4000,
+  c44: 25.3000,
+  c45: 61.9000,
+  c46: 98.5000,
+  c47: 35.4000,
+  c48: 72.0000,
+  c49: 8.9000,
+  c50: 45.5000,
+  c51: 82.1000,
+  c52: 19.0000,
+  c53: 55.6000,
+  c54: 92.2000,
+  c55: 29.1000,
+  c56: 65.7000,
+  c57: 2.6000,
+  c58: 39.2000,
+  c59: 75.8000,
+  c60: 12.7000,
+  c61: 49.3000,
+  c62: 85.9000,
+  c63: 22.8000,
+  c64: 59.4000,
+  c65: 96.0000,
+  c66: 32.9000,
+  c67: 69.5000,
+  c68: 6.4000,
+  c69: 43.0000,
+  c70: 79.6000,
+  c71: 16.5000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_108_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_108_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_108_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_108_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_108_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_108_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_108_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_108_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_108_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_108_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 109 — TAS/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_109_META = {
+  id: 'kpi_109',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 108036,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_109_COEF = {
+  c0: 8.3000,
+  c1: 44.3000,
+  c2: 80.3000,
+  c3: 16.6000,
+  c4: 52.6000,
+  c5: 88.6000,
+  c6: 24.9000,
+  c7: 60.9000,
+  c8: 96.9000,
+  c9: 33.2000,
+  c10: 69.2000,
+  c11: 5.5000,
+  c12: 41.5000,
+  c13: 77.5000,
+  c14: 13.8000,
+  c15: 49.8000,
+  c16: 85.8000,
+  c17: 22.1000,
+  c18: 58.1000,
+  c19: 94.1000,
+  c20: 30.4000,
+  c21: 66.4000,
+  c22: 2.7000,
+  c23: 38.7000,
+  c24: 74.7000,
+  c25: 11.0000,
+  c26: 47.0000,
+  c27: 83.0000,
+  c28: 19.3000,
+  c29: 55.3000,
+  c30: 91.3000,
+  c31: 27.6000,
+  c32: 63.6000,
+  c33: 99.6000,
+  c34: 35.9000,
+  c35: 71.9000,
+  c36: 8.2000,
+  c37: 44.2000,
+  c38: 80.2000,
+  c39: 16.5000,
+  c40: 52.5000,
+  c41: 88.5000,
+  c42: 24.8000,
+  c43: 60.8000,
+  c44: 96.8000,
+  c45: 33.1000,
+  c46: 69.1000,
+  c47: 5.4000,
+  c48: 41.4000,
+  c49: 77.4000,
+  c50: 13.7000,
+  c51: 49.7000,
+  c52: 85.7000,
+  c53: 22.0000,
+  c54: 58.0000,
+  c55: 94.0000,
+  c56: 30.3000,
+  c57: 66.3000,
+  c58: 2.6000,
+  c59: 38.6000,
+  c60: 74.6000,
+  c61: 10.9000,
+  c62: 46.9000,
+  c63: 82.9000,
+  c64: 19.2000,
+  c65: 55.2000,
+  c66: 91.2000,
+  c67: 27.5000,
+  c68: 63.5000,
+  c69: 99.5000,
+  c70: 35.8000,
+  c71: 71.8000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_109_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_109_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_109_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_109_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_109_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_109_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_109_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_109_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_109_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_109_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 110 — NT/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_110_META = {
+  id: 'kpi_110',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 109027,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_110_COEF = {
+  c0: 6.5000,
+  c1: 41.9000,
+  c2: 77.3000,
+  c3: 13.0000,
+  c4: 48.4000,
+  c5: 83.8000,
+  c6: 19.5000,
+  c7: 54.9000,
+  c8: 90.3000,
+  c9: 26.0000,
+  c10: 61.4000,
+  c11: 96.8000,
+  c12: 32.5000,
+  c13: 67.9000,
+  c14: 3.6000,
+  c15: 39.0000,
+  c16: 74.4000,
+  c17: 10.1000,
+  c18: 45.5000,
+  c19: 80.9000,
+  c20: 16.6000,
+  c21: 52.0000,
+  c22: 87.4000,
+  c23: 23.1000,
+  c24: 58.5000,
+  c25: 93.9000,
+  c26: 29.6000,
+  c27: 65.0000,
+  c28: 0.7000,
+  c29: 36.1000,
+  c30: 71.5000,
+  c31: 7.2000,
+  c32: 42.6000,
+  c33: 78.0000,
+  c34: 13.7000,
+  c35: 49.1000,
+  c36: 84.5000,
+  c37: 20.2000,
+  c38: 55.6000,
+  c39: 91.0000,
+  c40: 26.7000,
+  c41: 62.1000,
+  c42: 97.5000,
+  c43: 33.2000,
+  c44: 68.6000,
+  c45: 4.3000,
+  c46: 39.7000,
+  c47: 75.1000,
+  c48: 10.8000,
+  c49: 46.2000,
+  c50: 81.6000,
+  c51: 17.3000,
+  c52: 52.7000,
+  c53: 88.1000,
+  c54: 23.8000,
+  c55: 59.2000,
+  c56: 94.6000,
+  c57: 30.3000,
+  c58: 65.7000,
+  c59: 1.4000,
+  c60: 36.8000,
+  c61: 72.2000,
+  c62: 7.9000,
+  c63: 43.3000,
+  c64: 78.7000,
+  c65: 14.4000,
+  c66: 49.8000,
+  c67: 85.2000,
+  c68: 20.9000,
+  c69: 56.3000,
+  c70: 91.7000,
+  c71: 27.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_110_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_110_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_110_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_110_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_110_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_110_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_110_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_110_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_110_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_110_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 111 — ACT/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_111_META = {
+  id: 'kpi_111',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 110018,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_111_COEF = {
+  c0: 4.7000,
+  c1: 39.5000,
+  c2: 74.3000,
+  c3: 9.4000,
+  c4: 44.2000,
+  c5: 79.0000,
+  c6: 14.1000,
+  c7: 48.9000,
+  c8: 83.7000,
+  c9: 18.8000,
+  c10: 53.6000,
+  c11: 88.4000,
+  c12: 23.5000,
+  c13: 58.3000,
+  c14: 93.1000,
+  c15: 28.2000,
+  c16: 63.0000,
+  c17: 97.8000,
+  c18: 32.9000,
+  c19: 67.7000,
+  c20: 2.8000,
+  c21: 37.6000,
+  c22: 72.4000,
+  c23: 7.5000,
+  c24: 42.3000,
+  c25: 77.1000,
+  c26: 12.2000,
+  c27: 47.0000,
+  c28: 81.8000,
+  c29: 16.9000,
+  c30: 51.7000,
+  c31: 86.5000,
+  c32: 21.6000,
+  c33: 56.4000,
+  c34: 91.2000,
+  c35: 26.3000,
+  c36: 61.1000,
+  c37: 95.9000,
+  c38: 31.0000,
+  c39: 65.8000,
+  c40: 0.9000,
+  c41: 35.7000,
+  c42: 70.5000,
+  c43: 5.6000,
+  c44: 40.4000,
+  c45: 75.2000,
+  c46: 10.3000,
+  c47: 45.1000,
+  c48: 79.9000,
+  c49: 15.0000,
+  c50: 49.8000,
+  c51: 84.6000,
+  c52: 19.7000,
+  c53: 54.5000,
+  c54: 89.3000,
+  c55: 24.4000,
+  c56: 59.2000,
+  c57: 94.0000,
+  c58: 29.1000,
+  c59: 63.9000,
+  c60: 98.7000,
+  c61: 33.8000,
+  c62: 68.6000,
+  c63: 3.7000,
+  c64: 38.5000,
+  c65: 73.3000,
+  c66: 8.4000,
+  c67: 43.2000,
+  c68: 78.0000,
+  c69: 13.1000,
+  c70: 47.9000,
+  c71: 82.7000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_111_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_111_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_111_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_111_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_111_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_111_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_111_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_111_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_111_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_111_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 112 — NSW/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_112_META = {
+  id: 'kpi_112',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 111009,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_112_COEF = {
+  c0: 2.9000,
+  c1: 37.1000,
+  c2: 71.3000,
+  c3: 5.8000,
+  c4: 40.0000,
+  c5: 74.2000,
+  c6: 8.7000,
+  c7: 42.9000,
+  c8: 77.1000,
+  c9: 11.6000,
+  c10: 45.8000,
+  c11: 80.0000,
+  c12: 14.5000,
+  c13: 48.7000,
+  c14: 82.9000,
+  c15: 17.4000,
+  c16: 51.6000,
+  c17: 85.8000,
+  c18: 20.3000,
+  c19: 54.5000,
+  c20: 88.7000,
+  c21: 23.2000,
+  c22: 57.4000,
+  c23: 91.6000,
+  c24: 26.1000,
+  c25: 60.3000,
+  c26: 94.5000,
+  c27: 29.0000,
+  c28: 63.2000,
+  c29: 97.4000,
+  c30: 31.9000,
+  c31: 66.1000,
+  c32: 0.6000,
+  c33: 34.8000,
+  c34: 69.0000,
+  c35: 3.5000,
+  c36: 37.7000,
+  c37: 71.9000,
+  c38: 6.4000,
+  c39: 40.6000,
+  c40: 74.8000,
+  c41: 9.3000,
+  c42: 43.5000,
+  c43: 77.7000,
+  c44: 12.2000,
+  c45: 46.4000,
+  c46: 80.6000,
+  c47: 15.1000,
+  c48: 49.3000,
+  c49: 83.5000,
+  c50: 18.0000,
+  c51: 52.2000,
+  c52: 86.4000,
+  c53: 20.9000,
+  c54: 55.1000,
+  c55: 89.3000,
+  c56: 23.8000,
+  c57: 58.0000,
+  c58: 92.2000,
+  c59: 26.7000,
+  c60: 60.9000,
+  c61: 95.1000,
+  c62: 29.6000,
+  c63: 63.8000,
+  c64: 98.0000,
+  c65: 32.5000,
+  c66: 66.7000,
+  c67: 1.2000,
+  c68: 35.4000,
+  c69: 69.6000,
+  c70: 4.1000,
+  c71: 38.3000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_112_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_112_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_112_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_112_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_112_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_112_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_112_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_112_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_112_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_112_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 113 — VIC/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_113_META = {
+  id: 'kpi_113',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 112000,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_113_COEF = {
+  c0: 1.1000,
+  c1: 34.7000,
+  c2: 68.3000,
+  c3: 2.2000,
+  c4: 35.8000,
+  c5: 69.4000,
+  c6: 3.3000,
+  c7: 36.9000,
+  c8: 70.5000,
+  c9: 4.4000,
+  c10: 38.0000,
+  c11: 71.6000,
+  c12: 5.5000,
+  c13: 39.1000,
+  c14: 72.7000,
+  c15: 6.6000,
+  c16: 40.2000,
+  c17: 73.8000,
+  c18: 7.7000,
+  c19: 41.3000,
+  c20: 74.9000,
+  c21: 8.8000,
+  c22: 42.4000,
+  c23: 76.0000,
+  c24: 9.9000,
+  c25: 43.5000,
+  c26: 77.1000,
+  c27: 11.0000,
+  c28: 44.6000,
+  c29: 78.2000,
+  c30: 12.1000,
+  c31: 45.7000,
+  c32: 79.3000,
+  c33: 13.2000,
+  c34: 46.8000,
+  c35: 80.4000,
+  c36: 14.3000,
+  c37: 47.9000,
+  c38: 81.5000,
+  c39: 15.4000,
+  c40: 49.0000,
+  c41: 82.6000,
+  c42: 16.5000,
+  c43: 50.1000,
+  c44: 83.7000,
+  c45: 17.6000,
+  c46: 51.2000,
+  c47: 84.8000,
+  c48: 18.7000,
+  c49: 52.3000,
+  c50: 85.9000,
+  c51: 19.8000,
+  c52: 53.4000,
+  c53: 87.0000,
+  c54: 20.9000,
+  c55: 54.5000,
+  c56: 88.1000,
+  c57: 22.0000,
+  c58: 55.6000,
+  c59: 89.2000,
+  c60: 23.1000,
+  c61: 56.7000,
+  c62: 90.3000,
+  c63: 24.2000,
+  c64: 57.8000,
+  c65: 91.4000,
+  c66: 25.3000,
+  c67: 58.9000,
+  c68: 92.5000,
+  c69: 26.4000,
+  c70: 60.0000,
+  c71: 93.6000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_113_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_113_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_113_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_113_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_113_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_113_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_113_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_113_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_113_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_113_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 114 — QLD/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_114_META = {
+  id: 'kpi_114',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 112991,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_114_COEF = {
+  c0: 99.0000,
+  c1: 32.3000,
+  c2: 65.3000,
+  c3: 98.3000,
+  c4: 31.6000,
+  c5: 64.6000,
+  c6: 97.6000,
+  c7: 30.9000,
+  c8: 63.9000,
+  c9: 96.9000,
+  c10: 30.2000,
+  c11: 63.2000,
+  c12: 96.2000,
+  c13: 29.5000,
+  c14: 62.5000,
+  c15: 95.5000,
+  c16: 28.8000,
+  c17: 61.8000,
+  c18: 94.8000,
+  c19: 28.1000,
+  c20: 61.1000,
+  c21: 94.1000,
+  c22: 27.4000,
+  c23: 60.4000,
+  c24: 93.4000,
+  c25: 26.7000,
+  c26: 59.7000,
+  c27: 92.7000,
+  c28: 26.0000,
+  c29: 59.0000,
+  c30: 92.0000,
+  c31: 25.3000,
+  c32: 58.3000,
+  c33: 91.3000,
+  c34: 24.6000,
+  c35: 57.6000,
+  c36: 90.6000,
+  c37: 23.9000,
+  c38: 56.9000,
+  c39: 89.9000,
+  c40: 23.2000,
+  c41: 56.2000,
+  c42: 89.2000,
+  c43: 22.5000,
+  c44: 55.5000,
+  c45: 88.5000,
+  c46: 21.8000,
+  c47: 54.8000,
+  c48: 87.8000,
+  c49: 21.1000,
+  c50: 54.1000,
+  c51: 87.1000,
+  c52: 20.4000,
+  c53: 53.4000,
+  c54: 86.4000,
+  c55: 19.7000,
+  c56: 52.7000,
+  c57: 85.7000,
+  c58: 19.0000,
+  c59: 52.0000,
+  c60: 85.0000,
+  c61: 18.3000,
+  c62: 51.3000,
+  c63: 84.3000,
+  c64: 17.6000,
+  c65: 50.6000,
+  c66: 83.6000,
+  c67: 16.9000,
+  c68: 49.9000,
+  c69: 82.9000,
+  c70: 16.2000,
+  c71: 49.2000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_114_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_114_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_114_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_114_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_114_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_114_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_114_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_114_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_114_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_114_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 115 — WA/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_115_META = {
+  id: 'kpi_115',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 113982,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_115_COEF = {
+  c0: 97.2000,
+  c1: 29.9000,
+  c2: 62.3000,
+  c3: 94.7000,
+  c4: 27.4000,
+  c5: 59.8000,
+  c6: 92.2000,
+  c7: 24.9000,
+  c8: 57.3000,
+  c9: 89.7000,
+  c10: 22.4000,
+  c11: 54.8000,
+  c12: 87.2000,
+  c13: 19.9000,
+  c14: 52.3000,
+  c15: 84.7000,
+  c16: 17.4000,
+  c17: 49.8000,
+  c18: 82.2000,
+  c19: 14.9000,
+  c20: 47.3000,
+  c21: 79.7000,
+  c22: 12.4000,
+  c23: 44.8000,
+  c24: 77.2000,
+  c25: 9.9000,
+  c26: 42.3000,
+  c27: 74.7000,
+  c28: 7.4000,
+  c29: 39.8000,
+  c30: 72.2000,
+  c31: 4.9000,
+  c32: 37.3000,
+  c33: 69.7000,
+  c34: 2.4000,
+  c35: 34.8000,
+  c36: 67.2000,
+  c37: 99.6000,
+  c38: 32.3000,
+  c39: 64.7000,
+  c40: 97.1000,
+  c41: 29.8000,
+  c42: 62.2000,
+  c43: 94.6000,
+  c44: 27.3000,
+  c45: 59.7000,
+  c46: 92.1000,
+  c47: 24.8000,
+  c48: 57.2000,
+  c49: 89.6000,
+  c50: 22.3000,
+  c51: 54.7000,
+  c52: 87.1000,
+  c53: 19.8000,
+  c54: 52.2000,
+  c55: 84.6000,
+  c56: 17.3000,
+  c57: 49.7000,
+  c58: 82.1000,
+  c59: 14.8000,
+  c60: 47.2000,
+  c61: 79.6000,
+  c62: 12.3000,
+  c63: 44.7000,
+  c64: 77.1000,
+  c65: 9.8000,
+  c66: 42.2000,
+  c67: 74.6000,
+  c68: 7.3000,
+  c69: 39.7000,
+  c70: 72.1000,
+  c71: 4.8000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_115_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_115_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_115_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_115_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_115_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_115_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_115_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_115_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_115_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_115_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 116 — SA/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_116_META = {
+  id: 'kpi_116',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 114973,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_116_COEF = {
+  c0: 95.4000,
+  c1: 27.5000,
+  c2: 59.3000,
+  c3: 91.1000,
+  c4: 23.2000,
+  c5: 55.0000,
+  c6: 86.8000,
+  c7: 18.9000,
+  c8: 50.7000,
+  c9: 82.5000,
+  c10: 14.6000,
+  c11: 46.4000,
+  c12: 78.2000,
+  c13: 10.3000,
+  c14: 42.1000,
+  c15: 73.9000,
+  c16: 6.0000,
+  c17: 37.8000,
+  c18: 69.6000,
+  c19: 1.7000,
+  c20: 33.5000,
+  c21: 65.3000,
+  c22: 97.1000,
+  c23: 29.2000,
+  c24: 61.0000,
+  c25: 92.8000,
+  c26: 24.9000,
+  c27: 56.7000,
+  c28: 88.5000,
+  c29: 20.6000,
+  c30: 52.4000,
+  c31: 84.2000,
+  c32: 16.3000,
+  c33: 48.1000,
+  c34: 79.9000,
+  c35: 12.0000,
+  c36: 43.8000,
+  c37: 75.6000,
+  c38: 7.7000,
+  c39: 39.5000,
+  c40: 71.3000,
+  c41: 3.4000,
+  c42: 35.2000,
+  c43: 67.0000,
+  c44: 98.8000,
+  c45: 30.9000,
+  c46: 62.7000,
+  c47: 94.5000,
+  c48: 26.6000,
+  c49: 58.4000,
+  c50: 90.2000,
+  c51: 22.3000,
+  c52: 54.1000,
+  c53: 85.9000,
+  c54: 18.0000,
+  c55: 49.8000,
+  c56: 81.6000,
+  c57: 13.7000,
+  c58: 45.5000,
+  c59: 77.3000,
+  c60: 9.4000,
+  c61: 41.2000,
+  c62: 73.0000,
+  c63: 5.1000,
+  c64: 36.9000,
+  c65: 68.7000,
+  c66: 0.8000,
+  c67: 32.6000,
+  c68: 64.4000,
+  c69: 96.2000,
+  c70: 28.3000,
+  c71: 60.1000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_116_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_116_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_116_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_116_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_116_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_116_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_116_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_116_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_116_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_116_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 117 — TAS/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_117_META = {
+  id: 'kpi_117',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 115964,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_117_COEF = {
+  c0: 93.6000,
+  c1: 25.1000,
+  c2: 56.3000,
+  c3: 87.5000,
+  c4: 19.0000,
+  c5: 50.2000,
+  c6: 81.4000,
+  c7: 12.9000,
+  c8: 44.1000,
+  c9: 75.3000,
+  c10: 6.8000,
+  c11: 38.0000,
+  c12: 69.2000,
+  c13: 0.7000,
+  c14: 31.9000,
+  c15: 63.1000,
+  c16: 94.3000,
+  c17: 25.8000,
+  c18: 57.0000,
+  c19: 88.2000,
+  c20: 19.7000,
+  c21: 50.9000,
+  c22: 82.1000,
+  c23: 13.6000,
+  c24: 44.8000,
+  c25: 76.0000,
+  c26: 7.5000,
+  c27: 38.7000,
+  c28: 69.9000,
+  c29: 1.4000,
+  c30: 32.6000,
+  c31: 63.8000,
+  c32: 95.0000,
+  c33: 26.5000,
+  c34: 57.7000,
+  c35: 88.9000,
+  c36: 20.4000,
+  c37: 51.6000,
+  c38: 82.8000,
+  c39: 14.3000,
+  c40: 45.5000,
+  c41: 76.7000,
+  c42: 8.2000,
+  c43: 39.4000,
+  c44: 70.6000,
+  c45: 2.1000,
+  c46: 33.3000,
+  c47: 64.5000,
+  c48: 95.7000,
+  c49: 27.2000,
+  c50: 58.4000,
+  c51: 89.6000,
+  c52: 21.1000,
+  c53: 52.3000,
+  c54: 83.5000,
+  c55: 15.0000,
+  c56: 46.2000,
+  c57: 77.4000,
+  c58: 8.9000,
+  c59: 40.1000,
+  c60: 71.3000,
+  c61: 2.8000,
+  c62: 34.0000,
+  c63: 65.2000,
+  c64: 96.4000,
+  c65: 27.9000,
+  c66: 59.1000,
+  c67: 90.3000,
+  c68: 21.8000,
+  c69: 53.0000,
+  c70: 84.2000,
+  c71: 15.7000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_117_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_117_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_117_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_117_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_117_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_117_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_117_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_117_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_117_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_117_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 118 — NT/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_118_META = {
+  id: 'kpi_118',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 116955,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_118_COEF = {
+  c0: 91.8000,
+  c1: 22.7000,
+  c2: 53.3000,
+  c3: 83.9000,
+  c4: 14.8000,
+  c5: 45.4000,
+  c6: 76.0000,
+  c7: 6.9000,
+  c8: 37.5000,
+  c9: 68.1000,
+  c10: 98.7000,
+  c11: 29.6000,
+  c12: 60.2000,
+  c13: 90.8000,
+  c14: 21.7000,
+  c15: 52.3000,
+  c16: 82.9000,
+  c17: 13.8000,
+  c18: 44.4000,
+  c19: 75.0000,
+  c20: 5.9000,
+  c21: 36.5000,
+  c22: 67.1000,
+  c23: 97.7000,
+  c24: 28.6000,
+  c25: 59.2000,
+  c26: 89.8000,
+  c27: 20.7000,
+  c28: 51.3000,
+  c29: 81.9000,
+  c30: 12.8000,
+  c31: 43.4000,
+  c32: 74.0000,
+  c33: 4.9000,
+  c34: 35.5000,
+  c35: 66.1000,
+  c36: 96.7000,
+  c37: 27.6000,
+  c38: 58.2000,
+  c39: 88.8000,
+  c40: 19.7000,
+  c41: 50.3000,
+  c42: 80.9000,
+  c43: 11.8000,
+  c44: 42.4000,
+  c45: 73.0000,
+  c46: 3.9000,
+  c47: 34.5000,
+  c48: 65.1000,
+  c49: 95.7000,
+  c50: 26.6000,
+  c51: 57.2000,
+  c52: 87.8000,
+  c53: 18.7000,
+  c54: 49.3000,
+  c55: 79.9000,
+  c56: 10.8000,
+  c57: 41.4000,
+  c58: 72.0000,
+  c59: 2.9000,
+  c60: 33.5000,
+  c61: 64.1000,
+  c62: 94.7000,
+  c63: 25.6000,
+  c64: 56.2000,
+  c65: 86.8000,
+  c66: 17.7000,
+  c67: 48.3000,
+  c68: 78.9000,
+  c69: 9.8000,
+  c70: 40.4000,
+  c71: 71.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_118_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_118_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_118_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_118_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_118_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_118_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_118_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_118_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_118_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_118_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 119 — ACT/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_119_META = {
+  id: 'kpi_119',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 117946,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_119_COEF = {
+  c0: 90.0000,
+  c1: 20.3000,
+  c2: 50.3000,
+  c3: 80.3000,
+  c4: 10.6000,
+  c5: 40.6000,
+  c6: 70.6000,
+  c7: 0.9000,
+  c8: 30.9000,
+  c9: 60.9000,
+  c10: 90.9000,
+  c11: 21.2000,
+  c12: 51.2000,
+  c13: 81.2000,
+  c14: 11.5000,
+  c15: 41.5000,
+  c16: 71.5000,
+  c17: 1.8000,
+  c18: 31.8000,
+  c19: 61.8000,
+  c20: 91.8000,
+  c21: 22.1000,
+  c22: 52.1000,
+  c23: 82.1000,
+  c24: 12.4000,
+  c25: 42.4000,
+  c26: 72.4000,
+  c27: 2.7000,
+  c28: 32.7000,
+  c29: 62.7000,
+  c30: 92.7000,
+  c31: 23.0000,
+  c32: 53.0000,
+  c33: 83.0000,
+  c34: 13.3000,
+  c35: 43.3000,
+  c36: 73.3000,
+  c37: 3.6000,
+  c38: 33.6000,
+  c39: 63.6000,
+  c40: 93.6000,
+  c41: 23.9000,
+  c42: 53.9000,
+  c43: 83.9000,
+  c44: 14.2000,
+  c45: 44.2000,
+  c46: 74.2000,
+  c47: 4.5000,
+  c48: 34.5000,
+  c49: 64.5000,
+  c50: 94.5000,
+  c51: 24.8000,
+  c52: 54.8000,
+  c53: 84.8000,
+  c54: 15.1000,
+  c55: 45.1000,
+  c56: 75.1000,
+  c57: 5.4000,
+  c58: 35.4000,
+  c59: 65.4000,
+  c60: 95.4000,
+  c61: 25.7000,
+  c62: 55.7000,
+  c63: 85.7000,
+  c64: 16.0000,
+  c65: 46.0000,
+  c66: 76.0000,
+  c67: 6.3000,
+  c68: 36.3000,
+  c69: 66.3000,
+  c70: 96.3000,
+  c71: 26.6000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_119_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_119_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_119_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_119_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_119_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_119_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_119_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_119_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_119_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_119_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 120 — NSW/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_120_META = {
+  id: 'kpi_120',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 118937,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_120_COEF = {
+  c0: 88.2000,
+  c1: 17.9000,
+  c2: 47.3000,
+  c3: 76.7000,
+  c4: 6.4000,
+  c5: 35.8000,
+  c6: 65.2000,
+  c7: 94.6000,
+  c8: 24.3000,
+  c9: 53.7000,
+  c10: 83.1000,
+  c11: 12.8000,
+  c12: 42.2000,
+  c13: 71.6000,
+  c14: 1.3000,
+  c15: 30.7000,
+  c16: 60.1000,
+  c17: 89.5000,
+  c18: 19.2000,
+  c19: 48.6000,
+  c20: 78.0000,
+  c21: 7.7000,
+  c22: 37.1000,
+  c23: 66.5000,
+  c24: 95.9000,
+  c25: 25.6000,
+  c26: 55.0000,
+  c27: 84.4000,
+  c28: 14.1000,
+  c29: 43.5000,
+  c30: 72.9000,
+  c31: 2.6000,
+  c32: 32.0000,
+  c33: 61.4000,
+  c34: 90.8000,
+  c35: 20.5000,
+  c36: 49.9000,
+  c37: 79.3000,
+  c38: 9.0000,
+  c39: 38.4000,
+  c40: 67.8000,
+  c41: 97.2000,
+  c42: 26.9000,
+  c43: 56.3000,
+  c44: 85.7000,
+  c45: 15.4000,
+  c46: 44.8000,
+  c47: 74.2000,
+  c48: 3.9000,
+  c49: 33.3000,
+  c50: 62.7000,
+  c51: 92.1000,
+  c52: 21.8000,
+  c53: 51.2000,
+  c54: 80.6000,
+  c55: 10.3000,
+  c56: 39.7000,
+  c57: 69.1000,
+  c58: 98.5000,
+  c59: 28.2000,
+  c60: 57.6000,
+  c61: 87.0000,
+  c62: 16.7000,
+  c63: 46.1000,
+  c64: 75.5000,
+  c65: 5.2000,
+  c66: 34.6000,
+  c67: 64.0000,
+  c68: 93.4000,
+  c69: 23.1000,
+  c70: 52.5000,
+  c71: 81.9000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_120_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_120_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_120_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_120_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_120_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_120_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_120_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_120_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_120_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_120_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 121 — VIC/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_121_META = {
+  id: 'kpi_121',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 119928,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_121_COEF = {
+  c0: 86.4000,
+  c1: 15.5000,
+  c2: 44.3000,
+  c3: 73.1000,
+  c4: 2.2000,
+  c5: 31.0000,
+  c6: 59.8000,
+  c7: 88.6000,
+  c8: 17.7000,
+  c9: 46.5000,
+  c10: 75.3000,
+  c11: 4.4000,
+  c12: 33.2000,
+  c13: 62.0000,
+  c14: 90.8000,
+  c15: 19.9000,
+  c16: 48.7000,
+  c17: 77.5000,
+  c18: 6.6000,
+  c19: 35.4000,
+  c20: 64.2000,
+  c21: 93.0000,
+  c22: 22.1000,
+  c23: 50.9000,
+  c24: 79.7000,
+  c25: 8.8000,
+  c26: 37.6000,
+  c27: 66.4000,
+  c28: 95.2000,
+  c29: 24.3000,
+  c30: 53.1000,
+  c31: 81.9000,
+  c32: 11.0000,
+  c33: 39.8000,
+  c34: 68.6000,
+  c35: 97.4000,
+  c36: 26.5000,
+  c37: 55.3000,
+  c38: 84.1000,
+  c39: 13.2000,
+  c40: 42.0000,
+  c41: 70.8000,
+  c42: 99.6000,
+  c43: 28.7000,
+  c44: 57.5000,
+  c45: 86.3000,
+  c46: 15.4000,
+  c47: 44.2000,
+  c48: 73.0000,
+  c49: 2.1000,
+  c50: 30.9000,
+  c51: 59.7000,
+  c52: 88.5000,
+  c53: 17.6000,
+  c54: 46.4000,
+  c55: 75.2000,
+  c56: 4.3000,
+  c57: 33.1000,
+  c58: 61.9000,
+  c59: 90.7000,
+  c60: 19.8000,
+  c61: 48.6000,
+  c62: 77.4000,
+  c63: 6.5000,
+  c64: 35.3000,
+  c65: 64.1000,
+  c66: 92.9000,
+  c67: 22.0000,
+  c68: 50.8000,
+  c69: 79.6000,
+  c70: 8.7000,
+  c71: 37.5000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_121_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_121_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_121_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_121_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_121_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_121_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_121_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_121_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_121_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_121_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 122 — QLD/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_122_META = {
+  id: 'kpi_122',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 120919,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_122_COEF = {
+  c0: 84.6000,
+  c1: 13.1000,
+  c2: 41.3000,
+  c3: 69.5000,
+  c4: 97.7000,
+  c5: 26.2000,
+  c6: 54.4000,
+  c7: 82.6000,
+  c8: 11.1000,
+  c9: 39.3000,
+  c10: 67.5000,
+  c11: 95.7000,
+  c12: 24.2000,
+  c13: 52.4000,
+  c14: 80.6000,
+  c15: 9.1000,
+  c16: 37.3000,
+  c17: 65.5000,
+  c18: 93.7000,
+  c19: 22.2000,
+  c20: 50.4000,
+  c21: 78.6000,
+  c22: 7.1000,
+  c23: 35.3000,
+  c24: 63.5000,
+  c25: 91.7000,
+  c26: 20.2000,
+  c27: 48.4000,
+  c28: 76.6000,
+  c29: 5.1000,
+  c30: 33.3000,
+  c31: 61.5000,
+  c32: 89.7000,
+  c33: 18.2000,
+  c34: 46.4000,
+  c35: 74.6000,
+  c36: 3.1000,
+  c37: 31.3000,
+  c38: 59.5000,
+  c39: 87.7000,
+  c40: 16.2000,
+  c41: 44.4000,
+  c42: 72.6000,
+  c43: 1.1000,
+  c44: 29.3000,
+  c45: 57.5000,
+  c46: 85.7000,
+  c47: 14.2000,
+  c48: 42.4000,
+  c49: 70.6000,
+  c50: 98.8000,
+  c51: 27.3000,
+  c52: 55.5000,
+  c53: 83.7000,
+  c54: 12.2000,
+  c55: 40.4000,
+  c56: 68.6000,
+  c57: 96.8000,
+  c58: 25.3000,
+  c59: 53.5000,
+  c60: 81.7000,
+  c61: 10.2000,
+  c62: 38.4000,
+  c63: 66.6000,
+  c64: 94.8000,
+  c65: 23.3000,
+  c66: 51.5000,
+  c67: 79.7000,
+  c68: 8.2000,
+  c69: 36.4000,
+  c70: 64.6000,
+  c71: 92.8000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_122_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_122_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_122_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_122_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_122_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_122_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_122_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_122_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_122_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_122_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 123 — WA/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_123_META = {
+  id: 'kpi_123',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 121910,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_123_COEF = {
+  c0: 82.8000,
+  c1: 10.7000,
+  c2: 38.3000,
+  c3: 65.9000,
+  c4: 93.5000,
+  c5: 21.4000,
+  c6: 49.0000,
+  c7: 76.6000,
+  c8: 4.5000,
+  c9: 32.1000,
+  c10: 59.7000,
+  c11: 87.3000,
+  c12: 15.2000,
+  c13: 42.8000,
+  c14: 70.4000,
+  c15: 98.0000,
+  c16: 25.9000,
+  c17: 53.5000,
+  c18: 81.1000,
+  c19: 9.0000,
+  c20: 36.6000,
+  c21: 64.2000,
+  c22: 91.8000,
+  c23: 19.7000,
+  c24: 47.3000,
+  c25: 74.9000,
+  c26: 2.8000,
+  c27: 30.4000,
+  c28: 58.0000,
+  c29: 85.6000,
+  c30: 13.5000,
+  c31: 41.1000,
+  c32: 68.7000,
+  c33: 96.3000,
+  c34: 24.2000,
+  c35: 51.8000,
+  c36: 79.4000,
+  c37: 7.3000,
+  c38: 34.9000,
+  c39: 62.5000,
+  c40: 90.1000,
+  c41: 18.0000,
+  c42: 45.6000,
+  c43: 73.2000,
+  c44: 1.1000,
+  c45: 28.7000,
+  c46: 56.3000,
+  c47: 83.9000,
+  c48: 11.8000,
+  c49: 39.4000,
+  c50: 67.0000,
+  c51: 94.6000,
+  c52: 22.5000,
+  c53: 50.1000,
+  c54: 77.7000,
+  c55: 5.6000,
+  c56: 33.2000,
+  c57: 60.8000,
+  c58: 88.4000,
+  c59: 16.3000,
+  c60: 43.9000,
+  c61: 71.5000,
+  c62: 99.1000,
+  c63: 27.0000,
+  c64: 54.6000,
+  c65: 82.2000,
+  c66: 10.1000,
+  c67: 37.7000,
+  c68: 65.3000,
+  c69: 92.9000,
+  c70: 20.8000,
+  c71: 48.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_123_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_123_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_123_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_123_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_123_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_123_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_123_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_123_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_123_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_123_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 124 — SA/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_124_META = {
+  id: 'kpi_124',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 122901,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_124_COEF = {
+  c0: 81.0000,
+  c1: 8.3000,
+  c2: 35.3000,
+  c3: 62.3000,
+  c4: 89.3000,
+  c5: 16.6000,
+  c6: 43.6000,
+  c7: 70.6000,
+  c8: 97.6000,
+  c9: 24.9000,
+  c10: 51.9000,
+  c11: 78.9000,
+  c12: 6.2000,
+  c13: 33.2000,
+  c14: 60.2000,
+  c15: 87.2000,
+  c16: 14.5000,
+  c17: 41.5000,
+  c18: 68.5000,
+  c19: 95.5000,
+  c20: 22.8000,
+  c21: 49.8000,
+  c22: 76.8000,
+  c23: 4.1000,
+  c24: 31.1000,
+  c25: 58.1000,
+  c26: 85.1000,
+  c27: 12.4000,
+  c28: 39.4000,
+  c29: 66.4000,
+  c30: 93.4000,
+  c31: 20.7000,
+  c32: 47.7000,
+  c33: 74.7000,
+  c34: 2.0000,
+  c35: 29.0000,
+  c36: 56.0000,
+  c37: 83.0000,
+  c38: 10.3000,
+  c39: 37.3000,
+  c40: 64.3000,
+  c41: 91.3000,
+  c42: 18.6000,
+  c43: 45.6000,
+  c44: 72.6000,
+  c45: 99.6000,
+  c46: 26.9000,
+  c47: 53.9000,
+  c48: 80.9000,
+  c49: 8.2000,
+  c50: 35.2000,
+  c51: 62.2000,
+  c52: 89.2000,
+  c53: 16.5000,
+  c54: 43.5000,
+  c55: 70.5000,
+  c56: 97.5000,
+  c57: 24.8000,
+  c58: 51.8000,
+  c59: 78.8000,
+  c60: 6.1000,
+  c61: 33.1000,
+  c62: 60.1000,
+  c63: 87.1000,
+  c64: 14.4000,
+  c65: 41.4000,
+  c66: 68.4000,
+  c67: 95.4000,
+  c68: 22.7000,
+  c69: 49.7000,
+  c70: 76.7000,
+  c71: 4.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_124_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_124_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_124_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_124_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_124_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_124_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_124_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_124_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_124_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_124_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 125 — TAS/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_125_META = {
+  id: 'kpi_125',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 123892,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_125_COEF = {
+  c0: 79.2000,
+  c1: 5.9000,
+  c2: 32.3000,
+  c3: 58.7000,
+  c4: 85.1000,
+  c5: 11.8000,
+  c6: 38.2000,
+  c7: 64.6000,
+  c8: 91.0000,
+  c9: 17.7000,
+  c10: 44.1000,
+  c11: 70.5000,
+  c12: 96.9000,
+  c13: 23.6000,
+  c14: 50.0000,
+  c15: 76.4000,
+  c16: 3.1000,
+  c17: 29.5000,
+  c18: 55.9000,
+  c19: 82.3000,
+  c20: 9.0000,
+  c21: 35.4000,
+  c22: 61.8000,
+  c23: 88.2000,
+  c24: 14.9000,
+  c25: 41.3000,
+  c26: 67.7000,
+  c27: 94.1000,
+  c28: 20.8000,
+  c29: 47.2000,
+  c30: 73.6000,
+  c31: 0.3000,
+  c32: 26.7000,
+  c33: 53.1000,
+  c34: 79.5000,
+  c35: 6.2000,
+  c36: 32.6000,
+  c37: 59.0000,
+  c38: 85.4000,
+  c39: 12.1000,
+  c40: 38.5000,
+  c41: 64.9000,
+  c42: 91.3000,
+  c43: 18.0000,
+  c44: 44.4000,
+  c45: 70.8000,
+  c46: 97.2000,
+  c47: 23.9000,
+  c48: 50.3000,
+  c49: 76.7000,
+  c50: 3.4000,
+  c51: 29.8000,
+  c52: 56.2000,
+  c53: 82.6000,
+  c54: 9.3000,
+  c55: 35.7000,
+  c56: 62.1000,
+  c57: 88.5000,
+  c58: 15.2000,
+  c59: 41.6000,
+  c60: 68.0000,
+  c61: 94.4000,
+  c62: 21.1000,
+  c63: 47.5000,
+  c64: 73.9000,
+  c65: 0.6000,
+  c66: 27.0000,
+  c67: 53.4000,
+  c68: 79.8000,
+  c69: 6.5000,
+  c70: 32.9000,
+  c71: 59.3000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_125_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_125_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_125_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_125_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_125_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_125_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_125_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_125_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_125_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_125_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 126 — NT/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_126_META = {
+  id: 'kpi_126',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 124883,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_126_COEF = {
+  c0: 77.4000,
+  c1: 3.5000,
+  c2: 29.3000,
+  c3: 55.1000,
+  c4: 80.9000,
+  c5: 7.0000,
+  c6: 32.8000,
+  c7: 58.6000,
+  c8: 84.4000,
+  c9: 10.5000,
+  c10: 36.3000,
+  c11: 62.1000,
+  c12: 87.9000,
+  c13: 14.0000,
+  c14: 39.8000,
+  c15: 65.6000,
+  c16: 91.4000,
+  c17: 17.5000,
+  c18: 43.3000,
+  c19: 69.1000,
+  c20: 94.9000,
+  c21: 21.0000,
+  c22: 46.8000,
+  c23: 72.6000,
+  c24: 98.4000,
+  c25: 24.5000,
+  c26: 50.3000,
+  c27: 76.1000,
+  c28: 2.2000,
+  c29: 28.0000,
+  c30: 53.8000,
+  c31: 79.6000,
+  c32: 5.7000,
+  c33: 31.5000,
+  c34: 57.3000,
+  c35: 83.1000,
+  c36: 9.2000,
+  c37: 35.0000,
+  c38: 60.8000,
+  c39: 86.6000,
+  c40: 12.7000,
+  c41: 38.5000,
+  c42: 64.3000,
+  c43: 90.1000,
+  c44: 16.2000,
+  c45: 42.0000,
+  c46: 67.8000,
+  c47: 93.6000,
+  c48: 19.7000,
+  c49: 45.5000,
+  c50: 71.3000,
+  c51: 97.1000,
+  c52: 23.2000,
+  c53: 49.0000,
+  c54: 74.8000,
+  c55: 0.9000,
+  c56: 26.7000,
+  c57: 52.5000,
+  c58: 78.3000,
+  c59: 4.4000,
+  c60: 30.2000,
+  c61: 56.0000,
+  c62: 81.8000,
+  c63: 7.9000,
+  c64: 33.7000,
+  c65: 59.5000,
+  c66: 85.3000,
+  c67: 11.4000,
+  c68: 37.2000,
+  c69: 63.0000,
+  c70: 88.8000,
+  c71: 14.9000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_126_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_126_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_126_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_126_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_126_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_126_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_126_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_126_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_126_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_126_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 127 — ACT/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_127_META = {
+  id: 'kpi_127',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 125874,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_127_COEF = {
+  c0: 75.6000,
+  c1: 1.1000,
+  c2: 26.3000,
+  c3: 51.5000,
+  c4: 76.7000,
+  c5: 2.2000,
+  c6: 27.4000,
+  c7: 52.6000,
+  c8: 77.8000,
+  c9: 3.3000,
+  c10: 28.5000,
+  c11: 53.7000,
+  c12: 78.9000,
+  c13: 4.4000,
+  c14: 29.6000,
+  c15: 54.8000,
+  c16: 80.0000,
+  c17: 5.5000,
+  c18: 30.7000,
+  c19: 55.9000,
+  c20: 81.1000,
+  c21: 6.6000,
+  c22: 31.8000,
+  c23: 57.0000,
+  c24: 82.2000,
+  c25: 7.7000,
+  c26: 32.9000,
+  c27: 58.1000,
+  c28: 83.3000,
+  c29: 8.8000,
+  c30: 34.0000,
+  c31: 59.2000,
+  c32: 84.4000,
+  c33: 9.9000,
+  c34: 35.1000,
+  c35: 60.3000,
+  c36: 85.5000,
+  c37: 11.0000,
+  c38: 36.2000,
+  c39: 61.4000,
+  c40: 86.6000,
+  c41: 12.1000,
+  c42: 37.3000,
+  c43: 62.5000,
+  c44: 87.7000,
+  c45: 13.2000,
+  c46: 38.4000,
+  c47: 63.6000,
+  c48: 88.8000,
+  c49: 14.3000,
+  c50: 39.5000,
+  c51: 64.7000,
+  c52: 89.9000,
+  c53: 15.4000,
+  c54: 40.6000,
+  c55: 65.8000,
+  c56: 91.0000,
+  c57: 16.5000,
+  c58: 41.7000,
+  c59: 66.9000,
+  c60: 92.1000,
+  c61: 17.6000,
+  c62: 42.8000,
+  c63: 68.0000,
+  c64: 93.2000,
+  c65: 18.7000,
+  c66: 43.9000,
+  c67: 69.1000,
+  c68: 94.3000,
+  c69: 19.8000,
+  c70: 45.0000,
+  c71: 70.2000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_127_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_127_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_127_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_127_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_127_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_127_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_127_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_127_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_127_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_127_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 128 — NSW/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_128_META = {
+  id: 'kpi_128',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 126865,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_128_COEF = {
+  c0: 73.8000,
+  c1: 98.4000,
+  c2: 23.3000,
+  c3: 47.9000,
+  c4: 72.5000,
+  c5: 97.1000,
+  c6: 22.0000,
+  c7: 46.6000,
+  c8: 71.2000,
+  c9: 95.8000,
+  c10: 20.7000,
+  c11: 45.3000,
+  c12: 69.9000,
+  c13: 94.5000,
+  c14: 19.4000,
+  c15: 44.0000,
+  c16: 68.6000,
+  c17: 93.2000,
+  c18: 18.1000,
+  c19: 42.7000,
+  c20: 67.3000,
+  c21: 91.9000,
+  c22: 16.8000,
+  c23: 41.4000,
+  c24: 66.0000,
+  c25: 90.6000,
+  c26: 15.5000,
+  c27: 40.1000,
+  c28: 64.7000,
+  c29: 89.3000,
+  c30: 14.2000,
+  c31: 38.8000,
+  c32: 63.4000,
+  c33: 88.0000,
+  c34: 12.9000,
+  c35: 37.5000,
+  c36: 62.1000,
+  c37: 86.7000,
+  c38: 11.6000,
+  c39: 36.2000,
+  c40: 60.8000,
+  c41: 85.4000,
+  c42: 10.3000,
+  c43: 34.9000,
+  c44: 59.5000,
+  c45: 84.1000,
+  c46: 9.0000,
+  c47: 33.6000,
+  c48: 58.2000,
+  c49: 82.8000,
+  c50: 7.7000,
+  c51: 32.3000,
+  c52: 56.9000,
+  c53: 81.5000,
+  c54: 6.4000,
+  c55: 31.0000,
+  c56: 55.6000,
+  c57: 80.2000,
+  c58: 5.1000,
+  c59: 29.7000,
+  c60: 54.3000,
+  c61: 78.9000,
+  c62: 3.8000,
+  c63: 28.4000,
+  c64: 53.0000,
+  c65: 77.6000,
+  c66: 2.5000,
+  c67: 27.1000,
+  c68: 51.7000,
+  c69: 76.3000,
+  c70: 1.2000,
+  c71: 25.8000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_128_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_128_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_128_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_128_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_128_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_128_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_128_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_128_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_128_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_128_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 129 — VIC/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_129_META = {
+  id: 'kpi_129',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 127856,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_129_COEF = {
+  c0: 72.0000,
+  c1: 96.0000,
+  c2: 20.3000,
+  c3: 44.3000,
+  c4: 68.3000,
+  c5: 92.3000,
+  c6: 16.6000,
+  c7: 40.6000,
+  c8: 64.6000,
+  c9: 88.6000,
+  c10: 12.9000,
+  c11: 36.9000,
+  c12: 60.9000,
+  c13: 84.9000,
+  c14: 9.2000,
+  c15: 33.2000,
+  c16: 57.2000,
+  c17: 81.2000,
+  c18: 5.5000,
+  c19: 29.5000,
+  c20: 53.5000,
+  c21: 77.5000,
+  c22: 1.8000,
+  c23: 25.8000,
+  c24: 49.8000,
+  c25: 73.8000,
+  c26: 97.8000,
+  c27: 22.1000,
+  c28: 46.1000,
+  c29: 70.1000,
+  c30: 94.1000,
+  c31: 18.4000,
+  c32: 42.4000,
+  c33: 66.4000,
+  c34: 90.4000,
+  c35: 14.7000,
+  c36: 38.7000,
+  c37: 62.7000,
+  c38: 86.7000,
+  c39: 11.0000,
+  c40: 35.0000,
+  c41: 59.0000,
+  c42: 83.0000,
+  c43: 7.3000,
+  c44: 31.3000,
+  c45: 55.3000,
+  c46: 79.3000,
+  c47: 3.6000,
+  c48: 27.6000,
+  c49: 51.6000,
+  c50: 75.6000,
+  c51: 99.6000,
+  c52: 23.9000,
+  c53: 47.9000,
+  c54: 71.9000,
+  c55: 95.9000,
+  c56: 20.2000,
+  c57: 44.2000,
+  c58: 68.2000,
+  c59: 92.2000,
+  c60: 16.5000,
+  c61: 40.5000,
+  c62: 64.5000,
+  c63: 88.5000,
+  c64: 12.8000,
+  c65: 36.8000,
+  c66: 60.8000,
+  c67: 84.8000,
+  c68: 9.1000,
+  c69: 33.1000,
+  c70: 57.1000,
+  c71: 81.1000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_129_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_129_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_129_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_129_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_129_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_129_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_129_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_129_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_129_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_129_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 130 — QLD/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_130_META = {
+  id: 'kpi_130',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 128847,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_130_COEF = {
+  c0: 70.2000,
+  c1: 93.6000,
+  c2: 17.3000,
+  c3: 40.7000,
+  c4: 64.1000,
+  c5: 87.5000,
+  c6: 11.2000,
+  c7: 34.6000,
+  c8: 58.0000,
+  c9: 81.4000,
+  c10: 5.1000,
+  c11: 28.5000,
+  c12: 51.9000,
+  c13: 75.3000,
+  c14: 98.7000,
+  c15: 22.4000,
+  c16: 45.8000,
+  c17: 69.2000,
+  c18: 92.6000,
+  c19: 16.3000,
+  c20: 39.7000,
+  c21: 63.1000,
+  c22: 86.5000,
+  c23: 10.2000,
+  c24: 33.6000,
+  c25: 57.0000,
+  c26: 80.4000,
+  c27: 4.1000,
+  c28: 27.5000,
+  c29: 50.9000,
+  c30: 74.3000,
+  c31: 97.7000,
+  c32: 21.4000,
+  c33: 44.8000,
+  c34: 68.2000,
+  c35: 91.6000,
+  c36: 15.3000,
+  c37: 38.7000,
+  c38: 62.1000,
+  c39: 85.5000,
+  c40: 9.2000,
+  c41: 32.6000,
+  c42: 56.0000,
+  c43: 79.4000,
+  c44: 3.1000,
+  c45: 26.5000,
+  c46: 49.9000,
+  c47: 73.3000,
+  c48: 96.7000,
+  c49: 20.4000,
+  c50: 43.8000,
+  c51: 67.2000,
+  c52: 90.6000,
+  c53: 14.3000,
+  c54: 37.7000,
+  c55: 61.1000,
+  c56: 84.5000,
+  c57: 8.2000,
+  c58: 31.6000,
+  c59: 55.0000,
+  c60: 78.4000,
+  c61: 2.1000,
+  c62: 25.5000,
+  c63: 48.9000,
+  c64: 72.3000,
+  c65: 95.7000,
+  c66: 19.4000,
+  c67: 42.8000,
+  c68: 66.2000,
+  c69: 89.6000,
+  c70: 13.3000,
+  c71: 36.7000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_130_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_130_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_130_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_130_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_130_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_130_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_130_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_130_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_130_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_130_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 131 — WA/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_131_META = {
+  id: 'kpi_131',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 129838,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_131_COEF = {
+  c0: 68.4000,
+  c1: 91.2000,
+  c2: 14.3000,
+  c3: 37.1000,
+  c4: 59.9000,
+  c5: 82.7000,
+  c6: 5.8000,
+  c7: 28.6000,
+  c8: 51.4000,
+  c9: 74.2000,
+  c10: 97.0000,
+  c11: 20.1000,
+  c12: 42.9000,
+  c13: 65.7000,
+  c14: 88.5000,
+  c15: 11.6000,
+  c16: 34.4000,
+  c17: 57.2000,
+  c18: 80.0000,
+  c19: 3.1000,
+  c20: 25.9000,
+  c21: 48.7000,
+  c22: 71.5000,
+  c23: 94.3000,
+  c24: 17.4000,
+  c25: 40.2000,
+  c26: 63.0000,
+  c27: 85.8000,
+  c28: 8.9000,
+  c29: 31.7000,
+  c30: 54.5000,
+  c31: 77.3000,
+  c32: 0.4000,
+  c33: 23.2000,
+  c34: 46.0000,
+  c35: 68.8000,
+  c36: 91.6000,
+  c37: 14.7000,
+  c38: 37.5000,
+  c39: 60.3000,
+  c40: 83.1000,
+  c41: 6.2000,
+  c42: 29.0000,
+  c43: 51.8000,
+  c44: 74.6000,
+  c45: 97.4000,
+  c46: 20.5000,
+  c47: 43.3000,
+  c48: 66.1000,
+  c49: 88.9000,
+  c50: 12.0000,
+  c51: 34.8000,
+  c52: 57.6000,
+  c53: 80.4000,
+  c54: 3.5000,
+  c55: 26.3000,
+  c56: 49.1000,
+  c57: 71.9000,
+  c58: 94.7000,
+  c59: 17.8000,
+  c60: 40.6000,
+  c61: 63.4000,
+  c62: 86.2000,
+  c63: 9.3000,
+  c64: 32.1000,
+  c65: 54.9000,
+  c66: 77.7000,
+  c67: 0.8000,
+  c68: 23.6000,
+  c69: 46.4000,
+  c70: 69.2000,
+  c71: 92.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_131_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_131_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_131_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_131_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_131_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_131_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_131_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_131_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_131_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_131_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 132 — SA/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_132_META = {
+  id: 'kpi_132',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 130829,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_132_COEF = {
+  c0: 66.6000,
+  c1: 88.8000,
+  c2: 11.3000,
+  c3: 33.5000,
+  c4: 55.7000,
+  c5: 77.9000,
+  c6: 0.4000,
+  c7: 22.6000,
+  c8: 44.8000,
+  c9: 67.0000,
+  c10: 89.2000,
+  c11: 11.7000,
+  c12: 33.9000,
+  c13: 56.1000,
+  c14: 78.3000,
+  c15: 0.8000,
+  c16: 23.0000,
+  c17: 45.2000,
+  c18: 67.4000,
+  c19: 89.6000,
+  c20: 12.1000,
+  c21: 34.3000,
+  c22: 56.5000,
+  c23: 78.7000,
+  c24: 1.2000,
+  c25: 23.4000,
+  c26: 45.6000,
+  c27: 67.8000,
+  c28: 90.0000,
+  c29: 12.5000,
+  c30: 34.7000,
+  c31: 56.9000,
+  c32: 79.1000,
+  c33: 1.6000,
+  c34: 23.8000,
+  c35: 46.0000,
+  c36: 68.2000,
+  c37: 90.4000,
+  c38: 12.9000,
+  c39: 35.1000,
+  c40: 57.3000,
+  c41: 79.5000,
+  c42: 2.0000,
+  c43: 24.2000,
+  c44: 46.4000,
+  c45: 68.6000,
+  c46: 90.8000,
+  c47: 13.3000,
+  c48: 35.5000,
+  c49: 57.7000,
+  c50: 79.9000,
+  c51: 2.4000,
+  c52: 24.6000,
+  c53: 46.8000,
+  c54: 69.0000,
+  c55: 91.2000,
+  c56: 13.7000,
+  c57: 35.9000,
+  c58: 58.1000,
+  c59: 80.3000,
+  c60: 2.8000,
+  c61: 25.0000,
+  c62: 47.2000,
+  c63: 69.4000,
+  c64: 91.6000,
+  c65: 14.1000,
+  c66: 36.3000,
+  c67: 58.5000,
+  c68: 80.7000,
+  c69: 3.2000,
+  c70: 25.4000,
+  c71: 47.6000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_132_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_132_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_132_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_132_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_132_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_132_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_132_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_132_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_132_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_132_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 133 — TAS/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_133_META = {
+  id: 'kpi_133',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 131820,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_133_COEF = {
+  c0: 64.8000,
+  c1: 86.4000,
+  c2: 8.3000,
+  c3: 29.9000,
+  c4: 51.5000,
+  c5: 73.1000,
+  c6: 94.7000,
+  c7: 16.6000,
+  c8: 38.2000,
+  c9: 59.8000,
+  c10: 81.4000,
+  c11: 3.3000,
+  c12: 24.9000,
+  c13: 46.5000,
+  c14: 68.1000,
+  c15: 89.7000,
+  c16: 11.6000,
+  c17: 33.2000,
+  c18: 54.8000,
+  c19: 76.4000,
+  c20: 98.0000,
+  c21: 19.9000,
+  c22: 41.5000,
+  c23: 63.1000,
+  c24: 84.7000,
+  c25: 6.6000,
+  c26: 28.2000,
+  c27: 49.8000,
+  c28: 71.4000,
+  c29: 93.0000,
+  c30: 14.9000,
+  c31: 36.5000,
+  c32: 58.1000,
+  c33: 79.7000,
+  c34: 1.6000,
+  c35: 23.2000,
+  c36: 44.8000,
+  c37: 66.4000,
+  c38: 88.0000,
+  c39: 9.9000,
+  c40: 31.5000,
+  c41: 53.1000,
+  c42: 74.7000,
+  c43: 96.3000,
+  c44: 18.2000,
+  c45: 39.8000,
+  c46: 61.4000,
+  c47: 83.0000,
+  c48: 4.9000,
+  c49: 26.5000,
+  c50: 48.1000,
+  c51: 69.7000,
+  c52: 91.3000,
+  c53: 13.2000,
+  c54: 34.8000,
+  c55: 56.4000,
+  c56: 78.0000,
+  c57: 99.6000,
+  c58: 21.5000,
+  c59: 43.1000,
+  c60: 64.7000,
+  c61: 86.3000,
+  c62: 8.2000,
+  c63: 29.8000,
+  c64: 51.4000,
+  c65: 73.0000,
+  c66: 94.6000,
+  c67: 16.5000,
+  c68: 38.1000,
+  c69: 59.7000,
+  c70: 81.3000,
+  c71: 3.2000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_133_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_133_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_133_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_133_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_133_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_133_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_133_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_133_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_133_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_133_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 134 — NT/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_134_META = {
+  id: 'kpi_134',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 132811,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_134_COEF = {
+  c0: 63.0000,
+  c1: 84.0000,
+  c2: 5.3000,
+  c3: 26.3000,
+  c4: 47.3000,
+  c5: 68.3000,
+  c6: 89.3000,
+  c7: 10.6000,
+  c8: 31.6000,
+  c9: 52.6000,
+  c10: 73.6000,
+  c11: 94.6000,
+  c12: 15.9000,
+  c13: 36.9000,
+  c14: 57.9000,
+  c15: 78.9000,
+  c16: 0.2000,
+  c17: 21.2000,
+  c18: 42.2000,
+  c19: 63.2000,
+  c20: 84.2000,
+  c21: 5.5000,
+  c22: 26.5000,
+  c23: 47.5000,
+  c24: 68.5000,
+  c25: 89.5000,
+  c26: 10.8000,
+  c27: 31.8000,
+  c28: 52.8000,
+  c29: 73.8000,
+  c30: 94.8000,
+  c31: 16.1000,
+  c32: 37.1000,
+  c33: 58.1000,
+  c34: 79.1000,
+  c35: 0.4000,
+  c36: 21.4000,
+  c37: 42.4000,
+  c38: 63.4000,
+  c39: 84.4000,
+  c40: 5.7000,
+  c41: 26.7000,
+  c42: 47.7000,
+  c43: 68.7000,
+  c44: 89.7000,
+  c45: 11.0000,
+  c46: 32.0000,
+  c47: 53.0000,
+  c48: 74.0000,
+  c49: 95.0000,
+  c50: 16.3000,
+  c51: 37.3000,
+  c52: 58.3000,
+  c53: 79.3000,
+  c54: 0.6000,
+  c55: 21.6000,
+  c56: 42.6000,
+  c57: 63.6000,
+  c58: 84.6000,
+  c59: 5.9000,
+  c60: 26.9000,
+  c61: 47.9000,
+  c62: 68.9000,
+  c63: 89.9000,
+  c64: 11.2000,
+  c65: 32.2000,
+  c66: 53.2000,
+  c67: 74.2000,
+  c68: 95.2000,
+  c69: 16.5000,
+  c70: 37.5000,
+  c71: 58.5000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_134_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_134_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_134_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_134_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_134_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_134_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_134_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_134_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_134_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_134_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 135 — ACT/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_135_META = {
+  id: 'kpi_135',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 133802,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_135_COEF = {
+  c0: 61.2000,
+  c1: 81.6000,
+  c2: 2.3000,
+  c3: 22.7000,
+  c4: 43.1000,
+  c5: 63.5000,
+  c6: 83.9000,
+  c7: 4.6000,
+  c8: 25.0000,
+  c9: 45.4000,
+  c10: 65.8000,
+  c11: 86.2000,
+  c12: 6.9000,
+  c13: 27.3000,
+  c14: 47.7000,
+  c15: 68.1000,
+  c16: 88.5000,
+  c17: 9.2000,
+  c18: 29.6000,
+  c19: 50.0000,
+  c20: 70.4000,
+  c21: 90.8000,
+  c22: 11.5000,
+  c23: 31.9000,
+  c24: 52.3000,
+  c25: 72.7000,
+  c26: 93.1000,
+  c27: 13.8000,
+  c28: 34.2000,
+  c29: 54.6000,
+  c30: 75.0000,
+  c31: 95.4000,
+  c32: 16.1000,
+  c33: 36.5000,
+  c34: 56.9000,
+  c35: 77.3000,
+  c36: 97.7000,
+  c37: 18.4000,
+  c38: 38.8000,
+  c39: 59.2000,
+  c40: 79.6000,
+  c41: 0.3000,
+  c42: 20.7000,
+  c43: 41.1000,
+  c44: 61.5000,
+  c45: 81.9000,
+  c46: 2.6000,
+  c47: 23.0000,
+  c48: 43.4000,
+  c49: 63.8000,
+  c50: 84.2000,
+  c51: 4.9000,
+  c52: 25.3000,
+  c53: 45.7000,
+  c54: 66.1000,
+  c55: 86.5000,
+  c56: 7.2000,
+  c57: 27.6000,
+  c58: 48.0000,
+  c59: 68.4000,
+  c60: 88.8000,
+  c61: 9.5000,
+  c62: 29.9000,
+  c63: 50.3000,
+  c64: 70.7000,
+  c65: 91.1000,
+  c66: 11.8000,
+  c67: 32.2000,
+  c68: 52.6000,
+  c69: 73.0000,
+  c70: 93.4000,
+  c71: 14.1000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_135_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_135_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_135_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_135_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_135_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_135_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_135_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_135_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_135_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_135_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 136 — NSW/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_136_META = {
+  id: 'kpi_136',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 134793,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_136_COEF = {
+  c0: 59.4000,
+  c1: 79.2000,
+  c2: 99.0000,
+  c3: 19.1000,
+  c4: 38.9000,
+  c5: 58.7000,
+  c6: 78.5000,
+  c7: 98.3000,
+  c8: 18.4000,
+  c9: 38.2000,
+  c10: 58.0000,
+  c11: 77.8000,
+  c12: 97.6000,
+  c13: 17.7000,
+  c14: 37.5000,
+  c15: 57.3000,
+  c16: 77.1000,
+  c17: 96.9000,
+  c18: 17.0000,
+  c19: 36.8000,
+  c20: 56.6000,
+  c21: 76.4000,
+  c22: 96.2000,
+  c23: 16.3000,
+  c24: 36.1000,
+  c25: 55.9000,
+  c26: 75.7000,
+  c27: 95.5000,
+  c28: 15.6000,
+  c29: 35.4000,
+  c30: 55.2000,
+  c31: 75.0000,
+  c32: 94.8000,
+  c33: 14.9000,
+  c34: 34.7000,
+  c35: 54.5000,
+  c36: 74.3000,
+  c37: 94.1000,
+  c38: 14.2000,
+  c39: 34.0000,
+  c40: 53.8000,
+  c41: 73.6000,
+  c42: 93.4000,
+  c43: 13.5000,
+  c44: 33.3000,
+  c45: 53.1000,
+  c46: 72.9000,
+  c47: 92.7000,
+  c48: 12.8000,
+  c49: 32.6000,
+  c50: 52.4000,
+  c51: 72.2000,
+  c52: 92.0000,
+  c53: 12.1000,
+  c54: 31.9000,
+  c55: 51.7000,
+  c56: 71.5000,
+  c57: 91.3000,
+  c58: 11.4000,
+  c59: 31.2000,
+  c60: 51.0000,
+  c61: 70.8000,
+  c62: 90.6000,
+  c63: 10.7000,
+  c64: 30.5000,
+  c65: 50.3000,
+  c66: 70.1000,
+  c67: 89.9000,
+  c68: 10.0000,
+  c69: 29.8000,
+  c70: 49.6000,
+  c71: 69.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_136_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_136_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_136_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_136_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_136_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_136_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_136_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_136_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_136_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_136_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 137 — VIC/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_137_META = {
+  id: 'kpi_137',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 135784,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_137_COEF = {
+  c0: 57.6000,
+  c1: 76.8000,
+  c2: 96.0000,
+  c3: 15.5000,
+  c4: 34.7000,
+  c5: 53.9000,
+  c6: 73.1000,
+  c7: 92.3000,
+  c8: 11.8000,
+  c9: 31.0000,
+  c10: 50.2000,
+  c11: 69.4000,
+  c12: 88.6000,
+  c13: 8.1000,
+  c14: 27.3000,
+  c15: 46.5000,
+  c16: 65.7000,
+  c17: 84.9000,
+  c18: 4.4000,
+  c19: 23.6000,
+  c20: 42.8000,
+  c21: 62.0000,
+  c22: 81.2000,
+  c23: 0.7000,
+  c24: 19.9000,
+  c25: 39.1000,
+  c26: 58.3000,
+  c27: 77.5000,
+  c28: 96.7000,
+  c29: 16.2000,
+  c30: 35.4000,
+  c31: 54.6000,
+  c32: 73.8000,
+  c33: 93.0000,
+  c34: 12.5000,
+  c35: 31.7000,
+  c36: 50.9000,
+  c37: 70.1000,
+  c38: 89.3000,
+  c39: 8.8000,
+  c40: 28.0000,
+  c41: 47.2000,
+  c42: 66.4000,
+  c43: 85.6000,
+  c44: 5.1000,
+  c45: 24.3000,
+  c46: 43.5000,
+  c47: 62.7000,
+  c48: 81.9000,
+  c49: 1.4000,
+  c50: 20.6000,
+  c51: 39.8000,
+  c52: 59.0000,
+  c53: 78.2000,
+  c54: 97.4000,
+  c55: 16.9000,
+  c56: 36.1000,
+  c57: 55.3000,
+  c58: 74.5000,
+  c59: 93.7000,
+  c60: 13.2000,
+  c61: 32.4000,
+  c62: 51.6000,
+  c63: 70.8000,
+  c64: 90.0000,
+  c65: 9.5000,
+  c66: 28.7000,
+  c67: 47.9000,
+  c68: 67.1000,
+  c69: 86.3000,
+  c70: 5.8000,
+  c71: 25.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_137_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_137_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_137_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_137_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_137_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_137_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_137_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_137_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_137_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_137_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 138 — QLD/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_138_META = {
+  id: 'kpi_138',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 136775,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_138_COEF = {
+  c0: 55.8000,
+  c1: 74.4000,
+  c2: 93.0000,
+  c3: 11.9000,
+  c4: 30.5000,
+  c5: 49.1000,
+  c6: 67.7000,
+  c7: 86.3000,
+  c8: 5.2000,
+  c9: 23.8000,
+  c10: 42.4000,
+  c11: 61.0000,
+  c12: 79.6000,
+  c13: 98.2000,
+  c14: 17.1000,
+  c15: 35.7000,
+  c16: 54.3000,
+  c17: 72.9000,
+  c18: 91.5000,
+  c19: 10.4000,
+  c20: 29.0000,
+  c21: 47.6000,
+  c22: 66.2000,
+  c23: 84.8000,
+  c24: 3.7000,
+  c25: 22.3000,
+  c26: 40.9000,
+  c27: 59.5000,
+  c28: 78.1000,
+  c29: 96.7000,
+  c30: 15.6000,
+  c31: 34.2000,
+  c32: 52.8000,
+  c33: 71.4000,
+  c34: 90.0000,
+  c35: 8.9000,
+  c36: 27.5000,
+  c37: 46.1000,
+  c38: 64.7000,
+  c39: 83.3000,
+  c40: 2.2000,
+  c41: 20.8000,
+  c42: 39.4000,
+  c43: 58.0000,
+  c44: 76.6000,
+  c45: 95.2000,
+  c46: 14.1000,
+  c47: 32.7000,
+  c48: 51.3000,
+  c49: 69.9000,
+  c50: 88.5000,
+  c51: 7.4000,
+  c52: 26.0000,
+  c53: 44.6000,
+  c54: 63.2000,
+  c55: 81.8000,
+  c56: 0.7000,
+  c57: 19.3000,
+  c58: 37.9000,
+  c59: 56.5000,
+  c60: 75.1000,
+  c61: 93.7000,
+  c62: 12.6000,
+  c63: 31.2000,
+  c64: 49.8000,
+  c65: 68.4000,
+  c66: 87.0000,
+  c67: 5.9000,
+  c68: 24.5000,
+  c69: 43.1000,
+  c70: 61.7000,
+  c71: 80.3000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_138_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_138_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_138_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_138_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_138_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_138_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_138_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_138_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_138_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_138_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 139 — WA/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_139_META = {
+  id: 'kpi_139',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 137766,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_139_COEF = {
+  c0: 54.0000,
+  c1: 72.0000,
+  c2: 90.0000,
+  c3: 8.3000,
+  c4: 26.3000,
+  c5: 44.3000,
+  c6: 62.3000,
+  c7: 80.3000,
+  c8: 98.3000,
+  c9: 16.6000,
+  c10: 34.6000,
+  c11: 52.6000,
+  c12: 70.6000,
+  c13: 88.6000,
+  c14: 6.9000,
+  c15: 24.9000,
+  c16: 42.9000,
+  c17: 60.9000,
+  c18: 78.9000,
+  c19: 96.9000,
+  c20: 15.2000,
+  c21: 33.2000,
+  c22: 51.2000,
+  c23: 69.2000,
+  c24: 87.2000,
+  c25: 5.5000,
+  c26: 23.5000,
+  c27: 41.5000,
+  c28: 59.5000,
+  c29: 77.5000,
+  c30: 95.5000,
+  c31: 13.8000,
+  c32: 31.8000,
+  c33: 49.8000,
+  c34: 67.8000,
+  c35: 85.8000,
+  c36: 4.1000,
+  c37: 22.1000,
+  c38: 40.1000,
+  c39: 58.1000,
+  c40: 76.1000,
+  c41: 94.1000,
+  c42: 12.4000,
+  c43: 30.4000,
+  c44: 48.4000,
+  c45: 66.4000,
+  c46: 84.4000,
+  c47: 2.7000,
+  c48: 20.7000,
+  c49: 38.7000,
+  c50: 56.7000,
+  c51: 74.7000,
+  c52: 92.7000,
+  c53: 11.0000,
+  c54: 29.0000,
+  c55: 47.0000,
+  c56: 65.0000,
+  c57: 83.0000,
+  c58: 1.3000,
+  c59: 19.3000,
+  c60: 37.3000,
+  c61: 55.3000,
+  c62: 73.3000,
+  c63: 91.3000,
+  c64: 9.6000,
+  c65: 27.6000,
+  c66: 45.6000,
+  c67: 63.6000,
+  c68: 81.6000,
+  c69: 99.6000,
+  c70: 17.9000,
+  c71: 35.9000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_139_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_139_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_139_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_139_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_139_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_139_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_139_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_139_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_139_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_139_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 140 — SA/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_140_META = {
+  id: 'kpi_140',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 138757,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_140_COEF = {
+  c0: 52.2000,
+  c1: 69.6000,
+  c2: 87.0000,
+  c3: 4.7000,
+  c4: 22.1000,
+  c5: 39.5000,
+  c6: 56.9000,
+  c7: 74.3000,
+  c8: 91.7000,
+  c9: 9.4000,
+  c10: 26.8000,
+  c11: 44.2000,
+  c12: 61.6000,
+  c13: 79.0000,
+  c14: 96.4000,
+  c15: 14.1000,
+  c16: 31.5000,
+  c17: 48.9000,
+  c18: 66.3000,
+  c19: 83.7000,
+  c20: 1.4000,
+  c21: 18.8000,
+  c22: 36.2000,
+  c23: 53.6000,
+  c24: 71.0000,
+  c25: 88.4000,
+  c26: 6.1000,
+  c27: 23.5000,
+  c28: 40.9000,
+  c29: 58.3000,
+  c30: 75.7000,
+  c31: 93.1000,
+  c32: 10.8000,
+  c33: 28.2000,
+  c34: 45.6000,
+  c35: 63.0000,
+  c36: 80.4000,
+  c37: 97.8000,
+  c38: 15.5000,
+  c39: 32.9000,
+  c40: 50.3000,
+  c41: 67.7000,
+  c42: 85.1000,
+  c43: 2.8000,
+  c44: 20.2000,
+  c45: 37.6000,
+  c46: 55.0000,
+  c47: 72.4000,
+  c48: 89.8000,
+  c49: 7.5000,
+  c50: 24.9000,
+  c51: 42.3000,
+  c52: 59.7000,
+  c53: 77.1000,
+  c54: 94.5000,
+  c55: 12.2000,
+  c56: 29.6000,
+  c57: 47.0000,
+  c58: 64.4000,
+  c59: 81.8000,
+  c60: 99.2000,
+  c61: 16.9000,
+  c62: 34.3000,
+  c63: 51.7000,
+  c64: 69.1000,
+  c65: 86.5000,
+  c66: 4.2000,
+  c67: 21.6000,
+  c68: 39.0000,
+  c69: 56.4000,
+  c70: 73.8000,
+  c71: 91.2000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_140_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_140_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_140_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_140_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_140_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_140_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_140_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_140_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_140_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_140_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 141 — TAS/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_141_META = {
+  id: 'kpi_141',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 139748,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_141_COEF = {
+  c0: 50.4000,
+  c1: 67.2000,
+  c2: 84.0000,
+  c3: 1.1000,
+  c4: 17.9000,
+  c5: 34.7000,
+  c6: 51.5000,
+  c7: 68.3000,
+  c8: 85.1000,
+  c9: 2.2000,
+  c10: 19.0000,
+  c11: 35.8000,
+  c12: 52.6000,
+  c13: 69.4000,
+  c14: 86.2000,
+  c15: 3.3000,
+  c16: 20.1000,
+  c17: 36.9000,
+  c18: 53.7000,
+  c19: 70.5000,
+  c20: 87.3000,
+  c21: 4.4000,
+  c22: 21.2000,
+  c23: 38.0000,
+  c24: 54.8000,
+  c25: 71.6000,
+  c26: 88.4000,
+  c27: 5.5000,
+  c28: 22.3000,
+  c29: 39.1000,
+  c30: 55.9000,
+  c31: 72.7000,
+  c32: 89.5000,
+  c33: 6.6000,
+  c34: 23.4000,
+  c35: 40.2000,
+  c36: 57.0000,
+  c37: 73.8000,
+  c38: 90.6000,
+  c39: 7.7000,
+  c40: 24.5000,
+  c41: 41.3000,
+  c42: 58.1000,
+  c43: 74.9000,
+  c44: 91.7000,
+  c45: 8.8000,
+  c46: 25.6000,
+  c47: 42.4000,
+  c48: 59.2000,
+  c49: 76.0000,
+  c50: 92.8000,
+  c51: 9.9000,
+  c52: 26.7000,
+  c53: 43.5000,
+  c54: 60.3000,
+  c55: 77.1000,
+  c56: 93.9000,
+  c57: 11.0000,
+  c58: 27.8000,
+  c59: 44.6000,
+  c60: 61.4000,
+  c61: 78.2000,
+  c62: 95.0000,
+  c63: 12.1000,
+  c64: 28.9000,
+  c65: 45.7000,
+  c66: 62.5000,
+  c67: 79.3000,
+  c68: 96.1000,
+  c69: 13.2000,
+  c70: 30.0000,
+  c71: 46.8000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_141_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_141_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_141_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_141_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_141_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_141_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_141_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_141_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_141_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_141_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 142 — NT/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_142_META = {
+  id: 'kpi_142',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 140739,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_142_COEF = {
+  c0: 48.6000,
+  c1: 64.8000,
+  c2: 81.0000,
+  c3: 97.2000,
+  c4: 13.7000,
+  c5: 29.9000,
+  c6: 46.1000,
+  c7: 62.3000,
+  c8: 78.5000,
+  c9: 94.7000,
+  c10: 11.2000,
+  c11: 27.4000,
+  c12: 43.6000,
+  c13: 59.8000,
+  c14: 76.0000,
+  c15: 92.2000,
+  c16: 8.7000,
+  c17: 24.9000,
+  c18: 41.1000,
+  c19: 57.3000,
+  c20: 73.5000,
+  c21: 89.7000,
+  c22: 6.2000,
+  c23: 22.4000,
+  c24: 38.6000,
+  c25: 54.8000,
+  c26: 71.0000,
+  c27: 87.2000,
+  c28: 3.7000,
+  c29: 19.9000,
+  c30: 36.1000,
+  c31: 52.3000,
+  c32: 68.5000,
+  c33: 84.7000,
+  c34: 1.2000,
+  c35: 17.4000,
+  c36: 33.6000,
+  c37: 49.8000,
+  c38: 66.0000,
+  c39: 82.2000,
+  c40: 98.4000,
+  c41: 14.9000,
+  c42: 31.1000,
+  c43: 47.3000,
+  c44: 63.5000,
+  c45: 79.7000,
+  c46: 95.9000,
+  c47: 12.4000,
+  c48: 28.6000,
+  c49: 44.8000,
+  c50: 61.0000,
+  c51: 77.2000,
+  c52: 93.4000,
+  c53: 9.9000,
+  c54: 26.1000,
+  c55: 42.3000,
+  c56: 58.5000,
+  c57: 74.7000,
+  c58: 90.9000,
+  c59: 7.4000,
+  c60: 23.6000,
+  c61: 39.8000,
+  c62: 56.0000,
+  c63: 72.2000,
+  c64: 88.4000,
+  c65: 4.9000,
+  c66: 21.1000,
+  c67: 37.3000,
+  c68: 53.5000,
+  c69: 69.7000,
+  c70: 85.9000,
+  c71: 2.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_142_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_142_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_142_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_142_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_142_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_142_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_142_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_142_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_142_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_142_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 143 — ACT/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_143_META = {
+  id: 'kpi_143',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 141730,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_143_COEF = {
+  c0: 46.8000,
+  c1: 62.4000,
+  c2: 78.0000,
+  c3: 93.6000,
+  c4: 9.5000,
+  c5: 25.1000,
+  c6: 40.7000,
+  c7: 56.3000,
+  c8: 71.9000,
+  c9: 87.5000,
+  c10: 3.4000,
+  c11: 19.0000,
+  c12: 34.6000,
+  c13: 50.2000,
+  c14: 65.8000,
+  c15: 81.4000,
+  c16: 97.0000,
+  c17: 12.9000,
+  c18: 28.5000,
+  c19: 44.1000,
+  c20: 59.7000,
+  c21: 75.3000,
+  c22: 90.9000,
+  c23: 6.8000,
+  c24: 22.4000,
+  c25: 38.0000,
+  c26: 53.6000,
+  c27: 69.2000,
+  c28: 84.8000,
+  c29: 0.7000,
+  c30: 16.3000,
+  c31: 31.9000,
+  c32: 47.5000,
+  c33: 63.1000,
+  c34: 78.7000,
+  c35: 94.3000,
+  c36: 10.2000,
+  c37: 25.8000,
+  c38: 41.4000,
+  c39: 57.0000,
+  c40: 72.6000,
+  c41: 88.2000,
+  c42: 4.1000,
+  c43: 19.7000,
+  c44: 35.3000,
+  c45: 50.9000,
+  c46: 66.5000,
+  c47: 82.1000,
+  c48: 97.7000,
+  c49: 13.6000,
+  c50: 29.2000,
+  c51: 44.8000,
+  c52: 60.4000,
+  c53: 76.0000,
+  c54: 91.6000,
+  c55: 7.5000,
+  c56: 23.1000,
+  c57: 38.7000,
+  c58: 54.3000,
+  c59: 69.9000,
+  c60: 85.5000,
+  c61: 1.4000,
+  c62: 17.0000,
+  c63: 32.6000,
+  c64: 48.2000,
+  c65: 63.8000,
+  c66: 79.4000,
+  c67: 95.0000,
+  c68: 10.9000,
+  c69: 26.5000,
+  c70: 42.1000,
+  c71: 57.7000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_143_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_143_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_143_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_143_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_143_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_143_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_143_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_143_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_143_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_143_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 144 — NSW/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_144_META = {
+  id: 'kpi_144',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 142721,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_144_COEF = {
+  c0: 45.0000,
+  c1: 60.0000,
+  c2: 75.0000,
+  c3: 90.0000,
+  c4: 5.3000,
+  c5: 20.3000,
+  c6: 35.3000,
+  c7: 50.3000,
+  c8: 65.3000,
+  c9: 80.3000,
+  c10: 95.3000,
+  c11: 10.6000,
+  c12: 25.6000,
+  c13: 40.6000,
+  c14: 55.6000,
+  c15: 70.6000,
+  c16: 85.6000,
+  c17: 0.9000,
+  c18: 15.9000,
+  c19: 30.9000,
+  c20: 45.9000,
+  c21: 60.9000,
+  c22: 75.9000,
+  c23: 90.9000,
+  c24: 6.2000,
+  c25: 21.2000,
+  c26: 36.2000,
+  c27: 51.2000,
+  c28: 66.2000,
+  c29: 81.2000,
+  c30: 96.2000,
+  c31: 11.5000,
+  c32: 26.5000,
+  c33: 41.5000,
+  c34: 56.5000,
+  c35: 71.5000,
+  c36: 86.5000,
+  c37: 1.8000,
+  c38: 16.8000,
+  c39: 31.8000,
+  c40: 46.8000,
+  c41: 61.8000,
+  c42: 76.8000,
+  c43: 91.8000,
+  c44: 7.1000,
+  c45: 22.1000,
+  c46: 37.1000,
+  c47: 52.1000,
+  c48: 67.1000,
+  c49: 82.1000,
+  c50: 97.1000,
+  c51: 12.4000,
+  c52: 27.4000,
+  c53: 42.4000,
+  c54: 57.4000,
+  c55: 72.4000,
+  c56: 87.4000,
+  c57: 2.7000,
+  c58: 17.7000,
+  c59: 32.7000,
+  c60: 47.7000,
+  c61: 62.7000,
+  c62: 77.7000,
+  c63: 92.7000,
+  c64: 8.0000,
+  c65: 23.0000,
+  c66: 38.0000,
+  c67: 53.0000,
+  c68: 68.0000,
+  c69: 83.0000,
+  c70: 98.0000,
+  c71: 13.3000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_144_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_144_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_144_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_144_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_144_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_144_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_144_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_144_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_144_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_144_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 145 — VIC/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_145_META = {
+  id: 'kpi_145',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 143712,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_145_COEF = {
+  c0: 43.2000,
+  c1: 57.6000,
+  c2: 72.0000,
+  c3: 86.4000,
+  c4: 1.1000,
+  c5: 15.5000,
+  c6: 29.9000,
+  c7: 44.3000,
+  c8: 58.7000,
+  c9: 73.1000,
+  c10: 87.5000,
+  c11: 2.2000,
+  c12: 16.6000,
+  c13: 31.0000,
+  c14: 45.4000,
+  c15: 59.8000,
+  c16: 74.2000,
+  c17: 88.6000,
+  c18: 3.3000,
+  c19: 17.7000,
+  c20: 32.1000,
+  c21: 46.5000,
+  c22: 60.9000,
+  c23: 75.3000,
+  c24: 89.7000,
+  c25: 4.4000,
+  c26: 18.8000,
+  c27: 33.2000,
+  c28: 47.6000,
+  c29: 62.0000,
+  c30: 76.4000,
+  c31: 90.8000,
+  c32: 5.5000,
+  c33: 19.9000,
+  c34: 34.3000,
+  c35: 48.7000,
+  c36: 63.1000,
+  c37: 77.5000,
+  c38: 91.9000,
+  c39: 6.6000,
+  c40: 21.0000,
+  c41: 35.4000,
+  c42: 49.8000,
+  c43: 64.2000,
+  c44: 78.6000,
+  c45: 93.0000,
+  c46: 7.7000,
+  c47: 22.1000,
+  c48: 36.5000,
+  c49: 50.9000,
+  c50: 65.3000,
+  c51: 79.7000,
+  c52: 94.1000,
+  c53: 8.8000,
+  c54: 23.2000,
+  c55: 37.6000,
+  c56: 52.0000,
+  c57: 66.4000,
+  c58: 80.8000,
+  c59: 95.2000,
+  c60: 9.9000,
+  c61: 24.3000,
+  c62: 38.7000,
+  c63: 53.1000,
+  c64: 67.5000,
+  c65: 81.9000,
+  c66: 96.3000,
+  c67: 11.0000,
+  c68: 25.4000,
+  c69: 39.8000,
+  c70: 54.2000,
+  c71: 68.6000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_145_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_145_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_145_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_145_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_145_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_145_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_145_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_145_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_145_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_145_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 146 — QLD/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_146_META = {
+  id: 'kpi_146',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 144703,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_146_COEF = {
+  c0: 41.4000,
+  c1: 55.2000,
+  c2: 69.0000,
+  c3: 82.8000,
+  c4: 96.6000,
+  c5: 10.7000,
+  c6: 24.5000,
+  c7: 38.3000,
+  c8: 52.1000,
+  c9: 65.9000,
+  c10: 79.7000,
+  c11: 93.5000,
+  c12: 7.6000,
+  c13: 21.4000,
+  c14: 35.2000,
+  c15: 49.0000,
+  c16: 62.8000,
+  c17: 76.6000,
+  c18: 90.4000,
+  c19: 4.5000,
+  c20: 18.3000,
+  c21: 32.1000,
+  c22: 45.9000,
+  c23: 59.7000,
+  c24: 73.5000,
+  c25: 87.3000,
+  c26: 1.4000,
+  c27: 15.2000,
+  c28: 29.0000,
+  c29: 42.8000,
+  c30: 56.6000,
+  c31: 70.4000,
+  c32: 84.2000,
+  c33: 98.0000,
+  c34: 12.1000,
+  c35: 25.9000,
+  c36: 39.7000,
+  c37: 53.5000,
+  c38: 67.3000,
+  c39: 81.1000,
+  c40: 94.9000,
+  c41: 9.0000,
+  c42: 22.8000,
+  c43: 36.6000,
+  c44: 50.4000,
+  c45: 64.2000,
+  c46: 78.0000,
+  c47: 91.8000,
+  c48: 5.9000,
+  c49: 19.7000,
+  c50: 33.5000,
+  c51: 47.3000,
+  c52: 61.1000,
+  c53: 74.9000,
+  c54: 88.7000,
+  c55: 2.8000,
+  c56: 16.6000,
+  c57: 30.4000,
+  c58: 44.2000,
+  c59: 58.0000,
+  c60: 71.8000,
+  c61: 85.6000,
+  c62: 99.4000,
+  c63: 13.5000,
+  c64: 27.3000,
+  c65: 41.1000,
+  c66: 54.9000,
+  c67: 68.7000,
+  c68: 82.5000,
+  c69: 96.3000,
+  c70: 10.4000,
+  c71: 24.2000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_146_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_146_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_146_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_146_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_146_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_146_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_146_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_146_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_146_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_146_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 147 — WA/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_147_META = {
+  id: 'kpi_147',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 145694,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_147_COEF = {
+  c0: 39.6000,
+  c1: 52.8000,
+  c2: 66.0000,
+  c3: 79.2000,
+  c4: 92.4000,
+  c5: 5.9000,
+  c6: 19.1000,
+  c7: 32.3000,
+  c8: 45.5000,
+  c9: 58.7000,
+  c10: 71.9000,
+  c11: 85.1000,
+  c12: 98.3000,
+  c13: 11.8000,
+  c14: 25.0000,
+  c15: 38.2000,
+  c16: 51.4000,
+  c17: 64.6000,
+  c18: 77.8000,
+  c19: 91.0000,
+  c20: 4.5000,
+  c21: 17.7000,
+  c22: 30.9000,
+  c23: 44.1000,
+  c24: 57.3000,
+  c25: 70.5000,
+  c26: 83.7000,
+  c27: 96.9000,
+  c28: 10.4000,
+  c29: 23.6000,
+  c30: 36.8000,
+  c31: 50.0000,
+  c32: 63.2000,
+  c33: 76.4000,
+  c34: 89.6000,
+  c35: 3.1000,
+  c36: 16.3000,
+  c37: 29.5000,
+  c38: 42.7000,
+  c39: 55.9000,
+  c40: 69.1000,
+  c41: 82.3000,
+  c42: 95.5000,
+  c43: 9.0000,
+  c44: 22.2000,
+  c45: 35.4000,
+  c46: 48.6000,
+  c47: 61.8000,
+  c48: 75.0000,
+  c49: 88.2000,
+  c50: 1.7000,
+  c51: 14.9000,
+  c52: 28.1000,
+  c53: 41.3000,
+  c54: 54.5000,
+  c55: 67.7000,
+  c56: 80.9000,
+  c57: 94.1000,
+  c58: 7.6000,
+  c59: 20.8000,
+  c60: 34.0000,
+  c61: 47.2000,
+  c62: 60.4000,
+  c63: 73.6000,
+  c64: 86.8000,
+  c65: 0.3000,
+  c66: 13.5000,
+  c67: 26.7000,
+  c68: 39.9000,
+  c69: 53.1000,
+  c70: 66.3000,
+  c71: 79.5000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_147_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_147_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_147_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_147_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_147_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_147_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_147_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_147_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_147_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_147_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 148 — SA/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_148_META = {
+  id: 'kpi_148',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 146685,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_148_COEF = {
+  c0: 37.8000,
+  c1: 50.4000,
+  c2: 63.0000,
+  c3: 75.6000,
+  c4: 88.2000,
+  c5: 1.1000,
+  c6: 13.7000,
+  c7: 26.3000,
+  c8: 38.9000,
+  c9: 51.5000,
+  c10: 64.1000,
+  c11: 76.7000,
+  c12: 89.3000,
+  c13: 2.2000,
+  c14: 14.8000,
+  c15: 27.4000,
+  c16: 40.0000,
+  c17: 52.6000,
+  c18: 65.2000,
+  c19: 77.8000,
+  c20: 90.4000,
+  c21: 3.3000,
+  c22: 15.9000,
+  c23: 28.5000,
+  c24: 41.1000,
+  c25: 53.7000,
+  c26: 66.3000,
+  c27: 78.9000,
+  c28: 91.5000,
+  c29: 4.4000,
+  c30: 17.0000,
+  c31: 29.6000,
+  c32: 42.2000,
+  c33: 54.8000,
+  c34: 67.4000,
+  c35: 80.0000,
+  c36: 92.6000,
+  c37: 5.5000,
+  c38: 18.1000,
+  c39: 30.7000,
+  c40: 43.3000,
+  c41: 55.9000,
+  c42: 68.5000,
+  c43: 81.1000,
+  c44: 93.7000,
+  c45: 6.6000,
+  c46: 19.2000,
+  c47: 31.8000,
+  c48: 44.4000,
+  c49: 57.0000,
+  c50: 69.6000,
+  c51: 82.2000,
+  c52: 94.8000,
+  c53: 7.7000,
+  c54: 20.3000,
+  c55: 32.9000,
+  c56: 45.5000,
+  c57: 58.1000,
+  c58: 70.7000,
+  c59: 83.3000,
+  c60: 95.9000,
+  c61: 8.8000,
+  c62: 21.4000,
+  c63: 34.0000,
+  c64: 46.6000,
+  c65: 59.2000,
+  c66: 71.8000,
+  c67: 84.4000,
+  c68: 97.0000,
+  c69: 9.9000,
+  c70: 22.5000,
+  c71: 35.1000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_148_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_148_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_148_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_148_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_148_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_148_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_148_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_148_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_148_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_148_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 149 — TAS/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_149_META = {
+  id: 'kpi_149',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 147676,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_149_COEF = {
+  c0: 36.0000,
+  c1: 48.0000,
+  c2: 60.0000,
+  c3: 72.0000,
+  c4: 84.0000,
+  c5: 96.0000,
+  c6: 8.3000,
+  c7: 20.3000,
+  c8: 32.3000,
+  c9: 44.3000,
+  c10: 56.3000,
+  c11: 68.3000,
+  c12: 80.3000,
+  c13: 92.3000,
+  c14: 4.6000,
+  c15: 16.6000,
+  c16: 28.6000,
+  c17: 40.6000,
+  c18: 52.6000,
+  c19: 64.6000,
+  c20: 76.6000,
+  c21: 88.6000,
+  c22: 0.9000,
+  c23: 12.9000,
+  c24: 24.9000,
+  c25: 36.9000,
+  c26: 48.9000,
+  c27: 60.9000,
+  c28: 72.9000,
+  c29: 84.9000,
+  c30: 96.9000,
+  c31: 9.2000,
+  c32: 21.2000,
+  c33: 33.2000,
+  c34: 45.2000,
+  c35: 57.2000,
+  c36: 69.2000,
+  c37: 81.2000,
+  c38: 93.2000,
+  c39: 5.5000,
+  c40: 17.5000,
+  c41: 29.5000,
+  c42: 41.5000,
+  c43: 53.5000,
+  c44: 65.5000,
+  c45: 77.5000,
+  c46: 89.5000,
+  c47: 1.8000,
+  c48: 13.8000,
+  c49: 25.8000,
+  c50: 37.8000,
+  c51: 49.8000,
+  c52: 61.8000,
+  c53: 73.8000,
+  c54: 85.8000,
+  c55: 97.8000,
+  c56: 10.1000,
+  c57: 22.1000,
+  c58: 34.1000,
+  c59: 46.1000,
+  c60: 58.1000,
+  c61: 70.1000,
+  c62: 82.1000,
+  c63: 94.1000,
+  c64: 6.4000,
+  c65: 18.4000,
+  c66: 30.4000,
+  c67: 42.4000,
+  c68: 54.4000,
+  c69: 66.4000,
+  c70: 78.4000,
+  c71: 90.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_149_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_149_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_149_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_149_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_149_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_149_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_149_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_149_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_149_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_149_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 150 — NT/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_150_META = {
+  id: 'kpi_150',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 148667,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_150_COEF = {
+  c0: 34.2000,
+  c1: 45.6000,
+  c2: 57.0000,
+  c3: 68.4000,
+  c4: 79.8000,
+  c5: 91.2000,
+  c6: 2.9000,
+  c7: 14.3000,
+  c8: 25.7000,
+  c9: 37.1000,
+  c10: 48.5000,
+  c11: 59.9000,
+  c12: 71.3000,
+  c13: 82.7000,
+  c14: 94.1000,
+  c15: 5.8000,
+  c16: 17.2000,
+  c17: 28.6000,
+  c18: 40.0000,
+  c19: 51.4000,
+  c20: 62.8000,
+  c21: 74.2000,
+  c22: 85.6000,
+  c23: 97.0000,
+  c24: 8.7000,
+  c25: 20.1000,
+  c26: 31.5000,
+  c27: 42.9000,
+  c28: 54.3000,
+  c29: 65.7000,
+  c30: 77.1000,
+  c31: 88.5000,
+  c32: 0.2000,
+  c33: 11.6000,
+  c34: 23.0000,
+  c35: 34.4000,
+  c36: 45.8000,
+  c37: 57.2000,
+  c38: 68.6000,
+  c39: 80.0000,
+  c40: 91.4000,
+  c41: 3.1000,
+  c42: 14.5000,
+  c43: 25.9000,
+  c44: 37.3000,
+  c45: 48.7000,
+  c46: 60.1000,
+  c47: 71.5000,
+  c48: 82.9000,
+  c49: 94.3000,
+  c50: 6.0000,
+  c51: 17.4000,
+  c52: 28.8000,
+  c53: 40.2000,
+  c54: 51.6000,
+  c55: 63.0000,
+  c56: 74.4000,
+  c57: 85.8000,
+  c58: 97.2000,
+  c59: 8.9000,
+  c60: 20.3000,
+  c61: 31.7000,
+  c62: 43.1000,
+  c63: 54.5000,
+  c64: 65.9000,
+  c65: 77.3000,
+  c66: 88.7000,
+  c67: 0.4000,
+  c68: 11.8000,
+  c69: 23.2000,
+  c70: 34.6000,
+  c71: 46.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_150_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_150_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_150_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_150_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_150_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_150_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_150_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_150_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_150_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_150_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 151 — ACT/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_151_META = {
+  id: 'kpi_151',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 149658,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_151_COEF = {
+  c0: 32.4000,
+  c1: 43.2000,
+  c2: 54.0000,
+  c3: 64.8000,
+  c4: 75.6000,
+  c5: 86.4000,
+  c6: 97.2000,
+  c7: 8.3000,
+  c8: 19.1000,
+  c9: 29.9000,
+  c10: 40.7000,
+  c11: 51.5000,
+  c12: 62.3000,
+  c13: 73.1000,
+  c14: 83.9000,
+  c15: 94.7000,
+  c16: 5.8000,
+  c17: 16.6000,
+  c18: 27.4000,
+  c19: 38.2000,
+  c20: 49.0000,
+  c21: 59.8000,
+  c22: 70.6000,
+  c23: 81.4000,
+  c24: 92.2000,
+  c25: 3.3000,
+  c26: 14.1000,
+  c27: 24.9000,
+  c28: 35.7000,
+  c29: 46.5000,
+  c30: 57.3000,
+  c31: 68.1000,
+  c32: 78.9000,
+  c33: 89.7000,
+  c34: 0.8000,
+  c35: 11.6000,
+  c36: 22.4000,
+  c37: 33.2000,
+  c38: 44.0000,
+  c39: 54.8000,
+  c40: 65.6000,
+  c41: 76.4000,
+  c42: 87.2000,
+  c43: 98.0000,
+  c44: 9.1000,
+  c45: 19.9000,
+  c46: 30.7000,
+  c47: 41.5000,
+  c48: 52.3000,
+  c49: 63.1000,
+  c50: 73.9000,
+  c51: 84.7000,
+  c52: 95.5000,
+  c53: 6.6000,
+  c54: 17.4000,
+  c55: 28.2000,
+  c56: 39.0000,
+  c57: 49.8000,
+  c58: 60.6000,
+  c59: 71.4000,
+  c60: 82.2000,
+  c61: 93.0000,
+  c62: 4.1000,
+  c63: 14.9000,
+  c64: 25.7000,
+  c65: 36.5000,
+  c66: 47.3000,
+  c67: 58.1000,
+  c68: 68.9000,
+  c69: 79.7000,
+  c70: 90.5000,
+  c71: 1.6000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_151_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_151_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_151_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_151_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_151_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_151_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_151_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_151_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_151_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_151_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 152 — NSW/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_152_META = {
+  id: 'kpi_152',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 150649,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_152_COEF = {
+  c0: 30.6000,
+  c1: 40.8000,
+  c2: 51.0000,
+  c3: 61.2000,
+  c4: 71.4000,
+  c5: 81.6000,
+  c6: 91.8000,
+  c7: 2.3000,
+  c8: 12.5000,
+  c9: 22.7000,
+  c10: 32.9000,
+  c11: 43.1000,
+  c12: 53.3000,
+  c13: 63.5000,
+  c14: 73.7000,
+  c15: 83.9000,
+  c16: 94.1000,
+  c17: 4.6000,
+  c18: 14.8000,
+  c19: 25.0000,
+  c20: 35.2000,
+  c21: 45.4000,
+  c22: 55.6000,
+  c23: 65.8000,
+  c24: 76.0000,
+  c25: 86.2000,
+  c26: 96.4000,
+  c27: 6.9000,
+  c28: 17.1000,
+  c29: 27.3000,
+  c30: 37.5000,
+  c31: 47.7000,
+  c32: 57.9000,
+  c33: 68.1000,
+  c34: 78.3000,
+  c35: 88.5000,
+  c36: 98.7000,
+  c37: 9.2000,
+  c38: 19.4000,
+  c39: 29.6000,
+  c40: 39.8000,
+  c41: 50.0000,
+  c42: 60.2000,
+  c43: 70.4000,
+  c44: 80.6000,
+  c45: 90.8000,
+  c46: 1.3000,
+  c47: 11.5000,
+  c48: 21.7000,
+  c49: 31.9000,
+  c50: 42.1000,
+  c51: 52.3000,
+  c52: 62.5000,
+  c53: 72.7000,
+  c54: 82.9000,
+  c55: 93.1000,
+  c56: 3.6000,
+  c57: 13.8000,
+  c58: 24.0000,
+  c59: 34.2000,
+  c60: 44.4000,
+  c61: 54.6000,
+  c62: 64.8000,
+  c63: 75.0000,
+  c64: 85.2000,
+  c65: 95.4000,
+  c66: 5.9000,
+  c67: 16.1000,
+  c68: 26.3000,
+  c69: 36.5000,
+  c70: 46.7000,
+  c71: 56.9000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_152_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_152_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_152_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_152_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_152_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_152_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_152_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_152_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_152_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_152_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 153 — VIC/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_153_META = {
+  id: 'kpi_153',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 151640,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_153_COEF = {
+  c0: 28.8000,
+  c1: 38.4000,
+  c2: 48.0000,
+  c3: 57.6000,
+  c4: 67.2000,
+  c5: 76.8000,
+  c6: 86.4000,
+  c7: 96.0000,
+  c8: 5.9000,
+  c9: 15.5000,
+  c10: 25.1000,
+  c11: 34.7000,
+  c12: 44.3000,
+  c13: 53.9000,
+  c14: 63.5000,
+  c15: 73.1000,
+  c16: 82.7000,
+  c17: 92.3000,
+  c18: 2.2000,
+  c19: 11.8000,
+  c20: 21.4000,
+  c21: 31.0000,
+  c22: 40.6000,
+  c23: 50.2000,
+  c24: 59.8000,
+  c25: 69.4000,
+  c26: 79.0000,
+  c27: 88.6000,
+  c28: 98.2000,
+  c29: 8.1000,
+  c30: 17.7000,
+  c31: 27.3000,
+  c32: 36.9000,
+  c33: 46.5000,
+  c34: 56.1000,
+  c35: 65.7000,
+  c36: 75.3000,
+  c37: 84.9000,
+  c38: 94.5000,
+  c39: 4.4000,
+  c40: 14.0000,
+  c41: 23.6000,
+  c42: 33.2000,
+  c43: 42.8000,
+  c44: 52.4000,
+  c45: 62.0000,
+  c46: 71.6000,
+  c47: 81.2000,
+  c48: 90.8000,
+  c49: 0.7000,
+  c50: 10.3000,
+  c51: 19.9000,
+  c52: 29.5000,
+  c53: 39.1000,
+  c54: 48.7000,
+  c55: 58.3000,
+  c56: 67.9000,
+  c57: 77.5000,
+  c58: 87.1000,
+  c59: 96.7000,
+  c60: 6.6000,
+  c61: 16.2000,
+  c62: 25.8000,
+  c63: 35.4000,
+  c64: 45.0000,
+  c65: 54.6000,
+  c66: 64.2000,
+  c67: 73.8000,
+  c68: 83.4000,
+  c69: 93.0000,
+  c70: 2.9000,
+  c71: 12.5000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_153_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_153_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_153_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_153_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_153_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_153_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_153_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_153_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_153_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_153_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 154 — QLD/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_154_META = {
+  id: 'kpi_154',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 152631,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_154_COEF = {
+  c0: 27.0000,
+  c1: 36.0000,
+  c2: 45.0000,
+  c3: 54.0000,
+  c4: 63.0000,
+  c5: 72.0000,
+  c6: 81.0000,
+  c7: 90.0000,
+  c8: 99.0000,
+  c9: 8.3000,
+  c10: 17.3000,
+  c11: 26.3000,
+  c12: 35.3000,
+  c13: 44.3000,
+  c14: 53.3000,
+  c15: 62.3000,
+  c16: 71.3000,
+  c17: 80.3000,
+  c18: 89.3000,
+  c19: 98.3000,
+  c20: 7.6000,
+  c21: 16.6000,
+  c22: 25.6000,
+  c23: 34.6000,
+  c24: 43.6000,
+  c25: 52.6000,
+  c26: 61.6000,
+  c27: 70.6000,
+  c28: 79.6000,
+  c29: 88.6000,
+  c30: 97.6000,
+  c31: 6.9000,
+  c32: 15.9000,
+  c33: 24.9000,
+  c34: 33.9000,
+  c35: 42.9000,
+  c36: 51.9000,
+  c37: 60.9000,
+  c38: 69.9000,
+  c39: 78.9000,
+  c40: 87.9000,
+  c41: 96.9000,
+  c42: 6.2000,
+  c43: 15.2000,
+  c44: 24.2000,
+  c45: 33.2000,
+  c46: 42.2000,
+  c47: 51.2000,
+  c48: 60.2000,
+  c49: 69.2000,
+  c50: 78.2000,
+  c51: 87.2000,
+  c52: 96.2000,
+  c53: 5.5000,
+  c54: 14.5000,
+  c55: 23.5000,
+  c56: 32.5000,
+  c57: 41.5000,
+  c58: 50.5000,
+  c59: 59.5000,
+  c60: 68.5000,
+  c61: 77.5000,
+  c62: 86.5000,
+  c63: 95.5000,
+  c64: 4.8000,
+  c65: 13.8000,
+  c66: 22.8000,
+  c67: 31.8000,
+  c68: 40.8000,
+  c69: 49.8000,
+  c70: 58.8000,
+  c71: 67.8000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_154_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_154_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_154_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_154_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_154_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_154_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_154_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_154_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_154_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_154_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 155 — WA/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_155_META = {
+  id: 'kpi_155',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 153622,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_155_COEF = {
+  c0: 25.2000,
+  c1: 33.6000,
+  c2: 42.0000,
+  c3: 50.4000,
+  c4: 58.8000,
+  c5: 67.2000,
+  c6: 75.6000,
+  c7: 84.0000,
+  c8: 92.4000,
+  c9: 1.1000,
+  c10: 9.5000,
+  c11: 17.9000,
+  c12: 26.3000,
+  c13: 34.7000,
+  c14: 43.1000,
+  c15: 51.5000,
+  c16: 59.9000,
+  c17: 68.3000,
+  c18: 76.7000,
+  c19: 85.1000,
+  c20: 93.5000,
+  c21: 2.2000,
+  c22: 10.6000,
+  c23: 19.0000,
+  c24: 27.4000,
+  c25: 35.8000,
+  c26: 44.2000,
+  c27: 52.6000,
+  c28: 61.0000,
+  c29: 69.4000,
+  c30: 77.8000,
+  c31: 86.2000,
+  c32: 94.6000,
+  c33: 3.3000,
+  c34: 11.7000,
+  c35: 20.1000,
+  c36: 28.5000,
+  c37: 36.9000,
+  c38: 45.3000,
+  c39: 53.7000,
+  c40: 62.1000,
+  c41: 70.5000,
+  c42: 78.9000,
+  c43: 87.3000,
+  c44: 95.7000,
+  c45: 4.4000,
+  c46: 12.8000,
+  c47: 21.2000,
+  c48: 29.6000,
+  c49: 38.0000,
+  c50: 46.4000,
+  c51: 54.8000,
+  c52: 63.2000,
+  c53: 71.6000,
+  c54: 80.0000,
+  c55: 88.4000,
+  c56: 96.8000,
+  c57: 5.5000,
+  c58: 13.9000,
+  c59: 22.3000,
+  c60: 30.7000,
+  c61: 39.1000,
+  c62: 47.5000,
+  c63: 55.9000,
+  c64: 64.3000,
+  c65: 72.7000,
+  c66: 81.1000,
+  c67: 89.5000,
+  c68: 97.9000,
+  c69: 6.6000,
+  c70: 15.0000,
+  c71: 23.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_155_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_155_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_155_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_155_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_155_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_155_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_155_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_155_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_155_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_155_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 156 — SA/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_156_META = {
+  id: 'kpi_156',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 154613,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_156_COEF = {
+  c0: 23.4000,
+  c1: 31.2000,
+  c2: 39.0000,
+  c3: 46.8000,
+  c4: 54.6000,
+  c5: 62.4000,
+  c6: 70.2000,
+  c7: 78.0000,
+  c8: 85.8000,
+  c9: 93.6000,
+  c10: 1.7000,
+  c11: 9.5000,
+  c12: 17.3000,
+  c13: 25.1000,
+  c14: 32.9000,
+  c15: 40.7000,
+  c16: 48.5000,
+  c17: 56.3000,
+  c18: 64.1000,
+  c19: 71.9000,
+  c20: 79.7000,
+  c21: 87.5000,
+  c22: 95.3000,
+  c23: 3.4000,
+  c24: 11.2000,
+  c25: 19.0000,
+  c26: 26.8000,
+  c27: 34.6000,
+  c28: 42.4000,
+  c29: 50.2000,
+  c30: 58.0000,
+  c31: 65.8000,
+  c32: 73.6000,
+  c33: 81.4000,
+  c34: 89.2000,
+  c35: 97.0000,
+  c36: 5.1000,
+  c37: 12.9000,
+  c38: 20.7000,
+  c39: 28.5000,
+  c40: 36.3000,
+  c41: 44.1000,
+  c42: 51.9000,
+  c43: 59.7000,
+  c44: 67.5000,
+  c45: 75.3000,
+  c46: 83.1000,
+  c47: 90.9000,
+  c48: 98.7000,
+  c49: 6.8000,
+  c50: 14.6000,
+  c51: 22.4000,
+  c52: 30.2000,
+  c53: 38.0000,
+  c54: 45.8000,
+  c55: 53.6000,
+  c56: 61.4000,
+  c57: 69.2000,
+  c58: 77.0000,
+  c59: 84.8000,
+  c60: 92.6000,
+  c61: 0.7000,
+  c62: 8.5000,
+  c63: 16.3000,
+  c64: 24.1000,
+  c65: 31.9000,
+  c66: 39.7000,
+  c67: 47.5000,
+  c68: 55.3000,
+  c69: 63.1000,
+  c70: 70.9000,
+  c71: 78.7000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_156_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_156_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_156_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_156_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_156_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_156_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_156_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_156_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_156_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_156_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 157 — TAS/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_157_META = {
+  id: 'kpi_157',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 155604,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_157_COEF = {
+  c0: 21.6000,
+  c1: 28.8000,
+  c2: 36.0000,
+  c3: 43.2000,
+  c4: 50.4000,
+  c5: 57.6000,
+  c6: 64.8000,
+  c7: 72.0000,
+  c8: 79.2000,
+  c9: 86.4000,
+  c10: 93.6000,
+  c11: 1.1000,
+  c12: 8.3000,
+  c13: 15.5000,
+  c14: 22.7000,
+  c15: 29.9000,
+  c16: 37.1000,
+  c17: 44.3000,
+  c18: 51.5000,
+  c19: 58.7000,
+  c20: 65.9000,
+  c21: 73.1000,
+  c22: 80.3000,
+  c23: 87.5000,
+  c24: 94.7000,
+  c25: 2.2000,
+  c26: 9.4000,
+  c27: 16.6000,
+  c28: 23.8000,
+  c29: 31.0000,
+  c30: 38.2000,
+  c31: 45.4000,
+  c32: 52.6000,
+  c33: 59.8000,
+  c34: 67.0000,
+  c35: 74.2000,
+  c36: 81.4000,
+  c37: 88.6000,
+  c38: 95.8000,
+  c39: 3.3000,
+  c40: 10.5000,
+  c41: 17.7000,
+  c42: 24.9000,
+  c43: 32.1000,
+  c44: 39.3000,
+  c45: 46.5000,
+  c46: 53.7000,
+  c47: 60.9000,
+  c48: 68.1000,
+  c49: 75.3000,
+  c50: 82.5000,
+  c51: 89.7000,
+  c52: 96.9000,
+  c53: 4.4000,
+  c54: 11.6000,
+  c55: 18.8000,
+  c56: 26.0000,
+  c57: 33.2000,
+  c58: 40.4000,
+  c59: 47.6000,
+  c60: 54.8000,
+  c61: 62.0000,
+  c62: 69.2000,
+  c63: 76.4000,
+  c64: 83.6000,
+  c65: 90.8000,
+  c66: 98.0000,
+  c67: 5.5000,
+  c68: 12.7000,
+  c69: 19.9000,
+  c70: 27.1000,
+  c71: 34.3000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_157_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_157_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_157_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_157_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_157_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_157_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_157_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_157_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_157_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_157_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 158 — NT/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_158_META = {
+  id: 'kpi_158',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 156595,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_158_COEF = {
+  c0: 19.8000,
+  c1: 26.4000,
+  c2: 33.0000,
+  c3: 39.6000,
+  c4: 46.2000,
+  c5: 52.8000,
+  c6: 59.4000,
+  c7: 66.0000,
+  c8: 72.6000,
+  c9: 79.2000,
+  c10: 85.8000,
+  c11: 92.4000,
+  c12: 99.0000,
+  c13: 5.9000,
+  c14: 12.5000,
+  c15: 19.1000,
+  c16: 25.7000,
+  c17: 32.3000,
+  c18: 38.9000,
+  c19: 45.5000,
+  c20: 52.1000,
+  c21: 58.7000,
+  c22: 65.3000,
+  c23: 71.9000,
+  c24: 78.5000,
+  c25: 85.1000,
+  c26: 91.7000,
+  c27: 98.3000,
+  c28: 5.2000,
+  c29: 11.8000,
+  c30: 18.4000,
+  c31: 25.0000,
+  c32: 31.6000,
+  c33: 38.2000,
+  c34: 44.8000,
+  c35: 51.4000,
+  c36: 58.0000,
+  c37: 64.6000,
+  c38: 71.2000,
+  c39: 77.8000,
+  c40: 84.4000,
+  c41: 91.0000,
+  c42: 97.6000,
+  c43: 4.5000,
+  c44: 11.1000,
+  c45: 17.7000,
+  c46: 24.3000,
+  c47: 30.9000,
+  c48: 37.5000,
+  c49: 44.1000,
+  c50: 50.7000,
+  c51: 57.3000,
+  c52: 63.9000,
+  c53: 70.5000,
+  c54: 77.1000,
+  c55: 83.7000,
+  c56: 90.3000,
+  c57: 96.9000,
+  c58: 3.8000,
+  c59: 10.4000,
+  c60: 17.0000,
+  c61: 23.6000,
+  c62: 30.2000,
+  c63: 36.8000,
+  c64: 43.4000,
+  c65: 50.0000,
+  c66: 56.6000,
+  c67: 63.2000,
+  c68: 69.8000,
+  c69: 76.4000,
+  c70: 83.0000,
+  c71: 89.6000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_158_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_158_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_158_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_158_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_158_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_158_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_158_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_158_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_158_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_158_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 159 — ACT/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_159_META = {
+  id: 'kpi_159',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 157586,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_159_COEF = {
+  c0: 18.0000,
+  c1: 24.0000,
+  c2: 30.0000,
+  c3: 36.0000,
+  c4: 42.0000,
+  c5: 48.0000,
+  c6: 54.0000,
+  c7: 60.0000,
+  c8: 66.0000,
+  c9: 72.0000,
+  c10: 78.0000,
+  c11: 84.0000,
+  c12: 90.0000,
+  c13: 96.0000,
+  c14: 2.3000,
+  c15: 8.3000,
+  c16: 14.3000,
+  c17: 20.3000,
+  c18: 26.3000,
+  c19: 32.3000,
+  c20: 38.3000,
+  c21: 44.3000,
+  c22: 50.3000,
+  c23: 56.3000,
+  c24: 62.3000,
+  c25: 68.3000,
+  c26: 74.3000,
+  c27: 80.3000,
+  c28: 86.3000,
+  c29: 92.3000,
+  c30: 98.3000,
+  c31: 4.6000,
+  c32: 10.6000,
+  c33: 16.6000,
+  c34: 22.6000,
+  c35: 28.6000,
+  c36: 34.6000,
+  c37: 40.6000,
+  c38: 46.6000,
+  c39: 52.6000,
+  c40: 58.6000,
+  c41: 64.6000,
+  c42: 70.6000,
+  c43: 76.6000,
+  c44: 82.6000,
+  c45: 88.6000,
+  c46: 94.6000,
+  c47: 0.9000,
+  c48: 6.9000,
+  c49: 12.9000,
+  c50: 18.9000,
+  c51: 24.9000,
+  c52: 30.9000,
+  c53: 36.9000,
+  c54: 42.9000,
+  c55: 48.9000,
+  c56: 54.9000,
+  c57: 60.9000,
+  c58: 66.9000,
+  c59: 72.9000,
+  c60: 78.9000,
+  c61: 84.9000,
+  c62: 90.9000,
+  c63: 96.9000,
+  c64: 3.2000,
+  c65: 9.2000,
+  c66: 15.2000,
+  c67: 21.2000,
+  c68: 27.2000,
+  c69: 33.2000,
+  c70: 39.2000,
+  c71: 45.2000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_159_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_159_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_159_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_159_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_159_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_159_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_159_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_159_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_159_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_159_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 160 — NSW/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_160_META = {
+  id: 'kpi_160',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 158577,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_160_COEF = {
+  c0: 16.2000,
+  c1: 21.6000,
+  c2: 27.0000,
+  c3: 32.4000,
+  c4: 37.8000,
+  c5: 43.2000,
+  c6: 48.6000,
+  c7: 54.0000,
+  c8: 59.4000,
+  c9: 64.8000,
+  c10: 70.2000,
+  c11: 75.6000,
+  c12: 81.0000,
+  c13: 86.4000,
+  c14: 91.8000,
+  c15: 97.2000,
+  c16: 2.9000,
+  c17: 8.3000,
+  c18: 13.7000,
+  c19: 19.1000,
+  c20: 24.5000,
+  c21: 29.9000,
+  c22: 35.3000,
+  c23: 40.7000,
+  c24: 46.1000,
+  c25: 51.5000,
+  c26: 56.9000,
+  c27: 62.3000,
+  c28: 67.7000,
+  c29: 73.1000,
+  c30: 78.5000,
+  c31: 83.9000,
+  c32: 89.3000,
+  c33: 94.7000,
+  c34: 0.4000,
+  c35: 5.8000,
+  c36: 11.2000,
+  c37: 16.6000,
+  c38: 22.0000,
+  c39: 27.4000,
+  c40: 32.8000,
+  c41: 38.2000,
+  c42: 43.6000,
+  c43: 49.0000,
+  c44: 54.4000,
+  c45: 59.8000,
+  c46: 65.2000,
+  c47: 70.6000,
+  c48: 76.0000,
+  c49: 81.4000,
+  c50: 86.8000,
+  c51: 92.2000,
+  c52: 97.6000,
+  c53: 3.3000,
+  c54: 8.7000,
+  c55: 14.1000,
+  c56: 19.5000,
+  c57: 24.9000,
+  c58: 30.3000,
+  c59: 35.7000,
+  c60: 41.1000,
+  c61: 46.5000,
+  c62: 51.9000,
+  c63: 57.3000,
+  c64: 62.7000,
+  c65: 68.1000,
+  c66: 73.5000,
+  c67: 78.9000,
+  c68: 84.3000,
+  c69: 89.7000,
+  c70: 95.1000,
+  c71: 0.8000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_160_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_160_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_160_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_160_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_160_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_160_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_160_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_160_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_160_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_160_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 161 — VIC/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_161_META = {
+  id: 'kpi_161',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 159568,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_161_COEF = {
+  c0: 14.4000,
+  c1: 19.2000,
+  c2: 24.0000,
+  c3: 28.8000,
+  c4: 33.6000,
+  c5: 38.4000,
+  c6: 43.2000,
+  c7: 48.0000,
+  c8: 52.8000,
+  c9: 57.6000,
+  c10: 62.4000,
+  c11: 67.2000,
+  c12: 72.0000,
+  c13: 76.8000,
+  c14: 81.6000,
+  c15: 86.4000,
+  c16: 91.2000,
+  c17: 96.0000,
+  c18: 1.1000,
+  c19: 5.9000,
+  c20: 10.7000,
+  c21: 15.5000,
+  c22: 20.3000,
+  c23: 25.1000,
+  c24: 29.9000,
+  c25: 34.7000,
+  c26: 39.5000,
+  c27: 44.3000,
+  c28: 49.1000,
+  c29: 53.9000,
+  c30: 58.7000,
+  c31: 63.5000,
+  c32: 68.3000,
+  c33: 73.1000,
+  c34: 77.9000,
+  c35: 82.7000,
+  c36: 87.5000,
+  c37: 92.3000,
+  c38: 97.1000,
+  c39: 2.2000,
+  c40: 7.0000,
+  c41: 11.8000,
+  c42: 16.6000,
+  c43: 21.4000,
+  c44: 26.2000,
+  c45: 31.0000,
+  c46: 35.8000,
+  c47: 40.6000,
+  c48: 45.4000,
+  c49: 50.2000,
+  c50: 55.0000,
+  c51: 59.8000,
+  c52: 64.6000,
+  c53: 69.4000,
+  c54: 74.2000,
+  c55: 79.0000,
+  c56: 83.8000,
+  c57: 88.6000,
+  c58: 93.4000,
+  c59: 98.2000,
+  c60: 3.3000,
+  c61: 8.1000,
+  c62: 12.9000,
+  c63: 17.7000,
+  c64: 22.5000,
+  c65: 27.3000,
+  c66: 32.1000,
+  c67: 36.9000,
+  c68: 41.7000,
+  c69: 46.5000,
+  c70: 51.3000,
+  c71: 56.1000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_161_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_161_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_161_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_161_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_161_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_161_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_161_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_161_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_161_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_161_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 162 — QLD/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_162_META = {
+  id: 'kpi_162',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 160559,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_162_COEF = {
+  c0: 12.6000,
+  c1: 16.8000,
+  c2: 21.0000,
+  c3: 25.2000,
+  c4: 29.4000,
+  c5: 33.6000,
+  c6: 37.8000,
+  c7: 42.0000,
+  c8: 46.2000,
+  c9: 50.4000,
+  c10: 54.6000,
+  c11: 58.8000,
+  c12: 63.0000,
+  c13: 67.2000,
+  c14: 71.4000,
+  c15: 75.6000,
+  c16: 79.8000,
+  c17: 84.0000,
+  c18: 88.2000,
+  c19: 92.4000,
+  c20: 96.6000,
+  c21: 1.1000,
+  c22: 5.3000,
+  c23: 9.5000,
+  c24: 13.7000,
+  c25: 17.9000,
+  c26: 22.1000,
+  c27: 26.3000,
+  c28: 30.5000,
+  c29: 34.7000,
+  c30: 38.9000,
+  c31: 43.1000,
+  c32: 47.3000,
+  c33: 51.5000,
+  c34: 55.7000,
+  c35: 59.9000,
+  c36: 64.1000,
+  c37: 68.3000,
+  c38: 72.5000,
+  c39: 76.7000,
+  c40: 80.9000,
+  c41: 85.1000,
+  c42: 89.3000,
+  c43: 93.5000,
+  c44: 97.7000,
+  c45: 2.2000,
+  c46: 6.4000,
+  c47: 10.6000,
+  c48: 14.8000,
+  c49: 19.0000,
+  c50: 23.2000,
+  c51: 27.4000,
+  c52: 31.6000,
+  c53: 35.8000,
+  c54: 40.0000,
+  c55: 44.2000,
+  c56: 48.4000,
+  c57: 52.6000,
+  c58: 56.8000,
+  c59: 61.0000,
+  c60: 65.2000,
+  c61: 69.4000,
+  c62: 73.6000,
+  c63: 77.8000,
+  c64: 82.0000,
+  c65: 86.2000,
+  c66: 90.4000,
+  c67: 94.6000,
+  c68: 98.8000,
+  c69: 3.3000,
+  c70: 7.5000,
+  c71: 11.7000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_162_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_162_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_162_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_162_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_162_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_162_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_162_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_162_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_162_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_162_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 163 — WA/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_163_META = {
+  id: 'kpi_163',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 161550,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_163_COEF = {
+  c0: 10.8000,
+  c1: 14.4000,
+  c2: 18.0000,
+  c3: 21.6000,
+  c4: 25.2000,
+  c5: 28.8000,
+  c6: 32.4000,
+  c7: 36.0000,
+  c8: 39.6000,
+  c9: 43.2000,
+  c10: 46.8000,
+  c11: 50.4000,
+  c12: 54.0000,
+  c13: 57.6000,
+  c14: 61.2000,
+  c15: 64.8000,
+  c16: 68.4000,
+  c17: 72.0000,
+  c18: 75.6000,
+  c19: 79.2000,
+  c20: 82.8000,
+  c21: 86.4000,
+  c22: 90.0000,
+  c23: 93.6000,
+  c24: 97.2000,
+  c25: 1.1000,
+  c26: 4.7000,
+  c27: 8.3000,
+  c28: 11.9000,
+  c29: 15.5000,
+  c30: 19.1000,
+  c31: 22.7000,
+  c32: 26.3000,
+  c33: 29.9000,
+  c34: 33.5000,
+  c35: 37.1000,
+  c36: 40.7000,
+  c37: 44.3000,
+  c38: 47.9000,
+  c39: 51.5000,
+  c40: 55.1000,
+  c41: 58.7000,
+  c42: 62.3000,
+  c43: 65.9000,
+  c44: 69.5000,
+  c45: 73.1000,
+  c46: 76.7000,
+  c47: 80.3000,
+  c48: 83.9000,
+  c49: 87.5000,
+  c50: 91.1000,
+  c51: 94.7000,
+  c52: 98.3000,
+  c53: 2.2000,
+  c54: 5.8000,
+  c55: 9.4000,
+  c56: 13.0000,
+  c57: 16.6000,
+  c58: 20.2000,
+  c59: 23.8000,
+  c60: 27.4000,
+  c61: 31.0000,
+  c62: 34.6000,
+  c63: 38.2000,
+  c64: 41.8000,
+  c65: 45.4000,
+  c66: 49.0000,
+  c67: 52.6000,
+  c68: 56.2000,
+  c69: 59.8000,
+  c70: 63.4000,
+  c71: 67.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_163_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_163_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_163_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_163_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_163_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_163_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_163_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_163_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_163_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_163_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 164 — SA/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_164_META = {
+  id: 'kpi_164',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 162541,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_164_COEF = {
+  c0: 9.0000,
+  c1: 12.0000,
+  c2: 15.0000,
+  c3: 18.0000,
+  c4: 21.0000,
+  c5: 24.0000,
+  c6: 27.0000,
+  c7: 30.0000,
+  c8: 33.0000,
+  c9: 36.0000,
+  c10: 39.0000,
+  c11: 42.0000,
+  c12: 45.0000,
+  c13: 48.0000,
+  c14: 51.0000,
+  c15: 54.0000,
+  c16: 57.0000,
+  c17: 60.0000,
+  c18: 63.0000,
+  c19: 66.0000,
+  c20: 69.0000,
+  c21: 72.0000,
+  c22: 75.0000,
+  c23: 78.0000,
+  c24: 81.0000,
+  c25: 84.0000,
+  c26: 87.0000,
+  c27: 90.0000,
+  c28: 93.0000,
+  c29: 96.0000,
+  c30: 99.0000,
+  c31: 2.3000,
+  c32: 5.3000,
+  c33: 8.3000,
+  c34: 11.3000,
+  c35: 14.3000,
+  c36: 17.3000,
+  c37: 20.3000,
+  c38: 23.3000,
+  c39: 26.3000,
+  c40: 29.3000,
+  c41: 32.3000,
+  c42: 35.3000,
+  c43: 38.3000,
+  c44: 41.3000,
+  c45: 44.3000,
+  c46: 47.3000,
+  c47: 50.3000,
+  c48: 53.3000,
+  c49: 56.3000,
+  c50: 59.3000,
+  c51: 62.3000,
+  c52: 65.3000,
+  c53: 68.3000,
+  c54: 71.3000,
+  c55: 74.3000,
+  c56: 77.3000,
+  c57: 80.3000,
+  c58: 83.3000,
+  c59: 86.3000,
+  c60: 89.3000,
+  c61: 92.3000,
+  c62: 95.3000,
+  c63: 98.3000,
+  c64: 1.6000,
+  c65: 4.6000,
+  c66: 7.6000,
+  c67: 10.6000,
+  c68: 13.6000,
+  c69: 16.6000,
+  c70: 19.6000,
+  c71: 22.6000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_164_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_164_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_164_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_164_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_164_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_164_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_164_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_164_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_164_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_164_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 165 — TAS/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_165_META = {
+  id: 'kpi_165',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 163532,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_165_COEF = {
+  c0: 7.2000,
+  c1: 9.6000,
+  c2: 12.0000,
+  c3: 14.4000,
+  c4: 16.8000,
+  c5: 19.2000,
+  c6: 21.6000,
+  c7: 24.0000,
+  c8: 26.4000,
+  c9: 28.8000,
+  c10: 31.2000,
+  c11: 33.6000,
+  c12: 36.0000,
+  c13: 38.4000,
+  c14: 40.8000,
+  c15: 43.2000,
+  c16: 45.6000,
+  c17: 48.0000,
+  c18: 50.4000,
+  c19: 52.8000,
+  c20: 55.2000,
+  c21: 57.6000,
+  c22: 60.0000,
+  c23: 62.4000,
+  c24: 64.8000,
+  c25: 67.2000,
+  c26: 69.6000,
+  c27: 72.0000,
+  c28: 74.4000,
+  c29: 76.8000,
+  c30: 79.2000,
+  c31: 81.6000,
+  c32: 84.0000,
+  c33: 86.4000,
+  c34: 88.8000,
+  c35: 91.2000,
+  c36: 93.6000,
+  c37: 96.0000,
+  c38: 98.4000,
+  c39: 1.1000,
+  c40: 3.5000,
+  c41: 5.9000,
+  c42: 8.3000,
+  c43: 10.7000,
+  c44: 13.1000,
+  c45: 15.5000,
+  c46: 17.9000,
+  c47: 20.3000,
+  c48: 22.7000,
+  c49: 25.1000,
+  c50: 27.5000,
+  c51: 29.9000,
+  c52: 32.3000,
+  c53: 34.7000,
+  c54: 37.1000,
+  c55: 39.5000,
+  c56: 41.9000,
+  c57: 44.3000,
+  c58: 46.7000,
+  c59: 49.1000,
+  c60: 51.5000,
+  c61: 53.9000,
+  c62: 56.3000,
+  c63: 58.7000,
+  c64: 61.1000,
+  c65: 63.5000,
+  c66: 65.9000,
+  c67: 68.3000,
+  c68: 70.7000,
+  c69: 73.1000,
+  c70: 75.5000,
+  c71: 77.9000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_165_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_165_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_165_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_165_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_165_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_165_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_165_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_165_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_165_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_165_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 166 — NT/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_166_META = {
+  id: 'kpi_166',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 164523,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_166_COEF = {
+  c0: 5.4000,
+  c1: 7.2000,
+  c2: 9.0000,
+  c3: 10.8000,
+  c4: 12.6000,
+  c5: 14.4000,
+  c6: 16.2000,
+  c7: 18.0000,
+  c8: 19.8000,
+  c9: 21.6000,
+  c10: 23.4000,
+  c11: 25.2000,
+  c12: 27.0000,
+  c13: 28.8000,
+  c14: 30.6000,
+  c15: 32.4000,
+  c16: 34.2000,
+  c17: 36.0000,
+  c18: 37.8000,
+  c19: 39.6000,
+  c20: 41.4000,
+  c21: 43.2000,
+  c22: 45.0000,
+  c23: 46.8000,
+  c24: 48.6000,
+  c25: 50.4000,
+  c26: 52.2000,
+  c27: 54.0000,
+  c28: 55.8000,
+  c29: 57.6000,
+  c30: 59.4000,
+  c31: 61.2000,
+  c32: 63.0000,
+  c33: 64.8000,
+  c34: 66.6000,
+  c35: 68.4000,
+  c36: 70.2000,
+  c37: 72.0000,
+  c38: 73.8000,
+  c39: 75.6000,
+  c40: 77.4000,
+  c41: 79.2000,
+  c42: 81.0000,
+  c43: 82.8000,
+  c44: 84.6000,
+  c45: 86.4000,
+  c46: 88.2000,
+  c47: 90.0000,
+  c48: 91.8000,
+  c49: 93.6000,
+  c50: 95.4000,
+  c51: 97.2000,
+  c52: 99.0000,
+  c53: 1.1000,
+  c54: 2.9000,
+  c55: 4.7000,
+  c56: 6.5000,
+  c57: 8.3000,
+  c58: 10.1000,
+  c59: 11.9000,
+  c60: 13.7000,
+  c61: 15.5000,
+  c62: 17.3000,
+  c63: 19.1000,
+  c64: 20.9000,
+  c65: 22.7000,
+  c66: 24.5000,
+  c67: 26.3000,
+  c68: 28.1000,
+  c69: 29.9000,
+  c70: 31.7000,
+  c71: 33.5000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_166_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_166_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_166_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_166_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_166_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_166_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_166_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_166_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_166_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_166_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 167 — ACT/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_167_META = {
+  id: 'kpi_167',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 165514,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_167_COEF = {
+  c0: 3.6000,
+  c1: 4.8000,
+  c2: 6.0000,
+  c3: 7.2000,
+  c4: 8.4000,
+  c5: 9.6000,
+  c6: 10.8000,
+  c7: 12.0000,
+  c8: 13.2000,
+  c9: 14.4000,
+  c10: 15.6000,
+  c11: 16.8000,
+  c12: 18.0000,
+  c13: 19.2000,
+  c14: 20.4000,
+  c15: 21.6000,
+  c16: 22.8000,
+  c17: 24.0000,
+  c18: 25.2000,
+  c19: 26.4000,
+  c20: 27.6000,
+  c21: 28.8000,
+  c22: 30.0000,
+  c23: 31.2000,
+  c24: 32.4000,
+  c25: 33.6000,
+  c26: 34.8000,
+  c27: 36.0000,
+  c28: 37.2000,
+  c29: 38.4000,
+  c30: 39.6000,
+  c31: 40.8000,
+  c32: 42.0000,
+  c33: 43.2000,
+  c34: 44.4000,
+  c35: 45.6000,
+  c36: 46.8000,
+  c37: 48.0000,
+  c38: 49.2000,
+  c39: 50.4000,
+  c40: 51.6000,
+  c41: 52.8000,
+  c42: 54.0000,
+  c43: 55.2000,
+  c44: 56.4000,
+  c45: 57.6000,
+  c46: 58.8000,
+  c47: 60.0000,
+  c48: 61.2000,
+  c49: 62.4000,
+  c50: 63.6000,
+  c51: 64.8000,
+  c52: 66.0000,
+  c53: 67.2000,
+  c54: 68.4000,
+  c55: 69.6000,
+  c56: 70.8000,
+  c57: 72.0000,
+  c58: 73.2000,
+  c59: 74.4000,
+  c60: 75.6000,
+  c61: 76.8000,
+  c62: 78.0000,
+  c63: 79.2000,
+  c64: 80.4000,
+  c65: 81.6000,
+  c66: 82.8000,
+  c67: 84.0000,
+  c68: 85.2000,
+  c69: 86.4000,
+  c70: 87.6000,
+  c71: 88.8000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_167_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_167_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_167_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_167_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_167_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_167_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_167_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_167_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_167_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_167_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 168 — NSW/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_168_META = {
+  id: 'kpi_168',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 166505,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_168_COEF = {
+  c0: 1.8000,
+  c1: 2.4000,
+  c2: 3.0000,
+  c3: 3.6000,
+  c4: 4.2000,
+  c5: 4.8000,
+  c6: 5.4000,
+  c7: 6.0000,
+  c8: 6.6000,
+  c9: 7.2000,
+  c10: 7.8000,
+  c11: 8.4000,
+  c12: 9.0000,
+  c13: 9.6000,
+  c14: 10.2000,
+  c15: 10.8000,
+  c16: 11.4000,
+  c17: 12.0000,
+  c18: 12.6000,
+  c19: 13.2000,
+  c20: 13.8000,
+  c21: 14.4000,
+  c22: 15.0000,
+  c23: 15.6000,
+  c24: 16.2000,
+  c25: 16.8000,
+  c26: 17.4000,
+  c27: 18.0000,
+  c28: 18.6000,
+  c29: 19.2000,
+  c30: 19.8000,
+  c31: 20.4000,
+  c32: 21.0000,
+  c33: 21.6000,
+  c34: 22.2000,
+  c35: 22.8000,
+  c36: 23.4000,
+  c37: 24.0000,
+  c38: 24.6000,
+  c39: 25.2000,
+  c40: 25.8000,
+  c41: 26.4000,
+  c42: 27.0000,
+  c43: 27.6000,
+  c44: 28.2000,
+  c45: 28.8000,
+  c46: 29.4000,
+  c47: 30.0000,
+  c48: 30.6000,
+  c49: 31.2000,
+  c50: 31.8000,
+  c51: 32.4000,
+  c52: 33.0000,
+  c53: 33.6000,
+  c54: 34.2000,
+  c55: 34.8000,
+  c56: 35.4000,
+  c57: 36.0000,
+  c58: 36.6000,
+  c59: 37.2000,
+  c60: 37.8000,
+  c61: 38.4000,
+  c62: 39.0000,
+  c63: 39.6000,
+  c64: 40.2000,
+  c65: 40.8000,
+  c66: 41.4000,
+  c67: 42.0000,
+  c68: 42.6000,
+  c69: 43.2000,
+  c70: 43.8000,
+  c71: 44.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_168_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_168_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_168_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_168_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_168_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_168_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_168_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_168_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_168_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_168_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 169 — VIC/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_169_META = {
+  id: 'kpi_169',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 167496,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_169_COEF = {
+  c0: 0.0000,
+  c1: 0.0000,
+  c2: 0.0000,
+  c3: 0.0000,
+  c4: 0.0000,
+  c5: 0.0000,
+  c6: 0.0000,
+  c7: 0.0000,
+  c8: 0.0000,
+  c9: 0.0000,
+  c10: 0.0000,
+  c11: 0.0000,
+  c12: 0.0000,
+  c13: 0.0000,
+  c14: 0.0000,
+  c15: 0.0000,
+  c16: 0.0000,
+  c17: 0.0000,
+  c18: 0.0000,
+  c19: 0.0000,
+  c20: 0.0000,
+  c21: 0.0000,
+  c22: 0.0000,
+  c23: 0.0000,
+  c24: 0.0000,
+  c25: 0.0000,
+  c26: 0.0000,
+  c27: 0.0000,
+  c28: 0.0000,
+  c29: 0.0000,
+  c30: 0.0000,
+  c31: 0.0000,
+  c32: 0.0000,
+  c33: 0.0000,
+  c34: 0.0000,
+  c35: 0.0000,
+  c36: 0.0000,
+  c37: 0.0000,
+  c38: 0.0000,
+  c39: 0.0000,
+  c40: 0.0000,
+  c41: 0.0000,
+  c42: 0.0000,
+  c43: 0.0000,
+  c44: 0.0000,
+  c45: 0.0000,
+  c46: 0.0000,
+  c47: 0.0000,
+  c48: 0.0000,
+  c49: 0.0000,
+  c50: 0.0000,
+  c51: 0.0000,
+  c52: 0.0000,
+  c53: 0.0000,
+  c54: 0.0000,
+  c55: 0.0000,
+  c56: 0.0000,
+  c57: 0.0000,
+  c58: 0.0000,
+  c59: 0.0000,
+  c60: 0.0000,
+  c61: 0.0000,
+  c62: 0.0000,
+  c63: 0.0000,
+  c64: 0.0000,
+  c65: 0.0000,
+  c66: 0.0000,
+  c67: 0.0000,
+  c68: 0.0000,
+  c69: 0.0000,
+  c70: 0.0000,
+  c71: 0.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_169_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_169_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_169_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_169_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_169_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_169_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_169_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_169_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_169_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_169_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 170 — QLD/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_170_META = {
+  id: 'kpi_170',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 168487,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_170_COEF = {
+  c0: 97.9000,
+  c1: 97.3000,
+  c2: 96.7000,
+  c3: 96.1000,
+  c4: 95.5000,
+  c5: 94.9000,
+  c6: 94.3000,
+  c7: 93.7000,
+  c8: 93.1000,
+  c9: 92.5000,
+  c10: 91.9000,
+  c11: 91.3000,
+  c12: 90.7000,
+  c13: 90.1000,
+  c14: 89.5000,
+  c15: 88.9000,
+  c16: 88.3000,
+  c17: 87.7000,
+  c18: 87.1000,
+  c19: 86.5000,
+  c20: 85.9000,
+  c21: 85.3000,
+  c22: 84.7000,
+  c23: 84.1000,
+  c24: 83.5000,
+  c25: 82.9000,
+  c26: 82.3000,
+  c27: 81.7000,
+  c28: 81.1000,
+  c29: 80.5000,
+  c30: 79.9000,
+  c31: 79.3000,
+  c32: 78.7000,
+  c33: 78.1000,
+  c34: 77.5000,
+  c35: 76.9000,
+  c36: 76.3000,
+  c37: 75.7000,
+  c38: 75.1000,
+  c39: 74.5000,
+  c40: 73.9000,
+  c41: 73.3000,
+  c42: 72.7000,
+  c43: 72.1000,
+  c44: 71.5000,
+  c45: 70.9000,
+  c46: 70.3000,
+  c47: 69.7000,
+  c48: 69.1000,
+  c49: 68.5000,
+  c50: 67.9000,
+  c51: 67.3000,
+  c52: 66.7000,
+  c53: 66.1000,
+  c54: 65.5000,
+  c55: 64.9000,
+  c56: 64.3000,
+  c57: 63.7000,
+  c58: 63.1000,
+  c59: 62.5000,
+  c60: 61.9000,
+  c61: 61.3000,
+  c62: 60.7000,
+  c63: 60.1000,
+  c64: 59.5000,
+  c65: 58.9000,
+  c66: 58.3000,
+  c67: 57.7000,
+  c68: 57.1000,
+  c69: 56.5000,
+  c70: 55.9000,
+  c71: 55.3000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_170_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_170_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_170_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_170_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_170_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_170_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_170_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_170_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_170_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_170_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 171 — WA/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_171_META = {
+  id: 'kpi_171',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 169478,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_171_COEF = {
+  c0: 96.1000,
+  c1: 94.9000,
+  c2: 93.7000,
+  c3: 92.5000,
+  c4: 91.3000,
+  c5: 90.1000,
+  c6: 88.9000,
+  c7: 87.7000,
+  c8: 86.5000,
+  c9: 85.3000,
+  c10: 84.1000,
+  c11: 82.9000,
+  c12: 81.7000,
+  c13: 80.5000,
+  c14: 79.3000,
+  c15: 78.1000,
+  c16: 76.9000,
+  c17: 75.7000,
+  c18: 74.5000,
+  c19: 73.3000,
+  c20: 72.1000,
+  c21: 70.9000,
+  c22: 69.7000,
+  c23: 68.5000,
+  c24: 67.3000,
+  c25: 66.1000,
+  c26: 64.9000,
+  c27: 63.7000,
+  c28: 62.5000,
+  c29: 61.3000,
+  c30: 60.1000,
+  c31: 58.9000,
+  c32: 57.7000,
+  c33: 56.5000,
+  c34: 55.3000,
+  c35: 54.1000,
+  c36: 52.9000,
+  c37: 51.7000,
+  c38: 50.5000,
+  c39: 49.3000,
+  c40: 48.1000,
+  c41: 46.9000,
+  c42: 45.7000,
+  c43: 44.5000,
+  c44: 43.3000,
+  c45: 42.1000,
+  c46: 40.9000,
+  c47: 39.7000,
+  c48: 38.5000,
+  c49: 37.3000,
+  c50: 36.1000,
+  c51: 34.9000,
+  c52: 33.7000,
+  c53: 32.5000,
+  c54: 31.3000,
+  c55: 30.1000,
+  c56: 28.9000,
+  c57: 27.7000,
+  c58: 26.5000,
+  c59: 25.3000,
+  c60: 24.1000,
+  c61: 22.9000,
+  c62: 21.7000,
+  c63: 20.5000,
+  c64: 19.3000,
+  c65: 18.1000,
+  c66: 16.9000,
+  c67: 15.7000,
+  c68: 14.5000,
+  c69: 13.3000,
+  c70: 12.1000,
+  c71: 10.9000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_171_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_171_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_171_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_171_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_171_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_171_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_171_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_171_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_171_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_171_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 172 — SA/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_172_META = {
+  id: 'kpi_172',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 170469,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_172_COEF = {
+  c0: 94.3000,
+  c1: 92.5000,
+  c2: 90.7000,
+  c3: 88.9000,
+  c4: 87.1000,
+  c5: 85.3000,
+  c6: 83.5000,
+  c7: 81.7000,
+  c8: 79.9000,
+  c9: 78.1000,
+  c10: 76.3000,
+  c11: 74.5000,
+  c12: 72.7000,
+  c13: 70.9000,
+  c14: 69.1000,
+  c15: 67.3000,
+  c16: 65.5000,
+  c17: 63.7000,
+  c18: 61.9000,
+  c19: 60.1000,
+  c20: 58.3000,
+  c21: 56.5000,
+  c22: 54.7000,
+  c23: 52.9000,
+  c24: 51.1000,
+  c25: 49.3000,
+  c26: 47.5000,
+  c27: 45.7000,
+  c28: 43.9000,
+  c29: 42.1000,
+  c30: 40.3000,
+  c31: 38.5000,
+  c32: 36.7000,
+  c33: 34.9000,
+  c34: 33.1000,
+  c35: 31.3000,
+  c36: 29.5000,
+  c37: 27.7000,
+  c38: 25.9000,
+  c39: 24.1000,
+  c40: 22.3000,
+  c41: 20.5000,
+  c42: 18.7000,
+  c43: 16.9000,
+  c44: 15.1000,
+  c45: 13.3000,
+  c46: 11.5000,
+  c47: 9.7000,
+  c48: 7.9000,
+  c49: 6.1000,
+  c50: 4.3000,
+  c51: 2.5000,
+  c52: 0.7000,
+  c53: 98.6000,
+  c54: 96.8000,
+  c55: 95.0000,
+  c56: 93.2000,
+  c57: 91.4000,
+  c58: 89.6000,
+  c59: 87.8000,
+  c60: 86.0000,
+  c61: 84.2000,
+  c62: 82.4000,
+  c63: 80.6000,
+  c64: 78.8000,
+  c65: 77.0000,
+  c66: 75.2000,
+  c67: 73.4000,
+  c68: 71.6000,
+  c69: 69.8000,
+  c70: 68.0000,
+  c71: 66.2000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_172_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_172_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_172_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_172_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_172_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_172_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_172_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_172_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_172_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_172_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 173 — TAS/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_173_META = {
+  id: 'kpi_173',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 171460,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_173_COEF = {
+  c0: 92.5000,
+  c1: 90.1000,
+  c2: 87.7000,
+  c3: 85.3000,
+  c4: 82.9000,
+  c5: 80.5000,
+  c6: 78.1000,
+  c7: 75.7000,
+  c8: 73.3000,
+  c9: 70.9000,
+  c10: 68.5000,
+  c11: 66.1000,
+  c12: 63.7000,
+  c13: 61.3000,
+  c14: 58.9000,
+  c15: 56.5000,
+  c16: 54.1000,
+  c17: 51.7000,
+  c18: 49.3000,
+  c19: 46.9000,
+  c20: 44.5000,
+  c21: 42.1000,
+  c22: 39.7000,
+  c23: 37.3000,
+  c24: 34.9000,
+  c25: 32.5000,
+  c26: 30.1000,
+  c27: 27.7000,
+  c28: 25.3000,
+  c29: 22.9000,
+  c30: 20.5000,
+  c31: 18.1000,
+  c32: 15.7000,
+  c33: 13.3000,
+  c34: 10.9000,
+  c35: 8.5000,
+  c36: 6.1000,
+  c37: 3.7000,
+  c38: 1.3000,
+  c39: 98.6000,
+  c40: 96.2000,
+  c41: 93.8000,
+  c42: 91.4000,
+  c43: 89.0000,
+  c44: 86.6000,
+  c45: 84.2000,
+  c46: 81.8000,
+  c47: 79.4000,
+  c48: 77.0000,
+  c49: 74.6000,
+  c50: 72.2000,
+  c51: 69.8000,
+  c52: 67.4000,
+  c53: 65.0000,
+  c54: 62.6000,
+  c55: 60.2000,
+  c56: 57.8000,
+  c57: 55.4000,
+  c58: 53.0000,
+  c59: 50.6000,
+  c60: 48.2000,
+  c61: 45.8000,
+  c62: 43.4000,
+  c63: 41.0000,
+  c64: 38.6000,
+  c65: 36.2000,
+  c66: 33.8000,
+  c67: 31.4000,
+  c68: 29.0000,
+  c69: 26.6000,
+  c70: 24.2000,
+  c71: 21.8000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_173_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_173_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_173_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_173_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_173_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_173_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_173_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_173_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_173_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_173_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 174 — NT/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_174_META = {
+  id: 'kpi_174',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 172451,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_174_COEF = {
+  c0: 90.7000,
+  c1: 87.7000,
+  c2: 84.7000,
+  c3: 81.7000,
+  c4: 78.7000,
+  c5: 75.7000,
+  c6: 72.7000,
+  c7: 69.7000,
+  c8: 66.7000,
+  c9: 63.7000,
+  c10: 60.7000,
+  c11: 57.7000,
+  c12: 54.7000,
+  c13: 51.7000,
+  c14: 48.7000,
+  c15: 45.7000,
+  c16: 42.7000,
+  c17: 39.7000,
+  c18: 36.7000,
+  c19: 33.7000,
+  c20: 30.7000,
+  c21: 27.7000,
+  c22: 24.7000,
+  c23: 21.7000,
+  c24: 18.7000,
+  c25: 15.7000,
+  c26: 12.7000,
+  c27: 9.7000,
+  c28: 6.7000,
+  c29: 3.7000,
+  c30: 0.7000,
+  c31: 97.4000,
+  c32: 94.4000,
+  c33: 91.4000,
+  c34: 88.4000,
+  c35: 85.4000,
+  c36: 82.4000,
+  c37: 79.4000,
+  c38: 76.4000,
+  c39: 73.4000,
+  c40: 70.4000,
+  c41: 67.4000,
+  c42: 64.4000,
+  c43: 61.4000,
+  c44: 58.4000,
+  c45: 55.4000,
+  c46: 52.4000,
+  c47: 49.4000,
+  c48: 46.4000,
+  c49: 43.4000,
+  c50: 40.4000,
+  c51: 37.4000,
+  c52: 34.4000,
+  c53: 31.4000,
+  c54: 28.4000,
+  c55: 25.4000,
+  c56: 22.4000,
+  c57: 19.4000,
+  c58: 16.4000,
+  c59: 13.4000,
+  c60: 10.4000,
+  c61: 7.4000,
+  c62: 4.4000,
+  c63: 1.4000,
+  c64: 98.1000,
+  c65: 95.1000,
+  c66: 92.1000,
+  c67: 89.1000,
+  c68: 86.1000,
+  c69: 83.1000,
+  c70: 80.1000,
+  c71: 77.1000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_174_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_174_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_174_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_174_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_174_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_174_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_174_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_174_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_174_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_174_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 175 — ACT/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_175_META = {
+  id: 'kpi_175',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 173442,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_175_COEF = {
+  c0: 88.9000,
+  c1: 85.3000,
+  c2: 81.7000,
+  c3: 78.1000,
+  c4: 74.5000,
+  c5: 70.9000,
+  c6: 67.3000,
+  c7: 63.7000,
+  c8: 60.1000,
+  c9: 56.5000,
+  c10: 52.9000,
+  c11: 49.3000,
+  c12: 45.7000,
+  c13: 42.1000,
+  c14: 38.5000,
+  c15: 34.9000,
+  c16: 31.3000,
+  c17: 27.7000,
+  c18: 24.1000,
+  c19: 20.5000,
+  c20: 16.9000,
+  c21: 13.3000,
+  c22: 9.7000,
+  c23: 6.1000,
+  c24: 2.5000,
+  c25: 98.6000,
+  c26: 95.0000,
+  c27: 91.4000,
+  c28: 87.8000,
+  c29: 84.2000,
+  c30: 80.6000,
+  c31: 77.0000,
+  c32: 73.4000,
+  c33: 69.8000,
+  c34: 66.2000,
+  c35: 62.6000,
+  c36: 59.0000,
+  c37: 55.4000,
+  c38: 51.8000,
+  c39: 48.2000,
+  c40: 44.6000,
+  c41: 41.0000,
+  c42: 37.4000,
+  c43: 33.8000,
+  c44: 30.2000,
+  c45: 26.6000,
+  c46: 23.0000,
+  c47: 19.4000,
+  c48: 15.8000,
+  c49: 12.2000,
+  c50: 8.6000,
+  c51: 5.0000,
+  c52: 1.4000,
+  c53: 97.5000,
+  c54: 93.9000,
+  c55: 90.3000,
+  c56: 86.7000,
+  c57: 83.1000,
+  c58: 79.5000,
+  c59: 75.9000,
+  c60: 72.3000,
+  c61: 68.7000,
+  c62: 65.1000,
+  c63: 61.5000,
+  c64: 57.9000,
+  c65: 54.3000,
+  c66: 50.7000,
+  c67: 47.1000,
+  c68: 43.5000,
+  c69: 39.9000,
+  c70: 36.3000,
+  c71: 32.7000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_175_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_175_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_175_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_175_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_175_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_175_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_175_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_175_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_175_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_175_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 176 — NSW/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_176_META = {
+  id: 'kpi_176',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 174433,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_176_COEF = {
+  c0: 87.1000,
+  c1: 82.9000,
+  c2: 78.7000,
+  c3: 74.5000,
+  c4: 70.3000,
+  c5: 66.1000,
+  c6: 61.9000,
+  c7: 57.7000,
+  c8: 53.5000,
+  c9: 49.3000,
+  c10: 45.1000,
+  c11: 40.9000,
+  c12: 36.7000,
+  c13: 32.5000,
+  c14: 28.3000,
+  c15: 24.1000,
+  c16: 19.9000,
+  c17: 15.7000,
+  c18: 11.5000,
+  c19: 7.3000,
+  c20: 3.1000,
+  c21: 98.6000,
+  c22: 94.4000,
+  c23: 90.2000,
+  c24: 86.0000,
+  c25: 81.8000,
+  c26: 77.6000,
+  c27: 73.4000,
+  c28: 69.2000,
+  c29: 65.0000,
+  c30: 60.8000,
+  c31: 56.6000,
+  c32: 52.4000,
+  c33: 48.2000,
+  c34: 44.0000,
+  c35: 39.8000,
+  c36: 35.6000,
+  c37: 31.4000,
+  c38: 27.2000,
+  c39: 23.0000,
+  c40: 18.8000,
+  c41: 14.6000,
+  c42: 10.4000,
+  c43: 6.2000,
+  c44: 2.0000,
+  c45: 97.5000,
+  c46: 93.3000,
+  c47: 89.1000,
+  c48: 84.9000,
+  c49: 80.7000,
+  c50: 76.5000,
+  c51: 72.3000,
+  c52: 68.1000,
+  c53: 63.9000,
+  c54: 59.7000,
+  c55: 55.5000,
+  c56: 51.3000,
+  c57: 47.1000,
+  c58: 42.9000,
+  c59: 38.7000,
+  c60: 34.5000,
+  c61: 30.3000,
+  c62: 26.1000,
+  c63: 21.9000,
+  c64: 17.7000,
+  c65: 13.5000,
+  c66: 9.3000,
+  c67: 5.1000,
+  c68: 0.9000,
+  c69: 96.4000,
+  c70: 92.2000,
+  c71: 88.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_176_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_176_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_176_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_176_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_176_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_176_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_176_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_176_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_176_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_176_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 177 — VIC/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_177_META = {
+  id: 'kpi_177',
+  regionId: 'VIC' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 175424,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_177_COEF = {
+  c0: 85.3000,
+  c1: 80.5000,
+  c2: 75.7000,
+  c3: 70.9000,
+  c4: 66.1000,
+  c5: 61.3000,
+  c6: 56.5000,
+  c7: 51.7000,
+  c8: 46.9000,
+  c9: 42.1000,
+  c10: 37.3000,
+  c11: 32.5000,
+  c12: 27.7000,
+  c13: 22.9000,
+  c14: 18.1000,
+  c15: 13.3000,
+  c16: 8.5000,
+  c17: 3.7000,
+  c18: 98.6000,
+  c19: 93.8000,
+  c20: 89.0000,
+  c21: 84.2000,
+  c22: 79.4000,
+  c23: 74.6000,
+  c24: 69.8000,
+  c25: 65.0000,
+  c26: 60.2000,
+  c27: 55.4000,
+  c28: 50.6000,
+  c29: 45.8000,
+  c30: 41.0000,
+  c31: 36.2000,
+  c32: 31.4000,
+  c33: 26.6000,
+  c34: 21.8000,
+  c35: 17.0000,
+  c36: 12.2000,
+  c37: 7.4000,
+  c38: 2.6000,
+  c39: 97.5000,
+  c40: 92.7000,
+  c41: 87.9000,
+  c42: 83.1000,
+  c43: 78.3000,
+  c44: 73.5000,
+  c45: 68.7000,
+  c46: 63.9000,
+  c47: 59.1000,
+  c48: 54.3000,
+  c49: 49.5000,
+  c50: 44.7000,
+  c51: 39.9000,
+  c52: 35.1000,
+  c53: 30.3000,
+  c54: 25.5000,
+  c55: 20.7000,
+  c56: 15.9000,
+  c57: 11.1000,
+  c58: 6.3000,
+  c59: 1.5000,
+  c60: 96.4000,
+  c61: 91.6000,
+  c62: 86.8000,
+  c63: 82.0000,
+  c64: 77.2000,
+  c65: 72.4000,
+  c66: 67.6000,
+  c67: 62.8000,
+  c68: 58.0000,
+  c69: 53.2000,
+  c70: 48.4000,
+  c71: 43.6000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_177_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_177_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_177_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_177_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_177_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_177_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_177_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_177_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_177_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_177_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 178 — QLD/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_178_META = {
+  id: 'kpi_178',
+  regionId: 'QLD' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 176415,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_178_COEF = {
+  c0: 83.5000,
+  c1: 78.1000,
+  c2: 72.7000,
+  c3: 67.3000,
+  c4: 61.9000,
+  c5: 56.5000,
+  c6: 51.1000,
+  c7: 45.7000,
+  c8: 40.3000,
+  c9: 34.9000,
+  c10: 29.5000,
+  c11: 24.1000,
+  c12: 18.7000,
+  c13: 13.3000,
+  c14: 7.9000,
+  c15: 2.5000,
+  c16: 96.8000,
+  c17: 91.4000,
+  c18: 86.0000,
+  c19: 80.6000,
+  c20: 75.2000,
+  c21: 69.8000,
+  c22: 64.4000,
+  c23: 59.0000,
+  c24: 53.6000,
+  c25: 48.2000,
+  c26: 42.8000,
+  c27: 37.4000,
+  c28: 32.0000,
+  c29: 26.6000,
+  c30: 21.2000,
+  c31: 15.8000,
+  c32: 10.4000,
+  c33: 5.0000,
+  c34: 99.3000,
+  c35: 93.9000,
+  c36: 88.5000,
+  c37: 83.1000,
+  c38: 77.7000,
+  c39: 72.3000,
+  c40: 66.9000,
+  c41: 61.5000,
+  c42: 56.1000,
+  c43: 50.7000,
+  c44: 45.3000,
+  c45: 39.9000,
+  c46: 34.5000,
+  c47: 29.1000,
+  c48: 23.7000,
+  c49: 18.3000,
+  c50: 12.9000,
+  c51: 7.5000,
+  c52: 2.1000,
+  c53: 96.4000,
+  c54: 91.0000,
+  c55: 85.6000,
+  c56: 80.2000,
+  c57: 74.8000,
+  c58: 69.4000,
+  c59: 64.0000,
+  c60: 58.6000,
+  c61: 53.2000,
+  c62: 47.8000,
+  c63: 42.4000,
+  c64: 37.0000,
+  c65: 31.6000,
+  c66: 26.2000,
+  c67: 20.8000,
+  c68: 15.4000,
+  c69: 10.0000,
+  c70: 4.6000,
+  c71: 98.9000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_178_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_178_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_178_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_178_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_178_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_178_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_178_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_178_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_178_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_178_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 179 — WA/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_179_META = {
+  id: 'kpi_179',
+  regionId: 'WA' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 177406,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_179_COEF = {
+  c0: 81.7000,
+  c1: 75.7000,
+  c2: 69.7000,
+  c3: 63.7000,
+  c4: 57.7000,
+  c5: 51.7000,
+  c6: 45.7000,
+  c7: 39.7000,
+  c8: 33.7000,
+  c9: 27.7000,
+  c10: 21.7000,
+  c11: 15.7000,
+  c12: 9.7000,
+  c13: 3.7000,
+  c14: 97.4000,
+  c15: 91.4000,
+  c16: 85.4000,
+  c17: 79.4000,
+  c18: 73.4000,
+  c19: 67.4000,
+  c20: 61.4000,
+  c21: 55.4000,
+  c22: 49.4000,
+  c23: 43.4000,
+  c24: 37.4000,
+  c25: 31.4000,
+  c26: 25.4000,
+  c27: 19.4000,
+  c28: 13.4000,
+  c29: 7.4000,
+  c30: 1.4000,
+  c31: 95.1000,
+  c32: 89.1000,
+  c33: 83.1000,
+  c34: 77.1000,
+  c35: 71.1000,
+  c36: 65.1000,
+  c37: 59.1000,
+  c38: 53.1000,
+  c39: 47.1000,
+  c40: 41.1000,
+  c41: 35.1000,
+  c42: 29.1000,
+  c43: 23.1000,
+  c44: 17.1000,
+  c45: 11.1000,
+  c46: 5.1000,
+  c47: 98.8000,
+  c48: 92.8000,
+  c49: 86.8000,
+  c50: 80.8000,
+  c51: 74.8000,
+  c52: 68.8000,
+  c53: 62.8000,
+  c54: 56.8000,
+  c55: 50.8000,
+  c56: 44.8000,
+  c57: 38.8000,
+  c58: 32.8000,
+  c59: 26.8000,
+  c60: 20.8000,
+  c61: 14.8000,
+  c62: 8.8000,
+  c63: 2.8000,
+  c64: 96.5000,
+  c65: 90.5000,
+  c66: 84.5000,
+  c67: 78.5000,
+  c68: 72.5000,
+  c69: 66.5000,
+  c70: 60.5000,
+  c71: 54.5000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_179_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_179_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_179_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_179_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_179_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_179_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_179_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_179_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_179_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_179_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 180 — SA/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_180_META = {
+  id: 'kpi_180',
+  regionId: 'SA' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 178397,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_180_COEF = {
+  c0: 79.9000,
+  c1: 73.3000,
+  c2: 66.7000,
+  c3: 60.1000,
+  c4: 53.5000,
+  c5: 46.9000,
+  c6: 40.3000,
+  c7: 33.7000,
+  c8: 27.1000,
+  c9: 20.5000,
+  c10: 13.9000,
+  c11: 7.3000,
+  c12: 0.7000,
+  c13: 93.8000,
+  c14: 87.2000,
+  c15: 80.6000,
+  c16: 74.0000,
+  c17: 67.4000,
+  c18: 60.8000,
+  c19: 54.2000,
+  c20: 47.6000,
+  c21: 41.0000,
+  c22: 34.4000,
+  c23: 27.8000,
+  c24: 21.2000,
+  c25: 14.6000,
+  c26: 8.0000,
+  c27: 1.4000,
+  c28: 94.5000,
+  c29: 87.9000,
+  c30: 81.3000,
+  c31: 74.7000,
+  c32: 68.1000,
+  c33: 61.5000,
+  c34: 54.9000,
+  c35: 48.3000,
+  c36: 41.7000,
+  c37: 35.1000,
+  c38: 28.5000,
+  c39: 21.9000,
+  c40: 15.3000,
+  c41: 8.7000,
+  c42: 2.1000,
+  c43: 95.2000,
+  c44: 88.6000,
+  c45: 82.0000,
+  c46: 75.4000,
+  c47: 68.8000,
+  c48: 62.2000,
+  c49: 55.6000,
+  c50: 49.0000,
+  c51: 42.4000,
+  c52: 35.8000,
+  c53: 29.2000,
+  c54: 22.6000,
+  c55: 16.0000,
+  c56: 9.4000,
+  c57: 2.8000,
+  c58: 95.9000,
+  c59: 89.3000,
+  c60: 82.7000,
+  c61: 76.1000,
+  c62: 69.5000,
+  c63: 62.9000,
+  c64: 56.3000,
+  c65: 49.7000,
+  c66: 43.1000,
+  c67: 36.5000,
+  c68: 29.9000,
+  c69: 23.3000,
+  c70: 16.7000,
+  c71: 10.1000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_180_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_180_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_180_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_180_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_180_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_180_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_180_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_180_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_180_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_180_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 181 — TAS/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_181_META = {
+  id: 'kpi_181',
+  regionId: 'TAS' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 179388,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_181_COEF = {
+  c0: 78.1000,
+  c1: 70.9000,
+  c2: 63.7000,
+  c3: 56.5000,
+  c4: 49.3000,
+  c5: 42.1000,
+  c6: 34.9000,
+  c7: 27.7000,
+  c8: 20.5000,
+  c9: 13.3000,
+  c10: 6.1000,
+  c11: 98.6000,
+  c12: 91.4000,
+  c13: 84.2000,
+  c14: 77.0000,
+  c15: 69.8000,
+  c16: 62.6000,
+  c17: 55.4000,
+  c18: 48.2000,
+  c19: 41.0000,
+  c20: 33.8000,
+  c21: 26.6000,
+  c22: 19.4000,
+  c23: 12.2000,
+  c24: 5.0000,
+  c25: 97.5000,
+  c26: 90.3000,
+  c27: 83.1000,
+  c28: 75.9000,
+  c29: 68.7000,
+  c30: 61.5000,
+  c31: 54.3000,
+  c32: 47.1000,
+  c33: 39.9000,
+  c34: 32.7000,
+  c35: 25.5000,
+  c36: 18.3000,
+  c37: 11.1000,
+  c38: 3.9000,
+  c39: 96.4000,
+  c40: 89.2000,
+  c41: 82.0000,
+  c42: 74.8000,
+  c43: 67.6000,
+  c44: 60.4000,
+  c45: 53.2000,
+  c46: 46.0000,
+  c47: 38.8000,
+  c48: 31.6000,
+  c49: 24.4000,
+  c50: 17.2000,
+  c51: 10.0000,
+  c52: 2.8000,
+  c53: 95.3000,
+  c54: 88.1000,
+  c55: 80.9000,
+  c56: 73.7000,
+  c57: 66.5000,
+  c58: 59.3000,
+  c59: 52.1000,
+  c60: 44.9000,
+  c61: 37.7000,
+  c62: 30.5000,
+  c63: 23.3000,
+  c64: 16.1000,
+  c65: 8.9000,
+  c66: 1.7000,
+  c67: 94.2000,
+  c68: 87.0000,
+  c69: 79.8000,
+  c70: 72.6000,
+  c71: 65.4000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_181_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_181_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_181_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_181_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_181_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_181_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_181_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_181_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_181_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_181_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 182 — NT/education. */
+export const V1014_PUBSVC_KPI_SCENARIO_182_META = {
+  id: 'kpi_182',
+  regionId: 'NT' as V1014PubsSvcRegionId,
+  pillar: 'education' as V1014PubsSvcPillar,
+  seed: 180379,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_182_COEF = {
+  c0: 76.3000,
+  c1: 68.5000,
+  c2: 60.7000,
+  c3: 52.9000,
+  c4: 45.1000,
+  c5: 37.3000,
+  c6: 29.5000,
+  c7: 21.7000,
+  c8: 13.9000,
+  c9: 6.1000,
+  c10: 98.0000,
+  c11: 90.2000,
+  c12: 82.4000,
+  c13: 74.6000,
+  c14: 66.8000,
+  c15: 59.0000,
+  c16: 51.2000,
+  c17: 43.4000,
+  c18: 35.6000,
+  c19: 27.8000,
+  c20: 20.0000,
+  c21: 12.2000,
+  c22: 4.4000,
+  c23: 96.3000,
+  c24: 88.5000,
+  c25: 80.7000,
+  c26: 72.9000,
+  c27: 65.1000,
+  c28: 57.3000,
+  c29: 49.5000,
+  c30: 41.7000,
+  c31: 33.9000,
+  c32: 26.1000,
+  c33: 18.3000,
+  c34: 10.5000,
+  c35: 2.7000,
+  c36: 94.6000,
+  c37: 86.8000,
+  c38: 79.0000,
+  c39: 71.2000,
+  c40: 63.4000,
+  c41: 55.6000,
+  c42: 47.8000,
+  c43: 40.0000,
+  c44: 32.2000,
+  c45: 24.4000,
+  c46: 16.6000,
+  c47: 8.8000,
+  c48: 1.0000,
+  c49: 92.9000,
+  c50: 85.1000,
+  c51: 77.3000,
+  c52: 69.5000,
+  c53: 61.7000,
+  c54: 53.9000,
+  c55: 46.1000,
+  c56: 38.3000,
+  c57: 30.5000,
+  c58: 22.7000,
+  c59: 14.9000,
+  c60: 7.1000,
+  c61: 99.0000,
+  c62: 91.2000,
+  c63: 83.4000,
+  c64: 75.6000,
+  c65: 67.8000,
+  c66: 60.0000,
+  c67: 52.2000,
+  c68: 44.4000,
+  c69: 36.6000,
+  c70: 28.8000,
+  c71: 21.0000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_182_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_182_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_182_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_182_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_182_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_182_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_182_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_182_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_182_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_182_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 183 — ACT/housing. */
+export const V1014_PUBSVC_KPI_SCENARIO_183_META = {
+  id: 'kpi_183',
+  regionId: 'ACT' as V1014PubsSvcRegionId,
+  pillar: 'housing' as V1014PubsSvcPillar,
+  seed: 181370,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_183_COEF = {
+  c0: 74.5000,
+  c1: 66.1000,
+  c2: 57.7000,
+  c3: 49.3000,
+  c4: 40.9000,
+  c5: 32.5000,
+  c6: 24.1000,
+  c7: 15.7000,
+  c8: 7.3000,
+  c9: 98.6000,
+  c10: 90.2000,
+  c11: 81.8000,
+  c12: 73.4000,
+  c13: 65.0000,
+  c14: 56.6000,
+  c15: 48.2000,
+  c16: 39.8000,
+  c17: 31.4000,
+  c18: 23.0000,
+  c19: 14.6000,
+  c20: 6.2000,
+  c21: 97.5000,
+  c22: 89.1000,
+  c23: 80.7000,
+  c24: 72.3000,
+  c25: 63.9000,
+  c26: 55.5000,
+  c27: 47.1000,
+  c28: 38.7000,
+  c29: 30.3000,
+  c30: 21.9000,
+  c31: 13.5000,
+  c32: 5.1000,
+  c33: 96.4000,
+  c34: 88.0000,
+  c35: 79.6000,
+  c36: 71.2000,
+  c37: 62.8000,
+  c38: 54.4000,
+  c39: 46.0000,
+  c40: 37.6000,
+  c41: 29.2000,
+  c42: 20.8000,
+  c43: 12.4000,
+  c44: 4.0000,
+  c45: 95.3000,
+  c46: 86.9000,
+  c47: 78.5000,
+  c48: 70.1000,
+  c49: 61.7000,
+  c50: 53.3000,
+  c51: 44.9000,
+  c52: 36.5000,
+  c53: 28.1000,
+  c54: 19.7000,
+  c55: 11.3000,
+  c56: 2.9000,
+  c57: 94.2000,
+  c58: 85.8000,
+  c59: 77.4000,
+  c60: 69.0000,
+  c61: 60.6000,
+  c62: 52.2000,
+  c63: 43.8000,
+  c64: 35.4000,
+  c65: 27.0000,
+  c66: 18.6000,
+  c67: 10.2000,
+  c68: 1.8000,
+  c69: 93.1000,
+  c70: 84.7000,
+  c71: 76.3000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_183_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_183_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_183_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_183_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_183_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_183_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_183_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_183_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_183_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_183_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+/** Auto-generated KPI scenario 184 — NSW/healthcare. */
+export const V1014_PUBSVC_KPI_SCENARIO_184_META = {
+  id: 'kpi_184',
+  regionId: 'NSW' as V1014PubsSvcRegionId,
+  pillar: 'healthcare' as V1014PubsSvcPillar,
+  seed: 182361,
+} as const;
+
+const V1014_PUBSVC_KPI_SCENARIO_184_COEF = {
+  c0: 72.7000,
+  c1: 63.7000,
+  c2: 54.7000,
+  c3: 45.7000,
+  c4: 36.7000,
+  c5: 27.7000,
+  c6: 18.7000,
+  c7: 9.7000,
+  c8: 0.7000,
+  c9: 91.4000,
+  c10: 82.4000,
+  c11: 73.4000,
+  c12: 64.4000,
+  c13: 55.4000,
+  c14: 46.4000,
+  c15: 37.4000,
+  c16: 28.4000,
+  c17: 19.4000,
+  c18: 10.4000,
+  c19: 1.4000,
+  c20: 92.1000,
+  c21: 83.1000,
+  c22: 74.1000,
+  c23: 65.1000,
+  c24: 56.1000,
+  c25: 47.1000,
+  c26: 38.1000,
+  c27: 29.1000,
+  c28: 20.1000,
+  c29: 11.1000,
+  c30: 2.1000,
+  c31: 92.8000,
+  c32: 83.8000,
+  c33: 74.8000,
+  c34: 65.8000,
+  c35: 56.8000,
+  c36: 47.8000,
+  c37: 38.8000,
+  c38: 29.8000,
+  c39: 20.8000,
+  c40: 11.8000,
+  c41: 2.8000,
+  c42: 93.5000,
+  c43: 84.5000,
+  c44: 75.5000,
+  c45: 66.5000,
+  c46: 57.5000,
+  c47: 48.5000,
+  c48: 39.5000,
+  c49: 30.5000,
+  c50: 21.5000,
+  c51: 12.5000,
+  c52: 3.5000,
+  c53: 94.2000,
+  c54: 85.2000,
+  c55: 76.2000,
+  c56: 67.2000,
+  c57: 58.2000,
+  c58: 49.2000,
+  c59: 40.2000,
+  c60: 31.2000,
+  c61: 22.2000,
+  c62: 13.2000,
+  c63: 4.2000,
+  c64: 94.9000,
+  c65: 85.9000,
+  c66: 76.9000,
+  c67: 67.9000,
+  c68: 58.9000,
+  c69: 49.9000,
+  c70: 40.9000,
+  c71: 31.9000,
+} as const;
+
+export function V1014_PUBSVC_KPI_SCENARIO_184_evaluate(turn: number): {
+  waitTurns: number;
+  pressureScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1014_PUBSVC_KPI_SCENARIO_184_COEF) as Array<keyof typeof V1014_PUBSVC_KPI_SCENARIO_184_COEF>;
+  for (let i = 0; i < keys.length; i++) {
+    acc += V1014_PUBSVC_KPI_SCENARIO_184_COEF[keys[i]] * ((turn + i) % 7);
+  }
+  const demand = V1014_PUBSVC_clamp(30 + (acc % 65), 0, 100);
+  const slot = V1014_PUBSVC_computeQueueStep({
+    turn,
+    regionId: V1014_PUBSVC_KPI_SCENARIO_184_META.regionId,
+    pillar: V1014_PUBSVC_KPI_SCENARIO_184_META.pillar,
+    demandPressure: demand,
+    throughputCapacity: V1014_PUBSVC_clamp(55 + (V1014_PUBSVC_KPI_SCENARIO_184_META.seed % 20), 5, 120),
+    staffingCoverage: V1014_PUBSVC_clamp(48 + (V1014_PUBSVC_KPI_SCENARIO_184_META.seed % 15), 5, 120),
+    policyFocus: V1014_PUBSVC_clamp(40 + (turn * 3) % 40, 0, 100),
+    fiscalHeadroom: V1014_PUBSVC_clamp(50 + (turn % 5) * 4, 0, 100),
+    priorWaitTurns: V1014_PUBSVC_clamp((acc % 40) + turn, 0, 240),
+  });
+  const pressureScore = V1014_PUBSVC_clamp(slot.waitTurns * 0.5 + demand * 0.35, 0, 100);
+  return { waitTurns: slot.waitTurns, pressureScore, stable: slot.band !== 'critical' };
+}
+
+export function V1014_PUBSVC_KPI_SCENARIO_184_regressionAssert(turn: number): boolean {
+  const r = V1014_PUBSVC_KPI_SCENARIO_184_evaluate(turn);
+  return typeof r.waitTurns === 'number' && r.waitTurns >= 0 && r.pressureScore <= 100;
+}
+
+
+export interface V1014PubsSvcAtlasRow {
+  id: number;
+  region: V1014PubsSvcRegionId;
+  pillar: V1014PubsSvcPillar;
+  turn: number;
+  queuePrior: number;
+  skillGap: number;
+  migGain: number;
+}
+
+export const V1014_PUBSVC_REGIONAL_COEFFICIENT_ATLAS: readonly V1014PubsSvcAtlasRow[] = [
+  { id: 0, region: 'NSW', pillar: 'housing', turn: 1, queuePrior: 10, skillGap: 5, migGain: 0.4000 },
+  { id: 1, region: 'NSW', pillar: 'housing', turn: 2, queuePrior: 23, skillGap: 12, migGain: 0.5320 },
+  { id: 2, region: 'NSW', pillar: 'housing', turn: 3, queuePrior: 36, skillGap: 19, migGain: 0.6640 },
+  { id: 3, region: 'NSW', pillar: 'housing', turn: 4, queuePrior: 49, skillGap: 26, migGain: 0.7960 },
+  { id: 4, region: 'NSW', pillar: 'housing', turn: 5, queuePrior: 62, skillGap: 33, migGain: 0.9280 },
+  { id: 5, region: 'NSW', pillar: 'housing', turn: 6, queuePrior: 75, skillGap: 40, migGain: 1.0600 },
+  { id: 6, region: 'NSW', pillar: 'housing', turn: 7, queuePrior: 88, skillGap: 47, migGain: 1.1920 },
+  { id: 7, region: 'NSW', pillar: 'housing', turn: 8, queuePrior: 21, skillGap: 54, migGain: 1.3240 },
+  { id: 8, region: 'NSW', pillar: 'housing', turn: 9, queuePrior: 34, skillGap: 6, migGain: 1.4560 },
+  { id: 9, region: 'NSW', pillar: 'housing', turn: 10, queuePrior: 47, skillGap: 13, migGain: 1.5880 },
+  { id: 10, region: 'NSW', pillar: 'housing', turn: 11, queuePrior: 60, skillGap: 20, migGain: 0.5200 },
+  { id: 11, region: 'NSW', pillar: 'housing', turn: 12, queuePrior: 73, skillGap: 27, migGain: 0.6520 },
+  { id: 12, region: 'NSW', pillar: 'housing', turn: 13, queuePrior: 86, skillGap: 34, migGain: 0.7840 },
+  { id: 13, region: 'NSW', pillar: 'housing', turn: 14, queuePrior: 19, skillGap: 41, migGain: 0.9160 },
+  { id: 14, region: 'NSW', pillar: 'housing', turn: 15, queuePrior: 32, skillGap: 48, migGain: 1.0480 },
+  { id: 15, region: 'NSW', pillar: 'housing', turn: 16, queuePrior: 45, skillGap: 55, migGain: 1.1800 },
+  { id: 16, region: 'NSW', pillar: 'housing', turn: 17, queuePrior: 58, skillGap: 7, migGain: 1.3120 },
+  { id: 17, region: 'NSW', pillar: 'housing', turn: 18, queuePrior: 71, skillGap: 14, migGain: 1.4440 },
+  { id: 18, region: 'NSW', pillar: 'housing', turn: 19, queuePrior: 84, skillGap: 21, migGain: 1.5760 },
+  { id: 19, region: 'NSW', pillar: 'housing', turn: 20, queuePrior: 17, skillGap: 28, migGain: 0.5080 },
+  { id: 20, region: 'NSW', pillar: 'housing', turn: 21, queuePrior: 30, skillGap: 35, migGain: 0.6400 },
+  { id: 21, region: 'NSW', pillar: 'housing', turn: 22, queuePrior: 43, skillGap: 42, migGain: 0.7720 },
+  { id: 22, region: 'NSW', pillar: 'housing', turn: 23, queuePrior: 56, skillGap: 49, migGain: 0.9040 },
+  { id: 23, region: 'NSW', pillar: 'housing', turn: 24, queuePrior: 69, skillGap: 56, migGain: 1.0360 },
+  { id: 24, region: 'NSW', pillar: 'housing', turn: 25, queuePrior: 82, skillGap: 8, migGain: 1.1680 },
+  { id: 25, region: 'NSW', pillar: 'housing', turn: 26, queuePrior: 15, skillGap: 15, migGain: 1.3000 },
+  { id: 26, region: 'NSW', pillar: 'housing', turn: 27, queuePrior: 28, skillGap: 22, migGain: 1.4320 },
+  { id: 27, region: 'NSW', pillar: 'housing', turn: 28, queuePrior: 41, skillGap: 29, migGain: 1.5640 },
+  { id: 28, region: 'NSW', pillar: 'housing', turn: 29, queuePrior: 54, skillGap: 36, migGain: 0.4960 },
+  { id: 29, region: 'NSW', pillar: 'housing', turn: 30, queuePrior: 67, skillGap: 43, migGain: 0.6280 },
+  { id: 30, region: 'NSW', pillar: 'housing', turn: 31, queuePrior: 80, skillGap: 50, migGain: 0.7600 },
+  { id: 31, region: 'NSW', pillar: 'housing', turn: 32, queuePrior: 13, skillGap: 57, migGain: 0.8920 },
+  { id: 32, region: 'NSW', pillar: 'housing', turn: 33, queuePrior: 26, skillGap: 9, migGain: 1.0240 },
+  { id: 33, region: 'NSW', pillar: 'housing', turn: 34, queuePrior: 39, skillGap: 16, migGain: 1.1560 },
+  { id: 34, region: 'NSW', pillar: 'housing', turn: 35, queuePrior: 52, skillGap: 23, migGain: 1.2880 },
+  { id: 35, region: 'NSW', pillar: 'housing', turn: 36, queuePrior: 65, skillGap: 30, migGain: 1.4200 },
+  { id: 36, region: 'NSW', pillar: 'housing', turn: 37, queuePrior: 78, skillGap: 37, migGain: 1.5520 },
+  { id: 37, region: 'NSW', pillar: 'housing', turn: 38, queuePrior: 11, skillGap: 44, migGain: 0.4840 },
+  { id: 38, region: 'NSW', pillar: 'housing', turn: 39, queuePrior: 24, skillGap: 51, migGain: 0.6160 },
+  { id: 39, region: 'NSW', pillar: 'housing', turn: 40, queuePrior: 37, skillGap: 58, migGain: 0.7480 },
+  { id: 40, region: 'NSW', pillar: 'healthcare', turn: 1, queuePrior: 50, skillGap: 10, migGain: 0.8800 },
+  { id: 41, region: 'NSW', pillar: 'healthcare', turn: 2, queuePrior: 63, skillGap: 17, migGain: 1.0120 },
+  { id: 42, region: 'NSW', pillar: 'healthcare', turn: 3, queuePrior: 76, skillGap: 24, migGain: 1.1440 },
+  { id: 43, region: 'NSW', pillar: 'healthcare', turn: 4, queuePrior: 89, skillGap: 31, migGain: 1.2760 },
+  { id: 44, region: 'NSW', pillar: 'healthcare', turn: 5, queuePrior: 22, skillGap: 38, migGain: 1.4080 },
+  { id: 45, region: 'NSW', pillar: 'healthcare', turn: 6, queuePrior: 35, skillGap: 45, migGain: 1.5400 },
+  { id: 46, region: 'NSW', pillar: 'healthcare', turn: 7, queuePrior: 48, skillGap: 52, migGain: 0.4720 },
+  { id: 47, region: 'NSW', pillar: 'healthcare', turn: 8, queuePrior: 61, skillGap: 59, migGain: 0.6040 },
+  { id: 48, region: 'NSW', pillar: 'healthcare', turn: 9, queuePrior: 74, skillGap: 11, migGain: 0.7360 },
+  { id: 49, region: 'NSW', pillar: 'healthcare', turn: 10, queuePrior: 87, skillGap: 18, migGain: 0.8680 },
+  { id: 50, region: 'NSW', pillar: 'healthcare', turn: 11, queuePrior: 20, skillGap: 25, migGain: 1.0000 },
+  { id: 51, region: 'NSW', pillar: 'healthcare', turn: 12, queuePrior: 33, skillGap: 32, migGain: 1.1320 },
+  { id: 52, region: 'NSW', pillar: 'healthcare', turn: 13, queuePrior: 46, skillGap: 39, migGain: 1.2640 },
+  { id: 53, region: 'NSW', pillar: 'healthcare', turn: 14, queuePrior: 59, skillGap: 46, migGain: 1.3960 },
+  { id: 54, region: 'NSW', pillar: 'healthcare', turn: 15, queuePrior: 72, skillGap: 53, migGain: 1.5280 },
+  { id: 55, region: 'NSW', pillar: 'healthcare', turn: 16, queuePrior: 85, skillGap: 5, migGain: 0.4600 },
+  { id: 56, region: 'NSW', pillar: 'healthcare', turn: 17, queuePrior: 18, skillGap: 12, migGain: 0.5920 },
+  { id: 57, region: 'NSW', pillar: 'healthcare', turn: 18, queuePrior: 31, skillGap: 19, migGain: 0.7240 },
+  { id: 58, region: 'NSW', pillar: 'healthcare', turn: 19, queuePrior: 44, skillGap: 26, migGain: 0.8560 },
+  { id: 59, region: 'NSW', pillar: 'healthcare', turn: 20, queuePrior: 57, skillGap: 33, migGain: 0.9880 },
+  { id: 60, region: 'NSW', pillar: 'healthcare', turn: 21, queuePrior: 70, skillGap: 40, migGain: 1.1200 },
+  { id: 61, region: 'NSW', pillar: 'healthcare', turn: 22, queuePrior: 83, skillGap: 47, migGain: 1.2520 },
+  { id: 62, region: 'NSW', pillar: 'healthcare', turn: 23, queuePrior: 16, skillGap: 54, migGain: 1.3840 },
+  { id: 63, region: 'NSW', pillar: 'healthcare', turn: 24, queuePrior: 29, skillGap: 6, migGain: 1.5160 },
+  { id: 64, region: 'NSW', pillar: 'healthcare', turn: 25, queuePrior: 42, skillGap: 13, migGain: 0.4480 },
+  { id: 65, region: 'NSW', pillar: 'healthcare', turn: 26, queuePrior: 55, skillGap: 20, migGain: 0.5800 },
+  { id: 66, region: 'NSW', pillar: 'healthcare', turn: 27, queuePrior: 68, skillGap: 27, migGain: 0.7120 },
+  { id: 67, region: 'NSW', pillar: 'healthcare', turn: 28, queuePrior: 81, skillGap: 34, migGain: 0.8440 },
+  { id: 68, region: 'NSW', pillar: 'healthcare', turn: 29, queuePrior: 14, skillGap: 41, migGain: 0.9760 },
+  { id: 69, region: 'NSW', pillar: 'healthcare', turn: 30, queuePrior: 27, skillGap: 48, migGain: 1.1080 },
+  { id: 70, region: 'NSW', pillar: 'healthcare', turn: 31, queuePrior: 40, skillGap: 55, migGain: 1.2400 },
+  { id: 71, region: 'NSW', pillar: 'healthcare', turn: 32, queuePrior: 53, skillGap: 7, migGain: 1.3720 },
+  { id: 72, region: 'NSW', pillar: 'healthcare', turn: 33, queuePrior: 66, skillGap: 14, migGain: 1.5040 },
+  { id: 73, region: 'NSW', pillar: 'healthcare', turn: 34, queuePrior: 79, skillGap: 21, migGain: 0.4360 },
+  { id: 74, region: 'NSW', pillar: 'healthcare', turn: 35, queuePrior: 12, skillGap: 28, migGain: 0.5680 },
+  { id: 75, region: 'NSW', pillar: 'healthcare', turn: 36, queuePrior: 25, skillGap: 35, migGain: 0.7000 },
+  { id: 76, region: 'NSW', pillar: 'healthcare', turn: 37, queuePrior: 38, skillGap: 42, migGain: 0.8320 },
+  { id: 77, region: 'NSW', pillar: 'healthcare', turn: 38, queuePrior: 51, skillGap: 49, migGain: 0.9640 },
+  { id: 78, region: 'NSW', pillar: 'healthcare', turn: 39, queuePrior: 64, skillGap: 56, migGain: 1.0960 },
+  { id: 79, region: 'NSW', pillar: 'healthcare', turn: 40, queuePrior: 77, skillGap: 8, migGain: 1.2280 },
+  { id: 80, region: 'NSW', pillar: 'education', turn: 1, queuePrior: 10, skillGap: 15, migGain: 1.3600 },
+  { id: 81, region: 'NSW', pillar: 'education', turn: 2, queuePrior: 23, skillGap: 22, migGain: 1.4920 },
+  { id: 82, region: 'NSW', pillar: 'education', turn: 3, queuePrior: 36, skillGap: 29, migGain: 0.4240 },
+  { id: 83, region: 'NSW', pillar: 'education', turn: 4, queuePrior: 49, skillGap: 36, migGain: 0.5560 },
+  { id: 84, region: 'NSW', pillar: 'education', turn: 5, queuePrior: 62, skillGap: 43, migGain: 0.6880 },
+  { id: 85, region: 'NSW', pillar: 'education', turn: 6, queuePrior: 75, skillGap: 50, migGain: 0.8200 },
+  { id: 86, region: 'NSW', pillar: 'education', turn: 7, queuePrior: 88, skillGap: 57, migGain: 0.9520 },
+  { id: 87, region: 'NSW', pillar: 'education', turn: 8, queuePrior: 21, skillGap: 9, migGain: 1.0840 },
+  { id: 88, region: 'NSW', pillar: 'education', turn: 9, queuePrior: 34, skillGap: 16, migGain: 1.2160 },
+  { id: 89, region: 'NSW', pillar: 'education', turn: 10, queuePrior: 47, skillGap: 23, migGain: 1.3480 },
+  { id: 90, region: 'NSW', pillar: 'education', turn: 11, queuePrior: 60, skillGap: 30, migGain: 1.4800 },
+  { id: 91, region: 'NSW', pillar: 'education', turn: 12, queuePrior: 73, skillGap: 37, migGain: 0.4120 },
+  { id: 92, region: 'NSW', pillar: 'education', turn: 13, queuePrior: 86, skillGap: 44, migGain: 0.5440 },
+  { id: 93, region: 'NSW', pillar: 'education', turn: 14, queuePrior: 19, skillGap: 51, migGain: 0.6760 },
+  { id: 94, region: 'NSW', pillar: 'education', turn: 15, queuePrior: 32, skillGap: 58, migGain: 0.8080 },
+  { id: 95, region: 'NSW', pillar: 'education', turn: 16, queuePrior: 45, skillGap: 10, migGain: 0.9400 },
+  { id: 96, region: 'NSW', pillar: 'education', turn: 17, queuePrior: 58, skillGap: 17, migGain: 1.0720 },
+  { id: 97, region: 'NSW', pillar: 'education', turn: 18, queuePrior: 71, skillGap: 24, migGain: 1.2040 },
+  { id: 98, region: 'NSW', pillar: 'education', turn: 19, queuePrior: 84, skillGap: 31, migGain: 1.3360 },
+  { id: 99, region: 'NSW', pillar: 'education', turn: 20, queuePrior: 17, skillGap: 38, migGain: 1.4680 },
+  { id: 100, region: 'NSW', pillar: 'education', turn: 21, queuePrior: 30, skillGap: 45, migGain: 0.4000 },
+  { id: 101, region: 'NSW', pillar: 'education', turn: 22, queuePrior: 43, skillGap: 52, migGain: 0.5320 },
+  { id: 102, region: 'NSW', pillar: 'education', turn: 23, queuePrior: 56, skillGap: 59, migGain: 0.6640 },
+  { id: 103, region: 'NSW', pillar: 'education', turn: 24, queuePrior: 69, skillGap: 11, migGain: 0.7960 },
+  { id: 104, region: 'NSW', pillar: 'education', turn: 25, queuePrior: 82, skillGap: 18, migGain: 0.9280 },
+  { id: 105, region: 'NSW', pillar: 'education', turn: 26, queuePrior: 15, skillGap: 25, migGain: 1.0600 },
+  { id: 106, region: 'NSW', pillar: 'education', turn: 27, queuePrior: 28, skillGap: 32, migGain: 1.1920 },
+  { id: 107, region: 'NSW', pillar: 'education', turn: 28, queuePrior: 41, skillGap: 39, migGain: 1.3240 },
+  { id: 108, region: 'NSW', pillar: 'education', turn: 29, queuePrior: 54, skillGap: 46, migGain: 1.4560 },
+  { id: 109, region: 'NSW', pillar: 'education', turn: 30, queuePrior: 67, skillGap: 53, migGain: 1.5880 },
+  { id: 110, region: 'NSW', pillar: 'education', turn: 31, queuePrior: 80, skillGap: 5, migGain: 0.5200 },
+  { id: 111, region: 'NSW', pillar: 'education', turn: 32, queuePrior: 13, skillGap: 12, migGain: 0.6520 },
+  { id: 112, region: 'NSW', pillar: 'education', turn: 33, queuePrior: 26, skillGap: 19, migGain: 0.7840 },
+  { id: 113, region: 'NSW', pillar: 'education', turn: 34, queuePrior: 39, skillGap: 26, migGain: 0.9160 },
+  { id: 114, region: 'NSW', pillar: 'education', turn: 35, queuePrior: 52, skillGap: 33, migGain: 1.0480 },
+  { id: 115, region: 'NSW', pillar: 'education', turn: 36, queuePrior: 65, skillGap: 40, migGain: 1.1800 },
+  { id: 116, region: 'NSW', pillar: 'education', turn: 37, queuePrior: 78, skillGap: 47, migGain: 1.3120 },
+  { id: 117, region: 'NSW', pillar: 'education', turn: 38, queuePrior: 11, skillGap: 54, migGain: 1.4440 },
+  { id: 118, region: 'NSW', pillar: 'education', turn: 39, queuePrior: 24, skillGap: 6, migGain: 1.5760 },
+  { id: 119, region: 'NSW', pillar: 'education', turn: 40, queuePrior: 37, skillGap: 13, migGain: 0.5080 },
+  { id: 120, region: 'VIC', pillar: 'housing', turn: 1, queuePrior: 50, skillGap: 20, migGain: 0.6400 },
+  { id: 121, region: 'VIC', pillar: 'housing', turn: 2, queuePrior: 63, skillGap: 27, migGain: 0.7720 },
+  { id: 122, region: 'VIC', pillar: 'housing', turn: 3, queuePrior: 76, skillGap: 34, migGain: 0.9040 },
+  { id: 123, region: 'VIC', pillar: 'housing', turn: 4, queuePrior: 89, skillGap: 41, migGain: 1.0360 },
+  { id: 124, region: 'VIC', pillar: 'housing', turn: 5, queuePrior: 22, skillGap: 48, migGain: 1.1680 },
+  { id: 125, region: 'VIC', pillar: 'housing', turn: 6, queuePrior: 35, skillGap: 55, migGain: 1.3000 },
+  { id: 126, region: 'VIC', pillar: 'housing', turn: 7, queuePrior: 48, skillGap: 7, migGain: 1.4320 },
+  { id: 127, region: 'VIC', pillar: 'housing', turn: 8, queuePrior: 61, skillGap: 14, migGain: 1.5640 },
+  { id: 128, region: 'VIC', pillar: 'housing', turn: 9, queuePrior: 74, skillGap: 21, migGain: 0.4960 },
+  { id: 129, region: 'VIC', pillar: 'housing', turn: 10, queuePrior: 87, skillGap: 28, migGain: 0.6280 },
+  { id: 130, region: 'VIC', pillar: 'housing', turn: 11, queuePrior: 20, skillGap: 35, migGain: 0.7600 },
+  { id: 131, region: 'VIC', pillar: 'housing', turn: 12, queuePrior: 33, skillGap: 42, migGain: 0.8920 },
+  { id: 132, region: 'VIC', pillar: 'housing', turn: 13, queuePrior: 46, skillGap: 49, migGain: 1.0240 },
+  { id: 133, region: 'VIC', pillar: 'housing', turn: 14, queuePrior: 59, skillGap: 56, migGain: 1.1560 },
+  { id: 134, region: 'VIC', pillar: 'housing', turn: 15, queuePrior: 72, skillGap: 8, migGain: 1.2880 },
+  { id: 135, region: 'VIC', pillar: 'housing', turn: 16, queuePrior: 85, skillGap: 15, migGain: 1.4200 },
+  { id: 136, region: 'VIC', pillar: 'housing', turn: 17, queuePrior: 18, skillGap: 22, migGain: 1.5520 },
+  { id: 137, region: 'VIC', pillar: 'housing', turn: 18, queuePrior: 31, skillGap: 29, migGain: 0.4840 },
+  { id: 138, region: 'VIC', pillar: 'housing', turn: 19, queuePrior: 44, skillGap: 36, migGain: 0.6160 },
+  { id: 139, region: 'VIC', pillar: 'housing', turn: 20, queuePrior: 57, skillGap: 43, migGain: 0.7480 },
+  { id: 140, region: 'VIC', pillar: 'housing', turn: 21, queuePrior: 70, skillGap: 50, migGain: 0.8800 },
+  { id: 141, region: 'VIC', pillar: 'housing', turn: 22, queuePrior: 83, skillGap: 57, migGain: 1.0120 },
+  { id: 142, region: 'VIC', pillar: 'housing', turn: 23, queuePrior: 16, skillGap: 9, migGain: 1.1440 },
+  { id: 143, region: 'VIC', pillar: 'housing', turn: 24, queuePrior: 29, skillGap: 16, migGain: 1.2760 },
+  { id: 144, region: 'VIC', pillar: 'housing', turn: 25, queuePrior: 42, skillGap: 23, migGain: 1.4080 },
+  { id: 145, region: 'VIC', pillar: 'housing', turn: 26, queuePrior: 55, skillGap: 30, migGain: 1.5400 },
+  { id: 146, region: 'VIC', pillar: 'housing', turn: 27, queuePrior: 68, skillGap: 37, migGain: 0.4720 },
+  { id: 147, region: 'VIC', pillar: 'housing', turn: 28, queuePrior: 81, skillGap: 44, migGain: 0.6040 },
+  { id: 148, region: 'VIC', pillar: 'housing', turn: 29, queuePrior: 14, skillGap: 51, migGain: 0.7360 },
+  { id: 149, region: 'VIC', pillar: 'housing', turn: 30, queuePrior: 27, skillGap: 58, migGain: 0.8680 },
+  { id: 150, region: 'VIC', pillar: 'housing', turn: 31, queuePrior: 40, skillGap: 10, migGain: 1.0000 },
+  { id: 151, region: 'VIC', pillar: 'housing', turn: 32, queuePrior: 53, skillGap: 17, migGain: 1.1320 },
+  { id: 152, region: 'VIC', pillar: 'housing', turn: 33, queuePrior: 66, skillGap: 24, migGain: 1.2640 },
+  { id: 153, region: 'VIC', pillar: 'housing', turn: 34, queuePrior: 79, skillGap: 31, migGain: 1.3960 },
+  { id: 154, region: 'VIC', pillar: 'housing', turn: 35, queuePrior: 12, skillGap: 38, migGain: 1.5280 },
+  { id: 155, region: 'VIC', pillar: 'housing', turn: 36, queuePrior: 25, skillGap: 45, migGain: 0.4600 },
+  { id: 156, region: 'VIC', pillar: 'housing', turn: 37, queuePrior: 38, skillGap: 52, migGain: 0.5920 },
+  { id: 157, region: 'VIC', pillar: 'housing', turn: 38, queuePrior: 51, skillGap: 59, migGain: 0.7240 },
+  { id: 158, region: 'VIC', pillar: 'housing', turn: 39, queuePrior: 64, skillGap: 11, migGain: 0.8560 },
+  { id: 159, region: 'VIC', pillar: 'housing', turn: 40, queuePrior: 77, skillGap: 18, migGain: 0.9880 },
+  { id: 160, region: 'VIC', pillar: 'healthcare', turn: 1, queuePrior: 10, skillGap: 25, migGain: 1.1200 },
+  { id: 161, region: 'VIC', pillar: 'healthcare', turn: 2, queuePrior: 23, skillGap: 32, migGain: 1.2520 },
+  { id: 162, region: 'VIC', pillar: 'healthcare', turn: 3, queuePrior: 36, skillGap: 39, migGain: 1.3840 },
+  { id: 163, region: 'VIC', pillar: 'healthcare', turn: 4, queuePrior: 49, skillGap: 46, migGain: 1.5160 },
+  { id: 164, region: 'VIC', pillar: 'healthcare', turn: 5, queuePrior: 62, skillGap: 53, migGain: 0.4480 },
+  { id: 165, region: 'VIC', pillar: 'healthcare', turn: 6, queuePrior: 75, skillGap: 5, migGain: 0.5800 },
+  { id: 166, region: 'VIC', pillar: 'healthcare', turn: 7, queuePrior: 88, skillGap: 12, migGain: 0.7120 },
+  { id: 167, region: 'VIC', pillar: 'healthcare', turn: 8, queuePrior: 21, skillGap: 19, migGain: 0.8440 },
+  { id: 168, region: 'VIC', pillar: 'healthcare', turn: 9, queuePrior: 34, skillGap: 26, migGain: 0.9760 },
+  { id: 169, region: 'VIC', pillar: 'healthcare', turn: 10, queuePrior: 47, skillGap: 33, migGain: 1.1080 },
+  { id: 170, region: 'VIC', pillar: 'healthcare', turn: 11, queuePrior: 60, skillGap: 40, migGain: 1.2400 },
+  { id: 171, region: 'VIC', pillar: 'healthcare', turn: 12, queuePrior: 73, skillGap: 47, migGain: 1.3720 },
+  { id: 172, region: 'VIC', pillar: 'healthcare', turn: 13, queuePrior: 86, skillGap: 54, migGain: 1.5040 },
+  { id: 173, region: 'VIC', pillar: 'healthcare', turn: 14, queuePrior: 19, skillGap: 6, migGain: 0.4360 },
+  { id: 174, region: 'VIC', pillar: 'healthcare', turn: 15, queuePrior: 32, skillGap: 13, migGain: 0.5680 },
+  { id: 175, region: 'VIC', pillar: 'healthcare', turn: 16, queuePrior: 45, skillGap: 20, migGain: 0.7000 },
+  { id: 176, region: 'VIC', pillar: 'healthcare', turn: 17, queuePrior: 58, skillGap: 27, migGain: 0.8320 },
+  { id: 177, region: 'VIC', pillar: 'healthcare', turn: 18, queuePrior: 71, skillGap: 34, migGain: 0.9640 },
+  { id: 178, region: 'VIC', pillar: 'healthcare', turn: 19, queuePrior: 84, skillGap: 41, migGain: 1.0960 },
+  { id: 179, region: 'VIC', pillar: 'healthcare', turn: 20, queuePrior: 17, skillGap: 48, migGain: 1.2280 },
+  { id: 180, region: 'VIC', pillar: 'healthcare', turn: 21, queuePrior: 30, skillGap: 55, migGain: 1.3600 },
+  { id: 181, region: 'VIC', pillar: 'healthcare', turn: 22, queuePrior: 43, skillGap: 7, migGain: 1.4920 },
+  { id: 182, region: 'VIC', pillar: 'healthcare', turn: 23, queuePrior: 56, skillGap: 14, migGain: 0.4240 },
+  { id: 183, region: 'VIC', pillar: 'healthcare', turn: 24, queuePrior: 69, skillGap: 21, migGain: 0.5560 },
+  { id: 184, region: 'VIC', pillar: 'healthcare', turn: 25, queuePrior: 82, skillGap: 28, migGain: 0.6880 },
+  { id: 185, region: 'VIC', pillar: 'healthcare', turn: 26, queuePrior: 15, skillGap: 35, migGain: 0.8200 },
+  { id: 186, region: 'VIC', pillar: 'healthcare', turn: 27, queuePrior: 28, skillGap: 42, migGain: 0.9520 },
+  { id: 187, region: 'VIC', pillar: 'healthcare', turn: 28, queuePrior: 41, skillGap: 49, migGain: 1.0840 },
+  { id: 188, region: 'VIC', pillar: 'healthcare', turn: 29, queuePrior: 54, skillGap: 56, migGain: 1.2160 },
+  { id: 189, region: 'VIC', pillar: 'healthcare', turn: 30, queuePrior: 67, skillGap: 8, migGain: 1.3480 },
+  { id: 190, region: 'VIC', pillar: 'healthcare', turn: 31, queuePrior: 80, skillGap: 15, migGain: 1.4800 },
+  { id: 191, region: 'VIC', pillar: 'healthcare', turn: 32, queuePrior: 13, skillGap: 22, migGain: 0.4120 },
+  { id: 192, region: 'VIC', pillar: 'healthcare', turn: 33, queuePrior: 26, skillGap: 29, migGain: 0.5440 },
+  { id: 193, region: 'VIC', pillar: 'healthcare', turn: 34, queuePrior: 39, skillGap: 36, migGain: 0.6760 },
+  { id: 194, region: 'VIC', pillar: 'healthcare', turn: 35, queuePrior: 52, skillGap: 43, migGain: 0.8080 },
+  { id: 195, region: 'VIC', pillar: 'healthcare', turn: 36, queuePrior: 65, skillGap: 50, migGain: 0.9400 },
+  { id: 196, region: 'VIC', pillar: 'healthcare', turn: 37, queuePrior: 78, skillGap: 57, migGain: 1.0720 },
+  { id: 197, region: 'VIC', pillar: 'healthcare', turn: 38, queuePrior: 11, skillGap: 9, migGain: 1.2040 },
+  { id: 198, region: 'VIC', pillar: 'healthcare', turn: 39, queuePrior: 24, skillGap: 16, migGain: 1.3360 },
+  { id: 199, region: 'VIC', pillar: 'healthcare', turn: 40, queuePrior: 37, skillGap: 23, migGain: 1.4680 },
+  { id: 200, region: 'VIC', pillar: 'education', turn: 1, queuePrior: 50, skillGap: 30, migGain: 0.4000 },
+  { id: 201, region: 'VIC', pillar: 'education', turn: 2, queuePrior: 63, skillGap: 37, migGain: 0.5320 },
+  { id: 202, region: 'VIC', pillar: 'education', turn: 3, queuePrior: 76, skillGap: 44, migGain: 0.6640 },
+  { id: 203, region: 'VIC', pillar: 'education', turn: 4, queuePrior: 89, skillGap: 51, migGain: 0.7960 },
+  { id: 204, region: 'VIC', pillar: 'education', turn: 5, queuePrior: 22, skillGap: 58, migGain: 0.9280 },
+  { id: 205, region: 'VIC', pillar: 'education', turn: 6, queuePrior: 35, skillGap: 10, migGain: 1.0600 },
+  { id: 206, region: 'VIC', pillar: 'education', turn: 7, queuePrior: 48, skillGap: 17, migGain: 1.1920 },
+  { id: 207, region: 'VIC', pillar: 'education', turn: 8, queuePrior: 61, skillGap: 24, migGain: 1.3240 },
+  { id: 208, region: 'VIC', pillar: 'education', turn: 9, queuePrior: 74, skillGap: 31, migGain: 1.4560 },
+  { id: 209, region: 'VIC', pillar: 'education', turn: 10, queuePrior: 87, skillGap: 38, migGain: 1.5880 },
+  { id: 210, region: 'VIC', pillar: 'education', turn: 11, queuePrior: 20, skillGap: 45, migGain: 0.5200 },
+  { id: 211, region: 'VIC', pillar: 'education', turn: 12, queuePrior: 33, skillGap: 52, migGain: 0.6520 },
+  { id: 212, region: 'VIC', pillar: 'education', turn: 13, queuePrior: 46, skillGap: 59, migGain: 0.7840 },
+  { id: 213, region: 'VIC', pillar: 'education', turn: 14, queuePrior: 59, skillGap: 11, migGain: 0.9160 },
+  { id: 214, region: 'VIC', pillar: 'education', turn: 15, queuePrior: 72, skillGap: 18, migGain: 1.0480 },
+  { id: 215, region: 'VIC', pillar: 'education', turn: 16, queuePrior: 85, skillGap: 25, migGain: 1.1800 },
+  { id: 216, region: 'VIC', pillar: 'education', turn: 17, queuePrior: 18, skillGap: 32, migGain: 1.3120 },
+  { id: 217, region: 'VIC', pillar: 'education', turn: 18, queuePrior: 31, skillGap: 39, migGain: 1.4440 },
+  { id: 218, region: 'VIC', pillar: 'education', turn: 19, queuePrior: 44, skillGap: 46, migGain: 1.5760 },
+  { id: 219, region: 'VIC', pillar: 'education', turn: 20, queuePrior: 57, skillGap: 53, migGain: 0.5080 },
+  { id: 220, region: 'VIC', pillar: 'education', turn: 21, queuePrior: 70, skillGap: 5, migGain: 0.6400 },
+  { id: 221, region: 'VIC', pillar: 'education', turn: 22, queuePrior: 83, skillGap: 12, migGain: 0.7720 },
+  { id: 222, region: 'VIC', pillar: 'education', turn: 23, queuePrior: 16, skillGap: 19, migGain: 0.9040 },
+  { id: 223, region: 'VIC', pillar: 'education', turn: 24, queuePrior: 29, skillGap: 26, migGain: 1.0360 },
+  { id: 224, region: 'VIC', pillar: 'education', turn: 25, queuePrior: 42, skillGap: 33, migGain: 1.1680 },
+  { id: 225, region: 'VIC', pillar: 'education', turn: 26, queuePrior: 55, skillGap: 40, migGain: 1.3000 },
+  { id: 226, region: 'VIC', pillar: 'education', turn: 27, queuePrior: 68, skillGap: 47, migGain: 1.4320 },
+  { id: 227, region: 'VIC', pillar: 'education', turn: 28, queuePrior: 81, skillGap: 54, migGain: 1.5640 },
+  { id: 228, region: 'VIC', pillar: 'education', turn: 29, queuePrior: 14, skillGap: 6, migGain: 0.4960 },
+  { id: 229, region: 'VIC', pillar: 'education', turn: 30, queuePrior: 27, skillGap: 13, migGain: 0.6280 },
+  { id: 230, region: 'VIC', pillar: 'education', turn: 31, queuePrior: 40, skillGap: 20, migGain: 0.7600 },
+  { id: 231, region: 'VIC', pillar: 'education', turn: 32, queuePrior: 53, skillGap: 27, migGain: 0.8920 },
+  { id: 232, region: 'VIC', pillar: 'education', turn: 33, queuePrior: 66, skillGap: 34, migGain: 1.0240 },
+  { id: 233, region: 'VIC', pillar: 'education', turn: 34, queuePrior: 79, skillGap: 41, migGain: 1.1560 },
+  { id: 234, region: 'VIC', pillar: 'education', turn: 35, queuePrior: 12, skillGap: 48, migGain: 1.2880 },
+  { id: 235, region: 'VIC', pillar: 'education', turn: 36, queuePrior: 25, skillGap: 55, migGain: 1.4200 },
+  { id: 236, region: 'VIC', pillar: 'education', turn: 37, queuePrior: 38, skillGap: 7, migGain: 1.5520 },
+  { id: 237, region: 'VIC', pillar: 'education', turn: 38, queuePrior: 51, skillGap: 14, migGain: 0.4840 },
+  { id: 238, region: 'VIC', pillar: 'education', turn: 39, queuePrior: 64, skillGap: 21, migGain: 0.6160 },
+  { id: 239, region: 'VIC', pillar: 'education', turn: 40, queuePrior: 77, skillGap: 28, migGain: 0.7480 },
+  { id: 240, region: 'QLD', pillar: 'housing', turn: 1, queuePrior: 10, skillGap: 35, migGain: 0.8800 },
+  { id: 241, region: 'QLD', pillar: 'housing', turn: 2, queuePrior: 23, skillGap: 42, migGain: 1.0120 },
+  { id: 242, region: 'QLD', pillar: 'housing', turn: 3, queuePrior: 36, skillGap: 49, migGain: 1.1440 },
+  { id: 243, region: 'QLD', pillar: 'housing', turn: 4, queuePrior: 49, skillGap: 56, migGain: 1.2760 },
+  { id: 244, region: 'QLD', pillar: 'housing', turn: 5, queuePrior: 62, skillGap: 8, migGain: 1.4080 },
+  { id: 245, region: 'QLD', pillar: 'housing', turn: 6, queuePrior: 75, skillGap: 15, migGain: 1.5400 },
+  { id: 246, region: 'QLD', pillar: 'housing', turn: 7, queuePrior: 88, skillGap: 22, migGain: 0.4720 },
+  { id: 247, region: 'QLD', pillar: 'housing', turn: 8, queuePrior: 21, skillGap: 29, migGain: 0.6040 },
+  { id: 248, region: 'QLD', pillar: 'housing', turn: 9, queuePrior: 34, skillGap: 36, migGain: 0.7360 },
+  { id: 249, region: 'QLD', pillar: 'housing', turn: 10, queuePrior: 47, skillGap: 43, migGain: 0.8680 },
+  { id: 250, region: 'QLD', pillar: 'housing', turn: 11, queuePrior: 60, skillGap: 50, migGain: 1.0000 },
+  { id: 251, region: 'QLD', pillar: 'housing', turn: 12, queuePrior: 73, skillGap: 57, migGain: 1.1320 },
+  { id: 252, region: 'QLD', pillar: 'housing', turn: 13, queuePrior: 86, skillGap: 9, migGain: 1.2640 },
+  { id: 253, region: 'QLD', pillar: 'housing', turn: 14, queuePrior: 19, skillGap: 16, migGain: 1.3960 },
+  { id: 254, region: 'QLD', pillar: 'housing', turn: 15, queuePrior: 32, skillGap: 23, migGain: 1.5280 },
+  { id: 255, region: 'QLD', pillar: 'housing', turn: 16, queuePrior: 45, skillGap: 30, migGain: 0.4600 },
+  { id: 256, region: 'QLD', pillar: 'housing', turn: 17, queuePrior: 58, skillGap: 37, migGain: 0.5920 },
+  { id: 257, region: 'QLD', pillar: 'housing', turn: 18, queuePrior: 71, skillGap: 44, migGain: 0.7240 },
+  { id: 258, region: 'QLD', pillar: 'housing', turn: 19, queuePrior: 84, skillGap: 51, migGain: 0.8560 },
+  { id: 259, region: 'QLD', pillar: 'housing', turn: 20, queuePrior: 17, skillGap: 58, migGain: 0.9880 },
+  { id: 260, region: 'QLD', pillar: 'housing', turn: 21, queuePrior: 30, skillGap: 10, migGain: 1.1200 },
+  { id: 261, region: 'QLD', pillar: 'housing', turn: 22, queuePrior: 43, skillGap: 17, migGain: 1.2520 },
+  { id: 262, region: 'QLD', pillar: 'housing', turn: 23, queuePrior: 56, skillGap: 24, migGain: 1.3840 },
+  { id: 263, region: 'QLD', pillar: 'housing', turn: 24, queuePrior: 69, skillGap: 31, migGain: 1.5160 },
+  { id: 264, region: 'QLD', pillar: 'housing', turn: 25, queuePrior: 82, skillGap: 38, migGain: 0.4480 },
+  { id: 265, region: 'QLD', pillar: 'housing', turn: 26, queuePrior: 15, skillGap: 45, migGain: 0.5800 },
+  { id: 266, region: 'QLD', pillar: 'housing', turn: 27, queuePrior: 28, skillGap: 52, migGain: 0.7120 },
+  { id: 267, region: 'QLD', pillar: 'housing', turn: 28, queuePrior: 41, skillGap: 59, migGain: 0.8440 },
+  { id: 268, region: 'QLD', pillar: 'housing', turn: 29, queuePrior: 54, skillGap: 11, migGain: 0.9760 },
+  { id: 269, region: 'QLD', pillar: 'housing', turn: 30, queuePrior: 67, skillGap: 18, migGain: 1.1080 },
+  { id: 270, region: 'QLD', pillar: 'housing', turn: 31, queuePrior: 80, skillGap: 25, migGain: 1.2400 },
+  { id: 271, region: 'QLD', pillar: 'housing', turn: 32, queuePrior: 13, skillGap: 32, migGain: 1.3720 },
+  { id: 272, region: 'QLD', pillar: 'housing', turn: 33, queuePrior: 26, skillGap: 39, migGain: 1.5040 },
+  { id: 273, region: 'QLD', pillar: 'housing', turn: 34, queuePrior: 39, skillGap: 46, migGain: 0.4360 },
+  { id: 274, region: 'QLD', pillar: 'housing', turn: 35, queuePrior: 52, skillGap: 53, migGain: 0.5680 },
+  { id: 275, region: 'QLD', pillar: 'housing', turn: 36, queuePrior: 65, skillGap: 5, migGain: 0.7000 },
+  { id: 276, region: 'QLD', pillar: 'housing', turn: 37, queuePrior: 78, skillGap: 12, migGain: 0.8320 },
+  { id: 277, region: 'QLD', pillar: 'housing', turn: 38, queuePrior: 11, skillGap: 19, migGain: 0.9640 },
+  { id: 278, region: 'QLD', pillar: 'housing', turn: 39, queuePrior: 24, skillGap: 26, migGain: 1.0960 },
+  { id: 279, region: 'QLD', pillar: 'housing', turn: 40, queuePrior: 37, skillGap: 33, migGain: 1.2280 },
+  { id: 280, region: 'QLD', pillar: 'healthcare', turn: 1, queuePrior: 50, skillGap: 40, migGain: 1.3600 },
+  { id: 281, region: 'QLD', pillar: 'healthcare', turn: 2, queuePrior: 63, skillGap: 47, migGain: 1.4920 },
+  { id: 282, region: 'QLD', pillar: 'healthcare', turn: 3, queuePrior: 76, skillGap: 54, migGain: 0.4240 },
+  { id: 283, region: 'QLD', pillar: 'healthcare', turn: 4, queuePrior: 89, skillGap: 6, migGain: 0.5560 },
+  { id: 284, region: 'QLD', pillar: 'healthcare', turn: 5, queuePrior: 22, skillGap: 13, migGain: 0.6880 },
+  { id: 285, region: 'QLD', pillar: 'healthcare', turn: 6, queuePrior: 35, skillGap: 20, migGain: 0.8200 },
+  { id: 286, region: 'QLD', pillar: 'healthcare', turn: 7, queuePrior: 48, skillGap: 27, migGain: 0.9520 },
+  { id: 287, region: 'QLD', pillar: 'healthcare', turn: 8, queuePrior: 61, skillGap: 34, migGain: 1.0840 },
+  { id: 288, region: 'QLD', pillar: 'healthcare', turn: 9, queuePrior: 74, skillGap: 41, migGain: 1.2160 },
+  { id: 289, region: 'QLD', pillar: 'healthcare', turn: 10, queuePrior: 87, skillGap: 48, migGain: 1.3480 },
+  { id: 290, region: 'QLD', pillar: 'healthcare', turn: 11, queuePrior: 20, skillGap: 55, migGain: 1.4800 },
+  { id: 291, region: 'QLD', pillar: 'healthcare', turn: 12, queuePrior: 33, skillGap: 7, migGain: 0.4120 },
+  { id: 292, region: 'QLD', pillar: 'healthcare', turn: 13, queuePrior: 46, skillGap: 14, migGain: 0.5440 },
+  { id: 293, region: 'QLD', pillar: 'healthcare', turn: 14, queuePrior: 59, skillGap: 21, migGain: 0.6760 },
+  { id: 294, region: 'QLD', pillar: 'healthcare', turn: 15, queuePrior: 72, skillGap: 28, migGain: 0.8080 },
+  { id: 295, region: 'QLD', pillar: 'healthcare', turn: 16, queuePrior: 85, skillGap: 35, migGain: 0.9400 },
+  { id: 296, region: 'QLD', pillar: 'healthcare', turn: 17, queuePrior: 18, skillGap: 42, migGain: 1.0720 },
+  { id: 297, region: 'QLD', pillar: 'healthcare', turn: 18, queuePrior: 31, skillGap: 49, migGain: 1.2040 },
+  { id: 298, region: 'QLD', pillar: 'healthcare', turn: 19, queuePrior: 44, skillGap: 56, migGain: 1.3360 },
+  { id: 299, region: 'QLD', pillar: 'healthcare', turn: 20, queuePrior: 57, skillGap: 8, migGain: 1.4680 },
+  { id: 300, region: 'QLD', pillar: 'healthcare', turn: 21, queuePrior: 70, skillGap: 15, migGain: 0.4000 },
+  { id: 301, region: 'QLD', pillar: 'healthcare', turn: 22, queuePrior: 83, skillGap: 22, migGain: 0.5320 },
+  { id: 302, region: 'QLD', pillar: 'healthcare', turn: 23, queuePrior: 16, skillGap: 29, migGain: 0.6640 },
+  { id: 303, region: 'QLD', pillar: 'healthcare', turn: 24, queuePrior: 29, skillGap: 36, migGain: 0.7960 },
+  { id: 304, region: 'QLD', pillar: 'healthcare', turn: 25, queuePrior: 42, skillGap: 43, migGain: 0.9280 },
+  { id: 305, region: 'QLD', pillar: 'healthcare', turn: 26, queuePrior: 55, skillGap: 50, migGain: 1.0600 },
+  { id: 306, region: 'QLD', pillar: 'healthcare', turn: 27, queuePrior: 68, skillGap: 57, migGain: 1.1920 },
+  { id: 307, region: 'QLD', pillar: 'healthcare', turn: 28, queuePrior: 81, skillGap: 9, migGain: 1.3240 },
+  { id: 308, region: 'QLD', pillar: 'healthcare', turn: 29, queuePrior: 14, skillGap: 16, migGain: 1.4560 },
+  { id: 309, region: 'QLD', pillar: 'healthcare', turn: 30, queuePrior: 27, skillGap: 23, migGain: 1.5880 },
+  { id: 310, region: 'QLD', pillar: 'healthcare', turn: 31, queuePrior: 40, skillGap: 30, migGain: 0.5200 },
+  { id: 311, region: 'QLD', pillar: 'healthcare', turn: 32, queuePrior: 53, skillGap: 37, migGain: 0.6520 },
+  { id: 312, region: 'QLD', pillar: 'healthcare', turn: 33, queuePrior: 66, skillGap: 44, migGain: 0.7840 },
+  { id: 313, region: 'QLD', pillar: 'healthcare', turn: 34, queuePrior: 79, skillGap: 51, migGain: 0.9160 },
+  { id: 314, region: 'QLD', pillar: 'healthcare', turn: 35, queuePrior: 12, skillGap: 58, migGain: 1.0480 },
+  { id: 315, region: 'QLD', pillar: 'healthcare', turn: 36, queuePrior: 25, skillGap: 10, migGain: 1.1800 },
+  { id: 316, region: 'QLD', pillar: 'healthcare', turn: 37, queuePrior: 38, skillGap: 17, migGain: 1.3120 },
+  { id: 317, region: 'QLD', pillar: 'healthcare', turn: 38, queuePrior: 51, skillGap: 24, migGain: 1.4440 },
+  { id: 318, region: 'QLD', pillar: 'healthcare', turn: 39, queuePrior: 64, skillGap: 31, migGain: 1.5760 },
+  { id: 319, region: 'QLD', pillar: 'healthcare', turn: 40, queuePrior: 77, skillGap: 38, migGain: 0.5080 },
+  { id: 320, region: 'QLD', pillar: 'education', turn: 1, queuePrior: 10, skillGap: 45, migGain: 0.6400 },
+  { id: 321, region: 'QLD', pillar: 'education', turn: 2, queuePrior: 23, skillGap: 52, migGain: 0.7720 },
+  { id: 322, region: 'QLD', pillar: 'education', turn: 3, queuePrior: 36, skillGap: 59, migGain: 0.9040 },
+  { id: 323, region: 'QLD', pillar: 'education', turn: 4, queuePrior: 49, skillGap: 11, migGain: 1.0360 },
+  { id: 324, region: 'QLD', pillar: 'education', turn: 5, queuePrior: 62, skillGap: 18, migGain: 1.1680 },
+  { id: 325, region: 'QLD', pillar: 'education', turn: 6, queuePrior: 75, skillGap: 25, migGain: 1.3000 },
+  { id: 326, region: 'QLD', pillar: 'education', turn: 7, queuePrior: 88, skillGap: 32, migGain: 1.4320 },
+  { id: 327, region: 'QLD', pillar: 'education', turn: 8, queuePrior: 21, skillGap: 39, migGain: 1.5640 },
+  { id: 328, region: 'QLD', pillar: 'education', turn: 9, queuePrior: 34, skillGap: 46, migGain: 0.4960 },
+  { id: 329, region: 'QLD', pillar: 'education', turn: 10, queuePrior: 47, skillGap: 53, migGain: 0.6280 },
+  { id: 330, region: 'QLD', pillar: 'education', turn: 11, queuePrior: 60, skillGap: 5, migGain: 0.7600 },
+  { id: 331, region: 'QLD', pillar: 'education', turn: 12, queuePrior: 73, skillGap: 12, migGain: 0.8920 },
+  { id: 332, region: 'QLD', pillar: 'education', turn: 13, queuePrior: 86, skillGap: 19, migGain: 1.0240 },
+  { id: 333, region: 'QLD', pillar: 'education', turn: 14, queuePrior: 19, skillGap: 26, migGain: 1.1560 },
+  { id: 334, region: 'QLD', pillar: 'education', turn: 15, queuePrior: 32, skillGap: 33, migGain: 1.2880 },
+  { id: 335, region: 'QLD', pillar: 'education', turn: 16, queuePrior: 45, skillGap: 40, migGain: 1.4200 },
+  { id: 336, region: 'QLD', pillar: 'education', turn: 17, queuePrior: 58, skillGap: 47, migGain: 1.5520 },
+  { id: 337, region: 'QLD', pillar: 'education', turn: 18, queuePrior: 71, skillGap: 54, migGain: 0.4840 },
+  { id: 338, region: 'QLD', pillar: 'education', turn: 19, queuePrior: 84, skillGap: 6, migGain: 0.6160 },
+  { id: 339, region: 'QLD', pillar: 'education', turn: 20, queuePrior: 17, skillGap: 13, migGain: 0.7480 },
+  { id: 340, region: 'QLD', pillar: 'education', turn: 21, queuePrior: 30, skillGap: 20, migGain: 0.8800 },
+  { id: 341, region: 'QLD', pillar: 'education', turn: 22, queuePrior: 43, skillGap: 27, migGain: 1.0120 },
+  { id: 342, region: 'QLD', pillar: 'education', turn: 23, queuePrior: 56, skillGap: 34, migGain: 1.1440 },
+  { id: 343, region: 'QLD', pillar: 'education', turn: 24, queuePrior: 69, skillGap: 41, migGain: 1.2760 },
+  { id: 344, region: 'QLD', pillar: 'education', turn: 25, queuePrior: 82, skillGap: 48, migGain: 1.4080 },
+  { id: 345, region: 'QLD', pillar: 'education', turn: 26, queuePrior: 15, skillGap: 55, migGain: 1.5400 },
+  { id: 346, region: 'QLD', pillar: 'education', turn: 27, queuePrior: 28, skillGap: 7, migGain: 0.4720 },
+  { id: 347, region: 'QLD', pillar: 'education', turn: 28, queuePrior: 41, skillGap: 14, migGain: 0.6040 },
+  { id: 348, region: 'QLD', pillar: 'education', turn: 29, queuePrior: 54, skillGap: 21, migGain: 0.7360 },
+  { id: 349, region: 'QLD', pillar: 'education', turn: 30, queuePrior: 67, skillGap: 28, migGain: 0.8680 },
+  { id: 350, region: 'QLD', pillar: 'education', turn: 31, queuePrior: 80, skillGap: 35, migGain: 1.0000 },
+  { id: 351, region: 'QLD', pillar: 'education', turn: 32, queuePrior: 13, skillGap: 42, migGain: 1.1320 },
+  { id: 352, region: 'QLD', pillar: 'education', turn: 33, queuePrior: 26, skillGap: 49, migGain: 1.2640 },
+  { id: 353, region: 'QLD', pillar: 'education', turn: 34, queuePrior: 39, skillGap: 56, migGain: 1.3960 },
+  { id: 354, region: 'QLD', pillar: 'education', turn: 35, queuePrior: 52, skillGap: 8, migGain: 1.5280 },
+  { id: 355, region: 'QLD', pillar: 'education', turn: 36, queuePrior: 65, skillGap: 15, migGain: 0.4600 },
+  { id: 356, region: 'QLD', pillar: 'education', turn: 37, queuePrior: 78, skillGap: 22, migGain: 0.5920 },
+  { id: 357, region: 'QLD', pillar: 'education', turn: 38, queuePrior: 11, skillGap: 29, migGain: 0.7240 },
+  { id: 358, region: 'QLD', pillar: 'education', turn: 39, queuePrior: 24, skillGap: 36, migGain: 0.8560 },
+  { id: 359, region: 'QLD', pillar: 'education', turn: 40, queuePrior: 37, skillGap: 43, migGain: 0.9880 },
+  { id: 360, region: 'WA', pillar: 'housing', turn: 1, queuePrior: 50, skillGap: 50, migGain: 1.1200 },
+  { id: 361, region: 'WA', pillar: 'housing', turn: 2, queuePrior: 63, skillGap: 57, migGain: 1.2520 },
+  { id: 362, region: 'WA', pillar: 'housing', turn: 3, queuePrior: 76, skillGap: 9, migGain: 1.3840 },
+  { id: 363, region: 'WA', pillar: 'housing', turn: 4, queuePrior: 89, skillGap: 16, migGain: 1.5160 },
+  { id: 364, region: 'WA', pillar: 'housing', turn: 5, queuePrior: 22, skillGap: 23, migGain: 0.4480 },
+  { id: 365, region: 'WA', pillar: 'housing', turn: 6, queuePrior: 35, skillGap: 30, migGain: 0.5800 },
+  { id: 366, region: 'WA', pillar: 'housing', turn: 7, queuePrior: 48, skillGap: 37, migGain: 0.7120 },
+  { id: 367, region: 'WA', pillar: 'housing', turn: 8, queuePrior: 61, skillGap: 44, migGain: 0.8440 },
+  { id: 368, region: 'WA', pillar: 'housing', turn: 9, queuePrior: 74, skillGap: 51, migGain: 0.9760 },
+  { id: 369, region: 'WA', pillar: 'housing', turn: 10, queuePrior: 87, skillGap: 58, migGain: 1.1080 },
+  { id: 370, region: 'WA', pillar: 'housing', turn: 11, queuePrior: 20, skillGap: 10, migGain: 1.2400 },
+  { id: 371, region: 'WA', pillar: 'housing', turn: 12, queuePrior: 33, skillGap: 17, migGain: 1.3720 },
+  { id: 372, region: 'WA', pillar: 'housing', turn: 13, queuePrior: 46, skillGap: 24, migGain: 1.5040 },
+  { id: 373, region: 'WA', pillar: 'housing', turn: 14, queuePrior: 59, skillGap: 31, migGain: 0.4360 },
+  { id: 374, region: 'WA', pillar: 'housing', turn: 15, queuePrior: 72, skillGap: 38, migGain: 0.5680 },
+  { id: 375, region: 'WA', pillar: 'housing', turn: 16, queuePrior: 85, skillGap: 45, migGain: 0.7000 },
+  { id: 376, region: 'WA', pillar: 'housing', turn: 17, queuePrior: 18, skillGap: 52, migGain: 0.8320 },
+  { id: 377, region: 'WA', pillar: 'housing', turn: 18, queuePrior: 31, skillGap: 59, migGain: 0.9640 },
+  { id: 378, region: 'WA', pillar: 'housing', turn: 19, queuePrior: 44, skillGap: 11, migGain: 1.0960 },
+  { id: 379, region: 'WA', pillar: 'housing', turn: 20, queuePrior: 57, skillGap: 18, migGain: 1.2280 },
+  { id: 380, region: 'WA', pillar: 'housing', turn: 21, queuePrior: 70, skillGap: 25, migGain: 1.3600 },
+  { id: 381, region: 'WA', pillar: 'housing', turn: 22, queuePrior: 83, skillGap: 32, migGain: 1.4920 },
+  { id: 382, region: 'WA', pillar: 'housing', turn: 23, queuePrior: 16, skillGap: 39, migGain: 0.4240 },
+  { id: 383, region: 'WA', pillar: 'housing', turn: 24, queuePrior: 29, skillGap: 46, migGain: 0.5560 },
+  { id: 384, region: 'WA', pillar: 'housing', turn: 25, queuePrior: 42, skillGap: 53, migGain: 0.6880 },
+  { id: 385, region: 'WA', pillar: 'housing', turn: 26, queuePrior: 55, skillGap: 5, migGain: 0.8200 },
+  { id: 386, region: 'WA', pillar: 'housing', turn: 27, queuePrior: 68, skillGap: 12, migGain: 0.9520 },
+  { id: 387, region: 'WA', pillar: 'housing', turn: 28, queuePrior: 81, skillGap: 19, migGain: 1.0840 },
+  { id: 388, region: 'WA', pillar: 'housing', turn: 29, queuePrior: 14, skillGap: 26, migGain: 1.2160 },
+  { id: 389, region: 'WA', pillar: 'housing', turn: 30, queuePrior: 27, skillGap: 33, migGain: 1.3480 },
+  { id: 390, region: 'WA', pillar: 'housing', turn: 31, queuePrior: 40, skillGap: 40, migGain: 1.4800 },
+  { id: 391, region: 'WA', pillar: 'housing', turn: 32, queuePrior: 53, skillGap: 47, migGain: 0.4120 },
+  { id: 392, region: 'WA', pillar: 'housing', turn: 33, queuePrior: 66, skillGap: 54, migGain: 0.5440 },
+  { id: 393, region: 'WA', pillar: 'housing', turn: 34, queuePrior: 79, skillGap: 6, migGain: 0.6760 },
+  { id: 394, region: 'WA', pillar: 'housing', turn: 35, queuePrior: 12, skillGap: 13, migGain: 0.8080 },
+  { id: 395, region: 'WA', pillar: 'housing', turn: 36, queuePrior: 25, skillGap: 20, migGain: 0.9400 },
+  { id: 396, region: 'WA', pillar: 'housing', turn: 37, queuePrior: 38, skillGap: 27, migGain: 1.0720 },
+  { id: 397, region: 'WA', pillar: 'housing', turn: 38, queuePrior: 51, skillGap: 34, migGain: 1.2040 },
+  { id: 398, region: 'WA', pillar: 'housing', turn: 39, queuePrior: 64, skillGap: 41, migGain: 1.3360 },
+  { id: 399, region: 'WA', pillar: 'housing', turn: 40, queuePrior: 77, skillGap: 48, migGain: 1.4680 },
+  { id: 400, region: 'WA', pillar: 'healthcare', turn: 1, queuePrior: 10, skillGap: 55, migGain: 0.4000 },
+  { id: 401, region: 'WA', pillar: 'healthcare', turn: 2, queuePrior: 23, skillGap: 7, migGain: 0.5320 },
+  { id: 402, region: 'WA', pillar: 'healthcare', turn: 3, queuePrior: 36, skillGap: 14, migGain: 0.6640 },
+  { id: 403, region: 'WA', pillar: 'healthcare', turn: 4, queuePrior: 49, skillGap: 21, migGain: 0.7960 },
+  { id: 404, region: 'WA', pillar: 'healthcare', turn: 5, queuePrior: 62, skillGap: 28, migGain: 0.9280 },
+  { id: 405, region: 'WA', pillar: 'healthcare', turn: 6, queuePrior: 75, skillGap: 35, migGain: 1.0600 },
+  { id: 406, region: 'WA', pillar: 'healthcare', turn: 7, queuePrior: 88, skillGap: 42, migGain: 1.1920 },
+  { id: 407, region: 'WA', pillar: 'healthcare', turn: 8, queuePrior: 21, skillGap: 49, migGain: 1.3240 },
+  { id: 408, region: 'WA', pillar: 'healthcare', turn: 9, queuePrior: 34, skillGap: 56, migGain: 1.4560 },
+  { id: 409, region: 'WA', pillar: 'healthcare', turn: 10, queuePrior: 47, skillGap: 8, migGain: 1.5880 },
+  { id: 410, region: 'WA', pillar: 'healthcare', turn: 11, queuePrior: 60, skillGap: 15, migGain: 0.5200 },
+  { id: 411, region: 'WA', pillar: 'healthcare', turn: 12, queuePrior: 73, skillGap: 22, migGain: 0.6520 },
+  { id: 412, region: 'WA', pillar: 'healthcare', turn: 13, queuePrior: 86, skillGap: 29, migGain: 0.7840 },
+  { id: 413, region: 'WA', pillar: 'healthcare', turn: 14, queuePrior: 19, skillGap: 36, migGain: 0.9160 },
+  { id: 414, region: 'WA', pillar: 'healthcare', turn: 15, queuePrior: 32, skillGap: 43, migGain: 1.0480 },
+  { id: 415, region: 'WA', pillar: 'healthcare', turn: 16, queuePrior: 45, skillGap: 50, migGain: 1.1800 },
+  { id: 416, region: 'WA', pillar: 'healthcare', turn: 17, queuePrior: 58, skillGap: 57, migGain: 1.3120 },
+  { id: 417, region: 'WA', pillar: 'healthcare', turn: 18, queuePrior: 71, skillGap: 9, migGain: 1.4440 },
+  { id: 418, region: 'WA', pillar: 'healthcare', turn: 19, queuePrior: 84, skillGap: 16, migGain: 1.5760 },
+  { id: 419, region: 'WA', pillar: 'healthcare', turn: 20, queuePrior: 17, skillGap: 23, migGain: 0.5080 },
+  { id: 420, region: 'WA', pillar: 'healthcare', turn: 21, queuePrior: 30, skillGap: 30, migGain: 0.6400 },
+  { id: 421, region: 'WA', pillar: 'healthcare', turn: 22, queuePrior: 43, skillGap: 37, migGain: 0.7720 },
+  { id: 422, region: 'WA', pillar: 'healthcare', turn: 23, queuePrior: 56, skillGap: 44, migGain: 0.9040 },
+  { id: 423, region: 'WA', pillar: 'healthcare', turn: 24, queuePrior: 69, skillGap: 51, migGain: 1.0360 },
+  { id: 424, region: 'WA', pillar: 'healthcare', turn: 25, queuePrior: 82, skillGap: 58, migGain: 1.1680 },
+  { id: 425, region: 'WA', pillar: 'healthcare', turn: 26, queuePrior: 15, skillGap: 10, migGain: 1.3000 },
+  { id: 426, region: 'WA', pillar: 'healthcare', turn: 27, queuePrior: 28, skillGap: 17, migGain: 1.4320 },
+  { id: 427, region: 'WA', pillar: 'healthcare', turn: 28, queuePrior: 41, skillGap: 24, migGain: 1.5640 },
+  { id: 428, region: 'WA', pillar: 'healthcare', turn: 29, queuePrior: 54, skillGap: 31, migGain: 0.4960 },
+  { id: 429, region: 'WA', pillar: 'healthcare', turn: 30, queuePrior: 67, skillGap: 38, migGain: 0.6280 },
+  { id: 430, region: 'WA', pillar: 'healthcare', turn: 31, queuePrior: 80, skillGap: 45, migGain: 0.7600 },
+  { id: 431, region: 'WA', pillar: 'healthcare', turn: 32, queuePrior: 13, skillGap: 52, migGain: 0.8920 },
+  { id: 432, region: 'WA', pillar: 'healthcare', turn: 33, queuePrior: 26, skillGap: 59, migGain: 1.0240 },
+  { id: 433, region: 'WA', pillar: 'healthcare', turn: 34, queuePrior: 39, skillGap: 11, migGain: 1.1560 },
+  { id: 434, region: 'WA', pillar: 'healthcare', turn: 35, queuePrior: 52, skillGap: 18, migGain: 1.2880 },
+  { id: 435, region: 'WA', pillar: 'healthcare', turn: 36, queuePrior: 65, skillGap: 25, migGain: 1.4200 },
+  { id: 436, region: 'WA', pillar: 'healthcare', turn: 37, queuePrior: 78, skillGap: 32, migGain: 1.5520 },
+  { id: 437, region: 'WA', pillar: 'healthcare', turn: 38, queuePrior: 11, skillGap: 39, migGain: 0.4840 },
+  { id: 438, region: 'WA', pillar: 'healthcare', turn: 39, queuePrior: 24, skillGap: 46, migGain: 0.6160 },
+  { id: 439, region: 'WA', pillar: 'healthcare', turn: 40, queuePrior: 37, skillGap: 53, migGain: 0.7480 },
+  { id: 440, region: 'WA', pillar: 'education', turn: 1, queuePrior: 50, skillGap: 5, migGain: 0.8800 },
+  { id: 441, region: 'WA', pillar: 'education', turn: 2, queuePrior: 63, skillGap: 12, migGain: 1.0120 },
+  { id: 442, region: 'WA', pillar: 'education', turn: 3, queuePrior: 76, skillGap: 19, migGain: 1.1440 },
+  { id: 443, region: 'WA', pillar: 'education', turn: 4, queuePrior: 89, skillGap: 26, migGain: 1.2760 },
+  { id: 444, region: 'WA', pillar: 'education', turn: 5, queuePrior: 22, skillGap: 33, migGain: 1.4080 },
+  { id: 445, region: 'WA', pillar: 'education', turn: 6, queuePrior: 35, skillGap: 40, migGain: 1.5400 },
+  { id: 446, region: 'WA', pillar: 'education', turn: 7, queuePrior: 48, skillGap: 47, migGain: 0.4720 },
+  { id: 447, region: 'WA', pillar: 'education', turn: 8, queuePrior: 61, skillGap: 54, migGain: 0.6040 },
+  { id: 448, region: 'WA', pillar: 'education', turn: 9, queuePrior: 74, skillGap: 6, migGain: 0.7360 },
+  { id: 449, region: 'WA', pillar: 'education', turn: 10, queuePrior: 87, skillGap: 13, migGain: 0.8680 },
+  { id: 450, region: 'WA', pillar: 'education', turn: 11, queuePrior: 20, skillGap: 20, migGain: 1.0000 },
+  { id: 451, region: 'WA', pillar: 'education', turn: 12, queuePrior: 33, skillGap: 27, migGain: 1.1320 },
+  { id: 452, region: 'WA', pillar: 'education', turn: 13, queuePrior: 46, skillGap: 34, migGain: 1.2640 },
+  { id: 453, region: 'WA', pillar: 'education', turn: 14, queuePrior: 59, skillGap: 41, migGain: 1.3960 },
+  { id: 454, region: 'WA', pillar: 'education', turn: 15, queuePrior: 72, skillGap: 48, migGain: 1.5280 },
+  { id: 455, region: 'WA', pillar: 'education', turn: 16, queuePrior: 85, skillGap: 55, migGain: 0.4600 },
+  { id: 456, region: 'WA', pillar: 'education', turn: 17, queuePrior: 18, skillGap: 7, migGain: 0.5920 },
+  { id: 457, region: 'WA', pillar: 'education', turn: 18, queuePrior: 31, skillGap: 14, migGain: 0.7240 },
+  { id: 458, region: 'WA', pillar: 'education', turn: 19, queuePrior: 44, skillGap: 21, migGain: 0.8560 },
+  { id: 459, region: 'WA', pillar: 'education', turn: 20, queuePrior: 57, skillGap: 28, migGain: 0.9880 },
+  { id: 460, region: 'WA', pillar: 'education', turn: 21, queuePrior: 70, skillGap: 35, migGain: 1.1200 },
+  { id: 461, region: 'WA', pillar: 'education', turn: 22, queuePrior: 83, skillGap: 42, migGain: 1.2520 },
+  { id: 462, region: 'WA', pillar: 'education', turn: 23, queuePrior: 16, skillGap: 49, migGain: 1.3840 },
+  { id: 463, region: 'WA', pillar: 'education', turn: 24, queuePrior: 29, skillGap: 56, migGain: 1.5160 },
+  { id: 464, region: 'WA', pillar: 'education', turn: 25, queuePrior: 42, skillGap: 8, migGain: 0.4480 },
+  { id: 465, region: 'WA', pillar: 'education', turn: 26, queuePrior: 55, skillGap: 15, migGain: 0.5800 },
+  { id: 466, region: 'WA', pillar: 'education', turn: 27, queuePrior: 68, skillGap: 22, migGain: 0.7120 },
+  { id: 467, region: 'WA', pillar: 'education', turn: 28, queuePrior: 81, skillGap: 29, migGain: 0.8440 },
+  { id: 468, region: 'WA', pillar: 'education', turn: 29, queuePrior: 14, skillGap: 36, migGain: 0.9760 },
+  { id: 469, region: 'WA', pillar: 'education', turn: 30, queuePrior: 27, skillGap: 43, migGain: 1.1080 },
+  { id: 470, region: 'WA', pillar: 'education', turn: 31, queuePrior: 40, skillGap: 50, migGain: 1.2400 },
+  { id: 471, region: 'WA', pillar: 'education', turn: 32, queuePrior: 53, skillGap: 57, migGain: 1.3720 },
+  { id: 472, region: 'WA', pillar: 'education', turn: 33, queuePrior: 66, skillGap: 9, migGain: 1.5040 },
+  { id: 473, region: 'WA', pillar: 'education', turn: 34, queuePrior: 79, skillGap: 16, migGain: 0.4360 },
+  { id: 474, region: 'WA', pillar: 'education', turn: 35, queuePrior: 12, skillGap: 23, migGain: 0.5680 },
+  { id: 475, region: 'WA', pillar: 'education', turn: 36, queuePrior: 25, skillGap: 30, migGain: 0.7000 },
+  { id: 476, region: 'WA', pillar: 'education', turn: 37, queuePrior: 38, skillGap: 37, migGain: 0.8320 },
+  { id: 477, region: 'WA', pillar: 'education', turn: 38, queuePrior: 51, skillGap: 44, migGain: 0.9640 },
+  { id: 478, region: 'WA', pillar: 'education', turn: 39, queuePrior: 64, skillGap: 51, migGain: 1.0960 },
+  { id: 479, region: 'WA', pillar: 'education', turn: 40, queuePrior: 77, skillGap: 58, migGain: 1.2280 },
+  { id: 480, region: 'SA', pillar: 'housing', turn: 1, queuePrior: 10, skillGap: 10, migGain: 1.3600 },
+  { id: 481, region: 'SA', pillar: 'housing', turn: 2, queuePrior: 23, skillGap: 17, migGain: 1.4920 },
+  { id: 482, region: 'SA', pillar: 'housing', turn: 3, queuePrior: 36, skillGap: 24, migGain: 0.4240 },
+  { id: 483, region: 'SA', pillar: 'housing', turn: 4, queuePrior: 49, skillGap: 31, migGain: 0.5560 },
+  { id: 484, region: 'SA', pillar: 'housing', turn: 5, queuePrior: 62, skillGap: 38, migGain: 0.6880 },
+  { id: 485, region: 'SA', pillar: 'housing', turn: 6, queuePrior: 75, skillGap: 45, migGain: 0.8200 },
+  { id: 486, region: 'SA', pillar: 'housing', turn: 7, queuePrior: 88, skillGap: 52, migGain: 0.9520 },
+  { id: 487, region: 'SA', pillar: 'housing', turn: 8, queuePrior: 21, skillGap: 59, migGain: 1.0840 },
+  { id: 488, region: 'SA', pillar: 'housing', turn: 9, queuePrior: 34, skillGap: 11, migGain: 1.2160 },
+  { id: 489, region: 'SA', pillar: 'housing', turn: 10, queuePrior: 47, skillGap: 18, migGain: 1.3480 },
+  { id: 490, region: 'SA', pillar: 'housing', turn: 11, queuePrior: 60, skillGap: 25, migGain: 1.4800 },
+  { id: 491, region: 'SA', pillar: 'housing', turn: 12, queuePrior: 73, skillGap: 32, migGain: 0.4120 },
+  { id: 492, region: 'SA', pillar: 'housing', turn: 13, queuePrior: 86, skillGap: 39, migGain: 0.5440 },
+  { id: 493, region: 'SA', pillar: 'housing', turn: 14, queuePrior: 19, skillGap: 46, migGain: 0.6760 },
+  { id: 494, region: 'SA', pillar: 'housing', turn: 15, queuePrior: 32, skillGap: 53, migGain: 0.8080 },
+  { id: 495, region: 'SA', pillar: 'housing', turn: 16, queuePrior: 45, skillGap: 5, migGain: 0.9400 },
+  { id: 496, region: 'SA', pillar: 'housing', turn: 17, queuePrior: 58, skillGap: 12, migGain: 1.0720 },
+  { id: 497, region: 'SA', pillar: 'housing', turn: 18, queuePrior: 71, skillGap: 19, migGain: 1.2040 },
+  { id: 498, region: 'SA', pillar: 'housing', turn: 19, queuePrior: 84, skillGap: 26, migGain: 1.3360 },
+  { id: 499, region: 'SA', pillar: 'housing', turn: 20, queuePrior: 17, skillGap: 33, migGain: 1.4680 },
+  { id: 500, region: 'SA', pillar: 'housing', turn: 21, queuePrior: 30, skillGap: 40, migGain: 0.4000 },
+  { id: 501, region: 'SA', pillar: 'housing', turn: 22, queuePrior: 43, skillGap: 47, migGain: 0.5320 },
+  { id: 502, region: 'SA', pillar: 'housing', turn: 23, queuePrior: 56, skillGap: 54, migGain: 0.6640 },
+  { id: 503, region: 'SA', pillar: 'housing', turn: 24, queuePrior: 69, skillGap: 6, migGain: 0.7960 },
+  { id: 504, region: 'SA', pillar: 'housing', turn: 25, queuePrior: 82, skillGap: 13, migGain: 0.9280 },
+  { id: 505, region: 'SA', pillar: 'housing', turn: 26, queuePrior: 15, skillGap: 20, migGain: 1.0600 },
+  { id: 506, region: 'SA', pillar: 'housing', turn: 27, queuePrior: 28, skillGap: 27, migGain: 1.1920 },
+  { id: 507, region: 'SA', pillar: 'housing', turn: 28, queuePrior: 41, skillGap: 34, migGain: 1.3240 },
+  { id: 508, region: 'SA', pillar: 'housing', turn: 29, queuePrior: 54, skillGap: 41, migGain: 1.4560 },
+  { id: 509, region: 'SA', pillar: 'housing', turn: 30, queuePrior: 67, skillGap: 48, migGain: 1.5880 },
+  { id: 510, region: 'SA', pillar: 'housing', turn: 31, queuePrior: 80, skillGap: 55, migGain: 0.5200 },
+  { id: 511, region: 'SA', pillar: 'housing', turn: 32, queuePrior: 13, skillGap: 7, migGain: 0.6520 },
+  { id: 512, region: 'SA', pillar: 'housing', turn: 33, queuePrior: 26, skillGap: 14, migGain: 0.7840 },
+  { id: 513, region: 'SA', pillar: 'housing', turn: 34, queuePrior: 39, skillGap: 21, migGain: 0.9160 },
+  { id: 514, region: 'SA', pillar: 'housing', turn: 35, queuePrior: 52, skillGap: 28, migGain: 1.0480 },
+  { id: 515, region: 'SA', pillar: 'housing', turn: 36, queuePrior: 65, skillGap: 35, migGain: 1.1800 },
+  { id: 516, region: 'SA', pillar: 'housing', turn: 37, queuePrior: 78, skillGap: 42, migGain: 1.3120 },
+  { id: 517, region: 'SA', pillar: 'housing', turn: 38, queuePrior: 11, skillGap: 49, migGain: 1.4440 },
+  { id: 518, region: 'SA', pillar: 'housing', turn: 39, queuePrior: 24, skillGap: 56, migGain: 1.5760 },
+  { id: 519, region: 'SA', pillar: 'housing', turn: 40, queuePrior: 37, skillGap: 8, migGain: 0.5080 },
+  { id: 520, region: 'SA', pillar: 'healthcare', turn: 1, queuePrior: 50, skillGap: 15, migGain: 0.6400 },
+  { id: 521, region: 'SA', pillar: 'healthcare', turn: 2, queuePrior: 63, skillGap: 22, migGain: 0.7720 },
+  { id: 522, region: 'SA', pillar: 'healthcare', turn: 3, queuePrior: 76, skillGap: 29, migGain: 0.9040 },
+  { id: 523, region: 'SA', pillar: 'healthcare', turn: 4, queuePrior: 89, skillGap: 36, migGain: 1.0360 },
+  { id: 524, region: 'SA', pillar: 'healthcare', turn: 5, queuePrior: 22, skillGap: 43, migGain: 1.1680 },
+  { id: 525, region: 'SA', pillar: 'healthcare', turn: 6, queuePrior: 35, skillGap: 50, migGain: 1.3000 },
+  { id: 526, region: 'SA', pillar: 'healthcare', turn: 7, queuePrior: 48, skillGap: 57, migGain: 1.4320 },
+  { id: 527, region: 'SA', pillar: 'healthcare', turn: 8, queuePrior: 61, skillGap: 9, migGain: 1.5640 },
+  { id: 528, region: 'SA', pillar: 'healthcare', turn: 9, queuePrior: 74, skillGap: 16, migGain: 0.4960 },
+  { id: 529, region: 'SA', pillar: 'healthcare', turn: 10, queuePrior: 87, skillGap: 23, migGain: 0.6280 },
+  { id: 530, region: 'SA', pillar: 'healthcare', turn: 11, queuePrior: 20, skillGap: 30, migGain: 0.7600 },
+  { id: 531, region: 'SA', pillar: 'healthcare', turn: 12, queuePrior: 33, skillGap: 37, migGain: 0.8920 },
+  { id: 532, region: 'SA', pillar: 'healthcare', turn: 13, queuePrior: 46, skillGap: 44, migGain: 1.0240 },
+  { id: 533, region: 'SA', pillar: 'healthcare', turn: 14, queuePrior: 59, skillGap: 51, migGain: 1.1560 },
+  { id: 534, region: 'SA', pillar: 'healthcare', turn: 15, queuePrior: 72, skillGap: 58, migGain: 1.2880 },
+  { id: 535, region: 'SA', pillar: 'healthcare', turn: 16, queuePrior: 85, skillGap: 10, migGain: 1.4200 },
+  { id: 536, region: 'SA', pillar: 'healthcare', turn: 17, queuePrior: 18, skillGap: 17, migGain: 1.5520 },
+  { id: 537, region: 'SA', pillar: 'healthcare', turn: 18, queuePrior: 31, skillGap: 24, migGain: 0.4840 },
+  { id: 538, region: 'SA', pillar: 'healthcare', turn: 19, queuePrior: 44, skillGap: 31, migGain: 0.6160 },
+  { id: 539, region: 'SA', pillar: 'healthcare', turn: 20, queuePrior: 57, skillGap: 38, migGain: 0.7480 },
+  { id: 540, region: 'SA', pillar: 'healthcare', turn: 21, queuePrior: 70, skillGap: 45, migGain: 0.8800 },
+  { id: 541, region: 'SA', pillar: 'healthcare', turn: 22, queuePrior: 83, skillGap: 52, migGain: 1.0120 },
+  { id: 542, region: 'SA', pillar: 'healthcare', turn: 23, queuePrior: 16, skillGap: 59, migGain: 1.1440 },
+  { id: 543, region: 'SA', pillar: 'healthcare', turn: 24, queuePrior: 29, skillGap: 11, migGain: 1.2760 },
+  { id: 544, region: 'SA', pillar: 'healthcare', turn: 25, queuePrior: 42, skillGap: 18, migGain: 1.4080 },
+  { id: 545, region: 'SA', pillar: 'healthcare', turn: 26, queuePrior: 55, skillGap: 25, migGain: 1.5400 },
+  { id: 546, region: 'SA', pillar: 'healthcare', turn: 27, queuePrior: 68, skillGap: 32, migGain: 0.4720 },
+  { id: 547, region: 'SA', pillar: 'healthcare', turn: 28, queuePrior: 81, skillGap: 39, migGain: 0.6040 },
+  { id: 548, region: 'SA', pillar: 'healthcare', turn: 29, queuePrior: 14, skillGap: 46, migGain: 0.7360 },
+  { id: 549, region: 'SA', pillar: 'healthcare', turn: 30, queuePrior: 27, skillGap: 53, migGain: 0.8680 },
+  { id: 550, region: 'SA', pillar: 'healthcare', turn: 31, queuePrior: 40, skillGap: 5, migGain: 1.0000 },
+  { id: 551, region: 'SA', pillar: 'healthcare', turn: 32, queuePrior: 53, skillGap: 12, migGain: 1.1320 },
+  { id: 552, region: 'SA', pillar: 'healthcare', turn: 33, queuePrior: 66, skillGap: 19, migGain: 1.2640 },
+  { id: 553, region: 'SA', pillar: 'healthcare', turn: 34, queuePrior: 79, skillGap: 26, migGain: 1.3960 },
+  { id: 554, region: 'SA', pillar: 'healthcare', turn: 35, queuePrior: 12, skillGap: 33, migGain: 1.5280 },
+  { id: 555, region: 'SA', pillar: 'healthcare', turn: 36, queuePrior: 25, skillGap: 40, migGain: 0.4600 },
+  { id: 556, region: 'SA', pillar: 'healthcare', turn: 37, queuePrior: 38, skillGap: 47, migGain: 0.5920 },
+  { id: 557, region: 'SA', pillar: 'healthcare', turn: 38, queuePrior: 51, skillGap: 54, migGain: 0.7240 },
+  { id: 558, region: 'SA', pillar: 'healthcare', turn: 39, queuePrior: 64, skillGap: 6, migGain: 0.8560 },
+  { id: 559, region: 'SA', pillar: 'healthcare', turn: 40, queuePrior: 77, skillGap: 13, migGain: 0.9880 },
+  { id: 560, region: 'SA', pillar: 'education', turn: 1, queuePrior: 10, skillGap: 20, migGain: 1.1200 },
+  { id: 561, region: 'SA', pillar: 'education', turn: 2, queuePrior: 23, skillGap: 27, migGain: 1.2520 },
+  { id: 562, region: 'SA', pillar: 'education', turn: 3, queuePrior: 36, skillGap: 34, migGain: 1.3840 },
+  { id: 563, region: 'SA', pillar: 'education', turn: 4, queuePrior: 49, skillGap: 41, migGain: 1.5160 },
+  { id: 564, region: 'SA', pillar: 'education', turn: 5, queuePrior: 62, skillGap: 48, migGain: 0.4480 },
+  { id: 565, region: 'SA', pillar: 'education', turn: 6, queuePrior: 75, skillGap: 55, migGain: 0.5800 },
+  { id: 566, region: 'SA', pillar: 'education', turn: 7, queuePrior: 88, skillGap: 7, migGain: 0.7120 },
+  { id: 567, region: 'SA', pillar: 'education', turn: 8, queuePrior: 21, skillGap: 14, migGain: 0.8440 },
+  { id: 568, region: 'SA', pillar: 'education', turn: 9, queuePrior: 34, skillGap: 21, migGain: 0.9760 },
+  { id: 569, region: 'SA', pillar: 'education', turn: 10, queuePrior: 47, skillGap: 28, migGain: 1.1080 },
+  { id: 570, region: 'SA', pillar: 'education', turn: 11, queuePrior: 60, skillGap: 35, migGain: 1.2400 },
+  { id: 571, region: 'SA', pillar: 'education', turn: 12, queuePrior: 73, skillGap: 42, migGain: 1.3720 },
+  { id: 572, region: 'SA', pillar: 'education', turn: 13, queuePrior: 86, skillGap: 49, migGain: 1.5040 },
+  { id: 573, region: 'SA', pillar: 'education', turn: 14, queuePrior: 19, skillGap: 56, migGain: 0.4360 },
+  { id: 574, region: 'SA', pillar: 'education', turn: 15, queuePrior: 32, skillGap: 8, migGain: 0.5680 },
+  { id: 575, region: 'SA', pillar: 'education', turn: 16, queuePrior: 45, skillGap: 15, migGain: 0.7000 },
+  { id: 576, region: 'SA', pillar: 'education', turn: 17, queuePrior: 58, skillGap: 22, migGain: 0.8320 },
+  { id: 577, region: 'SA', pillar: 'education', turn: 18, queuePrior: 71, skillGap: 29, migGain: 0.9640 },
+  { id: 578, region: 'SA', pillar: 'education', turn: 19, queuePrior: 84, skillGap: 36, migGain: 1.0960 },
+  { id: 579, region: 'SA', pillar: 'education', turn: 20, queuePrior: 17, skillGap: 43, migGain: 1.2280 },
+  { id: 580, region: 'SA', pillar: 'education', turn: 21, queuePrior: 30, skillGap: 50, migGain: 1.3600 },
+  { id: 581, region: 'SA', pillar: 'education', turn: 22, queuePrior: 43, skillGap: 57, migGain: 1.4920 },
+  { id: 582, region: 'SA', pillar: 'education', turn: 23, queuePrior: 56, skillGap: 9, migGain: 0.4240 },
+  { id: 583, region: 'SA', pillar: 'education', turn: 24, queuePrior: 69, skillGap: 16, migGain: 0.5560 },
+  { id: 584, region: 'SA', pillar: 'education', turn: 25, queuePrior: 82, skillGap: 23, migGain: 0.6880 },
+  { id: 585, region: 'SA', pillar: 'education', turn: 26, queuePrior: 15, skillGap: 30, migGain: 0.8200 },
+  { id: 586, region: 'SA', pillar: 'education', turn: 27, queuePrior: 28, skillGap: 37, migGain: 0.9520 },
+  { id: 587, region: 'SA', pillar: 'education', turn: 28, queuePrior: 41, skillGap: 44, migGain: 1.0840 },
+  { id: 588, region: 'SA', pillar: 'education', turn: 29, queuePrior: 54, skillGap: 51, migGain: 1.2160 },
+  { id: 589, region: 'SA', pillar: 'education', turn: 30, queuePrior: 67, skillGap: 58, migGain: 1.3480 },
+  { id: 590, region: 'SA', pillar: 'education', turn: 31, queuePrior: 80, skillGap: 10, migGain: 1.4800 },
+  { id: 591, region: 'SA', pillar: 'education', turn: 32, queuePrior: 13, skillGap: 17, migGain: 0.4120 },
+  { id: 592, region: 'SA', pillar: 'education', turn: 33, queuePrior: 26, skillGap: 24, migGain: 0.5440 },
+  { id: 593, region: 'SA', pillar: 'education', turn: 34, queuePrior: 39, skillGap: 31, migGain: 0.6760 },
+  { id: 594, region: 'SA', pillar: 'education', turn: 35, queuePrior: 52, skillGap: 38, migGain: 0.8080 },
+  { id: 595, region: 'SA', pillar: 'education', turn: 36, queuePrior: 65, skillGap: 45, migGain: 0.9400 },
+  { id: 596, region: 'SA', pillar: 'education', turn: 37, queuePrior: 78, skillGap: 52, migGain: 1.0720 },
+  { id: 597, region: 'SA', pillar: 'education', turn: 38, queuePrior: 11, skillGap: 59, migGain: 1.2040 },
+  { id: 598, region: 'SA', pillar: 'education', turn: 39, queuePrior: 24, skillGap: 11, migGain: 1.3360 },
+  { id: 599, region: 'SA', pillar: 'education', turn: 40, queuePrior: 37, skillGap: 18, migGain: 1.4680 },
+  { id: 600, region: 'TAS', pillar: 'housing', turn: 1, queuePrior: 50, skillGap: 25, migGain: 0.4000 },
+  { id: 601, region: 'TAS', pillar: 'housing', turn: 2, queuePrior: 63, skillGap: 32, migGain: 0.5320 },
+  { id: 602, region: 'TAS', pillar: 'housing', turn: 3, queuePrior: 76, skillGap: 39, migGain: 0.6640 },
+  { id: 603, region: 'TAS', pillar: 'housing', turn: 4, queuePrior: 89, skillGap: 46, migGain: 0.7960 },
+  { id: 604, region: 'TAS', pillar: 'housing', turn: 5, queuePrior: 22, skillGap: 53, migGain: 0.9280 },
+  { id: 605, region: 'TAS', pillar: 'housing', turn: 6, queuePrior: 35, skillGap: 5, migGain: 1.0600 },
+  { id: 606, region: 'TAS', pillar: 'housing', turn: 7, queuePrior: 48, skillGap: 12, migGain: 1.1920 },
+  { id: 607, region: 'TAS', pillar: 'housing', turn: 8, queuePrior: 61, skillGap: 19, migGain: 1.3240 },
+  { id: 608, region: 'TAS', pillar: 'housing', turn: 9, queuePrior: 74, skillGap: 26, migGain: 1.4560 },
+  { id: 609, region: 'TAS', pillar: 'housing', turn: 10, queuePrior: 87, skillGap: 33, migGain: 1.5880 },
+  { id: 610, region: 'TAS', pillar: 'housing', turn: 11, queuePrior: 20, skillGap: 40, migGain: 0.5200 },
+  { id: 611, region: 'TAS', pillar: 'housing', turn: 12, queuePrior: 33, skillGap: 47, migGain: 0.6520 },
+  { id: 612, region: 'TAS', pillar: 'housing', turn: 13, queuePrior: 46, skillGap: 54, migGain: 0.7840 },
+  { id: 613, region: 'TAS', pillar: 'housing', turn: 14, queuePrior: 59, skillGap: 6, migGain: 0.9160 },
+  { id: 614, region: 'TAS', pillar: 'housing', turn: 15, queuePrior: 72, skillGap: 13, migGain: 1.0480 },
+  { id: 615, region: 'TAS', pillar: 'housing', turn: 16, queuePrior: 85, skillGap: 20, migGain: 1.1800 },
+  { id: 616, region: 'TAS', pillar: 'housing', turn: 17, queuePrior: 18, skillGap: 27, migGain: 1.3120 },
+  { id: 617, region: 'TAS', pillar: 'housing', turn: 18, queuePrior: 31, skillGap: 34, migGain: 1.4440 },
+  { id: 618, region: 'TAS', pillar: 'housing', turn: 19, queuePrior: 44, skillGap: 41, migGain: 1.5760 },
+  { id: 619, region: 'TAS', pillar: 'housing', turn: 20, queuePrior: 57, skillGap: 48, migGain: 0.5080 },
+  { id: 620, region: 'TAS', pillar: 'housing', turn: 21, queuePrior: 70, skillGap: 55, migGain: 0.6400 },
+  { id: 621, region: 'TAS', pillar: 'housing', turn: 22, queuePrior: 83, skillGap: 7, migGain: 0.7720 },
+  { id: 622, region: 'TAS', pillar: 'housing', turn: 23, queuePrior: 16, skillGap: 14, migGain: 0.9040 },
+  { id: 623, region: 'TAS', pillar: 'housing', turn: 24, queuePrior: 29, skillGap: 21, migGain: 1.0360 },
+  { id: 624, region: 'TAS', pillar: 'housing', turn: 25, queuePrior: 42, skillGap: 28, migGain: 1.1680 },
+  { id: 625, region: 'TAS', pillar: 'housing', turn: 26, queuePrior: 55, skillGap: 35, migGain: 1.3000 },
+  { id: 626, region: 'TAS', pillar: 'housing', turn: 27, queuePrior: 68, skillGap: 42, migGain: 1.4320 },
+  { id: 627, region: 'TAS', pillar: 'housing', turn: 28, queuePrior: 81, skillGap: 49, migGain: 1.5640 },
+  { id: 628, region: 'TAS', pillar: 'housing', turn: 29, queuePrior: 14, skillGap: 56, migGain: 0.4960 },
+  { id: 629, region: 'TAS', pillar: 'housing', turn: 30, queuePrior: 27, skillGap: 8, migGain: 0.6280 },
+  { id: 630, region: 'TAS', pillar: 'housing', turn: 31, queuePrior: 40, skillGap: 15, migGain: 0.7600 },
+  { id: 631, region: 'TAS', pillar: 'housing', turn: 32, queuePrior: 53, skillGap: 22, migGain: 0.8920 },
+  { id: 632, region: 'TAS', pillar: 'housing', turn: 33, queuePrior: 66, skillGap: 29, migGain: 1.0240 },
+  { id: 633, region: 'TAS', pillar: 'housing', turn: 34, queuePrior: 79, skillGap: 36, migGain: 1.1560 },
+  { id: 634, region: 'TAS', pillar: 'housing', turn: 35, queuePrior: 12, skillGap: 43, migGain: 1.2880 },
+  { id: 635, region: 'TAS', pillar: 'housing', turn: 36, queuePrior: 25, skillGap: 50, migGain: 1.4200 },
+  { id: 636, region: 'TAS', pillar: 'housing', turn: 37, queuePrior: 38, skillGap: 57, migGain: 1.5520 },
+  { id: 637, region: 'TAS', pillar: 'housing', turn: 38, queuePrior: 51, skillGap: 9, migGain: 0.4840 },
+  { id: 638, region: 'TAS', pillar: 'housing', turn: 39, queuePrior: 64, skillGap: 16, migGain: 0.6160 },
+  { id: 639, region: 'TAS', pillar: 'housing', turn: 40, queuePrior: 77, skillGap: 23, migGain: 0.7480 },
+  { id: 640, region: 'TAS', pillar: 'healthcare', turn: 1, queuePrior: 10, skillGap: 30, migGain: 0.8800 },
+  { id: 641, region: 'TAS', pillar: 'healthcare', turn: 2, queuePrior: 23, skillGap: 37, migGain: 1.0120 },
+  { id: 642, region: 'TAS', pillar: 'healthcare', turn: 3, queuePrior: 36, skillGap: 44, migGain: 1.1440 },
+  { id: 643, region: 'TAS', pillar: 'healthcare', turn: 4, queuePrior: 49, skillGap: 51, migGain: 1.2760 },
+  { id: 644, region: 'TAS', pillar: 'healthcare', turn: 5, queuePrior: 62, skillGap: 58, migGain: 1.4080 },
+  { id: 645, region: 'TAS', pillar: 'healthcare', turn: 6, queuePrior: 75, skillGap: 10, migGain: 1.5400 },
+  { id: 646, region: 'TAS', pillar: 'healthcare', turn: 7, queuePrior: 88, skillGap: 17, migGain: 0.4720 },
+  { id: 647, region: 'TAS', pillar: 'healthcare', turn: 8, queuePrior: 21, skillGap: 24, migGain: 0.6040 },
+  { id: 648, region: 'TAS', pillar: 'healthcare', turn: 9, queuePrior: 34, skillGap: 31, migGain: 0.7360 },
+  { id: 649, region: 'TAS', pillar: 'healthcare', turn: 10, queuePrior: 47, skillGap: 38, migGain: 0.8680 },
+  { id: 650, region: 'TAS', pillar: 'healthcare', turn: 11, queuePrior: 60, skillGap: 45, migGain: 1.0000 },
+  { id: 651, region: 'TAS', pillar: 'healthcare', turn: 12, queuePrior: 73, skillGap: 52, migGain: 1.1320 },
+  { id: 652, region: 'TAS', pillar: 'healthcare', turn: 13, queuePrior: 86, skillGap: 59, migGain: 1.2640 },
+  { id: 653, region: 'TAS', pillar: 'healthcare', turn: 14, queuePrior: 19, skillGap: 11, migGain: 1.3960 },
+  { id: 654, region: 'TAS', pillar: 'healthcare', turn: 15, queuePrior: 32, skillGap: 18, migGain: 1.5280 },
+  { id: 655, region: 'TAS', pillar: 'healthcare', turn: 16, queuePrior: 45, skillGap: 25, migGain: 0.4600 },
+  { id: 656, region: 'TAS', pillar: 'healthcare', turn: 17, queuePrior: 58, skillGap: 32, migGain: 0.5920 },
+  { id: 657, region: 'TAS', pillar: 'healthcare', turn: 18, queuePrior: 71, skillGap: 39, migGain: 0.7240 },
+  { id: 658, region: 'TAS', pillar: 'healthcare', turn: 19, queuePrior: 84, skillGap: 46, migGain: 0.8560 },
+  { id: 659, region: 'TAS', pillar: 'healthcare', turn: 20, queuePrior: 17, skillGap: 53, migGain: 0.9880 },
+  { id: 660, region: 'TAS', pillar: 'healthcare', turn: 21, queuePrior: 30, skillGap: 5, migGain: 1.1200 },
+  { id: 661, region: 'TAS', pillar: 'healthcare', turn: 22, queuePrior: 43, skillGap: 12, migGain: 1.2520 },
+  { id: 662, region: 'TAS', pillar: 'healthcare', turn: 23, queuePrior: 56, skillGap: 19, migGain: 1.3840 },
+  { id: 663, region: 'TAS', pillar: 'healthcare', turn: 24, queuePrior: 69, skillGap: 26, migGain: 1.5160 },
+  { id: 664, region: 'TAS', pillar: 'healthcare', turn: 25, queuePrior: 82, skillGap: 33, migGain: 0.4480 },
+  { id: 665, region: 'TAS', pillar: 'healthcare', turn: 26, queuePrior: 15, skillGap: 40, migGain: 0.5800 },
+  { id: 666, region: 'TAS', pillar: 'healthcare', turn: 27, queuePrior: 28, skillGap: 47, migGain: 0.7120 },
+  { id: 667, region: 'TAS', pillar: 'healthcare', turn: 28, queuePrior: 41, skillGap: 54, migGain: 0.8440 },
+  { id: 668, region: 'TAS', pillar: 'healthcare', turn: 29, queuePrior: 54, skillGap: 6, migGain: 0.9760 },
+  { id: 669, region: 'TAS', pillar: 'healthcare', turn: 30, queuePrior: 67, skillGap: 13, migGain: 1.1080 },
+  { id: 670, region: 'TAS', pillar: 'healthcare', turn: 31, queuePrior: 80, skillGap: 20, migGain: 1.2400 },
+  { id: 671, region: 'TAS', pillar: 'healthcare', turn: 32, queuePrior: 13, skillGap: 27, migGain: 1.3720 },
+  { id: 672, region: 'TAS', pillar: 'healthcare', turn: 33, queuePrior: 26, skillGap: 34, migGain: 1.5040 },
+  { id: 673, region: 'TAS', pillar: 'healthcare', turn: 34, queuePrior: 39, skillGap: 41, migGain: 0.4360 },
+  { id: 674, region: 'TAS', pillar: 'healthcare', turn: 35, queuePrior: 52, skillGap: 48, migGain: 0.5680 },
+  { id: 675, region: 'TAS', pillar: 'healthcare', turn: 36, queuePrior: 65, skillGap: 55, migGain: 0.7000 },
+  { id: 676, region: 'TAS', pillar: 'healthcare', turn: 37, queuePrior: 78, skillGap: 7, migGain: 0.8320 },
+  { id: 677, region: 'TAS', pillar: 'healthcare', turn: 38, queuePrior: 11, skillGap: 14, migGain: 0.9640 },
+  { id: 678, region: 'TAS', pillar: 'healthcare', turn: 39, queuePrior: 24, skillGap: 21, migGain: 1.0960 },
+  { id: 679, region: 'TAS', pillar: 'healthcare', turn: 40, queuePrior: 37, skillGap: 28, migGain: 1.2280 },
+  { id: 680, region: 'TAS', pillar: 'education', turn: 1, queuePrior: 50, skillGap: 35, migGain: 1.3600 },
+  { id: 681, region: 'TAS', pillar: 'education', turn: 2, queuePrior: 63, skillGap: 42, migGain: 1.4920 },
+  { id: 682, region: 'TAS', pillar: 'education', turn: 3, queuePrior: 76, skillGap: 49, migGain: 0.4240 },
+  { id: 683, region: 'TAS', pillar: 'education', turn: 4, queuePrior: 89, skillGap: 56, migGain: 0.5560 },
+  { id: 684, region: 'TAS', pillar: 'education', turn: 5, queuePrior: 22, skillGap: 8, migGain: 0.6880 },
+  { id: 685, region: 'TAS', pillar: 'education', turn: 6, queuePrior: 35, skillGap: 15, migGain: 0.8200 },
+  { id: 686, region: 'TAS', pillar: 'education', turn: 7, queuePrior: 48, skillGap: 22, migGain: 0.9520 },
+  { id: 687, region: 'TAS', pillar: 'education', turn: 8, queuePrior: 61, skillGap: 29, migGain: 1.0840 },
+  { id: 688, region: 'TAS', pillar: 'education', turn: 9, queuePrior: 74, skillGap: 36, migGain: 1.2160 },
+  { id: 689, region: 'TAS', pillar: 'education', turn: 10, queuePrior: 87, skillGap: 43, migGain: 1.3480 },
+  { id: 690, region: 'TAS', pillar: 'education', turn: 11, queuePrior: 20, skillGap: 50, migGain: 1.4800 },
+  { id: 691, region: 'TAS', pillar: 'education', turn: 12, queuePrior: 33, skillGap: 57, migGain: 0.4120 },
+  { id: 692, region: 'TAS', pillar: 'education', turn: 13, queuePrior: 46, skillGap: 9, migGain: 0.5440 },
+  { id: 693, region: 'TAS', pillar: 'education', turn: 14, queuePrior: 59, skillGap: 16, migGain: 0.6760 },
+  { id: 694, region: 'TAS', pillar: 'education', turn: 15, queuePrior: 72, skillGap: 23, migGain: 0.8080 },
+  { id: 695, region: 'TAS', pillar: 'education', turn: 16, queuePrior: 85, skillGap: 30, migGain: 0.9400 },
+  { id: 696, region: 'TAS', pillar: 'education', turn: 17, queuePrior: 18, skillGap: 37, migGain: 1.0720 },
+  { id: 697, region: 'TAS', pillar: 'education', turn: 18, queuePrior: 31, skillGap: 44, migGain: 1.2040 },
+  { id: 698, region: 'TAS', pillar: 'education', turn: 19, queuePrior: 44, skillGap: 51, migGain: 1.3360 },
+  { id: 699, region: 'TAS', pillar: 'education', turn: 20, queuePrior: 57, skillGap: 58, migGain: 1.4680 },
+  { id: 700, region: 'TAS', pillar: 'education', turn: 21, queuePrior: 70, skillGap: 10, migGain: 0.4000 },
+  { id: 701, region: 'TAS', pillar: 'education', turn: 22, queuePrior: 83, skillGap: 17, migGain: 0.5320 },
+  { id: 702, region: 'TAS', pillar: 'education', turn: 23, queuePrior: 16, skillGap: 24, migGain: 0.6640 },
+  { id: 703, region: 'TAS', pillar: 'education', turn: 24, queuePrior: 29, skillGap: 31, migGain: 0.7960 },
+  { id: 704, region: 'TAS', pillar: 'education', turn: 25, queuePrior: 42, skillGap: 38, migGain: 0.9280 },
+  { id: 705, region: 'TAS', pillar: 'education', turn: 26, queuePrior: 55, skillGap: 45, migGain: 1.0600 },
+  { id: 706, region: 'TAS', pillar: 'education', turn: 27, queuePrior: 68, skillGap: 52, migGain: 1.1920 },
+  { id: 707, region: 'TAS', pillar: 'education', turn: 28, queuePrior: 81, skillGap: 59, migGain: 1.3240 },
+  { id: 708, region: 'TAS', pillar: 'education', turn: 29, queuePrior: 14, skillGap: 11, migGain: 1.4560 },
+  { id: 709, region: 'TAS', pillar: 'education', turn: 30, queuePrior: 27, skillGap: 18, migGain: 1.5880 },
+  { id: 710, region: 'TAS', pillar: 'education', turn: 31, queuePrior: 40, skillGap: 25, migGain: 0.5200 },
+  { id: 711, region: 'TAS', pillar: 'education', turn: 32, queuePrior: 53, skillGap: 32, migGain: 0.6520 },
+  { id: 712, region: 'TAS', pillar: 'education', turn: 33, queuePrior: 66, skillGap: 39, migGain: 0.7840 },
+  { id: 713, region: 'TAS', pillar: 'education', turn: 34, queuePrior: 79, skillGap: 46, migGain: 0.9160 },
+  { id: 714, region: 'TAS', pillar: 'education', turn: 35, queuePrior: 12, skillGap: 53, migGain: 1.0480 },
+  { id: 715, region: 'TAS', pillar: 'education', turn: 36, queuePrior: 25, skillGap: 5, migGain: 1.1800 },
+  { id: 716, region: 'TAS', pillar: 'education', turn: 37, queuePrior: 38, skillGap: 12, migGain: 1.3120 },
+  { id: 717, region: 'TAS', pillar: 'education', turn: 38, queuePrior: 51, skillGap: 19, migGain: 1.4440 },
+  { id: 718, region: 'TAS', pillar: 'education', turn: 39, queuePrior: 64, skillGap: 26, migGain: 1.5760 },
+  { id: 719, region: 'TAS', pillar: 'education', turn: 40, queuePrior: 77, skillGap: 33, migGain: 0.5080 },
+  { id: 720, region: 'NT', pillar: 'housing', turn: 1, queuePrior: 10, skillGap: 40, migGain: 0.6400 },
+  { id: 721, region: 'NT', pillar: 'housing', turn: 2, queuePrior: 23, skillGap: 47, migGain: 0.7720 },
+  { id: 722, region: 'NT', pillar: 'housing', turn: 3, queuePrior: 36, skillGap: 54, migGain: 0.9040 },
+  { id: 723, region: 'NT', pillar: 'housing', turn: 4, queuePrior: 49, skillGap: 6, migGain: 1.0360 },
+  { id: 724, region: 'NT', pillar: 'housing', turn: 5, queuePrior: 62, skillGap: 13, migGain: 1.1680 },
+  { id: 725, region: 'NT', pillar: 'housing', turn: 6, queuePrior: 75, skillGap: 20, migGain: 1.3000 },
+  { id: 726, region: 'NT', pillar: 'housing', turn: 7, queuePrior: 88, skillGap: 27, migGain: 1.4320 },
+  { id: 727, region: 'NT', pillar: 'housing', turn: 8, queuePrior: 21, skillGap: 34, migGain: 1.5640 },
+  { id: 728, region: 'NT', pillar: 'housing', turn: 9, queuePrior: 34, skillGap: 41, migGain: 0.4960 },
+  { id: 729, region: 'NT', pillar: 'housing', turn: 10, queuePrior: 47, skillGap: 48, migGain: 0.6280 },
+  { id: 730, region: 'NT', pillar: 'housing', turn: 11, queuePrior: 60, skillGap: 55, migGain: 0.7600 },
+  { id: 731, region: 'NT', pillar: 'housing', turn: 12, queuePrior: 73, skillGap: 7, migGain: 0.8920 },
+  { id: 732, region: 'NT', pillar: 'housing', turn: 13, queuePrior: 86, skillGap: 14, migGain: 1.0240 },
+  { id: 733, region: 'NT', pillar: 'housing', turn: 14, queuePrior: 19, skillGap: 21, migGain: 1.1560 },
+  { id: 734, region: 'NT', pillar: 'housing', turn: 15, queuePrior: 32, skillGap: 28, migGain: 1.2880 },
+  { id: 735, region: 'NT', pillar: 'housing', turn: 16, queuePrior: 45, skillGap: 35, migGain: 1.4200 },
+  { id: 736, region: 'NT', pillar: 'housing', turn: 17, queuePrior: 58, skillGap: 42, migGain: 1.5520 },
+  { id: 737, region: 'NT', pillar: 'housing', turn: 18, queuePrior: 71, skillGap: 49, migGain: 0.4840 },
+  { id: 738, region: 'NT', pillar: 'housing', turn: 19, queuePrior: 84, skillGap: 56, migGain: 0.6160 },
+  { id: 739, region: 'NT', pillar: 'housing', turn: 20, queuePrior: 17, skillGap: 8, migGain: 0.7480 },
+  { id: 740, region: 'NT', pillar: 'housing', turn: 21, queuePrior: 30, skillGap: 15, migGain: 0.8800 },
+  { id: 741, region: 'NT', pillar: 'housing', turn: 22, queuePrior: 43, skillGap: 22, migGain: 1.0120 },
+  { id: 742, region: 'NT', pillar: 'housing', turn: 23, queuePrior: 56, skillGap: 29, migGain: 1.1440 },
+  { id: 743, region: 'NT', pillar: 'housing', turn: 24, queuePrior: 69, skillGap: 36, migGain: 1.2760 },
+  { id: 744, region: 'NT', pillar: 'housing', turn: 25, queuePrior: 82, skillGap: 43, migGain: 1.4080 },
+  { id: 745, region: 'NT', pillar: 'housing', turn: 26, queuePrior: 15, skillGap: 50, migGain: 1.5400 },
+  { id: 746, region: 'NT', pillar: 'housing', turn: 27, queuePrior: 28, skillGap: 57, migGain: 0.4720 },
+  { id: 747, region: 'NT', pillar: 'housing', turn: 28, queuePrior: 41, skillGap: 9, migGain: 0.6040 },
+  { id: 748, region: 'NT', pillar: 'housing', turn: 29, queuePrior: 54, skillGap: 16, migGain: 0.7360 },
+  { id: 749, region: 'NT', pillar: 'housing', turn: 30, queuePrior: 67, skillGap: 23, migGain: 0.8680 },
+  { id: 750, region: 'NT', pillar: 'housing', turn: 31, queuePrior: 80, skillGap: 30, migGain: 1.0000 },
+  { id: 751, region: 'NT', pillar: 'housing', turn: 32, queuePrior: 13, skillGap: 37, migGain: 1.1320 },
+  { id: 752, region: 'NT', pillar: 'housing', turn: 33, queuePrior: 26, skillGap: 44, migGain: 1.2640 },
+  { id: 753, region: 'NT', pillar: 'housing', turn: 34, queuePrior: 39, skillGap: 51, migGain: 1.3960 },
+  { id: 754, region: 'NT', pillar: 'housing', turn: 35, queuePrior: 52, skillGap: 58, migGain: 1.5280 },
+  { id: 755, region: 'NT', pillar: 'housing', turn: 36, queuePrior: 65, skillGap: 10, migGain: 0.4600 },
+  { id: 756, region: 'NT', pillar: 'housing', turn: 37, queuePrior: 78, skillGap: 17, migGain: 0.5920 },
+  { id: 757, region: 'NT', pillar: 'housing', turn: 38, queuePrior: 11, skillGap: 24, migGain: 0.7240 },
+  { id: 758, region: 'NT', pillar: 'housing', turn: 39, queuePrior: 24, skillGap: 31, migGain: 0.8560 },
+  { id: 759, region: 'NT', pillar: 'housing', turn: 40, queuePrior: 37, skillGap: 38, migGain: 0.9880 },
+  { id: 760, region: 'NT', pillar: 'healthcare', turn: 1, queuePrior: 50, skillGap: 45, migGain: 1.1200 },
+  { id: 761, region: 'NT', pillar: 'healthcare', turn: 2, queuePrior: 63, skillGap: 52, migGain: 1.2520 },
+  { id: 762, region: 'NT', pillar: 'healthcare', turn: 3, queuePrior: 76, skillGap: 59, migGain: 1.3840 },
+  { id: 763, region: 'NT', pillar: 'healthcare', turn: 4, queuePrior: 89, skillGap: 11, migGain: 1.5160 },
+  { id: 764, region: 'NT', pillar: 'healthcare', turn: 5, queuePrior: 22, skillGap: 18, migGain: 0.4480 },
+  { id: 765, region: 'NT', pillar: 'healthcare', turn: 6, queuePrior: 35, skillGap: 25, migGain: 0.5800 },
+  { id: 766, region: 'NT', pillar: 'healthcare', turn: 7, queuePrior: 48, skillGap: 32, migGain: 0.7120 },
+  { id: 767, region: 'NT', pillar: 'healthcare', turn: 8, queuePrior: 61, skillGap: 39, migGain: 0.8440 },
+  { id: 768, region: 'NT', pillar: 'healthcare', turn: 9, queuePrior: 74, skillGap: 46, migGain: 0.9760 },
+  { id: 769, region: 'NT', pillar: 'healthcare', turn: 10, queuePrior: 87, skillGap: 53, migGain: 1.1080 },
+  { id: 770, region: 'NT', pillar: 'healthcare', turn: 11, queuePrior: 20, skillGap: 5, migGain: 1.2400 },
+  { id: 771, region: 'NT', pillar: 'healthcare', turn: 12, queuePrior: 33, skillGap: 12, migGain: 1.3720 },
+  { id: 772, region: 'NT', pillar: 'healthcare', turn: 13, queuePrior: 46, skillGap: 19, migGain: 1.5040 },
+  { id: 773, region: 'NT', pillar: 'healthcare', turn: 14, queuePrior: 59, skillGap: 26, migGain: 0.4360 },
+  { id: 774, region: 'NT', pillar: 'healthcare', turn: 15, queuePrior: 72, skillGap: 33, migGain: 0.5680 },
+  { id: 775, region: 'NT', pillar: 'healthcare', turn: 16, queuePrior: 85, skillGap: 40, migGain: 0.7000 },
+  { id: 776, region: 'NT', pillar: 'healthcare', turn: 17, queuePrior: 18, skillGap: 47, migGain: 0.8320 },
+  { id: 777, region: 'NT', pillar: 'healthcare', turn: 18, queuePrior: 31, skillGap: 54, migGain: 0.9640 },
+  { id: 778, region: 'NT', pillar: 'healthcare', turn: 19, queuePrior: 44, skillGap: 6, migGain: 1.0960 },
+  { id: 779, region: 'NT', pillar: 'healthcare', turn: 20, queuePrior: 57, skillGap: 13, migGain: 1.2280 },
+  { id: 780, region: 'NT', pillar: 'healthcare', turn: 21, queuePrior: 70, skillGap: 20, migGain: 1.3600 },
+  { id: 781, region: 'NT', pillar: 'healthcare', turn: 22, queuePrior: 83, skillGap: 27, migGain: 1.4920 },
+  { id: 782, region: 'NT', pillar: 'healthcare', turn: 23, queuePrior: 16, skillGap: 34, migGain: 0.4240 },
+  { id: 783, region: 'NT', pillar: 'healthcare', turn: 24, queuePrior: 29, skillGap: 41, migGain: 0.5560 },
+  { id: 784, region: 'NT', pillar: 'healthcare', turn: 25, queuePrior: 42, skillGap: 48, migGain: 0.6880 },
+  { id: 785, region: 'NT', pillar: 'healthcare', turn: 26, queuePrior: 55, skillGap: 55, migGain: 0.8200 },
+  { id: 786, region: 'NT', pillar: 'healthcare', turn: 27, queuePrior: 68, skillGap: 7, migGain: 0.9520 },
+  { id: 787, region: 'NT', pillar: 'healthcare', turn: 28, queuePrior: 81, skillGap: 14, migGain: 1.0840 },
+  { id: 788, region: 'NT', pillar: 'healthcare', turn: 29, queuePrior: 14, skillGap: 21, migGain: 1.2160 },
+  { id: 789, region: 'NT', pillar: 'healthcare', turn: 30, queuePrior: 27, skillGap: 28, migGain: 1.3480 },
+  { id: 790, region: 'NT', pillar: 'healthcare', turn: 31, queuePrior: 40, skillGap: 35, migGain: 1.4800 },
+  { id: 791, region: 'NT', pillar: 'healthcare', turn: 32, queuePrior: 53, skillGap: 42, migGain: 0.4120 },
+  { id: 792, region: 'NT', pillar: 'healthcare', turn: 33, queuePrior: 66, skillGap: 49, migGain: 0.5440 },
+  { id: 793, region: 'NT', pillar: 'healthcare', turn: 34, queuePrior: 79, skillGap: 56, migGain: 0.6760 },
+  { id: 794, region: 'NT', pillar: 'healthcare', turn: 35, queuePrior: 12, skillGap: 8, migGain: 0.8080 },
+  { id: 795, region: 'NT', pillar: 'healthcare', turn: 36, queuePrior: 25, skillGap: 15, migGain: 0.9400 },
+  { id: 796, region: 'NT', pillar: 'healthcare', turn: 37, queuePrior: 38, skillGap: 22, migGain: 1.0720 },
+  { id: 797, region: 'NT', pillar: 'healthcare', turn: 38, queuePrior: 51, skillGap: 29, migGain: 1.2040 },
+  { id: 798, region: 'NT', pillar: 'healthcare', turn: 39, queuePrior: 64, skillGap: 36, migGain: 1.3360 },
+  { id: 799, region: 'NT', pillar: 'healthcare', turn: 40, queuePrior: 77, skillGap: 43, migGain: 1.4680 },
+  { id: 800, region: 'NT', pillar: 'education', turn: 1, queuePrior: 10, skillGap: 50, migGain: 0.4000 },
+  { id: 801, region: 'NT', pillar: 'education', turn: 2, queuePrior: 23, skillGap: 57, migGain: 0.5320 },
+  { id: 802, region: 'NT', pillar: 'education', turn: 3, queuePrior: 36, skillGap: 9, migGain: 0.6640 },
+  { id: 803, region: 'NT', pillar: 'education', turn: 4, queuePrior: 49, skillGap: 16, migGain: 0.7960 },
+  { id: 804, region: 'NT', pillar: 'education', turn: 5, queuePrior: 62, skillGap: 23, migGain: 0.9280 },
+  { id: 805, region: 'NT', pillar: 'education', turn: 6, queuePrior: 75, skillGap: 30, migGain: 1.0600 },
+  { id: 806, region: 'NT', pillar: 'education', turn: 7, queuePrior: 88, skillGap: 37, migGain: 1.1920 },
+  { id: 807, region: 'NT', pillar: 'education', turn: 8, queuePrior: 21, skillGap: 44, migGain: 1.3240 },
+  { id: 808, region: 'NT', pillar: 'education', turn: 9, queuePrior: 34, skillGap: 51, migGain: 1.4560 },
+  { id: 809, region: 'NT', pillar: 'education', turn: 10, queuePrior: 47, skillGap: 58, migGain: 1.5880 },
+  { id: 810, region: 'NT', pillar: 'education', turn: 11, queuePrior: 60, skillGap: 10, migGain: 0.5200 },
+  { id: 811, region: 'NT', pillar: 'education', turn: 12, queuePrior: 73, skillGap: 17, migGain: 0.6520 },
+  { id: 812, region: 'NT', pillar: 'education', turn: 13, queuePrior: 86, skillGap: 24, migGain: 0.7840 },
+  { id: 813, region: 'NT', pillar: 'education', turn: 14, queuePrior: 19, skillGap: 31, migGain: 0.9160 },
+  { id: 814, region: 'NT', pillar: 'education', turn: 15, queuePrior: 32, skillGap: 38, migGain: 1.0480 },
+  { id: 815, region: 'NT', pillar: 'education', turn: 16, queuePrior: 45, skillGap: 45, migGain: 1.1800 },
+  { id: 816, region: 'NT', pillar: 'education', turn: 17, queuePrior: 58, skillGap: 52, migGain: 1.3120 },
+  { id: 817, region: 'NT', pillar: 'education', turn: 18, queuePrior: 71, skillGap: 59, migGain: 1.4440 },
+  { id: 818, region: 'NT', pillar: 'education', turn: 19, queuePrior: 84, skillGap: 11, migGain: 1.5760 },
+  { id: 819, region: 'NT', pillar: 'education', turn: 20, queuePrior: 17, skillGap: 18, migGain: 0.5080 },
+  { id: 820, region: 'NT', pillar: 'education', turn: 21, queuePrior: 30, skillGap: 25, migGain: 0.6400 },
+  { id: 821, region: 'NT', pillar: 'education', turn: 22, queuePrior: 43, skillGap: 32, migGain: 0.7720 },
+  { id: 822, region: 'NT', pillar: 'education', turn: 23, queuePrior: 56, skillGap: 39, migGain: 0.9040 },
+  { id: 823, region: 'NT', pillar: 'education', turn: 24, queuePrior: 69, skillGap: 46, migGain: 1.0360 },
+  { id: 824, region: 'NT', pillar: 'education', turn: 25, queuePrior: 82, skillGap: 53, migGain: 1.1680 },
+  { id: 825, region: 'NT', pillar: 'education', turn: 26, queuePrior: 15, skillGap: 5, migGain: 1.3000 },
+  { id: 826, region: 'NT', pillar: 'education', turn: 27, queuePrior: 28, skillGap: 12, migGain: 1.4320 },
+  { id: 827, region: 'NT', pillar: 'education', turn: 28, queuePrior: 41, skillGap: 19, migGain: 1.5640 },
+  { id: 828, region: 'NT', pillar: 'education', turn: 29, queuePrior: 54, skillGap: 26, migGain: 0.4960 },
+  { id: 829, region: 'NT', pillar: 'education', turn: 30, queuePrior: 67, skillGap: 33, migGain: 0.6280 },
+  { id: 830, region: 'NT', pillar: 'education', turn: 31, queuePrior: 80, skillGap: 40, migGain: 0.7600 },
+  { id: 831, region: 'NT', pillar: 'education', turn: 32, queuePrior: 13, skillGap: 47, migGain: 0.8920 },
+  { id: 832, region: 'NT', pillar: 'education', turn: 33, queuePrior: 26, skillGap: 54, migGain: 1.0240 },
+  { id: 833, region: 'NT', pillar: 'education', turn: 34, queuePrior: 39, skillGap: 6, migGain: 1.1560 },
+  { id: 834, region: 'NT', pillar: 'education', turn: 35, queuePrior: 52, skillGap: 13, migGain: 1.2880 },
+  { id: 835, region: 'NT', pillar: 'education', turn: 36, queuePrior: 65, skillGap: 20, migGain: 1.4200 },
+  { id: 836, region: 'NT', pillar: 'education', turn: 37, queuePrior: 78, skillGap: 27, migGain: 1.5520 },
+  { id: 837, region: 'NT', pillar: 'education', turn: 38, queuePrior: 11, skillGap: 34, migGain: 0.4840 },
+  { id: 838, region: 'NT', pillar: 'education', turn: 39, queuePrior: 24, skillGap: 41, migGain: 0.6160 },
+  { id: 839, region: 'NT', pillar: 'education', turn: 40, queuePrior: 37, skillGap: 48, migGain: 0.7480 },
+  { id: 840, region: 'ACT', pillar: 'housing', turn: 1, queuePrior: 50, skillGap: 55, migGain: 0.8800 },
+  { id: 841, region: 'ACT', pillar: 'housing', turn: 2, queuePrior: 63, skillGap: 7, migGain: 1.0120 },
+  { id: 842, region: 'ACT', pillar: 'housing', turn: 3, queuePrior: 76, skillGap: 14, migGain: 1.1440 },
+  { id: 843, region: 'ACT', pillar: 'housing', turn: 4, queuePrior: 89, skillGap: 21, migGain: 1.2760 },
+  { id: 844, region: 'ACT', pillar: 'housing', turn: 5, queuePrior: 22, skillGap: 28, migGain: 1.4080 },
+  { id: 845, region: 'ACT', pillar: 'housing', turn: 6, queuePrior: 35, skillGap: 35, migGain: 1.5400 },
+  { id: 846, region: 'ACT', pillar: 'housing', turn: 7, queuePrior: 48, skillGap: 42, migGain: 0.4720 },
+  { id: 847, region: 'ACT', pillar: 'housing', turn: 8, queuePrior: 61, skillGap: 49, migGain: 0.6040 },
+  { id: 848, region: 'ACT', pillar: 'housing', turn: 9, queuePrior: 74, skillGap: 56, migGain: 0.7360 },
+  { id: 849, region: 'ACT', pillar: 'housing', turn: 10, queuePrior: 87, skillGap: 8, migGain: 0.8680 },
+  { id: 850, region: 'ACT', pillar: 'housing', turn: 11, queuePrior: 20, skillGap: 15, migGain: 1.0000 },
+  { id: 851, region: 'ACT', pillar: 'housing', turn: 12, queuePrior: 33, skillGap: 22, migGain: 1.1320 },
+  { id: 852, region: 'ACT', pillar: 'housing', turn: 13, queuePrior: 46, skillGap: 29, migGain: 1.2640 },
+  { id: 853, region: 'ACT', pillar: 'housing', turn: 14, queuePrior: 59, skillGap: 36, migGain: 1.3960 },
+  { id: 854, region: 'ACT', pillar: 'housing', turn: 15, queuePrior: 72, skillGap: 43, migGain: 1.5280 },
+  { id: 855, region: 'ACT', pillar: 'housing', turn: 16, queuePrior: 85, skillGap: 50, migGain: 0.4600 },
+  { id: 856, region: 'ACT', pillar: 'housing', turn: 17, queuePrior: 18, skillGap: 57, migGain: 0.5920 },
+  { id: 857, region: 'ACT', pillar: 'housing', turn: 18, queuePrior: 31, skillGap: 9, migGain: 0.7240 },
+  { id: 858, region: 'ACT', pillar: 'housing', turn: 19, queuePrior: 44, skillGap: 16, migGain: 0.8560 },
+  { id: 859, region: 'ACT', pillar: 'housing', turn: 20, queuePrior: 57, skillGap: 23, migGain: 0.9880 },
+  { id: 860, region: 'ACT', pillar: 'housing', turn: 21, queuePrior: 70, skillGap: 30, migGain: 1.1200 },
+  { id: 861, region: 'ACT', pillar: 'housing', turn: 22, queuePrior: 83, skillGap: 37, migGain: 1.2520 },
+  { id: 862, region: 'ACT', pillar: 'housing', turn: 23, queuePrior: 16, skillGap: 44, migGain: 1.3840 },
+  { id: 863, region: 'ACT', pillar: 'housing', turn: 24, queuePrior: 29, skillGap: 51, migGain: 1.5160 },
+  { id: 864, region: 'ACT', pillar: 'housing', turn: 25, queuePrior: 42, skillGap: 58, migGain: 0.4480 },
+  { id: 865, region: 'ACT', pillar: 'housing', turn: 26, queuePrior: 55, skillGap: 10, migGain: 0.5800 },
+  { id: 866, region: 'ACT', pillar: 'housing', turn: 27, queuePrior: 68, skillGap: 17, migGain: 0.7120 },
+  { id: 867, region: 'ACT', pillar: 'housing', turn: 28, queuePrior: 81, skillGap: 24, migGain: 0.8440 },
+  { id: 868, region: 'ACT', pillar: 'housing', turn: 29, queuePrior: 14, skillGap: 31, migGain: 0.9760 },
+  { id: 869, region: 'ACT', pillar: 'housing', turn: 30, queuePrior: 27, skillGap: 38, migGain: 1.1080 },
+  { id: 870, region: 'ACT', pillar: 'housing', turn: 31, queuePrior: 40, skillGap: 45, migGain: 1.2400 },
+  { id: 871, region: 'ACT', pillar: 'housing', turn: 32, queuePrior: 53, skillGap: 52, migGain: 1.3720 },
+  { id: 872, region: 'ACT', pillar: 'housing', turn: 33, queuePrior: 66, skillGap: 59, migGain: 1.5040 },
+  { id: 873, region: 'ACT', pillar: 'housing', turn: 34, queuePrior: 79, skillGap: 11, migGain: 0.4360 },
+  { id: 874, region: 'ACT', pillar: 'housing', turn: 35, queuePrior: 12, skillGap: 18, migGain: 0.5680 },
+  { id: 875, region: 'ACT', pillar: 'housing', turn: 36, queuePrior: 25, skillGap: 25, migGain: 0.7000 },
+  { id: 876, region: 'ACT', pillar: 'housing', turn: 37, queuePrior: 38, skillGap: 32, migGain: 0.8320 },
+  { id: 877, region: 'ACT', pillar: 'housing', turn: 38, queuePrior: 51, skillGap: 39, migGain: 0.9640 },
+  { id: 878, region: 'ACT', pillar: 'housing', turn: 39, queuePrior: 64, skillGap: 46, migGain: 1.0960 },
+  { id: 879, region: 'ACT', pillar: 'housing', turn: 40, queuePrior: 77, skillGap: 53, migGain: 1.2280 },
+  { id: 880, region: 'ACT', pillar: 'healthcare', turn: 1, queuePrior: 10, skillGap: 5, migGain: 1.3600 },
+  { id: 881, region: 'ACT', pillar: 'healthcare', turn: 2, queuePrior: 23, skillGap: 12, migGain: 1.4920 },
+  { id: 882, region: 'ACT', pillar: 'healthcare', turn: 3, queuePrior: 36, skillGap: 19, migGain: 0.4240 },
+  { id: 883, region: 'ACT', pillar: 'healthcare', turn: 4, queuePrior: 49, skillGap: 26, migGain: 0.5560 },
+  { id: 884, region: 'ACT', pillar: 'healthcare', turn: 5, queuePrior: 62, skillGap: 33, migGain: 0.6880 },
+  { id: 885, region: 'ACT', pillar: 'healthcare', turn: 6, queuePrior: 75, skillGap: 40, migGain: 0.8200 },
+  { id: 886, region: 'ACT', pillar: 'healthcare', turn: 7, queuePrior: 88, skillGap: 47, migGain: 0.9520 },
+  { id: 887, region: 'ACT', pillar: 'healthcare', turn: 8, queuePrior: 21, skillGap: 54, migGain: 1.0840 },
+  { id: 888, region: 'ACT', pillar: 'healthcare', turn: 9, queuePrior: 34, skillGap: 6, migGain: 1.2160 },
+  { id: 889, region: 'ACT', pillar: 'healthcare', turn: 10, queuePrior: 47, skillGap: 13, migGain: 1.3480 },
+  { id: 890, region: 'ACT', pillar: 'healthcare', turn: 11, queuePrior: 60, skillGap: 20, migGain: 1.4800 },
+  { id: 891, region: 'ACT', pillar: 'healthcare', turn: 12, queuePrior: 73, skillGap: 27, migGain: 0.4120 },
+  { id: 892, region: 'ACT', pillar: 'healthcare', turn: 13, queuePrior: 86, skillGap: 34, migGain: 0.5440 },
+  { id: 893, region: 'ACT', pillar: 'healthcare', turn: 14, queuePrior: 19, skillGap: 41, migGain: 0.6760 },
+  { id: 894, region: 'ACT', pillar: 'healthcare', turn: 15, queuePrior: 32, skillGap: 48, migGain: 0.8080 },
+  { id: 895, region: 'ACT', pillar: 'healthcare', turn: 16, queuePrior: 45, skillGap: 55, migGain: 0.9400 },
+  { id: 896, region: 'ACT', pillar: 'healthcare', turn: 17, queuePrior: 58, skillGap: 7, migGain: 1.0720 },
+  { id: 897, region: 'ACT', pillar: 'healthcare', turn: 18, queuePrior: 71, skillGap: 14, migGain: 1.2040 },
+  { id: 898, region: 'ACT', pillar: 'healthcare', turn: 19, queuePrior: 84, skillGap: 21, migGain: 1.3360 },
+  { id: 899, region: 'ACT', pillar: 'healthcare', turn: 20, queuePrior: 17, skillGap: 28, migGain: 1.4680 },
+  { id: 900, region: 'ACT', pillar: 'healthcare', turn: 21, queuePrior: 30, skillGap: 35, migGain: 0.4000 },
+  { id: 901, region: 'ACT', pillar: 'healthcare', turn: 22, queuePrior: 43, skillGap: 42, migGain: 0.5320 },
+  { id: 902, region: 'ACT', pillar: 'healthcare', turn: 23, queuePrior: 56, skillGap: 49, migGain: 0.6640 },
+  { id: 903, region: 'ACT', pillar: 'healthcare', turn: 24, queuePrior: 69, skillGap: 56, migGain: 0.7960 },
+  { id: 904, region: 'ACT', pillar: 'healthcare', turn: 25, queuePrior: 82, skillGap: 8, migGain: 0.9280 },
+  { id: 905, region: 'ACT', pillar: 'healthcare', turn: 26, queuePrior: 15, skillGap: 15, migGain: 1.0600 },
+  { id: 906, region: 'ACT', pillar: 'healthcare', turn: 27, queuePrior: 28, skillGap: 22, migGain: 1.1920 },
+  { id: 907, region: 'ACT', pillar: 'healthcare', turn: 28, queuePrior: 41, skillGap: 29, migGain: 1.3240 },
+  { id: 908, region: 'ACT', pillar: 'healthcare', turn: 29, queuePrior: 54, skillGap: 36, migGain: 1.4560 },
+  { id: 909, region: 'ACT', pillar: 'healthcare', turn: 30, queuePrior: 67, skillGap: 43, migGain: 1.5880 },
+  { id: 910, region: 'ACT', pillar: 'healthcare', turn: 31, queuePrior: 80, skillGap: 50, migGain: 0.5200 },
+  { id: 911, region: 'ACT', pillar: 'healthcare', turn: 32, queuePrior: 13, skillGap: 57, migGain: 0.6520 },
+  { id: 912, region: 'ACT', pillar: 'healthcare', turn: 33, queuePrior: 26, skillGap: 9, migGain: 0.7840 },
+  { id: 913, region: 'ACT', pillar: 'healthcare', turn: 34, queuePrior: 39, skillGap: 16, migGain: 0.9160 },
+  { id: 914, region: 'ACT', pillar: 'healthcare', turn: 35, queuePrior: 52, skillGap: 23, migGain: 1.0480 },
+  { id: 915, region: 'ACT', pillar: 'healthcare', turn: 36, queuePrior: 65, skillGap: 30, migGain: 1.1800 },
+  { id: 916, region: 'ACT', pillar: 'healthcare', turn: 37, queuePrior: 78, skillGap: 37, migGain: 1.3120 },
+  { id: 917, region: 'ACT', pillar: 'healthcare', turn: 38, queuePrior: 11, skillGap: 44, migGain: 1.4440 },
+  { id: 918, region: 'ACT', pillar: 'healthcare', turn: 39, queuePrior: 24, skillGap: 51, migGain: 1.5760 },
+  { id: 919, region: 'ACT', pillar: 'healthcare', turn: 40, queuePrior: 37, skillGap: 58, migGain: 0.5080 },
+  { id: 920, region: 'ACT', pillar: 'education', turn: 1, queuePrior: 50, skillGap: 10, migGain: 0.6400 },
+  { id: 921, region: 'ACT', pillar: 'education', turn: 2, queuePrior: 63, skillGap: 17, migGain: 0.7720 },
+  { id: 922, region: 'ACT', pillar: 'education', turn: 3, queuePrior: 76, skillGap: 24, migGain: 0.9040 },
+  { id: 923, region: 'ACT', pillar: 'education', turn: 4, queuePrior: 89, skillGap: 31, migGain: 1.0360 },
+  { id: 924, region: 'ACT', pillar: 'education', turn: 5, queuePrior: 22, skillGap: 38, migGain: 1.1680 },
+  { id: 925, region: 'ACT', pillar: 'education', turn: 6, queuePrior: 35, skillGap: 45, migGain: 1.3000 },
+  { id: 926, region: 'ACT', pillar: 'education', turn: 7, queuePrior: 48, skillGap: 52, migGain: 1.4320 },
+  { id: 927, region: 'ACT', pillar: 'education', turn: 8, queuePrior: 61, skillGap: 59, migGain: 1.5640 },
+  { id: 928, region: 'ACT', pillar: 'education', turn: 9, queuePrior: 74, skillGap: 11, migGain: 0.4960 },
+  { id: 929, region: 'ACT', pillar: 'education', turn: 10, queuePrior: 87, skillGap: 18, migGain: 0.6280 },
+  { id: 930, region: 'ACT', pillar: 'education', turn: 11, queuePrior: 20, skillGap: 25, migGain: 0.7600 },
+  { id: 931, region: 'ACT', pillar: 'education', turn: 12, queuePrior: 33, skillGap: 32, migGain: 0.8920 },
+  { id: 932, region: 'ACT', pillar: 'education', turn: 13, queuePrior: 46, skillGap: 39, migGain: 1.0240 },
+  { id: 933, region: 'ACT', pillar: 'education', turn: 14, queuePrior: 59, skillGap: 46, migGain: 1.1560 },
+  { id: 934, region: 'ACT', pillar: 'education', turn: 15, queuePrior: 72, skillGap: 53, migGain: 1.2880 },
+  { id: 935, region: 'ACT', pillar: 'education', turn: 16, queuePrior: 85, skillGap: 5, migGain: 1.4200 },
+  { id: 936, region: 'ACT', pillar: 'education', turn: 17, queuePrior: 18, skillGap: 12, migGain: 1.5520 },
+  { id: 937, region: 'ACT', pillar: 'education', turn: 18, queuePrior: 31, skillGap: 19, migGain: 0.4840 },
+  { id: 938, region: 'ACT', pillar: 'education', turn: 19, queuePrior: 44, skillGap: 26, migGain: 0.6160 },
+  { id: 939, region: 'ACT', pillar: 'education', turn: 20, queuePrior: 57, skillGap: 33, migGain: 0.7480 },
+  { id: 940, region: 'ACT', pillar: 'education', turn: 21, queuePrior: 70, skillGap: 40, migGain: 0.8800 },
+  { id: 941, region: 'ACT', pillar: 'education', turn: 22, queuePrior: 83, skillGap: 47, migGain: 1.0120 },
+  { id: 942, region: 'ACT', pillar: 'education', turn: 23, queuePrior: 16, skillGap: 54, migGain: 1.1440 },
+  { id: 943, region: 'ACT', pillar: 'education', turn: 24, queuePrior: 29, skillGap: 6, migGain: 1.2760 },
+  { id: 944, region: 'ACT', pillar: 'education', turn: 25, queuePrior: 42, skillGap: 13, migGain: 1.4080 },
+  { id: 945, region: 'ACT', pillar: 'education', turn: 26, queuePrior: 55, skillGap: 20, migGain: 1.5400 },
+  { id: 946, region: 'ACT', pillar: 'education', turn: 27, queuePrior: 68, skillGap: 27, migGain: 0.4720 },
+  { id: 947, region: 'ACT', pillar: 'education', turn: 28, queuePrior: 81, skillGap: 34, migGain: 0.6040 },
+  { id: 948, region: 'ACT', pillar: 'education', turn: 29, queuePrior: 14, skillGap: 41, migGain: 0.7360 },
+  { id: 949, region: 'ACT', pillar: 'education', turn: 30, queuePrior: 27, skillGap: 48, migGain: 0.8680 },
+  { id: 950, region: 'ACT', pillar: 'education', turn: 31, queuePrior: 40, skillGap: 55, migGain: 1.0000 },
+  { id: 951, region: 'ACT', pillar: 'education', turn: 32, queuePrior: 53, skillGap: 7, migGain: 1.1320 },
+  { id: 952, region: 'ACT', pillar: 'education', turn: 33, queuePrior: 66, skillGap: 14, migGain: 1.2640 },
+  { id: 953, region: 'ACT', pillar: 'education', turn: 34, queuePrior: 79, skillGap: 21, migGain: 1.3960 },
+  { id: 954, region: 'ACT', pillar: 'education', turn: 35, queuePrior: 12, skillGap: 28, migGain: 1.5280 },
+  { id: 955, region: 'ACT', pillar: 'education', turn: 36, queuePrior: 25, skillGap: 35, migGain: 0.4600 },
+  { id: 956, region: 'ACT', pillar: 'education', turn: 37, queuePrior: 38, skillGap: 42, migGain: 0.5920 },
+  { id: 957, region: 'ACT', pillar: 'education', turn: 38, queuePrior: 51, skillGap: 49, migGain: 0.7240 },
+  { id: 958, region: 'ACT', pillar: 'education', turn: 39, queuePrior: 64, skillGap: 56, migGain: 0.8560 },
+  { id: 959, region: 'ACT', pillar: 'education', turn: 40, queuePrior: 77, skillGap: 8, migGain: 0.9880 },
+];
+
+export function V1014_PUBSVC_lookupAtlasRow(id: number): V1014PubsSvcAtlasRow | undefined {
+  return V1014_PUBSVC_REGIONAL_COEFFICIENT_ATLAS.find((row) => row.id === id);
+}
+
+export function V1014_PUBSVC_atlasCompositeForRegion(region: V1014PubsSvcRegionId, turn: number): number {
+  const rows = V1014_PUBSVC_REGIONAL_COEFFICIENT_ATLAS.filter((row) => row.region === region && row.turn === turn);
+  if (!rows.length) return 50;
+  return V1014_PUBSVC_clamp(
+    V1014_PUBSVC_weightedMean(
+      rows.map((row) => ({
+        weight: 1,
+        value: 100 - row.queuePrior * 0.4 - row.skillGap * 0.35 - row.migGain * 12,
+      })),
+    ),
+  );
+}
+
+
+export interface V1014PubsSvcKpiTestResult {
+  id: string;
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface V1014PubsSvcKpiTestReport {
+  suiteId: typeof V1014_PUBSVC_LAB_SUITE_ID;
+  passed: number;
+  failed: number;
+  total: number;
+  results: V1014PubsSvcKpiTestResult[];
+}
+
+function v1014PubsSvcKpiCheck(
+  results: V1014PubsSvcKpiTestResult[],
+  id: string,
+  name: string,
+  condition: boolean,
+  detail: string,
+) {
+  results.push({ id, name, passed: Boolean(condition), detail });
+}
+
+export function runV1014PublicServicesV2SelfTests(): V1014PubsSvcKpiTestReport {
+  const results: V1014PubsSvcKpiTestResult[] = [];
+
+  v1014PubsSvcKpiCheck(results, 'kpi_001', 'Crosswalk produces snapshot', (() => {
+    const out = V1014_PUBSVC_computePublicServicesCrosswalk(V1014_PUBSVC_makeDefaultCrosswalkInputs());
+    return out.snapshot.nationalCompositeKpi > 0;
+  })(), 'national composite > 0');
+
+  v1014PubsSvcKpiCheck(results, 'kpi_002', 'Section6 roll-forward', (() => {
+    const out = V1014_PUBSVC_computePublicServicesCrosswalk(V1014_PUBSVC_makeDefaultCrosswalkInputs());
+    return out.persisted.lastTurn === out.snapshot.turn;
+  })(), 'persisted turn matches');
+
+  v1014PubsSvcKpiCheck(results, 'kpi_003', 'NT remote stress', (() => {
+    const out = V1014_PUBSVC_computePublicServicesCrosswalk(
+      V1014_PUBSVC_makeDefaultCrosswalkInputs({ turn: 4 }),
+    );
+    return out.snapshot.regions.NT.queuePressureIndex >= out.snapshot.regions.ACT.queuePressureIndex * 0.8;
+  })(), 'NT queue pressure elevated');
+
+  v1014PubsSvcKpiCheck(results, 'kpi_004', 'Skill mismatch responds to gap', (() => {
+    const out = V1014_PUBSVC_computePublicServicesCrosswalk(
+      V1014_PUBSVC_makeDefaultCrosswalkInputs({
+        ac20: { turn: 4, nationalReadiness: 28, specialistGap: 78 },
+      }),
+    );
+    return out.snapshot.nationalSkillMismatch > 45;
+  })(), 'specialist gap elevates national skill mismatch');
+
+  v1014PubsSvcKpiCheck(results, 'kpi_005', 'Migration inflow amplifies loop', (() => {
+    const base = V1014_PUBSVC_computePublicServicesCrosswalk(
+      V1014_PUBSVC_makeDefaultCrosswalkInputs({
+        aj20: { turn: 5, migrationFlowBand: 'balanced', wagePressureIndex: 48 },
+      }),
+    );
+    const out = V1014_PUBSVC_computePublicServicesCrosswalk(
+      V1014_PUBSVC_makeDefaultCrosswalkInputs({
+        aj20: { turn: 5, migrationFlowBand: 'strong_inflow', wagePressureIndex: 68 },
+      }),
+    );
+    return out.snapshot.nationalMigrationLoop >= base.snapshot.nationalMigrationLoop;
+  })(), 'inflow weakly raises migration loop index');
+
+  v1014PubsSvcKpiCheck(results, 'kpi_006', 'Low fiscal headroom raises queue pressure', (() => {
+    const base = V1014_PUBSVC_computePublicServicesCrosswalk(
+      V1014_PUBSVC_makeDefaultCrosswalkInputs({ fiscalHeadroom: 78 }),
+    );
+    const tight = V1014_PUBSVC_computePublicServicesCrosswalk(
+      V1014_PUBSVC_makeDefaultCrosswalkInputs({ fiscalHeadroom: 12 }),
+    );
+    return tight.snapshot.nationalQueuePressure >= base.snapshot.nationalQueuePressure;
+  })(), 'fiscal constraint worsens queues');
+
+  v1014PubsSvcKpiCheck(results, 'kpi_007', 'Regional aggregates cover 8 regions', (() => {
+    const out = V1014_PUBSVC_computePublicServicesCrosswalk(V1014_PUBSVC_makeDefaultCrosswalkInputs());
+    return Object.keys(out.snapshot.regions).length === 8;
+  })(), 'region count');
+
+  v1014PubsSvcKpiCheck(results, 'kpi_008', 'Queue grid size 24 slots', (() => {
+    const out = V1014_PUBSVC_computePublicServicesCrosswalk(V1014_PUBSVC_makeDefaultCrosswalkInputs());
+    return out.snapshot.queues.length === 24;
+  })(), 'expect 8 regions x 3 pillars');
+
+  v1014PubsSvcKpiCheck(results, 'kpi_009', 'Skill slice grid size 24', (() => {
+    const out = V1014_PUBSVC_computePublicServicesCrosswalk(V1014_PUBSVC_makeDefaultCrosswalkInputs());
+    return out.snapshot.skillSlices.length === 24;
+  })(), 'skill slice count 8x3');
+
+  v1014PubsSvcKpiCheck(results, 'kpi_010', 'Migration slices per region', (() => {
+    const out = V1014_PUBSVC_computePublicServicesCrosswalk(V1014_PUBSVC_makeDefaultCrosswalkInputs());
+    return out.snapshot.migrationSlices.length === 8;
+  })(), 'eight regional migration slices');
+
+  for (let i = 11; i <= 45; i++) {
+    const turn = (i % 12) + 1;
+    v1014PubsSvcKpiCheck(
+      results,
+      `kpi_${String(i).padStart(3, '0')}`,
+      `Deterministic crosswalk turn ${turn} variant ${i}`,
+      (() => {
+        const out = V1014_PUBSVC_computePublicServicesCrosswalk(
+          V1014_PUBSVC_makeDefaultCrosswalkInputs({
+            turn,
+            fiscalHeadroom: 40 + (i % 30),
+            policyFocus: {
+              housing: 40 + (i % 20),
+              healthcare: 42 + (i % 18),
+              education: 44 + (i % 16),
+            },
+          }),
+        );
+        const means = V1014_PUBSVC_section6RegionalAggregateMeans(out.persisted);
+        return means.composite > 0 && out.snapshot.schemaVersion === '10.14.2';
+      })(),
+      `turn=${turn}`,
+    );
+  }
+
+  v1014PubsSvcKpiCheck(results, 'kpi_046', 'Atlas NSW composite', (() => {
+    const v = V1014_PUBSVC_atlasCompositeForRegion('NSW', 5);
+    return v > 0 && v <= 100;
+  })(), 'atlas lookup');
+
+  v1014PubsSvcKpiCheck(results, 'kpi_047', 'Events on pressure', (() => {
+    const out = V1014_PUBSVC_computePublicServicesCrosswalk(
+      V1014_PUBSVC_makeDefaultCrosswalkInputs({
+        ap20: {
+          turn: 6,
+          nationalOutcomeIndex: 40,
+          regionalOutcome: {
+            NSW: {
+              healthcare: { accessScore: 25, backlogPressure: 90, staffingBand: 'critical_shortage' },
+            },
+          },
+        },
+        ac20: { turn: 6, nationalReadiness: 32, specialistGap: 82 },
+      }),
+    );
+    return out.events.length >= 1;
+  })(), 'stress emits crosswalk events');
+
+  v1014PubsSvcKpiCheck(results, 'kpi_048', 'Multi-turn persistence history', (() => {
+    let persisted = undefined as undefined | ReturnType<typeof V1014_PUBSVC_computePublicServicesCrosswalk>['persisted'];
+    for (let t = 1; t <= 4; t++) {
+      const step = V1014_PUBSVC_computePublicServicesCrosswalk(
+        V1014_PUBSVC_makeDefaultCrosswalkInputs({ turn: t }),
+        persisted,
+      );
+      persisted = step.persisted;
+    }
+    return (persisted?.historyTail.length ?? 0) >= 3;
+  })(), 'history depth');
+
+  const passed = results.filter((r) => r.passed).length;
+  const failed = results.filter((r) => !r.passed).length;
+  return {
+    suiteId: V1014_PUBSVC_LAB_SUITE_ID,
+    total: results.length,
+    results,
+  };
+}
+export function buildV1014PubsSvcCrosswalkInputsFromGameState(gs: any, turn: number): Partial<V1014PubsSvcCrosswalkInputs> {
+  const ps = gs?.publicServices;
+  const wf = gs?.workforceHumanCapital ?? gs?.workforce;
+  const hh = gs?.householdEconomy;
+  return {
+    turn,
+    ap20: {
+      turn,
+      nationalOutcomeIndex: Number(ps?.nationalOutcomeIndex ?? 55),
+      regionalOutcome: ps?.regionalOutcome ?? {},
+    },
+    ac20: {
+      turn,
+      nationalReadiness: Number(wf?.nationalReadiness ?? 58),
+      specialistGap: Number(wf?.specialistGap ?? 28),
+      regionalSkillSupply: wf?.regionalSkillSupply ?? {},
+    },
+    aj20: {
+      turn,
+      migrationFlowBand: (gs?.laborDemographics?.migrationFlowBand as any) || 'balanced',
+      regionalAttractiveness: gs?.laborDemographics?.regionalAttractiveness ?? {},
+      wagePressureIndex: Number(gs?.laborDemographics?.wagePressureIndex ?? 48),
+    },
+    af20: {
+      turn,
+      affordabilityStress: Number(hh?.affordabilityStress ?? 42),
+      regionalLivingStandard: hh?.regionalLivingStandard ?? {},
+      domesticDemandPull: Number(hh?.domesticDemandPull ?? 50),
+    },
+    fiscalHeadroom: Number(gs?.publicFinance?.headroomIndex ?? 55),
+    policyFocus: ps?.policyFocus ?? { housing: 50, healthcare: 52, education: 54 },
+  };
+}
+
+function V1014_PUBSVC_readSection6Slice(gs: any): V1014PubsSvcSection6Persisted | null {
+  const raw = gs?.save?.meta?.v1014?.public_services_v2;
+  return raw ? V1014_PUBSVC_migrateSection6Persisted(raw) : null;
+}
+
+function V1014_PUBSVC_patchSection6Slice(gs: any, persisted: V1014PubsSvcSection6Persisted): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1014 = { ...(meta.v1014 || {}) };
+  v1014.public_services_v2 = persisted;
+  meta.v1014 = v1014;
+  save.meta = meta;
+  return { ...gs, save };
+}
+
 // SECTION 21B: RELIABILITY UPGRADE — FOCUSED REGRESSION SELF-TESTS
 // ----------------------------------------------------------------------------
 // One check per substantive reliability fix (crash, accounting, lifecycle, determinism, gating).

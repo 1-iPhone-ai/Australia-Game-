@@ -52,13 +52,33 @@ def clean_orphan_import_lists(block: str) -> str:
     return "\n".join(out)
 
 
+def sanitize_inlined_chunk(rel: str, src: str) -> str:
+    name = rel.replace("\\", "/")
+    if name.endswith("crosswalk-adapters.ts"):
+        src = re.sub(r"\bPILLARS\b", "PUBSVC_ADAPTER_PILLARS", src)
+    if name.endswith("crosswalk-engine.ts"):
+        src = re.sub(r"\bPILLARS\b", "PUBSVC_ENGINE_PILLARS", src)
+    if "kpi-regression-suite.ts" in name:
+        src = re.sub(r"function check\(", "function v1014PubsSvcKpiCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1014PubsSvcKpiCheck(", src)
+    if name.endswith("v1014-scenario-v2-gates.ts"):
+        src = re.sub(r"\bREGIONS\b", "V1014SV2_GATE_REGIONS", src)
+        src = re.sub(r"\bTIERS\b", "V1014SV2_GATE_TIERS", src)
+        src = re.sub(r"\bARCH\b", "V1014SV2_GATE_ARCH", src)
+    if "run-v1014-trade-depth-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1014TradeDepthCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1014TradeDepthCheck(", src)
+    return src
+
+
 def bundle_local_files(rel_paths: list[str]) -> str:
     parts: list[str] = []
     for rel in rel_paths:
         p = ROOT / rel
         if not p.is_file():
             raise SystemExit(f"missing bundle file: {rel}")
-        parts.append(strip_module_imports(p.read_text(encoding="utf-8")))
+        raw = strip_module_imports(p.read_text(encoding="utf-8"))
+        parts.append(sanitize_inlined_chunk(rel, raw))
     return clean_orphan_import_lists("\n\n".join(parts))
 
 
