@@ -4,6 +4,8 @@
 
 **Module root:** `operation-10m/agent-24-replay/`
 
+**Assembly chunk:** `operation-10m/modules/agent-24-history/chunk.tsx` (`OP10M_MODULE_BEGIN agent-24-history`). Regenerate: `npm run build:chunk` in this directory.
+
 ## Assembly (Agent 25)
 
 1. Inline `src/history-replay-analytics.ts` at the anchor (replace existing block).
