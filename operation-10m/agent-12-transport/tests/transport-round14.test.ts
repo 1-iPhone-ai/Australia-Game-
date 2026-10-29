@@ -35,13 +35,13 @@ describe('Agent 12 round 14 catalog', () => {
 });
 
 describe('Agent 12 round 14 systems', () => {
-  it('returns agent12/18 with agricultural export, track possession, green bunkering', () => {
+  it('returns agent12/19 with agricultural export, track possession, green bunkering', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(110), {
       agriculturalExportPolicy: 'accelerate',
       trackPossessionPolicy: 'optimize',
       greenBunkeringPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/18');
+    assert.equal(state.schemaVersion, 'agent12/19');
     assert.ok(state.nationalAgriculturalExportThroughputIndex >= 9);
     assert.ok(state.nationalTrackPossessionEfficiencyIndex >= 38);
     assert.ok(state.greenBunkeringShare >= 0.05);

@@ -245,6 +245,23 @@ import {
   computeAirportExpressRailThroughputByRegion,
   nationalAirportExpressRailThroughputIndex,
 } from './airport-express-rail-index.ts';
+import {
+  computeLithiumBrineExportByRegion,
+  lithiumBrineExportProductivityMultiplier,
+  nationalLithiumBrineExportIndex,
+} from '../network/lithium-brine-export-index.ts';
+import {
+  computeInlandRailExpressByRegion,
+  computeInlandRailExpressShare,
+  inlandRailExpressProductivityMultiplier,
+  nationalInlandRailExpressIndex,
+} from '../operations/inland-rail-express-index.ts';
+import {
+  computeSpaceLaunchLogisticsShare,
+  computeSpaceLaunchLogisticsThroughputByRegion,
+  nationalSpaceLaunchLogisticsThroughputIndex,
+  spaceLaunchLogisticsProductivityMultiplier,
+} from './space-launch-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -924,6 +941,32 @@ export function computeTransportInfrastructureState(
     airportExpressRailShare,
     options?.airportExpressRailPolicy ?? 'baseline',
   );
+  const lithiumBrineExportByRegion = computeLithiumBrineExportByRegion(ops);
+  const nationalLithiumBrine = nationalLithiumBrineExportIndex(lithiumBrineExportByRegion);
+  const lithiumMult = lithiumBrineExportProductivityMultiplier(
+    nationalLithiumBrine,
+    options?.lithiumBrineExportPolicy ?? 'baseline',
+  );
+  const inlandRailExpressByRegion = computeInlandRailExpressByRegion(ops, networkStress);
+  const nationalInlandRailExpress = nationalInlandRailExpressIndex(inlandRailExpressByRegion);
+  const inlandRailExpressShare = computeInlandRailExpressShare(
+    ops,
+    options?.inlandRailExpressPolicy ?? 'baseline',
+  );
+  const inlandExpressMult = inlandRailExpressProductivityMultiplier(
+    inlandRailExpressShare,
+    options?.inlandRailExpressPolicy ?? 'baseline',
+  );
+  const spaceLaunchLogisticsThroughputByRegion = computeSpaceLaunchLogisticsThroughputByRegion(ops);
+  const nationalSpaceLaunch = nationalSpaceLaunchLogisticsThroughputIndex(spaceLaunchLogisticsThroughputByRegion);
+  const spaceLaunchLogisticsShare = computeSpaceLaunchLogisticsShare(
+    ops,
+    options?.spaceLaunchLogisticsPolicy ?? 'baseline',
+  );
+  const spaceLaunchMult = spaceLaunchLogisticsProductivityMultiplier(
+    spaceLaunchLogisticsShare,
+    options?.spaceLaunchLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -932,6 +975,9 @@ export function computeTransportInfrastructureState(
     const subseaBoost = (subseaCableLandingByRegion[code] - 4) * 0.005;
     const ammoniaBoost = (greenAmmoniaExportByRegion[code] - 12) * 0.0045;
     const airportBoost = (airportExpressRailThroughputByRegion[code] - 2) * 0.0049;
+    const lithiumBoost = (lithiumBrineExportByRegion[code] - 5) * 0.0048;
+    const inlandExpressBoost = (inlandRailExpressByRegion[code] - 10) * 0.0044;
+    const spaceLaunchBoost = (spaceLaunchLogisticsThroughputByRegion[code] - 1) * 0.0046;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -939,13 +985,19 @@ export function computeTransportInfrastructureState(
         cruiseBoost +
         subseaBoost +
         ammoniaBoost +
-        airportBoost) *
+        airportBoost +
+        lithiumBoost +
+        inlandExpressBoost +
+        spaceLaunchBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
       subseaMult *
       ammoniaMult *
-      airportExpressMult;
+      airportExpressMult *
+      lithiumMult *
+      inlandExpressMult *
+      spaceLaunchMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -974,7 +1026,10 @@ export function computeTransportInfrastructureState(
     nationalCruiseTurnaround * 0.015 +
     nationalSubseaCable * 0.014 +
     nationalGreenAmmonia * 0.014 +
-    nationalAirportExpress * 0.013;
+    nationalAirportExpress * 0.013 +
+    nationalLithiumBrine * 0.012 +
+    nationalInlandRailExpress * 0.012 +
+    nationalSpaceLaunch * 0.011;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -989,7 +1044,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/18',
+    schemaVersion: 'agent12/19',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -1100,6 +1155,14 @@ export function computeTransportInfrastructureState(
     airportExpressRailShare,
     nationalAirportExpressRailThroughputIndex: nationalAirportExpress,
     airportExpressRailThroughputByRegion,
+    nationalLithiumBrineExportIndex: nationalLithiumBrine,
+    lithiumBrineExportByRegion,
+    inlandRailExpressShare,
+    nationalInlandRailExpressIndex: nationalInlandRailExpress,
+    inlandRailExpressByRegion,
+    spaceLaunchLogisticsShare,
+    nationalSpaceLaunchLogisticsThroughputIndex: nationalSpaceLaunch,
+    spaceLaunchLogisticsThroughputByRegion,
     computeMs,
   };
 }

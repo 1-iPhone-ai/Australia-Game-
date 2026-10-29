@@ -259,8 +259,14 @@ export type GreenAmmoniaExportPolicy = 'baseline' | 'accelerate';
 
 export type AirportExpressRailPolicy = 'baseline' | 'deploy';
 
+export type LithiumBrineExportPolicy = 'baseline' | 'accelerate';
+
+export type InlandRailExpressPolicy = 'baseline' | 'deploy';
+
+export type SpaceLaunchLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/18';
+  schemaVersion: 'agent12/19';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -371,6 +377,14 @@ export interface TransportInfrastructureState {
   airportExpressRailShare: number;
   nationalAirportExpressRailThroughputIndex: number;
   airportExpressRailThroughputByRegion: Record<AuRegionCode, number>;
+  nationalLithiumBrineExportIndex: number;
+  lithiumBrineExportByRegion: Record<AuRegionCode, number>;
+  inlandRailExpressShare: number;
+  nationalInlandRailExpressIndex: number;
+  inlandRailExpressByRegion: Record<AuRegionCode, number>;
+  spaceLaunchLogisticsShare: number;
+  nationalSpaceLaunchLogisticsThroughputIndex: number;
+  spaceLaunchLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -415,6 +429,9 @@ export interface TransportInfrastructureOptions {
   subseaCableLandingPolicy?: SubseaCableLandingPolicy;
   greenAmmoniaExportPolicy?: GreenAmmoniaExportPolicy;
   airportExpressRailPolicy?: AirportExpressRailPolicy;
+  lithiumBrineExportPolicy?: LithiumBrineExportPolicy;
+  inlandRailExpressPolicy?: InlandRailExpressPolicy;
+  spaceLaunchLogisticsPolicy?: SpaceLaunchLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -1189,6 +1206,48 @@ export const TRANSPORT_CORRIDORS_ROUND17: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round18.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND18: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_sa_lithium_brine_chain',
+    name: 'WA–SA Lithium Brine Chain',
+    networkKind: 'trade',
+    regionSequence: ['WA', 'SA'],
+    requiredTagsByRegion: {
+      WA: ['lithium_brine', 'brine_export', 'battery_feedstock'],
+      SA: ['lithium_brine', 'brine_export', 'battery_feedstock'],
+    },
+    productivitySynergyPoints: 6.2,
+    logisticsRelief: 0.036,
+  },
+  {
+    id: 'corr_qld_nsw_inland_rail_express',
+    name: 'QLD–NSW Inland Rail Express',
+    networkKind: 'freight',
+    regionSequence: ['QLD', 'NSW'],
+    requiredTagsByRegion: {
+      QLD: ['inland_rail_express', 'express_freight', 'intermodal_express'],
+      NSW: ['inland_rail_express', 'express_freight', 'intermodal_express'],
+    },
+    productivitySynergyPoints: 6.5,
+    logisticsRelief: 0.038,
+  },
+  {
+    id: 'corr_nt_sa_space_launch_spine',
+    name: 'NT–SA Space Launch Spine',
+    networkKind: 'freight',
+    regionSequence: ['NT', 'SA'],
+    requiredTagsByRegion: {
+      NT: ['space_launch', 'launch_logistics', 'orbital_supply'],
+      SA: ['space_launch', 'launch_logistics', 'orbital_supply'],
+    },
+    productivitySynergyPoints: 5.9,
+    logisticsRelief: 0.033,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -1353,6 +1412,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND15,
   ...TRANSPORT_CORRIDORS_ROUND16,
   ...TRANSPORT_CORRIDORS_ROUND17,
+  ...TRANSPORT_CORRIDORS_ROUND18,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -2337,6 +2397,62 @@ export const TRANSPORT_SCENARIOS_ROUND17: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round18.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND18: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_lithium_brine_surge',
+    label: 'WA Lithium Brine Export Surge',
+    description: 'Battery feedstock rush overloads Fremantle bulk and brine yards.',
+    targetRegions: ['WA', 'SA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_nsw_inland_express_peak',
+    label: 'NSW Inland Express Peak',
+    description: 'Holiday container peak strains Parkes express handoffs.',
+    targetRegions: ['NSW', 'QLD'],
+    networkKind: 'freight',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['rail', 'logistics'],
+  },
+  {
+    id: 'scn_nt_launch_window_crunch',
+    label: 'NT Launch Window Crunch',
+    description: 'Orbital launch window compresses Darwin staging and Arnhem access.',
+    targetRegions: ['NT', 'SA'],
+    networkKind: 'freight',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['road', 'logistics'],
+  },
+  {
+    id: 'scn_sa_brine_rail_possession',
+    label: 'SA Brine Rail Possession',
+    description: 'Track possession delays Spencer Gulf brine module delivery.',
+    targetRegions: ['SA', 'WA'],
+    networkKind: 'freight',
+    utilizationAdd: 0.18,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail'],
+  },
+  {
+    id: 'scn_qld_express_port_congestion',
+    label: 'Queensland Express Port Congestion',
+    description: 'Brisbane express terminal queue backs up inland rail slots.',
+    targetRegions: ['QLD', 'NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.2,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -2515,6 +2631,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND15,
   ...TRANSPORT_SCENARIOS_ROUND16,
   ...TRANSPORT_SCENARIOS_ROUND17,
+  ...TRANSPORT_SCENARIOS_ROUND18,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -7085,6 +7202,233 @@ export const SCALE_WAVE_ROUND17_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round18-assets.ts ---
+
+export const ROUND18_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_greenbushes_brine_haul',
+    category: 'road',
+    name: 'Greenbushes Lithium Brine Haul',
+    description: 'Brine concentrate road feed to Kwinana processing.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['lithium_brine', 'brine_export', 'battery_feedstock', 'mining'],
+    laneKilometres: 52,
+    designSpeedKmh: 95,
+    freightShare: 0.44,
+    urbanShare: 0.08,
+    tollRoad: false,
+  },
+  {
+    id: 'road_sa_port_augusta_brine',
+    category: 'road',
+    name: 'Port Augusta Brine Export Link',
+    description: 'Spodumene and brine module road to Spencer Gulf.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['trade'],
+    tags: ['lithium_brine', 'brine_export', 'battery_feedstock'],
+    laneKilometres: 38,
+    designSpeedKmh: 90,
+    freightShare: 0.39,
+    urbanShare: 0.12,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_toowoomba_inland_express',
+    category: 'road',
+    name: 'Toowoomba Inland Express Feed',
+    description: 'Road interface to inland rail express terminals.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['freight'],
+    tags: ['inland_rail_express', 'express_freight', 'intermodal_express', 'motorway'],
+    laneKilometres: 41,
+    designSpeedKmh: 100,
+    freightShare: 0.36,
+    urbanShare: 0.18,
+    tollRoad: true,
+  },
+  {
+    id: 'road_nt_arnhem_launch_access',
+    category: 'road',
+    name: 'Arnhem Launch Access Road',
+    description: 'Remote launch site logistics and fuel staging access.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'SA'],
+    baseProductivityPoints: 3.8,
+    strategicNetworks: ['freight'],
+    tags: ['space_launch', 'launch_logistics', 'orbital_supply', 'remote'],
+    laneKilometres: 96,
+    designSpeedKmh: 80,
+    freightShare: 0.33,
+    urbanShare: 0.02,
+    tollRoad: false,
+  },
+];
+
+export const ROUND18_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_kalgoorlie_brine_rail',
+    category: 'rail',
+    name: 'Kalgoorlie Brine Export Rail',
+    description: 'Battery feedstock rail to Fremantle bulk.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['lithium_brine', 'brine_export', 'battery_feedstock', 'heavy_haul'],
+    trackKilometres: 580,
+    dualTrackShare: 0.52,
+    electrifiedShare: 0.12,
+    designFreightTonnesPerYear: 22_000_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_nsw_parkes_inland_express',
+    category: 'rail',
+    name: 'Parkes Inland Rail Express',
+    description: 'East-west express container path via Parkes hub.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD', 'VIC'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['freight'],
+    tags: ['inland_rail_express', 'express_freight', 'intermodal_express', 'intercapital'],
+    trackKilometres: 420,
+    dualTrackShare: 0.61,
+    electrifiedShare: 0.28,
+    designFreightTonnesPerYear: 18_500_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_sa_woomera_launch_spur',
+    category: 'rail',
+    name: 'Woomera Launch Logistics Spur',
+    description: 'Orbital supply rail spur to launch staging yards.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NT'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['freight'],
+    tags: ['space_launch', 'launch_logistics', 'orbital_supply'],
+    trackKilometres: 210,
+    dualTrackShare: 0.38,
+    electrifiedShare: 0.05,
+    designFreightTonnesPerYear: 4_200_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND18_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_fremantle_lithium_bulk',
+    category: 'port',
+    name: 'Fremantle Lithium Bulk Terminal',
+    description: 'Spodumene and brine derivative export berths.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 5.7,
+    strategicNetworks: ['trade'],
+    tags: ['lithium_brine', 'brine_export', 'battery_feedstock', 'bulk'],
+    berthCount: 4,
+    maxDraftMetres: 14.2,
+    teuCapacityPerYear: 185_000,
+    automationLevel: 1,
+    bulkShare: 0.61,
+  },
+  {
+    id: 'port_qld_brisbane_inland_express',
+    category: 'port',
+    name: 'Brisbane Inland Express Terminal',
+    description: 'Express container handoff to inland rail.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['inland_rail_express', 'express_freight', 'intermodal_express', 'container'],
+    berthCount: 3,
+    maxDraftMetres: 13.8,
+    teuCapacityPerYear: 320_000,
+    automationLevel: 2,
+    bulkShare: 0.18,
+  },
+  {
+    id: 'port_nt_darwin_launch_staging',
+    category: 'port',
+    name: 'Darwin Launch Staging Port',
+    description: 'Orbital supply module staging and fuel logistics.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'SA'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['trade'],
+    tags: ['space_launch', 'launch_logistics', 'orbital_supply', 'gateway'],
+    berthCount: 2,
+    maxDraftMetres: 12.5,
+    teuCapacityPerYear: 95_000,
+    automationLevel: 1,
+    bulkShare: 0.22,
+  },
+];
+
+export const ROUND18_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_wa_kwinana_brine_yard',
+    category: 'logistics',
+    name: 'Kwinana Brine Processing Yard',
+    description: 'Lithium brine concentrate and module staging.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['lithium_brine', 'brine_export', 'battery_feedstock'],
+    warehouseSqm: 112_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 51,
+  },
+  {
+    id: 'log_nsw_parkes_express_hub',
+    category: 'logistics',
+    name: 'Parkes Express Intermodal Hub',
+    description: 'Inland rail express container consolidation.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD', 'VIC'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['freight'],
+    tags: ['inland_rail_express', 'express_freight', 'intermodal_express'],
+    warehouseSqm: 142_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 58,
+  },
+  {
+    id: 'log_sa_woomera_orbital_yard',
+    category: 'logistics',
+    name: 'Woomera Orbital Supply Yard',
+    description: 'Launch vehicle and payload logistics stores.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NT'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['freight'],
+    tags: ['space_launch', 'launch_logistics', 'orbital_supply'],
+    warehouseSqm: 68_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 42,
+  },
+];
+
+export const SCALE_WAVE_ROUND18_ASSETS = [
+  ...ROUND18_ROADS,
+  ...ROUND18_RAIL,
+  ...ROUND18_PORTS,
+  ...ROUND18_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -7110,6 +7454,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND15_ASSETS,
     ...SCALE_WAVE_ROUND16_ASSETS,
     ...SCALE_WAVE_ROUND17_ASSETS,
+    ...SCALE_WAVE_ROUND18_ASSETS,
   ];
 }
 
@@ -8058,6 +8403,57 @@ export function subseaCableLandingProductivityMultiplier(
   const policyBoost = policy === 'expand' ? 0.041 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.048 + policyBoost, 0.93, 1.11);
+}
+
+
+// --- source: network/lithium-brine-export-index.ts ---
+
+/** 0–100 lithium brine and battery feedstock export throughput by region. */
+export function computeLithiumBrineExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const brineTagged = asset.tags.some(
+      (t) => t === 'lithium_brine' || t === 'brine_export' || t === 'battery_feedstock',
+    );
+    if (!brineTagged) continue;
+
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 780 + asset.freightShare * 4.2;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 11_800_000 + asset.trackKilometres / 620;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.9 + asset.bulkShare * 6.2;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 105_000 + (asset.intermodalLinks.includes('rail') ? 1.6 : 0.7);
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalLithiumBrineExportIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.44 + max * 0.56, 5, 74) * 10) / 10;
+}
+
+export function lithiumBrineExportProductivityMultiplier(
+  index: number,
+  policy: LithiumBrineExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.042 : 0;
+  const normalized = (index - 6) / 100;
+  return clamp(1 + normalized * 0.049 + policyBoost, 0.93, 1.11);
 }
 
 
@@ -9045,6 +9441,95 @@ export function greenAmmoniaExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.045 : 0;
   const normalized = (exportIndex - 12) / 100;
   return clamp(1 + normalized * 0.05 + policyBoost, 0.92, 1.12);
+}
+
+
+// --- source: operations/inland-rail-express-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type InlandRailExpressPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 inland rail express container throughput by region. */
+export function computeInlandRailExpressByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 8])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'inland_rail_express' ||
+          t === 'express_freight' ||
+          t === 'intermodal_express',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 8_400_000 + asset.trackKilometres / 480;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 560;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 88_000 + asset.intermodalLinks.length * 0.72;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.teuCapacityPerYear / 280_000 + asset.berthCount * 1.4;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.03 - stress * 0.028), 5, 90) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalInlandRailExpressIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.46 + max * 0.54, 7, 82) * 10) / 10;
+}
+
+export function computeInlandRailExpressShare(
+  operationalAssets: TransportAsset[],
+  policy: InlandRailExpressPolicy = 'baseline',
+): number {
+  let expressUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'rail' && asset.tags.includes('inland_rail_express')) {
+      const units =
+        ('designFreightTonnesPerYear' in asset ? asset.designFreightTonnesPerYear / 5_600_000 : 0) +
+        ('trackKilometres' in asset ? asset.trackKilometres / 220 : 0);
+      totalUnits += units + 1.8;
+      expressUnits += (units + 1.8) * 0.84;
+    }
+    if (asset.tags.includes('express_freight')) {
+      totalUnits += 1.2;
+      expressUnits += 0.76;
+    }
+  }
+
+  if (totalUnits <= 0) return 0.038;
+  const policyBoost = policy === 'deploy' ? 0.034 : 0;
+  return Math.round(clamp(expressUnits / totalUnits + policyBoost, 0.035, 0.36) * 1000) / 1000;
+}
+
+export function inlandRailExpressProductivityMultiplier(
+  share: number,
+  policy: InlandRailExpressPolicy,
+): number {
+  const bias = policy === 'deploy' ? 1.023 : 1;
+  return (1 + (share - 0.06) * 0.034) * bias;
 }
 
 
@@ -10255,6 +10740,95 @@ export function nationalAirportExpressRailThroughputIndex(
 }
 
 
+// --- source: productivity/space-launch-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type SpaceLaunchLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of remote logistics tied to space launch supply chains. */
+export function computeSpaceLaunchLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: SpaceLaunchLogisticsPolicy = 'baseline',
+): number {
+  let launchUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.some((t) => t === 'space_launch' || t === 'launch_logistics' || t === 'orbital_supply')) {
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 310;
+        launchUnits += asset.laneKilometres / 310 * 0.71;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 72_000;
+        launchUnits += asset.warehouseSqm / 72_000 * 0.65;
+      }
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.5;
+        launchUnits += asset.berthCount * 1.1;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.032;
+  const policyBoost = policy === 'expand' ? 0.031 : 0;
+  return Math.round(clamp(launchUnits / totalUnits + policyBoost, 0.03, 0.32) * 1000) / 1000;
+}
+
+export function spaceLaunchLogisticsProductivityMultiplier(
+  share: number,
+  policy: SpaceLaunchLogisticsPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.022 : 1;
+  return (1 + (share - 0.05) * 0.032) * bias;
+}
+
+export function computeSpaceLaunchLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'space_launch' || t === 'launch_logistics' || t === 'orbital_supply',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 420;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 16_000_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 92_000;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.1;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalSpaceLaunchLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 1.5, 52) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -10619,6 +11193,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   computeAirportExpressRailThroughputByRegion,
   nationalAirportExpressRailThroughputIndex,
 } from './airport-express-rail-index.ts';
+  computeLithiumBrineExportByRegion,
+  lithiumBrineExportProductivityMultiplier,
+  nationalLithiumBrineExportIndex,
+} from '../network/lithium-brine-export-index.ts';
+  computeInlandRailExpressByRegion,
+  computeInlandRailExpressShare,
+  inlandRailExpressProductivityMultiplier,
+  nationalInlandRailExpressIndex,
+} from '../operations/inland-rail-express-index.ts';
+  computeSpaceLaunchLogisticsShare,
+  computeSpaceLaunchLogisticsThroughputByRegion,
+  nationalSpaceLaunchLogisticsThroughputIndex,
+  spaceLaunchLogisticsProductivityMultiplier,
+} from './space-launch-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -11297,6 +11885,32 @@ export function computeTransportInfrastructureState(
     airportExpressRailShare,
     options?.airportExpressRailPolicy ?? 'baseline',
   );
+  const lithiumBrineExportByRegion = computeLithiumBrineExportByRegion(ops);
+  const nationalLithiumBrine = nationalLithiumBrineExportIndex(lithiumBrineExportByRegion);
+  const lithiumMult = lithiumBrineExportProductivityMultiplier(
+    nationalLithiumBrine,
+    options?.lithiumBrineExportPolicy ?? 'baseline',
+  );
+  const inlandRailExpressByRegion = computeInlandRailExpressByRegion(ops, networkStress);
+  const nationalInlandRailExpress = nationalInlandRailExpressIndex(inlandRailExpressByRegion);
+  const inlandRailExpressShare = computeInlandRailExpressShare(
+    ops,
+    options?.inlandRailExpressPolicy ?? 'baseline',
+  );
+  const inlandExpressMult = inlandRailExpressProductivityMultiplier(
+    inlandRailExpressShare,
+    options?.inlandRailExpressPolicy ?? 'baseline',
+  );
+  const spaceLaunchLogisticsThroughputByRegion = computeSpaceLaunchLogisticsThroughputByRegion(ops);
+  const nationalSpaceLaunch = nationalSpaceLaunchLogisticsThroughputIndex(spaceLaunchLogisticsThroughputByRegion);
+  const spaceLaunchLogisticsShare = computeSpaceLaunchLogisticsShare(
+    ops,
+    options?.spaceLaunchLogisticsPolicy ?? 'baseline',
+  );
+  const spaceLaunchMult = spaceLaunchLogisticsProductivityMultiplier(
+    spaceLaunchLogisticsShare,
+    options?.spaceLaunchLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -11305,6 +11919,9 @@ export function computeTransportInfrastructureState(
     const subseaBoost = (subseaCableLandingByRegion[code] - 4) * 0.005;
     const ammoniaBoost = (greenAmmoniaExportByRegion[code] - 12) * 0.0045;
     const airportBoost = (airportExpressRailThroughputByRegion[code] - 2) * 0.0049;
+    const lithiumBoost = (lithiumBrineExportByRegion[code] - 5) * 0.0048;
+    const inlandExpressBoost = (inlandRailExpressByRegion[code] - 10) * 0.0044;
+    const spaceLaunchBoost = (spaceLaunchLogisticsThroughputByRegion[code] - 1) * 0.0046;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -11312,13 +11929,19 @@ export function computeTransportInfrastructureState(
         cruiseBoost +
         subseaBoost +
         ammoniaBoost +
-        airportBoost) *
+        airportBoost +
+        lithiumBoost +
+        inlandExpressBoost +
+        spaceLaunchBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
       subseaMult *
       ammoniaMult *
-      airportExpressMult;
+      airportExpressMult *
+      lithiumMult *
+      inlandExpressMult *
+      spaceLaunchMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -11347,7 +11970,10 @@ export function computeTransportInfrastructureState(
     nationalCruiseTurnaround * 0.015 +
     nationalSubseaCable * 0.014 +
     nationalGreenAmmonia * 0.014 +
-    nationalAirportExpress * 0.013;
+    nationalAirportExpress * 0.013 +
+    nationalLithiumBrine * 0.012 +
+    nationalInlandRailExpress * 0.012 +
+    nationalSpaceLaunch * 0.011;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -11362,7 +11988,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/18',
+    schemaVersion: 'agent12/19',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -11473,6 +12099,14 @@ export function computeTransportInfrastructureState(
     airportExpressRailShare,
     nationalAirportExpressRailThroughputIndex: nationalAirportExpress,
     airportExpressRailThroughputByRegion,
+    nationalLithiumBrineExportIndex: nationalLithiumBrine,
+    lithiumBrineExportByRegion,
+    inlandRailExpressShare,
+    nationalInlandRailExpressIndex: nationalInlandRailExpress,
+    inlandRailExpressByRegion,
+    spaceLaunchLogisticsShare,
+    nationalSpaceLaunchLogisticsThroughputIndex: nationalSpaceLaunch,
+    spaceLaunchLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -11555,7 +12189,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/18' &&
+      infra.schemaVersion === 'agent12/19' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -11609,8 +12243,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalSubseaCableLandingIndex >= 5 &&
       infra.nationalGreenAmmoniaExportIndex >= 12 &&
       infra.airportExpressRailShare >= 0.04 &&
-      infra.nationalAirportExpressRailThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} subsea=${infra.nationalSubseaCableLandingIndex.toFixed(1)} ammonia=${infra.nationalGreenAmmoniaExportIndex.toFixed(1)} airport=${infra.nationalAirportExpressRailThroughputIndex.toFixed(1)}`,
+      infra.nationalAirportExpressRailThroughputIndex >= 2 &&
+      infra.nationalLithiumBrineExportIndex >= 6 &&
+      infra.nationalInlandRailExpressIndex >= 10 &&
+      infra.spaceLaunchLogisticsShare >= 0.03 &&
+      infra.nationalSpaceLaunchLogisticsThroughputIndex >= 1.5,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} lithium=${infra.nationalLithiumBrineExportIndex.toFixed(1)} inland=${infra.nationalInlandRailExpressIndex.toFixed(1)} launch=${infra.nationalSpaceLaunchLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;

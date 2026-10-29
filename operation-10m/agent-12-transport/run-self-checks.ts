@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/18' &&
+      infra.schemaVersion === 'agent12/19' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -122,8 +122,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalSubseaCableLandingIndex >= 5 &&
       infra.nationalGreenAmmoniaExportIndex >= 12 &&
       infra.airportExpressRailShare >= 0.04 &&
-      infra.nationalAirportExpressRailThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} subsea=${infra.nationalSubseaCableLandingIndex.toFixed(1)} ammonia=${infra.nationalGreenAmmoniaExportIndex.toFixed(1)} airport=${infra.nationalAirportExpressRailThroughputIndex.toFixed(1)}`,
+      infra.nationalAirportExpressRailThroughputIndex >= 2 &&
+      infra.nationalLithiumBrineExportIndex >= 6 &&
+      infra.nationalInlandRailExpressIndex >= 10 &&
+      infra.spaceLaunchLogisticsShare >= 0.03 &&
+      infra.nationalSpaceLaunchLogisticsThroughputIndex >= 1.5,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} lithium=${infra.nationalLithiumBrineExportIndex.toFixed(1)} inland=${infra.nationalInlandRailExpressIndex.toFixed(1)} launch=${infra.nationalSpaceLaunchLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;

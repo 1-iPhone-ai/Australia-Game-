@@ -255,8 +255,14 @@ export type GreenAmmoniaExportPolicy = 'baseline' | 'accelerate';
 
 export type AirportExpressRailPolicy = 'baseline' | 'deploy';
 
+export type LithiumBrineExportPolicy = 'baseline' | 'accelerate';
+
+export type InlandRailExpressPolicy = 'baseline' | 'deploy';
+
+export type SpaceLaunchLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/18';
+  schemaVersion: 'agent12/19';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -367,6 +373,14 @@ export interface TransportInfrastructureState {
   airportExpressRailShare: number;
   nationalAirportExpressRailThroughputIndex: number;
   airportExpressRailThroughputByRegion: Record<AuRegionCode, number>;
+  nationalLithiumBrineExportIndex: number;
+  lithiumBrineExportByRegion: Record<AuRegionCode, number>;
+  inlandRailExpressShare: number;
+  nationalInlandRailExpressIndex: number;
+  inlandRailExpressByRegion: Record<AuRegionCode, number>;
+  spaceLaunchLogisticsShare: number;
+  nationalSpaceLaunchLogisticsThroughputIndex: number;
+  spaceLaunchLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -411,6 +425,9 @@ export interface TransportInfrastructureOptions {
   subseaCableLandingPolicy?: SubseaCableLandingPolicy;
   greenAmmoniaExportPolicy?: GreenAmmoniaExportPolicy;
   airportExpressRailPolicy?: AirportExpressRailPolicy;
+  lithiumBrineExportPolicy?: LithiumBrineExportPolicy;
+  inlandRailExpressPolicy?: InlandRailExpressPolicy;
+  spaceLaunchLogisticsPolicy?: SpaceLaunchLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {

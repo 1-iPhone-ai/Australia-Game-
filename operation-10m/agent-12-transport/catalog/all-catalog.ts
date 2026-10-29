@@ -19,6 +19,7 @@ import { SCALE_WAVE_ROUND14_ASSETS } from './scale-wave-round14-assets.ts';
 import { SCALE_WAVE_ROUND15_ASSETS } from './scale-wave-round15-assets.ts';
 import { SCALE_WAVE_ROUND16_ASSETS } from './scale-wave-round16-assets.ts';
 import { SCALE_WAVE_ROUND17_ASSETS } from './scale-wave-round17-assets.ts';
+import { SCALE_WAVE_ROUND18_ASSETS } from './scale-wave-round18-assets.ts';
 import type { TransportAsset } from '../types.ts';
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -44,6 +45,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND15_ASSETS,
     ...SCALE_WAVE_ROUND16_ASSETS,
     ...SCALE_WAVE_ROUND17_ASSETS,
+    ...SCALE_WAVE_ROUND18_ASSETS,
   ];
 }
 

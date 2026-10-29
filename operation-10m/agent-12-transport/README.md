@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 18
+
+- Schema **`agent12/19`**: lithium brine export throughput, inland rail express readiness, space launch logistics share (`lithiumBrineExportPolicy`, `inlandRailExpressPolicy`, `spaceLaunchLogisticsPolicy`)
+- Catalog: **260** assets, **68** corridors, **108** scenarios
+- Systems: `network/lithium-brine-export-index.ts`, `operations/inland-rail-express-index.ts`, `productivity/space-launch-logistics-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 17
 
 - Schema **`agent12/18`**: subsea cable landing throughput, green ammonia export readiness, airport express rail share (`subseaCableLandingPolicy`, `greenAmmoniaExportPolicy`, `airportExpressRailPolicy`)
