@@ -1487,6 +1487,47 @@ export function evaluateMacroConsistencyGates(
       summary: 'Wide transmission envelope after wave 43 UI/dashboard export layers — spillover spread is elevated.'
     });
   }
+  const wave44Auto: any =
+    inputs.automationIdleGovernanceWave44Export ??
+    inputs.automationIdleGovernance?.wave44Export ??
+    inputs.idleAutomation?.governanceWave44Export;
+  const round44Ready = Boolean(
+    wave44Auto?.round44Ready ?? wave44Auto?.payload?.round44Ready ?? wave44Auto?.exportReady
+  );
+  if (
+    wave44Auto &&
+    !round44Ready &&
+    (state.automationSpilloverSummary != null || state.automationIdleGovernanceWave44ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'automation_idle_governance_wave44_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Automation idle governance wave 44 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave44Forecast: any =
+    inputs.forecastWave44Export ?? inputs.forecastingLab?.wave44Export ?? inputs.macroForecasts?.wave44Export;
+  const export44Status = String(wave44Forecast?.status ?? wave44Forecast?.syncStatus ?? '').toLowerCase();
+  if (
+    export44Status === 'drift' &&
+    (state.forecastingSpilloverSummary != null || state.forecastWave44ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'forecast_wave44_export_drifted',
+      triggered: true,
+      severity: 'info',
+      summary: 'Forecast wave 44 export drifted coincides with strained forecasting spillover.'
+    });
+  }
+  if (state.transmissionGradient?.band === 'steep' || state.transmissionGradient?.band === 'sloped') {
+    gates.push({
+      id: 'transmission_gradient_steep_wave44',
+      triggered: true,
+      severity: 'info',
+      summary: 'Steep transmission gradient after wave 44 export layers — spillover mass is concentrated.'
+    });
+  }
   if (state.transmissionPersistence?.band === 'cohesive') {
     gates.push({
       id: 'transmission_persistence_cohesive',

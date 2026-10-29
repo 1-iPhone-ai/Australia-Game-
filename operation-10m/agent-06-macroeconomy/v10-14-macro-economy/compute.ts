@@ -198,6 +198,14 @@ import {
   applyMacroDashboardClarityWave43ExportSpillover,
   readMacroDashboardClarityWave43ExportSpilloverFromV1023
 } from './bridge-v1023-dashboard-clarity-wave-round43-export.ts';
+import {
+  applyMacroAutomationIdleGovernanceWave44ExportSpillover,
+  readMacroAutomationIdleGovernanceWave44ExportSpilloverFromV1020
+} from './bridge-v1020-automation-idle-governance-wave-round44-export.ts';
+import {
+  applyMacroForecastWave44ExportSpillover,
+  readMacroForecastWave44ExportSpilloverFromV1021
+} from './bridge-v1021-forecast-wave-round44-export.ts';
 import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
 import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { buildMacroTransmissionReport } from './macro-transmission.ts';
@@ -381,6 +389,9 @@ export function computeNationalMacroEconomy(
   const forecastWave42ExportSpillover = readMacroForecastWave42ExportSpilloverFromV1021(inputs);
   const uiResponsivenessWave43ExportSpillover = readMacroUiResponsivenessWave43ExportSpilloverFromV1022(inputs);
   const dashboardClarityWave43ExportSpillover = readMacroDashboardClarityWave43ExportSpilloverFromV1023(inputs);
+  const automationIdleGovernanceWave44ExportSpillover =
+    readMacroAutomationIdleGovernanceWave44ExportSpilloverFromV1020(inputs);
+  const forecastWave44ExportSpillover = readMacroForecastWave44ExportSpilloverFromV1021(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -517,7 +528,15 @@ export function computeNationalMacroEconomy(
     withUiResponsivenessWave43Export,
     dashboardClarityWave43ExportSpillover
   );
-  const shocked = applyMacroShockAdjustments(inputs, withDashboardClarityWave43Export, pushEv);
+  const withAutomationIdleGovernanceWave44Export = applyMacroAutomationIdleGovernanceWave44ExportSpillover(
+    withDashboardClarityWave43Export,
+    automationIdleGovernanceWave44ExportSpillover
+  );
+  const withForecastWave44Export = applyMacroForecastWave44ExportSpillover(
+    withAutomationIdleGovernanceWave44Export,
+    forecastWave44ExportSpillover
+  );
+  const shocked = applyMacroShockAdjustments(inputs, withForecastWave44Export, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -627,7 +646,9 @@ export function computeNationalMacroEconomy(
     automationIdleGovernanceWave42Export: automationIdleGovernanceWave42ExportSpillover,
     forecastWave42Export: forecastWave42ExportSpillover,
     uiResponsivenessWave43Export: uiResponsivenessWave43ExportSpillover,
-    dashboardClarityWave43Export: dashboardClarityWave43ExportSpillover
+    dashboardClarityWave43Export: dashboardClarityWave43ExportSpillover,
+    automationIdleGovernanceWave44Export: automationIdleGovernanceWave44ExportSpillover,
+    forecastWave44Export: forecastWave44ExportSpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
@@ -791,6 +812,8 @@ export function computeNationalMacroEconomy(
     forecastWave42ExportSpilloverSummary: forecastWave42ExportSpillover.summary,
     uiResponsivenessWave43ExportSpilloverSummary: uiResponsivenessWave43ExportSpillover.summary,
     dashboardClarityWave43ExportSpilloverSummary: dashboardClarityWave43ExportSpillover.summary,
+    automationIdleGovernanceWave44ExportSpilloverSummary: automationIdleGovernanceWave44ExportSpillover.summary,
+    forecastWave44ExportSpilloverSummary: forecastWave44ExportSpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,

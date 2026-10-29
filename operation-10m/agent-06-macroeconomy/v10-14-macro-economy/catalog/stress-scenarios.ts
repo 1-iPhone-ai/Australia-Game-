@@ -270,6 +270,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Wave 43 UI & dashboard export stress',
     shockIds: ['stimulus_bounce', 'global_slowdown'],
     description: 'Blocked UI wave 43 export with unclear dashboard wave 43 export (harness overlay).'
+  },
+  {
+    id: 'wave44_automation_forecast_export_stress',
+    label: 'Wave 44 automation & forecast export stress',
+    shockIds: ['stimulus_bounce', 'global_slowdown'],
+    description: 'Blocked automation idle governance wave 44 export with drifted forecast wave 44 export (harness overlay).'
   }
 ];
 
