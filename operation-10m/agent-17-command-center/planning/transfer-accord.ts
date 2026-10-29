@@ -100,3 +100,7 @@ export function buildAgent17TransferAccord(
 export function transferAccordBlocksVault(snapshot: Agent17TransferAccordSnapshot): boolean {
   return snapshot.band === 'halted' || !snapshot.transferSettled;
 }
+
+export function transferAccordBlocksSettlement(snapshot: Agent17TransferAccordSnapshot): boolean {
+  return snapshot.band === 'halted' || !snapshot.transferSettled;
+}

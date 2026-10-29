@@ -1616,16 +1616,44 @@ export function runAgent17VaultDepthTests(): Agent17DevTestReport {
       `${releaseBlocked.band} cleared=${releaseBlocked.releaseCleared}`
     );
 
+    const vaultCompromised = buildAgent17VaultIndex({
+      releaseAccord: releaseBlocked,
+      custodyIndex: custodyBreached,
+      endorsementAccord: endorsementWithdrawn,
+    });
+    push(
+      'vlt_compromised_transfer',
+      'Blocked release yields compromised vault or blocks transfer',
+      vaultCompromised.band === 'compromised' ||
+        releaseAccordBlocksVault(releaseBlocked) ||
+        !vaultCompromised.vaultSealed,
+      `${vaultCompromised.band} sealed=${vaultCompromised.vaultSealed}`
+    );
+
+    const transferHalted = buildAgent17TransferAccord({
+      vaultIndex: vaultCompromised,
+      releaseAccord: releaseBlocked,
+      custodyIndex: custodyBreached,
+    });
+    push(
+      'vlt_halted_vault',
+      'Compromised vault yields halted transfer or blocks vault',
+      transferHalted.band === 'halted' ||
+        transferAccordBlocksVault(transferHalted) ||
+        !transferHalted.transferSettled,
+      `${transferHalted.band} settled=${transferHalted.transferSettled}`
+    );
+
     const evalRes = evaluateAcc17CommandCenterOperations(state, settings, 'player', ops);
     const depth = evalRes.snapshot.planningDepth;
     push(
       'vlt_evaluator_depth',
-      'Evaluator attaches custody index and release accord',
-      !!depth?.custodyIndex?.headline &&
-        !!depth?.releaseAccord?.headline &&
-        (depth.custodyIndex.holds?.length ?? 0) >= 5 &&
-        (depth.releaseAccord.gates?.length ?? 0) >= 5,
-      `${depth?.custodyIndex?.band}/${depth?.releaseAccord?.band}`
+      'Evaluator attaches vault index and transfer accord',
+      !!depth?.vaultIndex?.headline &&
+        !!depth?.transferAccord?.headline &&
+        (depth.vaultIndex.slots?.length ?? 0) >= 5 &&
+        (depth.transferAccord.legs?.length ?? 0) >= 5,
+      `${depth?.vaultIndex?.band}/${depth?.transferAccord?.band}`
     );
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);

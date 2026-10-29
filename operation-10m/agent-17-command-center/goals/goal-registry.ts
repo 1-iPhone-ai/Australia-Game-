@@ -842,6 +842,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Compromised vault or blocked release yields transferAccordBlocksVault.',
     severity: 'major',
   },
+  {
+    id: 'G17-121',
+    title: 'Settlement index on planning depth',
+    category: 'telemetry',
+    acceptance: 'settlementIndex reports settlementScore 0–100 with posted/pending/failed band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-122',
+    title: 'Closure accord filings complete',
+    category: 'telemetry',
+    acceptance: 'closureAccord exposes ≥5 filings and closureScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-123',
+    title: 'Failed settlement reopens closure accord',
+    category: 'integration',
+    acceptance: 'Failed settlement or halted transfer yields closureAccordBlocksSettlement.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

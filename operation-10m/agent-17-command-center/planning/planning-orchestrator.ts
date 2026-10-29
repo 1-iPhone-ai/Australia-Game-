@@ -87,6 +87,8 @@ import { buildAgent17CustodyIndex } from './custody-index.ts';
 import { buildAgent17ReleaseAccord } from './release-accord.ts';
 import { buildAgent17VaultIndex } from './vault-index.ts';
 import { buildAgent17TransferAccord } from './transfer-accord.ts';
+import { buildAgent17SettlementIndex } from './settlement-index.ts';
+import { buildAgent17ClosureAccord } from './closure-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -511,6 +513,16 @@ export function buildAgent17PlanningDepthSnapshot(
     releaseAccord,
     custodyIndex,
   });
+  const settlementIndex = buildAgent17SettlementIndex({
+    transferAccord,
+    vaultIndex,
+    releaseAccord,
+  });
+  const closureAccord = buildAgent17ClosureAccord({
+    settlementIndex,
+    transferAccord,
+    vaultIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -580,6 +592,8 @@ export function buildAgent17PlanningDepthSnapshot(
     releaseAccord,
     vaultIndex,
     transferAccord,
+    settlementIndex,
+    closureAccord,
   };
 }
 

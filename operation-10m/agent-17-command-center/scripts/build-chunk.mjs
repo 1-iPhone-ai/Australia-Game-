@@ -93,6 +93,8 @@ const FILES = [
   'planning/release-accord.ts',
   'planning/vault-index.ts',
   'planning/transfer-accord.ts',
+  'planning/settlement-index.ts',
+  'planning/closure-accord.ts',
   'planning/planning-orchestrator.ts',
   'evaluation/operations-evaluator.ts',
   'rollback/rollback-controller.ts',
@@ -134,6 +136,7 @@ const FILES = [
   'harness/run-registry-depth-tests.ts',
   'harness/run-ledger-depth-tests.ts',
   'harness/run-custody-depth-tests.ts',
+  'harness/run-vault-depth-tests.ts',
 ];
 
 function stripModulePreamble(source) {

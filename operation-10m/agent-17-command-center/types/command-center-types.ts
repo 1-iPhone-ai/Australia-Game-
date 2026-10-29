@@ -247,6 +247,8 @@ export interface Agent17PlanningDepthSnapshot {
   releaseAccord: Agent17ReleaseAccordSnapshot;
   vaultIndex: Agent17VaultIndexSnapshot;
   transferAccord: Agent17TransferAccordSnapshot;
+  settlementIndex: Agent17SettlementIndexSnapshot;
+  closureAccord: Agent17ClosureAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1327,6 +1329,40 @@ export interface Agent17TransferAccordSnapshot {
   vaultBand: Agent17VaultIndexSnapshot['band'];
   releaseBand: Agent17ReleaseAccordSnapshot['band'];
   transferSettled: boolean;
+  headline: string;
+}
+
+export interface Agent17SettlementLine {
+  id: string;
+  label: string;
+  booked: boolean;
+  weight: number;
+}
+
+export interface Agent17SettlementIndexSnapshot {
+  settlementScore: number;
+  band: 'posted' | 'pending' | 'failed';
+  lines: Agent17SettlementLine[];
+  transferBand: Agent17TransferAccordSnapshot['band'];
+  vaultBand: Agent17VaultIndexSnapshot['band'];
+  settlementPosted: boolean;
+  headline: string;
+}
+
+export interface Agent17ClosureFiling {
+  id: string;
+  label: string;
+  filed: boolean;
+  weight: number;
+}
+
+export interface Agent17ClosureAccordSnapshot {
+  closureScore: number;
+  band: 'final' | 'provisional' | 'reopened';
+  filings: Agent17ClosureFiling[];
+  settlementBand: Agent17SettlementIndexSnapshot['band'];
+  transferBand: Agent17TransferAccordSnapshot['band'];
+  closureFinal: boolean;
   headline: string;
 }
 

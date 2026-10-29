@@ -270,7 +270,16 @@ import {
 import {
   buildAgent17TransferAccord,
   transferAccordBlocksVault,
+  transferAccordBlocksSettlement,
 } from '../planning/transfer-accord.ts';
+import {
+  buildAgent17SettlementIndex,
+  settlementIndexBlocksClosure,
+} from '../planning/settlement-index.ts';
+import {
+  buildAgent17ClosureAccord,
+  closureAccordBlocksSettlement,
+} from '../planning/closure-accord.ts';
 import {
   Agent17RollbackController,
   createAgent17RollbackController,
@@ -2099,6 +2108,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const settlementIndex = depthEval.snapshot.planningDepth?.settlementIndex;
+  goalResults.push(
+    result(
+      'G17-121',
+      !!settlementIndex &&
+        settlementIndex.lines.length >= 5 &&
+        settlementIndex.settlementScore >= 0 &&
+        settlementIndex.settlementScore <= 100 &&
+        (settlementIndex.band === 'posted' ||
+          settlementIndex.band === 'pending' ||
+          settlementIndex.band === 'failed'),
+      `lines=${settlementIndex?.lines.length} score=${settlementIndex?.settlementScore}`
+    )
+  );
+
+  const closureAccord = depthEval.snapshot.planningDepth?.closureAccord;
+  goalResults.push(
+    result(
+      'G17-122',
+      !!closureAccord &&
+        closureAccord.filings.length >= 5 &&
+        closureAccord.closureScore >= 0 &&
+        closureAccord.closureScore <= 100,
+      `filings=${closureAccord?.filings.length} score=${closureAccord?.closureScore}`
+    )
+  );
+
+  const failedSettlement = buildAgent17SettlementIndex({
+    transferAccord: haltedTransfer,
+    vaultIndex: compromisedVault,
+    releaseAccord: blockedRelease,
+  });
+  const reopenedClosure = buildAgent17ClosureAccord({
+    settlementIndex: failedSettlement,
+    transferAccord: haltedTransfer,
+    vaultIndex: compromisedVault,
+  });
+  goalResults.push(
+    result(
+      'G17-123',
+      transferAccordBlocksSettlement(haltedTransfer) ||
+        settlementIndexBlocksClosure(failedSettlement) ||
+        closureAccordBlocksSettlement(reopenedClosure),
+      `${failedSettlement.band}/${reopenedClosure.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -2249,6 +2305,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-118',
     'G17-119',
     'G17-120',
+    'G17-121',
+    'G17-122',
+    'G17-123',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
