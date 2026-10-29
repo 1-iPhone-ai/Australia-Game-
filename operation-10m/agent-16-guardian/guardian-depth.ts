@@ -1303,6 +1303,62 @@ export function buildGuardianDepthRatificationReport(snapshot: GuardianCoPilotMo
   return lines.slice(0, 3);
 }
 
+export function computeAuthorizationStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceDependabilityScore < 50) load += Math.min(25, 50 - snapshot.governanceDependabilityScore);
+  if (snapshot.governanceDependabilityScore < 35) load += 10;
+  if (snapshot.ratificationIntegrityScore < 45) load += 20;
+  if (snapshot.ratificationIntegrityScore < 35) load += 10;
+  if (snapshot.ratificationStrainIndex >= 55) load += 20;
+  if (snapshot.ratificationStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeAuthorizationIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.authorizationStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.authorizationStrainIndex * 0.35));
+  if (snapshot.ratificationIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.ratificationIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceDependabilityScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceSteadfastnessScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.authorizationStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.authorizationStrainIndex * 0.32));
+  if (snapshot.authorizationIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.authorizationIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceDependabilityScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthAuthorizationReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.authorizationStrainIndex >= 55) {
+    lines.push(
+      `Authorization strain ${snapshot.authorizationStrainIndex} — stacked authorization review may exceed operator authorization capacity`
+    );
+  }
+  if (snapshot.authorizationIntegrityScore < 45) {
+    lines.push(
+      `Authorization integrity ${snapshot.authorizationIntegrityScore} — align Co-Pilot authorizations with Guardian authorization posture`
+    );
+  }
+  if (snapshot.governanceSteadfastnessScore < 40) {
+    lines.push(
+      `Governance steadfastness ${snapshot.governanceSteadfastnessScore} — little steadfastness to sustain authorization oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -1541,9 +1597,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withRatificationStrain: GuardianCoPilotMonitorSnapshot = { ...withTrustworthiness, ratificationStrainIndex };
   const ratificationIntegrityScore = computeRatificationIntegrityScore(withRatificationStrain);
   const withRatification: GuardianCoPilotMonitorSnapshot = { ...withRatificationStrain, ratificationIntegrityScore };
-  return {
+  const withDependability: GuardianCoPilotMonitorSnapshot = {
     ...withRatification,
     governanceDependabilityScore: computeGovernanceDependabilityScore(withRatification),
+    authorizationStrainIndex: 0,
+    authorizationIntegrityScore: 100,
+    governanceSteadfastnessScore: 100,
+  };
+  const authorizationStrainIndex = computeAuthorizationStrainIndex(withDependability);
+  const withAuthorizationStrain: GuardianCoPilotMonitorSnapshot = { ...withDependability, authorizationStrainIndex };
+  const authorizationIntegrityScore = computeAuthorizationIntegrityScore(withAuthorizationStrain);
+  const withAuthorization: GuardianCoPilotMonitorSnapshot = { ...withAuthorizationStrain, authorizationIntegrityScore };
+  return {
+    ...withAuthorization,
+    governanceSteadfastnessScore: computeGovernanceSteadfastnessScore(withAuthorization),
   };
 }
 
@@ -2308,6 +2375,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceDependabilityScore(snap) < 35;
+  });
+  ok('gd_authorization_strain', () => {
+    const snap = {
+      governanceDependabilityScore: 30,
+      ratificationIntegrityScore: 32,
+      ratificationStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAuthorizationStrainIndex(snap) >= 70;
+  });
+  ok('gd_authorization_integrity', () => {
+    const snap = {
+      authorizationStrainIndex: 72,
+      ratificationIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governanceDependabilityScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAuthorizationIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_steadfastness', () => {
+    const snap = {
+      authorizationStrainIndex: 78,
+      authorizationIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceDependabilityScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceSteadfastnessScore(snap) < 35;
   });
   return out;
 }
