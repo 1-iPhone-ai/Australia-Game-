@@ -11,6 +11,10 @@ export interface Agent22UiSnapshot {
   utilitiesStressBannerActive?: boolean;
   /** Round 17: phase-shell cost-of-living coach elevating inflation salience. */
   phaseShellCostOfLivingCoachActive?: boolean;
+  /** Round 29: player inflation salience latch in UI shell. */
+  playerInflationSalienceLatch?: boolean;
+  /** Round 29: UI expectations nudge band. */
+  uiExpectationsNudgeBand?: 'muted' | 'building' | 'sharp';
 }
 
 export function mergeAgent22IntoMacroFinancialInputs(
@@ -39,6 +43,13 @@ export function mergeAgent22IntoMacroFinancialInputs(
   }
   if (snapshot.phaseShellCostOfLivingCoachActive && snapshot.utilitiesStressBannerActive) {
     householdInflationScenarioActive = true;
+  }
+
+  if (snapshot.playerInflationSalienceLatch && snapshot.uiExpectationsNudgeBand === 'sharp') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+    householdInflationScenarioActive = true;
+  } else if (snapshot.uiExpectationsNudgeBand === 'building' && snapshot.uiNudgeInflationExpectationsUp) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
   return {

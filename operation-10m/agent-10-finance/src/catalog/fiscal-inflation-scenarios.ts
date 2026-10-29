@@ -977,6 +977,45 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'transport', 'housing', 'round28'],
   },
+  {
+    id: 'command_fusion_alert_stack',
+    label: 'Command fusion alert stack',
+    description: 'Red macro alert with critical command cascade and fusion latch.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.33,
+    },
+    tags: ['inflation', 'command', 'round29'],
+  },
+  {
+    id: 'ui_salience_expectations_stress',
+    label: 'UI salience expectations stress',
+    description: 'Sharp UI expectations nudge with household inflation scenario.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      publicStability: 37,
+      inflationSettingMultiplier: 1.3,
+    },
+    tags: ['inflation', 'ui', 'round29'],
+  },
+  {
+    id: 'command_ui_fusion_stress',
+    label: 'Command & UI fusion stress',
+    description: 'Critical command fusion colliding with sharp UI salience nudge.',
+    patch: {
+      inflationSettingMultiplier: 1.4,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 31,
+    },
+    tags: ['inflation', 'command', 'ui', 'round29'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

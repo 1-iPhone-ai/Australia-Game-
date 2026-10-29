@@ -9,6 +9,10 @@ export interface Agent17CommandSnapshot {
   coordinatedTighteningSuggested: boolean;
   /** Round 16: command center farmgate / food-supply alert. */
   farmgateSupplyAlertActive?: boolean;
+  /** Round 29: macro inflation fusion latch from command center. */
+  macroInflationFusionLatch?: boolean;
+  /** Round 29: command alert cascade band. */
+  commandAlertCascadeBand?: 'stable' | 'elevated' | 'critical';
 }
 
 export function mergeAgent17IntoMacroFinancialInputs(
@@ -42,6 +46,13 @@ export function mergeAgent17IntoMacroFinancialInputs(
   let householdInflationScenarioActive = base.householdInflationScenarioActive;
   if (snapshot.farmgateSupplyAlertActive) {
     householdInflationScenarioActive = true;
+  }
+
+  if (snapshot.macroInflationFusionLatch && snapshot.commandAlertCascadeBand === 'critical') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.commandAlertCascadeBand === 'elevated' && snapshot.macroAlertLevel === 'red') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
   return {

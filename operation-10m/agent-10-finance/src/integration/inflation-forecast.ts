@@ -192,6 +192,14 @@ import {
   assessHousingWellbeingInflationEssentialStress,
   type HousingWellbeingInflationEssentialStressBand,
 } from '../inflation/housing-wellbeing-inflation-essential-stress.js';
+import {
+  assessCommandCenterInflationFusionEscalation,
+  type CommandCenterInflationFusionEscalationBand,
+} from '../inflation/command-center-inflation-fusion-escalation.js';
+import {
+  assessUiPlayerInflationSalienceNudge,
+  type UiPlayerInflationSalienceNudgeBand,
+} from '../inflation/ui-player-inflation-salience-nudge.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -248,6 +256,8 @@ export interface InflationForecastPoint {
   macroDemandOverheatInflationSlippageBand: MacroDemandOverheatInflationSlippageBand;
   freightLogisticsInflationCongestionBand: FreightLogisticsInflationCongestionBand;
   housingWellbeingInflationEssentialStressBand: HousingWellbeingInflationEssentialStressBand;
+  commandCenterInflationFusionEscalationBand: CommandCenterInflationFusionEscalationBand;
+  uiPlayerInflationSalienceNudgeBand: UiPlayerInflationSalienceNudgeBand;
 }
 
 export interface InflationForecastPath {
@@ -705,6 +715,25 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const commandFusion = assessCommandCenterInflationFusionEscalation({
+      macroAlertLevel: inputs.highInflationScenario ? 'red' : inputs.creditShockActive ? 'amber' : 'green',
+      inflationFusionScore: inputs.highInflationScenario ? 0.8 : inputs.fiscalPressure === 'critical' ? 0.68 : 0.45,
+      coordinatedTighteningSuggested: inputs.fiscalPressure === 'critical',
+      macroInflationFusionLatch: inputs.householdInflationScenarioActive,
+      commandAlertCascadeBand:
+        inputs.systemicLiquidityBand === 'critical' ? 'critical' : inputs.creditShockActive ? 'elevated' : 'stable',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const uiSalienceNudge = assessUiPlayerInflationSalienceNudge({
+      inflationDashboardStressHighlight: inputs.highInflationScenario,
+      playerAttentionOnCostOfLiving: inputs.publicStability < 44 ? 'high' : inputs.householdInflationScenarioActive ? 'medium' : 'low',
+      uiNudgeInflationExpectationsUp: inputs.householdInflationScenarioActive,
+      playerInflationSalienceLatch: inputs.creditShockActive,
+      uiExpectationsNudgeBand: inputs.publicStability < 40 ? 'sharp' : inputs.fiscalPressure === 'critical' ? 'building' : 'muted',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -761,6 +790,8 @@ export function projectInflationForecastPath(
       macroDemandOverheatInflationSlippageBand: macroSlippage.slippageBand,
       freightLogisticsInflationCongestionBand: freightCongestion.congestionBand,
       housingWellbeingInflationEssentialStressBand: housingStress.stressBand,
+      commandCenterInflationFusionEscalationBand: commandFusion.escalationBand,
+      uiPlayerInflationSalienceNudgeBand: uiSalienceNudge.nudgeBand,
     });
   }
 
