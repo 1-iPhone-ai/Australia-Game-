@@ -150,6 +150,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   clearanceStrainIndex: number;
   clearanceIntegrityScore: number;
   governancePerseveranceScore: number;
+  dispensationStrainIndex: number;
+  dispensationIntegrityScore: number;
+  governanceFortitudeScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
