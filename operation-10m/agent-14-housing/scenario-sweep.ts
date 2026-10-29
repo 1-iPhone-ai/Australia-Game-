@@ -20,7 +20,9 @@ export type Agent14HousingScenarioId =
   | 'health_education_surge'
   | 'persisted_recovery_arc'
   | 'coupling_stress_escalation'
-  | 'equity_rebalance_push';
+  | 'equity_rebalance_push'
+  | 'accountability_slip_arc'
+  | 'intervention_priority_stress';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -122,6 +124,23 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
       'ps_ed_WA_regional_schools',
     ],
   },
+  {
+    id: 'accountability_slip_arc',
+    label: 'Accountability slip arc',
+    baseInputs: { fiscalHeadroom: 22, stateCapacityLoad: 82, workforceReadiness: 'blocking', workforceSpecialistGap: 68 },
+    launchProgramIds: ['ps_h_NT_remote_housing', 'ps_he_VIC_hospital_backlog', 'ps_ed_NSW_skills'],
+  },
+  {
+    id: 'intervention_priority_stress',
+    label: 'Intervention priority stress',
+    baseInputs: { fiscalHeadroom: 42, stateCapacityLoad: 72, workforceReadiness: 'strained', workforceSpecialistGap: 58 },
+    launchProgramIds: [
+      'ps_xp_TAS_community_wellbeing',
+      'ps_xp_WA_remote_lifecycle',
+      'ps_h_WA_remote_housing',
+      'ps_he_QLD_remote_clinic',
+    ],
+  },
 ];
 
 export function commitmentFromProgramStub(
@@ -158,6 +177,7 @@ export function simulateAgent14HousingScenario(
   let spendingPersisted: DelayedSpendingPersisted | null = null;
   let wellbeingMemoryPersisted = null;
   let couplingTrajectoryPersisted = null;
+  let accountabilityTrajectoryPersisted = null;
   const turns: EnrichedPublicServiceTurnInputs[] = [];
 
   for (let t = 1; t <= maxTurns; t += 1) {
@@ -173,12 +193,14 @@ export function simulateAgent14HousingScenario(
       spendingPersisted,
       wellbeingMemoryPersisted,
       couplingTrajectoryPersisted,
+      accountabilityTrajectoryPersisted,
       newCommitments,
       enforceCapacity: true,
     });
     spendingPersisted = result.spendingPersisted;
     wellbeingMemoryPersisted = result.wellbeingMemoryPersisted;
     couplingTrajectoryPersisted = result.couplingTrajectoryPersisted;
+    accountabilityTrajectoryPersisted = result.accountabilityTrajectoryPersisted;
     turns.push(result.inputs);
   }
 

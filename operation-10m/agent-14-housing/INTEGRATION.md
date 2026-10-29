@@ -15,6 +15,18 @@ Agent 25 inlines the chunk (or runs the assembly pipeline) — **do not** hand-e
 
 Integration branch: **`op10m/agent-14-housing`** (canonical worker branch for this module). Scale wave round 4 workers may push **`op10m/agent-14-housing-wellbeing`** for PR #331 head sync.
 
+## Scale wave 6 (resilience & intervention queue)
+
+| Module | Purpose |
+|--------|---------|
+| `accountability-trajectory.ts` | Cross-turn EMA of accountability scorecard with trajectory band |
+| `intervention-priority-queue.ts` | Merged equity + sequencing priority queue with expedite flag |
+| `wellbeing-resilience-index.ts` | Composite stress/resilience snapshot for GI surfacing |
+
+Turn advance attaches `accountabilityTrajectory`, `interventionPriorityQueue`, `wellbeingResilience`, and returns `accountabilityTrajectoryPersisted`.
+
+Community lifecycle stubs (`ps_xp_TAS_community_wellbeing`, `ps_xp_WA_remote_lifecycle`); scenarios `accountability_slip_arc`, `intervention_priority_stress`.
+
 ## Scale wave 5 (accountability & equity)
 
 | Module | Purpose |
@@ -57,9 +69,9 @@ Suggested marker:
 ## Wire-in steps
 
 1. Inline `operation-10m/modules/agent-14-housing/chunk.tsx` at the anchor (or merge exports from source tree).
-2. Extend `PublicServicesPersisted` (or parallel persisted blob on game state) with `delayedSpending: DelayedSpendingPersisted`, optional `regionalWellbeingMemory: RegionalWellbeingMemoryPersisted`, and optional `couplingTrajectory: CouplingTrajectoryPersisted`.
+2. Extend `PublicServicesPersisted` (or parallel persisted blob on game state) with `delayedSpending: DelayedSpendingPersisted`, optional `regionalWellbeingMemory: RegionalWellbeingMemoryPersisted`, optional `couplingTrajectory: CouplingTrajectoryPersisted`, and optional `accountabilityTrajectory: AccountabilityTrajectoryPersisted`.
 3. At national turn boundary **before** `computeNationalPublicServices`:
-   - Call `advancePublicServicesTurn({ inputs, spendingPersisted, wellbeingMemoryPersisted, couplingTrajectoryPersisted, newCommitments })`.
+   - Call `advancePublicServicesTurn({ inputs, spendingPersisted, wellbeingMemoryPersisted, couplingTrajectoryPersisted, accountabilityTrajectoryPersisted, newCommitments })`.
    - Spread `result.inputs` fields into `V1014PublicServicesInputs` (`fiscalLoadFromActivePrograms`, `completed*Projects`, `activeProgramCount`, optional `stateCapacityLoad` from V10.11).
 4. Register `runAgent14WellbeingSelfTests` in dev lab quick tier (`id: v1014_agent14_capacity_delay`).
 
@@ -70,7 +82,7 @@ Suggested marker:
 - `advanceDelayedSpendingEffects` / `commitSpendingProgram` / `makeSpendingCommitment`
 - `runAgent14WellbeingSelfTests`
 - `runAgent14HousingScenarioSweep` / `simulateAgent14HousingScenario`
-- `AGENT14_WELLBEING_SCHEMA_VERSION` (`10.14.5-scale-wave-5`)
+- `AGENT14_WELLBEING_SCHEMA_VERSION` (`10.14.6-scale-wave-6`)
 
 ## Upstream inputs (read-only)
 

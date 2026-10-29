@@ -1,10 +1,13 @@
 import type {
+  AccountabilityTrajectorySnapshot,
   Agent14WellbeingAccountabilityScorecard,
   Agent14WellbeingExecutiveBrief,
   Agent14WellbeingWarningBundle,
   CrossPillarCouplingSnapshot,
   EquityRebalancingAdvice,
   ProgramSequencingRecommendation,
+  WellbeingInterventionPriorityQueue,
+  WellbeingResilienceSnapshot,
   WellbeingTurnForecastPoint,
 } from './types.ts';
 
@@ -16,6 +19,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   forecastPoints?: WellbeingTurnForecastPoint[];
   accountabilityScorecard?: Agent14WellbeingAccountabilityScorecard;
   equityRebalancing?: EquityRebalancingAdvice;
+  accountabilityTrajectory?: AccountabilityTrajectorySnapshot;
+  interventionPriorityQueue?: WellbeingInterventionPriorityQueue;
+  wellbeingResilience?: WellbeingResilienceSnapshot;
 }): Agent14WellbeingExecutiveBrief {
   const giNotes: string[] = [];
   const topWarning = args.warnings.warnings.sort((a, b) => {
@@ -52,6 +58,17 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   if (args.equityRebalancing?.shouldEscalate) {
     giNotes.push(`Equity rebalance: ${args.equityRebalancing.summary}`);
   }
+  if (args.accountabilityTrajectory?.trajectory === 'deteriorating') {
+    giNotes.push(
+      `Accountability trajectory ${args.accountabilityTrajectory.trajectory} (EMA ${args.accountabilityTrajectory.overallScoreEma})`
+    );
+  }
+  if (args.interventionPriorityQueue?.shouldExpedite) {
+    giNotes.push(`Intervention queue: ${args.interventionPriorityQueue.summary}`);
+  }
+  if (args.wellbeingResilience && (args.wellbeingResilience.band === 'fragile' || args.wellbeingResilience.band === 'critical')) {
+    giNotes.push(`Wellbeing resilience ${args.wellbeingResilience.band} (${args.wellbeingResilience.resilienceIndex})`);
+  }
 
   const headlineParts: string[] = [];
   if (args.coupling.band === 'critical' || args.coupling.band === 'strained') {
@@ -64,6 +81,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
 
   if (forecastDeltaAffordability !== undefined && forecastDeltaAffordability < -2) {
     headlineParts.push('affordability trajectory softening');
+  }
+  if (args.wellbeingResilience?.band === 'critical') {
+    headlineParts.push('wellbeing resilience critical');
   }
 
   return {

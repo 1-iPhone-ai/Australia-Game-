@@ -16,4 +16,7 @@ export * from './wellbeing-executive-brief.ts';
 export * from './coupling-trajectory.ts';
 export * from './wellbeing-accountability-scorecard.ts';
 export * from './equity-rebalancing-advisor.ts';
+export * from './accountability-trajectory.ts';
+export * from './intervention-priority-queue.ts';
+export * from './wellbeing-resilience-index.ts';
 export { runAgent14WellbeingSelfTests } from './self-tests.ts';

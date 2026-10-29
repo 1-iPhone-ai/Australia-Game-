@@ -1,6 +1,6 @@
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.5-scale-wave-5' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.6-scale-wave-6' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -98,6 +98,9 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   couplingTrajectory?: CouplingTrajectorySnapshot;
   accountabilityScorecard?: Agent14WellbeingAccountabilityScorecard;
   equityRebalancing?: EquityRebalancingAdvice;
+  accountabilityTrajectory?: AccountabilityTrajectorySnapshot;
+  interventionPriorityQueue?: WellbeingInterventionPriorityQueue;
+  wellbeingResilience?: WellbeingResilienceSnapshot;
 }
 
 export type CouplingTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
@@ -151,6 +154,53 @@ export interface EquityRebalancingAdvice {
   shouldEscalate: boolean;
   laggingRegions: EquityRebalancingRegionAdvice[];
   summary: string;
+}
+
+export type AccountabilityTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
+
+export interface AccountabilityTrajectorySnapshot {
+  turn: number;
+  overallScoreEma: number;
+  instantaneousScore: number;
+  band: AccountabilityBand;
+  trajectory: AccountabilityTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface AccountabilityTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  overallScoreEma: number;
+  priorEma?: number;
+}
+
+export interface WellbeingInterventionPriorityItem {
+  rank: number;
+  programId: string;
+  regionId: string;
+  pillar: PublicServicePillar;
+  priorityScore: number;
+  source: 'equity' | 'sequencing' | 'capacity_relief';
+  fitsCapacity: boolean;
+  rationale: string;
+}
+
+export interface WellbeingInterventionPriorityQueue {
+  turn: number;
+  shouldExpedite: boolean;
+  items: WellbeingInterventionPriorityItem[];
+  summary: string;
+}
+
+export type WellbeingResilienceBand = 'robust' | 'steady' | 'fragile' | 'critical';
+
+export interface WellbeingResilienceSnapshot {
+  turn: number;
+  resilienceIndex: number;
+  band: WellbeingResilienceBand;
+  stressLoad: number;
+  drivers: string[];
 }
 
 export type CouplingStressBand = 'stable' | 'watch' | 'strained' | 'critical';
