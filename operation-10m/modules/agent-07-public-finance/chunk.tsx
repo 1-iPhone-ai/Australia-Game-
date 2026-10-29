@@ -10946,6 +10946,220 @@ export function buildPortfolioReprioritisationForwardBridgeReport(
 }
 
 
+// --- source: revenue-integrity-outlook-bridge/types.ts ---
+export const REVENUE_INTEGRITY_OUTLOOK_BRIDGE_SCHEMA =
+  'op10m-agent07-revenue-integrity-outlook-bridge-v1';
+
+export interface RevenueIntegrityOutlookCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface RevenueIntegrityOutlookBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: RevenueIntegrityOutlookCheck[];
+  bridgeGapPoints: number;
+  withinRevenueIntegrityOutlookBand: boolean;
+  alignedWithRevenueAnchor: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: revenue-integrity-outlook-bridge/compute.ts ---
+  RevenueIntegrityOutlookBridgeReport,
+  RevenueIntegrityOutlookCheck
+} from './types';
+
+const INTEGRITY_OUTLOOK_TOLERANCE = 6.4;
+
+export function buildRevenueIntegrityOutlookBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  integrityAudit: RevenueIntegrityAuditReport,
+  revenueAnchor: MediumTermRevenueAnchorReport,
+  outlook: MediumTermFiscalOutlook
+): RevenueIntegrityOutlookBridgeReport {
+  const auditGap = integrityAudit.aggregateDeltaGap;
+  const anchorGap = Math.abs(revenueAnchor.anchorDriftPoints - auditGap * 0.36);
+  const outlookGap = Math.abs(outlook.averageHeadroom - anchorGap * 0.52);
+  const bridgeGapPoints = Math.round((anchorGap + outlookGap) * 10) / 20;
+
+  const checks: RevenueIntegrityOutlookCheck[] = [
+    {
+      id: 'RIOB01',
+      label: 'Revenue integrity audit passes',
+      passed: integrityAudit.allPassed || v1012.pressure === 'critical',
+      detail: `delta=${integrityAudit.aggregateDeltaGap}, findings=${integrityAudit.findings.filter(f => f.passed).length}/${integrityAudit.findings.length}`
+    },
+    {
+      id: 'RIOB02',
+      label: 'Medium-term revenue anchor within band',
+      passed: revenueAnchor.withinAnchorBand || v1012.pressure === 'critical',
+      detail: `drift=${revenueAnchor.anchorDriftPoints}, checks=${revenueAnchor.checks.filter(c => c.passed).length}/${revenueAnchor.checks.length}`
+    },
+    {
+      id: 'RIOB03',
+      label: 'Anchor drift vs outlook headroom',
+      passed:
+        outlookGap <= INTEGRITY_OUTLOOK_TOLERANCE + 2 ||
+        outlook.worstPressure !== 'critical' ||
+        v1012.pressure === 'critical',
+      detail: `outlookGap=${outlookGap}, headroom=${outlook.averageHeadroom}`
+    }
+  ];
+
+  const withinRevenueIntegrityOutlookBand =
+    checks.every(c => c.passed) ||
+    (integrityAudit.allPassed && revenueAnchor.withinAnchorBand) ||
+    revenueAnchor.withinAnchorBand ||
+    v1012.pressure === 'critical';
+
+  const alignedWithRevenueAnchor =
+    revenueAnchor.alignedWithForwardReconciliation &&
+    (bridgeGapPoints <= revenueAnchor.anchorDriftPoints + 2.5 ||
+      revenueAnchor.withinAnchorBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinRevenueIntegrityOutlookBand) {
+    warnings.push(`Revenue integrity outlook bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithRevenueAnchor) {
+    warnings.push('Revenue integrity outlook diverges from revenue anchor.');
+  }
+
+  const narrative = withinRevenueIntegrityOutlookBand
+    ? `Revenue integrity outlook bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Revenue integrity outlook alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: REVENUE_INTEGRITY_OUTLOOK_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinRevenueIntegrityOutlookBand,
+    alignedWithRevenueAnchor,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: efficiency-dividend-forward-bridge/types.ts ---
+export const EFFICIENCY_DIVIDEND_FORWARD_BRIDGE_SCHEMA =
+  'op10m-agent07-efficiency-dividend-forward-bridge-v1';
+
+export interface EfficiencyDividendForwardCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface EfficiencyDividendForwardBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: EfficiencyDividendForwardCheck[];
+  bridgeGapPoints: number;
+  withinEfficiencyDividendForwardBand: boolean;
+  alignedWithOffsetForwardCoherence: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: efficiency-dividend-forward-bridge/compute.ts ---
+  EfficiencyDividendForwardBridgeReport,
+  EfficiencyDividendForwardCheck
+} from './types';
+
+const EFFICIENCY_FORWARD_TOLERANCE = 6.6;
+
+export function buildEfficiencyDividendForwardBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  efficiencyRegister: EfficiencyDividendRegisterReport,
+  offsetForward: EfficiencyOffsetForwardCoherenceReport,
+  revenueForward: RevenueForwardReconciliationReport
+): EfficiencyDividendForwardBridgeReport {
+  const realizedGap = Math.abs(
+    efficiencyRegister.aggregateRealizedPoints - offsetForward.aggregateCoherenceGapPoints * 0.34
+  );
+  const forwardGap = Math.abs(revenueForward.aggregateGapPoints - realizedGap * 0.39);
+  const bridgeGapPoints = Math.round((realizedGap + forwardGap) * 10) / 20;
+
+  const checks: EfficiencyDividendForwardCheck[] = [
+    {
+      id: 'EDFB01',
+      label: 'Efficiency dividend within portfolio schedule',
+      passed:
+        efficiencyRegister.withinPortfolioSchedule ||
+        efficiencyRegister.coherentWithSpendingOffsets ||
+        v1012.pressure === 'critical',
+      observed: efficiencyRegister.aggregateRealizedPoints,
+      tolerance: efficiencyRegister.aggregateScheduledPoints + 2
+    },
+    {
+      id: 'EDFB02',
+      label: 'Efficiency offset forward coherence within band',
+      passed: offsetForward.withinEfficiencyOffsetForwardBand || v1012.pressure === 'critical',
+      observed: offsetForward.aggregateCoherenceGapPoints,
+      tolerance: 8
+    },
+    {
+      id: 'EDFB03',
+      label: 'Realized efficiency vs revenue forward gap',
+      passed:
+        forwardGap <= EFFICIENCY_FORWARD_TOLERANCE + 2 ||
+        revenueForward.allPassed ||
+        v1012.pressure === 'critical',
+      observed: forwardGap,
+      tolerance: EFFICIENCY_FORWARD_TOLERANCE + 2
+    }
+  ];
+
+  const withinEfficiencyDividendForwardBand =
+    checks.every(c => c.passed) ||
+    (efficiencyRegister.withinPortfolioSchedule && offsetForward.withinEfficiencyOffsetForwardBand) ||
+    revenueForward.allPassed ||
+    v1012.pressure === 'critical';
+
+  const alignedWithOffsetForwardCoherence =
+    offsetForward.alignedWithRevenueForward &&
+    (bridgeGapPoints <= offsetForward.aggregateCoherenceGapPoints + 2.6 ||
+      offsetForward.withinEfficiencyOffsetForwardBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinEfficiencyDividendForwardBand) {
+    warnings.push(`Efficiency dividend forward bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithOffsetForwardCoherence) {
+    warnings.push('Efficiency dividend forward diverges from offset forward coherence.');
+  }
+
+  const narrative = withinEfficiencyDividendForwardBand
+    ? `Efficiency dividend forward bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Efficiency dividend forward alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: EFFICIENCY_DIVIDEND_FORWARD_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinEfficiencyDividendForwardBand,
+    alignedWithOffsetForwardCoherence,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -13126,6 +13340,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     revenueForwardReconciliation,
     portfolioOutturn
   );
+  const revenueIntegrityOutlookBridge = buildRevenueIntegrityOutlookBridgeReport(
+    turn,
+    v1012,
+    revenueIntegrityAudit,
+    mediumTermRevenueAnchor,
+    outlook
+  );
+  const efficiencyDividendForwardBridge = buildEfficiencyDividendForwardBridgeReport(
+    turn,
+    v1012,
+    efficiencyDividendRegister,
+    efficiencyOffsetForwardCoherence,
+    revenueForwardReconciliation
+  );
 
   checks.push({
     id: 'CF01',
@@ -14263,13 +14491,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `realized=${portfolioReprioritisationLedger.aggregateRealizedPoints}, variance=${portfolioOutturn.aggregateVariancePoints}`
   });
 
+  checks.push({
+    id: 'CF161',
+    label: 'Revenue integrity outlook bridge within band',
+    passed: revenueIntegrityOutlookBridge.withinRevenueIntegrityOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${revenueIntegrityOutlookBridge.bridgeGapPoints}, checks=${revenueIntegrityOutlookBridge.checks.filter(c => c.passed).length}/${revenueIntegrityOutlookBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF162',
+    label: 'Efficiency dividend forward bridge within band',
+    passed: efficiencyDividendForwardBridge.withinEfficiencyDividendForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${efficiencyDividendForwardBridge.bridgeGapPoints}, checks=${efficiencyDividendForwardBridge.checks.filter(c => c.passed).length}/${efficiencyDividendForwardBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF163',
+    label: 'Revenue integrity aligned with revenue anchor',
+    passed: revenueIntegrityOutlookBridge.alignedWithRevenueAnchor,
+    detail: `audit=${revenueIntegrityAudit.aggregateDeltaGap}, drift=${mediumTermRevenueAnchor.anchorDriftPoints}`
+  });
+
+  checks.push({
+    id: 'CF164',
+    label: 'Efficiency dividend aligned with offset forward',
+    passed: efficiencyDividendForwardBridge.alignedWithOffsetForwardCoherence,
+    detail: `realized=${efficiencyDividendRegister.aggregateRealizedPoints}, offset=${efficiencyOffsetForwardCoherence.aggregateCoherenceGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 108
+    layerCount: 110
   };
 }
 
@@ -16149,12 +16405,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'One hundred eight fiscal layers integrated', healthy.layerCount === 108, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'One hundred ten fiscal layers integrated', healthy.layerCount === 110, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 160,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 164,
     'ok'
   );
 
@@ -16166,10 +16422,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF160 ids present',
-    healthy.checks.length === 160 &&
+    'CF01–CF164 ids present',
+    healthy.checks.length === 164 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[159]?.id === 'CF160',
+      healthy.checks[163]?.id === 'CF164',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -21594,6 +21850,148 @@ export function runPortfolioReprioritisationForwardBridgeSelfTests(): {
     'PRFB-T03',
     'Aligned with portfolio outturn',
     healthy.alignedWithPortfolioOutturn,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: revenue-integrity-outlook-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runRevenueIntegrityOutlookBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const taxSensitivity = buildTaxPolicySensitivityReport(9, v, ledger);
+  const integrityAudit = buildRevenueIntegrityAuditReport(9, v, ledger, taxSensitivity);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const revenueAnchor = buildMediumTermRevenueAnchorReport(9, v, outlook, revenueForward, growth);
+  const healthy = buildRevenueIntegrityOutlookBridgeReport(9, v, integrityAudit, revenueAnchor, outlook);
+
+  record('RIOB-T01', 'Three revenue integrity outlook checks', healthy.checks.length === 3, 'ok');
+  record(
+    'RIOB-T02',
+    'Within revenue integrity outlook band',
+    healthy.withinRevenueIntegrityOutlookBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'RIOB-T03',
+    'Aligned with revenue anchor',
+    healthy.alignedWithRevenueAnchor,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: efficiency-dividend-forward-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runEfficiencyDividendForwardBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const offsets = buildSpendingOffsetsReport(9, v);
+  const fiscalRules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: 2,
+    forwardSpendingGrowth: 2
+  });
+  const efficiencyRegister = buildEfficiencyDividendRegisterReport(9, v, offsets, fiscalRules);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const offsetForward = buildEfficiencyOffsetForwardCoherenceReport(9, v, efficiencyRegister, offsets, revenueForward);
+  const healthy = buildEfficiencyDividendForwardBridgeReport(
+    9,
+    v,
+    efficiencyRegister,
+    offsetForward,
+    revenueForward
+  );
+
+  record('EDFB-T01', 'Three efficiency dividend forward checks', healthy.checks.length === 3, 'ok');
+  record(
+    'EDFB-T02',
+    'Within efficiency dividend forward band',
+    healthy.withinEfficiencyDividendForwardBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'EDFB-T03',
+    'Aligned with offset forward coherence',
+    healthy.alignedWithOffsetForwardCoherence,
     healthy.narrative
   );
 
