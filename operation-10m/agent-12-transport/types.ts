@@ -231,8 +231,14 @@ export type DisasterRecoveryStagingPolicy = 'baseline' | 'surge';
 
 export type CircularFreightPolicy = 'baseline' | 'expand';
 
+export type AgriculturalExportPolicy = 'baseline' | 'accelerate';
+
+export type TrackPossessionPolicy = 'baseline' | 'optimize';
+
+export type GreenBunkeringPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/14';
+  schemaVersion: 'agent12/15';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -315,6 +321,13 @@ export interface TransportInfrastructureState {
   circularFreightShare: number;
   nationalCircularFreightThroughputIndex: number;
   circularFreightThroughputByRegion: Record<AuRegionCode, number>;
+  nationalAgriculturalExportThroughputIndex: number;
+  agriculturalExportThroughputByRegion: Record<AuRegionCode, number>;
+  nationalTrackPossessionEfficiencyIndex: number;
+  trackPossessionEfficiencyByRegion: Record<AuRegionCode, number>;
+  greenBunkeringShare: number;
+  nationalGreenBunkeringThroughputIndex: number;
+  greenBunkeringThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -347,6 +360,9 @@ export interface TransportInfrastructureOptions {
   gaugeInteroperabilityPolicy?: GaugeInteroperabilityPolicy;
   disasterRecoveryStagingPolicy?: DisasterRecoveryStagingPolicy;
   circularFreightPolicy?: CircularFreightPolicy;
+  agriculturalExportPolicy?: AgriculturalExportPolicy;
+  trackPossessionPolicy?: TrackPossessionPolicy;
+  greenBunkeringPolicy?: GreenBunkeringPolicy;
 }
 
 export interface V94ProjectSnapshot {

@@ -181,6 +181,22 @@ import {
   computeCircularFreightThroughputByRegion,
   nationalCircularFreightThroughputIndex,
 } from './circular-freight-index.ts';
+import {
+  agriculturalExportProductivityMultiplier,
+  computeAgriculturalExportThroughputByRegion,
+  nationalAgriculturalExportThroughputIndex,
+} from '../network/agricultural-export-throughput-index.ts';
+import {
+  computeTrackPossessionEfficiencyByRegion,
+  nationalTrackPossessionEfficiencyIndex,
+  trackPossessionProductivityMultiplier,
+} from '../operations/track-possession-efficiency-index.ts';
+import {
+  computeGreenBunkeringShare,
+  computeGreenBunkeringThroughputByRegion,
+  greenBunkeringProductivityMultiplier,
+  nationalGreenBunkeringThroughputIndex,
+} from './green-bunkering-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -707,6 +723,57 @@ export function computeTransportInfrastructureState(
     nationalGaugeInteroperability * 0.02 +
     nationalCircularFreight * 0.018;
 
+  const agriculturalExportThroughputByRegion = computeAgriculturalExportThroughputByRegion(ops);
+  const nationalAgriculturalExport = nationalAgriculturalExportThroughputIndex(agriculturalExportThroughputByRegion);
+  const agriculturalMult = agriculturalExportProductivityMultiplier(
+    nationalAgriculturalExport,
+    options?.agriculturalExportPolicy ?? 'baseline',
+  );
+  const trackPossessionEfficiencyByRegion = computeTrackPossessionEfficiencyByRegion(ops, networkStress);
+  const nationalTrackPossession = nationalTrackPossessionEfficiencyIndex(trackPossessionEfficiencyByRegion);
+  const trackPossessionMult = trackPossessionProductivityMultiplier(
+    nationalTrackPossession,
+    options?.trackPossessionPolicy ?? 'baseline',
+  );
+  const greenBunkeringThroughputByRegion = computeGreenBunkeringThroughputByRegion(ops);
+  const nationalGreenBunkering = nationalGreenBunkeringThroughputIndex(greenBunkeringThroughputByRegion);
+  const greenBunkeringShare = computeGreenBunkeringShare(ops, options?.greenBunkeringPolicy ?? 'baseline');
+  const greenBunkeringMult = greenBunkeringProductivityMultiplier(
+    greenBunkeringShare,
+    options?.greenBunkeringPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const agriculturalBoost = (agriculturalExportThroughputByRegion[code] - 8) * 0.0056;
+    const trackBoost = (trackPossessionEfficiencyByRegion[code] - 38) * 0.0041;
+    const bunkeringBoost = (greenBunkeringThroughputByRegion[code] - 3) * 0.0054;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + agriculturalBoost + trackBoost + bunkeringBoost) *
+      agriculturalMult *
+      trackPossessionMult *
+      greenBunkeringMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035 +
+    nationalAviationCargo * 0.03 +
+    nationalHydrogenCorridor * 0.028 +
+    nationalCoastalShipping * 0.026 +
+    nationalAutonomousCorridor * 0.024 +
+    nationalDeepSeaGateway * 0.027 +
+    nationalElectricCorridor * 0.023 +
+    nationalDefenceLogistics * 0.022 +
+    nationalDigitalFreight * 0.021 +
+    nationalCriticalMinerals * 0.024 +
+    nationalIndigenousRemoteSupply * 0.019 +
+    nationalGaugeInteroperability * 0.02 +
+    nationalCircularFreight * 0.018 +
+    nationalAgriculturalExport * 0.022 +
+    nationalGreenBunkering * 0.017;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -720,7 +787,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/14',
+    schemaVersion: 'agent12/15',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -803,6 +870,13 @@ export function computeTransportInfrastructureState(
     circularFreightShare,
     nationalCircularFreightThroughputIndex: nationalCircularFreight,
     circularFreightThroughputByRegion,
+    nationalAgriculturalExportThroughputIndex: nationalAgriculturalExport,
+    agriculturalExportThroughputByRegion,
+    nationalTrackPossessionEfficiencyIndex: nationalTrackPossession,
+    trackPossessionEfficiencyByRegion,
+    greenBunkeringShare,
+    nationalGreenBunkeringThroughputIndex: nationalGreenBunkering,
+    greenBunkeringThroughputByRegion,
     computeMs,
   };
 }

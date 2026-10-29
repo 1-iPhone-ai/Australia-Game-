@@ -235,8 +235,14 @@ export type DisasterRecoveryStagingPolicy = 'baseline' | 'surge';
 
 export type CircularFreightPolicy = 'baseline' | 'expand';
 
+export type AgriculturalExportPolicy = 'baseline' | 'accelerate';
+
+export type TrackPossessionPolicy = 'baseline' | 'optimize';
+
+export type GreenBunkeringPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/14';
+  schemaVersion: 'agent12/15';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -319,6 +325,13 @@ export interface TransportInfrastructureState {
   circularFreightShare: number;
   nationalCircularFreightThroughputIndex: number;
   circularFreightThroughputByRegion: Record<AuRegionCode, number>;
+  nationalAgriculturalExportThroughputIndex: number;
+  agriculturalExportThroughputByRegion: Record<AuRegionCode, number>;
+  nationalTrackPossessionEfficiencyIndex: number;
+  trackPossessionEfficiencyByRegion: Record<AuRegionCode, number>;
+  greenBunkeringShare: number;
+  nationalGreenBunkeringThroughputIndex: number;
+  greenBunkeringThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -351,6 +364,9 @@ export interface TransportInfrastructureOptions {
   gaugeInteroperabilityPolicy?: GaugeInteroperabilityPolicy;
   disasterRecoveryStagingPolicy?: DisasterRecoveryStagingPolicy;
   circularFreightPolicy?: CircularFreightPolicy;
+  agriculturalExportPolicy?: AgriculturalExportPolicy;
+  trackPossessionPolicy?: TrackPossessionPolicy;
+  greenBunkeringPolicy?: GreenBunkeringPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -960,6 +976,47 @@ export const TRANSPORT_CORRIDORS_ROUND13: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round14.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND14: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_sa_grain_export_belt',
+    name: 'SA Grain Export Belt',
+    networkKind: 'trade',
+    regionSequence: ['SA', 'VIC'],
+    requiredTagsByRegion: {
+      SA: ['grain_export', 'agricultural_bulk', 'grain'],
+      VIC: ['harvest_corridor', 'grain'],
+    },
+    productivitySynergyPoints: 6.6,
+    logisticsRelief: 0.038,
+  },
+  {
+    id: 'corr_nsw_track_possession_mesh',
+    name: 'NSW Track Possession Mesh',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'ACT'],
+    requiredTagsByRegion: {
+      NSW: ['track_possession', 'maintenance_window', 'rail_availability'],
+      ACT: ['rail_availability', 'freight_rail'],
+    },
+    productivitySynergyPoints: 5.6,
+    logisticsRelief: 0.032,
+  },
+  {
+    id: 'corr_qld_green_bunkering_chain',
+    name: 'Queensland Green Bunkering Chain',
+    networkKind: 'trade',
+    regionSequence: ['QLD'],
+    requiredTagsByRegion: {
+      QLD: ['green_bunkering', 'ammonia_fuel', 'shore_power'],
+    },
+    productivitySynergyPoints: 6.3,
+    logisticsRelief: 0.037,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -1120,6 +1177,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND11,
   ...TRANSPORT_CORRIDORS_ROUND12,
   ...TRANSPORT_CORRIDORS_ROUND13,
+  ...TRANSPORT_CORRIDORS_ROUND14,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -1880,6 +1938,62 @@ export const TRANSPORT_SCENARIOS_ROUND13: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round14.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND14: TransportStressScenario[] = [
+  {
+    id: 'scn_sa_harvest_export_surge',
+    label: 'SA Harvest Export Surge',
+    description: 'Record grain harvest overwhelms Adelaide export rail.',
+    targetRegions: ['SA', 'VIC'],
+    networkKind: 'trade',
+    utilizationAdd: 0.28,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['rail', 'port'],
+  },
+  {
+    id: 'scn_nsw_track_possession_blitz',
+    label: 'NSW Track Possession Blitz',
+    description: 'Maintenance windows cut Sydney freight rail availability.',
+    targetRegions: ['NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail'],
+  },
+  {
+    id: 'scn_qld_green_bunkering_shortage',
+    label: 'QLD Green Bunkering Shortage',
+    description: 'Ammonia bunkering outage delays export vessel turnarounds.',
+    targetRegions: ['QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port'],
+  },
+  {
+    id: 'scn_vic_grain_port_congestion',
+    label: 'Victoria Grain Port Congestion',
+    description: 'Harvest drayage queues at Geelong grain terminals.',
+    targetRegions: ['VIC'],
+    networkKind: 'trade',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'road'],
+  },
+  {
+    id: 'scn_wa_ammonia_bunker_hold',
+    label: 'WA Ammonia Bunker Hold',
+    description: 'Green fuel loader fault slows Pilbara export bunkering.',
+    targetRegions: ['WA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -2054,6 +2168,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND11,
   ...TRANSPORT_SCENARIOS_ROUND12,
   ...TRANSPORT_SCENARIOS_ROUND13,
+  ...TRANSPORT_SCENARIOS_ROUND14,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -5703,6 +5818,247 @@ export const SCALE_WAVE_ROUND13_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round14-assets.ts ---
+
+export const ROUND14_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_sa_murray_grain_feed',
+    category: 'road',
+    name: 'Murray Grain Feed Highway',
+    description: 'Harvest corridor drayage to Adelaide grain export.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'VIC'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['grain_export', 'agricultural_bulk', 'harvest_corridor', 'national_highway'],
+    laneKilometres: 240,
+    designSpeedKmh: 110,
+    freightShare: 0.45,
+    urbanShare: 0.05,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_wimmera_harvest',
+    category: 'road',
+    name: 'Wimmera Harvest Corridor',
+    description: 'Grain bulk feed to Geelong and Portland export.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'SA'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['trade'],
+    tags: ['harvest_corridor', 'grain', 'agricultural_bulk'],
+    laneKilometres: 185,
+    designSpeedKmh: 100,
+    freightShare: 0.42,
+    urbanShare: 0.06,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_hunter_rail_availability',
+    category: 'road',
+    name: 'Hunter Rail Availability Feed',
+    description: 'Staging for coordinated track possession windows.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW'],
+    baseProductivityPoints: 3.8,
+    strategicNetworks: ['freight'],
+    tags: ['rail_availability', 'maintenance_window', 'freight'],
+    laneKilometres: 72,
+    designSpeedKmh: 100,
+    freightShare: 0.38,
+    urbanShare: 0.11,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_gladstone_bunker_feed',
+    category: 'road',
+    name: 'Gladstone Green Bunker Feed',
+    description: 'Ammonia bunkering supply to export berths.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['trade'],
+    tags: ['green_bunkering', 'ammonia_fuel', 'low_carbon_fuel', 'port_access'],
+    laneKilometres: 38,
+    designSpeedKmh: 90,
+    freightShare: 0.44,
+    urbanShare: 0.07,
+    tollRoad: false,
+  },
+];
+
+export const ROUND14_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_sa_adelaide_grain_export',
+    category: 'rail',
+    name: 'Adelaide Grain Export Rail',
+    description: 'Standard-gauge grain unit trains to outer harbour.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'VIC'],
+    baseProductivityPoints: 5.9,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['grain_export', 'agricultural_bulk', 'grain', 'freight_rail'],
+    trackKilometres: 320,
+    dualTrackShare: 0.58,
+    electrifiedShare: 0.35,
+    designFreightTonnesPerYear: 10_500_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_nsw_sydney_possession_mesh',
+    category: 'rail',
+    name: 'Sydney Possession Coordination Line',
+    description: 'Dual-track mesh reducing freight possession conflicts.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'ACT'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['freight'],
+    tags: ['track_possession', 'maintenance_window', 'rail_availability', 'freight_rail'],
+    trackKilometres: 165,
+    dualTrackShare: 0.74,
+    electrifiedShare: 0.8,
+    designFreightTonnesPerYear: 8_200_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_qld_curtis_green_rail',
+    category: 'rail',
+    name: 'Curtis Green Fuel Rail Feed',
+    description: 'Ammonia and green bunkering feed to LNG export precinct.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade'],
+    tags: ['green_bunkering', 'ammonia_fuel', 'energy_export', 'bulk'],
+    trackKilometres: 88,
+    dualTrackShare: 0.52,
+    electrifiedShare: 0.4,
+    designFreightTonnesPerYear: 6_400_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND14_PORTS: PortAsset[] = [
+  {
+    id: 'port_sa_outer_harbour_grain',
+    category: 'port',
+    name: 'Outer Harbour Grain Terminal',
+    description: 'Bulk grain export with shore-power bunkering.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'VIC'],
+    baseProductivityPoints: 6.4,
+    strategicNetworks: ['trade'],
+    tags: ['grain_export', 'grain', 'agricultural_bulk', 'shore_power', 'green_bunkering'],
+    berthCount: 7,
+    maxDraftMetres: 14.5,
+    teuCapacityPerYear: 380_000,
+    automationLevel: 2,
+    bulkShare: 0.72,
+  },
+  {
+    id: 'port_qld_gladstone_green_bunker',
+    category: 'port',
+    name: 'Gladstone Green Bunkering Terminal',
+    description: 'Ammonia and low-carbon fuel bunkering for export fleet.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 6.9,
+    strategicNetworks: ['trade'],
+    tags: ['green_bunkering', 'ammonia_fuel', 'shore_power', 'low_carbon_fuel', 'export'],
+    berthCount: 6,
+    maxDraftMetres: 15.2,
+    teuCapacityPerYear: 290_000,
+    automationLevel: 2,
+    bulkShare: 0.58,
+  },
+];
+
+export const ROUND14_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_sa_adelaide_grain_dc',
+    category: 'logistics',
+    name: 'Adelaide Grain Export DC',
+    description: 'Harvest consolidation and export staging.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'VIC'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['trade'],
+    tags: ['grain_export', 'agricultural_bulk', 'harvest_corridor'],
+    warehouseSqm: 168_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 59,
+  },
+  {
+    id: 'log_nsw_possession_control',
+    category: 'logistics',
+    name: 'NSW Possession Control Hub',
+    description: 'Track possession scheduling and rail availability staging.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'ACT'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['freight'],
+    tags: ['track_possession', 'maintenance_window', 'rail_availability'],
+    warehouseSqm: 88_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 66,
+  },
+  {
+    id: 'log_qld_green_bunker_staging',
+    category: 'logistics',
+    name: 'Gladstone Green Bunker Staging',
+    description: 'Ammonia fuel buffer and bunkering coordination yard.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['trade'],
+    tags: ['green_bunkering', 'ammonia_fuel', 'low_carbon_fuel'],
+    warehouseSqm: 102_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 57,
+  },
+  {
+    id: 'log_wa_karratha_bunker',
+    category: 'logistics',
+    name: 'Karratha Green Bunker Yard',
+    description: 'Pilbara export vessel green fuel staging.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['trade'],
+    tags: ['green_bunkering', 'ammonia_fuel', 'shore_power', 'mining'],
+    warehouseSqm: 76_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 49,
+  },
+  {
+    id: 'log_act_rail_coordination',
+    category: 'logistics',
+    name: 'Canberra Rail Coordination Node',
+    description: 'ACT freight rail availability and possession handoff.',
+    hostRegion: 'ACT',
+    servedRegions: ['ACT', 'NSW'],
+    baseProductivityPoints: 3.4,
+    strategicNetworks: ['freight'],
+    tags: ['rail_availability', 'freight_rail', 'track_possession', 'capital'],
+    warehouseSqm: 44_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 72,
+  },
+];
+
+export const SCALE_WAVE_ROUND14_ASSETS = [
+  ...ROUND14_ROADS,
+  ...ROUND14_RAIL,
+  ...ROUND14_PORTS,
+  ...ROUND14_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -5724,6 +6080,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND11_ASSETS,
     ...SCALE_WAVE_ROUND12_ASSETS,
     ...SCALE_WAVE_ROUND13_ASSETS,
+    ...SCALE_WAVE_ROUND14_ASSETS,
   ];
 }
 
@@ -6452,6 +6809,61 @@ export function gaugeInteroperabilityProductivityMultiplier(
   const policyBoost = policy === 'harmonize' ? 0.044 : 0;
   const normalized = (interoperabilityIndex - 14) / 100;
   return clamp(1 + normalized * 0.051 + policyBoost, 0.93, 1.11);
+}
+
+
+// --- source: network/agricultural-export-throughput-index.ts ---
+
+/** 0–100 agricultural export throughput (grain, livestock feed, harvest corridors). */
+export function computeAgriculturalExportThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const agTagged =
+      asset.tags.some(
+        (t) => t === 'grain_export' || t === 'agricultural_bulk' || t === 'harvest_corridor' || t === 'grain',
+      ) || (asset.category === 'port' && asset.tags.includes('grain'));
+
+    if (!agTagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.bulkShare * (asset.berthCount * 2 + asset.teuCapacityPerYear / 250_000);
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 5_500_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += (asset.laneKilometres * asset.freightShare) / 680;
+    }
+    if (asset.category === 'logistics' && asset.coldChainCapable) {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 100_000 + 1.5;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalAgriculturalExportThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.52 + max * 0.48, 4, 88) * 10) / 10;
+}
+
+export function agriculturalExportProductivityMultiplier(
+  throughputIndex: number,
+  policy: AgriculturalExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.043 : 0;
+  const normalized = (throughputIndex - 10) / 100;
+  return clamp(1 + normalized * 0.052 + policyBoost, 0.93, 1.11);
 }
 
 
@@ -7200,6 +7612,61 @@ export function disasterRecoveryStagingProductivityMultiplier(
   const policyBoost = policy === 'surge' ? 0.046 : 0;
   const normalized = (stagingIndex - 38) / 100;
   return clamp(1 + normalized * 0.052 + policyBoost, 0.92, 1.1);
+}
+
+
+// --- source: operations/track-possession-efficiency-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type TrackPossessionPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 track possession efficiency (shorter windows, higher rail availability). */
+export function computeTrackPossessionEfficiencyByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 35])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.includes('track_possession') ||
+      asset.tags.includes('maintenance_window') ||
+      asset.tags.includes('rail_availability')
+    ) {
+      if (asset.category === 'rail' && 'dualTrackShare' in asset) {
+        byRegion[asset.hostRegion] += asset.dualTrackShare * 14 + asset.trackKilometres / 55;
+      }
+      if (asset.category === 'logistics' && asset.intermodalLinks.includes('rail')) {
+        byRegion[asset.hostRegion] += asset.warehouseSqm / 105_000 + 2;
+      }
+    }
+    if (asset.category === 'rail' && asset.passengerCapable && asset.dualTrackShare > 0.5) {
+      byRegion[asset.hostRegion] += 1.8;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.03 - stress * 0.05), 18, 91) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalTrackPossessionEfficiencyIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  return Math.round(clamp(avg, 22, 86) * 10) / 10;
+}
+
+export function trackPossessionProductivityMultiplier(
+  efficiencyIndex: number,
+  policy: TrackPossessionPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'optimize' ? 0.045 : 0;
+  const normalized = (efficiencyIndex - 40) / 100;
+  return clamp(1 + normalized * 0.05 + policyBoost, 0.92, 1.1);
 }
 
 
@@ -8053,6 +8520,92 @@ export function nationalCircularFreightThroughputIndex(
 }
 
 
+// --- source: productivity/green-bunkering-index.ts ---
+
+/** 0–1 share of port/road fueling on green bunkering (ammonia, methanol, shore power). */
+export function computeGreenBunkeringShare(
+  operationalAssets: TransportAsset[],
+  policy: GreenBunkeringPolicy = 'baseline',
+): number {
+  let greenUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'port') {
+      const units = asset.berthCount * 2.5 + asset.teuCapacityPerYear / 350_000;
+      totalUnits += units;
+      if (
+        asset.tags.includes('green_bunkering') ||
+        asset.tags.includes('ammonia_fuel') ||
+        asset.tags.includes('shore_power')
+      ) {
+        greenUnits += units * (0.5 + asset.automationLevel * 0.07);
+      }
+    }
+    if (asset.category === 'road' && asset.tags.includes('green_bunkering') && 'laneKilometres' in asset) {
+      totalUnits += asset.laneKilometres / 180;
+      greenUnits += asset.laneKilometres / 180 * 0.65;
+    }
+    if (asset.category === 'logistics' && asset.tags.includes('ammonia_fuel')) {
+      totalUnits += asset.warehouseSqm / 85_000;
+      greenUnits += asset.warehouseSqm / 85_000;
+    }
+  }
+
+  if (totalUnits <= 0) return 0.06;
+  const policyBoost = policy === 'expand' ? 0.04 : 0;
+  return Math.round(clamp(greenUnits / totalUnits + policyBoost, 0.05, 0.48) * 1000) / 1000;
+}
+
+export function greenBunkeringProductivityMultiplier(
+  share: number,
+  policy: GreenBunkeringPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.024 : 1;
+  return (1 + (share - 0.09) * 0.038) * bias;
+}
+
+export function computeGreenBunkeringThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'green_bunkering' || t === 'ammonia_fuel' || t === 'shore_power' || t === 'low_carbon_fuel',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.6 + asset.automationLevel * 2.2;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 720;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 95_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalGreenBunkeringThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.54 + max * 0.46, 2, 68) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -8365,6 +8918,19 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   computeCircularFreightThroughputByRegion,
   nationalCircularFreightThroughputIndex,
 } from './circular-freight-index.ts';
+  agriculturalExportProductivityMultiplier,
+  computeAgriculturalExportThroughputByRegion,
+  nationalAgriculturalExportThroughputIndex,
+} from '../network/agricultural-export-throughput-index.ts';
+  computeTrackPossessionEfficiencyByRegion,
+  nationalTrackPossessionEfficiencyIndex,
+  trackPossessionProductivityMultiplier,
+} from '../operations/track-possession-efficiency-index.ts';
+  computeGreenBunkeringShare,
+  computeGreenBunkeringThroughputByRegion,
+  greenBunkeringProductivityMultiplier,
+  nationalGreenBunkeringThroughputIndex,
+} from './green-bunkering-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -8890,6 +9456,57 @@ export function computeTransportInfrastructureState(
     nationalGaugeInteroperability * 0.02 +
     nationalCircularFreight * 0.018;
 
+  const agriculturalExportThroughputByRegion = computeAgriculturalExportThroughputByRegion(ops);
+  const nationalAgriculturalExport = nationalAgriculturalExportThroughputIndex(agriculturalExportThroughputByRegion);
+  const agriculturalMult = agriculturalExportProductivityMultiplier(
+    nationalAgriculturalExport,
+    options?.agriculturalExportPolicy ?? 'baseline',
+  );
+  const trackPossessionEfficiencyByRegion = computeTrackPossessionEfficiencyByRegion(ops, networkStress);
+  const nationalTrackPossession = nationalTrackPossessionEfficiencyIndex(trackPossessionEfficiencyByRegion);
+  const trackPossessionMult = trackPossessionProductivityMultiplier(
+    nationalTrackPossession,
+    options?.trackPossessionPolicy ?? 'baseline',
+  );
+  const greenBunkeringThroughputByRegion = computeGreenBunkeringThroughputByRegion(ops);
+  const nationalGreenBunkering = nationalGreenBunkeringThroughputIndex(greenBunkeringThroughputByRegion);
+  const greenBunkeringShare = computeGreenBunkeringShare(ops, options?.greenBunkeringPolicy ?? 'baseline');
+  const greenBunkeringMult = greenBunkeringProductivityMultiplier(
+    greenBunkeringShare,
+    options?.greenBunkeringPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const agriculturalBoost = (agriculturalExportThroughputByRegion[code] - 8) * 0.0056;
+    const trackBoost = (trackPossessionEfficiencyByRegion[code] - 38) * 0.0041;
+    const bunkeringBoost = (greenBunkeringThroughputByRegion[code] - 3) * 0.0054;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + agriculturalBoost + trackBoost + bunkeringBoost) *
+      agriculturalMult *
+      trackPossessionMult *
+      greenBunkeringMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035 +
+    nationalAviationCargo * 0.03 +
+    nationalHydrogenCorridor * 0.028 +
+    nationalCoastalShipping * 0.026 +
+    nationalAutonomousCorridor * 0.024 +
+    nationalDeepSeaGateway * 0.027 +
+    nationalElectricCorridor * 0.023 +
+    nationalDefenceLogistics * 0.022 +
+    nationalDigitalFreight * 0.021 +
+    nationalCriticalMinerals * 0.024 +
+    nationalIndigenousRemoteSupply * 0.019 +
+    nationalGaugeInteroperability * 0.02 +
+    nationalCircularFreight * 0.018 +
+    nationalAgriculturalExport * 0.022 +
+    nationalGreenBunkering * 0.017;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -8903,7 +9520,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/14',
+    schemaVersion: 'agent12/15',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -8986,6 +9603,13 @@ export function computeTransportInfrastructureState(
     circularFreightShare,
     nationalCircularFreightThroughputIndex: nationalCircularFreight,
     circularFreightThroughputByRegion,
+    nationalAgriculturalExportThroughputIndex: nationalAgriculturalExport,
+    agriculturalExportThroughputByRegion,
+    nationalTrackPossessionEfficiencyIndex: nationalTrackPossession,
+    trackPossessionEfficiencyByRegion,
+    greenBunkeringShare,
+    nationalGreenBunkeringThroughputIndex: nationalGreenBunkering,
+    greenBunkeringThroughputByRegion,
     computeMs,
   };
 }
@@ -9068,7 +9692,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/14' &&
+      infra.schemaVersion === 'agent12/15' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -9106,8 +9730,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalGaugeInteroperabilityIndex >= 12 &&
       infra.nationalDisasterRecoveryStagingIndex > 37 &&
       infra.circularFreightShare >= 0.06 &&
-      infra.nationalCircularFreightThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} gauge=${infra.nationalGaugeInteroperabilityIndex.toFixed(1)} disaster=${infra.nationalDisasterRecoveryStagingIndex.toFixed(1)} circular=${infra.nationalCircularFreightThroughputIndex.toFixed(1)}`,
+      infra.nationalCircularFreightThroughputIndex >= 2 &&
+      infra.nationalAgriculturalExportThroughputIndex >= 9 &&
+      infra.nationalTrackPossessionEfficiencyIndex >= 38 &&
+      infra.greenBunkeringShare >= 0.05 &&
+      infra.nationalGreenBunkeringThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} agricultural=${infra.nationalAgriculturalExportThroughputIndex.toFixed(1)} track=${infra.nationalTrackPossessionEfficiencyIndex.toFixed(1)} bunkering=${infra.nationalGreenBunkeringThroughputIndex.toFixed(1)}`,
   });
 
   return results;

@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 14
+
+- Schema **`agent12/15`**: agricultural export throughput, track possession efficiency, green bunkering share (`agriculturalExportPolicy`, `trackPossessionPolicy`, `greenBunkeringPolicy`)
+- Catalog: **208** assets, **56** corridors, **88** scenarios
+- Systems: `network/agricultural-export-throughput-index.ts`, `operations/track-possession-efficiency-index.ts`, `productivity/green-bunkering-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 13
 
 - Schema **`agent12/14`**: gauge interoperability, disaster recovery staging, circular freight share (`gaugeInteroperabilityPolicy`, `disasterRecoveryStagingPolicy`, `circularFreightPolicy`)

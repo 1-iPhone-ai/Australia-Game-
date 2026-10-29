@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/14' &&
+      infra.schemaVersion === 'agent12/15' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -106,8 +106,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalGaugeInteroperabilityIndex >= 12 &&
       infra.nationalDisasterRecoveryStagingIndex > 37 &&
       infra.circularFreightShare >= 0.06 &&
-      infra.nationalCircularFreightThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} gauge=${infra.nationalGaugeInteroperabilityIndex.toFixed(1)} disaster=${infra.nationalDisasterRecoveryStagingIndex.toFixed(1)} circular=${infra.nationalCircularFreightThroughputIndex.toFixed(1)}`,
+      infra.nationalCircularFreightThroughputIndex >= 2 &&
+      infra.nationalAgriculturalExportThroughputIndex >= 9 &&
+      infra.nationalTrackPossessionEfficiencyIndex >= 38 &&
+      infra.greenBunkeringShare >= 0.05 &&
+      infra.nationalGreenBunkeringThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} agricultural=${infra.nationalAgriculturalExportThroughputIndex.toFixed(1)} track=${infra.nationalTrackPossessionEfficiencyIndex.toFixed(1)} bunkering=${infra.nationalGreenBunkeringThroughputIndex.toFixed(1)}`,
   });
 
   return results;
