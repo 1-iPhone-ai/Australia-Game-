@@ -200,6 +200,8 @@ export interface GTELPersisted {
   bilateralCycleReentryGateSmoothing?: number;
   cycleReentryStabilizationSmoothing?: number;
   bilateralLoopResumptionGateSmoothing?: number;
+  resumedLoopContinuitySmoothing?: number;
+  bilateralCycleRestartAcknowledgmentSmoothing?: number;
 }
 
 export interface GTELState {
@@ -265,6 +267,8 @@ export interface GTELState {
   bilateralCycleReentryGate: GTELBilateralCycleReentryGateSnapshot;
   cycleReentryStabilization: GTELCycleReentryStabilizationSnapshot;
   bilateralLoopResumptionGate: GTELBilateralLoopResumptionGateSnapshot;
+  resumedLoopContinuity: GTELResumedLoopContinuitySnapshot;
+  bilateralCycleRestartAcknowledgment: GTELBilateralCycleRestartAcknowledgmentSnapshot;
   inputHash: string;
 }
 
@@ -912,6 +916,26 @@ export interface GTELBilateralLoopResumptionGateSnapshot {
   summary: string;
 }
 
+export type GTELResumedLoopContinuityBand = 'continuous' | 'linked' | 'fragile' | 'broken';
+
+export interface GTELResumedLoopContinuitySnapshot {
+  score: number;
+  band: GTELResumedLoopContinuityBand;
+  resumptionSupport: number;
+  stabilizationAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralCycleRestartAcknowledgmentBand = 'acknowledged' | 'pending' | 'deferred' | 'rejected';
+
+export interface GTELBilateralCycleRestartAcknowledgmentSnapshot {
+  score: number;
+  band: GTELBilateralCycleRestartAcknowledgmentBand;
+  continuitySupport: number;
+  readinessLift: number;
+  summary: string;
+}
+
 export interface GlobalTradeEconomyPanelProps {
   state: GTELState | null;
   theme?: { isDark?: boolean };
@@ -1109,6 +1133,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     bilateralCycleReentryGateSmoothing: 0.52,
     cycleReentryStabilizationSmoothing: 0.52,
     bilateralLoopResumptionGateSmoothing: 0.52,
+    resumedLoopContinuitySmoothing: 0.52,
+    bilateralCycleRestartAcknowledgmentSmoothing: 0.52,
   };
 }
 
@@ -1346,6 +1372,10 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   );
   base.bilateralLoopResumptionGateSmoothing = sanitizeBilateralLoopResumptionGateSmoothing(
     r.bilateralLoopResumptionGateSmoothing,
+  );
+  base.resumedLoopContinuitySmoothing = sanitizeResumedLoopContinuitySmoothing(r.resumedLoopContinuitySmoothing);
+  base.bilateralCycleRestartAcknowledgmentSmoothing = sanitizeBilateralCycleRestartAcknowledgmentSmoothing(
+    r.bilateralCycleRestartAcknowledgmentSmoothing,
   );
   return base;
 }
@@ -7094,6 +7124,18 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   bilateralLoopResumptionGateGiNotes,
   bilateralLoopResumptionGateWorldEvent,
 } from './bilateral-loop-resumption-gate.ts';
+  computeResumedLoopContinuitySnapshot,
+  resumedLoopContinuityDomesticStress,
+  resumedLoopContinuityExportScale,
+  resumedLoopContinuityGiNotes,
+  resumedLoopContinuityWorldEvent,
+} from './resumed-loop-continuity.ts';
+  computeBilateralCycleRestartAcknowledgmentSnapshot,
+  bilateralCycleRestartAcknowledgmentDomesticStressRelief,
+  bilateralCycleRestartAcknowledgmentExportScale,
+  bilateralCycleRestartAcknowledgmentGiNotes,
+  bilateralCycleRestartAcknowledgmentWorldEvent,
+} from './bilateral-cycle-restart-acknowledgment.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -7796,6 +7838,26 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const resumptionEvent = bilateralLoopResumptionGateWorldEvent(bilateralLoopResumptionGate, turn);
   if (resumptionEvent) worldEvents.push(resumptionEvent);
 
+  const loopContinuityStep = computeResumedLoopContinuitySnapshot({
+    bilateralLoopResumptionGate,
+    cycleReentryStabilization,
+    persisted,
+  });
+  persisted = loopContinuityStep.persisted;
+  const resumedLoopContinuity = loopContinuityStep.snapshot;
+  const loopContinuityEvent = resumedLoopContinuityWorldEvent(resumedLoopContinuity, turn);
+  if (loopContinuityEvent) worldEvents.push(loopContinuityEvent);
+
+  const restartAckStep = computeBilateralCycleRestartAcknowledgmentSnapshot({
+    resumedLoopContinuity,
+    anchoredBookReadiness,
+    persisted,
+  });
+  persisted = restartAckStep.persisted;
+  const bilateralCycleRestartAcknowledgment = restartAckStep.snapshot;
+  const restartAckEvent = bilateralCycleRestartAcknowledgmentWorldEvent(bilateralCycleRestartAcknowledgment, turn);
+  if (restartAckEvent) worldEvents.push(restartAckEvent);
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -7837,6 +7899,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         bilateralCycleReentryGateExportScale(bilateralCycleReentryGate) *
         cycleReentryStabilizationExportScale(cycleReentryStabilization) *
         bilateralLoopResumptionGateExportScale(bilateralLoopResumptionGate) *
+        resumedLoopContinuityExportScale(resumedLoopContinuity) *
+        bilateralCycleRestartAcknowledgmentExportScale(bilateralCycleRestartAcknowledgment) *
         10,
     ) / 10;
 
@@ -7910,6 +7974,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       bilateralCapacityRenewalGateDomesticStressRelief(bilateralCapacityRenewalGate) +
       bilateralCycleReentryGateDomesticStressRelief(bilateralCycleReentryGate) +
       bilateralLoopResumptionGateDomesticStressRelief(bilateralLoopResumptionGate) +
+      bilateralCycleRestartAcknowledgmentDomesticStressRelief(bilateralCycleRestartAcknowledgment) +
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
       enforcementMods.domesticStress +
@@ -7929,7 +7994,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       capacityHandoffAbsorptionDomesticStress(capacityHandoffAbsorption) +
       tradeCycleSealVerificationDomesticStress(tradeCycleSealVerification) +
       capacityRenewalPrimingDomesticStress(capacityRenewalPriming) +
-      cycleReentryStabilizationDomesticStress(cycleReentryStabilization),
+      cycleReentryStabilizationDomesticStress(cycleReentryStabilization) +
+      resumedLoopContinuityDomesticStress(resumedLoopContinuity),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -7992,6 +8058,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.bilateralCycleReentryGateSmoothing,
     persisted.cycleReentryStabilizationSmoothing,
     persisted.bilateralLoopResumptionGateSmoothing,
+    persisted.resumedLoopContinuitySmoothing,
+    persisted.bilateralCycleRestartAcknowledgmentSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -8086,6 +8154,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     bilateralCycleReentryGate,
     cycleReentryStabilization,
     bilateralLoopResumptionGate,
+    resumedLoopContinuity,
+    bilateralCycleRestartAcknowledgment,
     inputHash,
   };
 
@@ -8159,6 +8229,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...bilateralCycleReentryGateGiNotes(state.bilateralCycleReentryGate));
   lines.push(...cycleReentryStabilizationGiNotes(state.cycleReentryStabilization));
   lines.push(...bilateralLoopResumptionGateGiNotes(state.bilateralLoopResumptionGate));
+  lines.push(...resumedLoopContinuityGiNotes(state.resumedLoopContinuity));
+  lines.push(...bilateralCycleRestartAcknowledgmentGiNotes(state.bilateralCycleRestartAcknowledgment));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }
@@ -8330,6 +8402,14 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   createEmptyBilateralLoopResumptionGateSnapshot,
   bilateralLoopResumptionGateExportScale,
 } from './bilateral-loop-resumption-gate.ts';
+  computeResumedLoopContinuitySnapshot,
+  createEmptyResumedLoopContinuitySnapshot,
+  resumedLoopContinuityExportScale,
+} from './resumed-loop-continuity.ts';
+  computeBilateralCycleRestartAcknowledgmentSnapshot,
+  createEmptyBilateralCycleRestartAcknowledgmentSnapshot,
+  bilateralCycleRestartAcknowledgmentExportScale,
+} from './bilateral-cycle-restart-acknowledgment.ts';
   validateScenarioShockCatalog,
   triggerCommodityShockScenario,
   COMMODITY_SHOCK_SCENARIOS,
@@ -9740,6 +9820,47 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       bilateralLoopResumptionGateExportScale(resumed) >= bilateralLoopResumptionGateExportScale(closed),
       'expected resumption scale lift',
+    );
+  });
+
+  ok('resumed loop continuity improves when loop resumption gate is resumed', () => {
+    const resumption = { ...createEmptyBilateralLoopResumptionGateSnapshot(), score: 0.92, band: 'resumed' as const };
+    const stabilization = { ...createEmptyCycleReentryStabilizationSnapshot(), score: 0.88, band: 'stable' as const };
+    const continuous = computeResumedLoopContinuitySnapshot({
+      bilateralLoopResumptionGate: resumption,
+      cycleReentryStabilization: stabilization,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const broken = computeResumedLoopContinuitySnapshot({
+      bilateralLoopResumptionGate: { ...resumption, score: 0.14, band: 'closed' },
+      cycleReentryStabilization: { ...stabilization, score: 0.12, band: 'volatile' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(continuous.score > broken.score, 'expected stronger continuity when resumed');
+    gtelAssert(
+      resumedLoopContinuityExportScale(continuous) >= resumedLoopContinuityExportScale(broken),
+      'expected loop continuity scale lift',
+    );
+  });
+
+  ok('bilateral cycle restart acknowledgment improves when loop continuity is continuous', () => {
+    const continuity = { ...createEmptyResumedLoopContinuitySnapshot(), score: 0.93, band: 'continuous' as const };
+    const readiness = { ...createEmptyAnchoredBookReadinessSnapshot(), score: 0.9, band: 'ready' as const };
+    const acknowledged = computeBilateralCycleRestartAcknowledgmentSnapshot({
+      resumedLoopContinuity: continuity,
+      anchoredBookReadiness: readiness,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const rejected = computeBilateralCycleRestartAcknowledgmentSnapshot({
+      resumedLoopContinuity: { ...continuity, score: 0.12, band: 'broken' },
+      anchoredBookReadiness: { ...readiness, score: 0.1, band: 'blocked' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(acknowledged.score > rejected.score, 'expected acknowledgment when continuous');
+    gtelAssert(
+      bilateralCycleRestartAcknowledgmentExportScale(acknowledged) >=
+        bilateralCycleRestartAcknowledgmentExportScale(rejected),
+      'expected acknowledgment scale lift',
     );
   });
 

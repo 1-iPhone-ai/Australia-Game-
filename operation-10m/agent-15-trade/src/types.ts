@@ -196,6 +196,8 @@ export interface GTELPersisted {
   bilateralCycleReentryGateSmoothing?: number;
   cycleReentryStabilizationSmoothing?: number;
   bilateralLoopResumptionGateSmoothing?: number;
+  resumedLoopContinuitySmoothing?: number;
+  bilateralCycleRestartAcknowledgmentSmoothing?: number;
 }
 
 export interface GTELState {
@@ -261,6 +263,8 @@ export interface GTELState {
   bilateralCycleReentryGate: GTELBilateralCycleReentryGateSnapshot;
   cycleReentryStabilization: GTELCycleReentryStabilizationSnapshot;
   bilateralLoopResumptionGate: GTELBilateralLoopResumptionGateSnapshot;
+  resumedLoopContinuity: GTELResumedLoopContinuitySnapshot;
+  bilateralCycleRestartAcknowledgment: GTELBilateralCycleRestartAcknowledgmentSnapshot;
   inputHash: string;
 }
 
@@ -905,6 +909,26 @@ export interface GTELBilateralLoopResumptionGateSnapshot {
   band: GTELBilateralLoopResumptionGateBand;
   stabilizationSupport: number;
   primingLift: number;
+  summary: string;
+}
+
+export type GTELResumedLoopContinuityBand = 'continuous' | 'linked' | 'fragile' | 'broken';
+
+export interface GTELResumedLoopContinuitySnapshot {
+  score: number;
+  band: GTELResumedLoopContinuityBand;
+  resumptionSupport: number;
+  stabilizationAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralCycleRestartAcknowledgmentBand = 'acknowledged' | 'pending' | 'deferred' | 'rejected';
+
+export interface GTELBilateralCycleRestartAcknowledgmentSnapshot {
+  score: number;
+  band: GTELBilateralCycleRestartAcknowledgmentBand;
+  continuitySupport: number;
+  readinessLift: number;
   summary: string;
 }
 

@@ -219,6 +219,16 @@ import {
   createEmptyBilateralLoopResumptionGateSnapshot,
   bilateralLoopResumptionGateExportScale,
 } from './bilateral-loop-resumption-gate.ts';
+import {
+  computeResumedLoopContinuitySnapshot,
+  createEmptyResumedLoopContinuitySnapshot,
+  resumedLoopContinuityExportScale,
+} from './resumed-loop-continuity.ts';
+import {
+  computeBilateralCycleRestartAcknowledgmentSnapshot,
+  createEmptyBilateralCycleRestartAcknowledgmentSnapshot,
+  bilateralCycleRestartAcknowledgmentExportScale,
+} from './bilateral-cycle-restart-acknowledgment.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -1633,6 +1643,47 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       bilateralLoopResumptionGateExportScale(resumed) >= bilateralLoopResumptionGateExportScale(closed),
       'expected resumption scale lift',
+    );
+  });
+
+  ok('resumed loop continuity improves when loop resumption gate is resumed', () => {
+    const resumption = { ...createEmptyBilateralLoopResumptionGateSnapshot(), score: 0.92, band: 'resumed' as const };
+    const stabilization = { ...createEmptyCycleReentryStabilizationSnapshot(), score: 0.88, band: 'stable' as const };
+    const continuous = computeResumedLoopContinuitySnapshot({
+      bilateralLoopResumptionGate: resumption,
+      cycleReentryStabilization: stabilization,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const broken = computeResumedLoopContinuitySnapshot({
+      bilateralLoopResumptionGate: { ...resumption, score: 0.14, band: 'closed' },
+      cycleReentryStabilization: { ...stabilization, score: 0.12, band: 'volatile' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(continuous.score > broken.score, 'expected stronger continuity when resumed');
+    gtelAssert(
+      resumedLoopContinuityExportScale(continuous) >= resumedLoopContinuityExportScale(broken),
+      'expected loop continuity scale lift',
+    );
+  });
+
+  ok('bilateral cycle restart acknowledgment improves when loop continuity is continuous', () => {
+    const continuity = { ...createEmptyResumedLoopContinuitySnapshot(), score: 0.93, band: 'continuous' as const };
+    const readiness = { ...createEmptyAnchoredBookReadinessSnapshot(), score: 0.9, band: 'ready' as const };
+    const acknowledged = computeBilateralCycleRestartAcknowledgmentSnapshot({
+      resumedLoopContinuity: continuity,
+      anchoredBookReadiness: readiness,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const rejected = computeBilateralCycleRestartAcknowledgmentSnapshot({
+      resumedLoopContinuity: { ...continuity, score: 0.12, band: 'broken' },
+      anchoredBookReadiness: { ...readiness, score: 0.1, band: 'blocked' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(acknowledged.score > rejected.score, 'expected acknowledgment when continuous');
+    gtelAssert(
+      bilateralCycleRestartAcknowledgmentExportScale(acknowledged) >=
+        bilateralCycleRestartAcknowledgmentExportScale(rejected),
+      'expected acknowledgment scale lift',
     );
   });
 

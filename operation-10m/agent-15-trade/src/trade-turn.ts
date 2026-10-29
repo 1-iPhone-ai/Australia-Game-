@@ -347,6 +347,20 @@ import {
   bilateralLoopResumptionGateWorldEvent,
 } from './bilateral-loop-resumption-gate.ts';
 import {
+  computeResumedLoopContinuitySnapshot,
+  resumedLoopContinuityDomesticStress,
+  resumedLoopContinuityExportScale,
+  resumedLoopContinuityGiNotes,
+  resumedLoopContinuityWorldEvent,
+} from './resumed-loop-continuity.ts';
+import {
+  computeBilateralCycleRestartAcknowledgmentSnapshot,
+  bilateralCycleRestartAcknowledgmentDomesticStressRelief,
+  bilateralCycleRestartAcknowledgmentExportScale,
+  bilateralCycleRestartAcknowledgmentGiNotes,
+  bilateralCycleRestartAcknowledgmentWorldEvent,
+} from './bilateral-cycle-restart-acknowledgment.ts';
+import {
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -1052,6 +1066,26 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const resumptionEvent = bilateralLoopResumptionGateWorldEvent(bilateralLoopResumptionGate, turn);
   if (resumptionEvent) worldEvents.push(resumptionEvent);
 
+  const loopContinuityStep = computeResumedLoopContinuitySnapshot({
+    bilateralLoopResumptionGate,
+    cycleReentryStabilization,
+    persisted,
+  });
+  persisted = loopContinuityStep.persisted;
+  const resumedLoopContinuity = loopContinuityStep.snapshot;
+  const loopContinuityEvent = resumedLoopContinuityWorldEvent(resumedLoopContinuity, turn);
+  if (loopContinuityEvent) worldEvents.push(loopContinuityEvent);
+
+  const restartAckStep = computeBilateralCycleRestartAcknowledgmentSnapshot({
+    resumedLoopContinuity,
+    anchoredBookReadiness,
+    persisted,
+  });
+  persisted = restartAckStep.persisted;
+  const bilateralCycleRestartAcknowledgment = restartAckStep.snapshot;
+  const restartAckEvent = bilateralCycleRestartAcknowledgmentWorldEvent(bilateralCycleRestartAcknowledgment, turn);
+  if (restartAckEvent) worldEvents.push(restartAckEvent);
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -1093,6 +1127,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         bilateralCycleReentryGateExportScale(bilateralCycleReentryGate) *
         cycleReentryStabilizationExportScale(cycleReentryStabilization) *
         bilateralLoopResumptionGateExportScale(bilateralLoopResumptionGate) *
+        resumedLoopContinuityExportScale(resumedLoopContinuity) *
+        bilateralCycleRestartAcknowledgmentExportScale(bilateralCycleRestartAcknowledgment) *
         10,
     ) / 10;
 
@@ -1166,6 +1202,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       bilateralCapacityRenewalGateDomesticStressRelief(bilateralCapacityRenewalGate) +
       bilateralCycleReentryGateDomesticStressRelief(bilateralCycleReentryGate) +
       bilateralLoopResumptionGateDomesticStressRelief(bilateralLoopResumptionGate) +
+      bilateralCycleRestartAcknowledgmentDomesticStressRelief(bilateralCycleRestartAcknowledgment) +
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
       enforcementMods.domesticStress +
@@ -1185,7 +1222,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       capacityHandoffAbsorptionDomesticStress(capacityHandoffAbsorption) +
       tradeCycleSealVerificationDomesticStress(tradeCycleSealVerification) +
       capacityRenewalPrimingDomesticStress(capacityRenewalPriming) +
-      cycleReentryStabilizationDomesticStress(cycleReentryStabilization),
+      cycleReentryStabilizationDomesticStress(cycleReentryStabilization) +
+      resumedLoopContinuityDomesticStress(resumedLoopContinuity),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -1248,6 +1286,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.bilateralCycleReentryGateSmoothing,
     persisted.cycleReentryStabilizationSmoothing,
     persisted.bilateralLoopResumptionGateSmoothing,
+    persisted.resumedLoopContinuitySmoothing,
+    persisted.bilateralCycleRestartAcknowledgmentSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -1342,6 +1382,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     bilateralCycleReentryGate,
     cycleReentryStabilization,
     bilateralLoopResumptionGate,
+    resumedLoopContinuity,
+    bilateralCycleRestartAcknowledgment,
     inputHash,
   };
 
@@ -1415,6 +1457,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...bilateralCycleReentryGateGiNotes(state.bilateralCycleReentryGate));
   lines.push(...cycleReentryStabilizationGiNotes(state.cycleReentryStabilization));
   lines.push(...bilateralLoopResumptionGateGiNotes(state.bilateralLoopResumptionGate));
+  lines.push(...resumedLoopContinuityGiNotes(state.resumedLoopContinuity));
+  lines.push(...bilateralCycleRestartAcknowledgmentGiNotes(state.bilateralCycleRestartAcknowledgment));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }

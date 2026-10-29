@@ -59,5 +59,7 @@ export * from './capacity-renewal-priming.ts';
 export * from './bilateral-cycle-reentry-gate.ts';
 export * from './cycle-reentry-stabilization.ts';
 export * from './bilateral-loop-resumption-gate.ts';
+export * from './resumed-loop-continuity.ts';
+export * from './bilateral-cycle-restart-acknowledgment.ts';
 export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';
