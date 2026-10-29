@@ -22,6 +22,11 @@ export function MacroEconomyInspectorLab(props: {
         Output index: {st.accounting.grossOutputIndex.toFixed(1)} · Identity OK:{' '}
         {String(st.accounting.identityOk)}
       </div>
+      {st.transmissionReport?.dominantLayerId && (
+        <div style={{ marginTop: 6, color: '#a5b4fc' }}>
+          Transmission dominant: {st.transmissionReport.dominantLayerId}
+        </div>
+      )}
       <div style={{ marginTop: 8 }}>
         {st.regionalContributions.map(r => (
           <div key={r.regionId}>

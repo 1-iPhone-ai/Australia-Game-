@@ -14,6 +14,7 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
     workforce: params?.workforce,
     publicFinance: params?.publicFinance,
     households: params?.households,
+    trade: params?.trade ?? params?.gameState?.tradeState,
     economicGeography: params?.economicGeography,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)

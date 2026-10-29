@@ -41,5 +41,23 @@ export function evaluateMacroConsistencyGates(
       summary: 'National expansion masks wide regional productivity dispersion.'
     });
   }
+  const tr: any = inputs.trade;
+  const terms = String(tr?.termsOfTrade?.band ?? tr?.termsBand ?? '');
+  if (terms === 'weak' && (fiscalPressure === 'critical' || fiscalPressure === 'strained')) {
+    gates.push({
+      id: 'trade_fiscal_stress',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Weak external terms coincide with strained fiscal capacity — macro downside risk elevated.'
+    });
+  }
+  if (state.transmissionReport?.dominantLayerId === 'v10.15_trade' && state.cyclePhase === 'contraction') {
+    gates.push({
+      id: 'external_led_contraction',
+      triggered: true,
+      severity: 'info',
+      summary: 'External demand layer dominates transmission while cycle is in contraction.'
+    });
+  }
   return gates;
 }

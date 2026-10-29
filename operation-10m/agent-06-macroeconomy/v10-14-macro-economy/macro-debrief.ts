@@ -13,6 +13,11 @@ export function composeMacroEconomyDebrief(state: NationalMacroEconomyState): Ma
   if (state.fiscalSpilloverSummary) bullets.push(state.fiscalSpilloverSummary);
   if (state.householdSpilloverSummary) bullets.push(state.householdSpilloverSummary);
   if (state.industrySpilloverSummary) bullets.push(state.industrySpilloverSummary);
+  if (state.tradeSpilloverSummary) bullets.push(state.tradeSpilloverSummary);
+  if (state.geographySpilloverSummary) bullets.push(state.geographySpilloverSummary);
+  if (state.transmissionReport?.dominantLayerId) {
+    bullets.push(`Dominant transmission: ${state.transmissionReport.dominantLayerId}`);
+  }
   const triggered = state.consistencyGates.filter(g => g.triggered);
   if (triggered.length) bullets.push(`Consistency notes: ${triggered.map(g => g.id).join(', ')}`);
   return {

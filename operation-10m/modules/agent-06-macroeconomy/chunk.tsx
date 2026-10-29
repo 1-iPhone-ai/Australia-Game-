@@ -92,6 +92,9 @@ export interface NationalMacroEconomyState {
   outlookProjection: MacroOutlookProjection;
   householdSpilloverSummary: string | null;
   industrySpilloverSummary: string | null;
+  tradeSpilloverSummary: string | null;
+  geographySpilloverSummary: string | null;
+  transmissionReport: MacroTransmissionReport;
   consistencyGates: MacroConsistencyGate[];
   debrief: MacroDebriefSnapshot;
   derivedSignals: Array<{ id: string; kind: string; text: string }>;
@@ -134,6 +137,24 @@ export interface MacroDebriefSnapshot {
   bullets: string[];
 }
 
+export interface MacroTransmissionLayer {
+  systemId: string;
+  label: string;
+  cycleContribution: number;
+  investmentContribution: number;
+  productivityContribution: number;
+  summary: string | null;
+}
+
+export interface MacroTransmissionReport {
+  turn: number;
+  dominantLayerId: string | null;
+  layers: MacroTransmissionLayer[];
+  netCycleNudge: number;
+  netInvestmentNudge: number;
+  netProductivityNudge: number;
+}
+
 export interface MacroEconomyPersisted {
   schemaVersion: string;
   revision: number;
@@ -160,6 +181,7 @@ export interface MacroEconomyInputs {
   workforce?: any;
   publicFinance?: any;
   households?: any;
+  trade?: any;
   economicGeography?: any;
   highInflationScenarioActive?: boolean;
   creditShockActive?: boolean;
@@ -1238,6 +1260,7 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
     workforce: params?.workforce,
     publicFinance: params?.publicFinance,
     households: params?.households,
+    trade: params?.trade ?? params?.gameState?.tradeState,
     economicGeography: params?.economicGeography,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
@@ -1648,6 +1671,24 @@ export function evaluateMacroConsistencyGates(
       summary: 'National expansion masks wide regional productivity dispersion.'
     });
   }
+  const tr: any = inputs.trade;
+  const terms = String(tr?.termsOfTrade?.band ?? tr?.termsBand ?? '');
+  if (terms === 'weak' && (fiscalPressure === 'critical' || fiscalPressure === 'strained')) {
+    gates.push({
+      id: 'trade_fiscal_stress',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Weak external terms coincide with strained fiscal capacity — macro downside risk elevated.'
+    });
+  }
+  if (state.transmissionReport?.dominantLayerId === 'v10.15_trade' && state.cyclePhase === 'contraction') {
+    gates.push({
+      id: 'external_led_contraction',
+      triggered: true,
+      severity: 'info',
+      summary: 'External demand layer dominates transmission while cycle is in contraction.'
+    });
+  }
   return gates;
 }
 
@@ -1666,6 +1707,11 @@ export function composeMacroEconomyDebrief(state: NationalMacroEconomyState): Ma
   if (state.fiscalSpilloverSummary) bullets.push(state.fiscalSpilloverSummary);
   if (state.householdSpilloverSummary) bullets.push(state.householdSpilloverSummary);
   if (state.industrySpilloverSummary) bullets.push(state.industrySpilloverSummary);
+  if (state.tradeSpilloverSummary) bullets.push(state.tradeSpilloverSummary);
+  if (state.geographySpilloverSummary) bullets.push(state.geographySpilloverSummary);
+  if (state.transmissionReport?.dominantLayerId) {
+    bullets.push(`Dominant transmission: ${state.transmissionReport.dominantLayerId}`);
+  }
   const triggered = state.consistencyGates.filter(g => g.triggered);
   if (triggered.length) bullets.push(`Consistency notes: ${triggered.map(g => g.id).join(', ')}`);
   return {
@@ -1815,10 +1861,14 @@ export function computeNationalMacroEconomy(
   const fiscalSpillover = readMacroFiscalSpilloverFromV1012(inputs);
   const householdSpillover = readMacroHouseholdSpilloverFromV1013(inputs);
   const industrySpillover = readMacroIndustrySpilloverFromV101(inputs);
+  const tradeSpillover = readMacroTradeSpilloverFromV1015(inputs);
+  const geographySpillover = readMacroGeographySpillover(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withIndustry, pushEv);
+  const withTrade = applyMacroTradeSpillover(withIndustry, tradeSpillover);
+  const withGeography = applyMacroGeographySpillover(withTrade, geographySpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withGeography, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -1845,6 +1895,14 @@ export function computeNationalMacroEconomy(
   const sectorProductivity = nationalSectorProductivityFromScore(productivityScore);
   const sectorOutputMix = computeNationalSectorOutputMix(regionalContributions);
   const regionalDivergence = computeRegionalDivergenceSnapshot(regionalContributions);
+  const transmissionReport = buildMacroTransmissionReport({
+    turn: inputs.turn,
+    fiscal: fiscalSpillover,
+    household: householdSpillover,
+    industry: industrySpillover,
+    trade: tradeSpillover,
+    geography: geographySpillover
+  });
 
   let nextPersisted: MacroEconomyPersisted = {
     ...persisted,
@@ -1888,6 +1946,9 @@ export function computeNationalMacroEconomy(
     fiscalSpilloverSummary: fiscalSpillover.summary,
     householdSpilloverSummary: householdSpillover.summary,
     industrySpilloverSummary: industrySpillover.summary,
+    tradeSpilloverSummary: tradeSpillover.summary,
+    geographySpilloverSummary: geographySpillover.summary,
+    transmissionReport,
     regionalDivergence,
     outlookProjection: {
       horizonTurns: 3,
@@ -2595,6 +2656,11 @@ export function runV1014_MACRO_MacroEconomySelfTests(): {
     check(r.id, r.name, r.passed, r.detail);
   }
 
+  const round4 = runAgent06Round4SelfTests();
+  for (const r of round4.results) {
+    check(r.id, r.name, r.passed, r.detail);
+  }
+
   const passed = results.filter(r => r.passed).length;
   return { passed, failed: results.length - passed, total: results.length, results };
 }
@@ -2637,6 +2703,11 @@ export function MacroEconomyInspectorLab(props: {
         Output index: {st.accounting.grossOutputIndex.toFixed(1)} · Identity OK:{' '}
         {String(st.accounting.identityOk)}
       </div>
+      {st.transmissionReport?.dominantLayerId && (
+        <div style={{ marginTop: 6, color: '#a5b4fc' }}>
+          Transmission dominant: {st.transmissionReport.dominantLayerId}
+        </div>
+      )}
       <div style={{ marginTop: 8 }}>
         {st.regionalContributions.map(r => (
           <div key={r.regionId}>

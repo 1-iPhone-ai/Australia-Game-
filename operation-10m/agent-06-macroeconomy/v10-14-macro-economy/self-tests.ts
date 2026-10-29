@@ -10,6 +10,7 @@ import { runCyclicalShockLibrarySelfTests } from './catalog/cyclical-shocks-self
 import { runAgent06DepthSelfTests } from './depth-self-tests.ts';
 import { runAgent06Round2SelfTests } from './round2-self-tests.ts';
 import { runAgent06Round3SelfTests } from './round3-self-tests.ts';
+import { runAgent06Round4SelfTests } from './round4-self-tests.ts';
 
 export function runV1014_MACRO_MacroEconomySelfTests(): {
   passed: number;
@@ -112,6 +113,11 @@ export function runV1014_MACRO_MacroEconomySelfTests(): {
 
   const round3 = runAgent06Round3SelfTests();
   for (const r of round3.results) {
+    check(r.id, r.name, r.passed, r.detail);
+  }
+
+  const round4 = runAgent06Round4SelfTests();
+  for (const r of round4.results) {
     check(r.id, r.name, r.passed, r.detail);
   }
 

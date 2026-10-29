@@ -88,6 +88,9 @@ export interface NationalMacroEconomyState {
   outlookProjection: MacroOutlookProjection;
   householdSpilloverSummary: string | null;
   industrySpilloverSummary: string | null;
+  tradeSpilloverSummary: string | null;
+  geographySpilloverSummary: string | null;
+  transmissionReport: MacroTransmissionReport;
   consistencyGates: MacroConsistencyGate[];
   debrief: MacroDebriefSnapshot;
   derivedSignals: Array<{ id: string; kind: string; text: string }>;
@@ -130,6 +133,24 @@ export interface MacroDebriefSnapshot {
   bullets: string[];
 }
 
+export interface MacroTransmissionLayer {
+  systemId: string;
+  label: string;
+  cycleContribution: number;
+  investmentContribution: number;
+  productivityContribution: number;
+  summary: string | null;
+}
+
+export interface MacroTransmissionReport {
+  turn: number;
+  dominantLayerId: string | null;
+  layers: MacroTransmissionLayer[];
+  netCycleNudge: number;
+  netInvestmentNudge: number;
+  netProductivityNudge: number;
+}
+
 export interface MacroEconomyPersisted {
   schemaVersion: string;
   revision: number;
@@ -156,6 +177,7 @@ export interface MacroEconomyInputs {
   workforce?: any;
   publicFinance?: any;
   households?: any;
+  trade?: any;
   economicGeography?: any;
   highInflationScenarioActive?: boolean;
   creditShockActive?: boolean;

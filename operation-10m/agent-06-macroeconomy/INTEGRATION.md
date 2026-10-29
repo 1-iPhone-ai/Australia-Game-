@@ -43,6 +43,10 @@ Insert at or replace duplicate of Section **20AG** (V10.14 macroeconomy):
 | `runAgent06AllSelfTests` | Full module test bundle |
 | `detectMacroEconomyQuestion` / `composeMacroEconomyGiAnswer` | GI macro Q&A |
 | `readMacroFiscalSpilloverFromV1012` | V10.12 read-only spillover |
+| `readMacroTradeSpilloverFromV1015` | V10.15 trade read-only spillover |
+| `readMacroGeographySpillover` | V10.11 economic geography spillover |
+| `buildMacroTransmissionReport` | Cross-layer transmission snapshot |
+| `runMacroEconomyRegressionHarness` | Multi-turn deterministic regression |
 | `evaluateMacroEconomyGuardianContext` | Guardian warn-only hooks |
 | `MacroEconomyInspectorLab` | LAB inspector |
 
