@@ -21,6 +21,16 @@ import {
 } from '../core/momentum-resilience-tension.ts';
 import { nrDashBuildMapHubIndex, nrDashPrimaryMapHub, nrDashTopMapHubs } from '../core/map-hub-index.ts';
 import { nrDashEnrichMapLinkStress, nrDashHottestMapLinkStress } from '../core/link-stress.ts';
+import { nrDashBuildCapacityHeadroom } from '../core/capacity-headroom.ts';
+import { nrDashBuildStrainDiversity } from '../core/strain-diversity.ts';
+import { nrDashBuildOwnerStressGap } from '../core/owner-stress-gap.ts';
+import { nrDashTopPeripheralRegions } from '../core/peripheral-isolation.ts';
+import { nrDashBuildTrendCoherence } from '../core/trend-coherence.ts';
+import {
+  nrDashBuildBorderStressRows,
+  nrDashHottestBorderRegion,
+  nrDashTopBorderStress,
+} from '../core/border-stress.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -329,6 +339,45 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     return (
       stressed.every(l => l.stressLevel != null && l.stressLevel >= 0 && l.stressLevel <= 1) &&
       Boolean(hot && (hot.stressLevel ?? 0) > 0)
+    );
+  });
+
+  check('a23_capacity_headroom', 'Capacity headroom complements utilization skew', () => {
+    const snap = nrDashBuildAuthSnapshot(5, null, createAgent23NsFixture(), null)!;
+    const head = nrDashBuildCapacityHeadroom(snap)!;
+    const skew = nrDashBuildUtilizationSkew(snap)!;
+    return head.sampleSize === 5 && head.meanHeadroom + skew.meanUtilization > 0.9 && head.spread >= 0;
+  });
+
+  check('a23_strain_diversity', 'Strain diversity covers heat grid cells', () => {
+    const div = nrDashBuildStrainDiversity(createAgent23NsFixture())!;
+    return div.cellCount === 40 && div.diversityIndex >= 0 && div.dominantCondition != null;
+  });
+
+  check('a23_owner_stress_gap', 'Owner stress gap compares NSW player row', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), { NSW: 'you' })!;
+    const gap = nrDashBuildOwnerStressGap(snap)!;
+    return gap.ownedRegionCount === 1 && gap.openNeedsGap === 0 && gap.resilienceGap != null;
+  });
+
+  check('a23_peripheral_isolation', 'Peripheral isolation ranks TAS or WA highly', () => {
+    const rows = nrDashTopPeripheralRegions(createAgent23NsFixture(), 3);
+    return rows.length === 3 && rows.some(r => r.regionId === 'TAS' || r.regionId === 'WA');
+  });
+
+  check('a23_trend_coherence', 'Trend coherence uses momentum history deltas', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const c = nrDashBuildTrendCoherence(snap)!;
+    return c.sampleSize === 8 && c.coherenceScore >= 0 && c.coherenceScore <= 1;
+  });
+
+  check('a23_border_stress', 'Border stress marks NSW fixture corridor hot', () => {
+    const ns = createAgent23NsFixture();
+    const rows = nrDashTopBorderStress(ns, 3);
+    return (
+      rows.length === 3 &&
+      nrDashBuildBorderStressRows(ns).length >= 8 &&
+      nrDashHottestBorderRegion(ns) === 'NSW'
     );
   });
 

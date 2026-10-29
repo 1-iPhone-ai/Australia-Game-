@@ -29,6 +29,12 @@ import { nrDashBuildUtilizationSkew } from '../core/utilization-skew.ts';
 import { nrDashTopTensionOutliers } from '../core/momentum-resilience-tension.ts';
 import { nrDashEnrichMapLinkStress, nrDashHottestMapLinkStress } from '../core/link-stress.ts';
 import { nrDashPrimaryMapHub, nrDashTopMapHubs } from '../core/map-hub-index.ts';
+import { nrDashBuildCapacityHeadroom } from '../core/capacity-headroom.ts';
+import { nrDashBuildStrainDiversity } from '../core/strain-diversity.ts';
+import { nrDashBuildOwnerStressGap } from '../core/owner-stress-gap.ts';
+import { nrDashTopPeripheralRegions } from '../core/peripheral-isolation.ts';
+import { nrDashBuildTrendCoherence } from '../core/trend-coherence.ts';
+import { nrDashHottestBorderRegion, nrDashTopBorderStress } from '../core/border-stress.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -57,6 +63,10 @@ import { NrDashNeedsImbalanceCard } from './needs-imbalance-card.tsx';
 import { NrDashRiskExposureCard } from './risk-exposure-card.tsx';
 import { NrDashUtilizationSkewStrip } from './utilization-skew-strip.tsx';
 import { NrDashMapHubStrip } from './map-hub-strip.tsx';
+import { NrDashCapacityHeadroomStrip } from './capacity-headroom-strip.tsx';
+import { NrDashOwnerStressGapCard } from './owner-stress-gap-card.tsx';
+import { NrDashPeripheralIsolationStrip } from './peripheral-isolation-strip.tsx';
+import { NrDashBorderStressStrip } from './border-stress-strip.tsx';
 import { RegionPositionMap } from './region-position-map.tsx';
 
 const NrDashProvenanceStrip: React.FC<{ items: NrDashProvenance[] }> = ({ items }) => (
@@ -83,6 +93,7 @@ export const NrDashOverviewTab: React.FC<{
     />
     <NrDashNeedsImbalanceCard imbalance={nrDashBuildNeedsImbalance(snap)} />
     <NrDashRiskExposureCard exposure={nrDashBuildRiskExposure(snap)} />
+    <NrDashOwnerStressGapCard gap={nrDashBuildOwnerStressGap(snap)} />
     <div className="grid md:grid-cols-3 gap-3 text-sm">
       <div className="rounded-lg border border-slate-600/50 p-3">
         <div className="text-xs opacity-70">National resilience</div>
@@ -124,15 +135,17 @@ export const NrDashOverviewTab: React.FC<{
 
 export const NrDashRegionsTab: React.FC<{
   snap: NrDashAuthSnapshot;
+  nsState: NationalSystemsState | null;
   focusRegionId: string | null;
   onFocusRegion?: (id: string) => void;
-}> = ({ snap, focusRegionId, onFocusRegion }) => (
+}> = ({ snap, nsState, focusRegionId, onFocusRegion }) => (
   <div className="space-y-2" data-testid="nr-dash-tab-regions">
     <NrDashProvenanceStrip items={snap.provenance.filter(p => p.source === 'living_regions')} />
     <NrDashRegionsDepthStrip
       spread={nrDashBuildResilienceSpread(snap)}
       outliers={nrDashTopParityOutliers(snap, 3)}
     />
+    <NrDashPeripheralIsolationStrip rows={nrDashTopPeripheralRegions(nsState, 3)} />
     {nrDashTopTensionOutliers(snap, 3).length > 0 && (
       <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-tension-outliers">
         <div className="font-semibold mb-1">Momentum ↔ resilience tension</div>
@@ -208,9 +221,20 @@ export const NrDashNetworksTab: React.FC<{
   const snapSkew = nrDashBuildUtilizationSkew(
     nrDashBuildAuthSnapshot(ns.turn ?? 0, null, ns, null)
   );
+  const headroom = nrDashBuildCapacityHeadroom(
+    nrDashBuildAuthSnapshot(ns.turn ?? 0, null, ns, null)
+  );
+  const strainDiv = nrDashBuildStrainDiversity(ns);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-networks">
       <NrDashUtilizationSkewStrip skew={snapSkew} />
+      <NrDashCapacityHeadroomStrip headroom={headroom} />
+      {strainDiv && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-strain-diversity">
+          Strain diversity index {strainDiv.diversityIndex} · dominant {strainDiv.dominantCondition ?? '—'} · μ weight{' '}
+          {strainDiv.meanWeight}
+        </div>
+      )}
       {coupling && (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-network-coupling">
           Network coupling μ {coupling.meanCoupling} · hottest {coupling.maxCouplingRegionId ?? '—'}
@@ -263,9 +287,19 @@ export const NrDashNetworksTab: React.FC<{
 
 export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }) => {
   const movers = nrDashTopTrendMovers(snap.regions, 5);
+  const coherence = nrDashBuildTrendCoherence(snap);
   return (
     <div data-testid="nr-dash-tab-trends">
       <NrDashProvenanceStrip items={snap.provenance} />
+      {coherence && (
+        <div className="text-xs mb-3 rounded border border-slate-600/50 p-2" data-testid="nr-dash-trend-coherence">
+          <div className="font-semibold mb-1">National momentum coherence</div>
+          <div>
+            score {coherence.coherenceScore} · σ {coherence.stdDev}
+            {coherence.divergentRegionId ? ` · outlier ${coherence.divergentRegionId}` : ''}
+          </div>
+        </div>
+      )}
       {movers.length > 0 && (
         <div className="text-xs mb-3" data-testid="nr-dash-trend-movers">
           <div className="font-semibold mb-1">Largest momentum history deltas (authoritative)</div>
@@ -324,10 +358,16 @@ export const NrDashMapTab: React.FC<{
       <NrDashProvenanceStrip items={snap.provenance} />
       <RegionPositionMap nodes={nodes} links={links} focusRegionId={focusRegionId} onSelect={onFocusRegion} />
       <NrDashCorridorStressStrip corridors={nrDashTopCorridorStress(nsState, 4)} />
+      <NrDashBorderStressStrip rows={nrDashTopBorderStress(nsState, 3)} />
       <NrDashMapHubStrip hubs={hubRows} primaryHubId={primaryHub} />
       {hottestLink && (
         <p className="text-[10px] opacity-75" data-testid="nr-dash-map-link-stress-hot">
           Hottest link stress: {hottestLink.label} ({Math.round((hottestLink.stressLevel ?? 0) * 100)}%)
+        </p>
+      )}
+      {nrDashHottestBorderRegion(nsState) && (
+        <p className="text-[10px] opacity-75" data-testid="nr-dash-map-border-hot">
+          Hottest border stress: {nrDashHottestBorderRegion(nsState)}
         </p>
       )}
       {pulseHot && (
@@ -430,7 +470,12 @@ export const NationalRegionalDashboardModal: React.FC<NationalRegionalDashboardM
           ) : tab === 'overview' ? (
             <NrDashOverviewTab snap={snap} nsState={nsState} onAsk={onAsk} />
           ) : tab === 'regions' ? (
-            <NrDashRegionsTab snap={snap} focusRegionId={focusRegionId} onFocusRegion={onFocusRegion} />
+            <NrDashRegionsTab
+              snap={snap}
+              nsState={nsState}
+              focusRegionId={focusRegionId}
+              onFocusRegion={onFocusRegion}
+            />
           ) : tab === 'networks' ? (
             <NrDashNetworksTab ns={nsState} onMapNetwork={onMapNetwork} />
           ) : tab === 'map' ? (
