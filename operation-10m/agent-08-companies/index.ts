@@ -196,6 +196,24 @@ export type {
   RemediationExecutionBand,
 } from './production-remediation-execution';
 
+export {
+  AGENT08_UTILIZATION_DEPTH_SCHEMA_VERSION,
+  classifyUtilizationSlackBand,
+  classifyUtilizationStress,
+  computeNationalProductionUtilizationDepth,
+  computeRegionalProductionUtilizationDepth,
+  scoreFirmProductionUtilization,
+  runAgent08UtilizationDepthSelfTests,
+} from './production-utilization-depth';
+
+export type {
+  FirmProductionUtilizationRow,
+  NationalProductionUtilizationDepth,
+  RegionalProductionUtilizationDepth,
+  UtilizationSlackBand,
+  UtilizationStressBand,
+} from './production-utilization-depth';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -208,6 +226,7 @@ import { runAgent08MandateSelfTests } from './production-coordination-mandate';
 import { runAgent08ComplianceSelfTests } from './production-mandate-compliance';
 import { runAgent08RemediationSelfTests } from './production-compliance-remediation';
 import { runAgent08ExecutionSelfTests } from './production-remediation-execution';
+import { runAgent08UtilizationDepthSelfTests } from './production-utilization-depth';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -272,6 +291,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const utilizationDepth = runAgent08UtilizationDepthSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -285,5 +309,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...compliance,
     ...remediation,
     ...execution,
+    ...utilizationDepth,
   ];
 }
