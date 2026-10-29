@@ -68,6 +68,7 @@ const FILES = [
   'compound-climate-grid-hardening-federation-ledger.ts',
   'sovereign-interconnector-critical-infrastructure-federation-ledger.ts',
   'export-corridor-transmission-resilience-federation-ledger.ts',
+  'renewable-export-continuity-sovereign-security-federation-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -308,6 +309,9 @@ const EXPORT_MANIFEST = [
   'runAgent13ExportCorridorTransmissionResilienceScaleSelfTests',
   'runAgent13ExportCorridorTransmissionResilienceTurnScenario',
   'V1014_EXPORT_CORRIDOR_TRANSMISSION_RESILIENCE_TURN_SCENARIOS',
+  'runAgent13RenewableExportContinuitySovereignSecurityScaleSelfTests',
+  'runAgent13RenewableExportContinuitySovereignSecurityTurnScenario',
+  'V1014_RENEWABLE_EXPORT_CONTINUITY_SOVEREIGN_SECURITY_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

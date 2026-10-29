@@ -225,6 +225,11 @@ import {
   V1014_EXPORT_CORRIDOR_TRANSMISSION_RESILIENCE_TURN_SCENARIOS,
 } from '../modules/export-corridor-transmission-resilience-federation-ledger.ts';
 import {
+  runAgent13RenewableExportContinuitySovereignSecurityScaleSelfTests,
+  runAgent13RenewableExportContinuitySovereignSecurityTurnScenario,
+  V1014_RENEWABLE_EXPORT_CONTINUITY_SOVEREIGN_SECURITY_TURN_SCENARIOS,
+} from '../modules/renewable-export-continuity-sovereign-security-federation-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -602,6 +607,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const exportCorridorTurn = runAgent13ExportCorridorTransmissionResilienceTurnScenario(V1014_EXPORT_CORRIDOR_TRANSMISSION_RESILIENCE_TURN_SCENARIOS[0]);
   ok(exportCorridorTurn.passed);
+
+  const renewableContinuity = runAgent13RenewableExportContinuitySovereignSecurityScaleSelfTests();
+  ok(renewableContinuity.failed === 0 && renewableContinuity.passed >= 5);
+
+  const renewableContinuityTurn = runAgent13RenewableExportContinuitySovereignSecurityTurnScenario(V1014_RENEWABLE_EXPORT_CONTINUITY_SOVEREIGN_SECURITY_TURN_SCENARIOS[0]);
+  ok(renewableContinuityTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

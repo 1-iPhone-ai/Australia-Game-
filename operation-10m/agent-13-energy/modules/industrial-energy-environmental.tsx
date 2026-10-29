@@ -344,6 +344,13 @@ import {
   type V1014RegionalExportCorridorTransmissionLedger,
   type V1014RegionalTransmissionResilienceFederationLedger,
 } from './export-corridor-transmission-resilience-federation-ledger';
+import {
+  advanceRegionalSovereignExportSecurityFederationOrchestration,
+  computeRegionalRenewableExportContinuityLedger,
+  scoreAgent13RenewableExportContinuitySovereignSecurityGIAlignment,
+  type V1014RegionalRenewableExportContinuityLedger,
+  type V1014RegionalSovereignExportSecurityFederationLedger,
+} from './renewable-export-continuity-sovereign-security-federation-ledger';
 
 import {
   buildHouseholdEnergyHints,
@@ -25990,6 +25997,10 @@ export interface V1014RegionalEnergyProfile {
   exportCorridorTransmissionRelief: number;
   transmissionResilienceFederationBand: string;
   transmissionResilienceFederationRelief: number;
+  renewableExportContinuityBand: string;
+  renewableExportContinuityRelief: number;
+  sovereignExportSecurityFederationBand: string;
+  sovereignExportSecurityFederationRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -26120,6 +26131,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalCriticalInfrastructureFederationLedgers: Record<string, V1014RegionalCriticalInfrastructureFederationLedger>;
   regionalExportCorridorTransmissionLedgers: Record<string, V1014RegionalExportCorridorTransmissionLedger>;
   regionalTransmissionResilienceFederationLedgers: Record<string, V1014RegionalTransmissionResilienceFederationLedger>;
+  regionalRenewableExportContinuityLedgers: Record<string, V1014RegionalRenewableExportContinuityLedger>;
+  regionalSovereignExportSecurityFederationLedgers: Record<string, V1014RegionalSovereignExportSecurityFederationLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -26221,6 +26234,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalCriticalInfrastructureFederationMemory: Record<string, { infrastructureIndex: number }>;
   regionalExportCorridorTransmissionMemory: Record<string, { exportBalance: number; exportIndex: number }>;
   regionalTransmissionResilienceFederationMemory: Record<string, { resilienceIndex: number }>;
+  regionalRenewableExportContinuityMemory: Record<string, { continuityBalance: number; continuityIndex: number }>;
+  regionalSovereignExportSecurityFederationMemory: Record<string, { securityIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -26334,6 +26349,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalCriticalInfrastructureFederationMemory: {},
     regionalExportCorridorTransmissionMemory: {},
     regionalTransmissionResilienceFederationMemory: {},
+    regionalRenewableExportContinuityMemory: {},
+    regionalSovereignExportSecurityFederationMemory: {},
     history: [],
   };
 }
@@ -26635,6 +26652,14 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalTransmissionResilienceFederationMemory === 'object' && raw.regionalTransmissionResilienceFederationMemory
         ? raw.regionalTransmissionResilienceFederationMemory
         : {},
+    regionalRenewableExportContinuityMemory:
+      typeof raw.regionalRenewableExportContinuityMemory === 'object' && raw.regionalRenewableExportContinuityMemory
+        ? raw.regionalRenewableExportContinuityMemory
+        : {},
+    regionalSovereignExportSecurityFederationMemory:
+      typeof raw.regionalSovereignExportSecurityFederationMemory === 'object' && raw.regionalSovereignExportSecurityFederationMemory
+        ? raw.regionalSovereignExportSecurityFederationMemory
+        : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -26835,6 +26860,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalCriticalInfrastructureFederationLedgers: {},
       regionalExportCorridorTransmissionLedgers: {},
       regionalTransmissionResilienceFederationLedgers: {},
+      regionalRenewableExportContinuityLedgers: {},
+      regionalSovereignExportSecurityFederationLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26939,6 +26966,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const criticalInfrastructureFederationLedgers: Record<string, V1014RegionalCriticalInfrastructureFederationLedger> = {};
   const exportCorridorTransmissionLedgers: Record<string, V1014RegionalExportCorridorTransmissionLedger> = {};
   const transmissionResilienceFederationLedgers: Record<string, V1014RegionalTransmissionResilienceFederationLedger> = {};
+  const renewableExportContinuityLedgers: Record<string, V1014RegionalRenewableExportContinuityLedger> = {};
+  const sovereignExportSecurityFederationLedgers: Record<string, V1014RegionalSovereignExportSecurityFederationLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -27175,6 +27204,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   const nextTransmissionResilienceFederationMemory: Record<string, { resilienceIndex: number }> = {
     ...persisted.regionalTransmissionResilienceFederationMemory,
+  };
+  const nextRenewableExportContinuityMemory: Record<string, { continuityBalance: number; continuityIndex: number }> = {
+    ...persisted.regionalRenewableExportContinuityMemory,
+  };
+  const nextSovereignExportSecurityFederationMemory: Record<string, { securityIndex: number }> = {
+    ...persisted.regionalSovereignExportSecurityFederationMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -28456,6 +28491,34 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextTransmissionResilienceFederationMemory[regionId] = transmissionResilienceFederationStep.next;
     transmissionResilienceFederationLedgers[regionId] = transmissionResilienceFederationStep.ledger;
     pressure -= transmissionResilienceFederationStep.ledger.transmissionResilienceFederationRelief;
+
+    const renewableExportContinuityStep = computeRegionalRenewableExportContinuityLedger({
+      regionId,
+      exportCorridorTransmissionRelief: exportCorridorTransmissionStep.ledger.exportCorridorTransmissionRelief,
+      transmissionResilienceFederationRelief: transmissionResilienceFederationStep.ledger.transmissionResilienceFederationRelief,
+      interregionalInterconnectionRelief: interregionalInterconnectionStep.ledger.interregionalInterconnectionRelief,
+      decarbonFederationRelief: decarbonFederationStep.ledger.decarbonFederationRelief,
+      safeguardCertificateRelief: decarbonCertificateStackStep.ledger.decarbonCertificateStackRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextRenewableExportContinuityMemory[regionId] || null,
+    });
+    nextRenewableExportContinuityMemory[regionId] = renewableExportContinuityStep.next;
+    renewableExportContinuityLedgers[regionId] = renewableExportContinuityStep.ledger;
+    pressure -= renewableExportContinuityStep.ledger.renewableExportContinuityRelief;
+
+    const sovereignExportSecurityFederationStep = advanceRegionalSovereignExportSecurityFederationOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      renewableExportContinuityBand: renewableExportContinuityStep.ledger.band,
+      interregionalInterconnectionRelief: interregionalInterconnectionStep.ledger.interregionalInterconnectionRelief,
+      decarbonFederationRelief: decarbonFederationStep.ledger.decarbonFederationRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextSovereignExportSecurityFederationMemory[regionId] || null,
+    });
+    nextSovereignExportSecurityFederationMemory[regionId] = sovereignExportSecurityFederationStep.next;
+    sovereignExportSecurityFederationLedgers[regionId] = sovereignExportSecurityFederationStep.ledger;
+    pressure -= sovereignExportSecurityFederationStep.ledger.sovereignExportSecurityFederationRelief;
     pressure = v1014Clamp(pressure, 0, 100);
 
     nextHyst[regionId] = { extractionScore, renewableScore: renewableShareScore, pressure };
@@ -28562,6 +28625,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       criticalInfrastructureFederationStep.ledger.summary,
       exportCorridorTransmissionStep.ledger.summary,
       transmissionResilienceFederationStep.ledger.summary,
+      renewableExportContinuityStep.ledger.summary,
+      sovereignExportSecurityFederationStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -28826,6 +28891,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       exportCorridorTransmissionRelief: exportCorridorTransmissionStep.ledger.exportCorridorTransmissionRelief,
       transmissionResilienceFederationBand: transmissionResilienceFederationStep.ledger.band,
       transmissionResilienceFederationRelief: transmissionResilienceFederationStep.ledger.transmissionResilienceFederationRelief,
+      renewableExportContinuityBand: renewableExportContinuityStep.ledger.band,
+      renewableExportContinuityRelief: renewableExportContinuityStep.ledger.renewableExportContinuityRelief,
+      sovereignExportSecurityFederationBand: sovereignExportSecurityFederationStep.ledger.band,
+      sovereignExportSecurityFederationRelief: sovereignExportSecurityFederationStep.ledger.sovereignExportSecurityFederationRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -28985,6 +29054,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalCriticalInfrastructureFederationLedgers: criticalInfrastructureFederationLedgers,
     regionalExportCorridorTransmissionLedgers: exportCorridorTransmissionLedgers,
     regionalTransmissionResilienceFederationLedgers: transmissionResilienceFederationLedgers,
+    regionalRenewableExportContinuityLedgers: renewableExportContinuityLedgers,
+    regionalSovereignExportSecurityFederationLedgers: sovereignExportSecurityFederationLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -29086,6 +29157,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalCriticalInfrastructureFederationMemory: nextCriticalInfrastructureFederationMemory,
     regionalExportCorridorTransmissionMemory: nextExportCorridorTransmissionMemory,
     regionalTransmissionResilienceFederationMemory: nextTransmissionResilienceFederationMemory,
+    regionalRenewableExportContinuityMemory: nextRenewableExportContinuityMemory,
+    regionalSovereignExportSecurityFederationMemory: nextSovereignExportSecurityFederationMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -30935,6 +31008,48 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     transmissionResilienceBand: rr48.state.regions.NSW?.transmissionResilienceFederationBand,
   });
   check('EXPORT CORRIDOR GI alignment', giExportCorridor.relevanceDelta > 0.25, giExportCorridor.reason || '');
+
+  const renewableContinuityInp: IndustrialEnergyEnvironmentalInputs = {
+    ...exportCorridorInp,
+    completedProjectTypes: [
+      ...(exportCorridorInp.completedProjectTypes || []),
+      'renewable_export_continuity_hub',
+      'sovereign_green_export_continuity_corridor',
+      'export_continuity_orchestration_mesh',
+      'federation_renewable_export_continuity_tie',
+      'renewable_export_continuity_recovery_hub',
+      'sovereign_export_load_stack',
+      'export_coupling_security_hub',
+      'national_renewable_export_security_mesh',
+      'sovereign_export_continuity_corridor',
+    ],
+  };
+  const rr49 = computeIndustrialEnergyEnvironmentalState(
+    renewableContinuityInp,
+    createInitialIndustrialEnergyEnvironmentalPersisted(),
+    null,
+  );
+  check(
+    'RENEWABLE export continuity tracked',
+    !!rr49.state.regionalRenewableExportContinuityLedgers.NSW?.band,
+    rr49.state.regionalRenewableExportContinuityLedgers.NSW?.band || '',
+  );
+  check(
+    'SOVEREIGN export security federation relief',
+    (rr49.state.regions.NSW?.sovereignExportSecurityFederationRelief || 0) > 0,
+    String(rr49.state.regions.NSW?.sovereignExportSecurityFederationRelief),
+  );
+  check(
+    'RENEWABLE export continuity memory persisted',
+    !!rr49.persisted.regionalRenewableExportContinuityMemory.NSW,
+    String(rr49.persisted.regionalRenewableExportContinuityMemory.NSW?.continuityIndex),
+  );
+  const giRenewableContinuity = scoreAgent13RenewableExportContinuitySovereignSecurityGIAlignment({
+    actionText: 'Renewable export continuity hub with sovereign export load stack and export coupling security hub',
+    renewableExportContinuityBand: rr49.state.regions.NSW?.renewableExportContinuityBand,
+    sovereignExportSecurityFederationBand: rr49.state.regions.NSW?.sovereignExportSecurityFederationBand,
+  });
+  check('RENEWABLE EXPORT CONTINUITY GI alignment', giRenewableContinuity.relevanceDelta > 0.25, giRenewableContinuity.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');
