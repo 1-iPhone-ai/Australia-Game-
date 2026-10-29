@@ -204,6 +204,12 @@ import { nrDashBuildChokepointCorridorSaturationShare } from '../core/chokepoint
 import { nrDashBuildLrDerivedSnippetSourceGap } from '../core/lr-derived-snippet-source-gap.ts';
 import { nrDashBuildPeripheralLinkSaturationShare } from '../core/peripheral-link-saturation-share.ts';
 import { nrDashBuildNsMajorHistoryOverlapGap } from '../core/ns-major-history-overlap-gap.ts';
+import { nrDashBuildNeutralOpenNeedsSkewGap } from '../core/neutral-open-needs-skew-gap.ts';
+import { nrDashBuildNationalOpenNeedsPeakSpread } from '../core/national-open-needs-peak-spread.ts';
+import { nrDashBuildDependencyLinkSaturationShare } from '../core/dependency-link-saturation-share.ts';
+import { nrDashBuildNsDerivedSnippetSourceGap } from '../core/ns-derived-snippet-source-gap.ts';
+import { nrDashBuildRimCorridorSaturationShare } from '../core/rim-corridor-saturation-share.ts';
+import { nrDashBuildCriticalHistoryOverlapGap } from '../core/critical-history-overlap-gap.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -384,6 +390,15 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const neutralNeedsSkew = nrDashBuildNeutralOpenNeedsSkewGap(snap);
+      return neutralNeedsSkew ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-neutral-open-needs-skew-gap">
+          Neutral open-needs skew gap {neutralNeedsSkew.openNeedsSkewGap} · ownership skew {neutralNeedsSkew.ownershipSkew} ·
+          neutral μ {neutralNeedsSkew.neutralMeanOpenNeeds} vs national μ {neutralNeedsSkew.nationalMeanOpenNeeds}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const ownerConc = nrDashBuildOwnerConcentrationIndex(snap);
       return ownerConc ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-owner-concentration">
@@ -478,6 +493,15 @@ export const NrDashOverviewTab: React.FC<{
       return needsSpread ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-open-needs-spread">
           Open needs spread σ {needsSpread.stdDev} · μ {needsSpread.meanOpenNeeds} across {needsSpread.regionCount} regions
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const needsPeakSpread = nrDashBuildNationalOpenNeedsPeakSpread(snap);
+      return needsPeakSpread && needsPeakSpread.peakSpread > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-open-needs-peak-spread">
+          National open-needs peak spread {needsPeakSpread.peakSpread} · {needsPeakSpread.minOpenNeeds}–
+          {needsPeakSpread.maxOpenNeeds} across {needsPeakSpread.regionCount} regions
         </div>
       ) : null;
     })()}
@@ -840,6 +864,15 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const nsDerivedSourceGap = nrDashBuildNsDerivedSnippetSourceGap(nsState, snap);
+      return nsDerivedSourceGap && nsDerivedSourceGap.sourceGap > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-ns-derived-snippet-source-gap">
+          NS derived snippet source gap {nsDerivedSourceGap.sourceGap} · derived {nsDerivedSourceGap.nsDerivedCount} · matched{' '}
+          {nsDerivedSourceGap.matchedSnippetCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const nsSnippetOverlap = nrDashBuildNsHistorySnippetOverlapGap(nsState, snap);
       return nsSnippetOverlap && nsSnippetOverlap.overlapGap > 0 ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-ns-history-snippet-overlap-gap">
@@ -899,6 +932,15 @@ export const NrDashOverviewTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-meaningful-history-overlap-gap">
           Meaningful-history overlap gap {meaningfulHistGap.overlapGap} · shared {meaningfulHistGap.sharedTurnCount} · NS{' '}
           {meaningfulHistGap.nsEntryCount} · meaningful {meaningfulHistGap.meaningfulEntryCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const criticalHistGap = nrDashBuildCriticalHistoryOverlapGap(lrView, nsState);
+      return criticalHistGap && criticalHistGap.overlapGap > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-critical-history-overlap-gap">
+          Critical-history overlap gap {criticalHistGap.overlapGap} · shared {criticalHistGap.sharedTurnCount} · NS{' '}
+          {criticalHistGap.nsEntryCount} · critical {criticalHistGap.criticalEntryCount}
         </div>
       ) : null;
     })()}
@@ -1906,6 +1948,15 @@ export const NrDashMapTab: React.FC<{
         ) : null;
       })()}
       {(() => {
+        const rimCorridorSat = nrDashBuildRimCorridorSaturationShare(nsState, baseNodes);
+        return rimCorridorSat && rimCorridorSat.saturationShare > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-rim-corridor-saturation-share">
+            Rim corridor saturation share {rimCorridorSat.saturationShare} · μ {rimCorridorSat.meanBlend} · peak{' '}
+            {rimCorridorSat.peakBlend}
+          </p>
+        ) : null;
+      })()}
+      {(() => {
         const hubPeripheralSat = nrDashBuildHubPeripheralSaturationShare(nsState);
         return hubPeripheralSat && hubPeripheralSat.saturationShare > 0 ? (
           <p className="text-[10px] opacity-75" data-testid="nr-dash-hub-peripheral-saturation-share">
@@ -1938,6 +1989,15 @@ export const NrDashMapTab: React.FC<{
           <p className="text-[10px] opacity-75" data-testid="nr-dash-dependency-corridor-saturation-share">
             Dependency corridor saturation share {depCorridorSat.saturationShare} · μ {depCorridorSat.meanBlend} · peak{' '}
             {depCorridorSat.peakBlend}
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const depLinkSat = nrDashBuildDependencyLinkSaturationShare(stressedLinks, baseNodes);
+        return depLinkSat && depLinkSat.saturationShare > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-dependency-link-saturation-share">
+            Dependency link saturation share {depLinkSat.saturationShare} · μ {depLinkSat.meanBlend} · peak{' '}
+            {depLinkSat.peakBlend}
           </p>
         ) : null;
       })()}
