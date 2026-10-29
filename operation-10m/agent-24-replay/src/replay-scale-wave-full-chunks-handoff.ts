@@ -17,6 +17,7 @@ import {
   O6K_AGENT24_WAVE34_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE35_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE37_INTEGRATION_BASELINE_SHA,
 } from './replay-scale-wave-integration-closeout.ts';
 
 export { O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA } from './replay-scale-wave-integration-closeout.ts';
@@ -54,7 +55,9 @@ export function buildAgent24ReplayScaleWaveFullChunksHandoffSeal(
   const waveRound = input.replayScaleWaveDryrunVerification.waveRound;
   const fullChunksBaselineSha =
     input.fullChunksBaselineSha ??
-    (waveRound >= 36
+    (waveRound >= 37
+      ? O6K_AGENT24_WAVE37_INTEGRATION_BASELINE_SHA
+      : waveRound >= 36
       ? O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA
       : waveRound >= 35
       ? O6K_AGENT24_WAVE35_INTEGRATION_BASELINE_SHA
@@ -152,7 +155,7 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
   const dryrunVerification = {
     reportId: 'dv',
     matchId: 'self',
-    waveRound: 36,
+    waveRound: 37,
     dryrunBaselineSha: O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
@@ -164,7 +167,7 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
   const fullChunksGate = {
     reportId: 'fcg',
     matchId: 'self',
-    waveRound: 36,
+    waveRound: 37,
     chunksGateOpen: true,
     blockerCount: 0,
     blockers: [],
@@ -185,7 +188,7 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
         seal.handoffReady &&
         seal.fullChunksBaselineSha === O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: seal.waveRound === 36 },
+    { name: 'wave_round_pinned', passed: seal.waveRound === 37 },
     {
       name: 'deterministic_fingerprint',
       passed:

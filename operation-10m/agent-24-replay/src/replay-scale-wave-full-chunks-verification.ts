@@ -117,7 +117,7 @@ export function runAgent24ReplayScaleWaveFullChunksVerificationSelfTests(): Arra
   const dryrunVerification = {
     reportId: 'dv',
     matchId: 'self',
-    waveRound: 36,
+    waveRound: 37,
     dryrunBaselineSha: O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
@@ -129,7 +129,7 @@ export function runAgent24ReplayScaleWaveFullChunksVerificationSelfTests(): Arra
   const fullChunksGate = {
     reportId: 'fcg',
     matchId: 'self',
-    waveRound: 36,
+    waveRound: 37,
     chunksGateOpen: true,
     blockerCount: 0,
     blockers: [],
@@ -139,7 +139,7 @@ export function runAgent24ReplayScaleWaveFullChunksVerificationSelfTests(): Arra
   const handoffSeal = {
     sealId: 'fch',
     matchId: 'self',
-    waveRound: 36,
+    waveRound: 37,
     fullChunksBaselineSha: O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
     handoffReady: true,
     linkCount: 3,
@@ -158,7 +158,7 @@ export function runAgent24ReplayScaleWaveFullChunksVerificationSelfTests(): Arra
 
   return [
     { name: 'verified_when_full_chunks_stack_ready', passed: report.verified && report.issueCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 36 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 37 },
     {
       name: 'deterministic_fingerprint',
       passed:
