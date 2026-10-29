@@ -72,4 +72,7 @@ export * from './batch-national-tick-unified-session.js';
 export * from './batch-national-tick-session-wave.js';
 export * from './batch-national-tick-session-wave-export.js';
 export * from './batch-national-tick-session-wave-replay-parity.js';
+export * from './batch-national-tick-session-wave-scorecard-export.js';
+export * from './batch-national-tick-session-wave-export-compare.js';
+export * from './batch-national-tick-session-wave-assembly-gate.js';
 export * from './engine.js';

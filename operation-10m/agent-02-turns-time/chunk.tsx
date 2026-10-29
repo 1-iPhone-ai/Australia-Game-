@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
 // @ts-nocheck
-// content-sha256-prefix: ba9b30ea286a6ede
+// content-sha256-prefix: 8975c1fd02298dca
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -4658,6 +4658,126 @@ export function verifyBatchNationalTickSessionWaveReplayParity(
   return { parityOk, baseline, replay };
 }
 
+// --- src/batch-national-tick-session-wave-scorecard-export.ts ---
+
+export interface BatchNationalTickSessionWaveScorecardExport {
+  ok: boolean;
+  sessionCount: number;
+  unifiedOkCount: number;
+  ledgerOkCount: number;
+  waveDigest: string;
+  ledgerDigest: string;
+  scorecardDigest: string;
+}
+
+export function computeBatchNationalTickSessionWaveScorecardDigest(
+  scorecard: BatchNationalTickSessionWaveScorecardExport,
+): string {
+  return fnv1a64Hex(
+    JSON.stringify({
+      ok: scorecard.ok,
+      sessionCount: scorecard.sessionCount,
+      unifiedOkCount: scorecard.unifiedOkCount,
+      ledgerOkCount: scorecard.ledgerOkCount,
+      waveDigest: scorecard.waveDigest,
+      ledgerDigest: scorecard.ledgerDigest,
+    }),
+  );
+}
+
+/**
+ * Round 18: scorecard rollup over session wave export for Agent 25 assembly hooks.
+ */
+export function exportBatchNationalTickSessionWaveScorecard(
+  wave: BatchNationalTickSessionWaveResult,
+): BatchNationalTickSessionWaveScorecardExport {
+  const exp: BatchNationalTickSessionWaveExport = exportBatchNationalTickSessionWave(wave);
+  const unifiedOkCount = exp.rows.filter((row) => row.unifiedOk).length;
+  const ledgerOkCount = exp.rows.filter((row) => row.ledgerOk).length;
+  const scorecard: BatchNationalTickSessionWaveScorecardExport = {
+    ok: exp.allOk && unifiedOkCount === exp.sessionCount && ledgerOkCount === exp.sessionCount,
+    sessionCount: exp.sessionCount,
+    unifiedOkCount,
+    ledgerOkCount,
+    waveDigest: exp.waveDigest,
+    ledgerDigest: exp.ledgerDigest,
+    scorecardDigest: '',
+  };
+  scorecard.scorecardDigest = computeBatchNationalTickSessionWaveScorecardDigest(scorecard);
+  return scorecard;
+}
+
+// --- src/batch-national-tick-session-wave-export-compare.ts ---
+
+export interface BatchNationalTickSessionWaveExportCompareResult {
+  ok: boolean;
+  waveDigestMatch: boolean;
+  ledgerDigestMatch: boolean;
+  sessionCountDelta: number;
+  allOkMatch: boolean;
+}
+
+/**
+ * Round 18: compare two flattened session wave exports (regression / twin-run checks).
+ */
+export function compareBatchNationalTickSessionWaveExports(
+  baseline: BatchNationalTickSessionWaveExport,
+  candidate: BatchNationalTickSessionWaveExport,
+): BatchNationalTickSessionWaveExportCompareResult {
+  const sessionCountDelta = candidate.sessionCount - baseline.sessionCount;
+  const waveDigestMatch = baseline.waveDigest === candidate.waveDigest;
+  const ledgerDigestMatch = baseline.ledgerDigest === candidate.ledgerDigest;
+  const allOkMatch = baseline.allOk === candidate.allOk;
+  return {
+    ok:
+      waveDigestMatch &&
+      ledgerDigestMatch &&
+      allOkMatch &&
+      sessionCountDelta === 0 &&
+      baseline.sessionCount === candidate.sessionCount,
+    waveDigestMatch,
+    ledgerDigestMatch,
+    sessionCountDelta,
+    allOkMatch,
+  };
+}
+
+// --- src/batch-national-tick-session-wave-assembly-gate.ts ---
+
+export interface BatchNationalTickSessionWaveAssemblyGateResult {
+  ok: boolean;
+  exportAllOk: boolean;
+  scorecardOk: boolean;
+  parityOk: boolean;
+  scorecard: BatchNationalTickSessionWaveScorecardExport;
+  parity: BatchNationalTickSessionWaveReplayParityResult;
+}
+
+/**
+ * Round 18: assembly gate — export ok, scorecard ok, and replay parity on the same tick specs.
+ */
+export function gateBatchNationalTickSessionWaveAssembly(
+  engine: TurnTimeEngine,
+  budget: TurnAdvanceBudgetState,
+  ticks: readonly NationalTickSessionWaveTickSpec[],
+  wave: BatchNationalTickSessionWaveResult,
+): BatchNationalTickSessionWaveAssemblyGateResult {
+  const exp = exportBatchNationalTickSessionWave(wave);
+  const scorecard = exportBatchNationalTickSessionWaveScorecard(wave);
+  const parity = verifyBatchNationalTickSessionWaveReplayParity(engine, budget, ticks);
+  const exportAllOk = exp.allOk;
+  const scorecardOk = scorecard.ok;
+  const parityOk = parity.parityOk;
+  return {
+    ok: exportAllOk && scorecardOk && parityOk,
+    exportAllOk,
+    scorecardOk,
+    parityOk,
+    scorecard,
+    parity,
+  };
+}
+
 // --- src/fast-forward.ts ---
 
 export interface FastForwardResult {
@@ -4808,7 +4928,7 @@ export function turnsBetweenInclusive(fromTurn: number, toTurn: number): number[
 
 export const AGENT_02_MODULE_ID = 'operation-10m/agent-02-turns-time';
 
-export const AGENT_02_MODULE_VERSION = '2.6.0';
+export const AGENT_02_MODULE_VERSION = '2.7.0';
 
 
 
@@ -5408,8 +5528,6 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
 
   const waveEngine = new TurnTimeEngine();
 
-  waveEngine.registerObligation({ id: 'wv', dueTurn: 1, kind: 'k' });
-
   const waveRun = runNationalTickOrchestratedSessionWave(waveEngine, createTurnAdvanceBudget(2), [
 
     { maxSteps: 1, input: { stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } } } },
@@ -5447,6 +5565,48 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
       { maxSteps: 1, input: { stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } } } },
 
     ]).parityOk,
+
+  });
+
+  const waveAssemblyEngine = new TurnTimeEngine();
+
+  const waveAssemblyBudget = createTurnAdvanceBudget(2);
+
+  const waveAssemblyTicks = [
+
+    { maxSteps: 1, input: { stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } } } },
+
+  ];
+
+  const waveAssemblyRun = runNationalTickOrchestratedSessionWave(waveAssemblyEngine, waveAssemblyBudget, waveAssemblyTicks);
+
+  results.push({
+
+    id: 'agent02_national_tick_session_wave_scorecard',
+
+    name: 'national tick session wave scorecard export',
+
+    passed: exportBatchNationalTickSessionWaveScorecard(waveAssemblyRun).ok,
+
+  });
+
+  results.push({
+
+    id: 'agent02_national_tick_session_wave_assembly_gate',
+
+    name: 'national tick session wave assembly gate',
+
+    passed: gateBatchNationalTickSessionWaveAssembly(
+
+      waveAssemblyEngine,
+
+      waveAssemblyBudget,
+
+      waveAssemblyTicks,
+
+      waveAssemblyRun,
+
+    ).ok,
 
   });
 
