@@ -187,7 +187,11 @@ export type LaborGiQueryTopic =
   | 'grit_resolve_coupling'
   | 'resolve_resilience'
   | 'subject_resolve_readiness'
-  | 'workforce_resolve_depth';
+  | 'workforce_resolve_depth'
+  | 'resolve_steadfast_coupling'
+  | 'steadfast_resilience'
+  | 'subject_steadfast_readiness'
+  | 'workforce_steadfast_depth';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -257,6 +261,7 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(subject commit readiness|commit readiness subject)/.test(q)) return 'subject_commit_readiness';
   if (/\b(workforce grit depth|grit depth index labor)/.test(q)) return 'workforce_grit_depth';
   if (/\b(workforce resolve depth|resolve depth index labor)/.test(q)) return 'workforce_resolve_depth';
+  if (/\b(workforce steadfast depth|steadfast depth index labor)/.test(q)) return 'workforce_steadfast_depth';
   if (/\b(workforce perseverance depth|perseverance depth index labor)/.test(q)) return 'workforce_perseverance_depth';
   if (/\b(workforce tenacity depth|tenacity depth index labor)/.test(q)) return 'workforce_tenacity_depth';
   if (/\b(workforce tenacity|tenacity index labor)/.test(q)) return 'workforce_tenacity';
@@ -400,6 +405,9 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(grit resolve|grit-resolve coupling)/.test(q)) return 'grit_resolve_coupling';
   if (/\b(resolve resilience)/.test(q)) return 'resolve_resilience';
   if (/\b(subject resolve readiness)/.test(q)) return 'subject_resolve_readiness';
+  if (/\b(resolve steadfast|resolve-steadfast coupling)/.test(q)) return 'resolve_steadfast_coupling';
+  if (/\b(steadfast resilience)/.test(q)) return 'steadfast_resilience';
+  if (/\b(subject steadfast readiness)/.test(q)) return 'subject_steadfast_readiness';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1890,6 +1898,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Resolve band ${state.nationalWorkforceResolveDepthIndex?.band ?? 'unknown'}; resolve drag ${Math.round(state.nationalWorkforceResolveDepthIndex?.resolveDrag ?? 0)}.`,
         inference: state.nationalWorkforceResolveDepthIndex?.stewardNote || state.summary,
         projection: 'Resolve depth synthesizes grit-resolve coupling, resilience, and subject resolve.'
+      };
+    case 'resolve_steadfast_coupling':
+      return {
+        topic,
+        headline: state.resolveSteadfastCouplingBrief?.summary || 'Resolve-steadfast coupling unavailable.',
+        fact: `Coupling band ${state.resolveSteadfastCouplingBrief?.band ?? 'unknown'}; resolve drag ${Math.round(state.resolveSteadfastCouplingBrief?.resolveDrag ?? 0)}.`,
+        inference: state.resolveSteadfastCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce resolve depth with steadfast levers — bounded indices only.'
+      };
+    case 'steadfast_resilience':
+      return {
+        topic,
+        headline: state.steadfastResilienceOutlook?.summary || 'Steadfast resilience unavailable.',
+        fact: `Resilience band ${state.steadfastResilienceOutlook?.band ?? 'unknown'}; resolve drag ${Math.round(state.steadfastResilienceOutlook?.resolveDrag ?? 0)}.`,
+        inference: state.steadfastResilienceOutlook?.stewardNote || state.outlook,
+        projection: 'Resilience outlook tracks resolve resilience against steadfast levers for wave 51 depth.'
+      };
+    case 'subject_steadfast_readiness':
+      return {
+        topic,
+        headline: state.subjectSteadfastReadinessBrief?.summary || 'Subject steadfast readiness unavailable.',
+        fact: `Steadfast band ${state.subjectSteadfastReadinessBrief?.band ?? 'unknown'}; steadfast drag ${Math.round(state.subjectSteadfastReadinessBrief?.steadfastDrag ?? 0)}.`,
+        inference: state.subjectSteadfastReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject steadfast readiness gates subject resolve against resolve depth for O10-233 wave 51.'
+      };
+    case 'workforce_steadfast_depth':
+      return {
+        topic,
+        headline: state.nationalWorkforceSteadfastDepthIndex?.summary || 'Workforce steadfast depth unavailable.',
+        fact: `Steadfast band ${state.nationalWorkforceSteadfastDepthIndex?.band ?? 'unknown'}; steadfast drag ${Math.round(state.nationalWorkforceSteadfastDepthIndex?.steadfastDrag ?? 0)}.`,
+        inference: state.nationalWorkforceSteadfastDepthIndex?.stewardNote || state.summary,
+        projection: 'Steadfast depth synthesizes resolve-steadfast coupling, resilience, and subject steadfast.'
       };
     default:
       return {

@@ -258,8 +258,13 @@ import { computeNationalGritResolveCouplingBrief } from './grit-resolve-coupling
 import { computeNationalResolveResilienceOutlook } from './resolve-resilience-outlook';
 import { computeNationalSubjectResolveReadinessBrief } from './subject-resolve-readiness-brief';
 import { computeNationalWorkforceResolveDepthIndex } from './national-workforce-resolve-depth-index';
+import { computeNationalResolveSteadfastCouplingBrief } from './resolve-steadfast-coupling-brief';
+import { computeNationalSteadfastResilienceOutlook } from './steadfast-resilience-outlook';
+import { computeNationalSubjectSteadfastReadinessBrief } from './subject-steadfast-readiness-brief';
+import { computeNationalWorkforceSteadfastDepthIndex } from './national-workforce-steadfast-depth-index';
 import { gritEaseForRegion } from './catalog/workforce-grit-levers';
 import { resolveEaseForRegion } from './catalog/workforce-resolve-levers';
+import { steadfastEaseForRegion } from './catalog/workforce-steadfast-levers';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -3241,7 +3246,78 @@ export function runV1014LaborDemographicsSelfTests(): {
   );
   check('R5016', resolveEaseForRegion('NSW', 'technology') > 0, 'resolve ease for region');
 
-  for (let i = 19; i <= 50; i++) {
+  check('R5101', Boolean(r1.state.resolveSteadfastCouplingBrief?.band), 'resolve steadfast on state');
+  check(
+    'R5102',
+    (r1.state.resolveSteadfastCouplingBrief?.resolveDrag ?? 0) >= 0,
+    'resolve steadfast drag'
+  );
+  check('R5103', Boolean(r1.state.steadfastResilienceOutlook?.band), 'steadfast resilience on state');
+  check(
+    'R5104',
+    (r1.state.steadfastResilienceOutlook?.resolveDrag ?? 0) >= 0,
+    'steadfast resilience resolve drag'
+  );
+  check('R5105', Boolean(r1.state.subjectSteadfastReadinessBrief?.band), 'subject steadfast on state');
+  check(
+    'R5106',
+    Boolean(r1.state.nationalWorkforceSteadfastDepthIndex?.band),
+    'workforce steadfast depth on state'
+  );
+  check(
+    'R5107',
+    detectLaborDemographicsQuery('resolve steadfast coupling') === 'resolve_steadfast_coupling',
+    'GI resolve steadfast detect'
+  );
+  check(
+    'R5108',
+    detectLaborDemographicsQuery('steadfast resilience') === 'steadfast_resilience',
+    'GI steadfast resilience detect'
+  );
+  check(
+    'R5109',
+    detectLaborDemographicsQuery('subject steadfast readiness') === 'subject_steadfast_readiness',
+    'GI subject steadfast detect'
+  );
+  check(
+    'R5110',
+    detectLaborDemographicsQuery('workforce steadfast depth') === 'workforce_steadfast_depth',
+    'GI workforce steadfast depth detect'
+  );
+  check(
+    'R5111',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_steadfast_depth').headline.length > 5,
+    'GI workforce steadfast depth answer'
+  );
+  const resolveSteadfastOnly = computeNationalResolveSteadfastCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceResolveDepthIndex
+  );
+  check('R5112', resolveSteadfastOnly.summary.length > 10, 'resolve steadfast standalone summary');
+  const steadfastResilienceOnly = computeNationalSteadfastResilienceOutlook(
+    r1.state,
+    r1.state.resolveResilienceOutlook
+  );
+  check('R5113', steadfastResilienceOnly.band.length > 3, 'steadfast resilience band string');
+  const subjectSteadfastOnly = computeNationalSubjectSteadfastReadinessBrief(
+    r1.state,
+    r1.state.subjectResolveReadinessBrief,
+    r1.state.nationalWorkforceResolveDepthIndex
+  );
+  check('R5114', subjectSteadfastOnly.steadfastDrag >= 0, 'subject steadfast drag');
+  check(
+    'R5115',
+    computeNationalWorkforceSteadfastDepthIndex(
+      rHhBad.state,
+      rHhBad.state.resolveSteadfastCouplingBrief,
+      rHhBad.state.steadfastResilienceOutlook,
+      rHhBad.state.subjectSteadfastReadinessBrief
+    ).stewardNote.length > 8,
+    'steadfast depth steward note'
+  );
+  check('R5116', steadfastEaseForRegion('NSW', 'technology') > 0, 'steadfast ease for region');
+
+  for (let i = 19; i <= 51; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
     check(`LD${String(i).padStart(2, '0')}`, ok, `invariant bundle ${i}`);
   }
