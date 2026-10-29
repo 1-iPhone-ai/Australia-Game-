@@ -162,12 +162,13 @@ export interface ResearchBranchEmphasisState {
   setTurn: number;
 }
 
-export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v38' as const;
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v39' as const;
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
 export type ResearchProgressSchemaVersion =
   | typeof RESEARCH_PROGRESS_SCHEMA_VERSION
+  | 'op10m-agent03-v38'
   | 'op10m-agent03-v37'
   | 'op10m-agent03-v36'
   | 'op10m-agent03-v35'
@@ -1419,6 +1420,44 @@ export interface ResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffInt
   ticketHint: string | null;
 }
 
+export type ResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityBand = 83 | 97 | 99 | 100;
+
+export interface ResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityBandEvent {
+  seq: number;
+  turn: number;
+  band: ResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityBand;
+  sealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityScore: number;
+  horizonTurns: number;
+  waveOrdinal: number;
+  phase: 'escalation' | 'de-escalation';
+}
+
+export interface ResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuitySnapshot {
+  capturedAtTurn: number;
+  sealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityScore: number;
+  horizonTurns: number;
+  waveOrdinal: number;
+  continuityMomentum: number;
+  projectedFunctionalHint: number;
+  dryRunEligible: boolean;
+  peakBand: ResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityBand | 0;
+  digest: string;
+}
+
+export interface ResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffOutlook {
+  active: boolean;
+  baseTurn: number;
+  horizonTurns: number;
+  waveOrdinal: number;
+  sealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffScore: number;
+  handoffMomentum: number;
+  integrationBaselineShaHint: string;
+  priorBaselineHints: string[];
+  projectedFunctionalHint: number;
+  dryRunEligible: boolean;
+  ticketHint: string | null;
+}
+
 export interface ResearchScaleWaveSealHandoffIntegrationOutlook {
   active: boolean;
   baseTurn: number;
@@ -1552,6 +1591,7 @@ export interface ResearchProgressState {
   scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationOutlook?: ResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationOutlook | null;
   scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealOutlook?: ResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealOutlook | null;
   scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityOutlook?: ResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityOutlook | null;
+  scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffOutlook?: ResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffOutlook | null;
   unlockSeq: number;
   branchEmphasis?: ResearchBranchEmphasisState[];
   emphasisRevision?: number;
@@ -1629,6 +1669,8 @@ export interface ResearchProgressState {
   sealHandoffIntegrationSealContinuityHandoffIntegrationSnapshot?: ResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSnapshot | null;
   sealHandoffIntegrationSealContinuityHandoffIntegrationSealBandLog?: ResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealBandEvent[];
   sealHandoffIntegrationSealContinuityHandoffIntegrationSealSnapshot?: ResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealSnapshot | null;
+  sealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityBandLog?: ResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityBandEvent[];
+  sealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuitySnapshot?: ResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuitySnapshot | null;
 }
 
 export interface StrategyHookDefinition {

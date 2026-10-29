@@ -49,6 +49,7 @@ import { computeResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffOutl
 import { computeResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationOutlook } from './scale-wave-seal-handoff-integration-seal-continuity-handoff-integration-outlook.ts';
 import { computeResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealOutlook } from './scale-wave-seal-handoff-integration-seal-continuity-handoff-integration-seal-outlook.ts';
 import { computeResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityOutlook } from './scale-wave-seal-handoff-integration-seal-continuity-handoff-integration-seal-continuity-outlook.ts';
+import { computeResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffOutlook } from './scale-wave-seal-handoff-integration-seal-continuity-handoff-integration-seal-continuity-handoff-outlook.ts';
 import { branchNodeTopologicalOrder, evaluateNodePrerequisites } from './prerequisites.ts';
 import { resolveActiveStrategyHooks, STRATEGY_HOOK_BY_ID } from './strategy-hooks.ts';
 import {
@@ -531,6 +532,16 @@ export function computeResearchProgress(
         coreBase.sealHandoffIntegrationSealContinuityHandoffIntegrationSnapshot ?? null,
     });
 
+  const scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffOutlook =
+    computeResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffOutlook(inputs, {
+      scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityOutlook,
+      scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealOutlook,
+      sealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuitySnapshot:
+        coreBase.sealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuitySnapshot ?? null,
+      sealHandoffIntegrationSealContinuityHandoffIntegrationSealSnapshot:
+        coreBase.sealHandoffIntegrationSealContinuityHandoffIntegrationSealSnapshot ?? null,
+    });
+
   const computed: ResearchProgressState = {
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: coreBase.revision,
@@ -580,6 +591,7 @@ export function computeResearchProgress(
     scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationOutlook,
     scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealOutlook,
     scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityOutlook,
+    scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffOutlook,
     unlockSeq: coreBase.unlockSeq,
     branchEmphasis: coreBase.branchEmphasis,
   };

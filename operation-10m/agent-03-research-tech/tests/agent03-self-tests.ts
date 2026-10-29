@@ -2544,6 +2544,19 @@ tests.push(
 );
 
 tests.push(
+  test('scale_wave_seal_handoff_integration_seal_continuity_handoff_integration_seal_continuity_handoff_outlook_derived_wave39', () => {
+    const inputs = baseInputs({ turn: 39 });
+    const state = computeResearchProgress(inputs, null);
+    const outlook = state.scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffOutlook;
+    assert(outlook != null);
+    assert(outlook?.waveOrdinal === 39);
+    assert(outlook?.integrationBaselineShaHint === '6134c6a');
+    assert(outlook?.projectedFunctionalHint === 2_077_426);
+    assert(detectForeignSaveFields({ scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffOutlook: outlook }).includes('scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffOutlook'));
+  })
+);
+
+tests.push(
   test('scale_wave_seal_handoff_integration_seal_continuity_handoff_integration_seal_continuity_outlook_derived_wave38', () => {
     const inputs = baseInputs({ turn: 38 });
     const state = computeResearchProgress(inputs, null);
