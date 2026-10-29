@@ -1,0 +1,16 @@
+# Agent 20 — Idle / Automation / Autonomous Ops
+
+Portable TypeScript module for Operation 10M. Covers:
+
+- **Conditional actions** — trigger + requirement-tree gating for human automation and steward intents
+- **Limits** — execution caps, safety floors, national steward spending caps
+- **Logs** — ring-buffer run history and steward ledger entries
+- **Safe time advance** — fail-closed gates before `end_turn` / `advance_day` while automation is in flight
+
+National steward planning logic mirrors canonical **SECTION 20AN** (`V1014_*`) for Agent 25 inline assembly.
+
+Run tests:
+
+```bash
+cd operation-10m/agent-20-automation && npm install && npm test
+```
