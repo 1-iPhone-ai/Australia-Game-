@@ -34,6 +34,7 @@ import { computeResearchScaleWaveIntegrationGateOutlook } from './scale-wave-int
 import { computeResearchTrancheDryRunHandoffOutlook } from './tranche-dry-run-handoff-outlook.ts';
 import { computeResearchMergedIntegrationBaselineOutlook } from './merged-integration-baseline-outlook.ts';
 import { computeResearchScaleWavePostIntegrationDryRunOutlook } from './scale-wave-post-integration-dry-run-outlook.ts';
+import { computeResearchScaleWaveIntegrationSealOutlook } from './scale-wave-integration-seal-outlook.ts';
 import { branchNodeTopologicalOrder, evaluateNodePrerequisites } from './prerequisites.ts';
 import { resolveActiveStrategyHooks, STRATEGY_HOOK_BY_ID } from './strategy-hooks.ts';
 import {
@@ -393,6 +394,13 @@ export function computeResearchProgress(
       dryRunHandoffSnapshot: coreBase.dryRunHandoffSnapshot ?? null,
     });
 
+  const scaleWaveIntegrationSealOutlook = computeResearchScaleWaveIntegrationSealOutlook(inputs, {
+    scaleWavePostIntegrationDryRunOutlook,
+    mergedIntegrationBaselineOutlook,
+    postIntegrationDryRunSnapshot: coreBase.postIntegrationDryRunSnapshot ?? null,
+    mergedIntegrationBaselineSnapshot: coreBase.mergedIntegrationBaselineSnapshot ?? null,
+  });
+
   const computed: ResearchProgressState = {
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: coreBase.revision,
@@ -427,6 +435,7 @@ export function computeResearchProgress(
     trancheDryRunHandoffOutlook,
     mergedIntegrationBaselineOutlook,
     scaleWavePostIntegrationDryRunOutlook,
+    scaleWaveIntegrationSealOutlook,
     unlockSeq: coreBase.unlockSeq,
     branchEmphasis: coreBase.branchEmphasis,
   };
