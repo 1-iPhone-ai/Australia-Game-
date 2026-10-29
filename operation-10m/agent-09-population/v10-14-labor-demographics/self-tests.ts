@@ -254,7 +254,12 @@ import { computeNationalPerseveranceGritCouplingBrief } from './perseverance-gri
 import { computeNationalGritResilienceOutlook } from './grit-resilience-outlook';
 import { computeNationalSubjectGritReadinessBrief } from './subject-grit-readiness-brief';
 import { computeNationalWorkforceGritDepthIndex } from './national-workforce-grit-depth-index';
+import { computeNationalGritResolveCouplingBrief } from './grit-resolve-coupling-brief';
+import { computeNationalResolveResilienceOutlook } from './resolve-resilience-outlook';
+import { computeNationalSubjectResolveReadinessBrief } from './subject-resolve-readiness-brief';
+import { computeNationalWorkforceResolveDepthIndex } from './national-workforce-resolve-depth-index';
 import { gritEaseForRegion } from './catalog/workforce-grit-levers';
+import { resolveEaseForRegion } from './catalog/workforce-resolve-levers';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -3168,6 +3173,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'grit depth steward note'
   );
   check('R4916', gritEaseForRegion('NSW', 'technology') > 0, 'grit ease for region');
+
+  check('R5001', Boolean(r1.state.gritResolveCouplingBrief?.band), 'grit resolve on state');
+  check(
+    'R5002',
+    (r1.state.gritResolveCouplingBrief?.gritDrag ?? 0) >= 0,
+    'grit resolve drag'
+  );
+  check('R5003', Boolean(r1.state.resolveResilienceOutlook?.band), 'resolve resilience on state');
+  check(
+    'R5004',
+    (r1.state.resolveResilienceOutlook?.gritDrag ?? 0) >= 0,
+    'resolve resilience grit drag'
+  );
+  check('R5005', Boolean(r1.state.subjectResolveReadinessBrief?.band), 'subject resolve on state');
+  check('R5006', Boolean(r1.state.nationalWorkforceResolveDepthIndex?.band), 'workforce resolve depth on state');
+  check(
+    'R5007',
+    detectLaborDemographicsQuery('grit resolve coupling') === 'grit_resolve_coupling',
+    'GI grit resolve detect'
+  );
+  check(
+    'R5008',
+    detectLaborDemographicsQuery('resolve resilience') === 'resolve_resilience',
+    'GI resolve resilience detect'
+  );
+  check(
+    'R5009',
+    detectLaborDemographicsQuery('subject resolve readiness') === 'subject_resolve_readiness',
+    'GI subject resolve detect'
+  );
+  check(
+    'R5010',
+    detectLaborDemographicsQuery('workforce resolve depth') === 'workforce_resolve_depth',
+    'GI workforce resolve depth detect'
+  );
+  check(
+    'R5011',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_resolve_depth').headline.length > 5,
+    'GI workforce resolve depth answer'
+  );
+  const gritResolveOnly = computeNationalGritResolveCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceGritDepthIndex
+  );
+  check('R5012', gritResolveOnly.summary.length > 10, 'grit resolve standalone summary');
+  const resolveResilienceOnly = computeNationalResolveResilienceOutlook(
+    r1.state,
+    r1.state.gritResilienceOutlook
+  );
+  check('R5013', resolveResilienceOnly.band.length > 3, 'resolve resilience band string');
+  const subjectResolveOnly = computeNationalSubjectResolveReadinessBrief(
+    r1.state,
+    r1.state.subjectGritReadinessBrief,
+    r1.state.nationalWorkforceGritDepthIndex
+  );
+  check('R5014', subjectResolveOnly.resolveDrag >= 0, 'subject resolve drag');
+  check(
+    'R5015',
+    computeNationalWorkforceResolveDepthIndex(
+      rHhBad.state,
+      rHhBad.state.gritResolveCouplingBrief,
+      rHhBad.state.resolveResilienceOutlook,
+      rHhBad.state.subjectResolveReadinessBrief
+    ).stewardNote.length > 8,
+    'resolve depth steward note'
+  );
+  check('R5016', resolveEaseForRegion('NSW', 'technology') > 0, 'resolve ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

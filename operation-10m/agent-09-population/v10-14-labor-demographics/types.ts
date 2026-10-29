@@ -365,6 +365,10 @@ export interface NationalLaborDemographicsState {
   gritResilienceOutlook?: NationalGritResilienceOutlook;
   subjectGritReadinessBrief?: NationalSubjectGritReadinessBrief;
   nationalWorkforceGritDepthIndex?: NationalWorkforceGritDepthIndex;
+  gritResolveCouplingBrief?: NationalGritResolveCouplingBrief;
+  resolveResilienceOutlook?: NationalResolveResilienceOutlook;
+  subjectResolveReadinessBrief?: NationalSubjectResolveReadinessBrief;
+  nationalWorkforceResolveDepthIndex?: NationalWorkforceResolveDepthIndex;
 }
 
 export type MigrationShockKind =
@@ -2421,6 +2425,50 @@ export interface NationalWorkforceGritDepthIndex {
   gritIndex: number;
   band: WorkforceGritDepthBand;
   gritDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type GritResolveCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalGritResolveCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: GritResolveCouplingBand;
+  gritDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ResolveResilienceBand = 'ebbing' | 'patchy' | 'rising' | 'fortified';
+
+export interface NationalResolveResilienceOutlook {
+  turn: number;
+  resilienceIndex: number;
+  band: ResolveResilienceBand;
+  gritDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectResolveReadinessBand = 'below_resolve' | 'approaching' | 'resolve_ready' | 'grit_locked';
+
+export interface NationalSubjectResolveReadinessBrief {
+  turn: number;
+  resolveIndex: number;
+  band: SubjectResolveReadinessBand;
+  resolveDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceResolveDepthBand = 'fragile' | 'thin' | 'elevated' | 'resolve';
+
+export interface NationalWorkforceResolveDepthIndex {
+  turn: number;
+  resolveIndex: number;
+  band: WorkforceResolveDepthBand;
+  resolveDrag: number;
   summary: string;
   stewardNote: string;
 }

@@ -206,6 +206,10 @@ import { computeNationalPerseveranceGritCouplingBrief } from './perseverance-gri
 import { computeNationalGritResilienceOutlook } from './grit-resilience-outlook';
 import { computeNationalSubjectGritReadinessBrief } from './subject-grit-readiness-brief';
 import { computeNationalWorkforceGritDepthIndex } from './national-workforce-grit-depth-index';
+import { computeNationalGritResolveCouplingBrief } from './grit-resolve-coupling-brief';
+import { computeNationalResolveResilienceOutlook } from './resolve-resilience-outlook';
+import { computeNationalSubjectResolveReadinessBrief } from './subject-resolve-readiness-brief';
+import { computeNationalWorkforceResolveDepthIndex } from './national-workforce-resolve-depth-index';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -1332,6 +1336,25 @@ export function computeNationalLaborDemographics(
     state.perseveranceGritCouplingBrief,
     state.gritResilienceOutlook,
     state.subjectGritReadinessBrief
+  );
+  state.gritResolveCouplingBrief = computeNationalGritResolveCouplingBrief(
+    state,
+    state.nationalWorkforceGritDepthIndex
+  );
+  state.resolveResilienceOutlook = computeNationalResolveResilienceOutlook(
+    state,
+    state.gritResilienceOutlook
+  );
+  state.subjectResolveReadinessBrief = computeNationalSubjectResolveReadinessBrief(
+    state,
+    state.subjectGritReadinessBrief,
+    state.nationalWorkforceGritDepthIndex
+  );
+  state.nationalWorkforceResolveDepthIndex = computeNationalWorkforceResolveDepthIndex(
+    state,
+    state.gritResolveCouplingBrief,
+    state.resolveResilienceOutlook,
+    state.subjectResolveReadinessBrief
   );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
@@ -2489,6 +2512,33 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceGritDepthIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.gritResolveCouplingBrief?.band === 'decoupled' ||
+      state.gritResolveCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.gritResolveCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.resolveResilienceOutlook?.band === 'ebbing' || state.resolveResilienceOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.resolveResilienceOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectResolveReadinessBrief?.band === 'below_resolve' ||
+      state.subjectResolveReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectResolveReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceResolveDepthIndex?.band === 'fragile' ||
+      state.nationalWorkforceResolveDepthIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceResolveDepthIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);

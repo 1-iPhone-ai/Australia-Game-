@@ -183,7 +183,11 @@ export type LaborGiQueryTopic =
   | 'perseverance_grit_coupling'
   | 'grit_resilience'
   | 'subject_grit_readiness'
-  | 'workforce_grit_depth';
+  | 'workforce_grit_depth'
+  | 'grit_resolve_coupling'
+  | 'resolve_resilience'
+  | 'subject_resolve_readiness'
+  | 'workforce_resolve_depth';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -252,6 +256,7 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(inclusion resilience|inclusion labor resilience)/.test(q)) return 'inclusion_resilience';
   if (/\b(subject commit readiness|commit readiness subject)/.test(q)) return 'subject_commit_readiness';
   if (/\b(workforce grit depth|grit depth index labor)/.test(q)) return 'workforce_grit_depth';
+  if (/\b(workforce resolve depth|resolve depth index labor)/.test(q)) return 'workforce_resolve_depth';
   if (/\b(workforce perseverance depth|perseverance depth index labor)/.test(q)) return 'workforce_perseverance_depth';
   if (/\b(workforce tenacity depth|tenacity depth index labor)/.test(q)) return 'workforce_tenacity_depth';
   if (/\b(workforce tenacity|tenacity index labor)/.test(q)) return 'workforce_tenacity';
@@ -392,6 +397,9 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(perseverance grit|perseverance-grit coupling)/.test(q)) return 'perseverance_grit_coupling';
   if (/\b(grit resilience)/.test(q)) return 'grit_resilience';
   if (/\b(subject grit readiness)/.test(q)) return 'subject_grit_readiness';
+  if (/\b(grit resolve|grit-resolve coupling)/.test(q)) return 'grit_resolve_coupling';
+  if (/\b(resolve resilience)/.test(q)) return 'resolve_resilience';
+  if (/\b(subject resolve readiness)/.test(q)) return 'subject_resolve_readiness';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1850,6 +1858,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Grit band ${state.nationalWorkforceGritDepthIndex?.band ?? 'unknown'}; grit drag ${Math.round(state.nationalWorkforceGritDepthIndex?.gritDrag ?? 0)}.`,
         inference: state.nationalWorkforceGritDepthIndex?.stewardNote || state.summary,
         projection: 'Grit depth synthesizes perseverance-grit coupling, resilience, and subject grit.'
+      };
+    case 'grit_resolve_coupling':
+      return {
+        topic,
+        headline: state.gritResolveCouplingBrief?.summary || 'Grit-resolve coupling unavailable.',
+        fact: `Coupling band ${state.gritResolveCouplingBrief?.band ?? 'unknown'}; grit drag ${Math.round(state.gritResolveCouplingBrief?.gritDrag ?? 0)}.`,
+        inference: state.gritResolveCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce grit depth with resolve levers — bounded indices only.'
+      };
+    case 'resolve_resilience':
+      return {
+        topic,
+        headline: state.resolveResilienceOutlook?.summary || 'Resolve resilience unavailable.',
+        fact: `Resilience band ${state.resolveResilienceOutlook?.band ?? 'unknown'}; grit drag ${Math.round(state.resolveResilienceOutlook?.gritDrag ?? 0)}.`,
+        inference: state.resolveResilienceOutlook?.stewardNote || state.outlook,
+        projection: 'Resilience outlook tracks grit resilience against resolve levers for wave 50 depth.'
+      };
+    case 'subject_resolve_readiness':
+      return {
+        topic,
+        headline: state.subjectResolveReadinessBrief?.summary || 'Subject resolve readiness unavailable.',
+        fact: `Resolve band ${state.subjectResolveReadinessBrief?.band ?? 'unknown'}; resolve drag ${Math.round(state.subjectResolveReadinessBrief?.resolveDrag ?? 0)}.`,
+        inference: state.subjectResolveReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject resolve readiness gates subject grit against grit depth for O10-231 wave 50.'
+      };
+    case 'workforce_resolve_depth':
+      return {
+        topic,
+        headline: state.nationalWorkforceResolveDepthIndex?.summary || 'Workforce resolve depth unavailable.',
+        fact: `Resolve band ${state.nationalWorkforceResolveDepthIndex?.band ?? 'unknown'}; resolve drag ${Math.round(state.nationalWorkforceResolveDepthIndex?.resolveDrag ?? 0)}.`,
+        inference: state.nationalWorkforceResolveDepthIndex?.stewardNote || state.summary,
+        projection: 'Resolve depth synthesizes grit-resolve coupling, resilience, and subject resolve.'
       };
     default:
       return {
