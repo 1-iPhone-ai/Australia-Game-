@@ -69,5 +69,7 @@ export * from './admitted-forward-commitment-continuity.ts';
 export * from './bilateral-commitment-window-handoff.ts';
 export * from './commitment-window-sustainment.ts';
 export * from './bilateral-forward-cycle-advance-gate.ts';
+export * from './forward-cycle-advance-continuity.ts';
+export * from './bilateral-commitment-loop-reopen-gate.ts';
 export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';

@@ -58,6 +58,8 @@ import { sanitizeAdmittedForwardCommitmentContinuitySmoothing } from './admitted
 import { sanitizeBilateralCommitmentWindowHandoffSmoothing } from './bilateral-commitment-window-handoff.ts';
 import { sanitizeCommitmentWindowSustainmentSmoothing } from './commitment-window-sustainment.ts';
 import { sanitizeBilateralForwardCycleAdvanceGateSmoothing } from './bilateral-forward-cycle-advance-gate.ts';
+import { sanitizeForwardCycleAdvanceContinuitySmoothing } from './forward-cycle-advance-continuity.ts';
+import { sanitizeBilateralCommitmentLoopReopenGateSmoothing } from './bilateral-commitment-loop-reopen-gate.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -134,6 +136,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     bilateralCommitmentWindowHandoffSmoothing: 0.52,
     commitmentWindowSustainmentSmoothing: 0.52,
     bilateralForwardCycleAdvanceGateSmoothing: 0.52,
+    forwardCycleAdvanceContinuitySmoothing: 0.52,
+    bilateralCommitmentLoopReopenGateSmoothing: 0.52,
   };
 }
 
@@ -399,6 +403,12 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   );
   base.bilateralForwardCycleAdvanceGateSmoothing = sanitizeBilateralForwardCycleAdvanceGateSmoothing(
     r.bilateralForwardCycleAdvanceGateSmoothing,
+  );
+  base.forwardCycleAdvanceContinuitySmoothing = sanitizeForwardCycleAdvanceContinuitySmoothing(
+    r.forwardCycleAdvanceContinuitySmoothing,
+  );
+  base.bilateralCommitmentLoopReopenGateSmoothing = sanitizeBilateralCommitmentLoopReopenGateSmoothing(
+    r.bilateralCommitmentLoopReopenGateSmoothing,
   );
   return base;
 }

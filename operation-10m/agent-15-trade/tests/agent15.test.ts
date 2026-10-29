@@ -47,7 +47,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 69);
+  assert.ok(r.passed >= 71);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {

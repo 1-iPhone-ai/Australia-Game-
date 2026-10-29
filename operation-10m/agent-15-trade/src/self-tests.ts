@@ -270,6 +270,16 @@ import {
   bilateralForwardCycleAdvanceGateExportScale,
 } from './bilateral-forward-cycle-advance-gate.ts';
 import {
+  computeForwardCycleAdvanceContinuitySnapshot,
+  createEmptyForwardCycleAdvanceContinuitySnapshot,
+  forwardCycleAdvanceContinuityExportScale,
+} from './forward-cycle-advance-continuity.ts';
+import {
+  computeBilateralCommitmentLoopReopenGateSnapshot,
+  createEmptyBilateralCommitmentLoopReopenGateSnapshot,
+  bilateralCommitmentLoopReopenGateExportScale,
+} from './bilateral-commitment-loop-reopen-gate.ts';
+import {
   computeBilateralTradeWindowContinuitySnapshot,
   createEmptyBilateralTradeWindowContinuitySnapshot,
 } from './bilateral-trade-window-continuity.ts';

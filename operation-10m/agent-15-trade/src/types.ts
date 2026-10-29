@@ -206,6 +206,8 @@ export interface GTELPersisted {
   bilateralCommitmentWindowHandoffSmoothing?: number;
   commitmentWindowSustainmentSmoothing?: number;
   bilateralForwardCycleAdvanceGateSmoothing?: number;
+  forwardCycleAdvanceContinuitySmoothing?: number;
+  bilateralCommitmentLoopReopenGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -281,6 +283,8 @@ export interface GTELState {
   bilateralCommitmentWindowHandoff: GTELBilateralCommitmentWindowHandoffSnapshot;
   commitmentWindowSustainment: GTELCommitmentWindowSustainmentSnapshot;
   bilateralForwardCycleAdvanceGate: GTELBilateralForwardCycleAdvanceGateSnapshot;
+  forwardCycleAdvanceContinuity: GTELForwardCycleAdvanceContinuitySnapshot;
+  bilateralCommitmentLoopReopenGate: GTELBilateralCommitmentLoopReopenGateSnapshot;
   inputHash: string;
 }
 
@@ -1025,6 +1029,26 @@ export interface GTELBilateralForwardCycleAdvanceGateSnapshot {
   band: GTELBilateralForwardCycleAdvanceGateBand;
   sustainmentFeed: number;
   sealLift: number;
+  summary: string;
+}
+
+export type GTELForwardCycleAdvanceContinuityBand = 'locked_in' | 'tracking' | 'wavering' | 'broken';
+
+export interface GTELForwardCycleAdvanceContinuitySnapshot {
+  score: number;
+  band: GTELForwardCycleAdvanceContinuityBand;
+  advanceSupport: number;
+  sustainmentFeed: number;
+  summary: string;
+}
+
+export type GTELBilateralCommitmentLoopReopenGateBand = 'reopened' | 'unlocking' | 'latched' | 'sealed';
+
+export interface GTELBilateralCommitmentLoopReopenGateSnapshot {
+  score: number;
+  band: GTELBilateralCommitmentLoopReopenGateBand;
+  continuityAnchor: number;
+  loopLift: number;
   summary: string;
 }
 
