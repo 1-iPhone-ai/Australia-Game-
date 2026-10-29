@@ -599,6 +599,7 @@ const LEGACY_V28 = 'op10m-agent03-v28' as const;
 const LEGACY_V29 = 'op10m-agent03-v29' as const;
 const LEGACY_V30 = 'op10m-agent03-v30' as const;
 const LEGACY_V31 = 'op10m-agent03-v31' as const;
+const LEGACY_V46 = 'op10m-agent03-v46' as const;
 const LEGACY_V45 = 'op10m-agent03-v45' as const;
 const LEGACY_V44 = 'op10m-agent03-v44' as const;
 const LEGACY_V43 = 'op10m-agent03-v43' as const;
@@ -666,6 +667,7 @@ export const RESEARCH_SAVE_DERIVED_KEYS = [
   'scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationOutlook',
   'scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealOutlook',
   'scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealSealOutlook',
+  'scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealSealSealOutlook',
 ] as const;
 
 function finalizeCoreForPersist(
