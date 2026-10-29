@@ -3211,7 +3211,7 @@ export const TRANSPORT_CORRIDORS_ROUND51: TransportCorridorDefinition[] = [
 
 export const TRANSPORT_CORRIDORS_ROUND52: TransportCorridorDefinition[] = [
   {
-    id: 'corr_nsw_vic_fusion_tritium_breeding',
+    id: 'corr_nsw_vic_superconducting_hvdc',
     name: 'NSW–VIC Fusion Tritium Breeding',
     networkKind: 'trade',
     regionSequence: ['NSW', 'VIC'],
@@ -33757,7 +33757,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/53' &&
+      infra.schemaVersion === 'agent12/54' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
