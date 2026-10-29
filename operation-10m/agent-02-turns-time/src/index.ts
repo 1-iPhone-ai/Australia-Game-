@@ -45,4 +45,8 @@ export * from './external-stabilization-window.js';
 export * from './external-stabilization-window-gate.js';
 export * from './batch-composite-readiness-digest.js';
 export * from './batch-advance-instrumented-composite-step.js';
+export * from './batch-advance-unified-pregate.js';
+export * from './stabilization-backlog-rebound-gate.js';
+export * from './batch-instrumented-advance-report.js';
+export * from './batch-advance-full-instrumented-step.js';
 export * from './engine.js';

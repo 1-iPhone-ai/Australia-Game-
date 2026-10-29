@@ -21,7 +21,7 @@ export interface ExternalStabilizationWindowMergeResult {
   ok: boolean;
 }
 
-function turnsInWindow(fromTurn: number, toTurn: number): number[] {
+export function listTurnsInStabilizationWindow(fromTurn: number, toTurn: number): number[] {
   const from = Math.max(1, Math.floor(fromTurn));
   const to = Math.max(from, Math.floor(toTurn));
   const turns: number[] = [];
@@ -37,7 +37,7 @@ export function mergeExternalStabilizationWindow(
   toTurn: number,
   stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
 ): ExternalStabilizationWindowMergeResult {
-  const windowTurns = turnsInWindow(fromTurn, toTurn);
+  const windowTurns = listTurnsInStabilizationWindow(fromTurn, toTurn);
   const rows: ExternalStabilizationWindowTurnRow[] = [];
   const missingTurns: number[] = [];
   const slice: Record<number, ExternalStabilizationTurnSignals> = {};

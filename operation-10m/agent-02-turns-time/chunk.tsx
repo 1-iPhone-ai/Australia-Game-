@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
 // @ts-nocheck
-// content-sha256-prefix: 1d833ca102d9373e
+// content-sha256-prefix: cecf933aa5d5a2e4
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -2048,6 +2048,50 @@ export class TurnTimeEngine {
     return computeBatchCompositeReadinessDigest(readiness);
   }
 
+  gateBatchAdvanceUnifiedPreconditions(
+    input: BatchAdvanceUnifiedPreGateInput,
+  ): BatchAdvanceUnifiedPreGateResult {
+    return gateBatchAdvanceUnifiedPreconditions(this.snapshot(), input);
+  }
+
+  gateStabilizationBacklogRebound(
+    batch: BatchAdvanceResult,
+    capture: BatchStabilizationQueueCapture,
+    stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+  ): StabilizationBacklogReboundGateResult {
+    return gateStabilizationBacklogRebound(batch, capture, stabilizationByTurn);
+  }
+
+  buildBatchInstrumentedAdvanceReport(
+    preGate: BatchAdvanceUnifiedPreGateResult | undefined,
+    batch: BatchAdvanceResult,
+    capture: BatchStabilizationQueueCapture,
+    rollup: BatchAdvanceObservabilityRollup,
+    readiness: BatchAdvanceReadinessGateResult,
+    rebound?: StabilizationBacklogReboundGateResult,
+  ): BatchInstrumentedAdvanceReport {
+    return buildBatchInstrumentedAdvanceReport(
+      preGate,
+      batch,
+      capture,
+      rollup,
+      readiness,
+      rebound,
+    );
+  }
+
+  stepTurnsWithBudgetFullInstrumentedGate(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+    input?: Parameters<typeof stepTurnsWithBudgetFullInstrumentedGate>[3],
+  ): BatchAdvanceWithFullInstrumentedGate {
+    return stepTurnsWithBudgetFullInstrumentedGate(this, maxSteps, budget, input);
+  }
+
+  computeBatchInstrumentedAdvanceDigest(report: BatchInstrumentedAdvanceReport): string {
+    return computeBatchInstrumentedAdvanceDigest(report);
+  }
+
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {
     return buildAgent02TurnPipelineReport(this.snapshot(), before);
   }
@@ -2946,7 +2990,7 @@ export interface ExternalStabilizationWindowMergeResult {
   ok: boolean;
 }
 
-function turnsInWindow(fromTurn: number, toTurn: number): number[] {
+export function listTurnsInStabilizationWindow(fromTurn: number, toTurn: number): number[] {
   const from = Math.max(1, Math.floor(fromTurn));
   const to = Math.max(from, Math.floor(toTurn));
   const turns: number[] = [];
@@ -2962,7 +3006,7 @@ export function mergeExternalStabilizationWindow(
   toTurn: number,
   stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
 ): ExternalStabilizationWindowMergeResult {
-  const windowTurns = turnsInWindow(fromTurn, toTurn);
+  const windowTurns = listTurnsInStabilizationWindow(fromTurn, toTurn);
   const rows: ExternalStabilizationWindowTurnRow[] = [];
   const missingTurns: number[] = [];
   const slice: Record<number, ExternalStabilizationTurnSignals> = {};
@@ -2998,14 +3042,6 @@ export interface ExternalStabilizationWindowGateResult {
   ok: boolean;
 }
 
-function turnsInWindow(fromTurn: number, toTurn: number): number[] {
-  const from = Math.max(1, Math.floor(fromTurn));
-  const to = Math.max(from, Math.floor(toTurn));
-  const turns: number[] = [];
-  for (let t = from; t <= to; t += 1) turns.push(t);
-  return turns;
-}
-
 /**
  * Pre-advance gate: stabilization window lattice + pipeline completeness for completed turns in range.
  */
@@ -3017,7 +3053,7 @@ export function gateExternalStabilizationWindow(
 ): ExternalStabilizationWindowGateResult {
   const merge = mergeExternalStabilizationWindow(fromTurn, toTurn, stabilizationByTurn);
   const incomplete = incompletePipelineTurns(snapshot.trace, snapshot.clock.turnIndex);
-  const windowTurns = turnsInWindow(fromTurn, toTurn).filter((t) => t < snapshot.clock.turnIndex);
+  const windowTurns = listTurnsInStabilizationWindow(fromTurn, toTurn).filter((t) => t < snapshot.clock.turnIndex);
   const turnsWithIncompletePipeline = windowTurns.filter((t) => incomplete.includes(t));
   const pipelineReady = turnsWithIncompletePipeline.length === 0;
   return {
@@ -3345,6 +3381,205 @@ export type InstrumentedCompositeInput = Omit<BatchAdvanceCompositeReadinessInpu
   stabilizationByTurn?: Readonly<Record<number, ExternalStabilizationTurnSignals>>;
 };
 
+// --- src/batch-advance-unified-pregate.ts ---
+
+export interface BatchAdvanceUnifiedPreGateInput {
+  fromTurn: number;
+  toTurn: number;
+  externalByTurn?: Readonly<Record<number, readonly string[]>>;
+  stabilizationByTurn?: Readonly<Record<number, ExternalStabilizationTurnSignals>>;
+}
+
+export interface BatchAdvanceUnifiedPreGateResult {
+  fromTurn: number;
+  toTurn: number;
+  dayPlan?: ExternalDayPlanWindowGateResult;
+  stabilization?: ExternalStabilizationWindowGateResult;
+  ok: boolean;
+}
+
+/**
+ * Round 11: single pre-batch gate for XS-02 narrative window + Agent 05 stabilization window.
+ */
+export function gateBatchAdvanceUnifiedPreconditions(
+  snapshot: TurnTimeSnapshot,
+  input: BatchAdvanceUnifiedPreGateInput,
+): BatchAdvanceUnifiedPreGateResult {
+  const dayPlan = input.externalByTurn
+    ? gateExternalDayPlanWindow(snapshot, input.fromTurn, input.toTurn, input.externalByTurn)
+    : undefined;
+  const stabilization = input.stabilizationByTurn
+    ? gateExternalStabilizationWindow(snapshot, input.fromTurn, input.toTurn, input.stabilizationByTurn)
+    : undefined;
+  const dayOk = dayPlan?.ok ?? true;
+  const stabOk = stabilization?.ok ?? true;
+  return {
+    fromTurn: input.fromTurn,
+    toTurn: input.toTurn,
+    dayPlan,
+    stabilization,
+    ok: dayOk && stabOk,
+  };
+}
+
+// --- src/stabilization-backlog-rebound-gate.ts ---
+
+export interface StabilizationBacklogReboundRow {
+  priorTurn: number;
+  turnIndex: number;
+  backlogAfterPrior: number;
+  backlogBeforeTurn: number;
+  externalCalmOnTurn: boolean;
+}
+
+export interface StabilizationBacklogReboundGateResult {
+  rows: StabilizationBacklogReboundRow[];
+  reboundTurns: number[];
+  ok: boolean;
+}
+
+/**
+ * Agent 05 clears post-queue calm when backlog returns — calm must not persist on a rebound turn.
+ */
+export function gateStabilizationBacklogRebound(
+  batch: BatchAdvanceResult,
+  capture: BatchStabilizationQueueCapture,
+  stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+): StabilizationBacklogReboundGateResult {
+  const steppedTurns: number[] = [];
+  for (const step of batch.steps) {
+    if (step.blockedByPause) continue;
+    steppedTurns.push(step.clockBefore.turnIndex);
+  }
+
+  const rows: StabilizationBacklogReboundRow[] = [];
+  const reboundTurns: number[] = [];
+
+  for (let i = 1; i < steppedTurns.length; i += 1) {
+    const priorTurn = steppedTurns[i - 1]!;
+    const turn = steppedTurns[i]!;
+    const afterPrior = capture.queueAfterByTurn[priorTurn];
+    const beforeTurn = capture.queueBeforeByTurn[turn];
+    if (!afterPrior || !beforeTurn) continue;
+
+    const backlogAfterPrior = countAgent02QueueDepth(afterPrior);
+    const backlogBeforeTurn = countAgent02QueueDepth(beforeTurn);
+    const external = normalizeExternalStabilizationSignals(stabilizationByTurn[turn]);
+    const rebound = backlogBeforeTurn > backlogAfterPrior;
+    rows.push({
+      priorTurn,
+      turnIndex: turn,
+      backlogAfterPrior,
+      backlogBeforeTurn,
+      externalCalmOnTurn: external.postQueueCalm,
+    });
+    if (rebound && external.postQueueCalm) {
+      reboundTurns.push(turn);
+    }
+  }
+
+  return { rows, reboundTurns, ok: reboundTurns.length === 0 };
+}
+
+// --- src/batch-instrumented-advance-report.ts ---
+
+export interface BatchInstrumentedAdvanceReport {
+  preGate?: BatchAdvanceUnifiedPreGateResult;
+  batch: BatchAdvanceResult;
+  capture: BatchStabilizationQueueCapture;
+  rollup: BatchAdvanceObservabilityRollup;
+  readiness: BatchAdvanceReadinessGateResult;
+  rebound?: StabilizationBacklogReboundGateResult;
+  ok: boolean;
+}
+
+export function buildBatchInstrumentedAdvanceReport(
+  preGate: BatchAdvanceUnifiedPreGateResult | undefined,
+  batch: BatchAdvanceResult,
+  capture: BatchStabilizationQueueCapture,
+  rollup: BatchAdvanceObservabilityRollup,
+  readiness: BatchAdvanceReadinessGateResult,
+  rebound?: StabilizationBacklogReboundGateResult,
+): BatchInstrumentedAdvanceReport {
+  const reboundOk = rebound?.ok ?? true;
+  const preOk = preGate?.ok ?? true;
+  return {
+    preGate,
+    batch,
+    capture,
+    rollup,
+    readiness,
+    rebound,
+    ok: preOk && readiness.ok && reboundOk,
+  };
+}
+
+export function computeBatchInstrumentedAdvanceDigest(report: BatchInstrumentedAdvanceReport): string {
+  const payload = JSON.stringify({
+    ok: report.ok,
+    pre: report.preGate?.ok ?? null,
+    readiness: report.readiness.compositeDigest ?? report.readiness.digest,
+    rebound: report.rebound?.reboundTurns ?? [],
+    completed: report.batch.completed,
+  });
+  return fnv1a64Hex(payload);
+}
+
+// --- src/batch-advance-full-instrumented-step.ts ---
+
+export interface BatchAdvanceFullInstrumentedInput extends BatchAdvanceCompositeReadinessInput {
+  preGate?: BatchAdvanceUnifiedPreGateInput;
+}
+
+export interface BatchAdvanceWithFullInstrumentedGate {
+  report: BatchInstrumentedAdvanceReport;
+  instrumentedDigest: string;
+}
+
+/**
+ * Round 11: unified pre-gate + instrumented batch + rebound gate + consolidated report.
+ */
+export function stepTurnsWithBudgetFullInstrumentedGate(
+  engine: TurnTimeEngine,
+  maxSteps: number,
+  budget: TurnAdvanceBudgetState,
+  input?: BatchAdvanceFullInstrumentedInput,
+): BatchAdvanceWithFullInstrumentedGate {
+  const before = engine.snapshot();
+  const preGate: BatchAdvanceUnifiedPreGateResult | undefined = input?.preGate
+    ? gateBatchAdvanceUnifiedPreconditions(before, input.preGate)
+    : undefined;
+
+  const { batch, capture } = stepTurnsWithBudgetStabilizationCapture(engine, maxSteps, budget);
+  const after = engine.snapshot();
+  const rollup = buildBatchAdvanceObservabilityRollup(before, after, batch);
+  const stabilizationOptions = input?.stabilization ?? batchStabilizationGateOptionsFromCapture(capture);
+  const readiness = gateBatchAdvanceReadiness(
+    after,
+    rollup,
+    input?.externalByTurn,
+    input?.stabilizationByTurn,
+    { stabilization: stabilizationOptions },
+  );
+  const rebound =
+    input?.stabilizationByTurn !== undefined
+      ? gateStabilizationBacklogRebound(batch, capture, input.stabilizationByTurn)
+      : undefined;
+
+  const report = buildBatchInstrumentedAdvanceReport(
+    preGate,
+    batch,
+    capture,
+    rollup,
+    readiness,
+    rebound,
+  );
+  return {
+    report,
+    instrumentedDigest: computeBatchInstrumentedAdvanceDigest(report),
+  };
+}
+
 // --- src/fast-forward.ts ---
 
 export interface FastForwardResult {
@@ -3495,7 +3730,7 @@ export function turnsBetweenInclusive(fromTurn: number, toTurn: number): number[
 
 export const AGENT_02_MODULE_ID = 'operation-10m/agent-02-turns-time';
 
-export const AGENT_02_MODULE_VERSION = '2.0.0';
+export const AGENT_02_MODULE_VERSION = '2.1.0';
 
 
 
@@ -3836,6 +4071,52 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
       instRun.readiness.ok &&
 
       (instRun.readiness.compositeDigest?.length ?? 0) === 16,
+
+  });
+
+  const unified = new TurnTimeEngine();
+
+  unified.scheduleEvent({ id: 'un', dueTurn: 1, kind: 'n' });
+
+  results.push({
+
+    id: 'agent02_unified_pregate',
+
+    name: 'unified pre-gate ok for aligned XS-02 and stabilization window',
+
+    passed: unified.gateBatchAdvanceUnifiedPreconditions({
+
+      fromTurn: 1,
+
+      toTurn: 1,
+
+      externalByTurn: { 1: ['un'] },
+
+      stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } },
+
+    }).ok,
+
+  });
+
+  const full = new TurnTimeEngine();
+
+  full.scheduleEvent({ id: 'full', dueTurn: 1, kind: 'n' });
+
+  const fullRun = stepTurnsWithBudgetFullInstrumentedGate(full, 1, createTurnAdvanceBudget(2), {
+
+    externalByTurn: { 1: ['full'] },
+
+    stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: true } },
+
+  });
+
+  results.push({
+
+    id: 'agent02_full_instrumented',
+
+    name: 'full instrumented gate report ok with auto capture',
+
+    passed: fullRun.report.ok && fullRun.instrumentedDigest.length === 16,
 
   });
 

@@ -141,6 +141,24 @@ import {
   type BatchAdvanceWithInstrumentedCompositeGate,
 } from './batch-advance-instrumented-composite-step.js';
 import {
+  gateBatchAdvanceUnifiedPreconditions,
+  type BatchAdvanceUnifiedPreGateInput,
+  type BatchAdvanceUnifiedPreGateResult,
+} from './batch-advance-unified-pregate.js';
+import {
+  gateStabilizationBacklogRebound,
+  type StabilizationBacklogReboundGateResult,
+} from './stabilization-backlog-rebound-gate.js';
+import {
+  buildBatchInstrumentedAdvanceReport,
+  computeBatchInstrumentedAdvanceDigest,
+  type BatchInstrumentedAdvanceReport,
+} from './batch-instrumented-advance-report.js';
+import {
+  stepTurnsWithBudgetFullInstrumentedGate,
+  type BatchAdvanceWithFullInstrumentedGate,
+} from './batch-advance-full-instrumented-step.js';
+import {
   buildBatchHorizonReconcileReport,
   type BatchHorizonReconcileReport,
 } from './batch-horizon-reconcile-report.js';
@@ -461,6 +479,50 @@ export class TurnTimeEngine {
 
   computeBatchCompositeReadinessDigest(readiness: BatchAdvanceReadinessGateResult): string {
     return computeBatchCompositeReadinessDigest(readiness);
+  }
+
+  gateBatchAdvanceUnifiedPreconditions(
+    input: BatchAdvanceUnifiedPreGateInput,
+  ): BatchAdvanceUnifiedPreGateResult {
+    return gateBatchAdvanceUnifiedPreconditions(this.snapshot(), input);
+  }
+
+  gateStabilizationBacklogRebound(
+    batch: BatchAdvanceResult,
+    capture: BatchStabilizationQueueCapture,
+    stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+  ): StabilizationBacklogReboundGateResult {
+    return gateStabilizationBacklogRebound(batch, capture, stabilizationByTurn);
+  }
+
+  buildBatchInstrumentedAdvanceReport(
+    preGate: BatchAdvanceUnifiedPreGateResult | undefined,
+    batch: BatchAdvanceResult,
+    capture: BatchStabilizationQueueCapture,
+    rollup: BatchAdvanceObservabilityRollup,
+    readiness: BatchAdvanceReadinessGateResult,
+    rebound?: StabilizationBacklogReboundGateResult,
+  ): BatchInstrumentedAdvanceReport {
+    return buildBatchInstrumentedAdvanceReport(
+      preGate,
+      batch,
+      capture,
+      rollup,
+      readiness,
+      rebound,
+    );
+  }
+
+  stepTurnsWithBudgetFullInstrumentedGate(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+    input?: Parameters<typeof stepTurnsWithBudgetFullInstrumentedGate>[3],
+  ): BatchAdvanceWithFullInstrumentedGate {
+    return stepTurnsWithBudgetFullInstrumentedGate(this, maxSteps, budget, input);
+  }
+
+  computeBatchInstrumentedAdvanceDigest(report: BatchInstrumentedAdvanceReport): string {
+    return computeBatchInstrumentedAdvanceDigest(report);
   }
 
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {

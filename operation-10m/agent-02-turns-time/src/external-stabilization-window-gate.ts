@@ -2,6 +2,7 @@ import { TurnTimeSnapshot } from './types.js';
 import { incompletePipelineTurns } from './pipeline-stages.js';
 import {
   mergeExternalStabilizationWindow,
+  listTurnsInStabilizationWindow,
   type ExternalStabilizationWindowMergeResult,
 } from './external-stabilization-window.js';
 import type { ExternalStabilizationTurnSignals } from './external-stabilization-signals.js';
@@ -12,14 +13,6 @@ export interface ExternalStabilizationWindowGateResult {
   turnsWithIncompletePipeline: number[];
   pipelineReady: boolean;
   ok: boolean;
-}
-
-function turnsInWindow(fromTurn: number, toTurn: number): number[] {
-  const from = Math.max(1, Math.floor(fromTurn));
-  const to = Math.max(from, Math.floor(toTurn));
-  const turns: number[] = [];
-  for (let t = from; t <= to; t += 1) turns.push(t);
-  return turns;
 }
 
 /**
@@ -33,7 +26,7 @@ export function gateExternalStabilizationWindow(
 ): ExternalStabilizationWindowGateResult {
   const merge = mergeExternalStabilizationWindow(fromTurn, toTurn, stabilizationByTurn);
   const incomplete = incompletePipelineTurns(snapshot.trace, snapshot.clock.turnIndex);
-  const windowTurns = turnsInWindow(fromTurn, toTurn).filter((t) => t < snapshot.clock.turnIndex);
+  const windowTurns = listTurnsInStabilizationWindow(fromTurn, toTurn).filter((t) => t < snapshot.clock.turnIndex);
   const turnsWithIncompletePipeline = windowTurns.filter((t) => incomplete.includes(t));
   const pipelineReady = turnsWithIncompletePipeline.length === 0;
   return {
