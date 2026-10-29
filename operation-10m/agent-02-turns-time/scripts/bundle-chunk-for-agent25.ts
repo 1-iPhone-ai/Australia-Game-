@@ -109,6 +109,9 @@ const SOURCE_FILES = [
   'src/batch-national-tick-session-wave-assembly-batch-integration-audit-gate.ts',
   'src/batch-national-tick-session-wave-assembly-batch-integration-audit-gate-export.ts',
   'src/batch-national-tick-session-wave-assembly-batch-integration-audit-gate-export-compare.ts',
+  'src/batch-national-tick-session-wave-assembly-batch-integration-audit-gate-replay-parity.ts',
+  'src/batch-national-tick-session-wave-assembly-batch-integration-audit-closure.ts',
+  'src/batch-national-tick-session-wave-assembly-batch-integration-audit-closure-export.ts',
   'src/fast-forward.ts',
 ] as const;
 
@@ -158,7 +161,7 @@ function bundleSources(): string {
 
   parts.push(
     `export const AGENT_02_MODULE_ID = 'operation-10m/${moduleId}';`,
-    `export const AGENT_02_MODULE_VERSION = '3.3.0';`,
+    `export const AGENT_02_MODULE_VERSION = '3.4.0';`,
     '',
     `export function runOp10mAgent02TurnsTimeSelfTests(): {`,
     `  passed: number;`,
@@ -566,6 +569,17 @@ function bundleSources(): string {
     `    name: 'assembly batch integration audit gate',`,
     `    passed: exportBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditGate(`,
     `      gateBatchNationalTickSessionWaveAssemblyBatchIntegrationAudit(`,
+    `        new TurnTimeEngine(),`,
+    `        createTurnAdvanceBudget(2),`,
+    `        [[{ maxSteps: 1, input: { stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } } } }]],`,
+    `      ),`,
+    `    ).ok,`,
+    `  });`,
+    `  results.push({`,
+    `    id: 'agent02_national_tick_session_wave_assembly_batch_integration_audit_closure',`,
+    `    name: 'assembly batch integration audit closure',`,
+    `    passed: exportBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosure(`,
+    `      closeBatchNationalTickSessionWaveAssemblyBatchIntegrationAudit(`,
     `        new TurnTimeEngine(),`,
     `        createTurnAdvanceBudget(2),`,
     `        [[{ maxSteps: 1, input: { stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } } } }]],`,
