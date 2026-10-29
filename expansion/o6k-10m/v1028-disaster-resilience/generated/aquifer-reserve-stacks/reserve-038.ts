@@ -1,0 +1,31 @@
+import type { V1028DresEvacuationCapacityEdge } from '../../types/core.ts';
+
+/** Evacuation capacity graph shard 038 (flood/bushfire/cyclone corridor coupling). */
+export const V1028_DRES_EVACUATION_CAPACITY_SHARD_038: readonly V1028DresEvacuationCapacityEdge[] = [
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.274, lagTurns: 4, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.28, lagTurns: 5, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.286, lagTurns: 6, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.292, lagTurns: 7, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.298, lagTurns: 4, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.304, lagTurns: 5, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.31, lagTurns: 6, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.316, lagTurns: 7, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.322, lagTurns: 4, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.328, lagTurns: 5, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.334, lagTurns: 6, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.34, lagTurns: 7, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.346, lagTurns: 4, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.352, lagTurns: 5, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.358, lagTurns: 6, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.364, lagTurns: 7, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.268, lagTurns: 4, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.274, lagTurns: 5, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.28, lagTurns: 6, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.286, lagTurns: 7, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.292, lagTurns: 4, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.298, lagTurns: 5, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.304, lagTurns: 6, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.31, lagTurns: 7, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.316, lagTurns: 4, nodeId: 'emergency_response_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.322, lagTurns: 5, nodeId: 'emergency_response_14' },
+];

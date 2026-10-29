@@ -1,0 +1,31 @@
+import type { V1028DresEvacuationCapacityEdge } from '../../types/core.ts';
+
+/** Evacuation capacity graph shard 030 (flood/bushfire/cyclone corridor coupling). */
+export const V1028_DRES_EVACUATION_CAPACITY_SHARD_030: readonly V1028DresEvacuationCapacityEdge[] = [
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.652, lagTurns: 5, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.556, lagTurns: 6, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.562, lagTurns: 7, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.568, lagTurns: 8, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.574, lagTurns: 5, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.58, lagTurns: 6, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.586, lagTurns: 7, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.592, lagTurns: 8, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.598, lagTurns: 5, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.604, lagTurns: 6, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.61, lagTurns: 7, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.616, lagTurns: 8, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.622, lagTurns: 5, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.628, lagTurns: 6, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.634, lagTurns: 7, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.64, lagTurns: 8, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.646, lagTurns: 5, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.652, lagTurns: 6, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.556, lagTurns: 7, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.562, lagTurns: 8, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.568, lagTurns: 5, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.574, lagTurns: 6, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.58, lagTurns: 7, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.586, lagTurns: 8, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.592, lagTurns: 5, nodeId: 'emergency_response_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.598, lagTurns: 6, nodeId: 'emergency_response_06' },
+];

@@ -1,0 +1,31 @@
+import type { V1028DresEvacuationCapacityEdge } from '../../types/core.ts';
+
+/** Evacuation capacity graph shard 043 (flood/bushfire/cyclone corridor coupling). */
+export const V1028_DRES_EVACUATION_CAPACITY_SHARD_043: readonly V1028DresEvacuationCapacityEdge[] = [
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.518, lagTurns: 9, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.524, lagTurns: 10, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.428, lagTurns: 11, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.434, lagTurns: 12, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.44, lagTurns: 9, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.446, lagTurns: 10, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.452, lagTurns: 11, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.458, lagTurns: 12, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.464, lagTurns: 9, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.47, lagTurns: 10, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.476, lagTurns: 11, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.482, lagTurns: 12, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.488, lagTurns: 9, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.494, lagTurns: 10, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.5, lagTurns: 11, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.506, lagTurns: 12, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.512, lagTurns: 9, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.518, lagTurns: 10, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.524, lagTurns: 11, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.428, lagTurns: 12, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.434, lagTurns: 9, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.44, lagTurns: 10, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.446, lagTurns: 11, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.452, lagTurns: 12, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.458, lagTurns: 9, nodeId: 'emergency_response_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.464, lagTurns: 10, nodeId: 'emergency_response_19' },
+];

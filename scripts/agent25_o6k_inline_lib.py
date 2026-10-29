@@ -605,6 +605,51 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
             "  createEmptyV1027WsecPersisted,\n  v1027WsecInputHash,\n  sanitizeV1027WsecPersisted,\n} from '../engine/water-security-orchestrator';",
             "  v1027WsecInputHash,\n} from '../engine/water-security-orchestrator';\nimport {\n  createEmptyV1027WsecPersisted,\n  sanitizeV1027WsecPersisted,\n} from '../persistence/migrations';",
         )
+    if "v1028-disaster-resilience" in name.replace("\\", "/"):
+        src = src.replace("SECTION 20BW", "SECTION 20BX")
+        src = src.replace("SECTION 20BV", "SECTION 20BX")
+        src = src.replace("SECTION 20BU", "SECTION 20BX")
+        src = src.replace("SECTION 20BT", "SECTION 20BX")
+        src = src.replace("SECTION 20BR", "SECTION 20BX")
+    if "disaster-resilience/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"function clampNum\(", "function v1028DresClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1028DresClampNum(", src)
+        src = re.sub(r"const REGIONS:", "const V1028_DRES_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1028_DRES_MIG_REGIONS", src)
+    if "disaster-resilience-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1028DresPersisted, sanitizeV1028DresPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1028_DRES_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1028_DRES_ORCH_REGIONS.forEach", src)
+    if "disaster-resilience-utils.ts" in name:
+        src = re.sub(
+            r"export function V1028_DRES_evacuationCapacityGraphHash",
+            "export function V1028_DRES_utilEvacuationCapacityGraphHash",
+            src,
+        )
+    if "v1028-disaster-resilience/evacuation-capacity-stacks/graph-utils.ts" in name.replace("\\", "/"):
+        src = re.sub(
+            r"V1028_DRES_evacuationCapacityGraphHash as dgovGraphHashCore",
+            "V1028_DRES_utilEvacuationCapacityGraphHash as dgovGraphHashCore",
+            src,
+        )
+    if "run-v1028-dres-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1028DresSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1028DresSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1028DresBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1028DresBaseInput(", src)
+        src = src.replace(
+            "  runV1028DresTurn,\n  createEmptyV1028DresPersisted,\n  v1028DresInputHash,\n  sanitizeV1028DresPersisted,\n} from '../engine/disaster-resilience-orchestrator';",
+            "  runV1028DresTurn,\n  v1028DresInputHash,\n} from '../engine/disaster-resilience-orchestrator';\nimport {\n  createEmptyV1028DresPersisted,\n  sanitizeV1028DresPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1028DresPersisted,\n  v1028DresInputHash,\n  sanitizeV1028DresPersisted,\n} from '../engine/disaster-resilience-orchestrator';",
+            "  v1028DresInputHash,\n} from '../engine/disaster-resilience-orchestrator';\nimport {\n  createEmptyV1028DresPersisted,\n  sanitizeV1028DresPersisted,\n} from '../persistence/migrations';",
+        )
     return src
 
 
@@ -1390,6 +1435,69 @@ def water_security_paths() -> list[str]:
             and "supply-pipeline" not in str(p)
             and "drought-buffer-bundle" not in str(p)
             and "hazard-registry" not in str(p)
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def disaster_resilience_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1028-disaster-resilience"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/evacuation-capacity-stacks/" in s and "graph-utils" in s:
+            return (2, s)
+        if "/generated/hazard-scenarios/" in s:
+            return (3, s)
+        if "/generated/evacuation-capacity-stacks/" in s:
+            return (4, s)
+        if "hazard-registry" in s or "evacuation-capacity-bundle" in s:
+            return (5, s)
+        if "/emergency-response-nodes/" in s:
+            return (6, s)
+        if "disaster-resilience-utils" in s:
+            return (7, s)
+        if "/adapters/" in s:
+            return (8, s)
+        if "disaster-resilience-orchestrator" in s:
+            return (9, s)
+        if "/self-tests/" in s:
+            return (10, s)
+        if "distribution-network" in s:
+            return (98, s)
+        if "aquifer-reserve" in s or "basin-registry" in s:
+            return (98, s)
+        if "conservation-offset" in s or "recovery-registry" in s or "primary-care" in s:
+            return (98, s)
+        if "stress-registry" in s or "supply-pipeline" in s:
+            return (98, s)
+        if "drought-buffer-bundle" in s:
+            return (98, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
+            and not (p.parent.name == "generated" and p.name == "index.ts")
+            and "aquifer-reserve" not in str(p)
+            and "basin-registry" not in str(p)
+            and "conservation-offset" not in str(p)
+            and "recovery-registry" not in str(p)
+            and "primary-care" not in str(p)
+            and "stress-registry" not in str(p)
+            and "supply-pipeline" not in str(p)
+            and "drought-buffer-bundle" not in str(p)
+            and "distribution-network" not in str(p)
         ),
         key=sort_key,
     )
