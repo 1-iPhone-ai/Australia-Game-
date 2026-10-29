@@ -43,5 +43,8 @@ export * from './settlement-long-horizon-capacity-risk.ts';
 export * from './regional-cohesion-integrity-pressure.ts';
 export * from './interregional-relief-delivery-equity-gap.ts';
 export * from './settlement-systemic-fragility-composite.ts';
+export * from './regional-governance-resilience-decay.ts';
+export * from './interregional-migration-stability-erosion.ts';
+export * from './settlement-adaptive-capacity-ceiling.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';

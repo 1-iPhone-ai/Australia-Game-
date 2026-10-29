@@ -178,6 +178,21 @@ import {
   op10mA11RegionsWithSystemicCascadeRisk,
   op10mA11SystemicFragilityEscalating,
 } from './settlement-systemic-fragility-composite.ts';
+import {
+  op10mA11ComputeRegionalGovernanceResilienceDecay,
+  op10mA11GovernanceResilienceDecayEscalating,
+  op10mA11RegionsWithGovernanceResilienceCollapse,
+} from './regional-governance-resilience-decay.ts';
+import {
+  op10mA11ComputeInterregionalMigrationStabilityErosion,
+  op10mA11MigrationStabilityErosionEscalating,
+  op10mA11RegionsWithMigrationChaos,
+} from './interregional-migration-stability-erosion.ts';
+import {
+  op10mA11AdaptiveCeilingEscalating,
+  op10mA11ComputeSettlementAdaptiveCapacityCeiling,
+  op10mA11RegionsWithBreachedAdaptiveCeiling,
+} from './settlement-adaptive-capacity-ceiling.ts';
 
 export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePersisted {
   return {
@@ -212,6 +227,9 @@ export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePe
     lastCohesionIntegrityIndex: 0,
     lastReliefEquityGapIndex: 0,
     lastSystemicFragilityIndex: 0,
+    lastGovernanceResilienceDecayIndex: 0,
+    lastMigrationStabilityErosionIndex: 0,
+    lastAdaptiveCapacityCeilingIndex: 0,
     inputHash: '',
   };
 }
@@ -281,6 +299,12 @@ export function validateOP10M_A11_CompositeState(state: OP10M_A11_CompositeState
   if (state.nationalCohesionIntegrityIndex < 0 || state.nationalCohesionIntegrityIndex > 100) errs.push('cohesion integrity index out of range');
   if (state.nationalReliefEquityGapIndex < 0 || state.nationalReliefEquityGapIndex > 100) errs.push('relief equity gap index out of range');
   if (state.nationalSystemicFragilityIndex < 0 || state.nationalSystemicFragilityIndex > 100) errs.push('systemic fragility index out of range');
+  if (state.governanceResilienceDecay.length !== 8) errs.push('governance resilience decay row count');
+  if (state.migrationStabilityErosion.length !== 8) errs.push('migration stability erosion row count');
+  if (state.adaptiveCapacityCeiling.length !== 8) errs.push('adaptive capacity ceiling row count');
+  if (state.nationalGovernanceResilienceDecayIndex < 0 || state.nationalGovernanceResilienceDecayIndex > 100) errs.push('governance resilience decay index out of range');
+  if (state.nationalMigrationStabilityErosionIndex < 0 || state.nationalMigrationStabilityErosionIndex > 100) errs.push('migration stability erosion index out of range');
+  if (state.nationalAdaptiveCapacityCeilingIndex < 0 || state.nationalAdaptiveCapacityCeilingIndex > 100) errs.push('adaptive capacity ceiling index out of range');
   return errs;
 }
 
@@ -521,6 +545,24 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     longHorizonCapacityRisk: longHorizonRiskOut.rows,
     landUseGridlock: landUseGridlockOut.rows,
     relocationBurden: relocationOut.rows,
+  });
+
+  const governanceResilienceDecayOut = op10mA11ComputeRegionalGovernanceResilienceDecay({
+    governanceFriction: governanceOut.rows,
+    systemicFragility: systemicFragilityOut.rows,
+    reliefEquityGap: reliefEquityGapOut.rows,
+  });
+
+  const migrationStabilityErosionOut = op10mA11ComputeInterregionalMigrationStabilityErosion({
+    migrationPressure,
+    mobilityTrap: mobilityTrapOut.rows,
+    cohesionIntegrity: cohesionIntegrityOut.rows,
+  });
+
+  const adaptiveCapacityCeilingOut = op10mA11ComputeSettlementAdaptiveCapacityCeiling({
+    climateAdaptationLag: climateAdaptationLagOut.rows,
+    receptionStrain: receptionStrainOut.rows,
+    fiscalCapacityStrain: fiscalCapacityStrainOut.rows,
   });
 
   const derivedRaw: Omit<OP10M_A11_CompositeDerivedEvent, 'id'>[] = [];
@@ -1094,6 +1136,63 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     );
   }
 
+  const governanceCollapsed = op10mA11RegionsWithGovernanceResilienceCollapse(governanceResilienceDecayOut.rows);
+  if (
+    governanceCollapsed.length >= 2 ||
+    governanceResilienceDecayOut.nationalIndex >= 45 ||
+    op10mA11GovernanceResilienceDecayEscalating(
+      governanceResilienceDecayOut.nationalIndex,
+      base.revision > 0 ? base.lastGovernanceResilienceDecayIndex : null,
+    )
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'governance_resilience_decay',
+      governanceCollapsed.slice(0, 5),
+      `Regional governance resilience decay (index ${governanceResilienceDecayOut.nationalIndex.toFixed(1)}).`,
+      governanceResilienceDecayOut.nationalIndex >= 54 ? 'major' : 'meaningful',
+    );
+  }
+
+  const migrationChaos = op10mA11RegionsWithMigrationChaos(migrationStabilityErosionOut.rows);
+  if (
+    migrationChaos.length >= 2 ||
+    migrationStabilityErosionOut.nationalIndex >= 46 ||
+    op10mA11MigrationStabilityErosionEscalating(
+      migrationStabilityErosionOut.nationalIndex,
+      base.revision > 0 ? base.lastMigrationStabilityErosionIndex : null,
+    )
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'migration_stability_erosion',
+      migrationChaos.slice(0, 5),
+      `Interregional migration stability erosion (index ${migrationStabilityErosionOut.nationalIndex.toFixed(1)}).`,
+      migrationStabilityErosionOut.nationalIndex >= 55 ? 'major' : 'meaningful',
+    );
+  }
+
+  const ceilingBreached = op10mA11RegionsWithBreachedAdaptiveCeiling(adaptiveCapacityCeilingOut.rows);
+  if (
+    ceilingBreached.length >= 2 ||
+    adaptiveCapacityCeilingOut.nationalIndex >= 48 ||
+    op10mA11AdaptiveCeilingEscalating(
+      adaptiveCapacityCeilingOut.nationalIndex,
+      base.revision > 0 ? base.lastAdaptiveCapacityCeilingIndex : null,
+    )
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'adaptive_capacity_ceiling',
+      ceilingBreached.slice(0, 5),
+      `Settlement adaptive capacity ceiling (index ${adaptiveCapacityCeilingOut.nationalIndex.toFixed(1)}).`,
+      adaptiveCapacityCeilingOut.nationalIndex >= 58 ? 'major' : 'meaningful',
+    );
+  }
+
   base.revision += 1;
   base.urban = urbanOut.persisted;
   base.infra = infraOut.persisted;
@@ -1123,11 +1222,14 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
   base.lastCohesionIntegrityIndex = cohesionIntegrityOut.nationalIndex;
   base.lastReliefEquityGapIndex = reliefEquityGapOut.nationalIndex;
   base.lastSystemicFragilityIndex = systemicFragilityOut.nationalIndex;
+  base.lastGovernanceResilienceDecayIndex = governanceResilienceDecayOut.nationalIndex;
+  base.lastMigrationStabilityErosionIndex = migrationStabilityErosionOut.nationalIndex;
+  base.lastAdaptiveCapacityCeilingIndex = adaptiveCapacityCeilingOut.nationalIndex;
   base.inputHash = op10mA11HashInputs({
     turn: inputs.urban.turn,
     cityCount: inputs.urban.cities.length,
     regionKeys: 'composite',
-    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}:${regionalCohesionIndex}:${metropolitanSaturationIndex}:${backlogOut.nationalIndex}:${housingSpilloverOut.nationalIndex}:${climateOut.nationalIndex}:${amenityOut.nationalIndex}:${relocationOut.nationalIndex}:${employmentAnchorOut.nationalIndex}:${commuteWedgeOut.nationalIndex}:${receptionStrainOut.nationalIndex}:${landUseGridlockOut.nationalIndex}:${mobilityTrapOut.nationalIndex}:${absorptionGapOut.nationalIndex}:${reliefOverheadOut.nationalIndex}:${corridorEquityDriftOut.nationalIndex}:${climateAdaptationLagOut.nationalIndex}:${fiscalCapacityStrainOut.nationalIndex}:${networkErosionOut.nationalIndex}:${longHorizonRiskOut.nationalIndex}:${cohesionIntegrityOut.nationalIndex}:${reliefEquityGapOut.nationalIndex}:${systemicFragilityOut.nationalIndex}`,
+    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}:${regionalCohesionIndex}:${metropolitanSaturationIndex}:${backlogOut.nationalIndex}:${housingSpilloverOut.nationalIndex}:${climateOut.nationalIndex}:${amenityOut.nationalIndex}:${relocationOut.nationalIndex}:${employmentAnchorOut.nationalIndex}:${commuteWedgeOut.nationalIndex}:${receptionStrainOut.nationalIndex}:${landUseGridlockOut.nationalIndex}:${mobilityTrapOut.nationalIndex}:${absorptionGapOut.nationalIndex}:${reliefOverheadOut.nationalIndex}:${corridorEquityDriftOut.nationalIndex}:${climateAdaptationLagOut.nationalIndex}:${fiscalCapacityStrainOut.nationalIndex}:${networkErosionOut.nationalIndex}:${longHorizonRiskOut.nationalIndex}:${cohesionIntegrityOut.nationalIndex}:${reliefEquityGapOut.nationalIndex}:${systemicFragilityOut.nationalIndex}:${governanceResilienceDecayOut.nationalIndex}:${migrationStabilityErosionOut.nationalIndex}:${adaptiveCapacityCeilingOut.nationalIndex}`,
   });
 
   const state: OP10M_A11_CompositeState = {
@@ -1202,7 +1304,13 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     nationalReliefEquityGapIndex: reliefEquityGapOut.nationalIndex,
     systemicFragility: systemicFragilityOut.rows,
     nationalSystemicFragilityIndex: systemicFragilityOut.nationalIndex,
-    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}; cohesion ${regionalCohesionIndex}; saturation ${metropolitanSaturationIndex}; service equity ${serviceEquityOut.nationalIndex}; backlog ${backlogOut.nationalIndex}; governance ${governanceOut.nationalIndex}; housing spillover ${housingSpilloverOut.nationalIndex}; talent drain ${talentOut.nationalIndex}; climate displacement ${climateOut.nationalIndex}; amenity cost ${amenityOut.nationalIndex}; decentralization ${decentralOut.nationalIndex}; relocation burden ${relocationOut.nationalIndex}; employment anchor ${employmentAnchorOut.nationalIndex}; commute wedge ${commuteWedgeOut.nationalIndex}; reception strain ${receptionStrainOut.nationalIndex}; land-use gridlock ${landUseGridlockOut.nationalIndex}; mobility trap ${mobilityTrapOut.nationalIndex}; absorption gap ${absorptionGapOut.nationalIndex}; relief overhead ${reliefOverheadOut.nationalIndex}; corridor equity drift ${corridorEquityDriftOut.nationalIndex}; climate adaptation lag ${climateAdaptationLagOut.nationalIndex}; fiscal capacity ${fiscalCapacityStrainOut.nationalIndex}; network erosion ${networkErosionOut.nationalIndex}; horizon risk ${longHorizonRiskOut.nationalIndex}; cohesion integrity ${cohesionIntegrityOut.nationalIndex}; relief equity gap ${reliefEquityGapOut.nationalIndex}; systemic fragility ${systemicFragilityOut.nationalIndex}.`,
+    governanceResilienceDecay: governanceResilienceDecayOut.rows,
+    nationalGovernanceResilienceDecayIndex: governanceResilienceDecayOut.nationalIndex,
+    migrationStabilityErosion: migrationStabilityErosionOut.rows,
+    nationalMigrationStabilityErosionIndex: migrationStabilityErosionOut.nationalIndex,
+    adaptiveCapacityCeiling: adaptiveCapacityCeilingOut.rows,
+    nationalAdaptiveCapacityCeilingIndex: adaptiveCapacityCeilingOut.nationalIndex,
+    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}; cohesion ${regionalCohesionIndex}; saturation ${metropolitanSaturationIndex}; service equity ${serviceEquityOut.nationalIndex}; backlog ${backlogOut.nationalIndex}; governance ${governanceOut.nationalIndex}; housing spillover ${housingSpilloverOut.nationalIndex}; talent drain ${talentOut.nationalIndex}; climate displacement ${climateOut.nationalIndex}; amenity cost ${amenityOut.nationalIndex}; decentralization ${decentralOut.nationalIndex}; relocation burden ${relocationOut.nationalIndex}; employment anchor ${employmentAnchorOut.nationalIndex}; commute wedge ${commuteWedgeOut.nationalIndex}; reception strain ${receptionStrainOut.nationalIndex}; land-use gridlock ${landUseGridlockOut.nationalIndex}; mobility trap ${mobilityTrapOut.nationalIndex}; absorption gap ${absorptionGapOut.nationalIndex}; relief overhead ${reliefOverheadOut.nationalIndex}; corridor equity drift ${corridorEquityDriftOut.nationalIndex}; climate adaptation lag ${climateAdaptationLagOut.nationalIndex}; fiscal capacity ${fiscalCapacityStrainOut.nationalIndex}; network erosion ${networkErosionOut.nationalIndex}; horizon risk ${longHorizonRiskOut.nationalIndex}; cohesion integrity ${cohesionIntegrityOut.nationalIndex}; relief equity gap ${reliefEquityGapOut.nationalIndex}; systemic fragility ${systemicFragilityOut.nationalIndex}; governance decay ${governanceResilienceDecayOut.nationalIndex}; migration stability ${migrationStabilityErosionOut.nationalIndex}; adaptive ceiling ${adaptiveCapacityCeilingOut.nationalIndex}.`,
     inputHash: base.inputHash,
   };
 

@@ -33,6 +33,9 @@ export type OP10M_A11_RegressionTurnSnapshot = {
   cohesionIntegrityIndex: number;
   reliefEquityGapIndex: number;
   systemicFragilityIndex: number;
+  governanceResilienceDecayIndex: number;
+  migrationStabilityErosionIndex: number;
+  adaptiveCapacityCeilingIndex: number;
   validationErrors: number;
 };
 
@@ -92,6 +95,9 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
       cohesionIntegrityIndex: out.state.nationalCohesionIntegrityIndex,
       reliefEquityGapIndex: out.state.nationalReliefEquityGapIndex,
       systemicFragilityIndex: out.state.nationalSystemicFragilityIndex,
+      governanceResilienceDecayIndex: out.state.nationalGovernanceResilienceDecayIndex,
+      migrationStabilityErosionIndex: out.state.nationalMigrationStabilityErosionIndex,
+      adaptiveCapacityCeilingIndex: out.state.nationalAdaptiveCapacityCeilingIndex,
       validationErrors,
     });
   }
@@ -122,6 +128,9 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
   const cohesionIntegrityStable = snapshots.every((s) => s.cohesionIntegrityIndex >= 8 && s.cohesionIntegrityIndex <= 100);
   const reliefEquityGapStable = snapshots.every((s) => s.reliefEquityGapIndex >= 8 && s.reliefEquityGapIndex <= 100);
   const systemicFragilityStable = snapshots.every((s) => s.systemicFragilityIndex >= 8 && s.systemicFragilityIndex <= 100);
+  const governanceDecayStable = snapshots.every((s) => s.governanceResilienceDecayIndex >= 8 && s.governanceResilienceDecayIndex <= 100);
+  const migrationStabilityStable = snapshots.every((s) => s.migrationStabilityErosionIndex >= 8 && s.migrationStabilityErosionIndex <= 100);
+  const adaptiveCeilingStable = snapshots.every((s) => s.adaptiveCapacityCeilingIndex >= 8 && s.adaptiveCapacityCeilingIndex <= 100);
 
   const ok =
     monotonicRevision &&
@@ -149,10 +158,13 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
     horizonRiskStable &&
     cohesionIntegrityStable &&
     reliefEquityGapStable &&
-    systemicFragilityStable;
+    systemicFragilityStable &&
+    governanceDecayStable &&
+    migrationStabilityStable &&
+    adaptiveCeilingStable;
   const detail = ok
-    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, systemic ${snapshots[snapshots.length - 1].systemicFragilityIndex}`
-    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable} gridlock=${landUseGridlockStable} trap=${mobilityTrapStable} gap=${absorptionGapStable} relief=${reliefOverheadStable} drift=${corridorDriftStable} lag=${adaptationLagStable} fiscal=${fiscalCapacityStable} erosion=${networkErosionStable} horizon=${horizonRiskStable} integrity=${cohesionIntegrityStable} reliefEq=${reliefEquityGapStable} systemic=${systemicFragilityStable}`;
+    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, adaptive ceiling ${snapshots[snapshots.length - 1].adaptiveCapacityCeilingIndex}`
+    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable} gridlock=${landUseGridlockStable} trap=${mobilityTrapStable} gap=${absorptionGapStable} relief=${reliefOverheadStable} drift=${corridorDriftStable} lag=${adaptationLagStable} fiscal=${fiscalCapacityStable} erosion=${networkErosionStable} horizon=${horizonRiskStable} integrity=${cohesionIntegrityStable} reliefEq=${reliefEquityGapStable} systemic=${systemicFragilityStable} govDecay=${governanceDecayStable} migStab=${migrationStabilityStable} ceiling=${adaptiveCeilingStable}`;
 
   return { ok, snapshots, detail };
 }

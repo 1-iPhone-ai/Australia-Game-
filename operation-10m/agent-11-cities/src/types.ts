@@ -215,7 +215,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.12' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.13' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -257,7 +257,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'long_horizon_capacity_risk'
   | 'cohesion_integrity_stress'
   | 'relief_delivery_equity_gap'
-  | 'systemic_settlement_fragility';
+  | 'systemic_settlement_fragility'
+  | 'governance_resilience_decay'
+  | 'migration_stability_erosion'
+  | 'adaptive_capacity_ceiling';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -534,6 +537,36 @@ export interface OP10M_A11_SystemicFragilityRow {
   narrative: string;
 }
 
+export type OP10M_A11_GovernanceResilienceBand = 'resilient' | 'eroding' | 'brittle' | 'collapsed';
+
+export interface OP10M_A11_GovernanceResilienceRow {
+  regionId: OP10M_A11_RegionId;
+  decayScore: number;
+  band: OP10M_A11_GovernanceResilienceBand;
+  drivers: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_MigrationStabilityBand = 'stable' | 'volatile' | 'unstable' | 'chaotic';
+
+export interface OP10M_A11_MigrationStabilityRow {
+  regionId: OP10M_A11_RegionId;
+  erosionScore: number;
+  band: OP10M_A11_MigrationStabilityBand;
+  signals: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_AdaptiveCeilingBand = 'headroom' | 'tight' | 'capped' | 'breached';
+
+export interface OP10M_A11_AdaptiveCeilingRow {
+  regionId: OP10M_A11_RegionId;
+  ceilingScore: number;
+  band: OP10M_A11_AdaptiveCeilingBand;
+  limits: string[];
+  narrative: string;
+}
+
 export type OP10M_A11_MigrationPressureBand = 'stable' | 'elevated' | 'high' | 'surge';
 
 export interface OP10M_A11_MigrationPressureRow {
@@ -698,6 +731,12 @@ export interface OP10M_A11_CompositeState {
   nationalReliefEquityGapIndex: number;
   systemicFragility: OP10M_A11_SystemicFragilityRow[];
   nationalSystemicFragilityIndex: number;
+  governanceResilienceDecay: OP10M_A11_GovernanceResilienceRow[];
+  nationalGovernanceResilienceDecayIndex: number;
+  migrationStabilityErosion: OP10M_A11_MigrationStabilityRow[];
+  nationalMigrationStabilityErosionIndex: number;
+  adaptiveCapacityCeiling: OP10M_A11_AdaptiveCeilingRow[];
+  nationalAdaptiveCapacityCeilingIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -734,5 +773,8 @@ export interface OP10M_A11_CompositePersisted {
   lastCohesionIntegrityIndex: number;
   lastReliefEquityGapIndex: number;
   lastSystemicFragilityIndex: number;
+  lastGovernanceResilienceDecayIndex: number;
+  lastMigrationStabilityErosionIndex: number;
+  lastAdaptiveCapacityCeilingIndex: number;
   inputHash: string;
 }

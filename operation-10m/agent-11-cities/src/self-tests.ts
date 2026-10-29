@@ -81,6 +81,9 @@ import { op10mA11ComputeSettlementLongHorizonCapacityRisk } from './settlement-l
 import { op10mA11ComputeRegionalCohesionIntegrityPressure } from './regional-cohesion-integrity-pressure.ts';
 import { op10mA11ComputeInterregionalReliefDeliveryEquityGap } from './interregional-relief-delivery-equity-gap.ts';
 import { op10mA11ComputeSettlementSystemicFragilityComposite } from './settlement-systemic-fragility-composite.ts';
+import { op10mA11ComputeRegionalGovernanceResilienceDecay } from './regional-governance-resilience-decay.ts';
+import { op10mA11ComputeInterregionalMigrationStabilityErosion } from './interregional-migration-stability-erosion.ts';
+import { op10mA11ComputeSettlementAdaptiveCapacityCeiling } from './settlement-adaptive-capacity-ceiling.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -407,7 +410,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.12',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.13',
     composite.state.schemaVersion,
   );
 
@@ -519,7 +522,10 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastLongHorizonCapacityRiskIndex === composite.state.nationalLongHorizonCapacityRiskIndex &&
       composite.persisted.lastCohesionIntegrityIndex === composite.state.nationalCohesionIntegrityIndex &&
       composite.persisted.lastReliefEquityGapIndex === composite.state.nationalReliefEquityGapIndex &&
-      composite.persisted.lastSystemicFragilityIndex === composite.state.nationalSystemicFragilityIndex,
+      composite.persisted.lastSystemicFragilityIndex === composite.state.nationalSystemicFragilityIndex &&
+      composite.persisted.lastGovernanceResilienceDecayIndex === composite.state.nationalGovernanceResilienceDecayIndex &&
+      composite.persisted.lastMigrationStabilityErosionIndex === composite.state.nationalMigrationStabilityErosionIndex &&
+      composite.persisted.lastAdaptiveCapacityCeilingIndex === composite.state.nationalAdaptiveCapacityCeilingIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -1246,6 +1252,90 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_113',
     composite.state.systemicFragility.every((s) => s.narrative.includes('systemic fragility')),
     composite.state.systemicFragility[0]?.band ?? 'none',
+  );
+
+  const governanceDecay = op10mA11ComputeRegionalGovernanceResilienceDecay({
+    governanceFriction: composite.state.governanceFriction,
+    systemicFragility: composite.state.systemicFragility,
+    reliefEquityGap: composite.state.reliefEquityGap,
+  });
+  push(
+    out,
+    'a11_114',
+    composite.state.governanceResilienceDecay.length === 8 &&
+      composite.state.nationalGovernanceResilienceDecayIndex === governanceDecay.nationalIndex,
+    `governance decay ${composite.state.nationalGovernanceResilienceDecayIndex}`,
+  );
+
+  const migrationStability = op10mA11ComputeInterregionalMigrationStabilityErosion({
+    migrationPressure: composite.state.migrationPressure,
+    mobilityTrap: composite.state.mobilityTrap,
+    cohesionIntegrity: composite.state.cohesionIntegrity,
+  });
+  push(
+    out,
+    'a11_115',
+    composite.state.migrationStabilityErosion.length === 8 &&
+      composite.state.nationalMigrationStabilityErosionIndex === migrationStability.nationalIndex,
+    `migration stability ${composite.state.nationalMigrationStabilityErosionIndex}`,
+  );
+
+  const adaptiveCeiling = op10mA11ComputeSettlementAdaptiveCapacityCeiling({
+    climateAdaptationLag: composite.state.climateAdaptationLag,
+    receptionStrain: composite.state.receptionStrain,
+    fiscalCapacityStrain: composite.state.fiscalCapacityStrain,
+  });
+  push(
+    out,
+    'a11_116',
+    composite.state.adaptiveCapacityCeiling.length === 8 &&
+      composite.state.nationalAdaptiveCapacityCeilingIndex === adaptiveCeiling.nationalIndex,
+    `adaptive ceiling ${composite.state.nationalAdaptiveCapacityCeilingIndex}`,
+  );
+
+  push(
+    out,
+    'a11_117',
+    composite.state.governanceResilienceDecay.every((g) => g.narrative.includes('governance resilience')),
+    composite.state.governanceResilienceDecay[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_118',
+    composite.derived.some((d) => d.kind === 'governance_resilience_decay') ||
+      composite.state.governanceResilienceDecay.some((g) => g.band === 'brittle' || g.band === 'collapsed'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_119',
+    composite.derived.some((d) => d.kind === 'migration_stability_erosion') ||
+      composite.state.migrationStabilityErosion.some((m) => m.band === 'unstable' || m.band === 'chaotic'),
+    composite.state.migrationStabilityErosion[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_120',
+    composite.persisted.lastGovernanceResilienceDecayIndex === composite.state.nationalGovernanceResilienceDecayIndex,
+    `persisted decay ${composite.persisted.lastGovernanceResilienceDecayIndex}`,
+  );
+
+  push(
+    out,
+    'a11_121',
+    composite.derived.some((d) => d.kind === 'adaptive_capacity_ceiling') ||
+      composite.state.adaptiveCapacityCeiling.some((a) => a.band === 'capped' || a.band === 'breached'),
+    composite.state.adaptiveCapacityCeiling[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_122',
+    composite.state.migrationStabilityErosion.every((m) => m.narrative.includes('migration stability')),
+    composite.state.migrationStabilityErosion[0]?.band ?? 'none',
   );
 
   return out;
