@@ -328,3 +328,13 @@ export function zenithPerpetuityRankingBonus(
   if (streak >= action.minCoalitionZenithPerpetuityStreakDays) return 28;
   return 2;
 }
+
+export function paragonInfinityRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionParagonInfinityStreakDays === undefined) return 0;
+  const streak = state.coalitionParagonInfinityStreakDays ?? 0;
+  if (streak >= action.minCoalitionParagonInfinityStreakDays) return 29;
+  return 2;
+}

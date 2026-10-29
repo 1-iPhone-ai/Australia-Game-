@@ -123,6 +123,7 @@ export {
   supremeConvergenceRankingBonus,
   apexTranscendenceRankingBonus,
   zenithPerpetuityRankingBonus,
+  paragonInfinityRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -468,6 +469,16 @@ export {
   applyZenithPerpetuityMandateBonus,
 } from './engine/coalition-zenith-perpetuity.ts';
 
+export { coalitionParagonInfinityStreakIssues } from './engine/coalition-paragon-infinity-gates.ts';
+
+export {
+  PARAGON_COALITION_INFINITY_THRESHOLD,
+  advanceCoalitionParagonInfinityStreak,
+  resetCoalitionParagonInfinityStreak,
+  isParagonCoalitionInfinity,
+  applyParagonInfinityMandateBonus,
+} from './engine/coalition-paragon-infinity.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '4.5.0';
+export const AGENT_01_MODULE_VERSION = '4.6.0';

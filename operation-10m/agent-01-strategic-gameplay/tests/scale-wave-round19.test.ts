@@ -118,7 +118,7 @@ describe('scale wave round 19 — eternal coalition ascendance', () => {
       coalitionEternalAscendanceStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(33);
+    expect(save.version).toBe(34);
     expect(save.coalitionEternalAscendanceStreakDays).toBe(5);
   });
 });

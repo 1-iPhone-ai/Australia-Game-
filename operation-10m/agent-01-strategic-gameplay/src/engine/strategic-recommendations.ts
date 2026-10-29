@@ -42,6 +42,7 @@ import {
   supremeConvergenceRankingBonus,
   apexTranscendenceRankingBonus,
   zenithPerpetuityRankingBonus,
+  paragonInfinityRankingBonus,
 } from './coalition-balance.ts';
 import { scoreNationalPriorityAlignment, validateAction } from './validation.ts';
 
@@ -101,7 +102,8 @@ export function rankStrategicActions(
         transcendentOmniumRankingBonus(state, action) +
         supremeConvergenceRankingBonus(state, action) +
         apexTranscendenceRankingBonus(state, action) +
-        zenithPerpetuityRankingBonus(state, action),
+        zenithPerpetuityRankingBonus(state, action) +
+        paragonInfinityRankingBonus(state, action),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });
