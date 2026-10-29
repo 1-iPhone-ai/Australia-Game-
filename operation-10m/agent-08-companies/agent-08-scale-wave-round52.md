@@ -24,6 +24,7 @@ Store closeout: `internal/operation-10m/agent-08-scale-wave-round52.md`
 | Integration merge | **`84d42cc6`** | `merge(op10m): O10-234 integration baseline ba97bdce` |
 | Module base (round 51 docs tip) | **`cfd81c88`** | `docs(op10m): O10-233 · wave 51 · round 51 Agent 08 handoff mirror` |
 | Gate feat (origin, push-first) | **`37e9dd94`** | `feat(op10m): O10-235 · wave 52 · round 52` |
-| Origin tip | _`pending docs tip pin`_ | `docs(op10m): O10-235 · wave 52 · round 52 handoff tip pin` |
+| Docs handoff | **`275a097d`** | `docs(op10m): O10-235 · wave 52 · round 52 handoff` |
+| Origin tip | _`275a097d`_ | `docs(op10m): O10-235 · wave 52 · round 52 handoff tip pin` |
 
 Gate subject scan: **O10-235 · wave 52 · round 52** (feat before docs; **274/274** post-push).
