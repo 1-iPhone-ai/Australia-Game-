@@ -163,6 +163,8 @@ export * from './automation-idle-governance-program-wave-round53-export.js';
 export * from './automation-idle-governance-program-wave-round53-capstone.js';
 export * from './automation-idle-governance-program-wave-round54-export.js';
 export * from './automation-idle-governance-program-wave-round54-capstone.js';
+export * from './automation-idle-governance-program-wave-round69-export.js';
+export * from './automation-idle-governance-program-wave-round69-capstone.js';
 export * from './automation-idle-governance-program-wave-round68-export.js';
 export * from './automation-idle-governance-program-wave-round68-capstone.js';
 export * from './automation-idle-governance-program-wave-round67-export.js';
@@ -351,6 +353,7 @@ import { runO10Agent20IdleGovernanceProgramWaveRound51CapstoneCompareSelfTests }
 import { runO10Agent20IdleGovernanceProgramWaveRound52ExportSelfTests } from './automation-idle-governance-program-wave-round52-export.js';
 import { runO10Agent20IdleGovernanceProgramWaveRound53ExportSelfTests } from './automation-idle-governance-program-wave-round53-export.js';
 import { runO10Agent20IdleGovernanceProgramWaveRound54ExportSelfTests } from './automation-idle-governance-program-wave-round54-export.js';
+import { runO10Agent20IdleGovernanceProgramWaveRound69ExportSelfTests } from './automation-idle-governance-program-wave-round69-export.js';
 import { runO10Agent20IdleGovernanceProgramWaveRound68ExportSelfTests } from './automation-idle-governance-program-wave-round68-export.js';
 import { runO10Agent20IdleGovernanceProgramWaveRound67ExportSelfTests } from './automation-idle-governance-program-wave-round67-export.js';
 import { runO10Agent20IdleGovernanceProgramWaveRound66ExportSelfTests } from './automation-idle-governance-program-wave-round66-export.js';
@@ -556,6 +559,7 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceProgramWaveRound52ExportSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveRound53ExportSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveRound54ExportSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveRound69ExportSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveRound68ExportSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveRound67ExportSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveRound66ExportSelfTests());
