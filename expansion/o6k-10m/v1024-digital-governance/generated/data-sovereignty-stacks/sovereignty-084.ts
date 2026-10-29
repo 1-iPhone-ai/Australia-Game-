@@ -1,0 +1,31 @@
+import type { V1024DgovDataSovereigntyEdge } from '../../types/core.ts';
+
+/** Data sovereignty graph shard 084 (residency/liability/audit corridor coupling). */
+export const V1024_DGOV_DATA_SOVEREIGNTY_SHARD_084: readonly V1024DgovDataSovereigntyEdge[] = [
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.676, lagTurns: 5, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.682, lagTurns: 6, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.688, lagTurns: 7, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.694, lagTurns: 8, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.7, lagTurns: 5, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.706, lagTurns: 6, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.712, lagTurns: 7, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.718, lagTurns: 8, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.724, lagTurns: 5, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.73, lagTurns: 6, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.736, lagTurns: 7, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.742, lagTurns: 8, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.748, lagTurns: 5, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.652, lagTurns: 6, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.658, lagTurns: 7, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.664, lagTurns: 8, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.67, lagTurns: 5, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.676, lagTurns: 6, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.682, lagTurns: 7, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.688, lagTurns: 8, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.694, lagTurns: 5, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.7, lagTurns: 6, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.706, lagTurns: 7, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.712, lagTurns: 8, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.718, lagTurns: 5, nodeId: 'platform_node_12' },
+  { fromChannel: 'child_safety', toChannel: 'genai_disclosure', weight: 0.724, lagTurns: 6, nodeId: 'platform_node_12' },
+];

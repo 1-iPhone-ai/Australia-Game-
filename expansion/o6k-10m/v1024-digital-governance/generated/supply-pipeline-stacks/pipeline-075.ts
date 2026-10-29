@@ -1,0 +1,31 @@
+import type { V1024DgovDataSovereigntyEdge } from '../../types/core.ts';
+
+/** Data sovereignty graph shard 075 (residency/liability/audit corridor coupling). */
+export const V1024_DGOV_DATA_SOVEREIGNTY_SHARD_075: readonly V1024DgovDataSovereigntyEdge[] = [
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.4, lagTurns: 5, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.406, lagTurns: 6, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.412, lagTurns: 7, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.418, lagTurns: 8, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.424, lagTurns: 5, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.43, lagTurns: 6, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.436, lagTurns: 7, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.442, lagTurns: 8, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.448, lagTurns: 5, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.454, lagTurns: 6, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.46, lagTurns: 7, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.364, lagTurns: 8, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.37, lagTurns: 5, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.376, lagTurns: 6, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.382, lagTurns: 7, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.388, lagTurns: 8, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.394, lagTurns: 5, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.4, lagTurns: 6, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.406, lagTurns: 7, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.412, lagTurns: 8, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.418, lagTurns: 5, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.424, lagTurns: 6, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.43, lagTurns: 7, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.436, lagTurns: 8, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.442, lagTurns: 5, nodeId: 'platform_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.448, lagTurns: 6, nodeId: 'platform_node_03' },
+];

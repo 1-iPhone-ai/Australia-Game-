@@ -1,0 +1,31 @@
+import type { V1024DgovDataSovereigntyEdge } from '../../types/core.ts';
+
+/** Data sovereignty graph shard 003 (residency/liability/audit corridor coupling). */
+export const V1024_DGOV_DATA_SOVEREIGNTY_SHARD_003: readonly V1024DgovDataSovereigntyEdge[] = [
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.266, lagTurns: 5, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.272, lagTurns: 6, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.278, lagTurns: 7, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.284, lagTurns: 8, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.29, lagTurns: 5, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.296, lagTurns: 6, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.302, lagTurns: 7, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.308, lagTurns: 8, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.314, lagTurns: 5, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.32, lagTurns: 6, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.326, lagTurns: 7, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.332, lagTurns: 8, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.236, lagTurns: 5, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.242, lagTurns: 6, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.248, lagTurns: 7, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.254, lagTurns: 8, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.26, lagTurns: 5, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.266, lagTurns: 6, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.272, lagTurns: 7, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.278, lagTurns: 8, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.284, lagTurns: 5, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.29, lagTurns: 6, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.296, lagTurns: 7, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.302, lagTurns: 8, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.308, lagTurns: 5, nodeId: 'platform_node_03' },
+  { fromChannel: 'cross_border_flow', toChannel: 'critical_infra', weight: 0.314, lagTurns: 6, nodeId: 'platform_node_03' },
+];

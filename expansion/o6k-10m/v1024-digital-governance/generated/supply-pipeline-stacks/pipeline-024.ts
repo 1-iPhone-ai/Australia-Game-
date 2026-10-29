@@ -1,0 +1,31 @@
+import type { V1024DgovDataSovereigntyEdge } from '../../types/core.ts';
+
+/** Data sovereignty graph shard 024 (residency/liability/audit corridor coupling). */
+export const V1024_DGOV_DATA_SOVEREIGNTY_SHARD_024: readonly V1024DgovDataSovereigntyEdge[] = [
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.4, lagTurns: 8, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.406, lagTurns: 9, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.412, lagTurns: 10, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.418, lagTurns: 11, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.424, lagTurns: 8, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.43, lagTurns: 9, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.436, lagTurns: 10, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.442, lagTurns: 11, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.448, lagTurns: 8, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.454, lagTurns: 9, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.46, lagTurns: 10, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.364, lagTurns: 11, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.37, lagTurns: 8, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.376, lagTurns: 9, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.382, lagTurns: 10, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.388, lagTurns: 11, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.394, lagTurns: 8, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.4, lagTurns: 9, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.406, lagTurns: 10, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.412, lagTurns: 11, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.418, lagTurns: 8, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.424, lagTurns: 9, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.43, lagTurns: 10, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.436, lagTurns: 11, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.442, lagTurns: 8, nodeId: 'platform_node_00' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.448, lagTurns: 9, nodeId: 'platform_node_00' },
+];

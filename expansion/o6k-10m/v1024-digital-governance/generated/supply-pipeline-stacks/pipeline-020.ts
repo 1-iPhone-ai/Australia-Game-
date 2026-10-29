@@ -1,0 +1,31 @@
+import type { V1024DgovDataSovereigntyEdge } from '../../types/core.ts';
+
+/** Data sovereignty graph shard 020 (residency/liability/audit corridor coupling). */
+export const V1024_DGOV_DATA_SOVEREIGNTY_SHARD_020: readonly V1024DgovDataSovereigntyEdge[] = [
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.266, lagTurns: 4, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.272, lagTurns: 5, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.278, lagTurns: 6, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.284, lagTurns: 7, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.29, lagTurns: 4, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.296, lagTurns: 5, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.302, lagTurns: 6, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.308, lagTurns: 7, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.314, lagTurns: 4, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.32, lagTurns: 5, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.326, lagTurns: 6, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.332, lagTurns: 7, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.236, lagTurns: 4, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.242, lagTurns: 5, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.248, lagTurns: 6, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.254, lagTurns: 7, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.26, lagTurns: 4, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.266, lagTurns: 5, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.272, lagTurns: 6, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.278, lagTurns: 7, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.284, lagTurns: 4, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.29, lagTurns: 5, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.296, lagTurns: 6, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.302, lagTurns: 7, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.308, lagTurns: 4, nodeId: 'platform_node_20' },
+  { fromChannel: 'rent', toChannel: 'build_to_rent', weight: 0.314, lagTurns: 5, nodeId: 'platform_node_20' },
+];
