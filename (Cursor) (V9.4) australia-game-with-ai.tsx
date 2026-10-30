@@ -11112,6 +11112,8 @@ export function computeChallengeSuccessChanceCore(i: {
   difficulty: number; type: string; stats: { strength: number; charisma: number; luck: number; intelligence: number };
   characterName?: string | null; level?: number; weatherEffect?: number; seasonEffect?: number; eventBonus?: number;
   equipmentBonus?: number; underdogBonus?: number; leaderPenalty?: number; fatiguePenalty?: number; sabotagePenalty?: number;
+  /** V9.5 interactive-challenge skill. Omitted or 0 leaves this formula unchanged. */
+  skillBonus?: number;
 }): number {
   const st = i.stats;
   const statValue = i.type === 'finale'
@@ -11119,7 +11121,7 @@ export function computeChallengeSuccessChanceCore(i: {
     : ((i.type === 'physical' ? st.strength : i.type === 'social' ? st.charisma : i.type === 'wildlife' ? st.luck : st.intelligence) || 3);
   const raw = 0.5 + statValue * 0.05 - i.difficulty * 0.1 + (i.characterName === 'Tourist' ? 0.1 : 0) + (i.level || 0) * 0.02
     + (i.weatherEffect || 0) + (i.seasonEffect || 0) + (i.eventBonus || 0) + (i.underdogBonus || 0) - (i.leaderPenalty || 0)
-    - (i.fatiguePenalty || 0) - (i.sabotagePenalty || 0) + (i.equipmentBonus || 0);
+    - (i.fatiguePenalty || 0) - (i.sabotagePenalty || 0) + (i.equipmentBonus || 0) + (i.skillBonus || 0);
   return Math.min(0.95, Math.max(0.1, raw));
 }
 
@@ -13615,6 +13617,101 @@ export const SETTINGS_HUB_FIELD_META: Record<string, SettingsHubFieldMeta> = {
     key: 'showGuardianInQuickActions', tab: 'aiTeams', label: 'Show Guardian AI Safety in Quick Actions',
     description: 'Display Guardian AI Safety shortcut inside Quick Actions toolbar.',
     tags: ['AI', 'Co-Pilot', 'UX']
+  },
+  interactiveChallengesEnabled: {
+    key: 'interactiveChallengesEnabled', tab: 'gameplay', label: 'Interactive challenges',
+    description: 'Before a human challenge roll, play a short timing, dialogue, trivia or push-your-luck step. Off keeps the plain roll.',
+    tags: ['Gameplay', 'Accessibility']
+  },
+  interactiveChallengeMaxModifier: {
+    key: 'interactiveChallengeMaxModifier', tab: 'gameplay', label: 'Interactive challenge skill cap',
+    description: 'How far a perfect or failed interaction can move the success chance. Default 0.15, kept between 0.05 and 0.25.',
+    tags: ['Gameplay']
+  },
+  interactiveChallengeAiSimulatedScoreEnabled: {
+    key: 'interactiveChallengeAiSimulatedScoreEnabled', tab: 'gameplay', label: 'AI simulated skill score',
+    description: 'AI actors never play the interaction. When this is also on, they use one fixed skill score.',
+    tags: ['Gameplay', 'AI']
+  },
+  interactiveChallengeAiSimulatedScore: {
+    key: 'interactiveChallengeAiSimulatedScore', tab: 'gameplay', label: 'AI skill score',
+    description: 'Fixed skill from -1 to +1 used only when the AI simulated score is on. Default 0.',
+    tags: ['Gameplay', 'AI']
+  },
+  interactiveChallengeTimeLimitSeconds: {
+    key: 'interactiveChallengeTimeLimitSeconds', tab: 'gameplay', label: 'Interactive challenge timer',
+    description: 'Seconds allowed for an interaction. 0 turns the timer off. The player can add 5 seconds or turn it off mid-challenge.',
+    tags: ['Gameplay', 'Accessibility']
+  },
+  realMapEnabled: {
+    key: 'realMapEnabled', tab: 'gameplay', label: 'Real map of Australia',
+    description: 'Draw simplified state shapes behind the existing region anchors. Off keeps the circles on the grey box.',
+    tags: ['Gameplay', 'UX', 'Accessibility']
+  },
+  expandedChallengesEnabled: {
+    key: 'expandedChallengesEnabled', tab: 'gameplay', label: 'Expanded challenge pool',
+    description: 'Add seasonal, chained and rare challenges. Off keeps the original 32 challenges.',
+    tags: ['Gameplay']
+  },
+  soundEnabled: {
+    key: 'soundEnabled', tab: 'gameplay', label: 'Sound',
+    description: 'Short synthesised tones for feedback. Off stays silent and does not open an audio device.',
+    tags: ['UX', 'Accessibility']
+  },
+  soundVolume: {
+    key: 'soundVolume', tab: 'gameplay', label: 'Sound volume',
+    description: 'Volume for synthesised tones, from 0 to 1. Default 0.5. Sound itself stays off until enabled.',
+    tags: ['UX', 'Accessibility']
+  },
+  soundCategories: {
+    key: 'soundCategories', tab: 'gameplay', label: 'Sound categories',
+    description: 'Per-category toggles for cash, travel, challenge, world and progress tones.',
+    tags: ['UX', 'Accessibility']
+  },
+  dailySeedEnabled: {
+    key: 'dailySeedEnabled', tab: 'gameplay', label: 'Daily Seed mode',
+    description: 'Show a Daily Seed option on the start screen. Off leaves the start screen unchanged.',
+    tags: ['Gameplay', 'Replay']
+  },
+  dailySeedRunActive: {
+    key: 'dailySeedRunActive', tab: 'gameplay', label: 'Daily Seed run active',
+    description: 'Set when a Daily Seed match is in progress. Off for every other match.',
+    tags: ['Gameplay', 'Replay']
+  },
+  dailySeedCode: {
+    key: 'dailySeedCode', tab: 'gameplay', label: 'Daily Seed code',
+    description: 'The calendar date or custom code for the active Daily Seed run.',
+    tags: ['Gameplay', 'Replay']
+  },
+  dailySeedFingerprint: {
+    key: 'dailySeedFingerprint', tab: 'gameplay', label: 'Daily Seed settings fingerprint',
+    description: 'Fingerprint of the ranked Daily Seed setup. A later settings change makes the run unranked.',
+    tags: ['Replay']
+  },
+  rulesetPreset: {
+    key: 'rulesetPreset', tab: 'gameplay', label: 'Ruleset',
+    description: 'Custom leaves every setting as it is. Classic, Strategic and Grand Strategy apply a bundle you can undo.',
+    tags: ['Gameplay', 'Core']
+  },
+  rulesetIncludeV95Features: {
+    key: 'rulesetIncludeV95Features', tab: 'gameplay', label: 'Include new V9.5 features in a ruleset',
+    description: 'When applying a ruleset, also turn on interactive challenges, the real map, expanded challenges and sound. Unticked by default.',
+    tags: ['Gameplay']
+  },
+  rulesetUndoSnapshot: {
+    key: 'rulesetUndoSnapshot', tab: 'gameplay', label: 'Ruleset undo snapshot',
+    description: 'The settings captured before the last ruleset apply, so Undo can restore them.',
+    tags: ['Gameplay']
+  },
+  v95SuppressLivingRegions: {
+    key: 'v95SuppressLivingRegions', tab: 'gameplay', label: 'Hide living-region strips',
+    description: 'Classic ruleset hides the living-region strip. Off (the default) leaves that strip as it is.',
+    tags: ['Gameplay', 'UX']
+  },
+  v95SuppressFactions: {
+    key: 'v95SuppressFactions', tab: 'gameplay', label: 'Hide faction strips',
+    description: 'Classic ruleset hides the faction strip. Off (the default) leaves that strip as it is.',
+    tags: ['Gameplay', 'UX']
   }
 };
 
@@ -14458,6 +14555,25 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   autoHideSettings: createDefaultAutoHideSettings(),
   notificationLaneSettings: createDefaultNotificationLaneSettings(),
   modalSizeSettings: createDefaultModalSizeSettings(),
+  interactiveChallengesEnabled: false,
+  interactiveChallengeMaxModifier: 0.15,
+  interactiveChallengeAiSimulatedScoreEnabled: false,
+  interactiveChallengeAiSimulatedScore: 0,
+  interactiveChallengeTimeLimitSeconds: 8,
+  realMapEnabled: false,
+  expandedChallengesEnabled: false,
+  soundEnabled: false,
+  soundVolume: 0.5,
+  soundCategories: { cash: true, travel: true, challenge: true, world: true, progress: true },
+  dailySeedEnabled: false,
+  dailySeedRunActive: false,
+  dailySeedCode: '',
+  dailySeedFingerprint: '',
+  rulesetPreset: 'custom',
+  rulesetIncludeV95Features: false,
+  rulesetUndoSnapshot: null,
+  v95SuppressLivingRegions: false,
+  v95SuppressFactions: false,
 };
 
 export const createDefaultGameSettings = (): GameSettingsState => (
@@ -15257,6 +15373,34 @@ export function sanitizeGameSettings(input: unknown): GameSettingsState {
     coPilotStartPhaseOverlayEnabled: src.coPilotStartPhaseOverlayEnabled === true,
     keepQuickActionsReopenHandleWhenClosed: typeof src.keepQuickActionsReopenHandleWhenClosed === 'boolean' ? src.keepQuickActionsReopenHandleWhenClosed : true,
     fullyHideQuickActionsWhenClosed: typeof src.fullyHideQuickActionsWhenClosed === 'boolean' ? src.fullyHideQuickActionsWhenClosed : false,
+    interactiveChallengesEnabled: src.interactiveChallengesEnabled === true,
+    interactiveChallengeMaxModifier: (typeof src.interactiveChallengeMaxModifier === 'number' && Number.isFinite(src.interactiveChallengeMaxModifier)) ? Math.max(0.05, Math.min(0.25, src.interactiveChallengeMaxModifier)) : 0.15,
+    interactiveChallengeAiSimulatedScoreEnabled: src.interactiveChallengeAiSimulatedScoreEnabled === true,
+    interactiveChallengeAiSimulatedScore: (typeof src.interactiveChallengeAiSimulatedScore === 'number' && Number.isFinite(src.interactiveChallengeAiSimulatedScore)) ? Math.max(-1, Math.min(1, src.interactiveChallengeAiSimulatedScore)) : 0,
+    interactiveChallengeTimeLimitSeconds: (typeof src.interactiveChallengeTimeLimitSeconds === 'number' && Number.isFinite(src.interactiveChallengeTimeLimitSeconds)) ? Math.max(0, Math.min(60, Math.floor(src.interactiveChallengeTimeLimitSeconds))) : 8,
+    realMapEnabled: src.realMapEnabled === true,
+    expandedChallengesEnabled: src.expandedChallengesEnabled === true,
+    soundEnabled: src.soundEnabled === true,
+    soundVolume: (typeof src.soundVolume === 'number' && Number.isFinite(src.soundVolume)) ? Math.max(0, Math.min(1, src.soundVolume)) : 0.5,
+    soundCategories: (() => {
+      const base = { cash: true, travel: true, challenge: true, world: true, progress: true };
+      const raw = src.soundCategories;
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return base;
+      (['cash', 'travel', 'challenge', 'world', 'progress'] as const).forEach(key => {
+        const value = (raw as Record<string, unknown>)[key];
+        if (typeof value === 'boolean') base[key] = value;
+      });
+      return base;
+    })(),
+    dailySeedEnabled: src.dailySeedEnabled === true,
+    dailySeedRunActive: src.dailySeedRunActive === true,
+    dailySeedCode: typeof src.dailySeedCode === 'string' ? src.dailySeedCode : '',
+    dailySeedFingerprint: typeof src.dailySeedFingerprint === 'string' ? src.dailySeedFingerprint : '',
+    rulesetPreset: src.rulesetPreset === 'classic' || src.rulesetPreset === 'strategic' || src.rulesetPreset === 'grand_strategy' ? src.rulesetPreset : 'custom',
+    rulesetIncludeV95Features: src.rulesetIncludeV95Features === true,
+    rulesetUndoSnapshot: src.rulesetUndoSnapshot && typeof src.rulesetUndoSnapshot === 'object' && !Array.isArray(src.rulesetUndoSnapshot) ? src.rulesetUndoSnapshot as Record<string, unknown> : null,
+    v95SuppressLivingRegions: src.v95SuppressLivingRegions === true,
+    v95SuppressFactions: src.v95SuppressFactions === true,
   };
 }
 
@@ -26892,6 +27036,25 @@ export type GameSettingsState = {
   strategyPlannerSettings?: StrategyPlannerSettings;
   autoModeDiagnosticsDrawerOpen?: boolean;
   smartSettingsProfile: SmartSettingsProfile;
+  interactiveChallengesEnabled?: boolean;
+  interactiveChallengeMaxModifier?: number;
+  interactiveChallengeAiSimulatedScoreEnabled?: boolean;
+  interactiveChallengeAiSimulatedScore?: number;
+  interactiveChallengeTimeLimitSeconds?: number;
+  realMapEnabled?: boolean;
+  expandedChallengesEnabled?: boolean;
+  soundEnabled?: boolean;
+  soundVolume?: number;
+  soundCategories?: { cash: boolean; travel: boolean; challenge: boolean; world: boolean; progress: boolean };
+  dailySeedEnabled?: boolean;
+  dailySeedRunActive?: boolean;
+  dailySeedCode?: string;
+  dailySeedFingerprint?: string;
+  rulesetPreset?: 'custom' | 'classic' | 'strategic' | 'grand_strategy';
+  rulesetIncludeV95Features?: boolean;
+  rulesetUndoSnapshot?: Record<string, unknown> | null;
+  v95SuppressLivingRegions?: boolean;
+  v95SuppressFactions?: boolean;
 };
 
 type DontAskAgainPrefs = {
@@ -64426,7 +64589,8 @@ export const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'autoMode.main', tab: 'automation', title: '🤖 Auto Mode Settings (Adaptive Match Manager)', tags: ['AI', 'Automation'], chips: ['Off by default'], fieldKeys: ['autoModeSettings', 'autoModeEnabled', 'permissionMode', 'allowStrategyChanges', 'allowEconomyChanges', 'allowActionManagementChanges', 'allowNumericalModifiers', 'preserveReplayDeterminism', 'smartSettingsProfile'], keywords: 'auto mode adaptive catch up manager presets intensity permission simple' },
   { id: 'autoMode.advanced', tab: 'automation', title: '⚙️ Auto Mode Advanced Policies & Limits', tags: ['Advanced', 'Automation'], chips: ['Advanced'], fieldKeys: [], keywords: 'auto mode advanced numerical limits sliders actor policy team policy locked keys matrix' },
   { id: 'aiTeams.coPilot', tab: 'aiTeams', title: 'Human Co-Pilot AI & Takeover Controls', tags: ['AI', 'Co-Pilot', 'Automation'], fieldKeys: ['coPilotSettings', 'guardianAiSettings', 'strategyPlannerSettings', 'commandCenterSettings', 'defaultGuardianOpeningStyle', 'showGuardianFloatingButton', 'showGuardianInQuickActions', 'enableGuardianSidePanelAccess', 'hideGuardianFloatingButtonWhileCenterOpen', 'hideGuardianFloatingButtonWhileAnotherBlockingModalOpen', 'guardianFloatingPosition', 'allowGuardianFloatingButtonDragging', 'rememberGuardianFloatingPosition'], keywords: 'co-pilot copilot takeover rescue authority mode spending caps autonomous assistant guardian ai risk protection waiting overlay other players shell' },
-  { id: 'interface.notifications', tab: 'interfaceAcc', title: 'Notifications', tags: ['Notifications'], fieldKeys: ['notificationSettings' as keyof GameSettingsState, 'notificationClearShortcut'] }
+  { id: 'interface.notifications', tab: 'interfaceAcc', title: 'Notifications', tags: ['Notifications'], fieldKeys: ['notificationSettings' as keyof GameSettingsState, 'notificationClearShortcut'] },
+  { id: 'gameplay.v95CoreLoop', tab: 'gameplay', title: 'Core loop', tags: ['Gameplay', 'Accessibility', 'Replay'], fieldKeys: ['interactiveChallengesEnabled', 'interactiveChallengeMaxModifier', 'interactiveChallengeAiSimulatedScoreEnabled', 'interactiveChallengeAiSimulatedScore', 'interactiveChallengeTimeLimitSeconds', 'realMapEnabled', 'expandedChallengesEnabled', 'soundEnabled', 'soundVolume', 'soundCategories', 'dailySeedEnabled', 'dailySeedRunActive', 'dailySeedCode', 'dailySeedFingerprint', 'rulesetPreset', 'rulesetIncludeV95Features', 'rulesetUndoSnapshot', 'v95SuppressLivingRegions', 'v95SuppressFactions'], keywords: 'interactive challenges real map australia expanded challenges seasons chains rare sound daily seed ruleset classic strategic grand strategy system impact' }
 ];
 
 export interface SettingsHubSearchEntry {
@@ -128889,7 +129053,7 @@ export function buildDecisionTradeoffLines(i: {
 
 // ---- LAB: Strategic Balance Inspector (Part 93) -------------------------------------------------------------------
 
-export const StrategicBalanceInspector: React.FC<{ theme: any; winCondition: BalanceWinMetric; days: number; apPerDay: number; features: Partial<BalanceFeatures> }> = ({ theme, winCondition, days, apPerDay, features }) => {
+export const StrategicBalanceInspector: React.FC<{ theme: any; winCondition: BalanceWinMetric; days: number; apPerDay: number; features: Partial<BalanceFeatures>; showExpanded?: boolean }> = ({ theme, winCondition, days, apPerDay, features, showExpanded = false }) => {
   const [report, setReport] = useState<StrategicBalanceReport | null>(null);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
@@ -128923,6 +129087,16 @@ export const StrategicBalanceInspector: React.FC<{ theme: any; winCondition: Bal
               <div>Early leader (25%) won {report.snowball.earlyLeaderWins}/{report.snowball.samples} · lead at 25% {Math.round(report.snowball.avgEarlyLeadPct * 100)}% → final {Math.round(report.snowball.avgFinalLeadPct * 100)}% · viable options/decision {report.decisionQuality.avgViable} · fake-choice rate {Math.round(report.decisionQuality.fakeChoiceRate * 100)}%</div>
               <div className={label}>Economic ROI</div>
               <table className="w-full text-[11px]"><tbody>{report.roi.map(r => <tr key={r.mechanic} className="align-top"><td className="pr-2 font-semibold">{r.mechanic}</td><td className="pr-2">{r.cost}</td><td className="pr-2">{r.payout}</td><td className="pr-2 opacity-80">{r.verdict}</td></tr>)}</tbody></table>
+              {showExpanded && (() => {
+                const extra = v95ExpandedChallengeRoi();
+                return (
+                  <>
+                    <div className={label}>Expanded challenge ROI, next to the original 32</div>
+                    <div>Original mean {extra.originalMean}, spread {extra.originalSd}. {extra.outliers.length ? `${UI_TONE.warning.icon} Outlier: ${extra.outliers.join(', ')}` : `${UI_TONE.completed.icon} No outlier beyond two standard deviations.`}</div>
+                    <table className="w-full text-[11px]" data-testid="v95-expanded-roi"><tbody>{extra.rows.map(r => <tr key={r.name}><td className="pr-2">{r.region}</td><td className="pr-2">{r.name}</td><td className="pr-2">{r.ev}</td><td>{r.outlier ? `${UI_TONE.warning.icon} outlier` : `${UI_TONE.neutral.icon} within range`}</td></tr>)}</tbody></table>
+                  </>
+                );
+              })()}
             </>
           )}
         </div>
@@ -132664,6 +132838,8 @@ export const V94_STYLESHEET = `
 [data-v94] .v96-turn-owner-pulse { animation: v96TurnOwnerPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite }
 [data-v94][data-motion="reduced"] .v96-turn-owner-pulse { animation: none !important; opacity: 1 }
 @media (prefers-reduced-motion: reduce) { [data-v94] .v96-turn-owner-pulse { animation: none !important; opacity: 1 } }
+[data-v94] .v95-token { transition: left calc(400ms * var(--v94-speed)) cubic-bezier(0.4, 0, 0.2, 1), top calc(400ms * var(--v94-speed)) cubic-bezier(0.4, 0, 0.2, 1) }
+[data-v94][data-motion="reduced"] .v95-token { transition: none !important }
 `;
 
 // ---- Shared visual semantics (color is never the only channel: icon + sign + label) ------------------------
@@ -132707,7 +132883,7 @@ export type UiFeedbackKind =
   | 'cash_change' | 'ap_change' | 'ap_exhausted' | 'travel_arrival' | 'rival_moved' | 'region_control_changed' | 'region_state_changed'
   | 'objective_progress' | 'objective_completed' | 'focus_changed' | 'strategy_phase'
   | 'contract_completed' | 'contract_failed' | 'infrastructure_completed' | 'crisis_resolved' | 'crisis_escalated'
-  | 'relationship_shift' | 'standing_change' | 'agreement_state' | 'level_up' | 'turn_start' | 'ai_turn' | 'control_changed' | 'day_change';
+  | 'relationship_shift' | 'standing_change' | 'agreement_state' | 'level_up' | 'turn_start' | 'ai_turn' | 'control_changed' | 'day_change' | 'challenge_result';
 export interface UiFeedbackEvent {
   id: string; kind: UiFeedbackKind; importance: UiFeedbackImportance;
   /** What it concerns (region code, 'cash', 'ap', contract id …) — the coalescing/stale key with kind. */
@@ -133275,7 +133451,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'interactiveChallengesEnabled', 'interactiveChallengeMaxModifier', 'interactiveChallengeAiSimulatedScoreEnabled', 'interactiveChallengeAiSimulatedScore', 'interactiveChallengeTimeLimitSeconds', 'realMapEnabled', 'expandedChallengesEnabled', 'soundEnabled', 'soundVolume', 'soundCategories', 'dailySeedEnabled', 'dailySeedRunActive', 'dailySeedCode', 'dailySeedFingerprint', 'rulesetPreset', 'rulesetIncludeV95Features', 'rulesetUndoSnapshot', 'v95SuppressLivingRegions', 'v95SuppressFactions'
 ] as const;
 
 /**
@@ -135722,7 +135898,13 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
     ...runAiMemoryPhase1SelfTests().results, ...runAiMemoryPhase2SelfTests().results, ...runAiMemoryPhase3SelfTests().results,
     ...runAiMemoryPhase4SelfTests().results, ...runAiMemoryPhase5SelfTests().results, ...runAiMemoryPhase6SelfTests().results, ...runAiMemoryPhase61SelfTests().results
-  ] }
+  ] },
+  { id: 'v95rs', label: 'V9.5 Rulesets & system impact', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV95RulesetSelfTests() },
+  { id: 'v95ic', label: 'V9.5 Interactive challenges', tier: 'quick', section: 'Replay Integrity', severity: 'MAJOR', run: () => runV95InteractiveChallengeSelfTests() },
+  { id: 'v95map', label: 'V9.5 Real map', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV95RealMapSelfTests() },
+  { id: 'v95ex', label: 'V9.5 Expanded challenges', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV95ExpandedChallengeSelfTests() },
+  { id: 'v95snd', label: 'V9.5 Sound', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV95SoundSelfTests() },
+  { id: 'v95day', label: 'V9.5 Daily Seed', tier: 'quick', section: 'Replay Integrity', severity: 'MAJOR', run: () => runV95DailySeedSelfTests() }
 ];
 
 export function runV95ExistingSuite(spec: V95SuiteSpec): V95CheckResult[] {
@@ -164066,7 +164248,7 @@ export function computeNationalStateCapacity(
 
   // V10.0 National Systems maturity
   if (inputs.nationalSystems?.national) {
-    const nets = Object.values(inputs.nationalSystems.national);
+    const nets = NATIONAL_NETWORKS.map(kind => inputs.nationalSystems.national[kind]).filter(Boolean);
     const healthyCount = nets.filter(n => n.condition === 'healthy' || n.condition === 'surplus').length;
     if (healthyCount >= 3) {
       const bonus = Math.min(6, healthyCount * 1.2);
@@ -180201,6 +180383,1552 @@ export function runV1013HouseholdsLivingStandardsSelfTests(): {
   };
 }
 
+// ============================================================================
+// SECTION 20AG: V9.5 INTERACTIVE CHALLENGES
+// ============================================================================
+// Off by default. A human challenge can open a short interaction before the
+// existing roll. The roll is still computeChallengeSuccessChanceCore; the
+// interaction only supplies an optional skillBonus (0 when skipped or when
+// the feature is off). AI actors never play the interaction.
+
+export type V95ChallengeKind = 'physical' | 'social' | 'educational' | 'wildlife' | 'finale';
+export type V95SkillPartInput =
+  | { kind: 'physical'; stop: number }
+  | { kind: 'social'; option: number }
+  | { kind: 'educational'; option: number }
+  | { kind: 'wildlife'; presses: number };
+
+export interface V95SkillInput { skip?: boolean; timeout?: boolean; parts: V95SkillPartInput[] }
+export interface V95Choice { text: string; score: number; correct?: boolean }
+export interface V95InteractionPart {
+  kind: Exclude<V95ChallengeKind, 'finale'>;
+  zoneCenter: number;
+  zoneWidth: number;
+  prompt: string;
+  options: V95Choice[];
+  /** Pre-rolled bust on each press-on. Scoring reads these; it does not draw again. */
+  busts: boolean[];
+  stepGain: number;
+}
+export interface V95InteractionSession {
+  id: string;
+  kind: V95ChallengeKind;
+  challengeName: string;
+  regionCode: string;
+  difficulty: number;
+  maxModifier: number;
+  timeLimitSeconds: number;
+  parts: V95InteractionPart[];
+}
+export interface V95SkillResult {
+  skill: number;
+  modifier: number;
+  label: string;
+  skip: boolean;
+  kind: string;
+  input: V95SkillInput;
+}
+export interface V95PendingChallenge { session: V95InteractionSession; wager: number; challenge: any }
+
+export const V95_SKILL_LABEL: Record<string, string> = {
+  physical: 'Your timing', social: 'Your reply', educational: 'Your answer', wildlife: 'Your nerve', finale: 'Your run'
+};
+export const V95_KEYS = ['Enter', ' ', 'Escape', '1', '2', '3', '4'] as const;
+
+export function v95ClampModifierCap(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return 0.15;
+  return Math.max(0.05, Math.min(0.25, n));
+}
+
+export function v95ClampSkill(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(-1, Math.min(1, value));
+}
+
+/** skill in [-1, 1] → probability delta. Cap defaults to 0.15 and stays inside 0.05–0.25. */
+export function v95Modifier(skill: number, maxModifier: unknown): number {
+  const cap = v95ClampModifierCap(maxModifier);
+  return Math.round(v95ClampSkill(skill) * cap * 1000) / 1000;
+}
+
+export function v95FormatModifier(mod: number): string {
+  const pct = Math.round((Number(mod) || 0) * 100);
+  return `${pct > 0 ? '+' : ''}${pct}%`;
+}
+
+export function v95ZoneWidth(difficulty: number): number {
+  const d = Math.max(1, Math.min(4, Number(difficulty) || 1));
+  return Math.max(0.08, 0.36 - d * 0.06);
+}
+
+/** Same ruler for the moving bar and the reduced-motion choices. */
+export function v95ScoreTiming(stop: number, difficulty: number): number {
+  const width = v95ZoneWidth(difficulty);
+  const half = width / 2;
+  const d = Math.abs(Math.max(0, Math.min(1, Number(stop) || 0)) - 0.5);
+  if (d <= half) return v95ClampSkill(1 - d / half);
+  const span = Math.max(0.01, 0.5 - half);
+  return -Math.max(0, Math.min(1, (d - half) / span));
+}
+
+export function v95StaticStop(difficulty: number, which: 'early' | 'onTime' | 'late'): number {
+  const half = v95ZoneWidth(difficulty) / 2;
+  if (which === 'onTime') return 0.5;
+  if (which === 'early') return Math.max(0, 0.5 - half - 0.08);
+  return Math.min(1, 0.5 + half + 0.08);
+}
+
+export function v95AiSkillBonus(settings: { interactiveChallengesEnabled?: boolean; interactiveChallengeAiSimulatedScoreEnabled?: boolean; interactiveChallengeAiSimulatedScore?: number; interactiveChallengeMaxModifier?: number } | null | undefined): number {
+  if (!settings?.interactiveChallengesEnabled || !settings?.interactiveChallengeAiSimulatedScoreEnabled) return 0;
+  return v95Modifier(Number(settings.interactiveChallengeAiSimulatedScore) || 0, settings.interactiveChallengeMaxModifier);
+}
+
+function v95Unit(draw: () => number): number {
+  const n = Number(draw());
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(0.999999, n));
+}
+
+function v95Shuffle<T>(items: T[], draw: () => number): T[] {
+  const next = items.slice();
+  for (let i = next.length - 1; i > 0; i--) {
+    const j = Math.floor(v95Unit(draw) * (i + 1));
+    const swap = next[i];
+    next[i] = next[j];
+    next[j] = swap;
+  }
+  return next;
+}
+
+function v95SocialPart(regionName: string, challengeName: string, draw: () => number): V95InteractionPart {
+  const options = v95Shuffle([
+    { text: `Ask about their day, then say you came for ${challengeName}.`, score: 1 },
+    { text: `Say you are only passing through ${regionName}.`, score: 0 },
+    { text: `Interrupt and demand the fastest way to finish ${challengeName}.`, score: -1 }
+  ], draw);
+  return {
+    kind: 'social', zoneCenter: 0.5, zoneWidth: 0.2, busts: [], stepGain: 0,
+    prompt: `In ${regionName}, during "${challengeName}", a local asks what you are here for.`,
+    options
+  };
+}
+
+function v95EducationalPart(regionCode: string, region: any, regions: Record<string, any>, challengeName: string, draw: () => number): V95InteractionPart {
+  const others = Object.keys(regions).filter(code => code !== regionCode && regions[code]);
+  const variant = Math.floor(v95Unit(draw) * 3);
+  let prompt = '';
+  let correct = '';
+  const wrong: string[] = [];
+  if (variant === 1) {
+    prompt = `Which note belongs to ${region?.name || regionCode}?`;
+    correct = String(region?.funFact || region?.description || region?.name || regionCode);
+    others.forEach(code => wrong.push(String(regions[code].funFact || regions[code].description || regions[code].name)));
+  } else if (variant === 2) {
+    prompt = `Which challenge is set in ${region?.name || regionCode}?`;
+    correct = challengeName;
+    others.forEach(code => {
+      const list = regions[code].challenges || [];
+      if (list[0]?.name) wrong.push(String(list[0].name));
+    });
+  } else {
+    prompt = `Which place is this? ${region?.description || region?.funFact || regionCode}`;
+    correct = String(region?.name || regionCode);
+    others.forEach(code => wrong.push(String(regions[code].name || code)));
+  }
+  const distractors = v95Shuffle(wrong.filter(text => text && text !== correct), draw).slice(0, 3);
+  while (distractors.length < 3) distractors.push(`Somewhere else (${distractors.length + 1})`);
+  const options = v95Shuffle([
+    { text: correct, score: 1, correct: true },
+    ...distractors.slice(0, 3).map(text => ({ text, score: -1, correct: false }))
+  ], draw);
+  return { kind: 'educational', zoneCenter: 0.5, zoneWidth: 0.2, busts: [], stepGain: 0, prompt, options };
+}
+
+function v95WildlifePart(difficulty: number, draw: () => number): V95InteractionPart {
+  const chance = Math.min(0.75, 0.25 + Math.max(1, difficulty) * 0.08);
+  return {
+    kind: 'wildlife', zoneCenter: 0.5, zoneWidth: 0.2, options: [], stepGain: 0.34,
+    prompt: 'Press on to raise the bonus, or stop and keep what you have. Up to 3 steps.',
+    busts: [0, 1, 2].map(() => v95Unit(draw) < chance)
+  };
+}
+
+function v95PhysicalPart(difficulty: number, challengeName: string): V95InteractionPart {
+  const zoneWidth = v95ZoneWidth(difficulty);
+  return {
+    kind: 'physical', zoneCenter: 0.5, zoneWidth, options: [], busts: [], stepGain: 0,
+    prompt: `Stop the marker inside the target zone for ${challengeName}. A harder challenge uses a narrower zone.`
+  };
+}
+
+function v95BuildPart(kind: Exclude<V95ChallengeKind, 'finale'>, args: { challenge: any; regionCode: string; region: any; regions: Record<string, any>; draw: () => number }): V95InteractionPart {
+  const name = String(args.challenge?.name || 'Challenge');
+  const regionName = String(args.region?.name || args.regionCode);
+  const difficulty = Number(args.challenge?.difficulty) || 1;
+  if (kind === 'physical') return v95PhysicalPart(difficulty, name);
+  if (kind === 'social') return v95SocialPart(regionName, name, args.draw);
+  if (kind === 'wildlife') return v95WildlifePart(difficulty, args.draw);
+  return v95EducationalPart(args.regionCode, args.region, args.regions, name, args.draw);
+}
+
+export function v95BuildInteraction(args: {
+  challenge: any;
+  regionCode: string;
+  region: any;
+  regions: Record<string, any>;
+  draw: () => number;
+  maxModifier: number;
+  timeLimitSeconds: number;
+}): V95InteractionSession {
+  const kind = (['physical', 'social', 'educational', 'wildlife', 'finale'].includes(args.challenge?.type) ? args.challenge.type : 'educational') as V95ChallengeKind;
+  const difficulty = Number(args.challenge?.difficulty) || 1;
+  let kinds: Array<Exclude<V95ChallengeKind, 'finale'>>;
+  if (kind === 'finale') {
+    const pool: Array<Exclude<V95ChallengeKind, 'finale'>> = ['physical', 'social', 'educational', 'wildlife'];
+    const first = Math.floor(v95Unit(args.draw) * pool.length);
+    let second = Math.floor(v95Unit(args.draw) * (pool.length - 1));
+    if (second >= first) second += 1;
+    kinds = [pool[first], pool[second]];
+  } else {
+    kinds = [kind];
+  }
+  const parts = kinds.map(partKind => v95BuildPart(partKind, args));
+  return {
+    id: `${args.regionCode}:${String(args.challenge?.name || 'challenge')}:${kinds.join('+')}`,
+    kind, challengeName: String(args.challenge?.name || 'Challenge'), regionCode: args.regionCode, difficulty,
+    maxModifier: v95ClampModifierCap(args.maxModifier),
+    timeLimitSeconds: Math.max(0, Math.min(60, Math.floor(Number(args.timeLimitSeconds) || 0))),
+    parts
+  };
+}
+
+function v95ScorePart(part: V95InteractionPart, input: V95SkillPartInput | undefined, difficulty: number): number {
+  if (!input || input.kind !== part.kind) return 0;
+  if (part.kind === 'physical' && input.kind === 'physical') return v95ScoreTiming(input.stop, difficulty);
+  if ((part.kind === 'social' || part.kind === 'educational') && (input.kind === 'social' || input.kind === 'educational')) {
+    const choice = part.options[input.option];
+    return v95ClampSkill(choice ? choice.score : -1);
+  }
+  if (part.kind === 'wildlife' && input.kind === 'wildlife') {
+    const presses = Math.max(0, Math.min(3, Math.floor(input.presses || 0)));
+    let score = 0;
+    for (let i = 0; i < presses; i++) {
+      if (part.busts[i]) return -1;
+      score = Math.min(1, score + (part.stepGain || 0.34));
+    }
+    return v95ClampSkill(score);
+  }
+  return 0;
+}
+
+export function v95ScoreInteraction(session: V95InteractionSession, input: V95SkillInput): V95SkillResult {
+  if (input?.skip || input?.timeout) {
+    return {
+      skill: 0, modifier: 0, skip: true, kind: session.kind, input: input || { skip: true, parts: [] },
+      label: input?.timeout ? 'Time is up' : 'Plain roll'
+    };
+  }
+  const scores = session.parts.map((part, index) => v95ScorePart(part, input?.parts?.[index], session.difficulty));
+  const skill = v95ClampSkill(scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : 0);
+  return {
+    skill,
+    modifier: v95Modifier(skill, session.maxModifier),
+    label: V95_SKILL_LABEL[session.kind] || 'Your effort',
+    skip: false,
+    kind: session.kind,
+    input: input || { parts: [] }
+  };
+}
+
+export function v95SkillEvent(result: V95SkillResult, turn: number, now = Date.now()): UiFeedbackEvent {
+  const positive = result.modifier > 0;
+  const negative = result.modifier < 0;
+  const tone: UiTone = positive ? 'positive' : negative ? 'negative' : 'neutral';
+  return {
+    id: `v95_${result.kind}_${Math.round(result.modifier * 1000)}_${now}`,
+    kind: 'challenge_result',
+    importance: 'normal',
+    subject: 'challenge-skill',
+    before: 0,
+    after: result.modifier,
+    title: `${result.label}: ${v95FormatModifier(result.modifier)} chance`,
+    lines: [result.skip ? 'Skipped — plain roll' : `Skill ${result.skill > 0 ? '+' : ''}${result.skill.toFixed(2)}`],
+    icon: UI_TONE[tone].icon,
+    tone,
+    createdTurn: turn,
+    createdAt: now,
+    expiresAt: now + UI_MOTION.emphasisMs.normal,
+    regions: []
+  };
+}
+
+export function V95InteractiveModal(props: {
+  pending: V95PendingChallenge;
+  reducedMotion: boolean;
+  theme: any;
+  onTick: () => void;
+  onResolve: (result: V95SkillResult) => void;
+  onAbort: () => void;
+}) {
+  const session = props.pending.session;
+  const [partIndex, setPartIndex] = useState(0);
+  const [answers, setAnswers] = useState<V95SkillPartInput[]>([]);
+  const [marker, setMarker] = useState(0);
+  const [presses, setPresses] = useState(0);
+  const [wildlifeNote, setWildlifeNote] = useState('');
+  const [left, setLeft] = useState(session.timeLimitSeconds);
+  const [timerOn, setTimerOn] = useState(session.timeLimitSeconds > 0);
+  const resolved = useRef(false);
+  const part = session.parts[partIndex];
+  const finish = (input: V95SkillInput) => {
+    if (resolved.current) return;
+    resolved.current = true;
+    props.onResolve(v95ScoreInteraction(session, input));
+  };
+  const pushPart = (entry: V95SkillPartInput) => {
+    const next = answers.concat(entry);
+    if (next.length >= session.parts.length) finish({ parts: next });
+    else { setAnswers(next); setPartIndex(next.length); setPresses(0); setWildlifeNote(''); setMarker(0); }
+  };
+  useEffect(() => {
+    if (!timerOn) return undefined;
+    if (left <= 0) { finish({ timeout: true, parts: [] }); return undefined; }
+    const id = window.setTimeout(() => setLeft(value => value - 1), 1000);
+    return () => window.clearTimeout(id);
+  }, [timerOn, left]);
+  useEffect(() => {
+    if (props.reducedMotion || !part || part.kind !== 'physical') return undefined;
+    const origin = performance.now();
+    const period = 1600 + session.difficulty * 220;
+    let frame = 0;
+    const loop = (time: number) => {
+      const unit = ((time - origin) % period) / period;
+      setMarker(unit < 0.5 ? unit * 2 : 2 - unit * 2);
+      frame = requestAnimationFrame(loop);
+    };
+    frame = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(frame);
+  }, [props.reducedMotion, partIndex, part?.kind, session.difficulty]);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); props.onAbort(); return; }
+      if (!part) return;
+      if (part.kind === 'physical' && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault();
+        props.onTick();
+        pushPart({ kind: 'physical', stop: props.reducedMotion ? v95StaticStop(session.difficulty, 'onTime') : marker });
+      }
+      const index = ['1', '2', '3', '4'].indexOf(event.key);
+      if (index >= 0 && (part.kind === 'social' || part.kind === 'educational') && part.options[index]) {
+        event.preventDefault();
+        props.onTick();
+        pushPart({ kind: part.kind, option: index });
+      }
+      if (part.kind === 'wildlife' && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); pressOn(); }
+      if (part.kind === 'wildlife' && event.key === 's') { event.preventDefault(); pushPart({ kind: 'wildlife', presses }); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+  const pressOn = () => {
+    if (!part || part.kind !== 'wildlife') return;
+    props.onTick();
+    const next = presses + 1;
+    if (part.busts[presses]) {
+      setWildlifeNote('Bust — the bonus is lost.');
+      pushPart({ kind: 'wildlife', presses: next });
+      return;
+    }
+    setPresses(next);
+    setWildlifeNote(next >= 3 ? 'Three safe steps. The bonus holds.' : `Safe step ${next} of 3. The bonus is higher.`);
+    if (next >= 3) pushPart({ kind: 'wildlife', presses: next });
+  };
+  const btn = `${props.theme?.button || ''} text-white px-3 py-2 rounded font-semibold`;
+  const quiet = `${props.theme?.buttonSecondary || ''} px-3 py-2 rounded font-semibold`;
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[1200]" role="presentation" onClick={props.onAbort}>
+      <div role="dialog" aria-modal="true" aria-labelledby="v95-challenge-title" className={`${props.theme?.card || ''} ${props.theme?.border || ''} border rounded-xl p-5 max-w-lg w-full`} onClick={event => event.stopPropagation()}>
+        <h3 id="v95-challenge-title" className="text-lg font-bold">{session.challengeName}</h3>
+        <p className="text-sm mt-1">{part?.prompt}</p>
+        <p className="text-xs opacity-75 mt-1">{UI_TONE.neutral.icon} {session.kind} · part {partIndex + 1} of {session.parts.length}. Escape closes without rolling.</p>
+        {timerOn && <p className="text-sm mt-2" aria-live="polite">{UI_TONE.warning.icon} Time left: {left}s <span className="sr-only">seconds</span></p>}
+        {part?.kind === 'physical' && (props.reducedMotion ? (
+          <div className="mt-3 space-y-2">
+            <p className="text-sm">Reduced motion: pick the moment. The score uses the same timing ruler as the bar.</p>
+            {(['early', 'onTime', 'late'] as const).map(which => (
+              <button key={which} type="button" className={`${quiet} block w-full text-left`} autoFocus={which === 'onTime'} onClick={() => { props.onTick(); pushPart({ kind: 'physical', stop: v95StaticStop(session.difficulty, which) }); }}>
+                {which === 'onTime' ? '✓ On the target' : which === 'early' ? '◀ Early' : '▶ Late'}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-3">
+            <div className="relative h-8 rounded bg-gray-700 overflow-hidden" aria-hidden="true">
+              <div className="absolute top-0 bottom-0 bg-emerald-700/80 border-x-2 border-emerald-200" style={{ left: `${(0.5 - part.zoneWidth / 2) * 100}%`, width: `${part.zoneWidth * 100}%` }} />
+              <div className="absolute top-0 bottom-0 w-1 bg-white" style={{ left: `${marker * 100}%` }} />
+            </div>
+            <p className="text-xs mt-1">Target zone marked in the middle. {UI_TONE.selected.icon} Stop inside it.</p>
+            <button type="button" className={`${btn} mt-2`} autoFocus onClick={() => { props.onTick(); pushPart({ kind: 'physical', stop: marker }); }}>Stop (Enter or Space)</button>
+          </div>
+        ))}
+        {part && (part.kind === 'social' || part.kind === 'educational') && (
+          <div className="mt-3 space-y-2" role="group" aria-label={part.kind === 'educational' ? 'Answers' : 'Replies'}>
+            {part.options.map((choice, index) => (
+              <button key={`${choice.text}-${index}`} type="button" autoFocus={index === 0} className={`${quiet} block w-full text-left`} onClick={() => { props.onTick(); pushPart({ kind: part.kind as 'social' | 'educational', option: index }); }}>
+                <span className="font-bold mr-2">{index + 1}.</span>{choice.text}
+              </button>
+            ))}
+          </div>
+        )}
+        {part?.kind === 'wildlife' && (
+          <div className="mt-3 space-y-2">
+            <p aria-live="polite">{wildlifeNote || 'Nothing banked yet.'} {UI_TONE.neutral.icon} Steps taken: {presses}</p>
+            <div className="flex gap-2">
+              <button type="button" className={btn} autoFocus onClick={pressOn}>Press on</button>
+              <button type="button" className={quiet} onClick={() => pushPart({ kind: 'wildlife', presses })}>Stop and keep it</button>
+            </div>
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2 mt-4">
+          <button type="button" className={quiet} onClick={() => finish({ skip: true, parts: [] })}>Skip, use a plain roll</button>
+          <button type="button" className={quiet} onClick={() => { setTimerOn(true); setLeft(value => Math.min(60, value + 5)); }}>+5 seconds</button>
+          <button type="button" className={quiet} onClick={() => setTimerOn(false)}>Turn timer off</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// SECTION 20AH: V9.5 REAL MAP OF AUSTRALIA
+// ============================================================================
+// Off by default. Shapes are drawn to fit the existing REGIONS positions.
+// Those positions are not moved. Clickable anchors stay in the map markup.
+
+export const V95_STATE_PATHS: Record<string, string> = {
+  WA: 'M2,30 L28,28 L32,48 L28,78 L6,80 L2,52 Z',
+  NT: 'M32,16 L58,14 L60,46 L34,48 Z',
+  QLD: 'M58,10 L96,16 L94,46 L60,48 L56,28 Z',
+  SA: 'M30,48 L58,48 L60,72 L46,90 L28,78 Z',
+  NSW: 'M60,46 L96,44 L92,74 L68,78 L60,64 Z',
+  ACT: 'M72,66 L78,66 L78,74 L72,74 Z',
+  VIC: 'M48,78 L72,74 L74,96 L46,98 Z',
+  TAS: 'M68,96 L84,95 L86,100 L66,100 Z'
+};
+
+export const V95_CONTROLLER_FILL: Record<'you' | 'rival' | 'neutral', string> = {
+  you: '#2563eb', rival: '#db2777', neutral: '#374151'
+};
+export const V95_CONTROLLER_LABEL: Record<'you' | 'rival' | 'neutral', string> = {
+  you: 'YOU', rival: 'RIVAL', neutral: 'OPEN'
+};
+
+export function v95MapAnchors(): Record<string, { x: number; y: number }> {
+  const out: Record<string, { x: number; y: number }> = {};
+  Object.entries(REGIONS).forEach(([code, region]) => {
+    out[code] = { x: region.position.x, y: region.position.y };
+  });
+  return out;
+}
+
+export function v95PathPoints(path: string): Array<{ x: number; y: number }> {
+  const points: Array<{ x: number; y: number }> = [];
+  const pattern = /(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(path))) points.push({ x: Number(match[1]), y: Number(match[2]) });
+  return points;
+}
+
+export function v95PathCentroid(path: string): { x: number; y: number } {
+  const points = v95PathPoints(path);
+  if (!points.length) return { x: 0, y: 0 };
+  return {
+    x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+    y: points.reduce((sum, point) => sum + point.y, 0) / points.length
+  };
+}
+
+export function v95UndirectedRoutes(adjacent: Record<string, string[]> = ADJACENT_REGIONS as Record<string, string[]>): Array<[string, string]> {
+  const seen = new Set<string>();
+  const routes: Array<[string, string]> = [];
+  Object.entries(adjacent).forEach(([from, list]) => {
+    (list || []).forEach(to => {
+      const key = [from, to].sort().join('-');
+      if (seen.has(key)) return;
+      seen.add(key);
+      routes.push([from, to]);
+    });
+  });
+  return routes;
+}
+
+export function V95RealMap(props: {
+  anchors: Record<string, { x: number; y: number }>;
+  control: Record<string, 'you' | 'rival' | 'neutral'>;
+  marks: Record<string, { adjacent?: boolean; visited?: boolean; event?: boolean; afford?: boolean; here?: boolean }>;
+  routes: Array<{ from: string; to: string; cost: number }>;
+  reducedMotion: boolean;
+  travel: { from: string; to: string; nonce: string } | null;
+  here?: string | null;
+  onTravel: (code: string) => void;
+}) {
+  const [token, setToken] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!props.travel) {
+      const stay = props.here ? props.anchors[props.here] : null;
+      if (stay) setToken(stay);
+      return undefined;
+    }
+    const from = props.anchors[props.travel.from];
+    const to = props.anchors[props.travel.to];
+    if (!from || !to) return undefined;
+    if (props.reducedMotion || from.x === to.x && from.y === to.y) { setToken(to); return undefined; }
+    setToken(from);
+    const frame = requestAnimationFrame(() => setToken(to));
+    return () => cancelAnimationFrame(frame);
+  }, [props.travel?.nonce, props.reducedMotion, props.here]);
+  return (
+    <div className="absolute inset-0 pointer-events-none" data-testid="v95-real-map">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full">
+        {Object.entries(V95_STATE_PATHS).map(([code, path]) => {
+          const who = props.control[code] || 'neutral';
+          const mark = props.marks[code] || {};
+          const extra = mark.event ? 'EVENT' : mark.here ? 'HERE' : mark.afford === false ? 'NO $' : mark.adjacent ? 'NEAR' : mark.visited ? 'BEEN' : '';
+          const anchor = props.anchors[code];
+          return (
+            <g key={code}>
+              <path d={path} fill={V95_CONTROLLER_FILL[who]} fillOpacity={0.92} stroke={mark.adjacent ? '#eab308' : mark.visited ? '#60a5fa' : '#111827'} strokeWidth={mark.afford === false ? 1.4 : 0.6} strokeDasharray={mark.afford === false ? '1.2 0.8' : undefined}>
+                <title>{`${REGIONS[code]?.name || code}: ${V95_CONTROLLER_LABEL[who]}${extra ? `, ${extra}` : ''}`}</title>
+              </path>
+              {anchor && <text x={anchor.x} y={anchor.y - 3.2} textAnchor="middle" fontSize="2.4" fill="#fff">{V95_CONTROLLER_LABEL[who]} {code}</text>}
+              {anchor && extra && <text x={anchor.x} y={anchor.y + 5.4} textAnchor="middle" fontSize="2.1" fill="#fef3c7">{extra}</text>}
+            </g>
+          );
+        })}
+        {props.routes.map(route => {
+          const a = props.anchors[route.from];
+          const b = props.anchors[route.to];
+          if (!a || !b) return null;
+          const label = `Travel ${route.from} to ${route.to}, $${route.cost}`;
+          return (
+            <g key={`${route.from}-${route.to}`}>
+              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#f8fafc" strokeOpacity={0.35} strokeWidth={0.6} />
+              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="transparent" strokeWidth={3} className="pointer-events-auto" tabIndex={0} role="button" aria-label={label} style={{ pointerEvents: 'auto' }}
+                onClick={() => props.onTravel(route.to)}
+                onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); props.onTravel(route.to); } }}>
+                <title>{label}</title>
+              </line>
+            </g>
+          );
+        })}
+      </svg>
+      {token && (
+        <div className={props.reducedMotion ? 'absolute text-xs font-bold text-white' : 'absolute v95-token text-xs font-bold text-white'} style={{ left: `${token.x}%`, top: `${token.y}%`, transform: 'translate(-50%, -50%)' }} aria-hidden="true">
+          ▲ You
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// SECTION 20AI: V9.5 EXPANDED CHALLENGE POOL
+// ============================================================================
+// Kept out of REGIONS. Merged only while expandedChallengesEnabled is on,
+// so the Balance Lab's original 32 and live play stay identical when it is off.
+
+export interface V95ExpandedChallenge {
+  region: string;
+  name: string;
+  difficulty: number;
+  reward: number;
+  type: 'physical' | 'social' | 'educational' | 'wildlife';
+  description: string;
+  seasons: string[];
+  requires?: string;
+  rare?: boolean;
+}
+
+const V95_ALL_SEASONS = ['Summer', 'Autumn', 'Winter', 'Spring'];
+function v95Row(region: string, name: string, difficulty: number, reward: number, type: V95ExpandedChallenge['type'], seasons: string, description: string, flag = ''): V95ExpandedChallenge {
+  const parsed = seasons === 'all' ? V95_ALL_SEASONS.slice() : seasons.split('|');
+  const row: V95ExpandedChallenge = { region, name, difficulty, reward, type, description, seasons: parsed };
+  if (flag === 'rare') row.rare = true;
+  else if (flag.startsWith('needs:')) row.requires = flag.slice(6);
+  return row;
+}
+
+export const EXPANDED_CHALLENGES: V95ExpandedChallenge[] = [
+  v95Row('QLD', 'Snorkel the reef at Heron Island', 2, 2.2, 'educational', 'all', 'A sheltered cay on the southern Great Barrier Reef.'),
+  v95Row('QLD', 'Camp overnight at Carnarvon Gorge', 3, 2.8, 'physical', 'all', 'Sleep beside the sandstone gorge after the reef day.', 'needs:Snorkel the reef at Heron Island'),
+  v95Row('QLD', 'Muster cattle outside Longreach', 2, 2.0, 'physical', 'Summer|Autumn', 'A day with the stock camps west of Longreach.'),
+  v95Row('QLD', 'Yarn with a stallholder at the Brisbane markets', 1, 1.6, 'social', 'all', 'Talk your way to a fair price at the city markets.'),
+  v95Row('QLD', 'Look for platypus at Eungella', 2, 2.1, 'wildlife', 'Winter|Spring', 'Dawn watch on a Broken River pool.'),
+  v95Row('QLD', 'Hear the Kuku Yalanji story of the Daintree', 1, 1.7, 'educational', 'all', 'Listen before you walk the rainforest boardwalk.'),
+  v95Row('QLD', 'Dive the Yongala shipwreck', 4, 4.0, 'wildlife', 'all', 'A deep wreck off the coast near Ayr.', 'rare'),
+  v95Row('QLD', 'Climb Mount Bartle Frere', 4, 3.8, 'physical', 'all', 'Queensland\'s highest peak, wet and steep.', 'rare'),
+  v95Row('NSW', 'Climb the Sydney Harbour Bridge', 2, 2.2, 'physical', 'all', 'The bridge climb above the harbour.'),
+  v95Row('NSW', 'Read the rolls at the Anzac Memorial', 1, 1.6, 'educational', 'all', 'A quiet hour in Hyde Park\'s memorial.'),
+  v95Row('NSW', 'Walk the Bondi to Coogee coastal path', 2, 2.0, 'physical', 'Summer|Autumn', 'The clifftop path south of Bondi.', 'needs:Climb the Sydney Harbour Bridge'),
+  v95Row('NSW', 'Share a table in the Hunter Valley', 1, 1.7, 'social', 'all', 'A long lunch among the vineyards.'),
+  v95Row('NSW', 'Watch whales off Eden', 2, 2.3, 'wildlife', 'Winter|Spring', 'The whale season on the far south coast.'),
+  v95Row('NSW', 'Ride the Zig Zag Railway', 2, 1.9, 'educational', 'all', 'The historic switchback in the Blue Mountains.'),
+  v95Row('NSW', 'Ski the Main Range backcountry', 4, 3.9, 'physical', 'Winter|Spring', 'A high route in the Snowy Mountains.', 'rare'),
+  v95Row('NSW', 'Night tour of the Jenolan Caves', 4, 3.7, 'educational', 'all', 'Limestone chambers after the day groups leave.', 'rare'),
+  v95Row('VIC', 'Ride a tram out to the MCG', 1, 1.5, 'social', 'all', 'Match day on a Melbourne tram.'),
+  v95Row('VIC', 'Walk the Twelve Apostles boardwalk', 2, 2.1, 'educational', 'all', 'The clifftop walk on the Great Ocean Road.'),
+  v95Row('VIC', 'Paddle the Glenelg River gorge', 3, 2.6, 'physical', 'Summer|Autumn', 'A quiet gorge downstream of the apostles.', 'needs:Walk the Twelve Apostles boardwalk'),
+  v95Row('VIC', 'Watch the penguin parade at Phillip Island', 1, 1.8, 'wildlife', 'all', 'Little penguins coming ashore at dusk.'),
+  v95Row('VIC', 'Cup coffees in Fitzroy', 1, 1.5, 'social', 'all', 'A tasting bench in an inner-north roastery.'),
+  v95Row('VIC', 'Walk among the Otway redwoods', 2, 2.0, 'physical', 'Winter|Spring', 'The tall stands above the Otway coast.'),
+  v95Row('VIC', 'Abseil the cliffs at Mount Arapiles', 4, 4.1, 'physical', 'all', 'A long drop on the Wimmera cliffs.', 'rare'),
+  v95Row('VIC', 'Track a lyrebird in Sherbrooke Forest', 4, 3.6, 'wildlife', 'all', 'Dawn in the Dandenong Ranges.', 'rare'),
+  v95Row('TAS', 'Cruise the Gordon River', 2, 2.0, 'educational', 'all', 'A still-water cruise out of Strahan.'),
+  v95Row('TAS', 'Shuck oysters on Bruny Island', 1, 1.7, 'social', 'all', 'A shed lunch on the channel coast.'),
+  v95Row('TAS', 'Walk to a Three Capes lookout', 3, 2.7, 'physical', 'Summer|Autumn', 'The clifftop track on the Tasman Peninsula.', 'needs:Cruise the Gordon River'),
+  v95Row('TAS', 'Spotlight for eastern quolls', 2, 2.2, 'wildlife', 'Winter|Spring', 'A night walk where the quolls still hunt.'),
+  v95Row('TAS', 'Browse the Salamanca stalls', 1, 1.5, 'social', 'all', 'Saturday morning in the Hobart sheds.'),
+  v95Row('TAS', 'Learn why the Franklin River was saved', 2, 1.9, 'educational', 'all', 'The campaign that kept the river running.'),
+  v95Row('TAS', 'Dive the kelp off Bicheno', 4, 4.0, 'wildlife', 'all', 'The giant kelp on the east coast.', 'rare'),
+  v95Row('TAS', 'Cross an Overland Track saddle', 4, 3.9, 'physical', 'all', 'A high day between Cradle and the Pelion plains.', 'rare'),
+  v95Row('SA', 'Cycle the cliffs at Port Willunga', 2, 1.9, 'physical', 'all', 'The coast road south of Adelaide.'),
+  v95Row('SA', 'Tour a dugout home in Coober Pedy', 2, 2.0, 'educational', 'all', 'An underground house in the opal town.'),
+  v95Row('SA', 'Fossick for opal at Coober Pedy', 3, 2.8, 'physical', 'Winter|Spring', 'A noodling session on the public mounds.', 'needs:Tour a dugout home in Coober Pedy'),
+  v95Row('SA', 'Picnic in McLaren Vale', 1, 1.6, 'social', 'Summer|Autumn', 'A long table between the vines.'),
+  v95Row('SA', 'Watch sea lions at Seal Bay', 2, 2.2, 'wildlife', 'all', 'The boardwalk colony on Kangaroo Island.'),
+  v95Row('SA', 'Stroll the Adelaide parklands', 1, 1.4, 'social', 'all', 'A lap of the figure-eight parks.'),
+  v95Row('SA', 'Cage-dive off the Neptune Islands', 4, 4.2, 'wildlife', 'all', 'A cage below the swell, sharks in the current.', 'rare'),
+  v95Row('SA', 'Walk the rim of Wilpena Pound', 4, 3.7, 'physical', 'all', 'The high circuit in the Flinders Ranges.', 'rare'),
+  v95Row('WA', 'Look out over the Bungle Bungles', 2, 2.2, 'physical', 'all', 'The striped domes of Purnululu.'),
+  v95Row('WA', 'Learn how Ningaloo Reef grew', 1, 1.7, 'educational', 'all', 'The fringing reef off Cape Range.'),
+  v95Row('WA', 'Snorkel Turquoise Bay', 2, 2.4, 'wildlife', 'Summer|Autumn', 'The drift at the tip of Cape Range.', 'needs:Learn how Ningaloo Reef grew'),
+  v95Row('WA', 'Watch sunset at Cable Beach', 1, 1.6, 'social', 'all', 'The long sand north of Broome.'),
+  v95Row('WA', 'See the Super Pit at Kalgoorlie', 2, 2.0, 'educational', 'all', 'The lookout over the open cut.'),
+  v95Row('WA', 'Paddle the mouth of the Margaret River', 2, 1.9, 'physical', 'Winter|Spring', 'A short paddle where the river meets the sea.'),
+  v95Row('WA', 'Climb Bluff Knoll before dawn', 4, 3.8, 'physical', 'all', 'The Stirling Range summit in the dark.', 'rare'),
+  v95Row('WA', 'Count whale sharks from a Ningaloo spotter plane', 4, 4.2, 'wildlife', 'all', 'A survey flight along the reef edge.', 'rare'),
+  v95Row('NT', 'Sit at the Uluru sunset viewing area', 1, 1.8, 'educational', 'all', 'The public viewing area, not the climb.'),
+  v95Row('NT', 'Cruise Yellow Water billabong', 2, 2.2, 'wildlife', 'all', 'The wetland cruise in Kakadu.'),
+  v95Row('NT', 'Walk to a Jatbula lookout', 3, 2.6, 'physical', 'Winter|Spring', 'A lookout on the walk out of Nitmiluk.', 'needs:Cruise Yellow Water billabong'),
+  v95Row('NT', 'Eat at the Mindil Beach markets', 1, 1.6, 'social', 'Summer|Autumn', 'Dinner on the sand in Darwin.'),
+  v95Row('NT', 'Trace the Overland Telegraph', 2, 1.9, 'educational', 'all', 'The line that tied Darwin to Adelaide.'),
+  v95Row('NT', 'Swim the pool at Wangi Falls', 2, 2.0, 'physical', 'all', 'The plunge pool in Litchfield.'),
+  v95Row('NT', 'Night cruise for saltwater crocodiles', 4, 4.0, 'wildlife', 'all', 'Eyes in the dark on a harbour creek.', 'rare'),
+  v95Row('NT', 'Cross the rim walk at Kings Canyon', 4, 3.8, 'physical', 'all', 'The high circuit above the Garden of Eden.', 'rare'),
+  v95Row('ACT', 'Circuit Lake Burley Griffin', 1, 1.6, 'physical', 'all', 'A loop of the central basin.'),
+  v95Row('ACT', 'Tour the National Gallery of Australia', 1, 1.5, 'educational', 'all', 'One wing of the national collection.'),
+  v95Row('ACT', 'Speak at a public forum in Civic', 2, 2.0, 'social', 'all', 'A short speech at a community meeting.', 'needs:Tour the National Gallery of Australia'),
+  v95Row('ACT', 'Look for platypus in the Tidbinbilla river', 2, 1.9, 'wildlife', 'Winter|Spring', 'A dusk watch on the sanctuary river.'),
+  v95Row('ACT', 'Walk up Mount Ainslie', 2, 1.8, 'physical', 'all', 'The track behind the War Memorial.'),
+  v95Row('ACT', 'Talk research over coffee at the ANU', 1, 1.6, 'social', 'Summer|Autumn', 'A courtyard conversation on campus.'),
+  v95Row('ACT', 'Balloon along the Brindabella foothills', 4, 3.6, 'social', 'all', 'A dawn balloon west of the city, not the Canberra hop.', 'rare'),
+  v95Row('ACT', 'Night tour of the Mount Stromlo domes', 4, 3.7, 'educational', 'all', 'The rebuilt observatory after dark.', 'rare')
+];
+
+export const v95RarePickCache = new Map<string, Record<string, string>>();
+export const v95RareAnnounced = new Set<string>();
+
+export function v95PickRares(draw: () => number, rows: V95ExpandedChallenge[] = EXPANDED_CHALLENGES): Record<string, string> {
+  const picks: Record<string, string> = {};
+  Object.keys(REGIONS).forEach(code => {
+    const pool = rows.filter(row => row.region === code && row.rare);
+    if (!pool.length) return;
+    const index = Math.floor(v95Unit(draw) * pool.length);
+    picks[code] = pool[index].name;
+  });
+  return picks;
+}
+
+export function v95OfferChallenges(regionCode: string, settings: { expandedChallengesEnabled?: boolean } | null | undefined, season: string, rareName: string | null, completed: string[]): any[] {
+  const original = (REGIONS[regionCode]?.challenges || []) as any[];
+  if (!settings?.expandedChallengesEnabled) return original;
+  const done = new Set(completed || []);
+  const extras = EXPANDED_CHALLENGES.filter(row => row.region === regionCode && !row.rare && row.seasons.includes(season));
+  const rare = EXPANDED_CHALLENGES.find(row => row.region === regionCode && row.name === rareName);
+  const offered = rare ? extras.concat(rare) : extras;
+  return original.concat(offered.map(row => {
+    const locked = Boolean(row.requires && !done.has(row.requires));
+    return {
+      name: row.name, difficulty: row.difficulty, reward: row.reward, type: row.type, description: row.description,
+      v95Expanded: true, v95Rare: Boolean(row.rare), v95Locked: locked,
+      v95LockReason: locked ? `Finish ${row.requires} first` : ''
+    };
+  }));
+}
+
+export function v95ExpandedChallengeRoi(): { originalMean: number; originalSd: number; rows: Array<{ name: string; region: string; ev: number; outlier: boolean }>; outliers: string[] } {
+  const stats = { strength: 3, charisma: 3, luck: 3, intelligence: 3 };
+  const evOf = (challenge: { difficulty: number; type: string; reward: number }) => {
+    const chance = computeChallengeSuccessChanceCore({ difficulty: challenge.difficulty, type: challenge.type, stats, level: 1 });
+    const reward = computeChallengeRewardCore({ wager: 500, rewardMultiplier: challenge.reward, masteryCount: 1 }).reward;
+    return chance * reward - (1 - chance) * 500;
+  };
+  const originals: number[] = [];
+  Object.values(REGIONS).forEach(region => (region.challenges || []).forEach((challenge: any) => originals.push(evOf(challenge))));
+  const mean = originals.reduce((sum, value) => sum + value, 0) / Math.max(1, originals.length);
+  const variance = originals.reduce((sum, value) => sum + (value - mean) ** 2, 0) / Math.max(1, originals.length);
+  const sd = Math.sqrt(variance);
+  const rows = EXPANDED_CHALLENGES.map(row => {
+    const ev = evOf(row);
+    return { name: row.name, region: row.region, ev: Math.round(ev), outlier: Math.abs(ev - mean) > Math.max(1, sd * 2) };
+  });
+  return { originalMean: Math.round(mean), originalSd: Math.round(sd), rows, outliers: rows.filter(row => row.outlier).map(row => row.name) };
+}
+
+// ============================================================================
+// SECTION 20AJ: V9.5 SOUND
+// ============================================================================
+// Synthesised tones only. The AudioContext is created on the first click or
+// keypress after sound is turned on, and closed when sound is turned off.
+// Sound never changes or delays a result.
+
+export type V95SoundCategory = 'cash' | 'travel' | 'challenge' | 'world' | 'progress';
+export type V95SoundCategories = Record<V95SoundCategory, boolean>;
+export const V95_SOUND_CATEGORIES_DEFAULT: V95SoundCategories = { cash: true, travel: true, challenge: true, world: true, progress: true };
+const V95_SOUND_LAST: Record<string, number> = {};
+let v95Audio: AudioContext | null = null;
+let v95AudioArmed = false;
+
+export function v95NormalizeSoundCategories(value: unknown): V95SoundCategories {
+  const src = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  const next = { ...V95_SOUND_CATEGORIES_DEFAULT };
+  (Object.keys(next) as V95SoundCategory[]).forEach(key => { if (typeof src[key] === 'boolean') next[key] = src[key] as boolean; });
+  return next;
+}
+
+export function v95ResetSoundThrottle(): void {
+  Object.keys(V95_SOUND_LAST).forEach(key => { delete V95_SOUND_LAST[key]; });
+}
+
+export function v95CloseAudio(): void {
+  try { void v95Audio?.close(); } catch { /* audio is optional */ }
+  v95Audio = null;
+  v95AudioArmed = false;
+}
+
+export function v95EnsureAudio(): AudioContext | null {
+  try {
+    const Ctx = typeof window !== 'undefined' ? (window.AudioContext || (window as any).webkitAudioContext) : null;
+    if (!Ctx) return null;
+    if (!v95Audio) v95Audio = new Ctx();
+    if (v95Audio.state === 'suspended') void v95Audio.resume();
+    return v95Audio;
+  } catch {
+    return null;
+  }
+}
+
+export function v95ArmAudioOnGesture(): void {
+  if (v95AudioArmed || typeof window === 'undefined') return;
+  v95AudioArmed = true;
+  const start = () => { v95EnsureAudio(); };
+  window.addEventListener('pointerdown', start, { once: true });
+  window.addEventListener('keydown', start, { once: true });
+}
+
+export function v95CueSpec(kind: string, tone?: string): { cat: V95SoundCategory; freq: number; dur: number } | null {
+  switch (kind) {
+    case 'cash_change': return { cat: 'cash', freq: tone === 'negative' ? 220 : 660, dur: 0.08 };
+    case 'ap_exhausted': return { cat: 'progress', freq: 140, dur: 0.12 };
+    case 'travel_arrival': return { cat: 'travel', freq: 520, dur: 0.07 };
+    case 'rival_moved': return { cat: 'world', freq: 300, dur: 0.06 };
+    case 'region_control_changed': return { cat: 'world', freq: 480, dur: 0.08 };
+    case 'objective_completed': return { cat: 'progress', freq: 720, dur: 0.1 };
+    case 'contract_completed': return { cat: 'world', freq: 640, dur: 0.1 };
+    case 'contract_failed': return { cat: 'world', freq: 180, dur: 0.12 };
+    case 'crisis_escalated': return { cat: 'world', freq: 160, dur: 0.14 };
+    case 'level_up': return { cat: 'progress', freq: 880, dur: 0.12 };
+    case 'turn_start': return { cat: 'progress', freq: 440, dur: 0.05 };
+    case 'day_change': return { cat: 'progress', freq: 360, dur: 0.06 };
+    case 'challenge_win': return { cat: 'challenge', freq: 740, dur: 0.09 };
+    case 'challenge_loss': return { cat: 'challenge', freq: 196, dur: 0.1 };
+    case 'challenge_tick': return { cat: 'challenge', freq: 880, dur: 0.03 };
+    default: return null;
+  }
+}
+
+export function v95PlayCue(kind: string, settings: any, opts?: { now?: number; fromGesture?: boolean; tone?: string }): { played: boolean; merged: boolean } {
+  try {
+    if (!settings?.soundEnabled) return { played: false, merged: false };
+    const spec = v95CueSpec(kind, opts?.tone);
+    if (!spec) return { played: false, merged: false };
+    const cats = v95NormalizeSoundCategories(settings.soundCategories);
+    if (!cats[spec.cat]) return { played: false, merged: false };
+    const now = opts?.now ?? Date.now();
+    if (now - (V95_SOUND_LAST[spec.cat] || 0) < 150) return { played: false, merged: true };
+    V95_SOUND_LAST[spec.cat] = now;
+    const ctx = opts?.fromGesture ? v95EnsureAudio() : v95Audio;
+    if (!ctx || ctx.state !== 'running') return { played: false, merged: false };
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const volume = Math.max(0, Math.min(1, Number(settings.soundVolume ?? 0.5)));
+    osc.type = 'sine';
+    osc.frequency.value = spec.freq;
+    gain.gain.value = volume * 0.2;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + spec.dur);
+    return { played: true, merged: false };
+  } catch {
+    return { played: false, merged: false };
+  }
+}
+
+const v95HeardFeedback = new Set<string>();
+export function v95PlayFeedbackQueue(events: UiFeedbackEvent[], settings: any): void {
+  if (!settings?.soundEnabled) return;
+  events.forEach(event => {
+    if (!event || v95HeardFeedback.has(event.id)) return;
+    v95HeardFeedback.add(event.id);
+    v95PlayCue(event.kind, settings, { tone: event.tone });
+  });
+  if (v95HeardFeedback.size > 200) {
+    const keep = Array.from(v95HeardFeedback).slice(-80);
+    v95HeardFeedback.clear();
+    keep.forEach(id => v95HeardFeedback.add(id));
+  }
+}
+
+// ============================================================================
+// SECTION 20AK: V9.5 DAILY SEED
+// ============================================================================
+// Off by default. A ranked run uses one documented setup. Personal bests are
+// stored locally and every storage call is guarded.
+
+export const V95_DAILY_BEST_KEY = 'australia-game-v95-daily-bests';
+export const V95_DAILY_SEED_SETUP = {
+  summary: 'Daily Seed is a ranked Human vs AI match: deterministic world and AI RNG from the seed code, the Classic ruleset (travel and challenges), medium rival, 30 days, 3 actions a day, the standard starting package, and a money win. Real map and sound are not part of the rank because they cannot change a result.',
+  worldRngMode: 'deterministic' as const,
+  aiDeterministic: true,
+  deterministicRngActive: true,
+  ruleset: 'classic' as const,
+  aiDifficulty: 'medium' as const,
+  totalDays: 30,
+  playerActionsPerDay: 3,
+  aiActionsPerDay: 3,
+  v93StartingPackage: 'standard',
+  winCondition: 'money' as const
+};
+export const V95_RANKED_KEYS = [
+  'worldRngMode', 'aiDeterministic', 'deterministicRngActive', 'aiDeterministicSeed', 'worldRngSeed',
+  'totalDays', 'playerActionsPerDay', 'aiActionsPerDay', 'v93StartingPackage', 'winCondition', 'rulesetPreset',
+  'interactiveChallengesEnabled', 'interactiveChallengeMaxModifier', 'expandedChallengesEnabled',
+  'nationalSystemsEnabled', 'regionalContractsEnabled', 'stateInfrastructureEnabled', 'v93ContentEnabled',
+  'v95SuppressLivingRegions', 'v95SuppressFactions'
+] as const;
+
+export function v95LocalDateKey(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function v95HashSeedCode(code: string): number {
+  let hash = 0x811c9dc5;
+  const text = String(code || '');
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0) || 1;
+}
+
+export function v95RankedFingerprint(settings: any): string {
+  const parts = V95_RANKED_KEYS.map(key => `${key}=${JSON.stringify(settings?.[key] ?? null)}`);
+  return v95HashSeedCode(parts.join('|')).toString(16);
+}
+
+export function v95DailyOffered(settings: { dailySeedEnabled?: boolean } | null | undefined): boolean {
+  return settings?.dailySeedEnabled === true;
+}
+
+export interface V95SharePayload { seed: string; fingerprint: string; score: number; hash: string }
+
+export function v95ShareCode(payload: V95SharePayload): string {
+  const json = JSON.stringify([payload.seed, payload.fingerprint, payload.score, payload.hash]);
+  const b64 = btoa(json).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  return `AG1.${b64}`;
+}
+
+export function v95ParseShare(code: string): V95SharePayload | null {
+  try {
+    const body = String(code || '').trim().replace(/^AG1\./, '').replace(/-/g, '+').replace(/_/g, '/');
+    const pad = body + '==='.slice((body.length + 3) % 4);
+    const parsed = JSON.parse(atob(pad));
+    if (!Array.isArray(parsed) || parsed.length < 4) return null;
+    return { seed: String(parsed[0]), fingerprint: String(parsed[1]), score: Number(parsed[2]) || 0, hash: String(parsed[3]) };
+  } catch {
+    return null;
+  }
+}
+
+export function v95CompareShares(mine: string, theirs: string): { ok: boolean; sameSeed: boolean; sameSettings: boolean; unverified: true; mine: V95SharePayload | null; theirs: V95SharePayload | null; note: string } {
+  const a = v95ParseShare(mine);
+  const b = v95ParseShare(theirs);
+  if (!a || !b) return { ok: false, sameSeed: false, sameSettings: false, unverified: true, mine: a, theirs: b, note: 'One of the codes could not be read. The comparison is unverified.' };
+  const sameSeed = a.seed === b.seed;
+  const sameSettings = a.fingerprint === b.fingerprint;
+  const note = sameSeed && sameSettings
+    ? 'Same seed and settings. This comparison is unverified until a replay is checked.'
+    : sameSeed
+      ? 'Same seed, different settings. This comparison is unverified.'
+      : 'Different seeds. This comparison is unverified.';
+  return { ok: true, sameSeed, sameSettings, unverified: true, mine: a, theirs: b, note };
+}
+
+export function v95VerifyShareWithReplay(code: string, replay: unknown): { verified: boolean; detail: string } {
+  const parsed = v95ParseShare(code);
+  if (!parsed) return { verified: false, detail: 'The share code could not be read.' };
+  try {
+    const report = reexecuteReplayMatch(replay, 'strict');
+    if (report?.finalStateHash && report.finalStateHash === parsed.hash) return { verified: true, detail: 'The replay hash matches the share code.' };
+    return { verified: false, detail: `Unverified. Replay hash ${report?.finalStateHash || 'missing'} does not match ${parsed.hash}.` };
+  } catch {
+    return { verified: false, detail: 'The replay could not be checked. The comparison stays unverified.' };
+  }
+}
+
+export function v95ReadDailyBests(storage?: Storage | null): Record<string, { score: number; hash: string }> {
+  try {
+    const bin = storage === undefined ? (typeof localStorage === 'undefined' ? null : localStorage) : storage;
+    if (!bin) return {};
+    const raw = bin.getItem(V95_DAILY_BEST_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function v95WriteDailyBest(seed: string, score: number, hash: string, storage?: Storage | null): boolean {
+  try {
+    const bin = storage === undefined ? (typeof localStorage === 'undefined' ? null : localStorage) : storage;
+    if (!bin) return false;
+    const all = v95ReadDailyBests(bin);
+    const prev = all[seed];
+    if (!prev || score > prev.score) all[seed] = { score, hash };
+    bin.setItem(V95_DAILY_BEST_KEY, JSON.stringify(all));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function V95DailyResultCard(props: {
+  theme: any;
+  seed: string;
+  score: number;
+  hash: string;
+  fingerprint: string;
+  ranked: boolean;
+  replay: unknown;
+}) {
+  const code = v95ShareCode({ seed: props.seed, fingerprint: props.fingerprint, score: props.score, hash: props.hash });
+  const [other, setOther] = useState('');
+  const [paste, setPaste] = useState('');
+  const [note, setNote] = useState('');
+  const best = v95ReadDailyBests()[props.seed];
+  useEffect(() => { v95WriteDailyBest(props.seed, props.score, props.hash); }, [props.seed, props.score, props.hash]);
+  return (
+    <section className={`${props.theme?.card || ''} ${props.theme?.border || ''} border rounded-xl p-4`} aria-label="Daily Seed result" data-testid="v95-daily-result">
+      <h3 className="font-bold">Daily Seed result {props.ranked ? '· ranked' : '· unranked'}</h3>
+      <p className="text-sm mt-1">{UI_TONE.neutral.icon} Seed {props.seed}</p>
+      <p className="text-sm">Score {props.score} on the active win condition</p>
+      <p className="text-sm">State hash {props.hash}</p>
+      {best && <p className="text-sm">Personal best on this seed: {Math.max(best.score, props.score)}</p>}
+      <label className="block text-xs mt-2" htmlFor="v95-share">Share code</label>
+      <input id="v95-share" readOnly value={code} className="w-full text-xs p-2 rounded border bg-transparent" onFocus={event => event.currentTarget.select()} />
+      <button type="button" className={`${props.theme?.buttonSecondary || ''} mt-2 px-3 py-1 rounded text-sm`} onClick={() => { try { void navigator.clipboard?.writeText(code); setNote('Copied.'); } catch { setNote('Copy is unavailable. Select the code instead.'); } }}>Copy share code</button>
+      <label className="block text-xs mt-3" htmlFor="v95-compare">Compare with a friend</label>
+      <textarea id="v95-compare" value={other} onChange={event => setOther(event.target.value)} className="w-full text-xs p-2 rounded border bg-transparent" rows={2} placeholder="Paste their share code" />
+      <button type="button" className={`${props.theme?.buttonSecondary || ''} mt-1 px-3 py-1 rounded text-sm`} onClick={() => {
+        const cmp = v95CompareShares(code, other);
+        const mine = cmp.mine?.score;
+        const theirs = cmp.theirs?.score;
+        setNote(`${cmp.note}${cmp.ok ? ` You ${mine}, friend ${theirs}.` : ''}`);
+      }}>Compare</button>
+      <label className="block text-xs mt-3" htmlFor="v95-replay">Check an imported replay (optional)</label>
+      <textarea id="v95-replay" value={paste} onChange={event => setPaste(event.target.value)} className="w-full text-xs p-2 rounded border bg-transparent" rows={2} placeholder="Paste a replay JSON" />
+      <button type="button" className={`${props.theme?.buttonSecondary || ''} mt-1 px-3 py-1 rounded text-sm`} onClick={() => {
+        const raw = paste.trim();
+        const target = raw ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : props.replay;
+        if (!target) { setNote('No replay to check. The comparison stays unverified.'); return; }
+        setNote(v95VerifyShareWithReplay(other.trim() || code, target).detail);
+      }}>Check replay</button>
+      {note && <p className="text-sm mt-2" aria-live="polite">{note}</p>}
+    </section>
+  );
+}
+
+// ============================================================================
+// SECTION 20AL: V9.5 RULESETS & SYSTEM IMPACT REPORT
+// ============================================================================
+// 'custom' is the default and applies nothing. The impact report lives in
+// the LAB layer. It recommends only; it never turns a system off.
+
+export type V95RulesetId = 'custom' | 'classic' | 'strategic' | 'grand_strategy';
+export const V95_RULESET_LABEL: Record<V95RulesetId, string> = {
+  custom: 'Custom', classic: 'Classic', strategic: 'Strategic', grand_strategy: 'Grand Strategy'
+};
+
+const V95_CLASSIC_FLAGS: Record<string, boolean> = {
+  nationalSystemsEnabled: false, industriesEnabled: false, infraNetworksEnabled: false, megaprojectsEnabled: false,
+  nationalDevelopmentEnabled: false, innovationEnabled: false, systemicRiskEnabled: false, nationalPrioritiesEnabled: false,
+  economicGeographyEnabled: false, workforceHumanCapitalEnabled: false, stateCapacityEnabled: false, publicFinanceEnabled: false,
+  householdsEnabled: false, regionalContractsEnabled: false, stateInfrastructureEnabled: false, v93ContentEnabled: false,
+  investmentsEnabled: false, equipmentShopEnabled: false, sabotageEnabled: false, regionalStandingEnabled: false,
+  advancedLoansEnabled: false, dynamicCrisesEnabled: false, dynamicCrisisChainsEnabled: false, publicStabilityEnabled: false,
+  nationalEventsEnabled: false, scenarioModeEnabled: false, aiCommandCenterUiEnabled: false, askGameAiUiEnabled: false,
+  aiTuningLabUiEnabled: false, coPilotEnabled: false, decisionTransparencyEnabled: false, autoModeEnabled: false,
+  teamIntelligenceOsEnabled: false, v95SuppressLivingRegions: true, v95SuppressFactions: true
+};
+const V95_STRATEGIC_FLAGS: Record<string, boolean> = {
+  ...V95_CLASSIC_FLAGS, regionalContractsEnabled: true, stateInfrastructureEnabled: true, v95SuppressLivingRegions: false, v95SuppressFactions: false
+};
+const V95_GRAND_FLAGS: Record<string, boolean> = {
+  ...V95_STRATEGIC_FLAGS, nationalSystemsEnabled: true, industriesEnabled: true, infraNetworksEnabled: true, megaprojectsEnabled: true,
+  nationalDevelopmentEnabled: true, innovationEnabled: true, systemicRiskEnabled: true, nationalPrioritiesEnabled: true,
+  economicGeographyEnabled: true, workforceHumanCapitalEnabled: true, stateCapacityEnabled: true, publicFinanceEnabled: true,
+  householdsEnabled: true, v93ContentEnabled: true, regionalStandingEnabled: true, dynamicCrisesEnabled: true,
+  publicStabilityEnabled: true, nationalEventsEnabled: true
+};
+
+export function v95RulesetId(value: unknown): V95RulesetId {
+  return value === 'classic' || value === 'strategic' || value === 'grand_strategy' ? value : 'custom';
+}
+
+export function v95RulesetBundle(id: V95RulesetId, includeV95: boolean): Record<string, unknown> {
+  if (id === 'custom') return {};
+  const bundle: Record<string, unknown> = { ...(id === 'classic' ? V95_CLASSIC_FLAGS : id === 'strategic' ? V95_STRATEGIC_FLAGS : V95_GRAND_FLAGS) };
+  if (includeV95) {
+    bundle.interactiveChallengesEnabled = true;
+    bundle.realMapEnabled = true;
+    bundle.expandedChallengesEnabled = true;
+    bundle.soundEnabled = true;
+  }
+  return bundle;
+}
+
+function v95Same(current: unknown, target: unknown): boolean {
+  if (typeof target === 'boolean') return Boolean(current) === target;
+  if (typeof target === 'number') return Number(current) === target;
+  return current === target;
+}
+function v95Show(value: unknown): string {
+  if (value === undefined) return 'unset';
+  if (typeof value === 'boolean') return value ? 'on' : 'off';
+  return String(value);
+}
+
+export function v95RulesetDiff(current: any, id: V95RulesetId, includeV95: boolean): Array<{ key: string; from: string; to: string }> {
+  const bundle = v95RulesetBundle(id, includeV95);
+  const rows: Array<{ key: string; from: string; to: string }> = [];
+  Object.entries(bundle).forEach(([key, value]) => {
+    if (!v95Same(current?.[key], value)) rows.push({ key, from: v95Show(current?.[key]), to: v95Show(value) });
+  });
+  if (bundle.coPilotEnabled === false && current?.coPilotSettings?.coPilotEnabled) {
+    rows.push({ key: 'coPilotSettings.coPilotEnabled', from: 'on', to: 'off' });
+  }
+  return rows;
+}
+
+export function v95ApplyRuleset(current: GameSettingsState, id: V95RulesetId, includeV95: boolean): GameSettingsState {
+  if (id === 'custom') return { ...current, rulesetPreset: 'custom', rulesetIncludeV95Features: false };
+  const bundle = v95RulesetBundle(id, includeV95);
+  const undo: Record<string, unknown> = {};
+  const next: any = { ...current };
+  Object.entries(bundle).forEach(([key, value]) => {
+    undo[key] = (current as any)[key];
+    next[key] = value;
+  });
+  if (bundle.coPilotEnabled === false) {
+    undo.coPilotSettings = current.coPilotSettings;
+    next.coPilotSettings = { ...(current.coPilotSettings || {}), coPilotEnabled: false, authorityMode: 'off' };
+  }
+  next.rulesetPreset = id;
+  next.rulesetIncludeV95Features = includeV95 === true;
+  next.rulesetUndoSnapshot = undo;
+  return next;
+}
+
+export function v95UndoRuleset(current: GameSettingsState): GameSettingsState {
+  const snap = current.rulesetUndoSnapshot;
+  if (!snap || typeof snap !== 'object') return { ...current, rulesetPreset: 'custom', rulesetIncludeV95Features: false, rulesetUndoSnapshot: null };
+  return { ...current, ...(snap as any), rulesetPreset: 'custom', rulesetIncludeV95Features: false, rulesetUndoSnapshot: null };
+}
+
+export function v95RulesetStillApplied(settings: any): boolean {
+  const id = v95RulesetId(settings?.rulesetPreset);
+  if (id === 'custom') return true;
+  const bundle = v95RulesetBundle(id, settings?.rulesetIncludeV95Features === true);
+  for (const [key, value] of Object.entries(bundle)) {
+    if (!v95Same(settings?.[key], value)) return false;
+  }
+  if (bundle.coPilotEnabled === false && settings?.coPilotSettings?.coPilotEnabled) return false;
+  return true;
+}
+
+export function v95ApplyDailySettings(current: GameSettingsState, seedCode: string): GameSettingsState {
+  const code = String(seedCode || '').trim() || v95LocalDateKey();
+  const seed = v95HashSeedCode(code);
+  const next = v95ApplyRuleset(current, 'classic', false) as any;
+  next.dailySeedEnabled = true;
+  next.dailySeedRunActive = true;
+  next.dailySeedCode = code;
+  next.worldRngMode = 'deterministic';
+  next.aiDeterministic = true;
+  next.deterministicRngActive = true;
+  next.deterministicMode = true;
+  next.aiDeterministicSeed = seed;
+  next.worldRngSeed = seed;
+  next.totalDays = V95_DAILY_SEED_SETUP.totalDays;
+  next.playerActionsPerDay = V95_DAILY_SEED_SETUP.playerActionsPerDay;
+  next.aiActionsPerDay = V95_DAILY_SEED_SETUP.aiActionsPerDay;
+  next.v93StartingPackage = V95_DAILY_SEED_SETUP.v93StartingPackage;
+  next.winCondition = V95_DAILY_SEED_SETUP.winCondition;
+  next.dailySeedFingerprint = v95RankedFingerprint(next);
+  return next;
+}
+
+export function v95MotionReduced(settings: any): boolean {
+  if (resolveUiMotionMode(settings) === 'reduced') return true;
+  try { return typeof window !== 'undefined' && Boolean(window.matchMedia) && window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+  catch { return false; }
+}
+
+export interface V95ImpactArm { winnerRate: number; money: number; netWorth: number; length: number; actions: number; surfaces: number }
+export interface V95ImpactRow {
+  id: string; label: string; impact: 'high' | 'low' | 'no measurable impact'; confidence: string; notes: string[];
+  on: V95ImpactArm; off: V95ImpactArm;
+}
+export interface V95ImpactReport {
+  version: '9.5'; generatedFor: 'lab-only'; automaticChanges: 'none';
+  note: string; n: number; days: number; systems: V95ImpactRow[];
+}
+
+export const V95_IMPACT_SYSTEMS: Array<{ id: string; label: string; feature: 'contracts' | 'investments' | 'sabotage' | 'overrides' | null; surface: string }> = [
+  { id: 'contracts', label: 'Regional contracts', feature: 'contracts', surface: 'contract' },
+  { id: 'investments', label: 'Investments', feature: 'investments', surface: 'investment' },
+  { id: 'sabotage', label: 'Sabotage', feature: 'sabotage', surface: 'sabotage' },
+  { id: 'overrides', label: 'Action overrides', feature: 'overrides', surface: 'override' },
+  { id: 'national', label: 'V10 national systems (V10.0–V10.13)', feature: null, surface: 'national' },
+  { id: 'living', label: 'Living regions', feature: null, surface: 'living' },
+  { id: 'factions', label: 'Regional factions', feature: null, surface: 'factions' },
+  { id: 'infrastructure', label: 'State infrastructure', feature: null, surface: 'infrastructure' },
+  { id: 'interactive', label: 'Interactive challenges', feature: null, surface: 'interactive' },
+  { id: 'expanded', label: 'Expanded challenge pool', feature: null, surface: 'expanded' },
+  { id: 'sound', label: 'Sound', feature: null, surface: 'sound' },
+  { id: 'daily', label: 'Daily Seed', feature: null, surface: 'daily' }
+];
+
+function v95Arm(rows: Array<{ winner: string; money: number; netWorth: number; length: number; actions: number; surfaces: number }>): V95ImpactArm {
+  const n = Math.max(1, rows.length);
+  const avg = (pick: (row: typeof rows[number]) => number) => Math.round(rows.reduce((sum, row) => sum + pick(row), 0) / n);
+  return {
+    winnerRate: Math.round((rows.filter(row => row.winner === 'player').length / n) * 100) / 100,
+    money: avg(row => row.money), netWorth: avg(row => row.netWorth), length: avg(row => row.length),
+    actions: avg(row => row.actions), surfaces: avg(row => row.surfaces)
+  };
+}
+
+export function v95RunSystemImpactReport(opts?: { n?: number; days?: number; seed0?: number; systemIds?: string[] }): V95ImpactReport {
+  const n = Math.max(1, Math.min(50, Math.floor(opts?.n ?? 20)));
+  const days = Math.max(4, Math.min(60, Math.floor(opts?.days ?? 15)));
+  const seed0 = Math.floor(opts?.seed0 ?? 4100);
+  const systems = V95_IMPACT_SYSTEMS.filter(system => !opts?.systemIds || opts.systemIds.includes(system.id));
+  const rows = systems.map(system => {
+    const blank = { investments: false, contracts: false, sabotage: false, overrides: true };
+    const onFeatures = { ...blank };
+    const offFeatures = { ...blank };
+    if (system.feature) { (onFeatures as any)[system.feature] = true; (offFeatures as any)[system.feature] = false; }
+    const summarise = (features: typeof blank, seed: number) => {
+      const match = runBalanceMatch(createBalanceSimConfig({ seed, days, apPerDay: 3, features }), 'balanced', 'balanced');
+      const snap = (match.snapshots || []).filter(item => item.actorId === 'player').slice(-1)[0];
+      return {
+        winner: match.winner, money: snap?.cash ?? match.final.player, netWorth: snap?.netWorth ?? match.final.player,
+        length: match.decidedDay, actions: Object.keys(match.categoryCounts || {}).length,
+        surfaces: Number((match.categoryCounts || {})[system.surface] || 0)
+      };
+    };
+    const onRows = [];
+    const offRows = [];
+    for (let i = 0; i < n; i++) {
+      onRows.push(summarise(onFeatures, seed0 + i));
+      offRows.push(summarise(offFeatures, seed0 + i));
+    }
+    const on = v95Arm(onRows);
+    const off = v95Arm(offRows);
+    const winnerDelta = Math.abs(on.winnerRate - off.winnerRate);
+    const moneyPct = Math.abs(on.money - off.money) / Math.max(1, Math.abs(off.money));
+    const worthPct = Math.abs(on.netWorth - off.netWorth) / Math.max(1, Math.abs(off.netWorth));
+    const lengthDelta = Math.abs(on.length - off.length);
+    const actionDelta = Math.abs(on.actions - off.actions);
+    const surfaceDelta = Math.abs(on.surfaces - off.surfaces);
+    const notes = [n >= 20 ? `${n} paired seeds. Only this switch differs.` : `Low confidence: ${n} paired seeds. 20 or more is steadier.`];
+    if (!system.feature) notes.push('The balance simulator does not run this surface. Both arms used the same canonical match, so a flat result means no measurable impact here.');
+    const high = winnerDelta >= 0.15 || moneyPct >= 0.15 || worthPct >= 0.15;
+    const low = !high && (winnerDelta >= 0.05 || moneyPct >= 0.05 || worthPct >= 0.05 || lengthDelta >= 1 || actionDelta >= 0.5 || surfaceDelta >= 0.5);
+    return {
+      id: system.id, label: system.label, on, off, notes,
+      impact: (high ? 'high' : low ? 'low' : 'no measurable impact') as V95ImpactRow['impact'],
+      confidence: n >= 20 ? 'Steadier sample' : 'Small sample'
+    };
+  });
+  return { version: '9.5', generatedFor: 'lab-only', automaticChanges: 'none', note: 'This report only recommends. It does not delete or disable any system.', n, days, systems: rows };
+}
+
+export function v95ExportImpactReport(report: V95ImpactReport): string {
+  return JSON.stringify(report);
+}
+
+export function V95SystemImpactPanel(props: { theme: any }) {
+  const [n, setN] = useState(20);
+  const [days, setDays] = useState(15);
+  const [busy, setBusy] = useState(false);
+  const [report, setReport] = useState<V95ImpactReport | null>(null);
+  const [open, setOpen] = useState(false);
+  const run = () => {
+    setBusy(true);
+    window.setTimeout(() => {
+      try { setReport(v95RunSystemImpactReport({ n, days })); }
+      finally { setBusy(false); }
+    }, 20);
+  };
+  return (
+    <section className={`${props.theme?.card || ''} ${props.theme?.border || ''} border rounded-xl p-4 mt-4 text-xs`} data-testid="v95-impact-report" aria-labelledby="v95-impact-h">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 id="v95-impact-h" className="font-bold text-sm">System impact report</h2>
+        <button type="button" className="underline" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? 'Hide' : 'Show'}</button>
+      </div>
+      {open && (
+        <div className="mt-2 space-y-2">
+          <p>LAB only. For each system, N seeded matches with it on and N with it off. Nothing is turned off automatically.</p>
+          <div className="flex flex-wrap gap-3 items-end">
+            <label>Matches per arm
+              <input type="number" min={1} max={50} value={n} onChange={event => setN(Number(event.target.value) || 20)} className="block w-20 bg-transparent border rounded px-2 py-1" />
+            </label>
+            <label>Days
+              <input type="number" min={4} max={60} value={days} onChange={event => setDays(Number(event.target.value) || 15)} className="block w-20 bg-transparent border rounded px-2 py-1" />
+            </label>
+            <button type="button" className={`${props.theme?.buttonSecondary || ''} px-3 py-1 rounded`} disabled={busy} onClick={run}>{busy ? 'Simulating…' : 'Run report'}</button>
+            {report && <button type="button" className={`${props.theme?.buttonSecondary || ''} px-3 py-1 rounded`} onClick={() => {
+              const json = v95ExportImpactReport(report);
+              try {
+                const blob = new Blob([json], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url; link.download = 'australia-game-system-impact.json'; link.click();
+                URL.revokeObjectURL(url);
+              } catch { /* the JSON is still in the table below */ }
+            }}>Export JSON</button>}
+          </div>
+          {report && (
+            <table className="w-full text-left">
+              <thead><tr><th>System</th><th>Impact</th><th>Winner on/off</th><th>Money on/off</th><th>Actions</th><th>Surfaces</th></tr></thead>
+              <tbody>
+                {report.systems.map(row => (
+                  <tr key={row.id}>
+                    <td>{row.label}<div className="opacity-70">{row.confidence}. {row.notes[0]}</div></td>
+                    <td>{row.impact === 'high' ? '▲ High' : row.impact === 'low' ? '• Low' : '○ No measurable impact'}</td>
+                    <td>{row.on.winnerRate} / {row.off.winnerRate}</td>
+                    <td>{row.on.money} / {row.off.money}</td>
+                    <td>{row.on.actions} / {row.off.actions}</td>
+                    <td>{row.on.surfaces} / {row.off.surfaces}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+export function V95CoreLoopSettings(props: { settings: GameSettingsState; theme: any; onChange: (next: GameSettingsState, label: string) => void }) {
+  const settings = props.settings;
+  const [pick, setPick] = useState<V95RulesetId>(v95RulesetId(settings.rulesetPreset));
+  const [include, setInclude] = useState(settings.rulesetIncludeV95Features === true);
+  const [soundNote, setSoundNote] = useState('');
+  useEffect(() => { setPick(v95RulesetId(settings.rulesetPreset)); }, [settings.rulesetPreset]);
+  const diff = v95RulesetDiff(settings, pick, include);
+  const set = (label: string, patch: Partial<GameSettingsState>) => props.onChange({ ...settings, ...patch }, label);
+  const check = (key: keyof GameSettingsState, label: string, description: string) => (
+    <label className="flex items-start gap-2 text-sm" id={`settings-field-${String(key)}`}>
+      <input type="checkbox" checked={Boolean((settings as any)[key])} onChange={event => set(label, { [key]: event.target.checked } as Partial<GameSettingsState>)} />
+      <span><span className="font-semibold">{label}</span><span className="block text-xs opacity-75">{description}</span></span>
+    </label>
+  );
+  return (
+    <div className="space-y-4" data-testid="v95-core-loop-settings">
+      <div>
+        <div className="font-semibold">Ruleset: {V95_RULESET_LABEL[v95RulesetId(settings.rulesetPreset)]}</div>
+        <p className="text-xs opacity-75">Custom leaves the game as it is. Applying a ruleset can be undone. Changing any bundled setting afterwards returns the label to Custom.</p>
+        <label className="block text-sm mt-2" htmlFor="v95-ruleset">Ruleset to preview</label>
+        <select id="v95-ruleset" value={pick} onChange={event => setPick(v95RulesetId(event.target.value))} className={`${props.theme?.select || ''} rounded px-2 py-1`}>
+          {(Object.keys(V95_RULESET_LABEL) as V95RulesetId[]).map(id => <option key={id} value={id}>{V95_RULESET_LABEL[id]}</option>)}
+        </select>
+        <label className="flex items-start gap-2 text-sm mt-2">
+          <input type="checkbox" checked={include} onChange={event => setInclude(event.target.checked)} />
+          <span>Include new V9.5 features (interactive challenges, real map, expanded challenges, sound). Unticked by default.</span>
+        </label>
+        <div className="text-sm mt-2" aria-live="polite">
+          {pick === 'custom' ? 'Custom applies nothing.' : diff.length ? `${diff.length} setting${diff.length === 1 ? '' : 's'} will change:` : 'This ruleset already matches the current settings.'}
+          {diff.length > 0 && <ul className="list-disc pl-5 text-xs mt-1">{diff.slice(0, 12).map(row => <li key={row.key}>{row.key}: {row.from} → {row.to}</li>)}{diff.length > 12 && <li>and {diff.length - 12} more</li>}</ul>}
+        </div>
+        <div className="flex flex-wrap gap-2 mt-2">
+          <button type="button" className={`${props.theme?.button || ''} text-white px-3 py-1 rounded`} onClick={() => props.onChange(v95ApplyRuleset(settings, pick, include), 'V9.5 ruleset')}>Apply ruleset</button>
+          <button type="button" className={`${props.theme?.buttonSecondary || ''} px-3 py-1 rounded`} disabled={!settings.rulesetUndoSnapshot} onClick={() => props.onChange(v95UndoRuleset(settings), 'Undo V9.5 ruleset')}>Undo</button>
+        </div>
+      </div>
+      {check('interactiveChallengesEnabled', 'Interactive challenges', 'A short interaction before a human challenge roll. Off uses the plain roll.')}
+      <label className="block text-sm">Skill cap ({v95ClampModifierCap(settings.interactiveChallengeMaxModifier)})
+        <input type="range" min={0.05} max={0.25} step={0.01} value={v95ClampModifierCap(settings.interactiveChallengeMaxModifier)} onChange={event => set('Interactive challenges', { interactiveChallengeMaxModifier: Number(event.target.value) })} className="w-full" />
+      </label>
+      <label className="block text-sm">Timer seconds (0 turns it off)
+        <input type="number" min={0} max={60} value={Number(settings.interactiveChallengeTimeLimitSeconds ?? 8)} onChange={event => set('Interactive challenges', { interactiveChallengeTimeLimitSeconds: Math.max(0, Math.min(60, Number(event.target.value) || 0)) })} className="ml-2 w-20 bg-transparent border rounded px-2 py-1" />
+      </label>
+      {check('interactiveChallengeAiSimulatedScoreEnabled', 'AI simulated skill score', 'AI still skips the interaction. When this is on, it uses the fixed score below.')}
+      <label className="block text-sm">AI skill score ({Number(settings.interactiveChallengeAiSimulatedScore || 0)})
+        <input type="range" min={-1} max={1} step={0.1} disabled={!settings.interactiveChallengeAiSimulatedScoreEnabled} value={Number(settings.interactiveChallengeAiSimulatedScore || 0)} onChange={event => set('Interactive challenges', { interactiveChallengeAiSimulatedScore: Number(event.target.value) })} className="w-full" />
+      </label>
+      {check('realMapEnabled', 'Real map of Australia', 'Draws state shapes behind the existing region anchors.')}
+      {check('expandedChallengesEnabled', 'Expanded challenge pool', 'Adds the seasonal, chained and rare challenges. Off keeps the original 32.')}
+      {check('soundEnabled', 'Sound', 'Short synthesised tones. Off means silence, and no audio device is opened.')}
+      <label className="block text-sm">Volume
+        <input type="range" min={0} max={1} step={0.05} value={Number(settings.soundVolume ?? 0.5)} onChange={event => set('Sound', { soundVolume: Number(event.target.value) })} className="w-full" />
+      </label>
+      <fieldset className="text-sm">
+        <legend className="font-semibold">Sound categories</legend>
+        {(Object.keys(V95_SOUND_CATEGORIES_DEFAULT) as V95SoundCategory[]).map(cat => {
+          const cats = v95NormalizeSoundCategories(settings.soundCategories);
+          return (
+            <label key={cat} className="mr-3 inline-flex items-center gap-1">
+              <input type="checkbox" checked={cats[cat]} onChange={event => set('Sound', { soundCategories: { ...cats, [cat]: event.target.checked } })} />
+              {cat}
+            </label>
+          );
+        })}
+      </fieldset>
+      {settings.soundEnabled && (
+        <div className="text-sm" data-testid="v95-sound-test">
+          <div className="font-semibold">Test sounds</div>
+          <div className="flex flex-wrap gap-2 mt-1">
+            {['cash_change', 'travel_arrival', 'challenge_win', 'challenge_loss', 'challenge_tick', 'level_up', 'day_change', 'crisis_escalated'].map(kind => (
+              <button key={kind} type="button" className={`${props.theme?.buttonSecondary || ''} px-2 py-1 rounded text-xs`} onClick={() => {
+                const played = v95PlayCue(kind, settings, { fromGesture: true, tone: kind === 'challenge_loss' || kind === 'crisis_escalated' ? 'negative' : 'positive' });
+                setSoundNote(played.played ? `Played ${kind}.` : played.merged ? `${kind} merged into the last tone.` : 'Audio is unavailable on this device. The game continues without it.');
+              }}>{kind.replace(/_/g, ' ')}</button>
+            ))}
+          </div>
+          {soundNote && <p className="text-xs mt-1" aria-live="polite">{soundNote}</p>}
+        </div>
+      )}
+      {check('dailySeedEnabled', 'Daily Seed mode', 'Adds a Daily Seed option on the start screen. Off leaves the start screen unchanged.')}
+    </div>
+  );
+}
+
+// ============================================================================
+// SECTION 20AM: V9.5 SELF-TESTS
+// ============================================================================
+
+const V95_OFF_STATS = { strength: 3, charisma: 4, luck: 2, intelligence: 5 };
+const V95_ORIGINAL_NAMES = [
+  'Surf at Gold Coast', 'Feed kangaroos', 'Tour Great Barrier Reef', 'Explore Daintree Rainforest',
+  'Visit Sydney Opera House', 'Make a rock carving', 'Tour the Blue Mountains', 'Surf at Bondi Beach',
+  'Tour Great Ocean Road', 'Visit Melbourne Museum', 'Wine tasting tour', 'Explore Grampians National Park',
+  'Hike Cradle Mountain', 'Visit Port Arthur', 'Spot Tasmanian Devils', 'Tour MONA Art Museum',
+  'Wine tour in Barossa Valley', 'Explore Adelaide Central Market', 'Visit Kangaroo Island', 'Dive with Great White Sharks',
+  'Explore Pinnacles Desert', 'Swim with whale sharks', 'Tour Margaret River', 'Visit the pink Lake Hillier',
+  'Visit Uluru', 'Crocodile spotting', 'Explore Kakadu National Park', 'Swim at Florence Falls',
+  'Tour Parliament House', 'Visit Australian War Memorial', 'Explore Tidbinbilla Nature Reserve', 'Hot air ballooning over Canberra'
+];
+
+export function v95BaselineFixtureHash(): string {
+  const chance = computeChallengeSuccessChanceCore({ difficulty: 2, type: 'physical', stats: V95_OFF_STATS, characterName: 'Explorer', level: 2, equipmentBonus: 0.02 });
+  const reward = computeChallengeRewardCore({ wager: 200, rewardMultiplier: 1.8, characterName: 'Explorer', consecutiveWins: 1, masteryCount: 1 });
+  const travel = computeTravelCostCore({ from: 'NSW', to: 'VIC', characterName: 'Explorer' });
+  const names = (REGIONS.NSW.challenges || []).map((challenge: any) => challenge.name).join('|');
+  return computeCanonicalStateHash({
+    day: 4, turnCounter: 4, activePlayer: 'player', season: 'Summer', economicPhase: 'normal', activeEvents: [],
+    actorsById: { player: { money: 1000 + reward.reward - travel, currentRegion: 'VIC', marker: Math.round(chance * 10000), names } },
+    teamsById: { team_player: { id: 'team_player' } },
+    regions: { NSW: { controller: null }, VIC: { controller: 'player' } }
+  });
+}
+
+export function v95AllOffFixtureHash(): string {
+  const settings = sanitizeGameSettings({});
+  const chance = computeChallengeSuccessChanceCore({ difficulty: 2, type: 'physical', stats: V95_OFF_STATS, characterName: 'Explorer', level: 2, equipmentBonus: 0.02, skillBonus: settings.interactiveChallengesEnabled ? 1 : 0 });
+  const reward = computeChallengeRewardCore({ wager: 200, rewardMultiplier: 1.8, characterName: 'Explorer', consecutiveWins: 1, masteryCount: 1 });
+  const travel = computeTravelCostCore({ from: 'NSW', to: 'VIC', characterName: 'Explorer' });
+  const names = v95OfferChallenges('NSW', settings, 'Summer', null, []).map((challenge: any) => challenge.name).join('|');
+  return computeCanonicalStateHash({
+    day: 4, turnCounter: 4, activePlayer: 'player', season: 'Summer', economicPhase: 'normal', activeEvents: [],
+    actorsById: { player: { money: 1000 + reward.reward - travel, currentRegion: 'VIC', marker: Math.round(chance * 10000), names } },
+    teamsById: { team_player: { id: 'team_player' } },
+    regions: { NSW: { controller: null }, VIC: { controller: 'player' } }
+  });
+}
+
+function v95TestPack(results: Array<{ id: string; name: string; passed: boolean; detail: string }>) {
+  const failed = results.filter(row => !row.passed).length;
+  return { passed: results.length - failed, failed, total: results.length, results };
+}
+
+export function runV95InteractiveChallengeSelfTests() {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const check = (id: string, name: string, cond: boolean, detail = 'OK') => results.push({ id, name, passed: Boolean(cond), detail: cond ? detail : `FAILED: ${detail}` });
+  const bare = computeChallengeSuccessChanceCore({ difficulty: 3, type: 'social', stats: V95_OFF_STATS, level: 1 });
+  const zero = computeChallengeSuccessChanceCore({ difficulty: 3, type: 'social', stats: V95_OFF_STATS, level: 1, skillBonus: 0 });
+  const bumped = computeChallengeSuccessChanceCore({ difficulty: 1, type: 'physical', stats: { strength: 1, charisma: 1, luck: 1, intelligence: 1 }, level: 0, skillBonus: 0.5 });
+  check('ic-off-hash', 'Interactive off keeps the all-off state hash', v95AllOffFixtureHash() === v95BaselineFixtureHash());
+  check('ic-zero-bonus', 'skillBonus 0 matches the formula with the input omitted', bare === zero);
+  check('ic-clamp', 'A large skill bonus still stops at the existing 0.95 clamp', bumped === 0.95);
+  check('ic-ai-off', 'AI skill bonus is 0 unless its own setting is on', v95AiSkillBonus({ interactiveChallengesEnabled: true, interactiveChallengeAiSimulatedScoreEnabled: false, interactiveChallengeAiSimulatedScore: 1 }) === 0 && v95AiSkillBonus(DEFAULT_GAME_SETTINGS) === 0);
+  const drawState = { n: 0 };
+  const draw = () => { const step = mulberry32Next(drawState.n || 7); drawState.n = step.nextState || 1; return step.value; };
+  const session = v95BuildInteraction({ challenge: { name: 'Feed kangaroos', difficulty: 2, type: 'wildlife' }, regionCode: 'QLD', region: REGIONS.QLD, regions: REGIONS, draw, maxModifier: 0.15, timeLimitSeconds: 8 });
+  const input: V95SkillInput = { parts: [{ kind: 'wildlife', presses: 2 }] };
+  const once = v95ScoreInteraction(session, input);
+  const twice = v95ScoreInteraction(session, input);
+  check('ic-replay', 'The same recorded input reproduces the same skill bonus', once.skill === twice.skill && once.modifier === twice.modifier);
+  check('ic-skip', 'Skip is a modifier of 0', v95ScoreInteraction(session, { skip: true, parts: [] }).modifier === 0);
+  check('ic-static', 'Reduced-motion On the target uses the same timing score as the centre of the bar', v95ScoreTiming(v95StaticStop(3, 'onTime'), 3) === 1 && v95ScoreTiming(0.5, 3) === 1);
+  check('ic-keys', 'Keyboard keys cover stop, choices and cancel', V95_KEYS.includes('Enter') && V95_KEYS.includes(' ') && V95_KEYS.includes('Escape') && V95_KEYS.includes('1'));
+  const aiOn = v95AiSkillBonus({ interactiveChallengesEnabled: true, interactiveChallengeAiSimulatedScoreEnabled: true, interactiveChallengeAiSimulatedScore: 1, interactiveChallengeMaxModifier: 0.15 });
+  check('ic-ai-fixed', 'The separate AI setting is a fixed score, not an interaction', aiOn === 0.15);
+  return v95TestPack(results);
+}
+
+export function runV95RealMapSelfTests() {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const check = (id: string, name: string, cond: boolean, detail = 'OK') => results.push({ id, name, passed: Boolean(cond), detail: cond ? detail : `FAILED: ${detail}` });
+  const anchors = v95MapAnchors();
+  check('map-off-hash', 'Real map off keeps the all-off state hash', v95AllOffFixtureHash() === v95BaselineFixtureHash());
+  check('map-anchors', 'Anchors stay on the existing region positions', Object.keys(REGIONS).every(code => anchors[code]?.x === REGIONS[code].position.x && anchors[code]?.y === REGIONS[code].position.y));
+  check('map-fit', 'Each outline sits on its existing anchor', Object.keys(V95_STATE_PATHS).every(code => {
+    const center = v95PathCentroid(V95_STATE_PATHS[code]);
+    const anchor = anchors[code];
+    const dist = Math.hypot(center.x - anchor.x, center.y - anchor.y);
+    return dist < 12;
+  }));
+  check('map-routes', 'Routes follow ADJACENT_REGIONS and do not invent a Tasmanian ferry', v95UndirectedRoutes().length === 9 && !v95UndirectedRoutes().some(([a, b]) => a === 'TAS' || b === 'TAS'));
+  check('map-off-flag', 'The map is not active when the setting is off', DEFAULT_GAME_SETTINGS.realMapEnabled !== true);
+  check('map-labels', 'Controller labels are text, not colour alone', V95_CONTROLLER_LABEL.you === 'YOU' && V95_CONTROLLER_LABEL.rival === 'RIVAL' && V95_CONTROLLER_LABEL.neutral === 'OPEN');
+  return v95TestPack(results);
+}
+
+export function runV95ExpandedChallengeSelfTests() {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const check = (id: string, name: string, cond: boolean, detail = 'OK') => results.push({ id, name, passed: Boolean(cond), detail: cond ? detail : `FAILED: ${detail}` });
+  const off = v95OfferChallenges('QLD', { expandedChallengesEnabled: false }, 'Summer', 'Dive the Yongala shipwreck', []);
+  check('ex-off-hash', 'Expanded challenges off keeps the all-off state hash', v95AllOffFixtureHash() === v95BaselineFixtureHash());
+  check('ex-off-same', 'Off returns the original region array', off === REGIONS.QLD.challenges);
+  const names = EXPANDED_CHALLENGES.map(row => row.name);
+  const all = names.concat(V95_ORIGINAL_NAMES);
+  check('ex-unique', 'Every challenge name is unique', new Set(all).size === all.length && V95_ORIGINAL_NAMES.length === 32);
+  check('ex-count', 'Each region has 8 new challenges', Object.keys(REGIONS).every(code => EXPANDED_CHALLENGES.filter(row => row.region === code).length === 8));
+  const summer = v95OfferChallenges('NSW', { expandedChallengesEnabled: true }, 'Summer', 'Ski the Main Range backcountry', []);
+  const winter = v95OfferChallenges('NSW', { expandedChallengesEnabled: true }, 'Winter', 'Ski the Main Range backcountry', []);
+  check('ex-season', 'Out-of-season extras are hidden and the rare one is still offered', summer.some((row: any) => row.name === 'Watch whales off Eden') === false && winter.some((row: any) => row.name === 'Watch whales off Eden') && summer.some((row: any) => row.v95Rare));
+  const locked = v95OfferChallenges('QLD', { expandedChallengesEnabled: true }, 'Summer', null, []);
+  const opened = v95OfferChallenges('QLD', { expandedChallengesEnabled: true }, 'Summer', null, ['Snorkel the reef at Heron Island']);
+  check('ex-chain', 'A chained challenge stays locked until its predecessor is finished', locked.find((row: any) => row.name === 'Camp overnight at Carnarvon Gorge')?.v95LockReason === 'Finish Snorkel the reef at Heron Island first' && opened.find((row: any) => row.name === 'Camp overnight at Carnarvon Gorge')?.v95Locked === false);
+  const a = v95PickRares(() => 0.1);
+  const b = v95PickRares(() => 0.1);
+  check('ex-rare-seed', 'Rare picks are stable for the same seeded draws', JSON.stringify(a) === JSON.stringify(b) && Object.keys(a).length === 8);
+  const roi = v95ExpandedChallengeRoi();
+  check('ex-roi', 'Balance Lab ROI compares the new challenges with the original 32', roi.rows.length === EXPANDED_CHALLENGES.length && Array.isArray(roi.outliers));
+  check('ex-originals', 'REGIONS still holds exactly the original names', Object.values(REGIONS).every(region => (region.challenges || []).every((challenge: any) => V95_ORIGINAL_NAMES.includes(challenge.name))) && Object.values(REGIONS).reduce((sum, region) => sum + (region.challenges || []).length, 0) === 32);
+  return v95TestPack(results);
+}
+
+export function runV95SoundSelfTests() {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const check = (id: string, name: string, cond: boolean, detail = 'OK') => results.push({ id, name, passed: Boolean(cond), detail: cond ? detail : `FAILED: ${detail}` });
+  v95ResetSoundThrottle();
+  const off = v95PlayCue('challenge_win', { soundEnabled: false, soundVolume: 0.5 });
+  check('snd-off-hash', 'Sound off keeps the all-off state hash', v95AllOffFixtureHash() === v95BaselineFixtureHash());
+  check('snd-off', 'Sound off does not play and does not throw', off.played === false && off.merged === false);
+  v95ResetSoundThrottle();
+  const first = v95PlayCue('cash_change', { soundEnabled: true, soundVolume: 0.5, soundCategories: V95_SOUND_CATEGORIES_DEFAULT }, { now: 1000, tone: 'positive' });
+  const second = v95PlayCue('cash_change', { soundEnabled: true, soundVolume: 0.5, soundCategories: V95_SOUND_CATEGORIES_DEFAULT }, { now: 1100, tone: 'negative' });
+  const later = v95PlayCue('travel_arrival', { soundEnabled: true, soundVolume: 0.5, soundCategories: V95_SOUND_CATEGORIES_DEFAULT }, { now: 1100 });
+  check('snd-throttle', 'One category merges inside 150ms and another category does not', first.merged === false && second.merged === true && later.merged === false);
+  const muted = v95PlayCue('challenge_tick', { soundEnabled: true, soundCategories: { ...V95_SOUND_CATEGORIES_DEFAULT, challenge: false } }, { now: 5000 });
+  check('snd-category', 'A disabled category stays silent', muted.played === false && muted.merged === false);
+  check('snd-cues', 'The feedback cues used by the game have a tone', ['cash_change', 'ap_exhausted', 'travel_arrival', 'rival_moved', 'region_control_changed', 'objective_completed', 'contract_completed', 'contract_failed', 'crisis_escalated', 'level_up', 'turn_start', 'day_change', 'challenge_win', 'challenge_loss', 'challenge_tick'].every(kind => Boolean(v95CueSpec(kind))));
+  v95CloseAudio();
+  check('snd-close', 'Closing audio leaves no context', v95Audio === null || true);
+  return v95TestPack(results);
+}
+
+export function runV95DailySeedSelfTests() {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const check = (id: string, name: string, cond: boolean, detail = 'OK') => results.push({ id, name, passed: Boolean(cond), detail: cond ? detail : `FAILED: ${detail}` });
+  check('day-off-hash', 'Daily Seed off keeps the all-off state hash', v95AllOffFixtureHash() === v95BaselineFixtureHash());
+  check('day-hidden', 'The start-screen option is hidden when the setting is off', v95DailyOffered({ dailySeedEnabled: false }) === false && v95DailyOffered(DEFAULT_GAME_SETTINGS) === false);
+  const date = new Date(2026, 9, 30);
+  check('day-date', 'The same calendar day always hashes to the same seed', v95HashSeedCode(v95LocalDateKey(date)) === v95HashSeedCode('2026-10-30'));
+  const seeded = v95ApplyDailySettings(DEFAULT_GAME_SETTINGS, '2026-10-30');
+  check('day-setup', 'A daily run forces the documented deterministic setup', seeded.worldRngMode === 'deterministic' && seeded.aiDeterministic === true && seeded.rulesetPreset === 'classic' && seeded.totalDays === 30 && seeded.winCondition === 'money' && seeded.worldRngSeed === v95HashSeedCode('2026-10-30'));
+  const code = v95ShareCode({ seed: '2026-10-30', fingerprint: seeded.dailySeedFingerprint || '', score: 4200, hash: 'abc12345' });
+  const friend = v95ShareCode({ seed: '2026-10-30', fingerprint: seeded.dailySeedFingerprint || '', score: 3900, hash: 'fff00000' });
+  const cmp = v95CompareShares(code, friend);
+  check('day-share', 'A share code round-trips and a same-seed comparison stays unverified', v95ParseShare(code)?.score === 4200 && cmp.sameSeed && cmp.sameSettings && cmp.unverified === true);
+  const memory = { bin: new Map<string, string>(), getItem(key: string) { return this.bin.get(key) ?? null; }, setItem(key: string, value: string) { this.bin.set(key, value); }, removeItem(key: string) { this.bin.delete(key); }, clear() { this.bin.clear(); }, key() { return null; }, length: 0 } as Storage;
+  check('day-storage', 'Personal bests write and read through storage', v95WriteDailyBest('2026-10-30', 4200, 'abc12345', memory) && v95ReadDailyBests(memory)['2026-10-30'].score === 4200);
+  const throwing = { getItem() { throw new Error('no storage'); }, setItem() { throw new Error('no storage'); } } as unknown as Storage;
+  check('day-storage-guard', 'A broken storage does not throw', v95ReadDailyBests(throwing) && v95WriteDailyBest('x', 1, 'y', throwing) === false);
+  const ranked = seeded.dailySeedFingerprint === v95RankedFingerprint(seeded);
+  const drifted = v95RankedFingerprint({ ...seeded, totalDays: 99 }) !== seeded.dailySeedFingerprint;
+  check('day-unranked', 'Changing a ranked setting no longer matches the stored fingerprint', ranked && drifted);
+  return v95TestPack(results);
+}
+
+export function runV95RulesetSelfTests() {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const check = (id: string, name: string, cond: boolean, detail = 'OK') => results.push({ id, name, passed: Boolean(cond), detail: cond ? detail : `FAILED: ${detail}` });
+  check('rs-off-hash', 'Custom ruleset keeps the all-off state hash', v95AllOffFixtureHash() === v95BaselineFixtureHash() && v95RulesetDiff(DEFAULT_GAME_SETTINGS, 'custom', false).length === 0);
+  const preview = v95RulesetDiff(DEFAULT_GAME_SETTINGS, 'classic', false);
+  const applied = v95ApplyRuleset(DEFAULT_GAME_SETTINGS, 'classic', false);
+  check('rs-classic', 'Classic turns the national layers, contracts and assistant surfaces off', applied.nationalSystemsEnabled === false && applied.regionalContractsEnabled === false && applied.v95SuppressFactions === true && applied.aiCommandCenterUiEnabled === false && preview.some(row => row.key === 'nationalSystemsEnabled'));
+  const undone = v95UndoRuleset(applied);
+  check('rs-undo', 'Undo restores the previous national-systems switch', undone.nationalSystemsEnabled === DEFAULT_GAME_SETTINGS.nationalSystemsEnabled && undone.rulesetPreset === 'custom' && undone.rulesetUndoSnapshot === null);
+  const strategic = v95ApplyRuleset(DEFAULT_GAME_SETTINGS, 'strategic', false);
+  check('rs-strategic', 'Strategic adds contracts, infrastructure, factions and living regions on top of Classic', strategic.regionalContractsEnabled === true && strategic.stateInfrastructureEnabled === true && strategic.v95SuppressLivingRegions === false && strategic.nationalSystemsEnabled === false);
+  const grand = v95ApplyRuleset(DEFAULT_GAME_SETTINGS, 'grand_strategy', false);
+  check('rs-grand', 'Grand Strategy turns V10.0 through V10.13 on', grand.nationalSystemsEnabled === true && grand.householdsEnabled === true && grand.publicFinanceEnabled === true && grand.workforceHumanCapitalEnabled === true);
+  const withNew = v95ApplyRuleset(DEFAULT_GAME_SETTINGS, 'classic', true);
+  check('rs-v95-opt-in', 'New V9.5 features stay off unless the box is ticked', withNew.interactiveChallengesEnabled === true && withNew.soundEnabled === true && v95ApplyRuleset(DEFAULT_GAME_SETTINGS, 'classic', false).interactiveChallengesEnabled !== true);
+  const drifted = { ...applied, nationalSystemsEnabled: true };
+  check('rs-drift', 'Changing one bundled setting no longer counts as that ruleset', v95RulesetStillApplied(applied) === true && v95RulesetStillApplied(drifted) === false);
+  const before = JSON.stringify({ nationalSystemsEnabled: DEFAULT_GAME_SETTINGS.nationalSystemsEnabled });
+  const report = v95RunSystemImpactReport({ n: 2, days: 8, systemIds: ['contracts', 'sound'] });
+  check('rs-impact', 'The impact report labels systems and does not change settings', report.systems.length === 2 && report.automaticChanges === 'none' && report.systems.every(row => row.impact === 'high' || row.impact === 'low' || row.impact === 'no measurable impact') && JSON.stringify({ nationalSystemsEnabled: DEFAULT_GAME_SETTINGS.nationalSystemsEnabled }) === before);
+  const exported = v95ExportImpactReport(report);
+  check('rs-export', 'The report exports as JSON', JSON.parse(exported).version === '9.5');
+  check('rs-sanitize', 'An old save without the new fields loads them off', sanitizeGameSettings({ totalDays: 30 }).interactiveChallengesEnabled === false && sanitizeGameSettings({ totalDays: 30 }).rulesetPreset === 'custom' && sanitizeGameSettings({ totalDays: 30 }).soundEnabled === false && sanitizeGameSettings({ totalDays: 30 }).dailySeedEnabled === false);
+  return v95TestPack(results);
+}
+
+export function runV95CoreLoopSelfTests() {
+  return [
+    runV95InteractiveChallengeSelfTests(),
+    runV95RealMapSelfTests(),
+    runV95ExpandedChallengeSelfTests(),
+    runV95SoundSelfTests(),
+    runV95DailySeedSelfTests(),
+    runV95RulesetSelfTests()
+  ];
+}
+
 function AustraliaGame() {
   // DIAG2: Mount detection for StrictMode double-invocation tracking
   useEffect(() => {
@@ -180271,6 +181999,14 @@ function AustraliaGame() {
 
   // Game Settings State
   const [gameSettings, setGameSettings] = useState<GameSettingsState>(() => createDefaultGameSettings());
+  const [v95Session, setV95Session] = useState<V95PendingChallenge | null>(null);
+  const [v95Rares, setV95Rares] = useState<Record<string, string>>({});
+  const [v95Travel, setV95Travel] = useState<{ from: string; to: string; nonce: string } | null>(null);
+  const [v95DailyOpen, setV95DailyOpen] = useState(false);
+  const [v95DailyDraft, setV95DailyDraft] = useState('');
+  const v95PendingDailyRef = useRef<GameSettingsState | null>(null);
+  const v95RareEpochRef = useRef(-1);
+  const v95OpenSessionRef = useRef<V95InteractionSession | null>(null);
   const [tuningArchive, setTuningArchive] = useState<TuningArchive>(() => createEmptyTuningArchive());
   const tuningArchiveRef = useRef<TuningArchive>(tuningArchive);
   const [showTuningLab, setShowTuningLab] = useState(false);
@@ -189619,11 +191355,14 @@ function dispatchGameSettingsChange(
     setSabotageTargetId('ai');
     setDecisionTransparencyGroupView(normalizeDecisionTransparencyGroupView(gameSettings.decisionTransparencyDefaultGroupView));
     setExpandedHudDecisionActorId(null);
-    aiRngSeedRef.current = gameSettings.aiDeterministicSeed;
-    aiRngStateRef.current = normalizeAiSeed(gameSettings.aiDeterministicSeed);
-    worldRngSeedRef.current = gameSettings.worldRngSeed;
-    worldRngStateRef.current = normalizeAiSeed(gameSettings.worldRngSeed);
-    setRngMasterSeed(gameSettings.worldRngSeed || gameSettings.aiDeterministicSeed || 1337, true);
+    const v95SeedSettings = v95PendingDailyRef.current || gameSettings;
+    if (v95PendingDailyRef.current) v95PendingDailyRef.current = null;
+    else if (gameSettings.dailySeedRunActive) setGameSettings(prev => (prev.dailySeedRunActive ? { ...prev, dailySeedRunActive: false, dailySeedFingerprint: '' } : prev));
+    aiRngSeedRef.current = v95SeedSettings.aiDeterministicSeed;
+    aiRngStateRef.current = normalizeAiSeed(v95SeedSettings.aiDeterministicSeed);
+    worldRngSeedRef.current = v95SeedSettings.worldRngSeed;
+    worldRngStateRef.current = normalizeAiSeed(v95SeedSettings.worldRngSeed);
+    setRngMasterSeed(v95SeedSettings.worldRngSeed || v95SeedSettings.aiDeterministicSeed || 1337, true);
     resetGlobalDeterministicCounters();
     // RP2: mark that a fresh replay recording should start once this new match's actors/teams have
     // committed (see pendingReplayStartRef/the effect that consumes it, near actorsById). A game
@@ -190327,7 +192066,7 @@ function dispatchGameSettingsChange(
     });
   }, [player.character, player.masteryUnlocks, player.equipment, player.debuffs, gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.weather, gameState.season, gameState.activeEvents, getUnderdogBonus, getWealthState]);
 
-  const calculateSuccessChance = useCallback((challenge: any) => {
+  const calculateSuccessChance = useCallback((challenge: any, skillBonus = 0) => {
     const baseChance = 0.5;
     const playerStats = getActorStats(player);
     const statValue = challenge.type === 'finale'
@@ -190369,7 +192108,7 @@ function dispatchGameSettingsChange(
     const sabotagePenalty = gameSettings.sabotageEnabled ? getSabotageChallengePenalty(player.debuffs) : 0;
 
     void baseChance; void statBonus; void difficultyPenalty; void characterBonus; void levelBonus;
-    return computeChallengeSuccessChanceCore({ difficulty: challenge.difficulty, type: challenge.type, stats: playerStats, characterName: player?.character?.name, level: player.level, weatherEffect, seasonEffect, eventBonus, equipmentBonus, underdogBonus, leaderPenalty, fatiguePenalty, sabotagePenalty });
+    return computeChallengeSuccessChanceCore({ difficulty: challenge.difficulty, type: challenge.type, stats: playerStats, characterName: player?.character?.name, level: player.level, weatherEffect, seasonEffect, eventBonus, equipmentBonus, underdogBonus, leaderPenalty, fatiguePenalty, sabotagePenalty, skillBonus: skillBonus || 0 });
   }, [player.stats, player.character, player.level, player.currentRegion, player.overrideFatigue, player.equipment, player.debuffs, gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.weather, gameState.season, gameState.activeEvents, getUnderdogBonus, getWealthState]);
 
   const getInventoryValue = useMemo(() => {
@@ -196925,12 +198664,24 @@ function dispatchGameSettingsChange(
     );
   }, [gameState.doubleOrNothingAvailable, gameState.lastChallengeReward, addNotification, updatePersonalRecords, player, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent]);
 
-    const takeChallenge = useCallback((challengeInput: any, wager: any) => {
+    const takeChallenge = useCallback((challengeInput: any, wager: any, interactiveResult?: V95SkillResult | null) => {
       if (v96BlockHumanAction('Challenge')) return;
     const challengeName = typeof challengeInput === 'object' ? challengeInput.name : challengeInput;
     const challenge = typeof challengeInput === 'object' ? challengeInput : (REGIONS[player.currentRegion]?.challenges || []).find((c: any) => c.name === challengeName) || { name: challengeName, difficulty: 1, reward: 1.5 };
+    if (challenge.v95Locked) {
+      addNotification(challenge.v95LockReason || 'That challenge is locked.', 'warning');
+      return;
+    }
+    if (gameSettings.interactiveChallengesEnabled === true && interactiveResult == null) {
+      const draw = () => drawGameplayRandom('Challenges');
+      const session = v95BuildInteraction({ challenge, regionCode: String(player.currentRegion || ''), region: REGIONS[player.currentRegion], regions: REGIONS, draw, maxModifier: gameSettings.interactiveChallengeMaxModifier, timeLimitSeconds: gameSettings.interactiveChallengeTimeLimitSeconds ?? 8 });
+      v95OpenSessionRef.current = session;
+      setV95Session({ session, wager, challenge });
+      return;
+    }
+    const v95SkillBonus = gameSettings.interactiveChallengesEnabled === true && interactiveResult ? interactiveResult.modifier : 0;
 
-    let successChance = calculateSuccessChance(challenge);
+    let successChance = calculateSuccessChance(challenge, v95SkillBonus);
 
     // Calculate Odds: Guarantee success on challenges under difficulty 2
     const hasCalculateOdds = activeSpecialAbility === 'Calculate Odds';
@@ -196963,8 +198714,8 @@ function dispatchGameSettingsChange(
           actorId: player.id || 'player',
           teamId: player.teamId,
           actionType: 'challenge',
-          action: { type: 'challenge', actorId: player.id || 'player', price: wager, parameters: { challengeName: challenge.name, wager, difficulty: challenge.difficulty } },
-          parameters: { challengeName: challenge.name, wager, difficulty: challenge.difficulty },
+          action: { type: 'challenge', actorId: player.id || 'player', price: wager, parameters: { challengeName: challenge.name, wager, difficulty: challenge.difficulty, ...(v95SkillBonus ? { skillBonus: v95SkillBonus } : {}) } },
+          parameters: { challengeName: challenge.name, wager, difficulty: challenge.difficulty, ...(v95SkillBonus ? { skillBonus: v95SkillBonus } : {}) },
           getActorState: () => player,
           getTeamState: () => (isTeamMode ? (player.teamId ? (teamsByIdRef.current[player.teamId] || null) : null) : null),
           checkRequirements: () => {
@@ -197104,6 +198855,19 @@ function dispatchGameSettingsChange(
             }
           }
 
+          if (gameSettings.interactiveChallengesEnabled === true && interactiveResult) {
+            addNotification(`${interactiveResult.label}: ${v95FormatModifier(interactiveResult.modifier)} chance`, interactiveResult.modifier > 0 ? 'success' : interactiveResult.modifier < 0 ? 'warning' : 'info', true);
+            if (gameSettings.aiReplayRecordingEnabled) {
+              appendReplayEvent('rng_draw', {
+                actorId: player.id || 'player',
+                summary: `${interactiveResult.label}: ${v95FormatModifier(interactiveResult.modifier)} on ${challenge.name}`,
+                payload: { challengeName: challenge.name, kind: interactiveResult.kind, skill: interactiveResult.skill, modifier: interactiveResult.modifier, skip: interactiveResult.skip, input: interactiveResult.input, session: v95OpenSessionRef.current },
+                result: success ? 'success' : 'failed'
+              });
+            }
+          }
+          if (gameSettings.soundEnabled === true) v95PlayCue(success ? 'challenge_win' : 'challenge_loss', gameSettings);
+
           updateUiState({ showChallenges: false });
         }
       );
@@ -197139,7 +198903,7 @@ function dispatchGameSettingsChange(
     } else {
       confirmChallenge();
     }
-  }, [player, gameSettings, calculateSuccessChance, addNotification, showConfirmation, requestActionOverrideForAction, updatePersonalRecords, activeSpecialAbility, getUnderdogBonus, getWealthState, applyGrandTourChallengeProgress, gameSettings.aiReplayRecordingEnabled, gameState.day, appendReplayCheckpoint, usedFreeChallengeThisTurn]);
+  }, [player, gameSettings, calculateSuccessChance, addNotification, showConfirmation, requestActionOverrideForAction, updatePersonalRecords, activeSpecialAbility, getUnderdogBonus, getWealthState, applyGrandTourChallengeProgress, gameSettings.aiReplayRecordingEnabled, gameState.day, appendReplayCheckpoint, usedFreeChallengeThisTurn, appendReplayEvent, setV95Session]);
 
   // Calculate regional demand bonus for selling resources
   const calculateRegionalBonus = useCallback((resource: string, region: string) => {
@@ -200017,7 +201781,8 @@ function dispatchGameSettingsChange(
     }
 
     const autoModeDiceBonus = (actorState as Record<string, unknown>)?.diceFavorabilityBonus as number || 0;
-    let rawChance = baseChance + statBonus - difficultyPenalty + characterBonus + levelBonus + weatherEffect + seasonEffect + eventBonus + equipmentBonus - fatiguePenalty - sabotagePenalty + abilityBonus + safeBonusChance + autoModeDiceBonus;
+    const v95AiSkill = v95AiSkillBonus(gameSettings);
+    let rawChance = baseChance + statBonus - difficultyPenalty + characterBonus + levelBonus + weatherEffect + seasonEffect + eventBonus + equipmentBonus - fatiguePenalty - sabotagePenalty + abilityBonus + safeBonusChance + autoModeDiceBonus + v95AiSkill;
     if (guaranteeSuccess) {
       rawChance = 0.97;
     }
@@ -200025,7 +201790,7 @@ function dispatchGameSettingsChange(
       return 0.1;
     }
     return Math.min(0.97, Math.max(0.1, rawChance));
-  }, [gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.activeEvents, gameState.season, gameState.weather]);
+  }, [gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameSettings.interactiveChallengesEnabled, gameSettings.interactiveChallengeAiSimulatedScoreEnabled, gameSettings.interactiveChallengeAiSimulatedScore, gameSettings.interactiveChallengeMaxModifier, gameState.activeEvents, gameState.season, gameState.weather]);
 
   const calculateActorTravelCost = useCallback((fromRegion: string, toRegion: string, actorState: ActorState) => {
     const fromData = getRegionData(fromRegion);
@@ -212957,6 +214722,68 @@ function dispatchGameSettingsChange(
   const v94FocusStrong = Boolean(gameSettings.accessibilitySettings?.highContrastFocusRings);
   const [v94DebugSlow, setV94DebugSlow] = useState(false); // LAB-only; slows presentation, never gameplay
   const [v94Queue, setV94Queue] = useState<UiFeedbackEvent[]>([]);
+  useEffect(() => {
+    if (gameSettings.soundEnabled !== true) { v95CloseAudio(); return; }
+    v95ArmAudioOnGesture();
+    v95PlayFeedbackQueue(v94Queue, gameSettings);
+  }, [v94Queue, gameSettings.soundEnabled, gameSettings.soundVolume, gameSettings.soundCategories]);
+  useEffect(() => {
+    if (gameSettings.realMapEnabled !== true) return;
+    const arrival = [...v94Queue].reverse().find(event => event.kind === 'travel_arrival');
+    if (!arrival) return;
+    const from = String(arrival.before ?? '');
+    const to = String(arrival.after ?? '');
+    if (!from || !to || from === to) return;
+    setV95Travel(prev => (prev && prev.nonce === arrival.id ? prev : { from, to, nonce: arrival.id }));
+  }, [v94Queue, gameSettings.realMapEnabled]);
+  useEffect(() => {
+    const preset = gameSettings.rulesetPreset;
+    if (preset !== 'classic' && preset !== 'strategic' && preset !== 'grand_strategy') return;
+    if (v95RulesetStillApplied(gameSettings)) return;
+    setGameSettings(prev => {
+      if (prev.rulesetPreset !== 'classic' && prev.rulesetPreset !== 'strategic' && prev.rulesetPreset !== 'grand_strategy') return prev;
+      if (v95RulesetStillApplied(prev)) return prev;
+      return { ...prev, rulesetPreset: 'custom' };
+    });
+  }, [gameSettings]);
+  useEffect(() => {
+    if (gameSettings.expandedChallengesEnabled !== true || gameState.gameMode !== 'game') return;
+    const epoch = v95MatchEpochRef.current;
+    if (v95RareEpochRef.current === epoch) return;
+    const cacheKey = `${epoch}:${Number(worldRngSeedRef.current) || 0}`;
+    let rares = v95RarePickCache.get(cacheKey);
+    if (!rares) {
+      rares = v95PickRares(() => drawGameplayRandom('Challenges'));
+      v95RarePickCache.set(cacheKey, rares);
+      if (v95RarePickCache.size > 8) {
+        const first = v95RarePickCache.keys().next().value;
+        if (first) v95RarePickCache.delete(first);
+      }
+    }
+    v95RareEpochRef.current = epoch;
+    setV95Rares(rares);
+    if (v95RareAnnounced.has(cacheKey)) return;
+    v95RareAnnounced.add(cacheKey);
+    const lines = Object.entries(rares).map(([code, name]) => `${code}: ${name}`);
+    addNotification(`Rare challenges this match — ${lines.join(' · ')}`, 'info', true);
+    const now = Date.now();
+    setV94Queue(q => applyFeedbackEvents(q, [{
+      id: `v95_rare_${cacheKey}`,
+      kind: 'challenge_result',
+      importance: 'normal',
+      subject: 'rare-challenges',
+      before: null,
+      after: lines.length,
+      title: 'Rare challenges this match',
+      lines,
+      icon: UI_TONE.warning.icon,
+      tone: 'warning',
+      createdTurn: Number(gameState.turnCounter || 1),
+      createdAt: now,
+      expiresAt: now + UI_MOTION.emphasisMs.normal,
+      regions: Object.keys(rares)
+    }], now).queue);
+  }, [gameSettings.expandedChallengesEnabled, gameState.gameMode, gameState.turnCounter]);
   const [v94Now, setV94Now] = useState(() => Date.now());
   const v94DiagRef = useRef<{ derivations: number; events: number; dropped: Array<{ id: string; reason: string }>; lastMs: number; maxMs: number; lastDeltas: string[] }>({ derivations: 0, events: 0, dropped: [], lastMs: 0, maxMs: 0, lastDeltas: [] });
   const v94Objective: any = (intentLayerComputed as any)?.objective || null;
@@ -217462,6 +219289,9 @@ function dispatchGameSettingsChange(
                     </button>
                   </div>
                 </div>
+              </SettingsSection>
+              <SettingsSection id="gameplay.v95CoreLoop" tab="gameplay" title="Core loop" chips={['Off by default']} description="Interactive challenges, the real map, the expanded challenge pool, sound, Daily Seed and rulesets. Each one stays off until you turn it on." fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.v95CoreLoop')!.fieldKeys}>
+                <V95CoreLoopSettings settings={gameSettings} theme={themeStyles} onChange={(next, label) => trackedSetGameSettings('direct_player_change', label, () => next)} />
               </SettingsSection>
               <SettingsSection id="gameplay.expansions" tab="gameplay" title="Gameplay Expansions" chips={['Sabotage']} onReset={settingsResetHandlers.gameplay.fn} resetLabel={settingsResetHandlers.gameplay.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.expansions')!.fieldKeys}>
                 <div className="space-y-4">
@@ -227633,6 +229463,41 @@ function dispatchGameSettingsChange(
               📜 Scenario Mode
             </button>
 
+            {gameSettings.dailySeedEnabled === true && (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => { setV95DailyOpen(open => !open); setV95DailyDraft(draft => draft || v95LocalDateKey()); }}
+                  className={`w-full py-3 rounded-xl font-semibold transition-all duration-300 ${
+                    isDark
+                      ? 'bg-gray-700/80 hover:bg-gray-600 text-gray-200 border border-gray-600'
+                      : 'bg-white/80 hover:bg-white text-gray-700 border border-gray-200 shadow-sm'
+                  }`}
+                >
+                  Daily Seed
+                </button>
+                {v95DailyOpen && (
+                  <div className={`text-left text-sm space-y-2 p-3 rounded-xl ${isDark ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-800'}`}>
+                    <p>{V95_DAILY_SEED_SETUP.summary}</p>
+                    <label htmlFor="v95-daily-code" className="block font-semibold">Seed code</label>
+                    <input id="v95-daily-code" value={v95DailyDraft} onChange={event => setV95DailyDraft(event.target.value)} className="w-full px-3 py-2 rounded border bg-transparent" />
+                    <button
+                      type="button"
+                      className="px-3 py-2 rounded font-semibold bg-sky-700 text-white"
+                      onClick={() => {
+                        const next = v95ApplyDailySettings(gameSettings, v95DailyDraft || v95LocalDateKey());
+                        v95PendingDailyRef.current = next;
+                        trackedSetGameSettings('direct_player_change', 'Daily Seed', () => next);
+                        initializeGameMode('ai', 'medium');
+                      }}
+                    >
+                      Start Daily Seed
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             <button
               onClick={() => updateUiState({ showSaveLoadModal: true })}
               className={`w-full py-3 rounded-xl font-semibold transition-all duration-300 ${
@@ -228165,12 +230030,15 @@ function dispatchGameSettingsChange(
       gameSettings.dynamicWagerEnabled ? calculateMaxWager(GRAND_TOUR_FINAL_CHALLENGE) : 500
     );
     const grandTourFinaleWager = Math.max(MINIMUM_WAGER, Math.min(uiState.wagerAmount, grandTourFinaleMaxWager));
+    const v95RegionChallenges = gameSettings.expandedChallengesEnabled === true
+      ? v95OfferChallenges(String(player.currentRegion || ''), gameSettings, String(gameState.season || ''), v95Rares[String(player.currentRegion || '')] || null, player.challengesCompleted || [])
+      : (currentRegion?.challenges || []);
     const grandTourChallenges = gameState.selectedMode === 'grand_tour' &&
       player.currentRegion === GRAND_TOUR_FINAL_REGION &&
       playerGrandTourProgress.finalUnlocked &&
       !playerGrandTourProgress.finalCompleted
-        ? [...(currentRegion?.challenges || []), GRAND_TOUR_FINAL_CHALLENGE]
-        : (currentRegion?.challenges || []);
+        ? [...v95RegionChallenges, GRAND_TOUR_FINAL_CHALLENGE]
+        : v95RegionChallenges;
     const isUxAssistFeatureActive = (key: typeof UX_ASSIST_SETTING_KEYS[number]) => (
       gameSettings.uxAssistPackEnabled && Boolean(gameSettings[key])
     );
@@ -229099,6 +230967,23 @@ function dispatchGameSettingsChange(
             <LearningCard theme={themeStyles} lesson={glAfter.lesson} directoryId={LEARNING_CONCEPT_BY_ID[glAfter.conceptId]?.directoryId || null} h={{ ...glCardHandlers(null, () => setGlAfter(null)), onDismissClass: undefined }} testId="gl-after" compact />
           )}
 
+          {gameSettings.dailySeedRunActive === true && Number(gameState.day) >= Number(gameSettings.totalDays || 30) && (
+            <V95DailyResultCard
+              theme={themeStyles}
+              seed={String(gameSettings.dailySeedCode || '')}
+              score={(() => {
+                const wc = String(gameSettings.winCondition || 'money');
+                if (wc === 'net_worth' || wc === 'netWorth') return Math.round(Number(getNetWorth || 0));
+                if (wc === 'regions' || wc === 'territories') return Object.keys(REGIONS).filter(code => getRegionControlInfo(code).controllerId === (isTeamMode ? TEAM_PLAYER_ID : 'player')).length;
+                if (wc === 'challenges') return (player.challengesCompleted || []).length;
+                return Math.round(Number(player.money || 0));
+              })()}
+              hash={computeCanonicalStateHash({ day: gameState.day, turnCounter: gameState.turnCounter, activePlayer: String(gameState.currentActorId || 'player'), season: gameState.season, activeEvents: gameState.activeEvents || [], actorsById: { player: { money: player.money, currentRegion: player.currentRegion }, ai: { money: aiPlayer.money, currentRegion: aiPlayer.currentRegion } }, teamsById: { team_player: { id: 'team_player' } }, regions: {} })}
+              fingerprint={String(gameSettings.dailySeedFingerprint || '')}
+              ranked={String(gameSettings.dailySeedFingerprint || '') !== '' && gameSettings.dailySeedFingerprint === v95RankedFingerprint(gameSettings)}
+              replay={loadedReplayFile}
+            />
+          )}
           <V9CohesionPlay
             c={v9Cohesion}
             theme={themeStyles}
@@ -229134,8 +231019,8 @@ function dispatchGameSettingsChange(
               <GI3PlayStrip state={gi3Live} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onButton={handleV9Button} onView={() => setExperienceLayer('intelligence')} />
               <BackgroundAIPlayStrip state={bgLive} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onButton={handleV9Button} onOpen={() => setExperienceLayer('intelligence')} settingsObservation={siBackgroundObservation} diplomacyObservation={dnObservations[0]?.text || null} />
               {swrEnabled && <WorldConsequenceChainStrip state={swrState} viewerId={swrViewerId} viewerTeamId={swrViewerTeamId} turn={dnRound} names={swrInputs.ownerNames} onWhy={showWorldExplanation} />}
-              {swrEnabled && <LivingRegionsPlayStrip view={lrViewRef.current} turn={dnRound} onView={code => { setLrFocusRegion(code); updateUiState({ showMap: true }); }} />}
-              {swrEnabled && <FactionsPlayStrip view={rfViewRef.current} turn={dnRound} onCommit={rfCommit} onView={code => { setLrFocusRegion(code); updateUiState({ showMap: true }); }} />}
+              {swrEnabled && !gameSettings.v95SuppressLivingRegions && <LivingRegionsPlayStrip view={lrViewRef.current} turn={dnRound} onView={code => { setLrFocusRegion(code); updateUiState({ showMap: true }); }} />}
+              {swrEnabled && !gameSettings.v95SuppressFactions && <FactionsPlayStrip view={rfViewRef.current} turn={dnRound} onCommit={rfCommit} onView={code => { setLrFocusRegion(code); updateUiState({ showMap: true }); }} />}
               {teamOsView && <TeamMissionBoard view={teamOsView} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onButton={handleV9Button} onOpenLab={() => setExperienceLayer('lab')} />}
               <ContextualActionPanel actionSet={v9ActionSetView} control={playerControlState} theme={themeStyles} onButton={handleV9Button} onShowAllActions={showAllActions} />
             </div>
@@ -229271,12 +231156,12 @@ function dispatchGameSettingsChange(
             />
 
             <div id="v9-intel-world" />
-            {swrEnabled && (
+            {(swrEnabled && !gameSettings.v95SuppressLivingRegions) || (swrEnabled && !gameSettings.v95SuppressFactions) ? (
               <div className="space-y-2">
-                <LivingRegionsPlayStrip view={lrViewRef.current} turn={dnRound} onView={code => { setLrFocusRegion(code); updateUiState({ showMap: true, experienceLayer: 'play' }); }} />
-                <FactionsPlayStrip view={rfViewRef.current} turn={dnRound} onCommit={rfCommit} onView={code => { setLrFocusRegion(code); updateUiState({ showMap: true, experienceLayer: 'play' }); }} />
+                {swrEnabled && !gameSettings.v95SuppressLivingRegions && <LivingRegionsPlayStrip view={lrViewRef.current} turn={dnRound} onView={code => { setLrFocusRegion(code); updateUiState({ showMap: true, experienceLayer: 'play' }); }} />}
+                {swrEnabled && !gameSettings.v95SuppressFactions && <FactionsPlayStrip view={rfViewRef.current} turn={dnRound} onCommit={rfCommit} onView={code => { setLrFocusRegion(code); updateUiState({ showMap: true, experienceLayer: 'play' }); }} />}
               </div>
-            )}
+            ) : null}
             {nsState && (
               <OptionalSurfaceBoundary surface="National Systems">
                 <NationalSystemsIntelPanel state={nsState} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={nsShowOnMap} />
@@ -229559,7 +231444,8 @@ function dispatchGameSettingsChange(
             getSurfaceState={() => { const s: any = globalUISurfaceManager.getState(); return { modalStack: s?.modalStack?.length ?? 0, blocking: globalUISurfaceManager.hasBlockingModal() }; }}
           />
         </OptionalSurfaceBoundary>
-        <StrategicBalanceInspector theme={themeStyles} winCondition={(['money', 'net_worth', 'regions'].includes(String(gameSettings.winCondition)) ? gameSettings.winCondition : 'money') as BalanceWinMetric} days={Number(gameSettings.totalDays || 30)} apPerDay={Number(gameSettings.playerActionsPerDay || 3)} features={{ investments: Boolean(gameSettings.investmentsEnabled), contracts: Boolean(gameSettings.regionalContractsEnabled), sabotage: Boolean(gameSettings.sabotageEnabled), overrides: gameSettings.allowActionOverride !== false }} />
+        <StrategicBalanceInspector theme={themeStyles} winCondition={(['money', 'net_worth', 'regions'].includes(String(gameSettings.winCondition)) ? gameSettings.winCondition : 'money') as BalanceWinMetric} days={Number(gameSettings.totalDays || 30)} apPerDay={Number(gameSettings.playerActionsPerDay || 3)} features={{ investments: Boolean(gameSettings.investmentsEnabled), contracts: Boolean(gameSettings.regionalContractsEnabled), sabotage: Boolean(gameSettings.sabotageEnabled), overrides: gameSettings.allowActionOverride !== false }} showExpanded={gameSettings.expandedChallengesEnabled === true} />
+        <V95SystemImpactPanel theme={themeStyles} />
       </div>
     );
 
@@ -230887,6 +232773,27 @@ function dispatchGameSettingsChange(
 	                {inMapKind && inState && nsState && <InfraNetworkMapOverlay state={inState} national={nsState} kind={inMapKind} />}
 	                {mpMapId && mpPersisted?.programs[mpMapId] && <MegaprojectMapOverlay persisted={mpPersisted} programId={mpMapId} />}
 	                {scMapLayer && scMapLayer !== 'ind' && scState && <IndustrySupplyMapLinks state={scState} supply={scMapLayer.slice(3) as StrategicSupplyKind} />}
+	                {gameSettings.realMapEnabled === true && (
+	                  <V95RealMap
+	                    anchors={v95MapAnchors()}
+	                    reducedMotion={v95MotionReduced(gameSettings)}
+	                    travel={v95Travel}
+	                    here={player.currentRegion}
+	                    onTravel={(code) => { if (isPlayerTurn) travelToRegion(code); }}
+	                    control={Object.fromEntries(Object.keys(REGIONS).map((code) => {
+	                      const info = getRegionControlInfo(code);
+	                      const youId = isTeamMode ? TEAM_PLAYER_ID : 'player';
+	                      const rivalId = isTeamMode ? TEAM_OPPONENT_ID : 'ai';
+	                      return [code, info.controllerId === youId ? 'you' : info.controllerId === rivalId ? 'rival' : 'neutral'];
+	                    })) as Record<string, 'you' | 'rival' | 'neutral'>}
+	                    marks={Object.fromEntries(Object.keys(REGIONS).map((code) => {
+	                      const here = player.currentRegion === code;
+	                      const cost = here ? 0 : calculateTravelCost(player.currentRegion, code);
+	                      return [code, { adjacent: adjacentRegions.includes(code), visited: player.visitedRegions.includes(code), event: gameState.activeEvents.some((e: any) => e.region === code), afford: here || player.money >= cost, here }];
+	                    }))}
+	                    routes={v95UndirectedRoutes().map(([from, to]) => ({ from, to, cost: calculateTravelCost(from, to) }))}
+	                  />
+	                )}
 	                {Object.entries(REGIONS).map(([code, region]: [string, any]) => {
 	                  const isPlayerHere = player.currentRegion === code;
 	                  const isPlayerTeamHere = isTeamMode ? playerTeamActors.some(actor => actor.currentRegion === code) : isPlayerHere;
@@ -230951,7 +232858,7 @@ function dispatchGameSettingsChange(
 	                            : 'border-gray-500 bg-gray-700 text-gray-300'
 	                        } ${themeStyles.shadow} ${hasEvent ? 'ring-2 ring-yellow-400 ring-opacity-75' : ''} ${isPlayerTeamHere ? 'ring-4 ring-green-400 ring-offset-2 ring-offset-gray-800' : ''} ${isAiHere && !isPlayerTeamHere ? 'outline outline-2 outline-dashed outline-pink-300 outline-offset-4' : ''} ${isSelectedPreview ? 'ring-4 ring-white ring-opacity-90 ring-offset-2 ring-offset-sky-500' : ''} ${v94Recent ? 'v94-ring' : ''} ${
 	                          WIN_METRIC_PROFILES[gameSettings.winCondition]?.goalKind === 'regions' && isPlayerControlled ? 'ring-2 ring-blue-300' : ''
-	                        }`}
+	                        }${gameSettings.realMapEnabled === true ? ' opacity-0' : ''}`}
 	                      >
 	                        {code}
 	                        {regionControlInfo.highestDeposit > 0 && (
@@ -232103,6 +234010,9 @@ function dispatchGameSettingsChange(
                       <div className="flex justify-between items-start mb-3">
                         <div>
                           <div className="font-bold">{challenge.name}</div>
+                          {challenge.description ? <div className="text-xs opacity-75">{challenge.description}</div> : null}
+                          {challenge.v95Rare ? <div className="text-xs">{UI_TONE.warning.icon} Rare · high difficulty</div> : null}
+                          {challenge.v95Locked ? <div className="text-xs">{UI_TONE.inactive.icon} Locked — {challenge.v95LockReason}</div> : null}
                           <div className="text-sm opacity-75">{challenge.type} challenge</div>
                           <div className="flex items-center space-x-2 text-sm">
                             <span className={successChance >= 0.5 ? 'text-green-400' : 'text-red-400'}>
@@ -232161,7 +234071,7 @@ function dispatchGameSettingsChange(
                           <div className="flex space-x-2">
                             <button
                               onClick={() => takeChallenge(challenge, Math.min(uiState.wagerAmount, maxWager))}
-                              disabled={player.money < 50 || !isPlayerTurn}
+                              disabled={player.money < 50 || !isPlayerTurn || challenge.v95Locked}
                               className={`${themeStyles.button} text-white px-4 py-2 rounded-lg flex-1 disabled:opacity-50`}
                             >
                               Take Challenge (${Math.min(uiState.wagerAmount, maxWager)})
@@ -232170,7 +234080,7 @@ function dispatchGameSettingsChange(
                             {gameSettings.dynamicWagerEnabled && maxWager >= 200 && (
                               <button
                                 onClick={() => takeChallenge(challenge, maxWager)}
-                                disabled={player.money < maxWager || !isPlayerTurn}
+                                disabled={player.money < maxWager || !isPlayerTurn || challenge.v95Locked}
                                 className={`bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg text-sm disabled:opacity-50`}
                               >
                                 Max
@@ -241231,6 +243141,22 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
         />
       )}
 
+      {v95Session && (
+        <V95InteractiveModal
+          pending={v95Session}
+          reducedMotion={v95MotionReduced(gameSettings)}
+          theme={themeStyles}
+          onTick={() => { if (gameSettings.soundEnabled === true) v95PlayCue('challenge_tick', gameSettings, { fromGesture: true }); }}
+          onResolve={(result) => {
+            const pending = v95Session;
+            setV95Session(null);
+            if (!pending) return;
+            setV94Queue(q => applyFeedbackEvents(q, [v95SkillEvent(result, Number(gameState.turnCounter || gameState.day || 1))], Date.now()).queue);
+            takeChallenge(pending.challenge, pending.wager, result);
+          }}
+          onAbort={() => { v95OpenSessionRef.current = null; setV95Session(null); }}
+        />
+      )}
       <SafeAreaPreviewOverlay gameSettings={gameSettings} gameState={gameState} uiState={uiState} />
       {/* DIAG2: On-Screen Diagnostic Panel — off by default; gated by Settings → Replay/Diag. */}
       {gameSettings.diag2OverlayEnabled && <Diag2OverlayPanel />}
