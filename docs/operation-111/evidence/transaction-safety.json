@@ -1,0 +1,45 @@
+{
+  "suite": "o111-transaction-safety",
+  "total": 6,
+  "passed": 6,
+  "failedCount": 0,
+  "results": [
+    {
+      "id": "o111_tx01_input_intact",
+      "name": "A refused region deposit does not mutate the caller input tree",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "id": "o111_tx02_negative_transfer",
+      "name": "A non-positive transfer_cash fails closed and moves no cash",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "id": "o111_tx03_save_tx_idempotent",
+      "name": "prepareSaveLoadTransaction is idempotent on a valid fixture",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "id": "o111_tx04_reject_no_candidate",
+      "name": "A rejected save load returns no candidate payload",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "id": "o111_tx05_verify_before_commit",
+      "name": "verifySaveLoadCandidate rejects an empty payload before hydration",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "id": "o111_tx06_settings_undo",
+      "name": "Smart Settings undo restores the exact prior match length",
+      "passed": true,
+      "detail": "ok"
+    }
+  ],
+  "failed": []
+}

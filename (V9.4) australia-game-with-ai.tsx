@@ -12,7 +12,7 @@ import React, { useState, useEffect, useCallback, useMemo, useReducer, useRef, u
 // ============================================================================
 
 export const SOURCE_FILE_ARCHITECTURE_VERSION = 'op111-agent02-v1' as const;
-export const SOURCE_FILE_SECTION_MARKER_COUNT = 60 as const;
+export const SOURCE_FILE_SECTION_MARKER_COUNT = 72 as const;
 
 export type SourceFileSectionFamily = 'foundation' | 'core' | 'gameplay' | 'ai-core' | 'systems' | 'ai-assistants' | 'ui-shell' | 'v9-intelligence' | 'v9-player' | 'v9-quality' | 'v10-national' | 'verification' | 'export' | 'other';
 
@@ -456,7 +456,7 @@ export const SOURCE_FILE_SECTION_INDEX: SourceFileSectionMeta[] = [
   }
 ] as SourceFileSectionMeta[];
 
-/** Exact // SECTION header labels in file order (excluding SECTION 1A itself). */
+/** Exact // SECTION header labels in file order, including SECTION 1A. */
 export const SOURCE_FILE_SECTION_HEADER_SNAPSHOT = `1: IMPORTS
 1A: SOURCE ARCHITECTURE MAP (Operation 111 / Agent 02)
 1B: BUILT-IN AI MEMORY, PERSISTENT MEMORY AND AI COMMUNICATION
@@ -486,16 +486,27 @@ export const SOURCE_FILE_SECTION_HEADER_SNAPSHOT = `1: IMPORTS
 20G: SETTINGS INTELLIGENCE 2.0 — INTELLIGENT GAME EXPERIENCE DIRECTOR
 20H: DIPLOMACY & NEGOTIATION 2.0 — DYNAMIC DEAL-MAKING SYSTEM
 20I: STRATEGIC CONSEQUENCE / WORLD REACTION SYSTEM
+20I-A56: GLOBAL ECONOMIC ENVIRONMENT — O111 AGENT 56
 20J: LIVING REGIONS 2.0 — DYNAMIC REGIONAL STATE SYSTEM
 20K: REGIONAL FACTIONS & STAKEHOLDERS 2.0
 20L: V9 GAMEPLAY COHESION — ONE GAME • ONE MOMENT • ONE CLEAR NEXT DECISION
 20M: V9.1 STRATEGIC DEPTH & BALANCE — diagnostics, policy simulation, ROI (LAB / tests only)
 20N: V9.2 GUIDED LEARNING — LEARN BY PLAYING • TEACH WHEN RELEVANT • NEVER OVERWHELM
 20O: V9.3 CONTENT EXPANSION & REPLAYABILITY — MORE SITUATIONS • SAME CORE SYSTEMS
+20F-A59 (O111 Agent 59): PRESET NATIONAL CRISIS STAGE EXECUTORS — map PRESET_CRISIS_CHAINS stageEffects into live mechanics.
 20P: V9.4 GAME FEEL & POLISH — RESPONSIVE • SATISFYING • CLEAR • ALIVE • POLISHED
+20P-A61: OPERATION 111 — VISUAL DESIGN TOKEN REGISTRY (Agent 61)
+20P-A62: DYNAMIC EVOLUTIONARY UI — MOMENT CLASS • ADAPTIVE PLAY EMPHASIS (O111 / AGENT 62)
+20P-A69: O111 RESPONSIVE UI (Agent 69) — VIEWPORT BANDS • ADAPTIVE SHELL
+20P-A66: O111 AGENT 66 — DATA VISUALIZATION (presentation-only chart primitives)
+20P-A67: CONTEXTUAL INFORMATION — RANKING SNIPPETS FOR PLAY (O111 Agent 67)
+20P-A68: OPERATION 111 ACCESSIBILITY ENGINEER — PLAY A11Y PROFILE
+20P-A70: INTERACTION FEEDBACK — BLOCKED TAPS & IMMEDIATE ACKNOWLEDGEMENT (Agent 70)
+20P-A8: O111 TRANSACTION SAFETY — ATOMIC COMMITS • FAILED = NO EFFECT • PURE PREVIEW
 20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
 20R: V9.6 HUMAN VS AI FIDELITY — THINK → ACT → RE-EVALUATE → KNOW WHEN TO STOP → END TURN
 20S: V10.0 NATIONAL SYSTEMS & INTERREGIONAL NETWORKS
+20G-A64: O111 AGENT 64 — STRATEGIC PLAY DASHBOARD (V10-P1 / V10-P3)
 20T: V10.1 INDUSTRIES & SUPPLY CHAINS
 20U: V10.2 STRATEGIC INFRASTRUCTURE NETWORKS
 20V: V10.3 NATIONAL MEGAPROJECTS
@@ -514,6 +525,7 @@ export const SOURCE_FILE_SECTION_HEADER_SNAPSHOT = `1: IMPORTS
 20AD PART 3: UI SURFACES, INSPECTOR & 52-TEST SELF-TEST SUITE (V10.11)
 20AE: V10.12 PUBLIC FINANCE, NATIONAL BUDGET & FISCAL CAPACITY
 20AF: V10.13 HOUSEHOLDS, LIVING STANDARDS & DOMESTIC DEMAND
+20AG: V10.14 UNIFIED NATIONAL LAYER (Operation 111 — Agents 21,25,29,30,36,40,55,109)
 21A: SOURCE ARCHITECTURE SELF-TESTS (Operation 111 / Agent 02)
 21B: RELIABILITY UPGRADE — FOCUSED REGRESSION SELF-TESTS
 22: FINAL EXPORT`;
@@ -21731,6 +21743,10 @@ export function buildSaveData(
   } as SaveGameData;
 }
 
+/**
+ * Legacy hydration helper for tests and partial payloads. Live UI loads must use
+ * prepareSaveLoadTransaction → verifySaveLoadCandidate → v95MigrateSaveForLoad → the in-app apply callback (Section 21B).
+ */
 export function applyLoadedState(saveData: unknown): {
   gameState: any;
   gameSettings: GameSettingsState;
@@ -137510,6 +137526,128 @@ export function runO111IntegrationSelfTests(): V9SelfTestResult[] {
 
   return results;
 }
+
+// ============================================================================
+// SECTION 20P-A8: O111 TRANSACTION SAFETY — ATOMIC COMMITS • FAILED = NO EFFECT • PURE PREVIEW
+// ============================================================================
+// Agent 82 (Division I). Three canonical transaction boundaries:
+//   1) Gameplay — reduceGameAction clones, then mutates the clone; callers apply nextState only when success is true
+//   2) Save/load — prepareSaveLoadTransaction + verifySaveLoadCandidate are pure; the live match stays untouched until commit
+//   3) Settings — applySmartSettingsPlan / undoSmartSettingsTransaction keep priorValues for an exact rollback
+
+export type O111TransactionBoundary = 'gameplay_action' | 'save_load' | 'settings_apply';
+
+/** Stable JSON snapshot for transaction audits (test fingerprint, not a hash primitive). */
+export function o111TransactionSnapshot(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '';
+  }
+}
+
+/** True when the live input object was not mutated. */
+export function o111InputStateUntouched(beforeJson: string, inputAfter: unknown): boolean {
+  return beforeJson.length > 0 && beforeJson === o111TransactionSnapshot(inputAfter);
+}
+
+/**
+ * Gameplay transaction helper: runs reduceGameAction and reports whether the caller's input tree stayed intact.
+ * Economic and action-point effects stay gated on `result.success` before `result.nextState` is copied into live slices.
+ */
+export function runO111GameplayActionTransaction(
+  state: CanonicalGameState,
+  action: GameAction,
+  context?: ActionExecutionContext
+): ActionTransitionResult & { inputUntouched: boolean } {
+  const before = o111TransactionSnapshot(state);
+  const result = reduceGameAction(state, action, context);
+  return { ...result, inputUntouched: o111InputStateUntouched(before, state) };
+}
+
+export function runO111TransactionSafetySelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try {
+      const r = fn();
+      results.push({ id, name, passed: r === true, detail: r === true ? 'ok' : String(r) });
+    } catch (err) {
+      results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  };
+  const runtime = (money: number): any => {
+    const save = createV95SaveFixture({ day: 2, money });
+    return {
+      ...JSON.parse(JSON.stringify(save.gameState)),
+      gameSettings: { ...DEFAULT_GAME_SETTINGS, actionLimitsEnabled: true, playerActionsPerDay: 3 },
+      player: { ...save.player, money },
+      aiPlayer: { ...save.aiPlayer, money },
+      actorsById: {
+        player: { ...save.player, money },
+        ai: { ...save.aiPlayer, money }
+      }
+    };
+  };
+
+  check('o111_tx01_input_intact', 'A refused region deposit does not mutate the caller input tree', () => {
+    const base = runtime(800);
+    const snap = o111TransactionSnapshot(base);
+    const tx = runO111GameplayActionTransaction(base, { type: 'region_deposit', actorId: 'player', targetRegion: 'VIC', investmentAmount: 50000 } as GameAction, { active: true, actorId: 'player' } as ActionExecutionContext);
+    const money = base.actorsById.player.money;
+    return (tx.inputUntouched && tx.success === false && money === 800 && snap === o111TransactionSnapshot(base)) || JSON.stringify({ ok: tx.success, money, touched: !tx.inputUntouched });
+  });
+
+  check('o111_tx02_negative_transfer', 'A non-positive transfer_cash fails closed and moves no cash', () => {
+    const base = runtime(2000);
+    const res = reduceGameAction(base, { type: 'transfer_cash', actorId: 'player', targetActorId: 'ai', price: -500 } as GameAction, { active: true, actorId: 'player' } as ActionExecutionContext);
+    const playerMoney = (res.nextState as any).actorsById.player.money;
+    const aiMoney = (res.nextState as any).actorsById.ai.money;
+    return (!res.success && playerMoney === 2000 && aiMoney === 2000) || JSON.stringify({ ok: res.success, playerMoney, aiMoney });
+  });
+
+  check('o111_tx03_save_tx_idempotent', 'prepareSaveLoadTransaction is idempotent on a valid fixture', () => {
+    const fixture = () => createV95SaveFixture({ day: 3, money: 1200 });
+    const a = prepareSaveLoadTransaction(JSON.stringify(fixture()));
+    const b = prepareSaveLoadTransaction(JSON.stringify(fixture()));
+    const stable = (data: any) => {
+      const copy = JSON.parse(JSON.stringify(data));
+      if (copy.campaignState) {
+        delete copy.campaignState.startedAt;
+        delete copy.campaignState.lastSavedAt;
+      }
+      return JSON.stringify(copy);
+    };
+    const samePayload = Boolean(a.data && b.data && stable(a.data) === stable(b.data));
+    const gameplay = a.data?.gameState?.day === 3 && (a.data?.player as any)?.money === 1200 && b.data?.gameState?.day === 3;
+    return (a.ok && b.ok && samePayload && gameplay) || `a=${a.ok} b=${b.ok} same=${samePayload} day=${a.data?.gameState?.day}`;
+  });
+
+  check('o111_tx04_reject_no_candidate', 'A rejected save load returns no candidate payload', () => {
+    const t = prepareSaveLoadTransaction('{"metadata":');
+    return (!t.ok && t.data === null && !t.report.loadable) || JSON.stringify({ ok: t.ok, data: t.data, loadable: t.report.loadable });
+  });
+
+  check('o111_tx05_verify_before_commit', 'verifySaveLoadCandidate rejects an empty payload before hydration', () => {
+    const v = verifySaveLoadCandidate({});
+    return (!v.ok && v.errors.length > 0) || v.errors.join('|');
+  });
+
+  check('o111_tx06_settings_undo', 'Smart Settings undo restores the exact prior match length', () => {
+    const settings = createDefaultGameSettings();
+    const before = settings.totalDays;
+    const plan = {
+      planId: 'o111_tx_plan',
+      changes: [{ settingKey: 'totalDays', proposedValue: before + 9, reason: 'O111 transaction undo' }]
+    };
+    const res = applySmartSettingsPlan(plan, settings, false);
+    if (res.updatedSettings.totalDays !== before + 9) return `apply=${res.updatedSettings.totalDays}`;
+    const undone = undoSmartSettingsTransaction(res.transaction, res.updatedSettings);
+    return undone.totalDays === before || `${undone.totalDays} vs ${before}`;
+  });
+
+  return results;
+}
+
 // SECTION 20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
 // ============================================================================
 // Local-only diagnostics. No network, workers, telemetry or storage writes happen in this section; every
@@ -140203,6 +140341,8 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'src_arch', label: 'Source architecture map (SECTION 1A)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runSourceArchitectureSelfTests() },
   { id: 'progression', label: 'Progression integration (O111-15)', tier: 'quick', section: 'Critical Invariants', severity: 'MAJOR', run: () => runProgressionIntegrationSelfTests() },
   { id: 'reliability', label: 'Reliability upgrade regressions', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runReliabilityUpgradeSelfTests() },
+  { id: 'o111-a8', label: 'O111 Transaction Safety', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runO111TransactionSafetySelfTests() },
+  { id: 'o111-e2e', label: 'O111 End-to-End Gameplay (Agent 97)', tier: 'quick', section: 'System Regression', severity: 'CRITICAL', run: () => runO111EndToEndGameplaySelfTests() },
   { id: 'idle76', label: 'O111 Idle Gameplay (Agent 76)', tier: 'quick', section: 'AI Turn Reliability', severity: 'MAJOR', run: () => runIdleGameplaySelfTests() },
   { id: 'o111_i81', label: 'O111 Agent 81 — State invariants', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runO111Agent81StateInvariantSelfTests() },
   { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
@@ -175895,7 +176035,7 @@ export function computeNationalPublicFinance(
       sourceSystem: isRec ? 'systemic_risk' : 'crisis_response',
       sourceId: cr.id,
       category: isRec ? 'recovery' : 'emergency',
-      regionIds: cr.regionIds.length ? cr.regionIds : ['QLD'],
+      regionIds: cr.regionIds?.length ? cr.regionIds : ['QLD'],
       commitmentType: isRec ? 'recovery' : 'emergency',
       fiscalLoad: baseLoad,
       loadBand: toLoadBand(baseLoad),
@@ -186200,6 +186340,7 @@ export function runV1013HouseholdsLivingStandardsSelfTests(): {
 // ============================================================================
 // Shared core + submodules. Single schema version and clamp helpers.
 export const V1014_SCHEMA_VERSION = '10.14.0';
+export const V1014_CORE_REGIONS: readonly string[] = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'] as const;
 export const V1014_LIMITS = {
   maxEvidence: 10,
   maxHistory: 16,
@@ -191333,17 +191474,61 @@ export function runV1014NationalWellbeingSelfTests(): {
 // ============================================================================
 
 export function runV1014UnifiedSelfTests(): V9SelfTestResult[] {
-  return [
-    ...runV1014NationalMacroeconomySelfTests(),
-    ...runV1014InflationPriceDynamicsSelfTests(),
-    ...runV1014CorporateSectorSelfTests(),
-    ...runV1014EconomicAnalyticsSelfTests(),
-    ...runV1014PopulationDynamicsSelfTests(),
-    ...runV1014PublicServicesSelfTests(),
-    ...runV1014NationalPolicySystemsSelfTests(),
-    ...runV1014NationalWellbeingSelfTests(),
+  const runners: Array<[string, () => unknown]> = [
+    ['macroeconomy', runV1014NationalMacroeconomySelfTests],
+    ['inflation', runV1014InflationPriceDynamicsSelfTests],
+    ['corporate', runV1014CorporateSectorSelfTests],
+    ['analytics', runV1014EconomicAnalyticsSelfTests],
+    ['population', runV1014PopulationDynamicsSelfTests],
+    ['public_services', runV1014PublicServicesSelfTests],
+    ['policy', runV1014NationalPolicySystemsSelfTests],
+    ['wellbeing', runV1014NationalWellbeingSelfTests],
   ];
+  const rows: V9SelfTestResult[] = [];
+  for (const [name, run] of runners) {
+    let pack: unknown;
+    try {
+      pack = run();
+    } catch (err) {
+      rows.push({ id: `v1014_${name}_threw`, name: `V10.14 ${name} suite threw`, passed: false, detail: err instanceof Error ? err.message : String(err) });
+      continue;
+    }
+    const list = Array.isArray(pack) ? pack : ((pack as { results?: Array<{ id?: string; name?: string; passed?: boolean; detail?: string }> }).results || []);
+    for (const row of list) {
+      rows.push({
+        id: String(row.id || row.name || `v1014_${name}`),
+        name: String(row.name || row.id || `V10.14 ${name}`),
+        passed: row.passed === true,
+        detail: row.passed === true ? 'ok' : String(row.detail || 'failed')
+      });
+    }
+  }
+  return rows;
 }
+
+// ============================================================================
+// SECTION 21A: SOURCE ARCHITECTURE SELF-TESTS (Operation 111 / Agent 02)
+// ----------------------------------------------------------------------------
+// Confirms the embedded section catalog still describes this file. The on-disk
+// marker list is checked by tests/source-architecture.mjs; this suite checks
+// the constants the catalog publishes.
+// ============================================================================
+export function runSourceArchitectureSelfTests(): V9SelfTestResult[] {
+  const snapshot = SOURCE_FILE_SECTION_HEADER_SNAPSHOT.trim().split('\n').filter(Boolean);
+  const ids = SOURCE_FILE_SECTION_INDEX.map(s => s.id);
+  const unique = new Set(ids).size === ids.length;
+  const phantom = SOURCE_FILE_SECTION_INDEX.find(s => s.id === '18');
+  const v94 = SOURCE_FILE_SECTION_INDEX.find(s => s.id === '20P');
+  const rows: Array<[string, string, boolean, string]> = [
+    ['arch_count', 'Embedded section snapshot length matches the published marker count', snapshot.length === SOURCE_FILE_SECTION_MARKER_COUNT, `${snapshot.length} vs ${SOURCE_FILE_SECTION_MARKER_COUNT}`],
+    ['arch_ids', 'Section index ids are unique', unique, 'duplicate id'],
+    ['arch_phantom', 'Section 18 stays a reserved numbering gap', Boolean(phantom?.reserved), 'section 18 is not reserved'],
+    ['arch_20p', 'Section 20P stays the V9.4 player-experience layer', v94?.family === 'v9-player' && v94?.layer === 6, `${v94?.family}/${v94?.layer}`],
+    ['arch_version', 'Architecture version pin is op111-agent02-v1', SOURCE_FILE_ARCHITECTURE_VERSION === 'op111-agent02-v1', String(SOURCE_FILE_ARCHITECTURE_VERSION)],
+  ];
+  return rows.map(([id, name, passed, detail]) => ({ id, name, passed, detail: passed ? 'ok' : detail }));
+}
+
 // SECTION 21B: RELIABILITY UPGRADE — FOCUSED REGRESSION SELF-TESTS
 // ----------------------------------------------------------------------------
 // One check per substantive reliability fix (crash, accounting, lifecycle, determinism, gating).
@@ -191512,6 +191697,131 @@ export function runReliabilityUpgradeSelfTests(): V9SelfTestResult[] {
       canon.actorsById.rival_x?.id === 'rival_x'
     ) || JSON.stringify({ keys: Object.keys(map), canonKeys: Object.keys(canon.actorsById || {}) });
   });
+  return results;
+}
+
+// ============================================================================
+// Operation 111 / Agent 97 — End-to-end gameplay smoke (integration plan §7.2–7.4)
+// Pure reducer + save/load paths; maps to regression rows R4–R9, R11–R13, R20.
+// ============================================================================
+export function runO111EndToEndGameplaySelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  const runtime = (money = 8000): any => {
+    const save = createV95SaveFixture({ day: 2, money });
+    const player = { ...save.player, money, inventory: [] as string[], actionsUsedThisTurn: 0 };
+    const ai = { ...save.aiPlayer, money };
+    return {
+      ...JSON.parse(JSON.stringify(save.gameState)),
+      gameMode: 'game',
+      selectedMode: 'ai',
+      currentTurn: 'player',
+      currentActorId: 'player',
+      turnCounter: 4,
+      day: 2,
+      gameSettings: createDefaultGameSettings(),
+      player,
+      aiPlayer: ai,
+      actorsById: { player, ai }
+    };
+  };
+
+  check('e2e_r4_menu_to_game', 'R4: SET_GAME_MODE enters an active match from the menu', () => {
+    const menu = { ...JSON.parse(JSON.stringify(initialGameState)), gameMode: 'menu', day: 1, turnCounter: 1 };
+    const started = gameStateReducer(menu, { type: 'SET_GAME_MODE', payload: 'game' });
+    return (started.gameMode === 'game' && started.day === menu.day) || `${started.gameMode}/${started.day}`;
+  });
+
+  check('e2e_r4_reset_game', 'R4: RESET_GAME returns core turn counters to a fresh baseline', () => {
+    const mid = { ...JSON.parse(JSON.stringify(initialGameState)), gameMode: 'game', day: 9, turnCounter: 40, currentActorId: 'ai' };
+    const reset = gameStateReducer(mid, { type: 'RESET_GAME' });
+    return (reset.turnCounter === initialGameState.turnCounter && reset.currentActorId === initialGameState.currentActorId && reset.gameMode === 'game')
+      || `${reset.turnCounter}/${reset.currentActorId}/${reset.gameMode}`;
+  });
+
+  check('e2e_r5_save_load', 'R5: Save JSON round-trips through prepareSaveLoadTransaction + applyLoadedState', () => {
+    const fixture = createV95SaveFixture({ day: 7, money: 4321 });
+    const txn = prepareSaveLoadTransaction(JSON.stringify(fixture));
+    if (!txn.ok || !txn.data) return txn.report.fatalErrors.join('|') || 'load failed';
+    const applied = applyLoadedState(txn.data);
+    return (applied.gameState.day === 7 && (txn.data.player as any).money === 4321 && txn.report.integrityStatus === 'intact')
+      || JSON.stringify({ day: applied.gameState.day, money: (txn.data.player as any)?.money, integrity: txn.report.integrityStatus });
+  });
+
+  check('e2e_r6_settings_persist', 'R6: Match length survives save → load', () => {
+    const fixture = createV95SaveFixture();
+    const customDays = (fixture.gameSettings.totalDays || DEFAULT_GAME_SETTINGS.totalDays) + 11;
+    fixture.gameSettings.totalDays = customDays;
+    const txn = prepareSaveLoadTransaction(JSON.stringify(fixture));
+    if (!txn.ok || !txn.data) return txn.report.fatalErrors.join('|') || 'load failed';
+    const applied = applyLoadedState(txn.data);
+    return applied.gameSettings.totalDays === customDays || `${applied.gameSettings.totalDays} vs ${customDays}`;
+  });
+
+  check('e2e_r8_end_turn', 'R8: end_turn advances the turn counter', () => {
+    const base = runtime();
+    const ended = reduceGameAction(base, { type: 'end_turn', actorId: 'player' } as GameAction, { active: true, actorId: 'player' } as ActionExecutionContext);
+    const next: any = ended.nextState;
+    return (ended.success && next.turnCounter === base.turnCounter + 1 && next.gameState.turnCounter === base.turnCounter + 1)
+      || JSON.stringify({ ok: ended.success, root: next.turnCounter, nested: next.gameState?.turnCounter });
+  });
+
+  check('e2e_r9_settings_undo', 'R9: Smart settings apply + undo restores the prior match length', () => {
+    const baseline = createDefaultGameSettings();
+    const before = baseline.totalDays;
+    const plan = { planId: 'o111_e2e_undo', changes: [{ settingKey: 'totalDays', proposedValue: before + 9, reason: 'O111 E2E undo probe' }] };
+    const applied = applySmartSettingsPlan(plan, baseline, false);
+    if (applied.updatedSettings.totalDays !== before + 9) return `apply=${applied.updatedSettings.totalDays}`;
+    const reverted = undoSmartSettingsTransaction(applied.transaction, applied.updatedSettings);
+    return reverted.totalDays === before || `${reverted.totalDays} vs ${before}`;
+  });
+
+  check('e2e_r11_region_deposit', 'R11: region_deposit moves cash into that region', () => {
+    const base = runtime(8000);
+    const amount = 500;
+    const r = reduceGameAction(base, { type: 'region_deposit', actorId: 'player', targetRegion: 'NSW', investmentAmount: amount } as GameAction, { active: true, actorId: 'player' } as ActionExecutionContext);
+    const next: any = r.nextState;
+    const deposit = next.gameState?.regionDeposits?.NSW?.player;
+    const money = next.actorsById?.player?.money;
+    const prior = base.regionDeposits?.NSW?.player || 0;
+    return (r.success && money === 8000 - amount && deposit === prior + amount)
+      || JSON.stringify({ ok: r.success, money, deposit, prior });
+  });
+
+  check('e2e_r12_travel_region', 'R12: travel selects a real region', () => {
+    const base = runtime(5000);
+    const r = reduceGameAction(base, { type: 'travel', actorId: 'player', parameters: { region: 'WA' } } as GameAction, { active: true, actorId: 'player' } as ActionExecutionContext);
+    const region = (r.nextState as any).actorsById?.player?.currentRegion;
+    return (r.success !== false && region === 'WA') || `${r.success}/${region}`;
+  });
+
+  check('e2e_r13_buy_market', 'R13: buy_market completes a priced trade', () => {
+    const base = runtime(5000);
+    const r = reduceGameAction(base, { type: 'buy_market', actorId: 'player', price: 40, parameters: { resource: 'wool', quantity: 2 } } as GameAction, { active: true, actorId: 'player' } as ActionExecutionContext);
+    const actor = (r.nextState as any).actorsById?.player;
+    const wool = (actor?.inventory || []).filter((item: string) => item === 'wool').length;
+    return (r.success && wool === 2 && actor.money === 5000 - 80) || JSON.stringify({ ok: r.success, wool, money: actor?.money });
+  });
+
+  check('e2e_r20_ten_turns', 'R20: ten consecutive end_turn steps complete', () => {
+    let st = runtime();
+    st.turnCounter = 1;
+    st.gameState = { ...st.gameState, turnCounter: 1 };
+    for (let i = 0; i < 10; i += 1) {
+      const step = reduceGameAction(st, { type: 'end_turn', actorId: 'player' } as GameAction, { active: true, actorId: 'player' } as ActionExecutionContext);
+      if (!step.success) return `failed at step ${i + 1}`;
+      st = step.nextState as any;
+    }
+    return (st.turnCounter === 11 && st.gameState.turnCounter === 11) || `${st.turnCounter}/${st.gameState?.turnCounter}`;
+  });
+
   return results;
 }
 

@@ -1,0 +1,17 @@
+[HANDOFF_COMMITTED] nextActorId=ai sessionStatus=undefined
+[HANDOFF_COMMITTED] nextActorId=ai sessionStatus=undefined
+[HANDOFF_COMMITTED] nextActorId=player sessionStatus=undefined
+PASS o111_int_r5_save_load_reducer: Save round-trip → LOAD_STATE restores match day and treasury (R5)
+PASS o111_int_r6_settings_chain: Match-scoped settings survive load and remain on runtime (R6)
+PASS o111_int_r7_migration_smoke: Legacy gameVersion migrates through v95MigrateSaveForLoad (R7)
+PASS o111_int_r8_turn_order: ADVANCE_ACTOR_TURN cycles player → ai on loaded fixture (R8)
+PASS o111_int_r8b_turn_counter: Two actor advances bump turnCounter without skipping human claim semantics (R8)
+PASS o111_int_r9_partial_load: Partial LOAD_STATE preserves AI thinking; full payload clears it (R9 / undo-safe load)
+PASS o111_int_r12_region_travel: Travel action updates region on canonical runtime (R12 smoke)
+PASS o111_int_r13_market_work: Work action mutates treasury on canonical runtime (R13 production smoke)
+PASS o111_int_r16_guardian_notify: Guardian notify-only mode allows risky action without blocking (R16 advisory)
+PASS o111_int_canonical_reducer_chain: Save → runtime → reduceGameAction keeps injected actor money (cross-layer)
+PASS o111_int_build_save_roundtrip: buildSaveData → prepareSaveLoadTransaction accepts fresh snapshot (R5 helper path)
+PASS o111_int_isolated_globals: Integration checks do not advance global RNG counters when isolated
+
+12/12 passed

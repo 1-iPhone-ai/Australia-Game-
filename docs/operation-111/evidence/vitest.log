@@ -1,0 +1,11 @@
+
+ RUN  v3.2.4 /workspace
+
+ ✓ tests/dev-infra.test.ts (3 tests) 61ms
+ ✓ src/save-compatibility/save-compatibility.test.ts (10 tests) 59ms
+
+ Test Files  2 passed (2)
+      Tests  13 passed (13)
+   Start at  17:24:33
+   Duration  753ms (transform 70ms, setup 0ms, collect 80ms, tests 119ms, environment 0ms, prepare 85ms)
+

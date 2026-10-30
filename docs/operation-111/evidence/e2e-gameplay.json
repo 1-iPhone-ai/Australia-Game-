@@ -1,0 +1,69 @@
+{
+  "suite": "o111-e2e-gameplay",
+  "total": 10,
+  "passed": 10,
+  "failedCount": 0,
+  "results": [
+    {
+      "id": "e2e_r4_menu_to_game",
+      "name": "R4: SET_GAME_MODE enters an active match from the menu",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "id": "e2e_r4_reset_game",
+      "name": "R4: RESET_GAME returns core turn counters to a fresh baseline",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "id": "e2e_r5_save_load",
+      "name": "R5: Save JSON round-trips through prepareSaveLoadTransaction + applyLoadedState",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "id": "e2e_r6_settings_persist",
+      "name": "R6: Match length survives save → load",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "id": "e2e_r8_end_turn",
+      "name": "R8: end_turn advances the turn counter",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "id": "e2e_r9_settings_undo",
+      "name": "R9: Smart settings apply + undo restores the prior match length",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "id": "e2e_r11_region_deposit",
+      "name": "R11: region_deposit moves cash into that region",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "id": "e2e_r12_travel_region",
+      "name": "R12: travel selects a real region",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "id": "e2e_r13_buy_market",
+      "name": "R13: buy_market completes a priced trade",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "id": "e2e_r20_ten_turns",
+      "name": "R20: ten consecutive end_turn steps complete",
+      "passed": true,
+      "detail": "ok"
+    }
+  ],
+  "failed": []
+}

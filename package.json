@@ -19,6 +19,8 @@
     "test:integration:gate-b2": "node scripts/run-o111-integration-gate.mjs b2",
     "test:integration:gate-final": "node scripts/run-o111-integration-gate.mjs final",
     "test:state-invariants": "npx --yes tsx scripts/run-agent-81-invariant-tests.ts",
+    "test:transactions": "npx --yes tsx scripts/run-transaction-safety-self-tests.mjs",
+    "test:e2e-gameplay": "npx --yes tsx scripts/run-e2e-gameplay-self-tests.mjs",
     "verify": "npm run verify:standalone && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {

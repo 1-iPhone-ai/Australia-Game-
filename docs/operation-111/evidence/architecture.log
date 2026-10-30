@@ -1,0 +1,10 @@
+ok: 72 section markers on disk
+FAIL: snapshot length 413 !== on-disk 72
+ok: architecture version pin present
+ok: in-file architecture self-test suite exported
+ok: release suite registers src_arch
+ok: 61 indexed sections with unique ids
+ok: phantom section 18 documents numbering gap
+ok: V9.4 section 20P catalogued as v9-player layer 6
+
+Source architecture gate failed.

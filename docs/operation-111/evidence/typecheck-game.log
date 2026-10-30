@@ -1,0 +1,5 @@
+
+> typecheck:game
+> node scripts/typecheck-game-baseline.mjs
+
+Game TSX typecheck at baseline: 186 errors.

@@ -1,0 +1,7 @@
+PASS o111_i81_f15_no_nesting_on_actions: F15: repeated canonical actions do not deepen gameState nesting
+PASS o111_i81_f15_detects_artificial: F15 detector flags artificial gameState.gameState nesting
+PASS o111_i81_canonical_idempotent: canonicalStateFromLiveRuntime is idempotent on canonical input
+PASS o111_i81_structural_on_fixture: Structural + critical invariants pass on the V95 save fixture
+PASS o111_i81_stress_nesting_bounded: Long-match stress keeps canonical nesting at zero extra layers
+
+All 5 Agent 81 state-invariant checks passed.

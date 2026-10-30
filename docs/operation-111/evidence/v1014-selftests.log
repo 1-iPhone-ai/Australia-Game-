@@ -1,0 +1,32 @@
+{
+  "total": 110,
+  "passed": 105,
+  "failedCount": 5,
+  "sample": [
+    {
+      "id": "ce05",
+      "name": "Strong industry snapshot yields supportive-or-better climate",
+      "detail": "distressed"
+    },
+    {
+      "id": "ce13",
+      "name": "Evidence list bounded",
+      "detail": "evidence=5"
+    },
+    {
+      "id": "ce14",
+      "name": "History capped on sanitize",
+      "detail": "len=40"
+    },
+    {
+      "id": "v1014_analytics_threw",
+      "name": "V10.14 analytics suite threw",
+      "detail": "Cannot read properties of undefined (reading 'replace')"
+    },
+    {
+      "id": "PS5",
+      "name": "Climate agenda lifts environmental coherence",
+      "detail": "97.31818181818183 vs 98.83333333333334"
+    }
+  ]
+}
