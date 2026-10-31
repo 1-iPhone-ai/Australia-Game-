@@ -86466,6 +86466,8 @@ export const SETTINGS_WINDOW_CSS = `
 
 
 export const PHONE_PLAY_CSS = `
+.phone-status-line { display: contents; }
+.phone-change-control { display: none !important; }
 @media (max-width: 639px) {
   html, body, #root, .phone-play-root { overflow-x: hidden; max-width: 100%; }
   .phone-has-bar { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
@@ -86477,27 +86479,20 @@ export const PHONE_PLAY_CSS = `
   .phone-action-bar button { min-height: 44px; min-width: 0; flex: 1 1 0; padding: 2px; overflow: hidden; font-size: 10px; line-height: 1.05; white-space: normal; display: flex; flex-direction: column; align-items: center; justify-content: center; }
   .phone-more-sheet { position: fixed; left: 0; right: 0; bottom: calc(64px + env(safe-area-inset-bottom, 0px)); z-index: 41; max-height: 70vh; overflow: auto; background: #0f172a; border-top-left-radius: 16px; border-top-right-radius: 16px; padding: 8px 8px 12px; }
   .phone-more-sheet button { min-height: 44px; min-width: 44px; }
-  .phone-toast { max-height: 12vh; overflow: hidden; }
-  .phone-toast button { min-height: 44px; max-height: 12vh; }
+  .phone-toast button { min-height: 44px; max-height: none; height: auto; }
   .phone-play-root { display: flex; flex-direction: column; }
   .phone-play-root > * { order: 9; max-width: 100%; min-width: 0; }
   [data-testid="v9-play-hud"] { display: contents; }
   [data-testid="v9-play-hud"] > * { order: 8; }
   [data-testid="v9-match-header"] { order: 1; }
-  [data-testid="v9-header"] { order: 2; display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; align-items: center !important; gap: 4px !important; margin: 0 0 8px !important; width: 100%; max-width: 100%; min-width: 0; }
-  [data-testid="v9-header"] > div { min-width: 0; align-self: center !important; }
-  [data-testid="v9-header"] > div:first-child { flex: 1.35 1 0; }
-  [data-testid="v9-header"] > div:last-child { flex: 1 1 0; }
-  [data-testid="v9-layer-nav"] { width: 100%; min-width: 0; }
-  [data-testid="v9-layer-nav"] button { min-width: 44px !important; min-height: 44px; flex: 1 1 auto; padding: 2px 1px !important; font-size: 8px !important; letter-spacing: 0 !important; gap: 0 !important; justify-content: center; overflow: hidden; }
+  .phone-status-line { display: flex; flex: 1 0 100%; align-items: center; flex-wrap: wrap; gap: 6px 8px; width: 100%; min-width: 0; }
+  .phone-change-control { display: inline-flex !important; align-items: center; justify-content: center; margin-left: auto; min-height: 44px; padding: 0 4px; background: transparent; border: 0; color: inherit; font-size: 13px; line-height: 1.1; font-weight: 600; text-decoration: underline; white-space: nowrap; }
+  [data-testid="v9-header"] { order: 2; display: block !important; margin: 0 0 8px !important; width: 100%; max-width: 100%; min-width: 0; }
+  [data-testid="v9-header"] > div:first-child { width: 100%; max-width: 100%; min-width: 0; }
+  [data-testid="v9-header"] > div:last-child { display: none !important; }
+  [data-testid="v9-layer-nav"] { width: 100%; min-width: 0; display: flex !important; }
+  [data-testid="v9-layer-nav"] button { flex: 1 1 0 !important; width: 0; min-width: 0 !important; min-height: 44px; padding: 4px 1px !important; font-size: 13px !important; letter-spacing: 0 !important; gap: 0 !important; justify-content: center; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   [data-testid="v9-layer-nav"] button > span[aria-hidden="true"] { display: none; }
-  [data-testid="v9-control-status"] { flex-direction: row !important; align-items: center !important; gap: 2px !important; padding: 2px !important; min-width: 0; width: 100%; }
-  [data-testid="v9-control-status"] > div:first-child { min-width: 0; flex: 1 1 auto; }
-  [data-testid="v9-control-status"] > div:first-child > span { display: none; }
-  [data-testid="v9-control-status"] > div:first-child .text-xs { display: none !important; }
-  [data-testid="v9-control-status"] > div:last-child { flex: 0 0 auto; }
-  [data-testid="v9-control-status"] .font-extrabold { font-size: 8px; white-space: nowrap; letter-spacing: 0; padding: 1px 3px; }
-  [data-testid="v9-control-status"] button { flex: 0 0 auto; min-width: max-content !important; min-height: 44px; padding: 2px 4px !important; font-size: 8px !important; white-space: nowrap; overflow: visible; }
   [data-testid="gl-welcome"] { order: 3; }
   [data-testid="v9-cohesion-play"] { order: 4; }
   .phone-board { order: 5; display: flex; flex-direction: column; width: 100%; min-width: 0; max-width: 100%; }
@@ -86510,12 +86505,11 @@ export const PHONE_PLAY_CSS = `
   .phone-extra-strips > .phone-more-summary, .phone-rest-after > .phone-more-summary { display: none; }
   .phone-more-summary { display: flex; align-items: center; min-height: 44px; font-weight: 700; cursor: pointer; }
   .australia-map-stage:not([data-real-map="true"]) { height: auto !important; display: grid !important; grid-template-columns: 1fr 1fr; gap: 8px; overflow: hidden; padding: 8px; min-width: 0; max-width: 100%; }
-  .australia-map-stage:not([data-real-map="true"]) > [role="button"] { position: relative !important; left: auto !important; top: auto !important; transform: none !important; min-height: 44px; min-width: 0; width: 100%; display: flex; flex-direction: column; align-items: center; overflow: hidden; }
-  .australia-map-stage:not([data-real-map="true"]) > [role="button"] > div:first-child { width: 100% !important; height: auto !important; min-height: 44px; min-width: 0; border-radius: 12px; flex-direction: column; padding: 6px; white-space: normal; position: relative; }
+  .australia-map-stage:not([data-real-map="true"]) > [role="button"] { position: relative !important; left: auto !important; top: auto !important; transform: none !important; min-height: 44px; min-width: 0; width: 100%; display: flex; flex-direction: row; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; justify-content: flex-start; overflow: hidden; gap: 4px; }
+  .australia-map-stage:not([data-real-map="true"]) > [role="button"] > div:first-child { flex: 1 0 100%; width: 100% !important; height: auto !important; min-height: 44px; min-width: 0; border-radius: 12px; flex-direction: column; align-items: flex-start !important; justify-content: center !important; text-align: left; padding: 6px; white-space: normal; position: relative; }
   .australia-map-stage:not([data-real-map="true"]) [data-testid="map-you-marker"],
-  .australia-map-stage:not([data-real-map="true"]) [data-testid="map-rival-marker"] { position: absolute !important; top: 2px; right: 2px; left: auto !important; bottom: auto !important; transform: none !important; margin: 0 !important; width: max-content !important; max-width: 70%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 10px; line-height: 1.1; padding: 1px 4px !important; z-index: 3; min-height: 0 !important; min-width: 0 !important; }
-  .australia-map-stage:not([data-real-map="true"]) [data-testid="map-rival-marker"] { top: 16px; }
-  .phone-region-name { display: block; font-size: 11px; font-weight: 600; white-space: normal; text-align: center; line-height: 1.15; }
+  .australia-map-stage:not([data-real-map="true"]) [data-testid="map-rival-marker"] { position: static !important; order: 2; top: auto !important; right: auto !important; left: auto !important; bottom: auto !important; transform: none !important; margin: 8px 4px 0 0 !important; width: max-content !important; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 10px; line-height: 1.1; padding: 1px 4px !important; z-index: auto; min-height: 0 !important; min-width: 0 !important; flex: 0 1 auto; }
+  .phone-region-name { display: block; font-size: 11px; font-weight: 600; white-space: normal; text-align: left; line-height: 1.15; }
   .phone-hide-action-bar { display: none !important; }
   [data-testid="v9-what-changed"] { display: none !important; }
   .phone-more-action { display: flex; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; min-height: 44px; margin-top: 6px; padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(148,163,184,0.35); background: #1e293b; text-align: left; box-sizing: border-box; }
@@ -86531,7 +86525,7 @@ export const PHONE_PLAY_CSS = `
   .phone-map-tools { display: flex; flex-direction: row; width: 100%; min-width: 0; gap: 8px; }
   .phone-map-tools > label, .phone-map-tools > button { flex: 1 1 0; width: 50%; max-width: calc(50% - 4px); min-width: 0 !important; overflow: hidden; box-sizing: border-box; }
   .phone-map-tools select { width: 100%; max-width: 100%; min-width: 0 !important; }
-  .phone-toast { position: fixed; left: 8px; right: 8px; top: var(--phone-toast-top, 72px); z-index: 35; max-height: 12vh; overflow: hidden; margin: 0; pointer-events: auto; }
+  .phone-toast { position: static; order: 2; left: auto; right: auto; top: auto; width: 100%; margin: 0 0 8px; z-index: auto; max-height: none; overflow: visible; pointer-events: auto; }
   .phone-play-root button, .phone-play-root a, .phone-play-root [role="button"], .phone-play-root select, .phone-play-root summary { min-height: 44px; min-width: 44px; }
   .fixed.inset-0 { padding: 0 !important; align-items: stretch !important; }
   .fixed.inset-0 > div { width: 100% !important; max-width: 100% !important; height: 100% !important; max-height: 100% !important; border-radius: 0 !important; display: flex; flex-direction: column; }
@@ -86543,6 +86537,8 @@ export const PHONE_PLAY_CSS = `
   .phone-region-name { display: none; }
   .phone-action-bar, .phone-more-sheet { display: none !important; }
   .phone-map-tools { display: contents; }
+  .phone-status-line { display: contents; }
+  .phone-change-control { display: none !important; }
 }
 `;
 
@@ -128702,7 +128698,7 @@ export function buildV9RegionContext(code: string, lr: LivingRegionsWorldView | 
 const V9_TONE: Record<'good' | 'warn' | 'bad' | 'info', string> = { good: 'border-emerald-500/60', warn: 'border-amber-500/70', bad: 'border-red-500/70', info: 'border-slate-500/50' };
 const V9_CONTROL_TONE: Record<V9Cohesion['header']['controlTone'], string> = { you: 'bg-emerald-600 text-white', copilot: 'bg-sky-600 text-white', rescue: 'bg-red-600 text-white', waiting: 'bg-slate-600 text-white' };
 
-export const V9MatchHeader: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() => void) | null; endTurnExtra?: React.ReactNode; onStanding: () => void; coachNode?: React.ReactNode; cashDelta?: UiFeedbackEvent | null; apDelta?: UiFeedbackEvent | null; apZero?: boolean; endgame?: boolean; onOpenSettings?: () => void }> = ({ c, theme, onEndTurn, endTurnExtra, onStanding, coachNode = null, cashDelta = null, apDelta = null, apZero = false, endgame = false, onOpenSettings }) => {
+export const V9MatchHeader: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() => void) | null; endTurnExtra?: React.ReactNode; onStanding: () => void; coachNode?: React.ReactNode; cashDelta?: UiFeedbackEvent | null; apDelta?: UiFeedbackEvent | null; apZero?: boolean; endgame?: boolean; onOpenSettings?: () => void; onChangeControl?: () => void }> = ({ c, theme, onEndTurn, endTurnExtra, onStanding, coachNode = null, cashDelta = null, apDelta = null, apZero = false, endgame = false, onOpenSettings, onChangeControl }) => {
   const h = c.header;
   const w = c.endTurnWarnings;
   return (
@@ -128711,9 +128707,12 @@ export const V9MatchHeader: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (()
         {onOpenSettings ? <button type="button" className={`${theme.buttonSecondary} sm:hidden min-h-[44px] min-w-[44px] rounded-lg px-2`} aria-label="Settings" data-testid="settings-open-button" onClick={onOpenSettings}>⚙️</button> : null}
         <span key={h.dayLabel} className="font-semibold v94-fade" data-testid="v94-day">{h.dayLabel}</span>
         <span key={h.turnLabel} className="font-extrabold v94-enter" data-testid="v9-turn-owner">{h.turnLabel}</span>
-        <span key={h.controlLabel} className={`v94-pop px-2 py-0.5 rounded-full text-xs font-extrabold ${V9_CONTROL_TONE[h.controlTone]}`} data-testid="v9-control-owner" role="status">{h.controlLabel}</span>
-        {h.apLabel && <FeelValue value={apZero ? <span className="font-bold text-amber-300">⚡ 0 actions left</span> : h.apLabel} valueKey={h.apLabel} delta={apDelta} testId="v94-ap" />}
-        <FeelValue value={<span className="font-bold">{h.cashLabel}</span>} valueKey={h.cashLabel} delta={cashDelta} testId="v94-cash" />
+        <span className="phone-status-line">
+          <span key={h.controlLabel} className={`v94-pop px-2 py-0.5 rounded-full text-xs font-extrabold ${V9_CONTROL_TONE[h.controlTone]}`} data-testid="v9-control-owner" role="status">{h.controlLabel}</span>
+          {h.apLabel && <FeelValue value={apZero ? <span className="font-bold text-amber-300">⚡ 0 actions left</span> : h.apLabel} valueKey={h.apLabel} delta={apDelta} testId="v94-ap" />}
+          <FeelValue value={<span className="font-bold">{h.cashLabel}</span>} valueKey={h.cashLabel} delta={cashDelta} testId="v94-cash" />
+          {onChangeControl ? <button type="button" className="phone-change-control" data-testid="phone-change-control" onClick={onChangeControl}>Change control</button> : null}
+        </span>
         <button type="button" className={`underline decoration-dotted ${endgame ? 'font-bold rounded px-1 border border-amber-500/60' : ''}`} onClick={onStanding} title="Match standing" data-testid="v94-win">{endgame ? '⏳ ' : ''}{h.winLabel}</button>
         {h.transitLabel && <span className="text-cyan-300" data-testid="v9-transit">{h.transitLabel}</span>}
         {h.critical && <span className="px-2 py-0.5 rounded bg-red-700 text-white text-xs font-bold" role="alert">⚠ {h.critical}</span>}
@@ -215767,23 +215766,6 @@ function dispatchGameSettingsChange(
       else if (text === '✕' || text === '×' || text === '✖') el.setAttribute('aria-label', 'Close');
     });
   });
-  useLayoutEffect(() => {
-    if (!phonePlay || typeof document === 'undefined') return;
-    const place = () => {
-      const header = document.querySelector('[data-testid="v9-match-header"]');
-      const tabs = document.querySelector('[data-testid="v9-header"]');
-      let bottom = header ? header.getBoundingClientRect().bottom : 56;
-      if (tabs && tabs.getClientRects().length) bottom = Math.max(bottom, tabs.getBoundingClientRect().bottom);
-      document.documentElement.style.setProperty('--phone-toast-top', Math.max(0, Math.ceil(bottom + 4)) + 'px');
-    };
-    place();
-    window.addEventListener('resize', place);
-    window.addEventListener('scroll', place, { passive: true });
-    return () => {
-      window.removeEventListener('resize', place);
-      window.removeEventListener('scroll', place);
-    };
-  });
   const v9AfterAction = useMemo<V9AfterAction | null>(() => {
     if (!swrEnabled || !swrState) return null;
     const pid = String(player?.id || 'player'); const tid = player?.teamId ? String(player.teamId) : null;
@@ -228583,7 +228565,7 @@ function dispatchGameSettingsChange(
       const critical = visibleNotifications.find(item => isSettingsCriticalAlert(item));
       const one = critical || visibleNotifications[0];
       const kind = String(one.type || one.notificationType || '').toLowerCase();
-      const dismissible = !isSettingsCriticalAlert(one) && !['warning', 'error'].includes(kind);
+      const dismissible = !isSettingsCriticalAlert(one);
       if (dismissible) {
         if (phoneShownToastRef.current.id !== String(one.id)) phoneShownToastRef.current = { id: String(one.id), at: Date.now() };
       } else if (phoneShownToastRef.current.id) {
@@ -231564,6 +231546,7 @@ function dispatchGameSettingsChange(
         <div role="tabpanel" id="v9-layer-panel-play" aria-labelledby="v9-layer-tab-play" className="mb-4 space-y-3 v94-fade" data-testid="v9-play-hud">
           <V9MatchHeader
             onOpenSettings={() => updateUiState({ showSettings: true, settingsWindowCategory: 'essentials', settingsPhonePane: 'list' })}
+            onChangeControl={playerControlState.owner !== 'ai_only' ? () => setExperienceLayer('intelligence') : undefined}
             c={v9Cohesion}
             theme={themeStyles}
             onEndTurn={v9HumanCanAct ? v9EndTurn : null}
@@ -233286,7 +233269,7 @@ function dispatchGameSettingsChange(
         </details>
         {/* Action Buttons Bar (V9: the complete action set — "More Actions" scrolls here) */}
         <div id="v9-all-actions-bar" />
-        {simplifiedActionBarActive ? (
+        {phonePlay ? null : simplifiedActionBarActive ? (
           <div className={`phone-hide-action-bar ${themeStyles.card} ${themeStyles.border} border rounded-xl p-3 mb-4 ${themeStyles.shadow}`}>
             <div className="flex flex-wrap gap-2 items-start">
               {renderActionDescriptor(actionDescriptors.saveLoad)}
