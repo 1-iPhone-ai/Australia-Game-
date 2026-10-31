@@ -86317,6 +86317,69 @@ export function runPhoneLayoutCheck(doc?: Document | null): { passed: boolean; r
     if (rect.width < 44 || rect.height < 44) small.push((el.getAttribute('aria-label') || el.textContent || el.tagName).replace(/\s+/g, ' ').trim().slice(0, 32));
   });
   results.push({ id: 'touch-targets', passed: small.length === 0, detail: small.length ? small.slice(0, 6).join(' | ') : 'Touch targets are at least 44px' });
+  const wide: string[] = [];
+  live.querySelectorAll('body *').forEach(node => {
+    const el = node as HTMLElement;
+    if (!el || el.closest('[hidden]')) return;
+    const tag = el.tagName;
+    if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'OPTION' || tag === 'HTML' || tag === 'BODY') return;
+    const cs = view.getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return;
+    if (rect.left >= -2 && rect.right <= vw + 2) return;
+    const name = (el.getAttribute('data-testid') || el.getAttribute('aria-label') || (typeof el.className === 'string' ? el.className : '') || tag).replace(/\s+/g, ' ').trim();
+    if (wide.length < 8) wide.push(name.slice(0, 60));
+  });
+  results.push({ id: 'within-viewport', passed: wide.length === 0, detail: wide.length ? 'Extends past the viewport: ' + wide.join(' | ') : 'Nothing extends past the viewport width' });
+  const toastEl = live.querySelector('[data-testid="notification-toast"]') as HTMLElement | null;
+  const headerEl = live.querySelector('[data-testid="v9-match-header"]') as HTMLElement | null;
+  if (toastEl && headerEl && toastEl.getClientRects().length && headerEl.getClientRects().length) {
+    const toastRect = toastEl.getBoundingClientRect();
+    const headerRect = headerEl.getBoundingClientRect();
+    const overlaps = toastRect.top < headerRect.bottom - 1 && toastRect.bottom > headerRect.top + 1 && toastRect.right > headerRect.left && toastRect.left < headerRect.right;
+    results.push({ id: 'toast-below-header', passed: !overlaps && toastRect.top + 1 >= headerRect.bottom, detail: overlaps || toastRect.top + 1 < headerRect.bottom ? 'Toast overlaps the header' : 'Toast sits below the header' });
+  } else {
+    results.push({ id: 'toast-below-header', passed: true, detail: toastEl ? 'Header is not on screen' : 'No toast is showing' });
+  }
+  const alwaysActions = ['saveLoad', 'workshop', 'resourceMarket', 'contracts', 'progress', 'negotiations', 'governance', 'automation', 'replay', 'diagnostics', 'settings', 'help', 'history', 'challenges', 'travel', 'market', 'endTurn', 'teamAiSettings'];
+  const sheet = live.querySelector('[data-testid="phone-more-sheet"]');
+  if (!live.querySelector('.phone-play-root')) {
+    results.push({ id: 'more-sheet-actions', passed: true, detail: 'Not on the play screen' });
+  } else if (!sheet) {
+    results.push({ id: 'more-sheet-actions', passed: false, detail: 'More sheet is missing' });
+  } else {
+    const have = new Set(Array.from(sheet.querySelectorAll('[data-phone-action]')).map(el => el.getAttribute('data-phone-action') || '').filter(Boolean));
+    const scraped = Array.from(live.querySelectorAll('.phone-hide-action-bar [data-action-id]')).map(el => el.getAttribute('data-action-id') || '').filter(Boolean);
+    const required = Array.from(new Set(alwaysActions.concat(scraped)));
+    if (sheet.getAttribute('data-loan-offered') === 'true') required.push('emergency_loan');
+    if (sheet.getAttribute('data-ability-offered') === 'true' && !required.includes('specialAbility')) required.push('specialAbility');
+    const missing = required.filter(id => !have.has(id));
+    results.push({ id: 'more-sheet-actions', passed: missing.length === 0, detail: missing.length ? 'Missing from More: ' + missing.join(', ') : 'More sheet has every action (' + required.length + ')' });
+  }
+  const playRoots = ['[data-testid="v9-match-header"]', '[data-testid="gl-welcome"]', '[data-testid="v9-cohesion-play"]', '.phone-map-col', '.phone-region-col']
+    .map(sel => live.querySelector(sel))
+    .filter((node): node is Element => Boolean(node));
+  const textCounts = new Map<string, number>();
+  let whatChanged = 0;
+  playRoots.forEach(root => {
+    root.querySelectorAll('section, p, h1, h2, h3, li, dt, div').forEach(node => {
+      const el = node as HTMLElement;
+      if (el.closest('.phone-more-sheet, .phone-action-bar, .phone-rest, .phone-toast')) return;
+      if (!el.getClientRects().length) return;
+      const pcs = view.getComputedStyle(el);
+      if (pcs.display === 'none' || pcs.visibility === 'hidden') return;
+      const direct = Array.from(el.childNodes).filter(child => child.nodeType === 3).map(child => child.textContent || '').join(' ').replace(/\s+/g, ' ').trim().toLowerCase();
+      if (direct === 'what changed') whatChanged += 1;
+      if (el.tagName === 'SECTION' && !el.querySelector('section')) {
+        const block = (el.innerText || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        if (block.length >= 24) textCounts.set(block, (textCounts.get(block) || 0) + 1);
+      }
+    });
+  });
+  const dupes = Array.from(textCounts.entries()).filter(([, count]) => count > 1).map(([label]) => label.slice(0, 48));
+  if (whatChanged > 1) dupes.unshift('what changed');
+  results.push({ id: 'play-column-duplicates', passed: dupes.length === 0, detail: dupes.length ? 'Repeated in PLAY: ' + dupes.slice(0, 4).join(' || ') : 'No repeated text block in the PLAY column' });
   return { passed: results.every(row => row.passed), results };
 }
 
@@ -86417,12 +86480,27 @@ export const PHONE_PLAY_CSS = `
   .phone-toast { max-height: 12vh; overflow: hidden; }
   .phone-toast button { min-height: 44px; max-height: 12vh; }
   .phone-play-root { display: flex; flex-direction: column; }
-  .phone-play-root > * { order: 4; max-width: 100%; }
+  .phone-play-root > * { order: 9; max-width: 100%; min-width: 0; }
   [data-testid="v9-play-hud"] { display: contents; }
-  [data-testid="v9-play-hud"] > * { order: 5; }
+  [data-testid="v9-play-hud"] > * { order: 8; }
   [data-testid="v9-match-header"] { order: 1; }
-  [data-testid="v9-cohesion-play"] { order: 2; }
-  .phone-board { order: 3; display: flex; flex-direction: column; width: 100%; }
+  [data-testid="v9-header"] { order: 2; display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; align-items: center !important; gap: 4px !important; margin: 0 0 8px !important; width: 100%; max-width: 100%; min-width: 0; }
+  [data-testid="v9-header"] > div { min-width: 0; align-self: center !important; }
+  [data-testid="v9-header"] > div:first-child { flex: 1.35 1 0; }
+  [data-testid="v9-header"] > div:last-child { flex: 1 1 0; }
+  [data-testid="v9-layer-nav"] { width: 100%; min-width: 0; }
+  [data-testid="v9-layer-nav"] button { min-width: 44px !important; min-height: 44px; flex: 1 1 auto; padding: 2px 1px !important; font-size: 8px !important; letter-spacing: 0 !important; gap: 0 !important; justify-content: center; overflow: hidden; }
+  [data-testid="v9-layer-nav"] button > span[aria-hidden="true"] { display: none; }
+  [data-testid="v9-control-status"] { flex-direction: row !important; align-items: center !important; gap: 2px !important; padding: 2px !important; min-width: 0; width: 100%; }
+  [data-testid="v9-control-status"] > div:first-child { min-width: 0; flex: 1 1 auto; }
+  [data-testid="v9-control-status"] > div:first-child > span { display: none; }
+  [data-testid="v9-control-status"] > div:first-child .text-xs { display: none !important; }
+  [data-testid="v9-control-status"] > div:last-child { flex: 0 0 auto; }
+  [data-testid="v9-control-status"] .font-extrabold { font-size: 8px; white-space: nowrap; letter-spacing: 0; padding: 1px 3px; }
+  [data-testid="v9-control-status"] button { flex: 0 0 auto; min-width: max-content !important; min-height: 44px; padding: 2px 4px !important; font-size: 8px !important; white-space: nowrap; overflow: visible; }
+  [data-testid="gl-welcome"] { order: 3; }
+  [data-testid="v9-cohesion-play"] { order: 4; }
+  .phone-board { order: 5; display: flex; flex-direction: column; width: 100%; min-width: 0; max-width: 100%; }
   .phone-map-col { order: 1; }
   .phone-map-col > :not(:first-child):not(.australia-map-stage) { display: none; }
   .phone-rest[open] ~ .phone-board .phone-map-col > :not(:first-child):not(.australia-map-stage) { display: block; }
@@ -86431,12 +86509,29 @@ export const PHONE_PLAY_CSS = `
   .phone-extra-strips { order: 7; }
   .phone-extra-strips > .phone-more-summary, .phone-rest-after > .phone-more-summary { display: none; }
   .phone-more-summary { display: flex; align-items: center; min-height: 44px; font-weight: 700; cursor: pointer; }
-  .australia-map-stage:not([data-real-map="true"]) { height: auto !important; display: grid !important; grid-template-columns: 1fr 1fr; gap: 8px; overflow: visible; padding: 8px; }
-  .australia-map-stage:not([data-real-map="true"]) > [role="button"] { position: relative !important; left: auto !important; top: auto !important; transform: none !important; min-height: 44px; min-width: 44px; display: flex; flex-direction: column; align-items: center; }
-  .australia-map-stage:not([data-real-map="true"]) > [role="button"] > div { width: 100% !important; height: auto !important; min-height: 44px; min-width: 44px; border-radius: 12px; flex-direction: column; padding: 6px; white-space: normal; }
+  .australia-map-stage:not([data-real-map="true"]) { height: auto !important; display: grid !important; grid-template-columns: 1fr 1fr; gap: 8px; overflow: hidden; padding: 8px; min-width: 0; max-width: 100%; }
+  .australia-map-stage:not([data-real-map="true"]) > [role="button"] { position: relative !important; left: auto !important; top: auto !important; transform: none !important; min-height: 44px; min-width: 0; width: 100%; display: flex; flex-direction: column; align-items: center; overflow: hidden; }
+  .australia-map-stage:not([data-real-map="true"]) > [role="button"] > div:first-child { width: 100% !important; height: auto !important; min-height: 44px; min-width: 0; border-radius: 12px; flex-direction: column; padding: 6px; white-space: normal; position: relative; }
   .australia-map-stage:not([data-real-map="true"]) [data-testid="map-you-marker"],
-  .australia-map-stage:not([data-real-map="true"]) [data-testid="map-rival-marker"] { position: static; transform: none; margin-top: 4px; white-space: normal; }
+  .australia-map-stage:not([data-real-map="true"]) [data-testid="map-rival-marker"] { position: absolute !important; top: 2px; right: 2px; left: auto !important; bottom: auto !important; transform: none !important; margin: 0 !important; width: max-content !important; max-width: 70%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 10px; line-height: 1.1; padding: 1px 4px !important; z-index: 3; min-height: 0 !important; min-width: 0 !important; }
+  .australia-map-stage:not([data-real-map="true"]) [data-testid="map-rival-marker"] { top: 16px; }
   .phone-region-name { display: block; font-size: 11px; font-weight: 600; white-space: normal; text-align: center; line-height: 1.15; }
+  .phone-hide-action-bar { display: none !important; }
+  [data-testid="v9-what-changed"] { display: none !important; }
+  .phone-more-action { display: flex; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; min-height: 44px; margin-top: 6px; padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(148,163,184,0.35); background: #1e293b; text-align: left; box-sizing: border-box; }
+  .phone-more-action span:last-child { min-width: 0; overflow-wrap: anywhere; }
+  .phone-more-heading { margin: 12px 4px 4px; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.7; }
+  .phone-customize-shortcuts { margin-top: 10px; }
+  .phone-customize-shortcuts > summary { min-height: 44px; display: flex; align-items: center; padding: 0 12px; }
+  .phone-customize-body { display: flex; flex-direction: column; gap: 6px; padding: 4px 0 8px; }
+  .phone-customize-body button { width: 100%; min-height: 44px; text-align: left; padding: 8px 12px; }
+  .phone-map-col, .phone-region-col { min-width: 0; max-width: 100%; }
+  .phone-map-col > .flex.justify-between { flex-direction: column; align-items: stretch; gap: 8px; min-width: 0; }
+  .phone-map-col > .flex.justify-between > h3 { width: 100%; margin: 0; }
+  .phone-map-tools { display: flex; flex-direction: row; width: 100%; min-width: 0; gap: 8px; }
+  .phone-map-tools > label, .phone-map-tools > button { flex: 1 1 0; width: 50%; max-width: calc(50% - 4px); min-width: 0 !important; overflow: hidden; box-sizing: border-box; }
+  .phone-map-tools select { width: 100%; max-width: 100%; min-width: 0 !important; }
+  .phone-toast { position: fixed; left: 8px; right: 8px; top: var(--phone-toast-top, 72px); z-index: 35; max-height: 12vh; overflow: hidden; margin: 0; pointer-events: auto; }
   .phone-play-root button, .phone-play-root a, .phone-play-root [role="button"], .phone-play-root select, .phone-play-root summary { min-height: 44px; min-width: 44px; }
   .fixed.inset-0 { padding: 0 !important; align-items: stretch !important; }
   .fixed.inset-0 > div { width: 100% !important; max-width: 100% !important; height: 100% !important; max-height: 100% !important; border-radius: 0 !important; display: flex; flex-direction: column; }
@@ -86447,6 +86542,7 @@ export const PHONE_PLAY_CSS = `
   .phone-more-summary { display: none; }
   .phone-region-name { display: none; }
   .phone-action-bar, .phone-more-sheet { display: none !important; }
+  .phone-map-tools { display: contents; }
 }
 `;
 
@@ -192517,7 +192613,9 @@ function dispatchGameSettingsChange(
     } else {
       addNotification(`Simulation started! ${nextTeams[TEAM_PLAYER_ID].name} vs ${nextTeams[TEAM_OPPONENT_ID].name}.`, 'info', true);
     }
-    addNotification('Press ? for keyboard shortcuts', 'info', true);
+    if (typeof window === 'undefined' || (!window.matchMedia('(pointer: coarse)').matches && window.innerWidth >= 640)) {
+      addNotification('Press ? for keyboard shortcuts', 'info', true);
+    }
     const teammatePrior = priorsByActor[ALLY_AI_ID];
     if (teammatePrior?.preferredTeamCoordination?.length) {
       addNotification(
@@ -215669,6 +215767,23 @@ function dispatchGameSettingsChange(
       else if (text === '✕' || text === '×' || text === '✖') el.setAttribute('aria-label', 'Close');
     });
   });
+  useLayoutEffect(() => {
+    if (!phonePlay || typeof document === 'undefined') return;
+    const place = () => {
+      const header = document.querySelector('[data-testid="v9-match-header"]');
+      const tabs = document.querySelector('[data-testid="v9-header"]');
+      let bottom = header ? header.getBoundingClientRect().bottom : 56;
+      if (tabs && tabs.getClientRects().length) bottom = Math.max(bottom, tabs.getBoundingClientRect().bottom);
+      document.documentElement.style.setProperty('--phone-toast-top', Math.max(0, Math.ceil(bottom + 4)) + 'px');
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, { passive: true });
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place);
+    };
+  });
   const v9AfterAction = useMemo<V9AfterAction | null>(() => {
     if (!swrEnabled || !swrState) return null;
     const pid = String(player?.id || 'player'); const tid = player?.teamId ? String(player.teamId) : null;
@@ -228452,6 +228567,9 @@ function dispatchGameSettingsChange(
     }
     // V9 cohesion: PLAY already tells this story — suppress repeats and collapse near-duplicates (critical always kept).
     if (experienceLayer === 'play' && isLiveIntentMatch) filtered = v9DedupeNotifications(filtered, v9Cohesion.surfacedKeys, n => isCriticalNotification(n));
+    if (phonePlay || (typeof window !== 'undefined' && (window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 640))) {
+      filtered = filtered.filter((n: any) => !/press \? for keyboard shortcuts/i.test(String(n?.message || '')));
+    }
     if (filtered.length === 0) return null;
     const ordered = settings.stackOrder === 'newest-first'
       ? [...filtered].reverse()
@@ -228473,7 +228591,7 @@ function dispatchGameSettingsChange(
       }
       const notifType = NOTIFICATION_TYPES[one.type];
       return (
-        <div className="phone-toast fixed left-2 right-2 z-[300]" data-testid="notification-toast-container" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 52px)', maxHeight: '12vh' }}>
+        <div className="phone-toast" data-testid="notification-toast-container">
           <button type="button" className={`${themeStyles.card} border rounded-lg px-3 text-left w-full`} data-testid="notification-toast" data-kind={kind} data-critical={dismissible ? 'false' : 'true'} aria-expanded={phoneToastOpen} onClick={() => setPhoneToastOpen(open => !open)}>
             <span className={phoneToastOpen ? 'whitespace-normal' : 'block truncate'}>{notifType?.icon || ''} {one.message}</span>
           </button>
@@ -230814,6 +230932,7 @@ function dispatchGameSettingsChange(
             disabled={disabled}
             title={reason || descriptor.title}
             aria-label={descriptor.ariaLabel || descriptor.label || undefined}
+            data-action-id={descriptor.id}
             data-testid={descriptor.id === 'settings' ? 'settings-open-button' : undefined}
             className={descriptor.className || actionButtonClass}
           >
@@ -230836,6 +230955,7 @@ function dispatchGameSettingsChange(
         {player?.character?.specialAbility && (
           <button
             onClick={activateSpecialAbility}
+            data-action-id="specialAbility"
             disabled={!isPlayerTurn || player.specialAbilityUses <= 0 || activeSpecialAbility !== null}
             title={getDisabledReasonForAction('specialAbility', !isPlayerTurn || player.specialAbilityUses <= 0 || activeSpecialAbility !== null) || undefined}
             className={`${activeSpecialAbility ? 'bg-gradient-to-r from-purple-600 to-blue-600' : themeStyles.accent} text-white rounded-lg flex items-center ${actionButtonSize} ${actionButtonGap} disabled:opacity-50 relative`}
@@ -230854,6 +230974,7 @@ function dispatchGameSettingsChange(
         {failedChallengeData && player.character.name === "Tourist" && player.specialAbilityUses > 0 && (
           <button
             onClick={retryFailedChallenge}
+            data-action-id="retryChallenge"
             disabled={!isPlayerTurn}
             className={`bg-gradient-to-r from-yellow-500 to-orange-500 text-white rounded-lg flex items-center ${actionButtonSize} ${actionButtonGap} disabled:opacity-50 animate-pulse`}
           >
@@ -230865,6 +230986,7 @@ function dispatchGameSettingsChange(
         {gameSettings.doubleOrNothingEnabled && gameState.doubleOrNothingAvailable && isPlayerTurn && (
           <button
             onClick={handleDoubleOrNothing}
+            data-action-id="doubleOrNothing"
             className={`bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-lg flex items-center ${actionButtonSize} ${actionButtonGap} animate-pulse`}
           >
             <span>🎲</span>
@@ -231991,6 +232113,53 @@ function dispatchGameSettingsChange(
       );
     };
 
+    const phoneEmergencyLoan = (getQuickActions as any[]).find((action: any) => action.id === 'emergency_loan') || null;
+    const phoneAbilityName = player?.character?.specialAbility ? String(player.character.specialAbility.name || 'Ability').split(' ')[0] : '';
+    const phoneSheetItem = (id: string, icon: string, label: string, onClick: () => void, disabled = false) => ({ id, icon, label, onClick, disabled });
+    const phoneSheetGroups: Array<{ title: string; items: Array<{ id: string; icon: string; label: string; onClick: () => void; disabled?: boolean }> }> = [
+      {
+        title: 'Play',
+        items: [
+          phoneSheetItem('challenges', actionDescriptors.challenges.icon, 'Challenges', actionDescriptors.challenges.onClick, Boolean(actionDescriptors.challenges.disabled)),
+          phoneSheetItem('travel', actionDescriptors.travel.icon, 'Travel', actionDescriptors.travel.onClick, Boolean(actionDescriptors.travel.disabled)),
+          phoneSheetItem('market', actionDescriptors.market.icon, actionDescriptors.market.label, actionDescriptors.market.onClick, Boolean(actionDescriptors.market.disabled)),
+          phoneSheetItem('endTurn', actionDescriptors.endTurn.icon, 'End Turn', actionDescriptors.endTurn.onClick, Boolean(actionDescriptors.endTurn.disabled)),
+          ...(phoneAbilityName ? [phoneSheetItem('specialAbility', '✨', phoneAbilityName, activateSpecialAbility, !isPlayerTurn || player.specialAbilityUses <= 0 || activeSpecialAbility !== null)] : []),
+          ...(phoneEmergencyLoan ? [phoneSheetItem('emergency_loan', String(phoneEmergencyLoan.icon || '💳'), String(phoneEmergencyLoan.label || 'Emergency Loan'), () => phoneEmergencyLoan.action(), Boolean(phoneEmergencyLoan.disabled))] : []),
+          ...(failedChallengeData && player.character?.name === 'Tourist' && player.specialAbilityUses > 0 ? [phoneSheetItem('retryChallenge', '🍀', 'Retry Challenge', retryFailedChallenge, !isPlayerTurn)] : []),
+          ...(gameSettings.doubleOrNothingEnabled && gameState.doubleOrNothingAvailable && isPlayerTurn ? [phoneSheetItem('doubleOrNothing', '🎲', 'Double or Nothing', handleDoubleOrNothing, false)] : []),
+          phoneSheetItem('negotiations', actionDescriptors.negotiations.icon, 'Negotiations', actionDescriptors.negotiations.onClick, Boolean(actionDescriptors.negotiations.disabled)),
+          phoneSheetItem('progress', actionDescriptors.progress.icon, 'Progress', actionDescriptors.progress.onClick, Boolean(actionDescriptors.progress.disabled))
+        ]
+      },
+      {
+        title: 'Manage',
+        items: [
+          phoneSheetItem('saveLoad', actionDescriptors.saveLoad.icon, 'Save / Load', actionDescriptors.saveLoad.onClick, Boolean(actionDescriptors.saveLoad.disabled)),
+          phoneSheetItem('workshop', actionDescriptors.workshop.icon, 'Workshop', actionDescriptors.workshop.onClick, Boolean(actionDescriptors.workshop.disabled)),
+          phoneSheetItem('resourceMarket', actionDescriptors.resourceMarket.icon, 'Resource Market', actionDescriptors.resourceMarket.onClick, Boolean(actionDescriptors.resourceMarket.disabled)),
+          phoneSheetItem('contracts', actionDescriptors.contracts.icon, 'Contracts', actionDescriptors.contracts.onClick, Boolean(actionDescriptors.contracts.disabled)),
+          ...(actionDescriptors.shop.visible !== false ? [phoneSheetItem('shop', actionDescriptors.shop.icon, 'Shop', actionDescriptors.shop.onClick, Boolean(actionDescriptors.shop.disabled))] : []),
+          ...(actionDescriptors.investments.visible !== false ? [phoneSheetItem('investments', actionDescriptors.investments.icon, 'Investments', actionDescriptors.investments.onClick, Boolean(actionDescriptors.investments.disabled))] : []),
+          ...(actionDescriptors.sabotage.visible !== false ? [phoneSheetItem('sabotage', actionDescriptors.sabotage.icon, 'Sabotage', actionDescriptors.sabotage.onClick, Boolean(actionDescriptors.sabotage.disabled))] : []),
+          ...(actionDescriptors.loans.visible !== false ? [phoneSheetItem('loans', actionDescriptors.loans.icon, 'Loans', actionDescriptors.loans.onClick, Boolean(actionDescriptors.loans.disabled))] : []),
+          phoneSheetItem('governance', actionDescriptors.governance.icon, 'Governance', actionDescriptors.governance.onClick, Boolean(actionDescriptors.governance.disabled)),
+          phoneSheetItem('automation', actionDescriptors.automation.icon, 'Automation', actionDescriptors.automation.onClick, Boolean(actionDescriptors.automation.disabled))
+        ]
+      },
+      {
+        title: 'Game',
+        items: [
+          phoneSheetItem('replay', actionDescriptors.replay.icon, 'Replay', actionDescriptors.replay.onClick, Boolean(actionDescriptors.replay.disabled)),
+          phoneSheetItem('diagnostics', actionDescriptors.diagnostics.icon, 'Diagnostics', actionDescriptors.diagnostics.onClick, Boolean(actionDescriptors.diagnostics.disabled)),
+          phoneSheetItem('settings', actionDescriptors.settings.icon, 'Settings', actionDescriptors.settings.onClick, Boolean(actionDescriptors.settings.disabled)),
+          phoneSheetItem('help', '❓', 'Help', actionDescriptors.help.onClick, false),
+          phoneSheetItem('history', actionDescriptors.history.icon, 'History', actionDescriptors.history.onClick, Boolean(actionDescriptors.history.disabled)),
+          phoneSheetItem('teamAiSettings', '🧠', 'Team AI', actionDescriptors.teamAiSettings.onClick, Boolean(actionDescriptors.teamAiSettings.disabled))
+        ]
+      }
+    ];
+
     return (
       <div className={`phone-play-root${phonePlay && experienceLayer === 'play' && isPlayerTurn ? ' phone-has-bar' : ''} min-h-screen ${themeStyles.background} ${themeStyles.text} p-4`}>
         <style>{PHONE_PLAY_CSS}</style>
@@ -232021,31 +232190,42 @@ function dispatchGameSettingsChange(
             <button type="button" aria-label="More actions" aria-expanded={phoneMoreOpen} onClick={() => setPhoneMoreOpen(open => !open)}>More</button>
           </div>
         )}
-        {phonePlay && phoneMoreOpen && (
-          <div className="phone-more-sheet" role="dialog" aria-label="More actions">
+        {phonePlay && experienceLayer === 'play' && (
+          <div className="phone-more-sheet" hidden={!(phoneMoreOpen && isPlayerTurn)} role="dialog" aria-label="All actions" data-testid="phone-more-sheet" data-loan-offered={phoneEmergencyLoan ? 'true' : 'false'} data-ability-offered={phoneAbilityName ? 'true' : 'false'}>
             <div className="flex items-center justify-between px-3">
               <h2 className="font-bold">More</h2>
               <button type="button" aria-label="Close" onClick={() => setPhoneMoreOpen(false)}>✕</button>
             </div>
-            <div className="px-3 pb-2 text-xs">Domain filter, compact, customize and the rest of the shortcuts.</div>
-            <div className="flex flex-wrap gap-2 px-3 pb-3">
-              {([
-                { id: 'all', label: 'All' },
-                { id: 'core', label: 'Core' },
-                { id: 'economy', label: 'Economy' },
-                { id: 'competition', label: 'Competition' },
-                { id: 'team', label: 'Team' },
-                { id: 'tools', label: 'Tools' }
-              ] as const).map(tab => (
-                <button key={tab.id} type="button" aria-label={'Filter ' + tab.label} className="px-3 rounded border" onClick={() => updateUiState({ quickActionDomainFilter: tab.id as unknown as QuickActionDomainId })}>{tab.label}</button>
-              ))}
-              <button type="button" aria-label="Compact or detailed shortcuts" onClick={() => updateUiState({ quickActionCompactView: !uiState.quickActionCompactView })}>{quickActionCompact ? 'Detailed' : 'Compact'}</button>
-              <button type="button" aria-label="Customize shortcuts" onClick={() => { setPhoneMoreOpen(false); updateUiState({ showQuickActionsCustomizer: true }); }}>Customize</button>
-              <button type="button" aria-label="Reset shortcuts" onClick={() => updateUiState((prev: any) => resetQuickActionsCustomization(prev))}>Reset</button>
-              {filteredQuickActions.filter(action => !['challenges', 'travel', 'market', 'endTurn'].includes(action.id)).map(action => (
-                <button key={action.id} type="button" aria-label={action.label} disabled={!isPlayerTurn || Boolean(action.disabled)} onClick={() => { setPhoneMoreOpen(false); requestManualAction(action.action); }}>{action.icon} {action.label}</button>
-              ))}
-            </div>
+            <p className="px-3 pb-2 text-xs">All actions</p>
+            {phoneSheetGroups.map(group => (
+              <div key={group.title}>
+                <div className="phone-more-heading">{group.title}</div>
+                {group.items.map(item => (
+                  <button key={item.id} type="button" className="phone-more-action" data-phone-action={item.id} aria-label={item.label} disabled={item.disabled} onClick={() => { setPhoneMoreOpen(false); item.onClick(); }}>
+                    <span aria-hidden="true">{item.icon}</span>
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+            <details className="phone-customize-shortcuts">
+              <summary>Customize shortcuts</summary>
+              <div className="phone-customize-body">
+                {([
+                  { id: 'all', label: 'All' },
+                  { id: 'core', label: 'Core' },
+                  { id: 'economy', label: 'Economy' },
+                  { id: 'competition', label: 'Competition' },
+                  { id: 'team', label: 'Team' },
+                  { id: 'tools', label: 'Tools' }
+                ] as const).map(tab => (
+                  <button key={tab.id} type="button" aria-label={'Filter ' + tab.label} onClick={() => updateUiState({ quickActionDomainFilter: tab.id as unknown as QuickActionDomainId })}>{tab.label}</button>
+                ))}
+                <button type="button" aria-label="Compact or detailed shortcuts" onClick={() => updateUiState({ quickActionCompactView: !uiState.quickActionCompactView })}>{quickActionCompact ? 'Detailed' : 'Compact'}</button>
+                <button type="button" aria-label="Customize shortcuts" onClick={() => { setPhoneMoreOpen(false); updateUiState({ showQuickActionsCustomizer: true }); }}>Customize</button>
+                <button type="button" aria-label="Reset shortcuts" onClick={() => updateUiState((prev: any) => resetQuickActionsCustomization(prev))}>Reset</button>
+              </div>
+            </details>
           </div>
         )}
         {/* Quick Actions Bar - only show on player turn when not suppressed by blocking modal */}
@@ -233107,7 +233287,7 @@ function dispatchGameSettingsChange(
         {/* Action Buttons Bar (V9: the complete action set — "More Actions" scrolls here) */}
         <div id="v9-all-actions-bar" />
         {simplifiedActionBarActive ? (
-          <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-3 mb-4 ${themeStyles.shadow}`}>
+          <div className={`phone-hide-action-bar ${themeStyles.card} ${themeStyles.border} border rounded-xl p-3 mb-4 ${themeStyles.shadow}`}>
             <div className="flex flex-wrap gap-2 items-start">
               {renderActionDescriptor(actionDescriptors.saveLoad)}
               {ACTION_GROUPS.primary.map(actionId => renderActionDescriptor(actionDescriptors[actionId]))}
@@ -233122,8 +233302,7 @@ function dispatchGameSettingsChange(
                   <span>⋯</span>
                   <span>More</span>
                 </button>
-                {uiState.simplifiedMoreOpen && (
-                  <div className={`absolute right-0 mt-2 ${themeStyles.card} ${themeStyles.border} border rounded-lg p-2 z-40 min-w-64 ${themeStyles.shadow}`}>
+                <div hidden={!uiState.simplifiedMoreOpen} className={`absolute right-0 mt-2 ${themeStyles.card} ${themeStyles.border} border rounded-lg p-2 z-40 min-w-64 ${themeStyles.shadow}`}>
                     <div className="text-[10px] uppercase tracking-wider opacity-60 px-1 pb-1">More · Build & Compete</div>
                     <div className="grid grid-cols-1 gap-2">
                       {ACTION_GROUPS.advanced.map(actionId => renderActionDescriptor(actionDescriptors[actionId]))}
@@ -233134,12 +233313,11 @@ function dispatchGameSettingsChange(
                       </div>
                     )}
                   </div>
-                )}
               </div>
             </div>
           </div>
         ) : (
-          <div className="flex flex-wrap gap-2 mb-4">
+          <div className="flex flex-wrap gap-2 mb-4 phone-hide-action-bar">
             {renderActionDescriptor(actionDescriptors.saveLoad)}
             {renderActionDescriptor(actionDescriptors.challenges)}
             {renderActionDescriptor(actionDescriptors.travel)}
@@ -233302,6 +233480,7 @@ function dispatchGameSettingsChange(
             <div className={`phone-map-col ${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 ${themeStyles.shadow} lg:col-span-2`}>
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold">🗺️ Australia Map</h3>
+                <div className="phone-map-tools">
                 {lrState && (
                   <label className="text-xs flex items-center gap-1 ml-auto mr-2">Layer
                     <select aria-label="Map layer" data-testid="lr-map-mode" value={mpMapId && mpPersisted?.programs[mpMapId] ? `mp:${mpMapId}` : inMapKind && inState ? `infra:${inMapKind}` : scMapLayer && scState ? scMapLayer : nsMapNetwork && nsState ? `net:${nsMapNetwork}` : lrMapMode} onChange={e => { const v = e.target.value; setInMapKind(null); setMpMapId(null); if (v.startsWith('mp:')) { setNsMapNetwork(null); setScMapLayer(null); setMpMapId(v.slice(3)); return; } if (v.startsWith('infra:')) { setNsMapNetwork(null); setScMapLayer(null); setInMapKind(v.slice(6) as StrategicInfrastructureNetworkKind); } else if (v === 'ind' || v.startsWith('sc:')) { setNsMapNetwork(null); setScMapLayer(v as IndustryMapLayer); } else if (v.startsWith('net:')) { setScMapLayer(null); setNsMapNetwork(v.slice(4) as NationalNetworkKind); } else { setScMapLayer(null); setNsMapNetwork(null); setLrMapMode(v as LRMapMode); } }} className={`${themeStyles.input || ''} bg-transparent border rounded px-1 py-0.5`}>
@@ -233319,6 +233498,7 @@ function dispatchGameSettingsChange(
                 >
                   Hide Map
                 </button>
+                </div>
               </div>
               
 	              <div className="australia-map-stage relative w-full h-96 bg-gray-800 rounded-lg overflow-hidden" data-real-map={gameSettings.realMapEnabled === true ? 'true' : 'false'} data-ns-network={nsMapNetwork && nsState ? nsMapNetwork : undefined}>
