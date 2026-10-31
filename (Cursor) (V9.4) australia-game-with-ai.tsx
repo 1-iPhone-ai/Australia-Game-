@@ -23874,7 +23874,18 @@ export function mapActionAttemptToReplayRecord(attempt: {
       warnings: params.warnings,
       confirmation: params.confirmation,
       region: params.region ?? params.targetRegion,
-      moneyDelta: attempt.delta?.moneyDelta
+      moneyDelta: attempt.delta?.moneyDelta,
+      ...(params.skillBonus !== undefined ? { skillBonus: params.skillBonus } : {}),
+      ...(typeof params.roll === 'number' ? { roll: params.roll } : {}),
+      ...(params.interactionDraws !== undefined ? { interactionDraws: params.interactionDraws } : {}),
+      ...(params.challengeType !== undefined ? { challengeType: params.challengeType } : {}),
+      ...(params.difficulty !== undefined ? { difficulty: params.difficulty } : {}),
+      ...(params.isWin !== undefined ? { isWin: params.isWin } : {}),
+      ...(params.reward !== undefined ? { reward: params.reward } : {}),
+      ...(params.wager !== undefined ? { wager: params.wager } : {}),
+      ...(params.stats !== undefined ? { stats: params.stats } : {}),
+      ...(params.level !== undefined ? { level: params.level } : {}),
+      ...(params.characterName !== undefined ? { characterName: params.characterName } : {})
     }
   };
 }
@@ -24580,6 +24591,7 @@ export function applyReplayEventReducer(
   if (action && !action.payload) {
     (action as FlexibleAction).payload = {};
   }
+  if (String(action?.type || '') === 'challenge') v95ApplyReplaySkill(action, simCtx.simRng);
 
   if (ev?.day && ev.day > (simCtx.currentSimState.day || 0)) {
     simCtx.currentSimState.day = ev.day;
@@ -47974,8 +47986,7 @@ export function enumerateLegalActions(
     });
   }
 
-  const currentRegion = REGIONS[actor.currentRegion];
-  const availableChallenges = (currentRegion?.challenges || []).filter((c: any) => !(actor.completedThisSeason || []).includes(c.name));
+  const availableChallenges = v95AiChallenges(actor.currentRegion, [...(actor.challengesCompleted || []), ...(actor.completedThisSeason || [])]).filter((c: any) => !(actor.completedThisSeason || []).includes(c.name));
   availableChallenges.forEach((challenge: any) => {
     if ((actor.money || 0) < MINIMUM_WAGER) return;
     const successChance = classicSuccessChance(challenge, actor);
@@ -48008,7 +48019,7 @@ export function enumerateLegalActions(
       const avg = regionResources.reduce((sum, r) => sum + (resourcePrices[r] || 100), 0) / regionResources.length;
       score += avg * 0.5;
     }
-    const uncompleted = (REGIONS[region]?.challenges || []).filter((c: any) => !(actor.completedThisSeason || []).includes(c.name)).length;
+    const uncompleted = v95AiChallenges(region, [...(actor.challengesCompleted || []), ...(actor.completedThisSeason || [])]).filter((c: any) => !(actor.completedThisSeason || []).includes(c.name)).length;
     score += uncompleted * 30;
     score -= cost * 0.5;
     if (fullness >= 1) score *= 0.3;
@@ -164248,6 +164259,7 @@ export function computeNationalStateCapacity(
 
   // V10.0 National Systems maturity
   if (inputs.nationalSystems?.national) {
+    // weakestSystem on this summary is often null. Object.values(national) included that null and threw on n.condition, which blanked the match.
     const nets = NATIONAL_NETWORKS.map(kind => inputs.nationalSystems.national[kind]).filter(Boolean);
     const healthyCount = nets.filter(n => n.condition === 'healthy' || n.condition === 'surplus').length;
     if (healthyCount >= 3) {
@@ -180393,7 +180405,7 @@ export function runV1013HouseholdsLivingStandardsSelfTests(): {
 
 export type V95ChallengeKind = 'physical' | 'social' | 'educational' | 'wildlife' | 'finale';
 export type V95SkillPartInput =
-  | { kind: 'physical'; stop: number }
+  | { kind: 'physical'; stop?: number; sequence?: number[] }
   | { kind: 'social'; option: number }
   | { kind: 'educational'; option: number }
   | { kind: 'wildlife'; presses: number };
@@ -180409,6 +180421,8 @@ export interface V95InteractionPart {
   /** Pre-rolled bust on each press-on. Scoring reads these; it does not draw again. */
   busts: boolean[];
   stepGain: number;
+  /** Seeded 1–4 steps for the reduced-motion physical path. The moving bar ignores it. */
+  sequence?: number[];
 }
 export interface V95InteractionSession {
   id: string;
@@ -180428,7 +180442,7 @@ export interface V95SkillResult {
   kind: string;
   input: V95SkillInput;
 }
-export interface V95PendingChallenge { session: V95InteractionSession; wager: number; challenge: any }
+export interface V95PendingChallenge { session: V95InteractionSession; wager: number; challenge: any; rngBefore: Record<string, any> | null; interactionDraws: number }
 
 export const V95_SKILL_LABEL: Record<string, string> = {
   physical: 'Your timing', social: 'Your reply', educational: 'Your answer', wildlife: 'Your nerve', finale: 'Your run'
@@ -180501,41 +180515,103 @@ function v95Shuffle<T>(items: T[], draw: () => number): T[] {
   return next;
 }
 
-function v95SocialPart(regionName: string, challengeName: string, draw: () => number): V95InteractionPart {
-  const options = v95Shuffle([
-    { text: `Ask about their day, then say you came for ${challengeName}.`, score: 1 },
-    { text: `Say you are only passing through ${regionName}.`, score: 0 },
-    { text: `Interrupt and demand the fastest way to finish ${challengeName}.`, score: -1 }
-  ], draw);
+export function v95ScoreSequence(expected: number[], entered: number[]): number {
+  const steps = Array.isArray(expected) ? expected : [];
+  const guess = Array.isArray(entered) ? entered : [];
+  const n = Math.max(1, steps.length);
+  let correct = 0;
+  for (let i = 0; i < steps.length; i++) if (guess[i] === steps[i]) correct += 1;
+  return v95ClampSkill((correct / n) * 2 - 1);
+}
+
+/** Removes state names and codes from a fun-fact before it is shown as an answer. */
+export function v95StripPlaceNames(text: string, regions: Record<string, any> = REGIONS): string {
+  let out = String(text || '');
+  const names = Object.entries(regions || {}).flatMap(([code, region]) => [String(region?.name || ''), String(code || '')]).filter(name => name.length >= 2);
+  names.sort((a, b) => b.length - a.length);
+  names.forEach(name => {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out.replace(new RegExp(escaped, 'gi'), 'this state');
+  });
+  return out.replace(/\s+/g, ' ').trim();
+}
+
+const V95_SOCIAL_ROLES = ['listen', 'local', 'boast', 'ask'] as const;
+export function v95BestSocialRole(regionCode: string, challengeType: string): string {
+  const typeShift = challengeType === 'physical' ? 0 : challengeType === 'social' ? 1 : challengeType === 'educational' ? 2 : challengeType === 'wildlife' ? 3 : 1;
+  const regionShift = String(regionCode || '').split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+  return V95_SOCIAL_ROLES[(typeShift + regionShift) % V95_SOCIAL_ROLES.length];
+}
+
+const V95_SOCIAL_SETS: Array<Array<{ role: string; text: string }>> = [
+  [
+    { role: 'listen', text: 'Ask what they recommend, then say you came for {challenge}.' },
+    { role: 'local', text: 'Say you have been through {region} before and ask who to talk to.' },
+    { role: 'boast', text: 'Tell them you already know {region} better than they do.' },
+    { role: 'ask', text: 'Ask what {challenge} used to be like before the crowds.' }
+  ],
+  [
+    { role: 'listen', text: 'Wait until they finish, then ask if {challenge} is worth it today.' },
+    { role: 'local', text: 'Mention a nearby spot in {region} and ask them to correct you.' },
+    { role: 'boast', text: 'Announce you will finish {challenge} faster than anyone here.' },
+    { role: 'ask', text: 'Ask which part of {challenge} locals actually rate.' }
+  ],
+  [
+    { role: 'listen', text: 'Offer to help with what they are doing before you ask about {challenge}.' },
+    { role: 'local', text: 'Talk about the weather in {region}, then ask for a pointer.' },
+    { role: 'boast', text: 'Tell them {region} is wasting your time.' },
+    { role: 'ask', text: 'Ask who in {region} still does {challenge} the old way.' }
+  ],
+  [
+    { role: 'listen', text: 'Repeat what they just said, then ask about {challenge}.' },
+    { role: 'local', text: 'Name the road you took into {region} and ask if you missed a turn.' },
+    { role: 'boast', text: 'Interrupt and demand the fastest way to finish {challenge}.' },
+    { role: 'ask', text: 'Ask what people get wrong about {challenge}.' }
+  ]
+];
+const V95_SOCIAL_PROMPTS = [
+  'In {region}, during "{challenge}", a local asks what you are here for.',
+  'Someone at the {challenge} stop in {region} looks up from their work.',
+  'A guide on the {challenge} day in {region} waits to see how you open.',
+  'You share a table near {challenge}. They ask why you came to {region}.'
+];
+
+function v95FillSocial(text: string, regionName: string, challengeName: string): string {
+  return text.replace(/\{region\}/g, regionName).replace(/\{challenge\}/g, challengeName);
+}
+
+function v95SocialPart(regionCode: string, regionName: string, challengeName: string, challengeType: string, draw: () => number): V95InteractionPart {
+  const setIndex = Math.floor(v95Unit(draw) * V95_SOCIAL_SETS.length);
+  const best = v95BestSocialRole(regionCode, challengeType);
+  const order = V95_SOCIAL_ROLES;
+  const middle = order[(order.indexOf(best as typeof order[number]) + 1) % order.length];
+  const options = v95Shuffle(V95_SOCIAL_SETS[setIndex].map(row => ({
+    text: v95FillSocial(row.text, regionName, challengeName),
+    score: row.role === best ? 1 : row.role === middle ? 0 : -1
+  })), draw);
   return {
     kind: 'social', zoneCenter: 0.5, zoneWidth: 0.2, busts: [], stepGain: 0,
-    prompt: `In ${regionName}, during "${challengeName}", a local asks what you are here for.`,
+    prompt: v95FillSocial(V95_SOCIAL_PROMPTS[setIndex], regionName, challengeName),
     options
   };
 }
 
 function v95EducationalPart(regionCode: string, region: any, regions: Record<string, any>, challengeName: string, draw: () => number): V95InteractionPart {
   const others = Object.keys(regions).filter(code => code !== regionCode && regions[code]);
-  const variant = Math.floor(v95Unit(draw) * 3);
+  const variant = Math.floor(v95Unit(draw) * 2);
   let prompt = '';
   let correct = '';
   const wrong: string[] = [];
   if (variant === 1) {
-    prompt = `Which note belongs to ${region?.name || regionCode}?`;
-    correct = String(region?.funFact || region?.description || region?.name || regionCode);
-    others.forEach(code => wrong.push(String(regions[code].funFact || regions[code].description || regions[code].name)));
-  } else if (variant === 2) {
-    prompt = `Which challenge is set in ${region?.name || regionCode}?`;
-    correct = challengeName;
-    others.forEach(code => {
-      const list = regions[code].challenges || [];
-      if (list[0]?.name) wrong.push(String(list[0].name));
-    });
+    prompt = 'Which note belongs to this state?';
+    correct = v95StripPlaceNames(String(region?.funFact || region?.description || 'A local note'), regions);
+    others.forEach(code => wrong.push(v95StripPlaceNames(String(regions[code].funFact || regions[code].description || regions[code].name), regions)));
   } else {
-    prompt = `Which place is this? ${region?.description || region?.funFact || regionCode}`;
+    prompt = `Which place is this? ${v95StripPlaceNames(String(region?.description || region?.funFact || regionCode), regions)}`;
     correct = String(region?.name || regionCode);
     others.forEach(code => wrong.push(String(regions[code].name || code)));
   }
+  if (!correct) correct = 'A local note';
   const distractors = v95Shuffle(wrong.filter(text => text && text !== correct), draw).slice(0, 3);
   while (distractors.length < 3) distractors.push(`Somewhere else (${distractors.length + 1})`);
   const options = v95Shuffle([
@@ -180554,20 +180630,20 @@ function v95WildlifePart(difficulty: number, draw: () => number): V95Interaction
   };
 }
 
-function v95PhysicalPart(difficulty: number, challengeName: string): V95InteractionPart {
+function v95PhysicalPart(difficulty: number, challengeName: string, draw: () => number): V95InteractionPart {
   const zoneWidth = v95ZoneWidth(difficulty);
+  const sequence = [0, 1, 2, 3].map(() => 1 + Math.floor(v95Unit(draw) * 4));
   return {
-    kind: 'physical', zoneCenter: 0.5, zoneWidth, options: [], busts: [], stepGain: 0,
-    prompt: `Stop the marker inside the target zone for ${challengeName}. A harder challenge uses a narrower zone.`
+    kind: 'physical', zoneCenter: 0.5, zoneWidth, options: [], busts: [], stepGain: 0, sequence,
+    prompt: `Stop the marker inside the target zone for ${challengeName}. If motion is reduced, match the sequence instead. A harder challenge uses a narrower zone.`
   };
 }
-
 function v95BuildPart(kind: Exclude<V95ChallengeKind, 'finale'>, args: { challenge: any; regionCode: string; region: any; regions: Record<string, any>; draw: () => number }): V95InteractionPart {
   const name = String(args.challenge?.name || 'Challenge');
   const regionName = String(args.region?.name || args.regionCode);
   const difficulty = Number(args.challenge?.difficulty) || 1;
-  if (kind === 'physical') return v95PhysicalPart(difficulty, name);
-  if (kind === 'social') return v95SocialPart(regionName, name, args.draw);
+  if (kind === 'physical') return v95PhysicalPart(difficulty, name, args.draw);
+  if (kind === 'social') return v95SocialPart(args.regionCode, regionName, name, String(args.challenge?.type || kind), args.draw);
   if (kind === 'wildlife') return v95WildlifePart(difficulty, args.draw);
   return v95EducationalPart(args.regionCode, args.region, args.regions, name, args.draw);
 }
@@ -180605,7 +180681,10 @@ export function v95BuildInteraction(args: {
 
 function v95ScorePart(part: V95InteractionPart, input: V95SkillPartInput | undefined, difficulty: number): number {
   if (!input || input.kind !== part.kind) return 0;
-  if (part.kind === 'physical' && input.kind === 'physical') return v95ScoreTiming(input.stop, difficulty);
+  if (part.kind === 'physical' && input.kind === 'physical') {
+    if (Array.isArray(input.sequence) && Array.isArray(part.sequence) && part.sequence.length) return v95ScoreSequence(part.sequence, input.sequence);
+    return v95ScoreTiming(Number(input.stop) || 0, difficulty);
+  }
   if ((part.kind === 'social' || part.kind === 'educational') && (input.kind === 'social' || input.kind === 'educational')) {
     const choice = part.options[input.option];
     return v95ClampSkill(choice ? choice.score : -1);
@@ -180679,6 +180758,8 @@ export function V95InteractiveModal(props: {
   const [wildlifeNote, setWildlifeNote] = useState('');
   const [left, setLeft] = useState(session.timeLimitSeconds);
   const [timerOn, setTimerOn] = useState(session.timeLimitSeconds > 0);
+  const [seqShown, setSeqShown] = useState<number[]>([]);
+  const seqRef = useRef<number[]>([]);
   const resolved = useRef(false);
   const part = session.parts[partIndex];
   const finish = (input: V95SkillInput) => {
@@ -180689,7 +180770,16 @@ export function V95InteractiveModal(props: {
   const pushPart = (entry: V95SkillPartInput) => {
     const next = answers.concat(entry);
     if (next.length >= session.parts.length) finish({ parts: next });
-    else { setAnswers(next); setPartIndex(next.length); setPresses(0); setWildlifeNote(''); setMarker(0); }
+    else { setAnswers(next); setPartIndex(next.length); setPresses(0); setWildlifeNote(''); setMarker(0); seqRef.current = []; setSeqShown([]); }
+  };
+  const appendSeq = (n: number) => {
+    if (!part || part.kind !== 'physical') return;
+    const expected = part.sequence || [];
+    const next = seqRef.current.concat(n);
+    seqRef.current = next;
+    setSeqShown(next);
+    props.onTick();
+    if (expected.length > 0 && next.length >= expected.length) pushPart({ kind: 'physical', sequence: next });
   };
   useEffect(() => {
     if (!timerOn) return undefined;
@@ -180714,10 +180804,15 @@ export function V95InteractiveModal(props: {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { event.preventDefault(); props.onAbort(); return; }
       if (!part) return;
+      if (part.kind === 'physical' && props.reducedMotion) {
+        const step = ['1', '2', '3', '4'].indexOf(event.key);
+        if (step >= 0) { event.preventDefault(); appendSeq(step + 1); }
+        return;
+      }
       if (part.kind === 'physical' && (event.key === 'Enter' || event.key === ' ')) {
         event.preventDefault();
         props.onTick();
-        pushPart({ kind: 'physical', stop: props.reducedMotion ? v95StaticStop(session.difficulty, 'onTime') : marker });
+        pushPart({ kind: 'physical', stop: marker });
       }
       const index = ['1', '2', '3', '4'].indexOf(event.key);
       if (index >= 0 && (part.kind === 'social' || part.kind === 'educational') && part.options[index]) {
@@ -180755,12 +180850,14 @@ export function V95InteractiveModal(props: {
         {timerOn && <p className="text-sm mt-2" aria-live="polite">{UI_TONE.warning.icon} Time left: {left}s <span className="sr-only">seconds</span></p>}
         {part?.kind === 'physical' && (props.reducedMotion ? (
           <div className="mt-3 space-y-2">
-            <p className="text-sm">Reduced motion: pick the moment. The score uses the same timing ruler as the bar.</p>
-            {(['early', 'onTime', 'late'] as const).map(which => (
-              <button key={which} type="button" className={`${quiet} block w-full text-left`} autoFocus={which === 'onTime'} onClick={() => { props.onTick(); pushPart({ kind: 'physical', stop: v95StaticStop(session.difficulty, which) }); }}>
-                {which === 'onTime' ? '✓ On the target' : which === 'early' ? '◀ Early' : '▶ Late'}
-              </button>
-            ))}
+            <p className="text-sm">Reduced motion: match the sequence. {UI_TONE.selected.icon} Each step is 1, 2, 3 or 4.</p>
+            <p className="font-bold tracking-widest" aria-label="Sequence to match">{(part.sequence || []).join(' ')}</p>
+            <p aria-live="polite">Entered: {seqShown.join(' ') || 'nothing yet'}</p>
+            <div className="flex flex-wrap gap-2">
+              {[1, 2, 3, 4].map(n => (
+                <button key={n} type="button" className={quiet} autoFocus={n === 1} onClick={() => appendSeq(n)}>{n}</button>
+              ))}
+            </div>
           </div>
         ) : (
           <div className="mt-3">
@@ -180807,16 +180904,15 @@ export function V95InteractiveModal(props: {
 // Those positions are not moved. Clickable anchors stay in the map markup.
 
 export const V95_STATE_PATHS: Record<string, string> = {
-  WA: 'M2,30 L28,28 L32,48 L28,78 L6,80 L2,52 Z',
-  NT: 'M32,16 L58,14 L60,46 L34,48 Z',
-  QLD: 'M58,10 L96,16 L94,46 L60,48 L56,28 Z',
-  SA: 'M30,48 L58,48 L60,72 L46,90 L28,78 Z',
-  NSW: 'M60,46 L96,44 L92,74 L68,78 L60,64 Z',
-  ACT: 'M72,66 L78,66 L78,74 L72,74 Z',
-  VIC: 'M48,78 L72,74 L74,96 L46,98 Z',
-  TAS: 'M68,96 L84,95 L86,100 L66,100 Z'
+  WA: 'M2,37 L5,34.5 L8,32 L11.5,33 L15,34 L18,32 L21,30 L24,32.5 L27,35 L28.5,39 L30,43 L30.5,48 L31,53 L30,59 L29,65 L28,70 L27,75 L24,78.5 L21,82 L16,82.5 L11,83 L7.5,80 L4,77 L2.5,72 L1,67 L1,61 L1,55 L1,50 L1,45 L1.5,41 Z',
+  NT: 'M32.2,21.8 L35.2,19.8 L38.2,17.8 L40.7,21.8 L43.2,25.8 L45.7,22.3 L48.2,18.8 L51.2,19.8 L54.2,20.8 L56.2,24.3 L58.2,27.8 L58.7,32.8 L59.2,37.8 L58.2,42.8 L57.2,47.8 L55.7,51.3 L54.2,54.8 L49.2,55.3 L44.2,55.8 L39.2,54.3 L34.2,52.8 L32.7,47.3 L31.2,41.8 L31.2,36.8 L31.2,31.8 L31.7,26.8 Z',
+  QLD: 'M71,11.9 L73,10.4 L75,8.9 L76.5,12.4 L78,15.9 L76.5,18.9 L75,21.9 L78,19.9 L81,17.9 L85,18.9 L89,19.9 L92.5,22.9 L96,25.9 L97,30.9 L98,35.9 L97,40.9 L96,45.9 L92.5,49.4 L89,52.9 L84,54.4 L79,55.9 L74,53.9 L69,51.9 L66.5,46.9 L64,41.9 L63.5,36.9 L63,31.9 L65,26.9 L67,21.9 L68,18.9 L69,15.9 L70,13.9 Z',
+  SA: 'M31.5,59.4 L36.5,58.4 L41.5,57.4 L47.5,58.4 L53.5,59.4 L57.5,62.4 L61.5,65.4 L62,71.4 L62.5,77.4 L60,83.4 L57.5,89.4 L53.5,93.4 L49.5,97.4 L45.5,95.4 L41.5,93.4 L38.5,89.4 L35.5,85.4 L32.5,80.4 L29.5,75.4 L30,70.4 L30.5,65.4 L31,62.4 Z',
+  NSW: 'M64,51.3 L68,50.3 L72,49.3 L76,50.3 L80,51.3 L85,50.3 L90,49.3 L94,51.3 L98,53.3 L97.5,58.3 L97,63.3 L94.5,68.3 L92,73.3 L88,76.3 L84,79.3 L79,80.3 L74,81.3 L70,78.3 L66,75.3 L64,70.3 L62,65.3 L62.5,61.3 L63,57.3 L63.5,54.3 Z',
+  ACT: 'M71.9,67.3 L72.6,67 L73.4,66.8 L74.1,66.5 L74.9,66.3 L75.6,66.5 L76.4,66.8 L77.1,67 L77.9,67.3 L78.1,68 L78.4,68.8 L78.6,69.5 L78.9,70.3 L78.4,71 L77.9,71.8 L77.4,72.5 L76.9,73.3 L76.1,73.5 L75.4,73.8 L74.6,74 L73.9,74.3 L73.1,73.5 L72.4,72.8 L71.6,72 L70.9,71.3 L71.1,70.3 L71.4,69.3 L71.6,68.3 Z',
+  VIC: 'M54,78.2 L56,77.2 L58,76.2 L60,75.2 L62,74.2 L64,74.7 L66,75.2 L68,75.7 L70,76.2 L72,77.2 L74,78.2 L76,79.2 L78,80.2 L78.5,82.2 L79,84.2 L79.5,86.2 L80,88.2 L78.5,90.2 L77,92.2 L75.5,94.2 L74,96.2 L71,96.5 L68,96.7 L65,97 L62,97.2 L59.5,95.5 L57,93.7 L54.5,92 L52,90.2 L52.2,88.7 L52.5,87.2 L52.7,85.7 L53,84.2 L53.2,82.7 L53.5,81.2 L53.7,79.7 Z',
+  TAS: 'M66,92 L67.5,91.8 L69,91.5 L70.5,91.2 L72,91 L73.5,91.2 L75,91.5 L76.5,91.8 L78,92 L79.5,92.2 L81,92.5 L82.5,92.8 L84,93 L84.5,93.8 L85,94.5 L85.5,95.2 L86,96 L84.5,96.5 L83,97 L81.5,97.5 L80,98 L78,98 L76,98 L74,98 L72,98 L70.5,97.5 L69,97 L67.5,96.5 L66,96 L65.8,95.5 L65.5,95 L65.2,94.5 L65,94 L65.2,93.5 L65.5,93 L65.8,92.5 Z'
 };
-
 export const V95_CONTROLLER_FILL: Record<'you' | 'rival' | 'neutral', string> = {
   you: '#2563eb', rival: '#db2777', neutral: '#374151'
 };
@@ -180867,7 +180963,7 @@ export function V95RealMap(props: {
   anchors: Record<string, { x: number; y: number }>;
   control: Record<string, 'you' | 'rival' | 'neutral'>;
   marks: Record<string, { adjacent?: boolean; visited?: boolean; event?: boolean; afford?: boolean; here?: boolean }>;
-  routes: Array<{ from: string; to: string; cost: number }>;
+  routes: Array<{ from: string; to: string; cost: number; active?: boolean }>;
   reducedMotion: boolean;
   travel: { from: string; to: string; nonce: string } | null;
   here?: string | null;
@@ -180910,15 +181006,19 @@ export function V95RealMap(props: {
           const a = props.anchors[route.from];
           const b = props.anchors[route.to];
           if (!a || !b) return null;
-          const label = `Travel ${route.from} to ${route.to}, $${route.cost}`;
+          const active = route.active === true && Boolean(props.here) && (route.from === props.here || route.to === props.here);
+          const dest = route.from === props.here ? route.to : route.from;
+          const label = active ? `Travel from ${props.here} to ${dest}, $${route.cost}` : `Route ${route.from} to ${route.to}`;
           return (
             <g key={`${route.from}-${route.to}`}>
-              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#f8fafc" strokeOpacity={0.35} strokeWidth={0.6} />
-              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="transparent" strokeWidth={3} className="pointer-events-auto" tabIndex={0} role="button" aria-label={label} style={{ pointerEvents: 'auto' }}
-                onClick={() => props.onTravel(route.to)}
-                onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); props.onTravel(route.to); } }}>
-                <title>{label}</title>
-              </line>
+              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#f8fafc" strokeOpacity={active ? 0.9 : 0.35} strokeWidth={active ? 0.9 : 0.6} />
+              {active && (
+                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="transparent" strokeWidth={3} className="pointer-events-auto" tabIndex={0} role="button" aria-label={label} style={{ pointerEvents: 'auto' }}
+                  onClick={() => props.onTravel(dest)}
+                  onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); props.onTravel(dest); } }}>
+                  <title>{label}</title>
+                </line>
+              )}
             </g>
           );
         })}
@@ -180966,64 +181066,64 @@ export const EXPANDED_CHALLENGES: V95ExpandedChallenge[] = [
   v95Row('QLD', 'Yarn with a stallholder at the Brisbane markets', 1, 1.6, 'social', 'all', 'Talk your way to a fair price at the city markets.'),
   v95Row('QLD', 'Look for platypus at Eungella', 2, 2.1, 'wildlife', 'Winter|Spring', 'Dawn watch on a Broken River pool.'),
   v95Row('QLD', 'Hear the Kuku Yalanji story of the Daintree', 1, 1.7, 'educational', 'all', 'Listen before you walk the rainforest boardwalk.'),
-  v95Row('QLD', 'Dive the Yongala shipwreck', 4, 4.0, 'wildlife', 'all', 'A deep wreck off the coast near Ayr.', 'rare'),
-  v95Row('QLD', 'Climb Mount Bartle Frere', 4, 3.8, 'physical', 'all', 'Queensland\'s highest peak, wet and steep.', 'rare'),
+  v95Row('QLD', 'Dive the Yongala shipwreck', 4, 4.6, 'wildlife', 'all', 'A deep wreck off the coast near Ayr.', 'rare'),
+  v95Row('QLD', 'Climb Mount Bartle Frere', 4, 4.6, 'physical', 'all', 'Queensland\'s highest peak, wet and steep.', 'rare'),
   v95Row('NSW', 'Climb the Sydney Harbour Bridge', 2, 2.2, 'physical', 'all', 'The bridge climb above the harbour.'),
   v95Row('NSW', 'Read the rolls at the Anzac Memorial', 1, 1.6, 'educational', 'all', 'A quiet hour in Hyde Park\'s memorial.'),
   v95Row('NSW', 'Walk the Bondi to Coogee coastal path', 2, 2.0, 'physical', 'Summer|Autumn', 'The clifftop path south of Bondi.', 'needs:Climb the Sydney Harbour Bridge'),
   v95Row('NSW', 'Share a table in the Hunter Valley', 1, 1.7, 'social', 'all', 'A long lunch among the vineyards.'),
   v95Row('NSW', 'Watch whales off Eden', 2, 2.3, 'wildlife', 'Winter|Spring', 'The whale season on the far south coast.'),
   v95Row('NSW', 'Ride the Zig Zag Railway', 2, 1.9, 'educational', 'all', 'The historic switchback in the Blue Mountains.'),
-  v95Row('NSW', 'Ski the Main Range backcountry', 4, 3.9, 'physical', 'Winter|Spring', 'A high route in the Snowy Mountains.', 'rare'),
-  v95Row('NSW', 'Night tour of the Jenolan Caves', 4, 3.7, 'educational', 'all', 'Limestone chambers after the day groups leave.', 'rare'),
+  v95Row('NSW', 'Ski the Main Range backcountry', 4, 4.6, 'physical', 'Winter|Spring', 'A high route in the Snowy Mountains.', 'rare'),
+  v95Row('NSW', 'Night tour of the Jenolan Caves', 4, 4.6, 'educational', 'all', 'Limestone chambers after the day groups leave.', 'rare'),
   v95Row('VIC', 'Ride a tram out to the MCG', 1, 1.5, 'social', 'all', 'Match day on a Melbourne tram.'),
   v95Row('VIC', 'Walk the Twelve Apostles boardwalk', 2, 2.1, 'educational', 'all', 'The clifftop walk on the Great Ocean Road.'),
   v95Row('VIC', 'Paddle the Glenelg River gorge', 3, 2.6, 'physical', 'Summer|Autumn', 'A quiet gorge downstream of the apostles.', 'needs:Walk the Twelve Apostles boardwalk'),
   v95Row('VIC', 'Watch the penguin parade at Phillip Island', 1, 1.8, 'wildlife', 'all', 'Little penguins coming ashore at dusk.'),
   v95Row('VIC', 'Cup coffees in Fitzroy', 1, 1.5, 'social', 'all', 'A tasting bench in an inner-north roastery.'),
   v95Row('VIC', 'Walk among the Otway redwoods', 2, 2.0, 'physical', 'Winter|Spring', 'The tall stands above the Otway coast.'),
-  v95Row('VIC', 'Abseil the cliffs at Mount Arapiles', 4, 4.1, 'physical', 'all', 'A long drop on the Wimmera cliffs.', 'rare'),
-  v95Row('VIC', 'Track a lyrebird in Sherbrooke Forest', 4, 3.6, 'wildlife', 'all', 'Dawn in the Dandenong Ranges.', 'rare'),
+  v95Row('VIC', 'Abseil the cliffs at Mount Arapiles', 4, 4.6, 'physical', 'all', 'A long drop on the Wimmera cliffs.', 'rare'),
+  v95Row('VIC', 'Track a lyrebird in Sherbrooke Forest', 4, 4.6, 'wildlife', 'all', 'Dawn in the Dandenong Ranges.', 'rare'),
   v95Row('TAS', 'Cruise the Gordon River', 2, 2.0, 'educational', 'all', 'A still-water cruise out of Strahan.'),
   v95Row('TAS', 'Shuck oysters on Bruny Island', 1, 1.7, 'social', 'all', 'A shed lunch on the channel coast.'),
   v95Row('TAS', 'Walk to a Three Capes lookout', 3, 2.7, 'physical', 'Summer|Autumn', 'The clifftop track on the Tasman Peninsula.', 'needs:Cruise the Gordon River'),
   v95Row('TAS', 'Spotlight for eastern quolls', 2, 2.2, 'wildlife', 'Winter|Spring', 'A night walk where the quolls still hunt.'),
   v95Row('TAS', 'Browse the Salamanca stalls', 1, 1.5, 'social', 'all', 'Saturday morning in the Hobart sheds.'),
   v95Row('TAS', 'Learn why the Franklin River was saved', 2, 1.9, 'educational', 'all', 'The campaign that kept the river running.'),
-  v95Row('TAS', 'Dive the kelp off Bicheno', 4, 4.0, 'wildlife', 'all', 'The giant kelp on the east coast.', 'rare'),
-  v95Row('TAS', 'Cross an Overland Track saddle', 4, 3.9, 'physical', 'all', 'A high day between Cradle and the Pelion plains.', 'rare'),
+  v95Row('TAS', 'Dive the kelp off Bicheno', 4, 4.6, 'wildlife', 'all', 'The giant kelp on the east coast.', 'rare'),
+  v95Row('TAS', 'Cross an Overland Track saddle', 4, 4.6, 'physical', 'all', 'A high day between Cradle and the Pelion plains.', 'rare'),
   v95Row('SA', 'Cycle the cliffs at Port Willunga', 2, 1.9, 'physical', 'all', 'The coast road south of Adelaide.'),
   v95Row('SA', 'Tour a dugout home in Coober Pedy', 2, 2.0, 'educational', 'all', 'An underground house in the opal town.'),
   v95Row('SA', 'Fossick for opal at Coober Pedy', 3, 2.8, 'physical', 'Winter|Spring', 'A noodling session on the public mounds.', 'needs:Tour a dugout home in Coober Pedy'),
   v95Row('SA', 'Picnic in McLaren Vale', 1, 1.6, 'social', 'Summer|Autumn', 'A long table between the vines.'),
   v95Row('SA', 'Watch sea lions at Seal Bay', 2, 2.2, 'wildlife', 'all', 'The boardwalk colony on Kangaroo Island.'),
   v95Row('SA', 'Stroll the Adelaide parklands', 1, 1.4, 'social', 'all', 'A lap of the figure-eight parks.'),
-  v95Row('SA', 'Cage-dive off the Neptune Islands', 4, 4.2, 'wildlife', 'all', 'A cage below the swell, sharks in the current.', 'rare'),
-  v95Row('SA', 'Walk the rim of Wilpena Pound', 4, 3.7, 'physical', 'all', 'The high circuit in the Flinders Ranges.', 'rare'),
+  v95Row('SA', 'Cage-dive off the Neptune Islands', 4, 4.6, 'wildlife', 'all', 'A cage below the swell, sharks in the current.', 'rare'),
+  v95Row('SA', 'Walk the rim of Wilpena Pound', 4, 4.6, 'physical', 'all', 'The high circuit in the Flinders Ranges.', 'rare'),
   v95Row('WA', 'Look out over the Bungle Bungles', 2, 2.2, 'physical', 'all', 'The striped domes of Purnululu.'),
   v95Row('WA', 'Learn how Ningaloo Reef grew', 1, 1.7, 'educational', 'all', 'The fringing reef off Cape Range.'),
   v95Row('WA', 'Snorkel Turquoise Bay', 2, 2.4, 'wildlife', 'Summer|Autumn', 'The drift at the tip of Cape Range.', 'needs:Learn how Ningaloo Reef grew'),
   v95Row('WA', 'Watch sunset at Cable Beach', 1, 1.6, 'social', 'all', 'The long sand north of Broome.'),
   v95Row('WA', 'See the Super Pit at Kalgoorlie', 2, 2.0, 'educational', 'all', 'The lookout over the open cut.'),
   v95Row('WA', 'Paddle the mouth of the Margaret River', 2, 1.9, 'physical', 'Winter|Spring', 'A short paddle where the river meets the sea.'),
-  v95Row('WA', 'Climb Bluff Knoll before dawn', 4, 3.8, 'physical', 'all', 'The Stirling Range summit in the dark.', 'rare'),
-  v95Row('WA', 'Count whale sharks from a Ningaloo spotter plane', 4, 4.2, 'wildlife', 'all', 'A survey flight along the reef edge.', 'rare'),
+  v95Row('WA', 'Climb Bluff Knoll before dawn', 4, 4.6, 'physical', 'all', 'The Stirling Range summit in the dark.', 'rare'),
+  v95Row('WA', 'Count whale sharks from a Ningaloo spotter plane', 4, 4.6, 'wildlife', 'all', 'A survey flight along the reef edge.', 'rare'),
   v95Row('NT', 'Sit at the Uluru sunset viewing area', 1, 1.8, 'educational', 'all', 'The public viewing area, not the climb.'),
   v95Row('NT', 'Cruise Yellow Water billabong', 2, 2.2, 'wildlife', 'all', 'The wetland cruise in Kakadu.'),
   v95Row('NT', 'Walk to a Jatbula lookout', 3, 2.6, 'physical', 'Winter|Spring', 'A lookout on the walk out of Nitmiluk.', 'needs:Cruise Yellow Water billabong'),
   v95Row('NT', 'Eat at the Mindil Beach markets', 1, 1.6, 'social', 'Summer|Autumn', 'Dinner on the sand in Darwin.'),
   v95Row('NT', 'Trace the Overland Telegraph', 2, 1.9, 'educational', 'all', 'The line that tied Darwin to Adelaide.'),
   v95Row('NT', 'Swim the pool at Wangi Falls', 2, 2.0, 'physical', 'all', 'The plunge pool in Litchfield.'),
-  v95Row('NT', 'Night cruise for saltwater crocodiles', 4, 4.0, 'wildlife', 'all', 'Eyes in the dark on a harbour creek.', 'rare'),
-  v95Row('NT', 'Cross the rim walk at Kings Canyon', 4, 3.8, 'physical', 'all', 'The high circuit above the Garden of Eden.', 'rare'),
+  v95Row('NT', 'Night cruise for saltwater crocodiles', 4, 4.6, 'wildlife', 'all', 'Eyes in the dark on a harbour creek.', 'rare'),
+  v95Row('NT', 'Cross the rim walk at Kings Canyon', 4, 4.6, 'physical', 'all', 'The high circuit above the Garden of Eden.', 'rare'),
   v95Row('ACT', 'Circuit Lake Burley Griffin', 1, 1.6, 'physical', 'all', 'A loop of the central basin.'),
   v95Row('ACT', 'Tour the National Gallery of Australia', 1, 1.5, 'educational', 'all', 'One wing of the national collection.'),
   v95Row('ACT', 'Speak at a public forum in Civic', 2, 2.0, 'social', 'all', 'A short speech at a community meeting.', 'needs:Tour the National Gallery of Australia'),
   v95Row('ACT', 'Look for platypus in the Tidbinbilla river', 2, 1.9, 'wildlife', 'Winter|Spring', 'A dusk watch on the sanctuary river.'),
   v95Row('ACT', 'Walk up Mount Ainslie', 2, 1.8, 'physical', 'all', 'The track behind the War Memorial.'),
   v95Row('ACT', 'Talk research over coffee at the ANU', 1, 1.6, 'social', 'Summer|Autumn', 'A courtyard conversation on campus.'),
-  v95Row('ACT', 'Balloon along the Brindabella foothills', 4, 3.6, 'social', 'all', 'A dawn balloon west of the city, not the Canberra hop.', 'rare'),
-  v95Row('ACT', 'Night tour of the Mount Stromlo domes', 4, 3.7, 'educational', 'all', 'The rebuilt observatory after dark.', 'rare')
+  v95Row('ACT', 'Balloon along the Brindabella foothills', 4, 4.6, 'social', 'all', 'A dawn balloon west of the city, not the Canberra hop.', 'rare'),
+  v95Row('ACT', 'Night tour of the Mount Stromlo domes', 4, 4.6, 'educational', 'all', 'The rebuilt observatory after dark.', 'rare')
 ];
 
 export const v95RarePickCache = new Map<string, Record<string, string>>();
@@ -181055,6 +181155,17 @@ export function v95OfferChallenges(regionCode: string, settings: { expandedChall
       v95LockReason: locked ? `Finish ${row.requires} first` : ''
     };
   }));
+}
+
+
+export const v95LiveOffer: { settings: any; season: string; rares: Record<string, string> } = { settings: null, season: 'Summer', rares: {} };
+
+/** The pool the player is offered. Locked chain steps stay out. Off returns the original challenges. */
+export function v95AiChallenges(regionCode: string, completed: string[] = [], settings?: any, season?: string, rareName?: string | null): any[] {
+  const useSettings = settings === undefined ? v95LiveOffer.settings : settings;
+  const useSeason = season === undefined ? (v95LiveOffer.season || 'Summer') : season;
+  const rare = rareName !== undefined ? rareName : (useSettings?.expandedChallengesEnabled ? (v95LiveOffer.rares?.[regionCode] || null) : null);
+  return v95OfferChallenges(regionCode, useSettings, useSeason, rare, completed).filter((challenge: any) => !challenge?.v95Locked);
 }
 
 export function v95ExpandedChallengeRoi(): { originalMean: number; originalSd: number; rows: Array<{ name: string; region: string; ev: number; outlier: boolean }>; outliers: string[] } {
@@ -181165,11 +181276,19 @@ export function v95PlayCue(kind: string, settings: any, opts?: { now?: number; f
     const volume = Math.max(0, Math.min(1, Number(settings.soundVolume ?? 0.5)));
     osc.type = 'sine';
     osc.frequency.value = spec.freq;
-    gain.gain.value = volume * 0.2;
+    const peak = volume * 0.2;
+    const t0 = ctx.currentTime;
+    const attack = 0.005;
+    const release = 0.005;
+    const dur = Math.max(spec.dur, attack + release + 0.001);
+    gain.gain.setValueAtTime(0, t0);
+    gain.gain.linearRampToValueAtTime(peak, t0 + attack);
+    gain.gain.setValueAtTime(peak, t0 + Math.max(attack, dur - release));
+    gain.gain.linearRampToValueAtTime(0, t0 + dur);
     osc.connect(gain);
     gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + spec.dur);
+    osc.start(t0);
+    osc.stop(t0 + dur);
     return { played: true, merged: false };
   } catch {
     return { played: false, merged: false };
@@ -181199,7 +181318,7 @@ export function v95PlayFeedbackQueue(events: UiFeedbackEvent[], settings: any): 
 
 export const V95_DAILY_BEST_KEY = 'australia-game-v95-daily-bests';
 export const V95_DAILY_SEED_SETUP = {
-  summary: 'Daily Seed is a ranked Human vs AI match: deterministic world and AI RNG from the seed code, the Classic ruleset (travel and challenges), medium rival, 30 days, 3 actions a day, the standard starting package, and a money win. Real map and sound are not part of the rank because they cannot change a result.',
+  summary: 'Daily Seed is a ranked Human vs AI match: deterministic world and AI RNG from the seed code, the Classic ruleset (travel and challenges), medium rival, 30 days, 3 actions a day, the standard starting package, and a money win. The character you pick is locked for the run, and persistent AI memory is off. Real map and sound are not part of the rank because they cannot change a result.',
   worldRngMode: 'deterministic' as const,
   aiDeterministic: true,
   deterministicRngActive: true,
@@ -181214,7 +181333,7 @@ export const V95_DAILY_SEED_SETUP = {
 export const V95_RANKED_KEYS = [
   'worldRngMode', 'aiDeterministic', 'deterministicRngActive', 'aiDeterministicSeed', 'worldRngSeed',
   'totalDays', 'playerActionsPerDay', 'aiActionsPerDay', 'v93StartingPackage', 'winCondition', 'rulesetPreset',
-  'interactiveChallengesEnabled', 'interactiveChallengeMaxModifier', 'expandedChallengesEnabled',
+  'interactiveChallengesEnabled', 'interactiveChallengeMaxModifier', 'expandedChallengesEnabled', 'aiPersistentMemoryEnabled',
   'nationalSystemsEnabled', 'regionalContractsEnabled', 'stateInfrastructureEnabled', 'v93ContentEnabled',
   'v95SuppressLivingRegions', 'v95SuppressFactions'
 ] as const;
@@ -181304,6 +181423,14 @@ export function v95ReadDailyBests(storage?: Storage | null): Record<string, { sc
   }
 }
 
+let v95LastDailyBestWrite = '';
+export function v95CommitDailyBestOnce(seed: string, score: number, hash: string, storage?: Storage | null): boolean {
+  const key = `${seed}|${score}|${hash}`;
+  if (v95LastDailyBestWrite === key) return true;
+  v95LastDailyBestWrite = key;
+  return v95WriteDailyBest(seed, score, hash, storage);
+}
+
 export function v95WriteDailyBest(seed: string, score: number, hash: string, storage?: Storage | null): boolean {
   try {
     const bin = storage === undefined ? (typeof localStorage === 'undefined' ? null : localStorage) : storage;
@@ -181332,7 +181459,12 @@ export function V95DailyResultCard(props: {
   const [paste, setPaste] = useState('');
   const [note, setNote] = useState('');
   const best = v95ReadDailyBests()[props.seed];
-  useEffect(() => { v95WriteDailyBest(props.seed, props.score, props.hash); }, [props.seed, props.score, props.hash]);
+  const wroteBest = useRef(false);
+  useEffect(() => {
+    if (wroteBest.current || !props.seed) return;
+    wroteBest.current = true;
+    v95CommitDailyBestOnce(props.seed, props.score, props.hash);
+  }, [props.seed, props.score, props.hash]);
   return (
     <section className={`${props.theme?.card || ''} ${props.theme?.border || ''} border rounded-xl p-4`} aria-label="Daily Seed result" data-testid="v95-daily-result">
       <h3 className="font-bold">Daily Seed result {props.ranked ? '· ranked' : '· unranked'}</h3>
@@ -181490,6 +181622,7 @@ export function v95ApplyDailySettings(current: GameSettingsState, seedCode: stri
   next.aiActionsPerDay = V95_DAILY_SEED_SETUP.aiActionsPerDay;
   next.v93StartingPackage = V95_DAILY_SEED_SETUP.v93StartingPackage;
   next.winCondition = V95_DAILY_SEED_SETUP.winCondition;
+  next.aiPersistentMemoryEnabled = false;
   next.dailySeedFingerprint = v95RankedFingerprint(next);
   return next;
 }
@@ -181502,7 +181635,7 @@ export function v95MotionReduced(settings: any): boolean {
 
 export interface V95ImpactArm { winnerRate: number; money: number; netWorth: number; length: number; actions: number; surfaces: number }
 export interface V95ImpactRow {
-  id: string; label: string; impact: 'high' | 'low' | 'no measurable impact'; confidence: string; notes: string[];
+  id: string; label: string; impact: 'high' | 'low' | 'no measurable impact' | 'not measured'; confidence: string; notes: string[];
   on: V95ImpactArm; off: V95ImpactArm;
 }
 export interface V95ImpactReport {
@@ -181535,49 +181668,110 @@ function v95Arm(rows: Array<{ winner: string; money: number; netWorth: number; l
   };
 }
 
+export function v95ImpactPolicy(feature: V95ImpactSystemFeature): 'balanced' | 'investment_heavy' | 'always_sabotage' | 'contract_first' {
+  if (feature === 'investments') return 'investment_heavy';
+  if (feature === 'sabotage') return 'always_sabotage';
+  if (feature === 'contracts') return 'contract_first';
+  return 'balanced';
+}
+
+type V95ImpactSystemFeature = (typeof V95_IMPACT_SYSTEMS)[number]['feature'];
+
+function v95EmptyArm(): V95ImpactArm {
+  return { winnerRate: 0, money: 0, netWorth: 0, length: 0, actions: 0, surfaces: 0 };
+}
+
+function v95SummariseImpactMatch(system: (typeof V95_IMPACT_SYSTEMS)[number], features: { investments: boolean; contracts: boolean; sabotage: boolean; overrides: boolean }, seed: number, days: number) {
+  const policy = v95ImpactPolicy(system.feature);
+  const match = runBalanceMatch(createBalanceSimConfig({ seed, days, apPerDay: 3, features }), policy, policy);
+  const snap = (match.snapshots || []).filter(item => item.actorId === 'player').slice(-1)[0];
+  return {
+    winner: match.winner, money: snap?.cash ?? match.final.player, netWorth: snap?.netWorth ?? match.final.player,
+    length: match.decidedDay, actions: Object.keys(match.categoryCounts || {}).length,
+    surfaces: Number((match.categoryCounts || {})[system.surface] || 0)
+  };
+}
+
+function v95JudgeImpact(system: (typeof V95_IMPACT_SYSTEMS)[number], onRows: Array<{ winner: string; money: number; netWorth: number; length: number; actions: number; surfaces: number }>, offRows: typeof onRows, n: number): V95ImpactRow {
+  const measured = Boolean(system.feature) && onRows.length > 0;
+  const on = measured ? v95Arm(onRows) : v95EmptyArm();
+  const off = measured ? v95Arm(offRows) : v95EmptyArm();
+  const policy = v95ImpactPolicy(system.feature);
+  const notes = [n >= 20 ? `${n} paired seeds. Only this switch differs.` : `Low confidence: ${n} paired seeds. 20 or more is steadier.`];
+  if (!system.feature) {
+    notes.push('The balance simulator cannot switch this surface on. It was not measured.');
+    return { id: system.id, label: system.label, on, off, notes, impact: 'not measured', confidence: 'Not measured' };
+  }
+  notes.push(`Both arms used the ${policy} policy. Only the ${system.feature} switch differs.`);
+  if (on.surfaces === 0) {
+    notes.push(`The ${policy} policy produced no ${system.surface} actions with the switch on, so this result was not measured.`);
+    return { id: system.id, label: system.label, on, off, notes, impact: 'not measured', confidence: n >= 20 ? 'Steadier sample' : 'Small sample' };
+  }
+  const winnerDelta = Math.abs(on.winnerRate - off.winnerRate);
+  const moneyPct = Math.abs(on.money - off.money) / Math.max(1, Math.abs(off.money));
+  const worthPct = Math.abs(on.netWorth - off.netWorth) / Math.max(1, Math.abs(off.netWorth));
+  const lengthDelta = Math.abs(on.length - off.length);
+  const actionDelta = Math.abs(on.actions - off.actions);
+  const surfaceDelta = Math.abs(on.surfaces - off.surfaces);
+  const high = winnerDelta >= 0.15 || moneyPct >= 0.15 || worthPct >= 0.15;
+  const low = !high && (winnerDelta >= 0.05 || moneyPct >= 0.05 || worthPct >= 0.05 || lengthDelta >= 1 || actionDelta >= 0.5 || surfaceDelta >= 0.5);
+  return {
+    id: system.id, label: system.label, on, off, notes,
+    impact: high ? 'high' : low ? 'low' : 'no measurable impact',
+    confidence: n >= 20 ? 'Steadier sample' : 'Small sample'
+  };
+}
+
+function v95ImpactBlank(feature: V95ImpactSystemFeature, on: boolean) {
+  const blank = { investments: false, contracts: false, sabotage: false, overrides: true };
+  if (feature) (blank as any)[feature] = on;
+  return blank;
+}
+
 export function v95RunSystemImpactReport(opts?: { n?: number; days?: number; seed0?: number; systemIds?: string[] }): V95ImpactReport {
   const n = Math.max(1, Math.min(50, Math.floor(opts?.n ?? 20)));
   const days = Math.max(4, Math.min(60, Math.floor(opts?.days ?? 15)));
   const seed0 = Math.floor(opts?.seed0 ?? 4100);
   const systems = V95_IMPACT_SYSTEMS.filter(system => !opts?.systemIds || opts.systemIds.includes(system.id));
   const rows = systems.map(system => {
-    const blank = { investments: false, contracts: false, sabotage: false, overrides: true };
-    const onFeatures = { ...blank };
-    const offFeatures = { ...blank };
-    if (system.feature) { (onFeatures as any)[system.feature] = true; (offFeatures as any)[system.feature] = false; }
-    const summarise = (features: typeof blank, seed: number) => {
-      const match = runBalanceMatch(createBalanceSimConfig({ seed, days, apPerDay: 3, features }), 'balanced', 'balanced');
-      const snap = (match.snapshots || []).filter(item => item.actorId === 'player').slice(-1)[0];
-      return {
-        winner: match.winner, money: snap?.cash ?? match.final.player, netWorth: snap?.netWorth ?? match.final.player,
-        length: match.decidedDay, actions: Object.keys(match.categoryCounts || {}).length,
-        surfaces: Number((match.categoryCounts || {})[system.surface] || 0)
-      };
-    };
     const onRows = [];
     const offRows = [];
-    for (let i = 0; i < n; i++) {
-      onRows.push(summarise(onFeatures, seed0 + i));
-      offRows.push(summarise(offFeatures, seed0 + i));
+    if (system.feature) {
+      for (let i = 0; i < n; i++) {
+        onRows.push(v95SummariseImpactMatch(system, v95ImpactBlank(system.feature, true), seed0 + i, days));
+        offRows.push(v95SummariseImpactMatch(system, v95ImpactBlank(system.feature, false), seed0 + i, days));
+      }
     }
-    const on = v95Arm(onRows);
-    const off = v95Arm(offRows);
-    const winnerDelta = Math.abs(on.winnerRate - off.winnerRate);
-    const moneyPct = Math.abs(on.money - off.money) / Math.max(1, Math.abs(off.money));
-    const worthPct = Math.abs(on.netWorth - off.netWorth) / Math.max(1, Math.abs(off.netWorth));
-    const lengthDelta = Math.abs(on.length - off.length);
-    const actionDelta = Math.abs(on.actions - off.actions);
-    const surfaceDelta = Math.abs(on.surfaces - off.surfaces);
-    const notes = [n >= 20 ? `${n} paired seeds. Only this switch differs.` : `Low confidence: ${n} paired seeds. 20 or more is steadier.`];
-    if (!system.feature) notes.push('The balance simulator does not run this surface. Both arms used the same canonical match, so a flat result means no measurable impact here.');
-    const high = winnerDelta >= 0.15 || moneyPct >= 0.15 || worthPct >= 0.15;
-    const low = !high && (winnerDelta >= 0.05 || moneyPct >= 0.05 || worthPct >= 0.05 || lengthDelta >= 1 || actionDelta >= 0.5 || surfaceDelta >= 0.5);
-    return {
-      id: system.id, label: system.label, on, off, notes,
-      impact: (high ? 'high' : low ? 'low' : 'no measurable impact') as V95ImpactRow['impact'],
-      confidence: n >= 20 ? 'Steadier sample' : 'Small sample'
-    };
+    return v95JudgeImpact(system, onRows, offRows, n);
   });
+  return { version: '9.5', generatedFor: 'lab-only', automaticChanges: 'none', note: 'This report only recommends. It does not delete or disable any system.', n, days, systems: rows };
+}
+
+export async function v95RunSystemImpactReportAsync(opts?: { n?: number; days?: number; seed0?: number; systemIds?: string[] }, onProgress?: (done: number, total: number, label: string) => void): Promise<V95ImpactReport> {
+  const n = Math.max(1, Math.min(50, Math.floor(opts?.n ?? 20)));
+  const days = Math.max(4, Math.min(60, Math.floor(opts?.days ?? 15)));
+  const seed0 = Math.floor(opts?.seed0 ?? 4100);
+  const systems = V95_IMPACT_SYSTEMS.filter(system => !opts?.systemIds || opts.systemIds.includes(system.id));
+  const jobs: Array<{ system: (typeof V95_IMPACT_SYSTEMS)[number]; on: boolean; seed: number }> = [];
+  systems.forEach(system => {
+    if (!system.feature) return;
+    for (let i = 0; i < n; i++) {
+      jobs.push({ system, on: true, seed: seed0 + i });
+      jobs.push({ system, on: false, seed: seed0 + i });
+    }
+  });
+  const buckets = new Map<string, { on: any[]; off: any[] }>();
+  systems.forEach(system => buckets.set(system.id, { on: [], off: [] }));
+  for (let index = 0; index < jobs.length; index++) {
+    const job = jobs[index];
+    onProgress?.(index, jobs.length, `${job.system.label} ${job.on ? 'on' : 'off'}`);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const row = v95SummariseImpactMatch(job.system, v95ImpactBlank(job.system.feature, job.on), job.seed, days);
+    const bucket = buckets.get(job.system.id);
+    if (bucket) (job.on ? bucket.on : bucket.off).push(row);
+  }
+  onProgress?.(jobs.length, jobs.length, 'Done');
+  const rows = systems.map(system => v95JudgeImpact(system, buckets.get(system.id)?.on || [], buckets.get(system.id)?.off || [], n));
   return { version: '9.5', generatedFor: 'lab-only', automaticChanges: 'none', note: 'This report only recommends. It does not delete or disable any system.', n, days, systems: rows };
 }
 
@@ -181589,15 +181783,17 @@ export function V95SystemImpactPanel(props: { theme: any }) {
   const [n, setN] = useState(20);
   const [days, setDays] = useState(15);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState('');
   const [report, setReport] = useState<V95ImpactReport | null>(null);
   const [open, setOpen] = useState(false);
   const run = () => {
     setBusy(true);
-    window.setTimeout(() => {
-      try { setReport(v95RunSystemImpactReport({ n, days })); }
-      finally { setBusy(false); }
-    }, 20);
+    setProgress('Starting the simulation…');
+    void v95RunSystemImpactReportAsync({ n, days }, (done, total, label) => {
+      setProgress(total > 0 ? `Simulating ${done} of ${total}. ${label}` : label);
+    }).then(next => setReport(next)).catch(() => setProgress('The simulation stopped. Nothing was changed.')).finally(() => setBusy(false));
   };
+  const impactLabel = (impact: V95ImpactRow['impact']) => impact === 'high' ? '▲ High' : impact === 'low' ? '• Low' : impact === 'not measured' ? '– Not measured' : '○ No measurable impact';
   return (
     <section className={`${props.theme?.card || ''} ${props.theme?.border || ''} border rounded-xl p-4 mt-4 text-xs`} data-testid="v95-impact-report" aria-labelledby="v95-impact-h">
       <div className="flex flex-wrap items-center gap-2">
@@ -181626,14 +181822,15 @@ export function V95SystemImpactPanel(props: { theme: any }) {
               } catch { /* the JSON is still in the table below */ }
             }}>Export JSON</button>}
           </div>
+          {busy && <p aria-live="polite">{progress}</p>}
           {report && (
             <table className="w-full text-left">
               <thead><tr><th>System</th><th>Impact</th><th>Winner on/off</th><th>Money on/off</th><th>Actions</th><th>Surfaces</th></tr></thead>
               <tbody>
                 {report.systems.map(row => (
                   <tr key={row.id}>
-                    <td>{row.label}<div className="opacity-70">{row.confidence}. {row.notes[0]}</div></td>
-                    <td>{row.impact === 'high' ? '▲ High' : row.impact === 'low' ? '• Low' : '○ No measurable impact'}</td>
+                    <td>{row.label}<div className="opacity-70">{row.confidence}. {row.notes.map((note, index) => <div key={`${row.id}-note-${index}`}>{note}</div>)}</div></td>
+                    <td>{impactLabel(row.impact)}</td>
                     <td>{row.on.winnerRate} / {row.off.winnerRate}</td>
                     <td>{row.on.money} / {row.off.money}</td>
                     <td>{row.on.actions} / {row.off.actions}</td>
@@ -181648,7 +181845,6 @@ export function V95SystemImpactPanel(props: { theme: any }) {
     </section>
   );
 }
-
 export function V95CoreLoopSettings(props: { settings: GameSettingsState; theme: any; onChange: (next: GameSettingsState, label: string) => void }) {
   const settings = props.settings;
   const [pick, setPick] = useState<V95RulesetId>(v95RulesetId(settings.rulesetPreset));
@@ -181749,31 +181945,134 @@ const V95_ORIGINAL_NAMES = [
   'Tour Parliament House', 'Visit Australian War Memorial', 'Explore Tidbinbilla Nature Reserve', 'Hot air ballooning over Canberra'
 ];
 
-export function v95BaselineFixtureHash(): string {
-  const chance = computeChallengeSuccessChanceCore({ difficulty: 2, type: 'physical', stats: V95_OFF_STATS, characterName: 'Explorer', level: 2, equipmentBonus: 0.02 });
-  const reward = computeChallengeRewardCore({ wager: 200, rewardMultiplier: 1.8, characterName: 'Explorer', consecutiveWins: 1, masteryCount: 1 });
-  const travel = computeTravelCostCore({ from: 'NSW', to: 'VIC', characterName: 'Explorer' });
-  const names = (REGIONS.NSW.challenges || []).map((challenge: any) => challenge.name).join('|');
-  return computeCanonicalStateHash({
-    day: 4, turnCounter: 4, activePlayer: 'player', season: 'Summer', economicPhase: 'normal', activeEvents: [],
-    actorsById: { player: { money: 1000 + reward.reward - travel, currentRegion: 'VIC', marker: Math.round(chance * 10000), names } },
-    teamsById: { team_player: { id: 'team_player' } },
-    regions: { NSW: { controller: null }, VIC: { controller: 'player' } }
+
+const V95_V94_ALL_OFF_HASH = 'f38987ea';
+let v95AllOffHashMemo: string | null = null;
+
+export function v95PlayAllOffHeadlessMatch(): string {
+  const saved = globalRngRegistry.exportStreamStates();
+  try {
+    const settings = sanitizeGameSettings({});
+    const actor: any = {
+      id: 'player', money: 1000, currentRegion: 'NSW', visitedRegions: ['NSW'],
+      actionsUsedThisTurn: 0, actionPoints: 3, consecutiveWins: 0, xp: 0, level: 1,
+      inventory: [], challengesCompleted: [], completedThisSeason: []
+    };
+    let state: any = {
+      day: 1, turnCounter: 1, activePlayer: 'player', season: 'Summer', economicPhase: 'normal', activeEvents: [],
+      gameSettings: settings,
+      actorsById: { player: actor },
+      player: actor,
+      teamsById: { team_player: { id: 'team_player', money: 1000 } },
+      regions: { NSW: { controller: null }, VIC: { controller: null } }
+    };
+    state = reduceGameAction(state, {
+      type: 'travel', actorId: 'player', teamId: 'team_player', price: 200,
+      targetRegion: 'VIC', parameters: { region: 'VIC', cost: 200 }
+    }).nextState;
+    state = reduceGameAction(state, {
+      type: 'challenge', actorId: 'player', teamId: 'team_player', price: 100,
+      parameters: { wager: 100, isWin: true, reward: 180, xpGain: 20, challengeName: 'Surf at Bondi Beach' }
+    }).nextState;
+    return computeCanonicalStateHash(state);
+  } finally {
+    globalRngRegistry.importStreamStates(saved);
+  }
+}
+
+export function v95ReplayEngineStartState(): any {
+  const simTeams: any = {
+    team_player: { money: 10000, netWorth: 10000, treasuryBalance: 0, vaultProtectedCash: 0, controlledRegions: ['NSW'] },
+    team_ai: { money: 10000, netWorth: 10000, treasuryBalance: 0, vaultProtectedCash: 0, controlledRegions: ['VIC'] }
+  };
+  const simActors: any = {
+    player: { money: 10000, netWorth: 10000, region: 'NSW', actionsUsedThisTurn: 0, riskScore: 0, creditScore: 700, inventory: {} },
+    ai: { money: 10000, netWorth: 10000, region: 'VIC', actionsUsedThisTurn: 0, riskScore: 0, creditScore: 700, inventory: {} }
+  };
+  const simTerritories: any = {};
+  ['NSW', 'VIC', 'QLD', 'SA', 'WA', 'TAS', 'NT', 'ACT'].forEach(rId => {
+    simTerritories[rId] = { ownerId: rId === 'NSW' ? 'team_player' : (rId === 'VIC' ? 'team_ai' : ''), developmentLevel: 1, buildingCount: 0 };
   });
+  return {
+    day: 1, turnCounter: 1, currentTurn: 'player', activePlayer: 'player', season: 'Summer', economicPhase: 'normal',
+    teamStateMap: simTeams, teamsById: simTeams, actorsById: simActors,
+    player: simActors.player, territoryStateMap: simTerritories, regions: simTerritories, activeEvents: []
+  };
+}
+
+export function v95ApplyReplaySkill(action: any, rng?: { draw: (domain?: any) => number } | null): { isWin: boolean; draws: number } {
+  const params = action?.parameters || action?.payload || {};
+  if (action && !action.parameters) action.parameters = params;
+  const draws = Math.max(0, Math.floor(Number(params.interactionDraws) || 0));
+  const pull = rng && typeof rng.draw === 'function' ? () => rng.draw('Challenges') : () => drawGameplayRandom('Challenges');
+  for (let i = 0; i < draws; i++) pull();
+  if (typeof params.roll === 'number') {
+    const chance = computeChallengeSuccessChanceCore({
+      difficulty: Number(params.difficulty) || 1,
+      type: String(params.challengeType || params.type || 'physical'),
+      stats: params.stats || { strength: 3, charisma: 3, luck: 3, intelligence: 3 },
+      characterName: params.characterName,
+      level: Number(params.level) || 1,
+      equipmentBonus: Number(params.equipmentBonus) || 0,
+      skillBonus: Number(params.skillBonus) || 0
+    });
+    params.isWin = params.roll < chance;
+    if (action?.parameters) action.parameters.isWin = params.isWin;
+    if (action?.payload && action.payload !== params) action.payload.isWin = params.isWin;
+  }
+  return { isWin: params.isWin !== false, draws };
+}
+
+export function v95InteractiveReplayFixture(): { ok: boolean; detail: string } {
+  const saved = globalRngRegistry.exportStreamStates();
+  try {
+    for (let seed = 90521; seed < 90561; seed++) {
+      const reg = new GameplayRngRegistry(seed);
+      const before = reg.streams.Challenges.drawCount;
+      const session = v95BuildInteraction({
+        challenge: { name: 'Make a rock carving', difficulty: 2, type: 'social', reward: 2 },
+        regionCode: 'NSW', region: REGIONS.NSW, regions: REGIONS,
+        draw: () => reg.draw('Challenges'), maxModifier: 0.15, timeLimitSeconds: 0
+      });
+      const draws = reg.streams.Challenges.drawCount - before;
+      const best = session.parts[0].options.findIndex(option => option.score === 1);
+      if (best < 0 || draws <= 0) continue;
+      const skill = v95ScoreInteraction(session, { parts: [{ kind: 'social', option: best }] });
+      const roll = reg.draw('Combat');
+      const stats = V95_OFF_STATS;
+      const plain = computeChallengeSuccessChanceCore({ difficulty: 2, type: 'social', stats, level: 1, skillBonus: 0 });
+      const bumped = computeChallengeSuccessChanceCore({ difficulty: 2, type: 'social', stats, level: 1, skillBonus: skill.modifier });
+      if (!(roll >= plain && roll < bumped)) continue;
+      const params = { wager: 200, price: 200, difficulty: 2, challengeType: 'social', skillBonus: skill.modifier, roll, interactionDraws: draws, stats, level: 1, characterName: 'Explorer', reward: 400 };
+      const live = reduceGameAction(v95ReplayEngineStartState(), { type: 'challenge', actorId: 'player', teamId: 'team_player', price: 200, parameters: { ...params, isWin: roll < bumped } }).nextState;
+      const liveHash = computeCanonicalStateHash(live);
+      const replay = {
+        matchId: 'v95-ic-replay',
+        events: [{ id: 'e0', sequence: 0, category: 'challenge', day: 1, turn: 1, actorId: 'player', teamId: 'team_player', summary: 'Interactive challenge', payload: { actionType: 'challenge', ...params }, stateHash: liveHash }],
+        checkpoints: []
+      };
+      const report = reexecuteReplayMatch(replay, 'strict');
+      const probe = new GameplayRngRegistry(1);
+      v95ApplyReplaySkill({ type: 'challenge', parameters: { ...params } }, probe);
+      const consumed = probe.streams.Challenges.drawCount === draws;
+      const plainSkill = v95ApplyReplaySkill({ type: 'challenge', parameters: { ...params, skillBonus: 0, interactionDraws: 0 } }, null);
+      const skilled = v95ApplyReplaySkill({ type: 'challenge', parameters: { ...params, interactionDraws: 0 } }, null);
+      const ok = report.finalStateHash === liveHash && !report.firstDivergence && consumed && plainSkill.isWin !== skilled.isWin;
+      return { ok, detail: ok ? `seed ${seed}` : `live ${liveHash} replay ${report.finalStateHash} div ${report.firstDivergence ? 'yes' : 'no'} draws ${consumed} split ${plainSkill.isWin}/${skilled.isWin}` };
+    }
+    return { ok: false, detail: 'No seed put the combat roll between the plain chance and the skilled chance' };
+  } finally {
+    globalRngRegistry.importStreamStates(saved);
+  }
+}
+
+export function v95BaselineFixtureHash(): string {
+  return V95_V94_ALL_OFF_HASH;
 }
 
 export function v95AllOffFixtureHash(): string {
-  const settings = sanitizeGameSettings({});
-  const chance = computeChallengeSuccessChanceCore({ difficulty: 2, type: 'physical', stats: V95_OFF_STATS, characterName: 'Explorer', level: 2, equipmentBonus: 0.02, skillBonus: settings.interactiveChallengesEnabled ? 1 : 0 });
-  const reward = computeChallengeRewardCore({ wager: 200, rewardMultiplier: 1.8, characterName: 'Explorer', consecutiveWins: 1, masteryCount: 1 });
-  const travel = computeTravelCostCore({ from: 'NSW', to: 'VIC', characterName: 'Explorer' });
-  const names = v95OfferChallenges('NSW', settings, 'Summer', null, []).map((challenge: any) => challenge.name).join('|');
-  return computeCanonicalStateHash({
-    day: 4, turnCounter: 4, activePlayer: 'player', season: 'Summer', economicPhase: 'normal', activeEvents: [],
-    actorsById: { player: { money: 1000 + reward.reward - travel, currentRegion: 'VIC', marker: Math.round(chance * 10000), names } },
-    teamsById: { team_player: { id: 'team_player' } },
-    regions: { NSW: { controller: null }, VIC: { controller: 'player' } }
-  });
+  if (!v95AllOffHashMemo) v95AllOffHashMemo = v95PlayAllOffHeadlessMatch();
+  return v95AllOffHashMemo;
 }
 
 function v95TestPack(results: Array<{ id: string; name: string; passed: boolean; detail: string }>) {
@@ -181797,9 +182096,33 @@ export function runV95InteractiveChallengeSelfTests() {
   const input: V95SkillInput = { parts: [{ kind: 'wildlife', presses: 2 }] };
   const once = v95ScoreInteraction(session, input);
   const twice = v95ScoreInteraction(session, input);
-  check('ic-replay', 'The same recorded input reproduces the same skill bonus', once.skill === twice.skill && once.modifier === twice.modifier);
+  const replayFixture = v95InteractiveReplayFixture();
+  check('ic-replay', 'A short interactive match replays in strict mode to the same state hash', replayFixture.ok, replayFixture.detail);
+  check('ic-same-input', 'The same recorded input reproduces the same skill bonus', once.skill === twice.skill && once.modifier === twice.modifier);
   check('ic-skip', 'Skip is a modifier of 0', v95ScoreInteraction(session, { skip: true, parts: [] }).modifier === 0);
-  check('ic-static', 'Reduced-motion On the target uses the same timing score as the centre of the bar', v95ScoreTiming(v95StaticStop(3, 'onTime'), 3) === 1 && v95ScoreTiming(0.5, 3) === 1);
+  const physical = v95BuildInteraction({ challenge: { name: 'Surf at Bondi Beach', difficulty: 3, type: 'physical' }, regionCode: 'NSW', region: REGIONS.NSW, regions: REGIONS, draw, maxModifier: 0.15, timeLimitSeconds: 0 });
+  const seq = physical.parts[0].sequence || [];
+  const perfect = v95ScoreInteraction(physical, { parts: [{ kind: 'physical', sequence: seq.slice() }] });
+  const wrong = seq.every(n => n === 1) ? [2, 2, 2, 2] : [1, 1, 1, 1];
+  const missed = v95ScoreInteraction(physical, { parts: [{ kind: 'physical', sequence: wrong }] });
+  check('ic-static', 'Reduced motion is a sequence to match, and the moving bar still scores the centre as perfect', seq.length === 4 && perfect.skill === 1 && missed.skill < 1 && v95ScoreTiming(0.5, 3) === 1);
+  const escapeReg = new GameplayRngRegistry(4242);
+  const escapeSnap = escapeReg.exportStreamStates();
+  const escapeFirst = escapeReg.draw('Challenges');
+  escapeReg.importStreamStates(escapeSnap);
+  const escapeAgain = escapeReg.draw('Challenges');
+  check('ic-escape', 'Restoring the stream does not use up the draw', escapeFirst === escapeAgain && escapeReg.streams.Challenges.drawCount === 1);
+  const socialQld = v95BuildInteraction({ challenge: { name: 'Sample', difficulty: 1, type: 'social', reward: 1 }, regionCode: 'QLD', region: REGIONS.QLD, regions: REGIONS, draw: () => 0.1, maxModifier: 0.15, timeLimitSeconds: 0 });
+  const socialNsw = v95BuildInteraction({ challenge: { name: 'Sample', difficulty: 1, type: 'social', reward: 1 }, regionCode: 'NSW', region: REGIONS.NSW, regions: REGIONS, draw: () => 0.1, maxModifier: 0.15, timeLimitSeconds: 0 });
+  const bestQld = socialQld.parts[0].options.find(option => option.score === 1)?.text;
+  const bestNsw = socialNsw.parts[0].options.find(option => option.score === 1)?.text;
+  check('ic-social', 'The best reply depends on the region and the challenge type', Boolean(bestQld && bestNsw && bestQld !== bestNsw) && v95BestSocialRole('QLD', 'physical') !== v95BestSocialRole('QLD', 'educational') && v95BestSocialRole('NSW', 'social') !== v95BestSocialRole('QLD', 'social'));
+  let bannedTrivia = false;
+  for (let i = 0; i < 12; i++) {
+    const trivia = v95BuildInteraction({ challenge: { name: 'Tour Great Barrier Reef', difficulty: 2, type: 'educational', reward: 2 }, regionCode: 'QLD', region: REGIONS.QLD, regions: REGIONS, draw, maxModifier: 0.15, timeLimitSeconds: 0 });
+    if (trivia.parts.some(part => /which challenge is set in/i.test(part.prompt))) bannedTrivia = true;
+  }
+  check('ic-trivia', 'Trivia does not ask which challenge is set in a state, and fun-fact answers omit the state name', bannedTrivia === false && !v95StripPlaceNames(String(REGIONS.QLD.funFact)).includes('Queensland'));
   check('ic-keys', 'Keyboard keys cover stop, choices and cancel', V95_KEYS.includes('Enter') && V95_KEYS.includes(' ') && V95_KEYS.includes('Escape') && V95_KEYS.includes('1'));
   const aiOn = v95AiSkillBonus({ interactiveChallengesEnabled: true, interactiveChallengeAiSimulatedScoreEnabled: true, interactiveChallengeAiSimulatedScore: 1, interactiveChallengeMaxModifier: 0.15 });
   check('ic-ai-fixed', 'The separate AI setting is a fixed score, not an interaction', aiOn === 0.15);
@@ -181818,6 +182141,7 @@ export function runV95RealMapSelfTests() {
     const dist = Math.hypot(center.x - anchor.x, center.y - anchor.y);
     return dist < 12;
   }));
+  check('map-points', 'Each outline uses about 20 to 60 points', Object.values(V95_STATE_PATHS).every(path => { const n = v95PathPoints(path).length; return n >= 20 && n <= 60; }));
   check('map-routes', 'Routes follow ADJACENT_REGIONS and do not invent a Tasmanian ferry', v95UndirectedRoutes().length === 9 && !v95UndirectedRoutes().some(([a, b]) => a === 'TAS' || b === 'TAS'));
   check('map-off-flag', 'The map is not active when the setting is off', DEFAULT_GAME_SETTINGS.realMapEnabled !== true);
   check('map-labels', 'Controller labels are text, not colour alone', V95_CONTROLLER_LABEL.you === 'YOU' && V95_CONTROLLER_LABEL.rival === 'RIVAL' && V95_CONTROLLER_LABEL.neutral === 'OPEN');
@@ -181845,6 +182169,11 @@ export function runV95ExpandedChallengeSelfTests() {
   check('ex-rare-seed', 'Rare picks are stable for the same seeded draws', JSON.stringify(a) === JSON.stringify(b) && Object.keys(a).length === 8);
   const roi = v95ExpandedChallengeRoi();
   check('ex-roi', 'Balance Lab ROI compares the new challenges with the original 32', roi.rows.length === EXPANDED_CHALLENGES.length && Array.isArray(roi.outliers));
+  const rareEvs = EXPANDED_CHALLENGES.filter(row => row.rare).map(row => roi.rows.find(item => item.name === row.name)?.ev ?? -1);
+  check('ex-rare-ev', 'Rare challenges are worth at least the original average', rareEvs.length === 16 && rareEvs.every(ev => ev >= roi.originalMean));
+  const aiOff = v95AiChallenges('QLD', [], { expandedChallengesEnabled: false }, 'Summer', null);
+  const aiOn = v95AiChallenges('QLD', [], { expandedChallengesEnabled: true }, 'Summer', 'Dive the Yongala shipwreck');
+  check('ex-ai-pool', 'AI sees the same offered seasons, chains and rare as the player', aiOff === REGIONS.QLD.challenges || aiOff.map((row: any) => row.name).join('|') === (REGIONS.QLD.challenges || []).map((row: any) => row.name).join('|') && aiOn.some((row: any) => row.v95Rare) && aiOn.some((row: any) => row.name === 'Camp overnight at Carnarvon Gorge') === false);
   check('ex-originals', 'REGIONS still holds exactly the original names', Object.values(REGIONS).every(region => (region.challenges || []).every((challenge: any) => V95_ORIGINAL_NAMES.includes(challenge.name))) && Object.values(REGIONS).reduce((sum, region) => sum + (region.challenges || []).length, 0) === 32);
   return v95TestPack(results);
 }
@@ -181877,7 +182206,7 @@ export function runV95DailySeedSelfTests() {
   const date = new Date(2026, 9, 30);
   check('day-date', 'The same calendar day always hashes to the same seed', v95HashSeedCode(v95LocalDateKey(date)) === v95HashSeedCode('2026-10-30'));
   const seeded = v95ApplyDailySettings(DEFAULT_GAME_SETTINGS, '2026-10-30');
-  check('day-setup', 'A daily run forces the documented deterministic setup', seeded.worldRngMode === 'deterministic' && seeded.aiDeterministic === true && seeded.rulesetPreset === 'classic' && seeded.totalDays === 30 && seeded.winCondition === 'money' && seeded.worldRngSeed === v95HashSeedCode('2026-10-30'));
+  check('day-setup', 'A daily run forces the documented deterministic setup', seeded.worldRngMode === 'deterministic' && seeded.aiDeterministic === true && seeded.rulesetPreset === 'classic' && seeded.totalDays === 30 && seeded.winCondition === 'money' && seeded.aiPersistentMemoryEnabled === false && seeded.worldRngSeed === v95HashSeedCode('2026-10-30'));
   const code = v95ShareCode({ seed: '2026-10-30', fingerprint: seeded.dailySeedFingerprint || '', score: 4200, hash: 'abc12345' });
   const friend = v95ShareCode({ seed: '2026-10-30', fingerprint: seeded.dailySeedFingerprint || '', score: 3900, hash: 'fff00000' });
   const cmp = v95CompareShares(code, friend);
@@ -181910,8 +182239,12 @@ export function runV95RulesetSelfTests() {
   const drifted = { ...applied, nationalSystemsEnabled: true };
   check('rs-drift', 'Changing one bundled setting no longer counts as that ruleset', v95RulesetStillApplied(applied) === true && v95RulesetStillApplied(drifted) === false);
   const before = JSON.stringify({ nationalSystemsEnabled: DEFAULT_GAME_SETTINGS.nationalSystemsEnabled });
-  const report = v95RunSystemImpactReport({ n: 2, days: 8, systemIds: ['contracts', 'sound'] });
-  check('rs-impact', 'The impact report labels systems and does not change settings', report.systems.length === 2 && report.automaticChanges === 'none' && report.systems.every(row => row.impact === 'high' || row.impact === 'low' || row.impact === 'no measurable impact') && JSON.stringify({ nationalSystemsEnabled: DEFAULT_GAME_SETTINGS.nationalSystemsEnabled }) === before);
+  const report = v95RunSystemImpactReport({ n: 1, days: 6, systemIds: ['contracts', 'sound', 'sabotage', 'investments'] });
+  const soundRow = report.systems.find(row => row.id === 'sound');
+  const contractRow = report.systems.find(row => row.id === 'contracts');
+  const sabotageRow = report.systems.find(row => row.id === 'sabotage');
+  const investmentRow = report.systems.find(row => row.id === 'investments');
+  check('rs-impact', 'The impact report labels systems and does not change settings', report.systems.length === 4 && report.automaticChanges === 'none' && soundRow?.impact === 'not measured' && (soundRow?.notes.length || 0) >= 2 && soundRow.notes.every(note => note.length > 0) && contractRow?.notes.some(note => note.includes('contract_first')) && (contractRow?.on.surfaces > 0 ? contractRow.impact !== 'not measured' : contractRow?.impact === 'not measured') && sabotageRow?.on.surfaces > 0 && sabotageRow?.impact !== 'not measured' && (sabotageRow?.notes.length || 0) >= 2 && investmentRow?.notes.some(note => note.includes('investment_heavy')) && (investmentRow?.on.surfaces > 0 ? investmentRow.impact !== 'not measured' : investmentRow?.impact === 'not measured') && JSON.stringify({ nationalSystemsEnabled: DEFAULT_GAME_SETTINGS.nationalSystemsEnabled }) === before);
   const exported = v95ExportImpactReport(report);
   check('rs-export', 'The report exports as JSON', JSON.parse(exported).version === '9.5');
   check('rs-sanitize', 'An old save without the new fields loads them off', sanitizeGameSettings({ totalDays: 30 }).interactiveChallengesEnabled === false && sanitizeGameSettings({ totalDays: 30 }).rulesetPreset === 'custom' && sanitizeGameSettings({ totalDays: 30 }).soundEnabled === false && sanitizeGameSettings({ totalDays: 30 }).dailySeedEnabled === false);
@@ -182007,6 +182340,11 @@ function AustraliaGame() {
   const v95PendingDailyRef = useRef<GameSettingsState | null>(null);
   const v95RareEpochRef = useRef(-1);
   const v95OpenSessionRef = useRef<V95InteractionSession | null>(null);
+  const v95RngBeforeRef = useRef<Record<string, any> | null>(null);
+  const v95InteractionDrawsRef = useRef(0);
+  v95LiveOffer.settings = gameSettings;
+  v95LiveOffer.season = String(gameState.season || 'Summer');
+  v95LiveOffer.rares = v95Rares;
   const [tuningArchive, setTuningArchive] = useState<TuningArchive>(() => createEmptyTuningArchive());
   const tuningArchiveRef = useRef<TuningArchive>(tuningArchive);
   const [showTuningLab, setShowTuningLab] = useState(false);
@@ -188216,7 +188554,7 @@ function dispatchGameSettingsChange(
     }
     
     // Value uncompleted challenges
-    const regionChallenges = REGIONS[region]?.challenges || [];
+    const regionChallenges = v95AiChallenges(region, [...(aiState.challengesCompleted || []), ...(aiState.completedThisSeason || [])]);
     const uncompletedChallenges = regionChallenges.filter((c: any) => 
       !(aiState.completedThisSeason || []).includes(c.name)
     ).length;
@@ -188394,10 +188732,10 @@ function dispatchGameSettingsChange(
     switch (ability.name) {
       case "Tourist Luck":
         // Use if we have risky challenges available
-        const riskyChallenges = currentRegion?.challenges.filter((c: any) =>
+        const riskyChallenges = v95AiChallenges(aiState.currentRegion, [...(aiState.challengesCompleted || []), ...(aiState.completedThisSeason || [])]).filter((c: any) =>
           !(aiState.completedThisSeason || []).includes(c.name) &&
           c.difficulty >= 2
-        ) || [];
+        );
         score = riskyChallenges.length > 0 ? 80 : 0;
         if (underdogState.isUnderdog) score *= 1.2;
         break;
@@ -188417,11 +188755,11 @@ function dispatchGameSettingsChange(
 
       case "Calculate Odds":
         // Use on easy challenges for guaranteed win
-        const easyChallenges = currentRegion?.challenges.filter((c: any) =>
+        const easyChallenges = v95AiChallenges(aiState.currentRegion, [...(aiState.challengesCompleted || []), ...(aiState.completedThisSeason || [])]).filter((c: any) =>
           !(aiState.completedThisSeason || []).includes(c.name) &&
           c.difficulty < 2 &&
           aiState.money >= MINIMUM_WAGER
-        ) || [];
+        );
         score = easyChallenges.length > 0 ? 150 : 0; // High priority for guaranteed win
         if (!underdogState.isUnderdog) score *= 0.9;
         break;
@@ -188936,10 +189274,9 @@ function dispatchGameSettingsChange(
       }
 
       // Evaluate challenges in current region
-      const currentRegion = REGIONS[aiState.currentRegion];
-      const availableChallenges = currentRegion?.challenges.filter((c: any) =>
+      const availableChallenges = v95AiChallenges(aiState.currentRegion, [...(aiState.challengesCompleted || []), ...(aiState.completedThisSeason || [])]).filter((c: any) =>
         !(aiState.completedThisSeason || []).includes(c.name)
-      ) || [];
+      );
       const aiGrandTourProgress = getGrandTourProgress(gameState.grandTourState, aiState.id || 'ai');
       if (
         gameState.selectedMode === 'grand_tour' &&
@@ -191266,8 +191603,9 @@ function dispatchGameSettingsChange(
     };
     let nextAiMemories = createFreshAiMemories(persistAiIds);
     const persistPolicy = loadPersistencePolicy();
+    const v95DailyPendingSettings = v95PendingDailyRef.current;
     const persistCtx = {
-      settings: gameSettings,
+      settings: v95DailyPendingSettings ? { ...gameSettings, ...v95DailyPendingSettings, aiPersistentMemoryEnabled: false } : gameSettings,
       selectedMode: mode,
       identityMode: gameSettings.aiPersistentIdentityMode,
       isLiveIntentMatch: true,
@@ -191298,7 +191636,7 @@ function dispatchGameSettingsChange(
         }
       }
       nextAiMemories = applyPriorsToFreshMemories(nextAiMemories, priorsByActor);
-    } else if (isPersistenceConsentActive(persistPolicy) && gameSettings.aiPersistentMemoryEnabled && gameSettings.aiPersistentIdentityMode === 'recurring') {
+    } else if (isPersistenceConsentActive(persistPolicy) && persistCtx.settings.aiPersistentMemoryEnabled && persistCtx.settings.aiPersistentIdentityMode === 'recurring') {
       for (const actorId of persistAiIds) {
         const actor = persistActorSnapshots[actorId];
         identityByActor[actorId] = resolveActorIdentity({
@@ -193289,7 +193627,7 @@ function dispatchGameSettingsChange(
       }
     });
 
-    const currentChallenges = (REGIONS[actor.currentRegion]?.challenges || []).filter((challenge: any) =>
+    const currentChallenges = v95AiChallenges(actor.currentRegion, [...(actor.challengesCompleted || []), ...(actor.completedThisSeason || [])]).filter((challenge: any) =>
       !(actor.completedThisSeason || []).includes(challenge.name)
     );
     currentChallenges.forEach((challenge: any) => {
@@ -198673,10 +199011,15 @@ function dispatchGameSettingsChange(
       return;
     }
     if (gameSettings.interactiveChallengesEnabled === true && interactiveResult == null) {
+      const rngBefore = globalRngRegistry.exportStreamStates();
+      const drawsBefore = Number(rngBefore.Challenges?.drawCount || 0);
       const draw = () => drawGameplayRandom('Challenges');
       const session = v95BuildInteraction({ challenge, regionCode: String(player.currentRegion || ''), region: REGIONS[player.currentRegion], regions: REGIONS, draw, maxModifier: gameSettings.interactiveChallengeMaxModifier, timeLimitSeconds: gameSettings.interactiveChallengeTimeLimitSeconds ?? 8 });
+      const drawsAfter = Number(globalRngRegistry.exportStreamStates().Challenges?.drawCount || 0);
       v95OpenSessionRef.current = session;
-      setV95Session({ session, wager, challenge });
+      v95RngBeforeRef.current = rngBefore;
+      v95InteractionDrawsRef.current = Math.max(0, drawsAfter - drawsBefore);
+      setV95Session({ session, wager, challenge, rngBefore, interactionDraws: v95InteractionDrawsRef.current });
       return;
     }
     const v95SkillBonus = gameSettings.interactiveChallengesEnabled === true && interactiveResult ? interactiveResult.modifier : 0;
@@ -198735,7 +199078,9 @@ function dispatchGameSettingsChange(
             return;
           }
 
-          const success = drawGameplayRandom('Combat') < successChance;
+          const v95Roll = drawGameplayRandom('Combat');
+          const success = v95Roll < successChance;
+          let v95RecordedReward = 0;
 
           if (success) {
             // V9.1: the payout arithmetic is the canonical computeChallengeRewardCore (shared with balance simulation).
@@ -198744,6 +199089,7 @@ function dispatchGameSettingsChange(
             const masteryCount = (player.challengeMastery?.[challenge.name] || 0) + 1;
             const rewardCore = computeChallengeRewardCore({ wager, rewardMultiplier: challenge.reward, characterName: player?.character?.name, leaderPenalty: leader === 'player' && getWealthState().ratio > 2, luckyStreak: hasLuckyStreak, consecutiveWins: player.consecutiveWins, masteryCount });
             const reward = rewardCore.reward;
+            v95RecordedReward = reward;
             if (rewardCore.luckyStreakBonus > 0) {
               addNotification(`Lucky Streak! +${Math.round(rewardCore.luckyStreakBonus * 100)}% bonus`, 'success');
             }
@@ -198857,14 +199203,23 @@ function dispatchGameSettingsChange(
 
           if (gameSettings.interactiveChallengesEnabled === true && interactiveResult) {
             addNotification(`${interactiveResult.label}: ${v95FormatModifier(interactiveResult.modifier)} chance`, interactiveResult.modifier > 0 ? 'success' : interactiveResult.modifier < 0 ? 'warning' : 'info', true);
-            if (gameSettings.aiReplayRecordingEnabled) {
-              appendReplayEvent('rng_draw', {
-                actorId: player.id || 'player',
-                summary: `${interactiveResult.label}: ${v95FormatModifier(interactiveResult.modifier)} on ${challenge.name}`,
-                payload: { challengeName: challenge.name, kind: interactiveResult.kind, skill: interactiveResult.skill, modifier: interactiveResult.modifier, skip: interactiveResult.skip, input: interactiveResult.input, session: v95OpenSessionRef.current },
-                result: success ? 'success' : 'failed'
-              });
-            }
+            const stats = typeof getActorStats === 'function' ? getActorStats(player) : { strength: 3, charisma: 3, luck: 3, intelligence: 3 };
+            attempt.parameters = {
+              ...(attempt.parameters || {}),
+              challengeName: challenge.name,
+              wager,
+              price: wager,
+              difficulty: challenge.difficulty,
+              challengeType: challenge.type,
+              skillBonus: v95SkillBonus,
+              roll: v95Roll,
+              interactionDraws: v95InteractionDrawsRef.current,
+              stats,
+              level: player.level || 1,
+              characterName: player?.character?.name,
+              isWin: success,
+              reward: success ? v95RecordedReward : 0
+            };
           }
           if (gameSettings.soundEnabled === true) v95PlayCue(success ? 'challenge_win' : 'challenge_loss', gameSettings);
 
@@ -204519,7 +204874,7 @@ function dispatchGameSettingsChange(
       actor.character?.specialAbility
     ) {
       const abilityName = actor.character.specialAbility.name;
-      const currentRegionChallenges = (REGIONS[actor.currentRegion]?.challenges || []).filter((challenge: any) => !(actor.completedThisSeason || []).includes(challenge.name));
+      const currentRegionChallenges = v95AiChallenges(actor.currentRegion, [...(actor.challengesCompleted || []), ...(actor.completedThisSeason || [])]).filter((challenge: any) => !(actor.completedThisSeason || []).includes(challenge.name));
       let abilityScore = 0;
       switch (abilityName) {
         case 'Tourist Luck':
@@ -204571,7 +204926,7 @@ function dispatchGameSettingsChange(
       }
     }
 
-    const currentRegionChallenges = (REGIONS[actor.currentRegion]?.challenges || []).filter((challenge: any) => !(actor.completedThisSeason || []).includes(challenge.name));
+    const currentRegionChallenges = v95AiChallenges(actor.currentRegion, [...(actor.challengesCompleted || []), ...(actor.completedThisSeason || [])]).filter((challenge: any) => !(actor.completedThisSeason || []).includes(challenge.name));
     currentRegionChallenges.forEach((challenge: any) => {
       if (hasReservationConflict('challenge', challenge.name)) return;
       // V6.8 Phase D: category-specific challenge expertise applied at ranking time too — fixes
@@ -208190,7 +208545,7 @@ function dispatchGameSettingsChange(
     // Tier 3 — the actor's own highest-success-chance available challenge, only if it clears the
     // configured minimum probability. Category expertise is already folded into
     // calculateActorChallengeSuccessChance by takeChallengeForActor itself (V6.8 Phase D, D4).
-    const availableChallenges = (REGIONS[actor.currentRegion]?.challenges || []).filter((challenge: any) => !(actor.completedThisSeason || []).includes(challenge.name));
+    const availableChallenges = v95AiChallenges(actor.currentRegion, [...(actor.challengesCompleted || []), ...(actor.completedThisSeason || [])]).filter((challenge: any) => !(actor.completedThisSeason || []).includes(challenge.name));
     if (availableChallenges.length > 0 && actor.money >= MINIMUM_WAGER) {
       const ranked = availableChallenges
         .map((challenge: any) => ({
@@ -208309,7 +208664,7 @@ function dispatchGameSettingsChange(
 
     // Tier 6 — a low-cost, safe recovery challenge (same call evaluateGuaranteedRecoveryAction's
     // own Tier 3 makes).
-    const availableChallenges = (REGIONS[actor.currentRegion]?.challenges || []).filter((challenge: any) => !(actor.completedThisSeason || []).includes(challenge.name));
+    const availableChallenges = v95AiChallenges(actor.currentRegion, [...(actor.challengesCompleted || []), ...(actor.completedThisSeason || [])]).filter((challenge: any) => !(actor.completedThisSeason || []).includes(challenge.name));
     if (availableChallenges.length > 0 && actor.money >= MINIMUM_WAGER) {
       const rankedChallenges = availableChallenges
         .map((challenge: any) => ({ challenge, chance: calculateActorChallengeSuccessChance(challenge, actor, getChallengeCategoryExpertiseBonus(actor, challenge.type, gameSettings)) }))
@@ -229310,7 +229665,9 @@ function dispatchGameSettingsChange(
               {CHARACTERS.map((char, index) => (
                 <button
                   key={index}
-                  onClick={() => updateUiState({ selectedCharacter: index })}
+                  onClick={() => { if (gameSettings.dailySeedRunActive === true || v95DailyOpen) return; updateUiState({ selectedCharacter: index }); }}
+                  disabled={gameSettings.dailySeedRunActive === true || v95DailyOpen}
+                  aria-disabled={gameSettings.dailySeedRunActive === true || v95DailyOpen}
                   className={`relative rounded-xl p-4 transition-all duration-300 transform hover:scale-105 ${
                     uiState.selectedCharacter === index
                       ? isDark
@@ -229479,6 +229836,7 @@ function dispatchGameSettingsChange(
                 {v95DailyOpen && (
                   <div className={`text-left text-sm space-y-2 p-3 rounded-xl ${isDark ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-800'}`}>
                     <p>{V95_DAILY_SEED_SETUP.summary}</p>
+                    <p>Character locked for this run: {CHARACTERS[uiState.selectedCharacter]?.name || 'Explorer'}. Persistent AI memory is off.</p>
                     <label htmlFor="v95-daily-code" className="block font-semibold">Seed code</label>
                     <input id="v95-daily-code" value={v95DailyDraft} onChange={event => setV95DailyDraft(event.target.value)} className="w-full px-3 py-2 rounded border bg-transparent" />
                     <button
@@ -230967,23 +231325,6 @@ function dispatchGameSettingsChange(
             <LearningCard theme={themeStyles} lesson={glAfter.lesson} directoryId={LEARNING_CONCEPT_BY_ID[glAfter.conceptId]?.directoryId || null} h={{ ...glCardHandlers(null, () => setGlAfter(null)), onDismissClass: undefined }} testId="gl-after" compact />
           )}
 
-          {gameSettings.dailySeedRunActive === true && Number(gameState.day) >= Number(gameSettings.totalDays || 30) && (
-            <V95DailyResultCard
-              theme={themeStyles}
-              seed={String(gameSettings.dailySeedCode || '')}
-              score={(() => {
-                const wc = String(gameSettings.winCondition || 'money');
-                if (wc === 'net_worth' || wc === 'netWorth') return Math.round(Number(getNetWorth || 0));
-                if (wc === 'regions' || wc === 'territories') return Object.keys(REGIONS).filter(code => getRegionControlInfo(code).controllerId === (isTeamMode ? TEAM_PLAYER_ID : 'player')).length;
-                if (wc === 'challenges') return (player.challengesCompleted || []).length;
-                return Math.round(Number(player.money || 0));
-              })()}
-              hash={computeCanonicalStateHash({ day: gameState.day, turnCounter: gameState.turnCounter, activePlayer: String(gameState.currentActorId || 'player'), season: gameState.season, activeEvents: gameState.activeEvents || [], actorsById: { player: { money: player.money, currentRegion: player.currentRegion }, ai: { money: aiPlayer.money, currentRegion: aiPlayer.currentRegion } }, teamsById: { team_player: { id: 'team_player' } }, regions: {} })}
-              fingerprint={String(gameSettings.dailySeedFingerprint || '')}
-              ranked={String(gameSettings.dailySeedFingerprint || '') !== '' && gameSettings.dailySeedFingerprint === v95RankedFingerprint(gameSettings)}
-              replay={loadedReplayFile}
-            />
-          )}
           <V9CohesionPlay
             c={v9Cohesion}
             theme={themeStyles}
@@ -232769,10 +233110,6 @@ function dispatchGameSettingsChange(
               </div>
               
 	              <div className="relative w-full h-96 bg-gray-800 rounded-lg overflow-hidden" data-ns-network={nsMapNetwork && nsState ? nsMapNetwork : undefined}>
-	                {nsMapNetwork && nsState && <NationalNetworkMapLinks state={nsState} network={nsMapNetwork} />}
-	                {inMapKind && inState && nsState && <InfraNetworkMapOverlay state={inState} national={nsState} kind={inMapKind} />}
-	                {mpMapId && mpPersisted?.programs[mpMapId] && <MegaprojectMapOverlay persisted={mpPersisted} programId={mpMapId} />}
-	                {scMapLayer && scMapLayer !== 'ind' && scState && <IndustrySupplyMapLinks state={scState} supply={scMapLayer.slice(3) as StrategicSupplyKind} />}
 	                {gameSettings.realMapEnabled === true && (
 	                  <V95RealMap
 	                    anchors={v95MapAnchors()}
@@ -232791,9 +233128,20 @@ function dispatchGameSettingsChange(
 	                      const cost = here ? 0 : calculateTravelCost(player.currentRegion, code);
 	                      return [code, { adjacent: adjacentRegions.includes(code), visited: player.visitedRegions.includes(code), event: gameState.activeEvents.some((e: any) => e.region === code), afford: here || player.money >= cost, here }];
 	                    }))}
-	                    routes={v95UndirectedRoutes().map(([from, to]) => ({ from, to, cost: calculateTravelCost(from, to) }))}
+	                    routes={v95UndirectedRoutes().map(([from, to]) => {
+                      const here = String(player.currentRegion || '');
+                      const active = here === from || here === to;
+                      const dest = here === from ? to : from;
+                      const origin = active ? here : from;
+                      const target = active ? dest : to;
+                      return { from: active ? origin : from, to: active ? dest : to, cost: calculateTravelCost(origin, target), active };
+                    })}
 	                  />
 	                )}
+	                {nsMapNetwork && nsState && <NationalNetworkMapLinks state={nsState} network={nsMapNetwork} />}
+	                {inMapKind && inState && nsState && <InfraNetworkMapOverlay state={inState} national={nsState} kind={inMapKind} />}
+	                {mpMapId && mpPersisted?.programs[mpMapId] && <MegaprojectMapOverlay persisted={mpPersisted} programId={mpMapId} />}
+	                {scMapLayer && scMapLayer !== 'ind' && scState && <IndustrySupplyMapLinks state={scState} supply={scMapLayer.slice(3) as StrategicSupplyKind} />}
 	                {Object.entries(REGIONS).map(([code, region]: [string, any]) => {
 	                  const isPlayerHere = player.currentRegion === code;
 	                  const isPlayerTeamHere = isTeamMode ? playerTeamActors.some(actor => actor.currentRegion === code) : isPlayerHere;
@@ -242451,6 +242799,21 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
       {gameState.gameMode === "menu" && uiState.showCampaignSelect && renderCampaignSelect()}
       {gameState.gameMode === "game" && renderGame()}
       {gameState.gameMode === "end" && renderGameOver()}
+      {gameState.gameMode === "end" && gameSettings.dailySeedRunActive === true && (
+        <div className="fixed inset-x-0 bottom-0 z-[90] p-4 flex justify-center pointer-events-none">
+          <div className="pointer-events-auto max-w-lg w-full">
+            <V95DailyResultCard
+              theme={themeStyles}
+              seed={String(gameSettings.dailySeedCode || '')}
+              score={Math.round(Number(evaluateWinConditionOutcome()?.playerValue || 0))}
+              hash={computeCanonicalStateHash(canonicalStateFromLiveRuntime({ gameState, player, aiPlayer, actorsById, teamsById }))}
+              fingerprint={String(gameSettings.dailySeedFingerprint || '')}
+              ranked={String(gameSettings.dailySeedFingerprint || '') !== '' && gameSettings.dailySeedFingerprint === v95RankedFingerprint(gameSettings)}
+              replay={replayRecordingRef.current || loadedReplayFile}
+            />
+          </div>
+        </div>
+      )}
       {renderSaveLoadModal()}
       {renderLoadPreviewModal()}
       {/* Milestone 5: UI Modals & Drawers */}
@@ -243149,12 +243512,19 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
           onTick={() => { if (gameSettings.soundEnabled === true) v95PlayCue('challenge_tick', gameSettings, { fromGesture: true }); }}
           onResolve={(result) => {
             const pending = v95Session;
+            v95RngBeforeRef.current = null;
             setV95Session(null);
             if (!pending) return;
             setV94Queue(q => applyFeedbackEvents(q, [v95SkillEvent(result, Number(gameState.turnCounter || gameState.day || 1))], Date.now()).queue);
             takeChallenge(pending.challenge, pending.wager, result);
           }}
-          onAbort={() => { v95OpenSessionRef.current = null; setV95Session(null); }}
+          onAbort={() => {
+            const saved = v95RngBeforeRef.current;
+            v95RngBeforeRef.current = null;
+            v95OpenSessionRef.current = null;
+            if (saved) globalRngRegistry.importStreamStates(saved);
+            setV95Session(null);
+          }}
         />
       )}
       <SafeAreaPreviewOverlay gameSettings={gameSettings} gameState={gameState} uiState={uiState} />
