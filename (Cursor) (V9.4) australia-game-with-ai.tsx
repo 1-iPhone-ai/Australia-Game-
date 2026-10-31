@@ -85298,7 +85298,7 @@ export const QuickActionsReopenHandle: React.FC<QuickActionsReopenHandleProps> =
         zIndex: globalUISurfaceManager.getZIndex(widgetId),
         ...(relocatedPos ? { position: 'fixed', left: `${relocatedPos.x}px`, top: `${relocatedPos.y}px`, bottom: 'auto', right: 'auto' } : {})
       }}
-      className="fixed bottom-4 left-6 z-40"
+      className="phone-reopen-handle fixed bottom-4 left-6 z-40"
     >
       <button
         type="button"
@@ -86108,6 +86108,30 @@ export function settingsPreviewRows(before: any, patch: Record<string, unknown>)
   }));
 }
 
+export function annotateSettingsSwitches(root: ParentNode | null): void {
+  if (!root || typeof (root as any).querySelectorAll !== 'function') return;
+  (root as ParentNode).querySelectorAll('input[type="checkbox"]').forEach(node => {
+    const input = node as HTMLInputElement;
+    input.classList.add('settings-switch-input');
+    input.setAttribute('role', 'switch');
+    input.setAttribute('aria-checked', input.checked ? 'true' : 'false');
+    const row = input.closest('.settings-row, label, .settings-menu-row') as HTMLElement | null;
+    const title = row?.querySelector('.font-semibold, .settings-menu-label')?.textContent || '';
+    const fromLabel = (input.closest('label')?.innerText || '').replace(/\b(On|Off)\b/g, ' ');
+    const name = (input.getAttribute('aria-label') || title || fromLabel).replace(/\b(On|Off)\b/g, ' ').replace(/\s+/g, ' ').trim();
+    if (name) input.setAttribute('aria-label', name);
+    const parent = input.parentElement;
+    if (!parent) return;
+    let state = parent.querySelector(':scope > .settings-switch-state') as HTMLElement | null;
+    if (!state) {
+      state = (input.ownerDocument || document).createElement('span');
+      state.className = 'settings-switch-state';
+      input.insertAdjacentElement('afterend', state);
+    }
+    state.textContent = input.checked ? 'On' : 'Off';
+  });
+}
+
 export function annotateSettingsLockReasons(root: ParentNode | null, info: { teamMode: boolean; liveMatch: boolean }): void {
   if (!root || typeof (root as any).querySelectorAll !== 'function') return;
   const nodes = (root as ParentNode).querySelectorAll('button, input, select, textarea');
@@ -86175,6 +86199,7 @@ export function runSettingsLayoutCheck(doc?: Document | null): { passed: boolean
   if (!root) {
     results.push({ id: 'dom', passed: true, detail: 'Settings window is not open. LAB → Developer runs the on-screen checks.' });
   } else {
+    annotateSettingsSwitches(root);
     annotateSettingsLockReasons(root, { teamMode: true, liveMatch: root.getAttribute('data-live-match') === 'true' });
     const win = root.getBoundingClientRect();
     const content = root.querySelector('[data-testid="settings-content"]') as HTMLElement | null;
@@ -86226,6 +86251,75 @@ export function runSettingsLayoutCheck(doc?: Document | null): { passed: boolean
   return { passed: results.every(row => row.passed), results };
 }
 
+export function runPhoneLayoutCheck(doc?: Document | null): { passed: boolean; results: Array<{ id: string; passed: boolean; detail: string }> } {
+  const results: Array<{ id: string; passed: boolean; detail: string }> = [];
+  const live = doc || (typeof document !== 'undefined' ? document : null);
+  const view = typeof window !== 'undefined' ? window : null;
+  if (!live || !view) {
+    results.push({ id: 'dom', passed: true, detail: 'No document. Open the match and run the check from Developer.' });
+    return { passed: true, results };
+  }
+  const phone = view.innerWidth < 640;
+  const page = live.documentElement;
+  const overflow = page.scrollWidth > page.clientWidth + 2;
+  results.push({ id: 'no-x-overflow', passed: !overflow, detail: overflow ? 'Page is ' + page.scrollWidth + 'px wide in a ' + page.clientWidth + 'px view' : 'No horizontal overflow' });
+  if (!phone) {
+    results.push({ id: 'phone-only', passed: true, detail: 'Viewport is ' + view.innerWidth + 'px. Phone toast, touch and coverage checks run under 640px.' });
+    return { passed: results.every(row => row.passed), results };
+  }
+  const vw = view.innerWidth;
+  const vh = view.innerHeight;
+  const viewportArea = Math.max(1, vw * vh);
+  const turnText = (live.querySelector('[data-testid="v9-turn-owner"]')?.textContent || '').toUpperCase();
+  const humanTurn = !turnText || turnText.includes('YOUR');
+  let cover = 0;
+  const seen = new Set<Element>();
+  if (!humanTurn) {
+    results.push({ id: 'fixed-coverage', passed: true, detail: 'Coverage is measured on a human turn. Current turn: ' + turnText.trim() });
+  } else {
+    live.querySelectorAll('body *').forEach(node => {
+      const el = node as HTMLElement;
+      if (seen.has(el)) return;
+      const cs = view.getComputedStyle(el);
+      if (cs.position !== 'fixed' || cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0) return;
+      let parent = el.parentElement;
+      while (parent) {
+        const pcs = view.getComputedStyle(parent);
+        if (pcs.position === 'fixed' && pcs.display !== 'none' && pcs.visibility !== 'hidden') return;
+        parent = parent.parentElement;
+      }
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) return;
+      const area = Math.max(0, Math.min(rect.right, vw) - Math.max(rect.left, 0)) * Math.max(0, Math.min(rect.bottom, vh) - Math.max(rect.top, 0));
+      if (area < 2 || area > viewportArea * 0.5) return;
+      seen.add(el);
+      cover += area;
+    });
+    const coverPct = Math.round(cover / viewportArea * 100);
+    results.push({ id: 'fixed-coverage', passed: coverPct <= 20, detail: 'Fixed layers cover ' + coverPct + '% during a human turn' });
+  }
+  const toasts = live.querySelectorAll('[data-testid="notification-toast"]');
+  const visibleToasts = Array.from(toasts).filter(el => (el as HTMLElement).getClientRects().length > 0);
+  results.push({ id: 'one-toast', passed: visibleToasts.length <= 1, detail: visibleToasts.length + ' toast(s) visible' });
+  const unnamed: string[] = [];
+  live.querySelectorAll('button, a').forEach(node => {
+    const el = node as HTMLElement;
+    if (!el.getClientRects().length) return;
+    const name = (el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || el.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!name) unnamed.push(el.className.toString().slice(0, 40) || el.tagName);
+  });
+  results.push({ id: 'accessible-names', passed: unnamed.length === 0, detail: unnamed.length ? unnamed.length + ' controls have no name' : 'Buttons and links have names' });
+  const small: string[] = [];
+  live.querySelectorAll('button, a, [role="button"]').forEach(node => {
+    const el = node as HTMLElement;
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return;
+    if (rect.width < 44 || rect.height < 44) small.push((el.getAttribute('aria-label') || el.textContent || el.tagName).replace(/\s+/g, ' ').trim().slice(0, 32));
+  });
+  results.push({ id: 'touch-targets', passed: small.length === 0, detail: small.length ? small.slice(0, 6).join(' | ') : 'Touch targets are at least 44px' });
+  return { passed: results.every(row => row.passed), results };
+}
+
 export const SETTINGS_WINDOW_CSS = `
 .settings-window-frame { position: relative; min-width: 0; }
 .settings-window-frame > div > style { display: none; }
@@ -86274,15 +86368,23 @@ export const SETTINGS_WINDOW_CSS = `
 .settings-window-frame[data-layout="phone"] .settings-scroll select,
 .settings-window-frame[data-layout="phone"] .settings-scroll input { min-height: 44px; }
 .settings-lock-reason { font-size: 12px; margin-top: 4px; opacity: 0.85; }
-.settings-menu-sheet { position: absolute; right: 12px; top: 60px; z-index: 5; min-width: 240px; max-width: calc(100% - 24px); }
-.settings-window-frame[data-layout="phone"] .settings-menu-sheet { left: 0; right: 0; top: auto; bottom: 0; border-radius: 16px 16px 0 0; max-height: 70%; overflow: auto; }
+.settings-window-frame[data-layout="phone"] .settings-menu-sheet { position: fixed; left: 0; right: 0; top: auto; bottom: 0; width: 100%; max-width: 100%; border-radius: 16px 16px 0 0; max-height: 70%; overflow: auto; z-index: 80; }
 .settings-cat-summary { display: block; font-size: 12px; opacity: 0.75; white-space: normal; }
 .settings-essentials-stack > * + * { margin-top: 0; }
 .settings-field-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .settings-window-frame[data-layout="desktop"] [data-testid="settings-essentials"] .settings-row { padding: 1px 0; }
 .settings-window-frame[data-layout="desktop"] [data-testid="settings-essentials"] .settings-row-control { display: flex; align-items: center; gap: 8px; }
 .settings-window-frame[data-layout="desktop"] [data-testid="settings-essentials"] .settings-row-control select,
-.settings-window-frame[data-layout="desktop"] [data-testid="settings-essentials"] .settings-row-control input { flex: 1; min-width: 0; min-height: 32px; padding-top: 2px; padding-bottom: 2px; }
+.settings-window-frame[data-layout="desktop"] [data-testid="settings-essentials"] .settings-row-control input:not([type="checkbox"]) { flex: 1; min-width: 0; min-height: 32px; padding-top: 2px; padding-bottom: 2px; }
+.settings-switch { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+.settings-window-frame input[type="checkbox"] { appearance: none; width: 44px; height: 26px; min-height: 26px !important; flex: 0 0 44px; border-radius: 999px; background: #64748b; border: 0; position: relative; margin: 0; cursor: pointer; }
+.settings-window-frame input[type="checkbox"]::before { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; }
+.settings-window-frame input[type="checkbox"]:checked { background: #2563eb; }
+.settings-window-frame input[type="checkbox"]:checked::before { left: 21px; }
+.settings-switch-state { font-size: 12px; min-width: 1.6rem; }
+.settings-menu-anchor { position: relative; flex: none; }
+.settings-menu-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 2px 4px; }
+.settings-menu-sheet { position: absolute; right: 0; top: calc(100% + 4px); z-index: 5; width: 280px; max-width: 280px; }
 .settings-window-frame[data-layout="desktop"] .settings-ruleset-compact { gap: 2px; }
 .settings-window-frame[data-layout="desktop"] .settings-ruleset-compact p,
 .settings-window-frame[data-layout="desktop"] .settings-ruleset-compact label,
@@ -86293,9 +86395,69 @@ export const SETTINGS_WINDOW_CSS = `
 .settings-window-frame[data-layout="phone"] [data-testid="settings-essentials"] .font-semibold { font-size: 14px; }
 .settings-sound-control, .settings-scale-control { display: flex; align-items: center; gap: 8px; width: 100%; }
 .settings-sound-control input[type="range"], .settings-scale-control input[type="range"] { flex: 1; min-width: 0; }
+.settings-window-frame[data-layout="desktop"] .settings-ruleset-compact { align-items: flex-start; }
+.settings-window-frame[data-layout="desktop"] [data-testid="settings-essentials"] .settings-ruleset-compact .settings-row-control { flex-direction: column; align-items: stretch; flex: 1 1 320px; max-width: 46%; }
 .settings-window-frame[data-layout="phone"] .settings-ruleset-compact { gap: 2px; }
 .settings-window-frame[data-layout="phone"] .settings-ruleset-compact .mt-2 { margin-top: 2px; }
 `;
+
+
+export const PHONE_PLAY_CSS = `
+@media (max-width: 639px) {
+  html, body, #root, .phone-play-root { overflow-x: hidden; max-width: 100%; }
+  .phone-has-bar { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+  .phone-stat-row { display: grid !important; grid-template-columns: 1fr 1fr; gap: 8px 12px; width: 100%; align-items: start; }
+  .phone-stat-row > * { min-width: 0; margin-left: 0 !important; margin-right: 0 !important; overflow-wrap: anywhere; }
+  .phone-stat-row > .border-l { display: none; }
+  .phone-quick-dock, .v96-turn-indicator, .phone-reopen-handle, [data-testid="notification-lane-manager"], [aria-label="Floating Widget Toolbar"] { display: none !important; }
+  .phone-action-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex; gap: 4px; align-items: center; padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px)); background: #0f172a; border-top: 1px solid rgba(148,163,184,0.4); max-height: calc(64px + env(safe-area-inset-bottom, 0px)); box-sizing: border-box; }
+  .phone-action-bar button { min-height: 44px; min-width: 0; flex: 1 1 0; padding: 2px; overflow: hidden; font-size: 10px; line-height: 1.05; white-space: normal; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .phone-more-sheet { position: fixed; left: 0; right: 0; bottom: calc(64px + env(safe-area-inset-bottom, 0px)); z-index: 41; max-height: 70vh; overflow: auto; background: #0f172a; border-top-left-radius: 16px; border-top-right-radius: 16px; padding: 8px 8px 12px; }
+  .phone-more-sheet button { min-height: 44px; min-width: 44px; }
+  .phone-toast { max-height: 12vh; overflow: hidden; }
+  .phone-toast button { min-height: 44px; max-height: 12vh; }
+  .phone-play-root { display: flex; flex-direction: column; }
+  .phone-play-root > * { order: 4; max-width: 100%; }
+  [data-testid="v9-play-hud"] { display: contents; }
+  [data-testid="v9-play-hud"] > * { order: 5; }
+  [data-testid="v9-match-header"] { order: 1; }
+  [data-testid="v9-cohesion-play"] { order: 2; }
+  .phone-board { order: 3; display: flex; flex-direction: column; width: 100%; }
+  .phone-map-col { order: 1; }
+  .phone-map-col > :not(:first-child):not(.australia-map-stage) { display: none; }
+  .phone-rest[open] ~ .phone-board .phone-map-col > :not(:first-child):not(.australia-map-stage) { display: block; }
+  .phone-region-col { order: 2; }
+  .phone-rest { order: 6; }
+  .phone-extra-strips { order: 7; }
+  .phone-extra-strips > .phone-more-summary, .phone-rest-after > .phone-more-summary { display: none; }
+  .phone-more-summary { display: flex; align-items: center; min-height: 44px; font-weight: 700; cursor: pointer; }
+  .australia-map-stage:not([data-real-map="true"]) { height: auto !important; display: grid !important; grid-template-columns: 1fr 1fr; gap: 8px; overflow: visible; padding: 8px; }
+  .australia-map-stage:not([data-real-map="true"]) > [role="button"] { position: relative !important; left: auto !important; top: auto !important; transform: none !important; min-height: 44px; min-width: 44px; display: flex; flex-direction: column; align-items: center; }
+  .australia-map-stage:not([data-real-map="true"]) > [role="button"] > div { width: 100% !important; height: auto !important; min-height: 44px; min-width: 44px; border-radius: 12px; flex-direction: column; padding: 6px; white-space: normal; }
+  .australia-map-stage:not([data-real-map="true"]) [data-testid="map-you-marker"],
+  .australia-map-stage:not([data-real-map="true"]) [data-testid="map-rival-marker"] { position: static; transform: none; margin-top: 4px; white-space: normal; }
+  .phone-region-name { display: block; font-size: 11px; font-weight: 600; white-space: normal; text-align: center; line-height: 1.15; }
+  .phone-play-root button, .phone-play-root a, .phone-play-root [role="button"], .phone-play-root select, .phone-play-root summary { min-height: 44px; min-width: 44px; }
+  .fixed.inset-0 { padding: 0 !important; align-items: stretch !important; }
+  .fixed.inset-0 > div { width: 100% !important; max-width: 100% !important; height: 100% !important; max-height: 100% !important; border-radius: 0 !important; display: flex; flex-direction: column; }
+  .fixed.inset-0 button { min-height: 44px; min-width: 44px; }
+}
+@media (min-width: 640px) {
+  .phone-rest { display: contents; }
+  .phone-more-summary { display: none; }
+  .phone-region-name { display: none; }
+  .phone-action-bar, .phone-more-sheet { display: none !important; }
+}
+`;
+
+export function SettingsSwitch(props: { checked: boolean; label: string; onChange: (next: boolean) => void; disabled?: boolean }) {
+  return (
+    <label className="settings-switch">
+      <input type="checkbox" role="switch" aria-checked={props.checked} aria-label={props.label} checked={props.checked} disabled={props.disabled} onChange={event => props.onChange(event.target.checked)} />
+      <span className="settings-switch-state">{props.checked ? 'On' : 'Off'}</span>
+    </label>
+  );
+}
 
 export function SettingsEssentialsPanel(props: {
   gameSettings: GameSettingsState;
@@ -86310,6 +86472,8 @@ export function SettingsEssentialsPanel(props: {
   onAssistant: (level: AssistanceLevel) => void;
   onOpenMechanics: () => void;
   onResetKey: (key: string) => void;
+  onQueueNext?: (patch: Record<string, unknown>) => void;
+  onCancelNext?: (key: string) => void;
   changedOnly?: boolean;
 }) {
   const rulesetId = v95RulesetId(props.gameSettings.rulesetPreset);
@@ -86351,6 +86515,10 @@ export function SettingsEssentialsPanel(props: {
     if (key === 'theme' || key === 'aiDifficulty' || key === 'how') return false;
     return (aliases[key] || [key]).some(item => props.changedKeys.includes(item));
   };
+  const pending = (props.uiState?.nextMatchPending || {}) as Record<string, any>;
+  const queue = (key: string, value: unknown, extra?: Record<string, unknown>) => {
+    if (props.liveMatch && props.onQueueNext) props.onQueueNext({ [key]: value, ...(extra || {}) });
+  };
   const access = props.gameSettings.accessibilitySettings || createDefaultAccessibilitySettings();
   const patchAccess = (label: string, patch: Partial<AccessibilitySettings>) => props.onSettings(label, prev => ({
     ...prev,
@@ -86365,32 +86533,35 @@ export function SettingsEssentialsPanel(props: {
           <div className="text-xs opacity-75">How strongly the opponent plays.</div>
         </div>
         <div className="settings-row-control">
-          <select id="settings-ai-difficulty" aria-label="AI opponent difficulty" className={`${props.theme.select} rounded px-3 py-2 w-full`} value={props.gameState.aiDifficulty} disabled={props.liveMatch} aria-disabled={props.liveMatch || undefined} data-lock-reason={props.liveMatch ? 'Applies next match' : undefined} onChange={event => props.onDifficulty(event.target.value)}>
+          <select id="settings-ai-difficulty" aria-label="AI opponent difficulty" className={`${props.theme.select} rounded px-3 py-2 w-full`} value={props.liveMatch && pending.aiDifficulty ? pending.aiDifficulty : props.gameState.aiDifficulty} onChange={event => props.liveMatch ? queue('aiDifficulty', event.target.value) : props.onDifficulty(event.target.value)}>
             {Object.keys(AI_DIFFICULTY_PROFILES).map(key => <option key={key} value={key}>{AI_DIFFICULTY_PROFILES[key].name}</option>)}
           </select>
-          {props.liveMatch && <div className="settings-lock-reason">Applies next match</div>}
+          {props.liveMatch && <div className="settings-lock-reason">Applies next match{pending.aiDifficulty ? <> · <button type="button" className="underline" onClick={() => props.onCancelNext?.('aiDifficulty')}>Cancel</button></> : null}</div>}
         </div>
       </div>
       <div className="settings-row" data-setting-key="totalDays" style={{ display: showRow('totalDays') ? undefined : 'none' }}>
         <div className="settings-row-copy"><div className="font-semibold">Game length</div><div className="text-xs opacity-75">How many days the match lasts.</div>{reasonFor('totalDays')}</div>
         <div className="settings-row-control">
-          <input id="settings-total-days" aria-label="Game length" type="number" min={10} max={100} className={`${props.theme.input || props.theme.select} rounded px-3 py-2 w-full`} value={props.gameSettings.totalDays} onChange={event => props.onSettings('Game length', prev => ({ ...prev, totalDays: Math.max(10, Math.min(100, Math.floor(Number(event.target.value) || prev.totalDays))) }))} />
+          <input id="settings-total-days" aria-label="Game length" type="number" min={10} max={100} className={`${props.theme.input || props.theme.select} rounded px-3 py-2 w-full`} value={props.liveMatch && pending.totalDays != null ? pending.totalDays : props.gameSettings.totalDays} onChange={event => { const value = Math.max(10, Math.min(100, Math.floor(Number(event.target.value) || props.gameSettings.totalDays))); if (props.liveMatch) queue('totalDays', value); else props.onSettings('Game length', prev => ({ ...prev, totalDays: value })); }} />
+          {props.liveMatch && <div className="settings-lock-reason">Applies next match{pending.totalDays != null ? <> · <button type="button" className="underline" onClick={() => props.onCancelNext?.('totalDays')}>Cancel</button></> : null}</div>}
           {reset('totalDays')}
         </div>
       </div>
       <div className="settings-row" data-setting-key="playerActionsPerDay" style={{ display: showRow('playerActionsPerDay') ? undefined : 'none' }}>
         <div className="settings-row-copy"><div className="font-semibold">Actions per day</div><div className="text-xs opacity-75">How many you can take each day.</div>{reasonFor('playerActionsPerDay')}</div>
         <div className="settings-row-control">
-          <input id="settings-actions-per-day" aria-label="Actions per day" type="number" min={1} max={10} className={`${props.theme.input || props.theme.select} rounded px-3 py-2 w-full`} value={props.gameSettings.playerActionsPerDay} onChange={event => { const value = Math.max(1, Math.min(10, Math.floor(Number(event.target.value) || 1))); props.onSettings('Actions per day', prev => ({ ...prev, playerActionsPerDay: value, maxActionsPerTurn: value })); }} />
+          <input id="settings-actions-per-day" aria-label="Actions per day" type="number" min={1} max={10} className={`${props.theme.input || props.theme.select} rounded px-3 py-2 w-full`} value={props.liveMatch && pending.playerActionsPerDay != null ? pending.playerActionsPerDay : props.gameSettings.playerActionsPerDay} onChange={event => { const value = Math.max(1, Math.min(10, Math.floor(Number(event.target.value) || 1))); if (props.liveMatch) queue('playerActionsPerDay', value, { maxActionsPerTurn: value }); else props.onSettings('Actions per day', prev => ({ ...prev, playerActionsPerDay: value, maxActionsPerTurn: value })); }} />
+          {props.liveMatch && <div className="settings-lock-reason">Applies next match{pending.playerActionsPerDay != null ? <> · <button type="button" className="underline" onClick={() => props.onCancelNext?.('playerActionsPerDay')}>Cancel</button></> : null}</div>}
           {reset('playerActionsPerDay')}
         </div>
       </div>
       <div className="settings-row" data-setting-key="winCondition" style={{ display: showRow('winCondition') ? undefined : 'none' }}>
         <div className="settings-row-copy"><div className="font-semibold">Win condition</div><div className="text-xs opacity-75">What decides the winner.</div>{reasonFor('winCondition')}</div>
         <div className="settings-row-control">
-          <select id="settings-win-condition" aria-label="Win condition" className={`${props.theme.select} rounded px-3 py-2 w-full`} value={props.gameSettings.winCondition} onChange={event => props.onSettings('Win condition', prev => ({ ...prev, winCondition: normalizeWinMetric(event.target.value) }))}>
+          <select id="settings-win-condition" aria-label="Win condition" className={`${props.theme.select} rounded px-3 py-2 w-full`} value={props.liveMatch && pending.winCondition ? pending.winCondition : props.gameSettings.winCondition} onChange={event => { const value = normalizeWinMetric(event.target.value); if (props.liveMatch) queue('winCondition', value); else props.onSettings('Win condition', prev => ({ ...prev, winCondition: value })); }}>
             {WIN_METRIC_OPTIONS.map(option => <option key={option} value={option}>{WIN_METRIC_LABELS[option]}</option>)}
           </select>
+          {props.liveMatch && <div className="settings-lock-reason">Applies next match{pending.winCondition ? <> · <button type="button" className="underline" onClick={() => props.onCancelNext?.('winCondition')}>Cancel</button></> : null}</div>}
           {reset('winCondition')}
         </div>
       </div>
@@ -86410,7 +86581,7 @@ export function SettingsEssentialsPanel(props: {
         <div key={key} className="settings-row" data-setting-key={key} style={{ display: showRow(key) ? undefined : 'none' }}>
           <div className="settings-row-copy"><div className="font-semibold">{label}</div><div className="text-xs opacity-75">{description}</div>{reasonFor(key)}</div>
           <div className="settings-row-control">
-            <label className="inline-flex items-center gap-2"><input type="checkbox" checked={Boolean((props.gameSettings as any)[key])} onChange={event => props.onSettings(label, prev => ({ ...prev, [key]: event.target.checked }))} /> On</label>
+            <SettingsSwitch label={label} checked={Boolean((props.gameSettings as any)[key])} onChange={checked => props.onSettings(label, prev => ({ ...prev, [key]: checked }))} />
             {reset(key)}
           </div>
         </div>
@@ -86418,7 +86589,7 @@ export function SettingsEssentialsPanel(props: {
       <div className="settings-row" data-setting-key="soundEnabled" style={{ display: showRow('soundEnabled') ? undefined : 'none' }}>
         <div className="settings-row-copy"><div className="font-semibold">Sound</div><div className="text-xs opacity-75">Tones for money, travel and challenges.</div>{reasonFor('soundEnabled')}</div>
         <div className="settings-row-control settings-sound-control">
-          <label className="inline-flex items-center gap-2"><input type="checkbox" aria-label="Sound" checked={props.gameSettings.soundEnabled === true} onChange={event => props.onSettings('Sound', prev => ({ ...prev, soundEnabled: event.target.checked }))} /> Sound on</label>
+          <SettingsSwitch label="Sound" checked={props.gameSettings.soundEnabled === true} onChange={checked => props.onSettings('Sound', prev => ({ ...prev, soundEnabled: checked }))} />
           <input id="settings-volume" aria-label="Volume" type="range" min={0} max={1} step={0.05} value={Number(props.gameSettings.soundVolume ?? 0.5)} onChange={event => props.onSettings('Volume', prev => ({ ...prev, soundVolume: Number(event.target.value) }))} className="w-full" />
           {reset('soundEnabled')}
         </div>
@@ -86441,7 +86612,7 @@ export function SettingsEssentialsPanel(props: {
       </div>
       <div className="settings-row" data-setting-key="reducedMotion" style={{ display: showRow('reducedMotion') ? undefined : 'none' }}>
         <div className="settings-row-copy"><div className="font-semibold">Reduced motion</div><div className="text-xs opacity-75">Keep movement short and still.</div></div>
-        <div className="settings-row-control"><label className="inline-flex items-center gap-2"><input type="checkbox" checked={access.reducedMotion === true} onChange={event => patchAccess('Reduced motion', { reducedMotion: event.target.checked })} /> Reduce motion</label></div>
+        <div className="settings-row-control"><SettingsSwitch label="Reduced motion" checked={access.reducedMotion === true} onChange={checked => patchAccess('Reduced motion', { reducedMotion: checked })} /></div>
       </div>
       <div className="settings-row" data-setting-key="textScaleMultiplier" style={{ display: showRow('textScaleMultiplier') ? undefined : 'none' }}>
         <div className="settings-row-copy"><div className="font-semibold">Text size</div><div className="text-xs opacity-75">Scale interface text.</div></div>
@@ -86452,7 +86623,7 @@ export function SettingsEssentialsPanel(props: {
       </div>
       <div className="settings-row" data-setting-key="highContrastFocusRings" style={{ display: showRow('highContrastFocusRings') ? undefined : 'none' }}>
         <div className="settings-row-copy"><div className="font-semibold">High contrast focus</div><div className="text-xs opacity-75">Stronger keyboard outlines.</div></div>
-        <div className="settings-row-control"><label className="inline-flex items-center gap-2"><input type="checkbox" checked={access.highContrastFocusRings === true} onChange={event => patchAccess('High contrast focus', { highContrastFocusRings: event.target.checked })} /> High contrast focus</label></div>
+        <div className="settings-row-control"><SettingsSwitch label="High contrast focus" checked={access.highContrastFocusRings === true} onChange={checked => patchAccess('High contrast focus', { highContrastFocusRings: checked })} /></div>
       </div>
       <div className="settings-row" data-setting-key="notificationSettings" style={{ display: showRow('notificationSettings') ? undefined : 'none' }}>
         <div className="settings-row-copy"><div className="font-semibold">Notifications</div><div className="text-xs opacity-75">How many pop-ups can sit on screen.</div></div>
@@ -88785,6 +88956,11 @@ export function isCriticalNotification(n: any): boolean {
   return false;
 }
 
+export function isSettingsCriticalAlert(n: any): boolean {
+  if (!n) return false;
+  return isCriticalNotification({ ...n, persistent: false });
+}
+
 // --- 11. Notification Lane Manager Component ---
 export const NotificationLaneManager: React.FC<NotificationLaneManagerProps> = ({
   settings,
@@ -88805,7 +88981,8 @@ export const NotificationLaneManager: React.FC<NotificationLaneManagerProps> = (
 
   // V7.2 R1 & R2: Hide ordinary notification toasts during active blocking modals while preserving critical alerts
   let activeToasts = notifications;
-  if (isBlockingModalOpen) return null;
+  if (isBlockingModalOpen || currentUiState?.showSettings) return null;
+  if (typeof window !== 'undefined' && window.innerWidth < 640) return null;
 
   if (activeToasts.length === 0) return null;
 
@@ -136372,6 +136549,7 @@ function v95NormalizeSuiteResults(raw: unknown): Array<{ name: string; passed: b
 
 export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'settings-layout', label: 'Settings layout check', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runSettingsLayoutCheck(typeof document !== 'undefined' ? document : null) },
+  { id: 'phone-layout', label: 'Phone layout check', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runPhoneLayoutCheck(typeof document !== 'undefined' ? document : null) },
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
@@ -182360,26 +182538,50 @@ export function V95CoreLoopSettings(props: { settings: GameSettingsState; theme:
       <span><span className="font-semibold">{label}</span><span className="block text-xs opacity-75">{description}</span></span>
     </label>
   );
+  if (props.mode === 'ruleset') {
+    const undoReady = Boolean(settings.rulesetUndoSnapshot);
+    return (
+      <div className="settings-row settings-ruleset-compact" data-testid="v95-core-loop-settings" data-setting-key="rulesetPreset">
+        <div className="settings-row-copy">
+          <div className="font-semibold">Ruleset: {V95_RULESET_LABEL[v95RulesetId(settings.rulesetPreset)]}</div>
+          <div className="text-xs opacity-75">A hand edit switches the label to Custom.</div>
+        </div>
+        <div className="settings-row-control">
+          <select id="v95-ruleset" aria-label="Ruleset" value={pick} onChange={event => setPick(v95RulesetId(event.target.value))} className={`${props.theme?.select || ''} rounded px-2 py-1 w-full`}>
+            {(Object.keys(V95_RULESET_LABEL) as V95RulesetId[]).map(id => <option key={id} value={id}>{V95_RULESET_LABEL[id]}</option>)}
+          </select>
+          <SettingsSwitch label="Include new features" checked={include} onChange={setInclude} />
+          <div className="text-xs" aria-live="polite">
+            {pick === 'custom' ? 'Custom keeps your current settings.' : diff.length ? `${diff.length} setting${diff.length === 1 ? '' : 's'} will change:` : 'This ruleset already matches the current settings.'}
+            {diff.length > 0 && <ul className="list-disc pl-5 mt-1">{diff.slice(0, 12).map(row => <li key={row.key}>{row.key}: {row.from} → {row.to}</li>)}{diff.length > 12 && <li>and {diff.length - 12} more</li>}</ul>}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={`${props.theme?.button || ''} text-white px-3 py-1 rounded`} onClick={() => props.onChange(v95ApplyRuleset(settings, pick, include), 'V9.5 ruleset')}>Apply ruleset</button>
+            <button type="button" className={`${props.theme?.buttonSecondary || ''} px-3 py-1 rounded`} disabled={!undoReady} data-lock-reason={undoReady ? undefined : 'Nothing to undo yet'} onClick={() => props.onChange(v95UndoRuleset(settings), 'Undo V9.5 ruleset')}>Undo</button>
+          </div>
+          
+        </div>
+      </div>
+    );
+  }
   return (
-    <div className={props.mode === 'ruleset' ? 'settings-ruleset-compact' : 'space-y-4'} data-testid="v95-core-loop-settings">
+    <div className="space-y-4" data-testid="v95-core-loop-settings">
       <div>
         <div className="font-semibold">Ruleset: {V95_RULESET_LABEL[v95RulesetId(settings.rulesetPreset)]}</div>
-        <p className="text-xs opacity-75">{props.mode === 'ruleset' ? 'A hand edit switches the label to Custom.' : 'Custom leaves the game as it is. Applying a ruleset can be undone. Changing any bundled setting afterwards returns the label to Custom.'}</p>
+        <p className="text-xs opacity-75">Custom leaves the game as it is. Applying a ruleset can be undone. Changing any bundled setting afterwards returns the label to Custom.</p>
         <select id="v95-ruleset" aria-label="Ruleset to preview" value={pick} onChange={event => setPick(v95RulesetId(event.target.value))} className={`${props.theme?.select || ''} rounded px-2 py-1`}>
           {(Object.keys(V95_RULESET_LABEL) as V95RulesetId[]).map(id => <option key={id} value={id}>{V95_RULESET_LABEL[id]}</option>)}
         </select>
-        <label className="flex items-start gap-2 text-sm mt-2">
-          <input type="checkbox" checked={include} onChange={event => setInclude(event.target.checked)} />
-          <span>Include new features</span>
-        </label>
+        <div className="mt-2"><SettingsSwitch label="Include new features" checked={include} onChange={setInclude} /></div>
         <div className="text-sm mt-2" aria-live="polite">
-          {pick === 'custom' ? 'Custom applies nothing.' : diff.length ? `${diff.length} setting${diff.length === 1 ? '' : 's'} will change:` : 'This ruleset already matches the current settings.'}
+          {pick === 'custom' ? 'Custom keeps your current settings.' : diff.length ? `${diff.length} setting${diff.length === 1 ? '' : 's'} will change:` : 'This ruleset already matches the current settings.'}
           {diff.length > 0 && <ul className="list-disc pl-5 text-xs mt-1">{diff.slice(0, 12).map(row => <li key={row.key}>{row.key}: {row.from} → {row.to}</li>)}{diff.length > 12 && <li>and {diff.length - 12} more</li>}</ul>}
         </div>
         <div className="flex flex-wrap gap-2 mt-2">
           <button type="button" className={`${props.theme?.button || ''} text-white px-3 py-1 rounded`} onClick={() => props.onChange(v95ApplyRuleset(settings, pick, include), 'V9.5 ruleset')}>Apply ruleset</button>
-          <button type="button" className={`${props.theme?.buttonSecondary || ''} px-3 py-1 rounded`} disabled={!settings.rulesetUndoSnapshot} onClick={() => props.onChange(v95UndoRuleset(settings), 'Undo V9.5 ruleset')}>Undo</button>
+          <button type="button" className={`${props.theme?.buttonSecondary || ''} px-3 py-1 rounded`} disabled={!settings.rulesetUndoSnapshot} data-lock-reason={settings.rulesetUndoSnapshot ? undefined : 'Nothing to undo yet'} onClick={() => props.onChange(v95UndoRuleset(settings), 'Undo V9.5 ruleset')}>Undo</button>
         </div>
+        
       </div>
       {props.mode !== 'ruleset' && <>
       {check('interactiveChallengesEnabled', 'Interactive challenges', 'A short interaction before a human challenge roll. Off uses the plain roll.')}
@@ -184040,9 +184242,11 @@ function AustraliaGame() {
   const isTeamMode = useMemo(() => isTeamModeSelection(gameState.selectedMode), [gameState.selectedMode]);
   useLayoutEffect(() => {
     if (!uiState.showSettings) return;
-    annotateSettingsLockReasons(document.querySelector('[data-testid="settings-window"]'), {
+    const settingsRoot = document.querySelector('[data-testid="settings-window"]');
+    annotateSettingsSwitches(settingsRoot);
+    annotateSettingsLockReasons(settingsRoot, {
       teamMode: isTeamMode,
-      liveMatch: Boolean(gameState.gameStarted && !gameState.gameOver)
+      liveMatch: gameState.gameMode === 'game' && !gameState.gameOver
     });
   }, [uiState.showSettings, uiState.settingsWindowCategory, uiState.settingsViewMode, uiState.settingsPhonePane, uiState.settingsSearchQuery, gameSettings, isTeamMode, gameState.gameStarted, gameState.gameOver, gameState.aiDifficulty]);
   // Latest stored Team Operating System state for callbacks that run outside render (Strategic Command).
@@ -192028,6 +192232,20 @@ function dispatchGameSettingsChange(
         return;
       }
       skipPersistentAbandonPromptRef.current = false;
+      const pendingNext = nextMatchPendingRef.current || {};
+      if (pendingNext.totalDays != null || pendingNext.playerActionsPerDay != null || pendingNext.winCondition || pendingNext.aiDifficulty) {
+        const patch: Partial<GameSettingsState> = {};
+        if (pendingNext.totalDays != null) patch.totalDays = pendingNext.totalDays;
+        if (pendingNext.playerActionsPerDay != null) {
+          patch.playerActionsPerDay = pendingNext.playerActionsPerDay;
+          patch.maxActionsPerTurn = pendingNext.maxActionsPerTurn ?? pendingNext.playerActionsPerDay;
+        }
+        if (pendingNext.winCondition) patch.winCondition = pendingNext.winCondition;
+        if (Object.keys(patch).length) trackedSetGameSettings('direct_player_change', 'Next match', prev => ({ ...prev, ...patch }));
+        if (pendingNext.aiDifficulty) difficulty = pendingNext.aiDifficulty;
+        nextMatchPendingRef.current = {};
+        updateUiState({ nextMatchPending: {} });
+      }
       v95MatchEpochRef.current += 1;
       soloAiTurnSessionTokenRef.current = null; soloAiClaimsRef.current = createSoloAiClaimRegistry(); soloAiRuntimeRef.current = null; setSoloAiPhase('idle');
       if (gameSettings && (gameSettings as any).deferredTransactions?.length) {
@@ -192308,6 +192526,7 @@ function dispatchGameSettingsChange(
         true
       );
     }
+    if (typeof window !== 'undefined') window.scrollTo(0, 0);
   }, [addNotification, gameSettings, gameState.gameMode, gameState.selectedMode, isolatedReplayRuntime, pickRandomCharacters, showConfirmation, uiState.playerName, uiState.selectedCharacter, updateUiState]);
 
   // Phase 12: Scenario Launch & Exit Handlers
@@ -215412,6 +215631,44 @@ function dispatchGameSettingsChange(
   // After-action feedback for MAJOR player actions: the player's own root event and what the world did next.
   const [v9AfterDismissed, setV9AfterDismissed] = useState<string[]>([]);
   const [v9PlayDetailsOpen, setV9PlayDetailsOpen] = useState(false);
+  const [phonePlay, setPhonePlay] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches);
+  const [phoneMoreOpen, setPhoneMoreOpen] = useState(false);
+  const [phoneToastOpen, setPhoneToastOpen] = useState(false);
+  const [phoneMoreDetailsOpen, setPhoneMoreDetailsOpen] = useState(false);
+  const nextMatchPendingRef = useRef<any>({});
+  nextMatchPendingRef.current = uiState.nextMatchPending || {};
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 639px)');
+    const apply = () => setPhonePlay(media.matches);
+    apply();
+    media.addEventListener('change', apply);
+    return () => media.removeEventListener('change', apply);
+  }, []);
+  const phoneShownToastRef = useRef<{ id: string; at: number }>({ id: '', at: 0 });
+  useEffect(() => {
+    if (gameState.gameMode === 'game') window.scrollTo(0, 0);
+  }, [gameState.gameMode]);
+  useEffect(() => {
+    if (!phonePlay || uiState.showSettings) return;
+    const shown = phoneShownToastRef.current;
+    if (!shown.id) return;
+    const wait = Math.max(0, 4000 - (Date.now() - shown.at));
+    const timer = window.setTimeout(() => {
+      if (phoneShownToastRef.current.id === shown.id) clearNotification(shown.id);
+    }, wait);
+    return () => window.clearTimeout(timer);
+  }, [phonePlay, uiState.showSettings, notifications, clearNotification]);
+  useLayoutEffect(() => {
+    if (!phonePlay || typeof document === 'undefined') return;
+    document.querySelectorAll('button, a, [role="button"]').forEach(node => {
+      const el = node as HTMLElement;
+      if (el.getAttribute('aria-label') || el.getAttribute('aria-labelledby')) return;
+      const title = el.getAttribute('title');
+      const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (title) el.setAttribute('aria-label', title);
+      else if (text === '✕' || text === '×' || text === '✖') el.setAttribute('aria-label', 'Close');
+    });
+  });
   const v9AfterAction = useMemo<V9AfterAction | null>(() => {
     if (!swrEnabled || !swrState) return null;
     const pid = String(player?.id || 'player'); const tid = player?.teamId ? String(player.teamId) : null;
@@ -216177,6 +216434,16 @@ function dispatchGameSettingsChange(
             setSettingsLayoutReport(report);
             addNotification(report.passed ? 'Settings layout check passed' : 'Settings layout check failed: ' + report.results.filter(row => !row.passed).map(row => row.id).join(', '), report.passed ? 'info' : 'warning');
           }, 400);
+        }
+      },
+      {
+        id: 'phone_layout_check', group: 'developer', title: 'Phone layout check',
+        description: 'Checks overflow, fixed layers, toasts, names and touch targets at this viewport.',
+        onOpen: () => {
+          const report = runPhoneLayoutCheck(document);
+          setSettingsLayoutReport(report);
+          addNotification(report.passed ? 'Phone layout check passed' : 'Phone layout check failed: ' + report.results.filter(row => !row.passed).map(row => row.id).join(', '), report.passed ? 'info' : 'warning');
+          updateUiState({ showSettings: true, settingsShowDeveloper: true, settingsWindowCategory: 'developer', settingsPhonePane: 'detail' });
         }
       },
       settingsEntry('ai_difficulty', 'ai_engine', 'AI Difficulty & Engine', 'Rival and teammate AI difficulty, market modifiers and engine options.', 'aiTeams', 'ai.settings'),
@@ -217268,6 +217535,7 @@ function dispatchGameSettingsChange(
                 className={`${themeStyles.select} rounded px-3 py-2 w-full text-sm`}
               />
             </div>
+            <div className="settings-menu-anchor">
             <button
               type="button"
               className={`${themeStyles.buttonSecondary} px-3 rounded`}
@@ -217276,6 +217544,18 @@ function dispatchGameSettingsChange(
               aria-haspopup="menu"
               onClick={() => setSettingsMenuOpen(open => !open)}
             >⋯</button>
+            {settingsMenuOpen && (
+              <div className={`settings-menu-sheet ${themeStyles.card} ${themeStyles.border} border shadow-xl p-2`} role="menu" aria-label="Settings menu">
+                <div className="settings-menu-row"><span className="settings-menu-label">Show advanced settings</span><SettingsSwitch label="Show advanced settings" checked={uiState.settingsViewMode === 'advanced'} onChange={checked => updateUiState({ settingsViewMode: checked ? 'advanced' : 'basic' })} /></div>
+                <div className="settings-menu-row"><span className="settings-menu-label">Show developer settings</span><SettingsSwitch label="Show developer settings" checked={Boolean(uiState.settingsShowDeveloper)} onChange={checked => updateUiState({ settingsShowDeveloper: checked })} /></div>
+                <div className="settings-menu-row"><span className="settings-menu-label">Changed only</span><SettingsSwitch label="Changed only" checked={Boolean(uiState.settingsChangedOnly)} onChange={checked => updateUiState({ settingsChangedOnly: checked })} /></div>
+                <button type="button" role="menuitem" className={`${themeStyles.buttonSecondary} w-full text-left px-3 rounded mb-1`} onClick={() => { collapseAllSettingsSections(); setSettingsMenuOpen(false); }}>Collapse all</button>
+                <button type="button" role="menuitem" className={`${themeStyles.buttonSecondary} w-full text-left px-3 rounded mb-1`} onClick={() => { expandAllSettingsSections(); setSettingsMenuOpen(false); }}>Expand all</button>
+                <button type="button" role="menuitem" className={`${themeStyles.buttonSecondary} w-full text-left px-3 rounded mb-1`} onClick={() => { setShowImportExportModal(true); setSettingsMenuOpen(false); }}>Export / Import</button>
+                <button type="button" role="menuitem" className={`${themeStyles.buttonSecondary} w-full text-left px-3 rounded`} onClick={() => { setSettingsResetList(settingsPlayerChangedKeys(gameSettings)); setSettingsMenuOpen(false); }}>Reset…</button>
+              </div>
+            )}
+            </div>
             <button
               type="button"
               className={`${themeStyles.buttonSecondary} px-3 rounded`}
@@ -217283,17 +217563,6 @@ function dispatchGameSettingsChange(
               onClick={() => updateUiState({ showSettings: false })}
             >✕</button>
           </header>
-          {settingsMenuOpen && (
-            <div className={`settings-menu-sheet ${themeStyles.card} ${themeStyles.border} border shadow-xl p-2`} role="menu" aria-label="Settings menu">
-              <button type="button" role="menuitemcheckbox" aria-checked={uiState.settingsViewMode === 'advanced'} className={`${themeStyles.buttonSecondary} w-full text-left px-3 rounded mb-1`} onClick={() => updateUiState({ settingsViewMode: uiState.settingsViewMode === 'advanced' ? 'basic' : 'advanced' })}>{uiState.settingsViewMode === 'advanced' ? '✓ ' : ''}Show advanced settings</button>
-              <button type="button" role="menuitemcheckbox" aria-checked={Boolean(uiState.settingsShowDeveloper)} className={`${themeStyles.buttonSecondary} w-full text-left px-3 rounded mb-1`} onClick={() => updateUiState({ settingsShowDeveloper: !uiState.settingsShowDeveloper, settingsWindowCategory: !uiState.settingsShowDeveloper ? (uiState.settingsWindowCategory || 'essentials') : uiState.settingsWindowCategory })}>{uiState.settingsShowDeveloper ? '✓ ' : ''}Show developer settings</button>
-              <button type="button" role="menuitemcheckbox" aria-checked={Boolean(uiState.settingsChangedOnly)} className={`${themeStyles.buttonSecondary} w-full text-left px-3 rounded mb-1`} onClick={() => updateUiState({ settingsChangedOnly: !uiState.settingsChangedOnly })}>{uiState.settingsChangedOnly ? '✓ ' : ''}Changed only</button>
-              <button type="button" role="menuitem" className={`${themeStyles.buttonSecondary} w-full text-left px-3 rounded mb-1`} onClick={() => { collapseAllSettingsSections(); setSettingsMenuOpen(false); }}>Collapse all</button>
-              <button type="button" role="menuitem" className={`${themeStyles.buttonSecondary} w-full text-left px-3 rounded mb-1`} onClick={() => { expandAllSettingsSections(); setSettingsMenuOpen(false); }}>Expand all</button>
-              <button type="button" role="menuitem" className={`${themeStyles.buttonSecondary} w-full text-left px-3 rounded mb-1`} onClick={() => { setShowImportExportModal(true); setSettingsMenuOpen(false); }}>Export / Import</button>
-              <button type="button" role="menuitem" className={`${themeStyles.buttonSecondary} w-full text-left px-3 rounded`} onClick={() => { setSettingsResetList(settingsPlayerChangedKeys(gameSettings)); setSettingsMenuOpen(false); }}>Reset…</button>
-            </div>
-          )}
           <div className="settings-content-row" data-testid="settings-content">
             <nav className={`settings-nav border-r ${themeStyles.border} p-2`} aria-label="Settings categories">
               <div className="settings-phone-search pb-2">
@@ -217361,8 +217630,8 @@ function dispatchGameSettingsChange(
               {(() => {
                 const category = (uiState.settingsWindowCategory || 'essentials') as SettingsWindowCategoryId;
                 const searching = Boolean((uiState.settingsSearchQuery || '').trim());
-                const liveMatch = Boolean(gameState.gameStarted && !gameState.gameOver);
-                const critical = (notifications || []).find((item: any) => isCriticalNotification(item));
+                const liveMatch = gameState.gameMode === 'game' && !gameState.gameOver;
+                const critical = (notifications || []).find((item: any) => isSettingsCriticalAlert(item));
                 const criticalText = critical ? String(critical.message || critical.text || critical.title || '') : '';
                 const changedKeys = settingsPlayerChangedKeys(gameSettings);
                 return (
@@ -217401,6 +217670,8 @@ function dispatchGameSettingsChange(
                           settingsActiveTab: 'mechanicsDir',
                           pendingSettingsNavigation: { tab: 'mechanicsDir', sectionId: 'mechanicsDirectory.directory', highlight: true, expandIfCollapsed: true, timestamp: Date.now() }
                         })}
+                        onQueueNext={(patch) => updateUiState({ nextMatchPending: { ...(uiState.nextMatchPending || {}), ...patch } })}
+                        onCancelNext={(key) => { const next = { ...(uiState.nextMatchPending || {}) }; delete next[key]; updateUiState({ nextMatchPending: next }); }}
                         onResetKey={(key) => trackedSetGameSettings('direct_player_change', 'Reset ' + key, prev => ({ ...prev, [key]: (DEFAULT_GAME_SETTINGS as any)[key] }))}
                       />
                     )}
@@ -217451,6 +217722,11 @@ function dispatchGameSettingsChange(
                           setSettingsLayoutReport(report);
                           addNotification(report.passed ? 'Settings layout check passed' : 'Settings layout check failed: ' + report.results.filter(row => !row.passed).map(row => row.id).join(', '), report.passed ? 'info' : 'warning');
                         }}>Run settings layout check</button>
+                        <button type="button" className={`${themeStyles.buttonSecondary} px-3 py-2 rounded ml-2`} onClick={() => {
+                          const report = runPhoneLayoutCheck(document);
+                          setSettingsLayoutReport(report);
+                          addNotification(report.passed ? 'Phone layout check passed' : 'Phone layout check failed: ' + report.results.filter(row => !row.passed).map(row => row.id).join(', '), report.passed ? 'info' : 'warning');
+                        }}>Run phone layout check</button>
                         {settingsLayoutReport && <ul className="text-xs mt-2 space-y-1">{settingsLayoutReport.results.map(row => <li key={row.id}>{row.passed ? 'Pass' : 'Fail'} · {row.id}: {row.detail}</li>)}</ul>}
                       </div>
                     )}
@@ -228167,7 +228443,7 @@ function dispatchGameSettingsChange(
       Boolean(uiState?.showQuickActionsCustomizer);
     const settings = gameSettings.notificationSettings || createDefaultNotificationSettings();
     let filtered = notifications.filter(n => settings.typeFilters[n.notificationType || 'system']);
-    if (isBlockingModalOpen) return null;
+    if (isBlockingModalOpen || uiState.showSettings) return null;
     if (usesGuidedIntentChrome(gameSettings) && gameSettings.playerIntentExplainMode !== 'every' && !gameSettings.playerIntentExplainRoutineActions) {
       filtered = filtered.filter(n => {
         const prio = classifyNotificationPriority(n);
@@ -228184,6 +228460,26 @@ function dispatchGameSettingsChange(
     const visibleNotifications = ordered.slice(0, Math.max(0, maxVisibleLimit));
 
     if (visibleNotifications.length === 0) return null;
+
+    if (phonePlay) {
+      const critical = visibleNotifications.find(item => isSettingsCriticalAlert(item));
+      const one = critical || visibleNotifications[0];
+      const kind = String(one.type || one.notificationType || '').toLowerCase();
+      const dismissible = !isSettingsCriticalAlert(one) && !['warning', 'error'].includes(kind);
+      if (dismissible) {
+        if (phoneShownToastRef.current.id !== String(one.id)) phoneShownToastRef.current = { id: String(one.id), at: Date.now() };
+      } else if (phoneShownToastRef.current.id) {
+        phoneShownToastRef.current = { id: '', at: 0 };
+      }
+      const notifType = NOTIFICATION_TYPES[one.type];
+      return (
+        <div className="phone-toast fixed left-2 right-2 z-[300]" data-testid="notification-toast-container" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 52px)', maxHeight: '12vh' }}>
+          <button type="button" className={`${themeStyles.card} border rounded-lg px-3 text-left w-full`} data-testid="notification-toast" data-kind={kind} data-critical={dismissible ? 'false' : 'true'} aria-expanded={phoneToastOpen} onClick={() => setPhoneToastOpen(open => !open)}>
+            <span className={phoneToastOpen ? 'whitespace-normal' : 'block truncate'}>{notifType?.icon || ''} {one.message}</span>
+          </button>
+        </div>
+      );
+    }
 
     const isCoPilotHudActive = Boolean(takeoverSession || coPilotManualOverride);
 
@@ -228443,7 +228739,7 @@ function dispatchGameSettingsChange(
       : (isTeamMode ? `${activeActor?.displayName || activeActor?.name}'s turn` : 'Awaiting your action');
     
     return (
-      <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-40 flex flex-col items-center gap-1" style={{ marginTop: 'env(safe-area-inset-top, 0px)' }} data-testid="v96-turn-indicator">
+      <div className="v96-turn-indicator fixed top-20 left-1/2 transform -translate-x-1/2 z-40 flex flex-col items-center gap-1" style={{ marginTop: 'env(safe-area-inset-top, 0px)' }} data-testid="v96-turn-indicator">
         {!isSoloRival && <GuardianInlineWarning actionType="end_turn" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'end_turn', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} compact />}
         <div role="status" aria-live="polite" data-testid="v96-turn-pill" data-turn-owner={isPlayerTurn ? 'human' : 'ai'} data-ai-phase={isAiTurn ? soloAiPhase : 'idle'} className={`${isPlayerTurn ? themeStyles.success : themeStyles.ai} ${themeStyles.shadow} rounded-full px-6 py-3 flex items-center space-x-3 ${isSoloRival ? 'v96-turn-owner-pulse' : 'animate-pulse'}`}>
           <span className="text-2xl">{isPlayerTurn ? '👤' : '🤖'}</span>
@@ -231209,6 +231505,8 @@ function dispatchGameSettingsChange(
             coach={glInPlay && glCoachTarget ? { target: glCoachTarget, node: glCoachNode } : null}
           />
 
+          <details className="phone-extra-strips" open={phonePlay ? phoneMoreDetailsOpen : true} data-phone-section="more">
+          <summary className="phone-more-summary">More details</summary>
           {pf12Enabled && pf12View && <PublicFinancePlayChip view={pf12View} onClick={() => updateUiState({ experienceLayer: 'intelligence' } as any)} />}
           {hh13Enabled && hh13State && <HouseholdsPlaySignalBanner state={hh13State} onOpenIntel={() => updateUiState({ experienceLayer: 'intelligence' } as any)} />}
           {egEnabled && egState && <EconomicGeographyPlayCard state={egState} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
@@ -231239,6 +231537,7 @@ function dispatchGameSettingsChange(
               <ContextualActionPanel actionSet={v9ActionSetView} control={playerControlState} theme={themeStyles} onButton={handleV9Button} onShowAllActions={showAllActions} />
             </div>
           )}
+          </details>
         </div>
       );
     };
@@ -231693,7 +231992,8 @@ function dispatchGameSettingsChange(
     };
 
     return (
-      <div className={`min-h-screen ${themeStyles.background} ${themeStyles.text} p-4`}>
+      <div className={`phone-play-root${phonePlay && experienceLayer === 'play' && isPlayerTurn ? ' phone-has-bar' : ''} min-h-screen ${themeStyles.background} ${themeStyles.text} p-4`}>
+        <style>{PHONE_PLAY_CSS}</style>
         {/* Notification Bar */}
         {renderNotificationBar()}
         
@@ -231712,9 +232012,45 @@ function dispatchGameSettingsChange(
         {/* Day Transition Screen */}
         {renderDayTransitionScreen()}
 
+        {phonePlay && experienceLayer === 'play' && isPlayerTurn && (
+          <div className="phone-action-bar" data-testid="phone-action-bar">
+            <button type="button" aria-label="Challenges" disabled={!isPlayerTurn} onClick={() => actionDescriptors.challenges.onClick()}>🎯 Challenges</button>
+            <button type="button" aria-label="Travel" disabled={!isPlayerTurn} onClick={() => actionDescriptors.travel.onClick()}>✈️ Travel</button>
+            <button type="button" aria-label="Market" disabled={!isPlayerTurn} onClick={() => actionDescriptors.market.onClick()}>💰 Market</button>
+            <button type="button" aria-label="End Turn" onClick={() => actionDescriptors.endTurn.onClick()}>⏭ End Turn</button>
+            <button type="button" aria-label="More actions" aria-expanded={phoneMoreOpen} onClick={() => setPhoneMoreOpen(open => !open)}>More</button>
+          </div>
+        )}
+        {phonePlay && phoneMoreOpen && (
+          <div className="phone-more-sheet" role="dialog" aria-label="More actions">
+            <div className="flex items-center justify-between px-3">
+              <h2 className="font-bold">More</h2>
+              <button type="button" aria-label="Close" onClick={() => setPhoneMoreOpen(false)}>✕</button>
+            </div>
+            <div className="px-3 pb-2 text-xs">Domain filter, compact, customize and the rest of the shortcuts.</div>
+            <div className="flex flex-wrap gap-2 px-3 pb-3">
+              {([
+                { id: 'all', label: 'All' },
+                { id: 'core', label: 'Core' },
+                { id: 'economy', label: 'Economy' },
+                { id: 'competition', label: 'Competition' },
+                { id: 'team', label: 'Team' },
+                { id: 'tools', label: 'Tools' }
+              ] as const).map(tab => (
+                <button key={tab.id} type="button" aria-label={'Filter ' + tab.label} className="px-3 rounded border" onClick={() => updateUiState({ quickActionDomainFilter: tab.id as unknown as QuickActionDomainId })}>{tab.label}</button>
+              ))}
+              <button type="button" aria-label="Compact or detailed shortcuts" onClick={() => updateUiState({ quickActionCompactView: !uiState.quickActionCompactView })}>{quickActionCompact ? 'Detailed' : 'Compact'}</button>
+              <button type="button" aria-label="Customize shortcuts" onClick={() => { setPhoneMoreOpen(false); updateUiState({ showQuickActionsCustomizer: true }); }}>Customize</button>
+              <button type="button" aria-label="Reset shortcuts" onClick={() => updateUiState((prev: any) => resetQuickActionsCustomization(prev))}>Reset</button>
+              {filteredQuickActions.filter(action => !['challenges', 'travel', 'market', 'endTurn'].includes(action.id)).map(action => (
+                <button key={action.id} type="button" aria-label={action.label} disabled={!isPlayerTurn || Boolean(action.disabled)} onClick={() => { setPhoneMoreOpen(false); requestManualAction(action.action); }}>{action.icon} {action.label}</button>
+              ))}
+            </div>
+          </div>
+        )}
         {/* Quick Actions Bar - only show on player turn when not suppressed by blocking modal */}
         {experienceLayer === 'play' && isPlayerTurn && getQuickActions.length > 0 && uiState.quickActionsOpen && !uiState.showQuickActionsCustomizer && !uiState.showSettings && !surfaceState.activeBlockingModal && !globalUISurfaceManager.isWidgetSuppressed('quick_actions') && shouldShowWidgetContextually('quick_actions', resolveCurrentGamePhase(gameState, uiState, surfaceState), gameState, gameSettings, surfaceState, gameSettings?.presetSettings?.activePreset || 'Current/Custom') && (
-          <div className={`fixed ${quickActionCompact ? "bottom-2" : "bottom-6"} left-1/2 -translate-x-1/2 z-40`}>
+          <div className={`phone-quick-dock fixed ${quickActionCompact ? "bottom-2" : "bottom-6"} left-1/2 -translate-x-1/2 z-40`}>
             <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-3 ${themeStyles.shadow}`}>
               {/* Quick Actions Domain Filter & Customization Toolbar */}
               <div className="flex flex-wrap items-center justify-between gap-2 pb-2 mb-2 border-b border-gray-700/40">
@@ -231839,6 +232175,8 @@ function dispatchGameSettingsChange(
 
         {/* V9: the classic board (status, map, region, full action bar, stats) is the PLAY layer. */}
         {experienceLayer === 'play' && (<>
+        <details className="phone-rest" open={phonePlay ? phoneMoreDetailsOpen : true} onToggle={event => { if (phonePlay) setPhoneMoreDetailsOpen(event.currentTarget.open); }}>
+        <summary className="phone-more-summary">More details</summary>
         <details className="mb-4" open={!v9Simple} data-testid="v9-match-standing">
           <summary className="cursor-pointer text-xs font-semibold opacity-80 mb-2">📊 Match standing, conditions & events</summary>
 	        {/* Top Status Bar */}
@@ -232093,7 +232431,7 @@ function dispatchGameSettingsChange(
 	        {/* Top Status Bar */}
 	        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-4 mb-4 ${themeStyles.shadow}`}>
           <div className="flex flex-wrap justify-between items-center gap-4">
-            <div className="flex items-center space-x-4">
+            <div className="phone-stat-row flex items-center space-x-4">
               <div>
                 <div className="text-sm opacity-75">Player</div>
                 <div className="font-bold">{player.name}</div>
@@ -232155,7 +232493,7 @@ function dispatchGameSettingsChange(
               )}
             </div>
             
-            <div className="flex items-center space-x-4">
+            <div className="phone-stat-row flex items-center space-x-4">
               {(() => {
                 const isCommandCenterSystemEnabled = Boolean(
                   (gameSettings.aiCommandCenterUiEnabled ?? false) &&
@@ -232829,9 +233167,10 @@ function dispatchGameSettingsChange(
         )}
         
         {/* Main Content Area */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        </details>
+        <div className="phone-board grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Left Column - Current Region Info */}
-          <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 ${themeStyles.shadow}`}>
+          <div className={`phone-region-col ${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 ${themeStyles.shadow}`}>
             <h3 className="text-2xl font-bold mb-3">📍 {currentRegion?.name || "Unknown Region"}</h3>
             <p className="text-sm opacity-75 mb-4">{currentRegion?.description || ""}</p>
             
@@ -232960,7 +233299,7 @@ function dispatchGameSettingsChange(
           
           {/* Middle Column - Map */}
           {uiState.showMap && (
-            <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 ${themeStyles.shadow} lg:col-span-2`}>
+            <div className={`phone-map-col ${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 ${themeStyles.shadow} lg:col-span-2`}>
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold">🗺️ Australia Map</h3>
                 {lrState && (
@@ -232982,7 +233321,7 @@ function dispatchGameSettingsChange(
                 </button>
               </div>
               
-	              <div className="relative w-full h-96 bg-gray-800 rounded-lg overflow-hidden" data-ns-network={nsMapNetwork && nsState ? nsMapNetwork : undefined}>
+	              <div className="australia-map-stage relative w-full h-96 bg-gray-800 rounded-lg overflow-hidden" data-real-map={gameSettings.realMapEnabled === true ? 'true' : 'false'} data-ns-network={nsMapNetwork && nsState ? nsMapNetwork : undefined}>
 	                {gameSettings.realMapEnabled === true && (
 	                  <V95RealMap
 	                    anchors={v95MapAnchors()}
@@ -233082,6 +233421,7 @@ function dispatchGameSettingsChange(
 	                        }${gameSettings.realMapEnabled === true ? ' opacity-0' : ''}`}
 	                      >
 	                        {code}
+                          <span className="phone-region-name">{region.name}</span>
 	                        {regionControlInfo.highestDeposit > 0 && (
 	                          <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 text-[10px] bg-black bg-opacity-75 px-1.5 py-0.5 rounded">
 	                            ${regionControlInfo.highestDeposit}
@@ -233789,7 +234129,8 @@ function dispatchGameSettingsChange(
 	            </div>
 	          )}
 	        </div>
-	        
+	        <details className="phone-rest phone-rest-after" open={phonePlay ? phoneMoreDetailsOpen : true}>
+	        <summary className="phone-more-summary">More details</summary>
         <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-4 mt-4 ${themeStyles.shadow}`}>
           {WIN_METRIC_PROFILES[gameSettings.winCondition]?.goalKind === 'money' ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
@@ -233880,6 +234221,7 @@ function dispatchGameSettingsChange(
             </div>
           </div>
         </div>
+        </details>
         
         </>)}
 
