@@ -4051,9 +4051,9 @@ const V613_CHANGELOG = [
 ];
 
 const ACTION_GROUPS = {
-  primary: ["challenges", "travel", "market", "endTurn"],
+  primary: ["challenges", "travel", "market", "endTurn", "settings"],
   secondary: ["workshop", "resourceMarket", "contracts", "investments", "shop", "progress"],
-  advanced: ["loans", "sabotage", "negotiations", "governance", "teamAiSettings", "automation", "replay", "diagnostics", "settings", "help", "history"]
+  advanced: ["loans", "sabotage", "negotiations", "governance", "teamAiSettings", "automation", "replay", "diagnostics", "help", "history"]
 } as const;
 
 const TEAM_MODE_AI_SYSTEM_PROFILE_OPTIONS: TeamModeAiSystemProfile[] = [
@@ -13272,31 +13272,6 @@ export const SETTINGS_HUB_FIELD_META: Record<string, SettingsHubFieldMeta> = {
     key: 'autoCollapseCategoriesOnNarrow', tab: 'interfaceAcc', label: 'Auto Collapse Categories On Narrow Screen',
     description: 'Automatically collapse settings categories on narrow/mobile viewports.',
     tags: ['UX', 'Interface'], chips: ['Off by default']
-  },
-  conflictControlEnabled: {
-    key: 'conflictControlEnabled', tab: 'interfaceAcc', label: 'Floating UI Conflict Control',
-    description: 'Master toggle to prevent overlapping floating controls and windows.',
-    tags: ['UX', 'Floating UI'], chips: ['On by default']
-  },
-  conflictAllowRelocation: {
-    key: 'conflictAllowRelocation', tab: 'interfaceAcc', label: 'Allow Widget Relocation',
-    description: 'Relocate lower priority floating controls when screen space collides with higher priority UI.',
-    tags: ['UX', 'Floating UI'], chips: ['On by default']
-  },
-  conflictReturnToPreferred: {
-    key: 'conflictReturnToPreferred', tab: 'interfaceAcc', label: 'Return to Preferred Coords',
-    description: 'Automatically restore floating controls to their preferred coordinates once higher priority windows close.',
-    tags: ['UX', 'Floating UI'], chips: ['On by default']
-  },
-  conflictShowExplanations: {
-    key: 'conflictShowExplanations', tab: 'interfaceAcc', label: 'Show Conflict Explanations',
-    description: 'Display explanation badges on displaced floating widgets.',
-    tags: ['UX', 'Floating UI'], chips: ['Off by default']
-  },
-  floatingUiPriorityMatrix: {
-    key: 'floatingUiPriorityMatrix', tab: 'interfaceAcc', label: '11-Tier Priority Matrix',
-    description: 'Priority ordering for UI surfaces and floating widgets.',
-    tags: ['UX', 'Floating UI'], chips: ['Matrix']
   },
   autoModeEnabled: { key: 'autoModeEnabled', tab: 'automation', label: 'Auto Mode Enabled', description: 'Master toggle for auto mode system.', tags: ['AI', 'Automation'] },
   permissionMode: { key: 'permissionMode', tab: 'automation', label: 'Permission Mode', description: 'Global default permission mode.', tags: ['AI', 'Automation'] },
@@ -46696,7 +46671,7 @@ export const GuardianAiCenterModal: React.FC<GuardianAiCenterModalProps> = ({
           modalRef.current.querySelectorAll<HTMLElement>(
             'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
           )
-        ).filter(el => !el.hasAttribute('disabled'));
+        ).filter(el => !el.hasAttribute('disabled') && el.getClientRects().length > 0);
 
         if (focusables.length === 0) return;
 
@@ -59904,6 +59879,10 @@ export interface SettingsHubContextValue {
   settingsSearchViewMode?: 'results' | 'focused';
   focusedSearchResultIndex?: number;
   pendingSettingsNavigation?: PendingSettingsNavigation | null;
+  windowCategory?: string | null;
+  showAdvanced?: boolean;
+  showDeveloper?: boolean;
+  searchQuery?: string;
 }
 interface SettingsGateNoticeProps {
   /** The trailing phrase, e.g. "the Economy Governor" or "Action Overrides". */
@@ -64515,7 +64494,7 @@ export const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'interface.categoryNavigation', tab: 'interfaceAcc', title: '📂 Category Navigation & Section Collapse', tags: ['UX', 'Interface'], fieldKeys: ['allowSettingsCategoryCollapse', 'startSettingsCategoryCollapsed', 'settingsCategoryNavigationMode', 'rememberCategoryNavigationState', 'rememberCategoryNavigationMode', 'autoCollapseCategoriesOnNarrow'], keywords: 'category navigation collapse expand dropdown compact full mode remember state narrow viewport' },
   { id: 'home.dashboard', tab: 'home', title: 'Settings Dashboard', tags: ['UX'], fieldKeys: [], keywords: 'home dashboard settings overview welcome quick setup' },
   { id: 'interface.startScreen', tab: 'interfaceAcc', title: '🛡️ Start-Screen Protection', tags: ['UX'], fieldKeys: ['startScreenConflictProtection', 'showFloatingControlsOnStartScreen', 'startScreenFloatingLayout', 'restoreEligibleFloatingControlsAfterMatchStarts', 'hideGameplaySidePanelsOnStartScreen'], keywords: 'start screen protection floating controls safe area layout conflict' },
-  { id: 'interface.floatingUi', tab: 'interfaceAcc', title: '🎯 Floating UI Conflict Control & Priority Matrix', tags: ['UX', 'Floating UI'], fieldKeys: ['conflictControlSettings', 'conflictControlEnabled', 'conflictAllowRelocation', 'conflictReturnToPreferred', 'conflictShowExplanations', 'floatingUiPriorityMatrix'], keywords: 'floating ui conflict control priority matrix spatial collision relocation return to preferred' },
+  { id: 'interface.floatingUi', tab: 'interfaceAcc', title: '🎯 Floating UI Conflict Control & Priority Matrix', tags: ['UX', 'Floating UI'], fieldKeys: ['conflictControlSettings'], keywords: 'floating ui conflict control priority matrix spatial collision relocation return to preferred' },
   { id: 'interface.aiAssistants', tab: 'interfaceAcc', title: '🧠 AI Assistant Surfaces', tags: ['UX', 'AI', 'Floating UI'], fieldKeys: ['aiCommandCenterUiEnabled', 'askGameAiUiEnabled', 'aiTuningLabUiEnabled'], keywords: 'ai command center ask game assistant tuning lab floating button hud widget hide show off by default alt+c ctrl+k' },
   { id: 'interface.launcherDock', tab: 'interfaceAcc', title: '🚀 Unified Launcher & Dock', tags: ['UX', 'Launcher', 'Dock'], fieldKeys: ['launcherSettings', 'dockSettings'], keywords: 'unified launcher floating widget dock positioning mode dragging collapse badge' },
   { id: 'interface.quickActionsVisibility', tab: 'interfaceAcc', title: '⚡ Quick Actions Visibility & Close Behavior', tags: ['UX', 'Quick Actions'], fieldKeys: ['keepQuickActionsReopenHandleWhenClosed', 'fullyHideQuickActionsWhenClosed'], keywords: 'quick actions visibility reopen handle button close behavior minimize hide' },
@@ -64599,7 +64578,7 @@ export const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'advancedSystems.humanAutomation', tab: 'automation', title: 'Human Player Automation', tags: ['Advanced'], chips: ['Off by default'], fieldKeys: ['humanAutomationEnabled', 'humanAutomationTransparencyEnabled', 'automationSequenceLaunchEnabled', 'automationSlotProgressionEnabled', 'automationRunHistoryEnabled', 'automationExtendedTriggersEnabled', 'automationExtendedActionsEnabled', 'automationConflictWarningsEnabled', 'automationDailyDigestEnabled', 'automationImportExportEnabled'] },
   { id: 'autoMode.main', tab: 'automation', title: '🤖 Auto Mode Settings (Adaptive Match Manager)', tags: ['AI', 'Automation'], chips: ['Off by default'], fieldKeys: ['autoModeSettings', 'autoModeEnabled', 'permissionMode', 'allowStrategyChanges', 'allowEconomyChanges', 'allowActionManagementChanges', 'allowNumericalModifiers', 'preserveReplayDeterminism', 'smartSettingsProfile'], keywords: 'auto mode adaptive catch up manager presets intensity permission simple' },
   { id: 'autoMode.advanced', tab: 'automation', title: '⚙️ Auto Mode Advanced Policies & Limits', tags: ['Advanced', 'Automation'], chips: ['Advanced'], fieldKeys: [], keywords: 'auto mode advanced numerical limits sliders actor policy team policy locked keys matrix' },
-  { id: 'aiTeams.coPilot', tab: 'aiTeams', title: 'Human Co-Pilot AI & Takeover Controls', tags: ['AI', 'Co-Pilot', 'Automation'], fieldKeys: ['coPilotSettings', 'guardianAiSettings', 'strategyPlannerSettings', 'commandCenterSettings', 'defaultGuardianOpeningStyle', 'showGuardianFloatingButton', 'showGuardianInQuickActions', 'enableGuardianSidePanelAccess', 'hideGuardianFloatingButtonWhileCenterOpen', 'hideGuardianFloatingButtonWhileAnotherBlockingModalOpen', 'guardianFloatingPosition', 'allowGuardianFloatingButtonDragging', 'rememberGuardianFloatingPosition'], keywords: 'co-pilot copilot takeover rescue authority mode spending caps autonomous assistant guardian ai risk protection waiting overlay other players shell' },
+  { id: 'aiTeams.coPilot', tab: 'aiTeams', title: 'Human Co-Pilot AI & Takeover Controls', tags: ['AI', 'Co-Pilot', 'Automation'], fieldKeys: ['coPilotSettings', 'guardianAiSettings', 'strategyPlannerSettings', 'commandCenterSettings', 'defaultGuardianOpeningStyle', 'showGuardianFloatingButton', 'showGuardianInQuickActions', 'enableGuardianSidePanelAccess', 'hideGuardianFloatingButtonWhileCenterOpen', 'hideGuardianFloatingButtonWhileAnotherBlockingModalOpen', 'allowGuardianFloatingButtonDragging', 'rememberGuardianFloatingPosition'], keywords: 'co-pilot copilot takeover rescue authority mode spending caps autonomous assistant guardian ai risk protection waiting overlay other players shell' },
   { id: 'interface.notifications', tab: 'interfaceAcc', title: 'Notifications', tags: ['Notifications'], fieldKeys: ['notificationSettings' as keyof GameSettingsState, 'notificationClearShortcut'] },
   { id: 'gameplay.v95CoreLoop', tab: 'gameplay', title: 'Core loop', tags: ['Gameplay', 'Accessibility', 'Replay'], fieldKeys: ['interactiveChallengesEnabled', 'interactiveChallengeMaxModifier', 'interactiveChallengeAiSimulatedScoreEnabled', 'interactiveChallengeAiSimulatedScore', 'interactiveChallengeTimeLimitSeconds', 'realMapEnabled', 'expandedChallengesEnabled', 'soundEnabled', 'soundVolume', 'soundCategories', 'dailySeedEnabled', 'dailySeedRunActive', 'dailySeedCode', 'dailySeedFingerprint', 'rulesetPreset', 'rulesetIncludeV95Features', 'rulesetUndoSnapshot', 'v95SuppressLivingRegions', 'v95SuppressFactions'], keywords: 'interactive challenges real map australia expanded challenges seasons chains rare sound daily seed ruleset classic strategic grand strategy system impact' }
 ];
@@ -85266,6 +85245,7 @@ export const QuickActionsReopenHandle: React.FC<QuickActionsReopenHandleProps> =
   const relocatedPos = bounds?.isRelocated ? bounds.relocatedPos : undefined;
 
   if (isTemporarilyCollapsed) {
+    return null;
     const activeModalZIndex = activeModal ? globalUISurfaceManager.getZIndex(activeModal) : 500;
     const targetZIndex = activeModalZIndex + 10;
     const toastPosition = gameSettings?.notificationSettings?.position || 'top-right';
@@ -86022,6 +86002,572 @@ export const SETTINGS_HUB_TAB_LABELS: Record<SettingsHubTabId, string> = {
   replayDiag: 'Replay & Diagnostics',
   interfaceAcc: 'Interface & Accessibility'
 };
+
+
+export type SettingsWindowCategoryId =
+  | 'essentials' | 'rules' | 'economy' | 'competition' | 'ai'
+  | 'assistance' | 'smart' | 'interface' | 'presets' | 'developer';
+
+export const SETTINGS_WINDOW_CATEGORIES: Array<{ id: SettingsWindowCategoryId; label: string; icon: string; summary: string }> = [
+  { id: 'essentials', label: 'Essentials', icon: '⭐', summary: 'Rules, difficulty, length, assistance, sound and comfort' },
+  { id: 'rules', label: 'Rules & match', icon: '📐', summary: 'Match rules, action limits and challenges' },
+  { id: 'economy', label: 'Economy & money', icon: '💰', summary: 'Markets, loans, investments and prices' },
+  { id: 'competition', label: 'Competition & regions', icon: '🗺️', summary: 'Regions, contracts, standing and rivalry' },
+  { id: 'ai', label: 'AI opponents & teammates', icon: '🤖', summary: 'Rival difficulty, teammates and team brains' },
+  { id: 'assistance', label: 'Assistance & automation', icon: '🛟', summary: 'The Game Assistant, approvals and automation' },
+  { id: 'smart', label: 'Smart setup', icon: '✨', summary: 'Describe the match you want and check configuration health' },
+  { id: 'interface', label: 'Interface & accessibility', icon: '🎨', summary: 'Theme, motion, text size and notifications' },
+  { id: 'presets', label: 'Presets & profiles', icon: '📦', summary: 'Saved setups and what each one changes' },
+  { id: 'developer', label: 'Developer', icon: '🧪', summary: 'Diagnostics, rescue tools and the mechanics reference' }
+];
+
+const SETTINGS_DEVELOPER_SECTION_IDS = new Set([
+  'interface.startScreen', 'interface.floatingUi', 'interface.uiRescue', 'interface.safeAreaPreview',
+  'mechanicsDirectory.directory'
+]);
+
+/** Keys a system writes on purpose. A new match records guided learning; that is not a player edit. */
+export const SETTINGS_NON_PLAYER_CHANGE_KEYS = new Set(['guidedLearning']);
+
+export function settingsStableStringify(value: unknown): string {
+  if (value === undefined) return 'null';
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return '[' + value.map(settingsStableStringify).join(',') + ']';
+  const obj = value as Record<string, unknown>;
+  return '{' + Object.keys(obj).sort().filter(key => obj[key] !== undefined).map(key => JSON.stringify(key) + ':' + settingsStableStringify(obj[key])).join(',') + '}';
+}
+
+export function settingsPlayerChangedKeys(current: Partial<GameSettingsState> | null | undefined): string[] {
+  if (!current) return [];
+  return (Object.keys(DEFAULT_GAME_SETTINGS) as string[]).filter(key => {
+    if (SETTINGS_NON_PLAYER_CHANGE_KEYS.has(key)) return false;
+    return settingsStableStringify((current as any)[key]) !== settingsStableStringify((DEFAULT_GAME_SETTINGS as any)[key]);
+  });
+}
+
+export function settingsWindowCategoryFor(sectionId: string, tab: SettingsHubTabId): SettingsWindowCategoryId {
+  const indexed = SETTINGS_HUB_SECTION_INDEX.find(section => section.id === sectionId);
+  const title = indexed?.title || '';
+  const blob = (sectionId + ' ' + title).toLowerCase();
+  if (SETTINGS_DEVELOPER_SECTION_IDS.has(sectionId) || tab === 'replayDiag' || tab === 'mechanicsDir') return 'developer';
+  if (/tuning lab|determinis|live control center internals|mechanics directory/.test(blob)) return 'developer';
+  if (sectionId === 'quickSetup.core') return 'essentials';
+  switch (tab) {
+    case 'gameplay': return 'rules';
+    case 'economy': return 'economy';
+    case 'competition': return 'competition';
+    case 'aiTeams': return 'ai';
+    case 'automation': return 'assistance';
+    case 'oversight': return 'rules';
+    case 'interfaceAcc': return 'interface';
+    case 'quickSetup': return 'presets';
+    case 'home': return 'smart';
+    default: return 'rules';
+  }
+}
+
+export function settingsWindowCategoryLabel(id: SettingsWindowCategoryId): string {
+  return SETTINGS_WINDOW_CATEGORIES.find(category => category.id === id)?.label || id;
+}
+
+const SETTINGS_BASIC_SECTION_IDS = new Set([
+  'home.dashboard', 'quickSetup.core', 'quickSetup.presets',
+  'gameplay.core', 'gameplay.actionLimits', 'gameplay.actionOverride', 'gameplay.challengeRules', 'gameplay.expansions', 'gameplay.v95CoreLoop', 'gameplay.matchVariety',
+  'interface.appearance', 'interface.accessibility', 'interface.notifications', 'interface.uxAssist', 'interface.changelog'
+]);
+
+const SETTINGS_ADVANCED_SECTION_RE = /sequence|requirement|weight|slider|tuning|determinis|matrix|safe-area|safe area|rescue|start-screen|start screen|conflict control|priority matrix/i;
+
+export function settingsSectionIsAdvanced(id: string, title?: string, description?: string, chips?: readonly unknown[]): boolean {
+  if (SETTINGS_BASIC_SECTION_IDS.has(id)) return false;
+  const chipText = (chips || []).map(chip => String(chip)).join(' ');
+  if (/advanced|experimental/i.test(chipText)) return true;
+  if (SETTINGS_ADVANCED_SECTION_RE.test(id + ' ' + (title || ''))) return true;
+  const desc = description || '';
+  if (desc.length > 220 || desc.indexOf('\n') >= 0) return true;
+  return false;
+}
+
+export const SETTINGS_ESSENTIAL_KEYS = [
+  'rulesetPreset', 'rulesetIncludeV95Features', 'totalDays', 'playerActionsPerDay', 'winCondition',
+  'interactiveChallengesEnabled', 'realMapEnabled', 'expandedChallengesEnabled', 'soundEnabled', 'soundVolume'
+] as const;
+
+export function settingsEssentialKeyExists(key: string): boolean {
+  if (key === 'theme' || key === 'aiDifficulty') return true;
+  if (key.indexOf('accessibilitySettings.') === 0) return Object.prototype.hasOwnProperty.call(DEFAULT_GAME_SETTINGS, 'accessibilitySettings');
+  if (key.indexOf('notificationSettings.') === 0) return Object.prototype.hasOwnProperty.call(DEFAULT_GAME_SETTINGS, 'notificationSettings');
+  return Object.prototype.hasOwnProperty.call(DEFAULT_GAME_SETTINGS, key);
+}
+
+export function settingsPreviewRows(before: any, patch: Record<string, unknown>): Array<{ key: string; from: string; to: string }> {
+  return Object.keys(patch).filter(key => settingsStableStringify(before?.[key]) !== settingsStableStringify(patch[key])).slice(0, 24).map(key => ({
+    key,
+    from: settingsStableStringify(before?.[key]).slice(0, 80),
+    to: settingsStableStringify(patch[key]).slice(0, 80)
+  }));
+}
+
+export function annotateSettingsLockReasons(root: ParentNode | null, info: { teamMode: boolean; liveMatch: boolean }): void {
+  if (!root || typeof (root as any).querySelectorAll !== 'function') return;
+  const nodes = (root as ParentNode).querySelectorAll('button, input, select, textarea');
+  nodes.forEach(node => {
+    const el = node as HTMLElement;
+    const disabled = (el as HTMLButtonElement).disabled || el.getAttribute('aria-disabled') === 'true';
+    const next = el.nextElementSibling;
+    if (!disabled) {
+      if (next && next.classList.contains('settings-lock-reason') && next.getAttribute('data-auto-reason') === 'true') next.remove();
+      return;
+    }
+    if (next && next.classList.contains('settings-lock-reason')) return;
+    const hinted = el.getAttribute('data-lock-reason') || '';
+    const title = el.getAttribute('title') || '';
+    const around = ((el.closest('[data-setting-key]') as HTMLElement | null)?.innerText || el.getAttribute('aria-label') || '').slice(0, 180);
+    let reason = hinted || '';
+    if (!reason && /needs team mode/i.test(title + around)) reason = 'Needs Team Mode';
+    else if (!reason && /applies next match/i.test(title + around)) reason = 'Applies next match';
+    else if (!reason && /set by /i.test(title)) reason = title;
+    else if (!reason && /locked in smart setup/i.test(title + around)) reason = 'Locked in Smart setup · Unlock';
+    else if (!reason && !info.teamMode && /team mode/i.test(around)) reason = 'Needs Team Mode';
+    else if (!reason && info.liveMatch && /difficulty/i.test(around)) reason = 'Applies next match';
+    else if (!reason && title) reason = title;
+    else if (!reason) reason = 'Unavailable right now';
+    const note = (el.ownerDocument || document).createElement('div');
+    note.className = 'settings-lock-reason';
+    note.setAttribute('data-auto-reason', 'true');
+    note.textContent = reason;
+    el.insertAdjacentElement('afterend', note);
+  });
+}
+
+export function runSettingsLayoutCheck(doc?: Document | null): { passed: boolean; results: Array<{ id: string; passed: boolean; detail: string }> } {
+  const results: Array<{ id: string; passed: boolean; detail: string }> = [];
+  const essentialPaths = [
+    ...SETTINGS_ESSENTIAL_KEYS,
+    'theme', 'aiDifficulty',
+    'accessibilitySettings.reducedMotion', 'accessibilitySettings.textScaleMultiplier', 'accessibilitySettings.highContrastFocusRings',
+    'notificationSettings.maxVisible', 'notificationSettings.animationSpeed'
+  ];
+  const missing = essentialPaths.filter(key => !settingsEssentialKeyExists(key));
+  results.push({ id: 'essentials-keys', passed: missing.length === 0, detail: missing.length ? 'Missing ' + missing.join(', ') : 'Essentials keys exist on GameSettingsState, uiState.theme, or gameState.aiDifficulty' });
+  const oldSave = sanitizeGameSettings({
+    conflictControlEnabled: false,
+    conflictAllowRelocation: false,
+    conflictReturnToPreferred: true,
+    conflictShowExplanations: true,
+    guardianFloatingPosition: { x: 9, y: 8 },
+    totalDays: 40
+  } as any);
+  const oldOk = oldSave.conflictControlEnabled === false
+    && oldSave.conflictControlSettings?.enabled === false
+    && oldSave.conflictAllowRelocation === false
+    && oldSave.conflictReturnToPreferred === true
+    && oldSave.conflictShowExplanations === true
+    && (oldSave.guardianFloatingPosition as any)?.x === 9
+    && oldSave.totalDays === 40;
+  results.push({ id: 'old-saves', passed: oldOk, detail: oldOk ? 'Flat conflict keys and guardian position still load' : 'Old-save conflict keys were not read' });
+  const metaClean = !SETTINGS_HUB_FIELD_META.conflictControlEnabled && !SETTINGS_HUB_FIELD_META.guardianFloatingPosition && !SETTINGS_HUB_FIELD_META.floatingUiPriorityMatrix;
+  results.push({ id: 'search-meta', passed: metaClean, detail: metaClean ? 'Unused conflict keys are not in search' : 'Unused keys are still searchable' });
+  const fresh = settingsPlayerChangedKeys(createDefaultGameSettings());
+  results.push({ id: 'fresh-diff', passed: fresh.length === 0, detail: fresh.length ? 'Fresh settings differ: ' + fresh.join(', ') : 'A fresh settings object matches defaults' });
+  const liveDoc = doc || (typeof document !== 'undefined' ? document : null);
+  const root = liveDoc?.querySelector?.('[data-testid="settings-window"]') as HTMLElement | null;
+  if (!root) {
+    results.push({ id: 'dom', passed: true, detail: 'Settings window is not open. LAB → Developer runs the on-screen checks.' });
+  } else {
+    annotateSettingsLockReasons(root, { teamMode: true, liveMatch: root.getAttribute('data-live-match') === 'true' });
+    const win = root.getBoundingClientRect();
+    const content = root.querySelector('[data-testid="settings-content"]') as HTMLElement | null;
+    const contentH = content ? content.getBoundingClientRect().height : 0;
+    const ratio = win.height > 0 ? contentH / win.height : 0;
+    results.push({ id: 'content-ratio', passed: ratio >= 0.7, detail: 'Content is ' + Math.round(ratio * 100) + '% of the window' });
+    const layerZ = (el: HTMLElement): number => {
+      let node: HTMLElement | null = el;
+      while (node) {
+        const raw = window.getComputedStyle(node).zIndex;
+        const parsed = parseInt(raw || '', 10);
+        if (raw !== 'auto' && !Number.isNaN(parsed)) return parsed;
+        node = node.parentElement;
+      }
+      return 0;
+    };
+    const zWin = layerZ(root);
+    const overlaps: string[] = [];
+    liveDoc!.querySelectorAll('body *').forEach(node => {
+      const el = node as HTMLElement;
+      if (root.contains(el) || el.contains(root)) return;
+      const cs = window.getComputedStyle(el);
+      if (cs.position !== 'fixed' || cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0) return;
+      const zRaw = cs.zIndex;
+      const z = parseInt(zRaw || '0', 10) || 0;
+      if (zRaw === 'auto' || z < zWin) return;
+      const rect = el.getBoundingClientRect();
+      const hit = rect.width > 0 && rect.height > 0 && rect.left < win.right && rect.right > win.left && rect.top < win.bottom && rect.bottom > win.top;
+      if (hit) overlaps.push(el.getAttribute('data-testid') || el.className.toString().slice(0, 80) || el.tagName);
+    });
+    results.push({ id: 'no-overlap', passed: overlaps.length === 0, detail: overlaps.length ? 'Overlaps: ' + overlaps.slice(0, 6).join(' | ') : 'No fixed layer covers Settings' });
+    const overflowNodes = [root, content].filter(Boolean) as HTMLElement[];
+    const overflow = overflowNodes.some(el => el.scrollWidth > el.clientWidth + 1);
+    results.push({ id: 'no-x-overflow', passed: !overflow, detail: overflow ? 'Horizontal overflow inside Settings' : 'No horizontal overflow' });
+    const disabled = Array.from(root.querySelectorAll('button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disabled="true"]'));
+    const unexplained = disabled.filter(el => {
+      const next = el.nextElementSibling;
+      return !(next && next.classList.contains('settings-lock-reason') && (next.textContent || '').trim().length > 0);
+    });
+    results.push({ id: 'disabled-reasons', passed: unexplained.length === 0, detail: unexplained.length ? unexplained.length + ' disabled control(s) have no reason' : 'Every disabled control has a reason' });
+    const bars = root.querySelectorAll('[data-testid="settings-undo-bar"]');
+    const saveButtons = Array.from(root.querySelectorAll('button')).filter(button => (button.textContent || '').trim() === 'Save Changes');
+    const duplicateBanner = ((root.textContent || '').match(/modified from defaults/g) || []).length;
+    results.push({ id: 'one-undo-bar', passed: bars.length === 1 && saveButtons.length === 0 && duplicateBanner === 0, detail: 'Undo bars ' + bars.length + ', Save Changes ' + saveButtons.length });
+    const opener = liveDoc!.querySelector('[data-testid="settings-open-button"], button[aria-label="Settings"]') as HTMLElement | null;
+    const name = opener ? (opener.getAttribute('aria-label') || opener.textContent || '').trim() : '';
+    results.push({ id: 'settings-button-name', passed: /settings/i.test(name), detail: name ? 'Accessible name: ' + name : 'Settings button has no accessible name' });
+  }
+  return { passed: results.every(row => row.passed), results };
+}
+
+export const SETTINGS_WINDOW_CSS = `
+.settings-window-frame { position: relative; min-width: 0; }
+.settings-window-frame > div > style { display: none; }
+.settings-window-frame[data-layout="phone"] {
+  width: 100%; height: 100%; max-height: 100%; border-radius: 0; margin: 0;
+  padding-top: env(safe-area-inset-top); padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left);
+}
+.settings-header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; min-height: 56px; max-height: 64px; }
+.settings-window-frame[data-layout="phone"] .settings-header { height: 56px; max-height: 56px; padding-top: 6px; padding-bottom: 6px; box-sizing: border-box; }
+.settings-header button, .settings-nav button, .settings-menu-sheet button { min-height: 44px; min-width: 44px; }
+.settings-desktop-search { flex: 1; min-width: 0; }
+.settings-back, .settings-phone-search, .settings-tablet-nav { display: none; }
+.settings-window-frame[data-layout="phone"][data-pane="detail"] .settings-back { display: inline-flex; }
+.settings-window-frame[data-layout="phone"] .settings-desktop-search { display: none; }
+.settings-window-frame[data-layout="phone"][data-pane="list"] .settings-phone-search { display: block; }
+.settings-window-frame[data-layout="tablet"] .settings-tablet-nav { display: block; }
+.settings-window-frame { box-sizing: border-box; overflow-x: hidden; max-width: 100%; }
+.settings-header h2 { min-width: 0; flex: 1; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.15; }
+.settings-content-row { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
+.settings-nav { width: 230px; flex: none; overflow-x: hidden; overflow-y: auto; }
+.settings-window-frame[data-layout="tablet"] .settings-nav { display: none; }
+.settings-window-frame[data-layout="tablet"] .settings-content-row { flex-direction: column; }
+.settings-window-frame[data-layout="tablet"] .settings-tablet-nav { width: calc(100% - 16px); flex: none; }
+.settings-window-frame[data-layout="phone"] .settings-content-row { flex-direction: column; }
+.settings-window-frame[data-layout="phone"] .settings-nav { width: 100%; flex: 1 1 auto; }
+.settings-window-frame[data-layout="phone"][data-pane="detail"] .settings-nav { display: none; }
+.settings-window-frame[data-layout="phone"][data-pane="list"] .settings-scroll { display: none; }
+.settings-window-frame[data-show-developer="false"] .settings-cat-developer { display: none; }
+.settings-scroll { min-width: 0; overflow-x: hidden; }
+.settings-window-frame[data-settings-basic="true"] .settings-advanced-block { display: none !important; }
+.settings-row { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-bottom: 1px solid rgba(148,163,184,0.25); }
+.settings-window-frame[data-layout="desktop"] .settings-row { flex-direction: row; align-items: center; justify-content: space-between; gap: 16px; padding: 4px 0; }
+.settings-window-frame[data-layout="desktop"] [data-testid="settings-essentials"] .settings-row-copy { display: flex; flex-wrap: wrap; column-gap: 8px; align-items: baseline; }
+.settings-ruleset-compact { display: flex; flex-direction: column; gap: 4px; }
+.settings-ruleset-compact .mt-2 { margin-top: 4px; }
+.settings-window-frame[data-layout="desktop"] .settings-row-copy { flex: 1; min-width: 0; }
+.settings-window-frame[data-layout="desktop"] .settings-row-control { flex: 0 0 280px; max-width: 46%; }
+.settings-window-frame[data-layout="phone"] .settings-scroll .truncate,
+.settings-window-frame[data-layout="phone"] .settings-scroll .whitespace-nowrap,
+.settings-window-frame[data-layout="phone"] .settings-nav .truncate {
+  white-space: normal !important; overflow: visible !important; text-overflow: clip !important;
+}
+.settings-window-frame[data-layout="phone"] .settings-scroll .flex.justify-between { flex-direction: column; align-items: stretch; }
+.settings-window-frame[data-layout="phone"] .settings-scroll button,
+.settings-window-frame[data-layout="phone"] .settings-scroll select,
+.settings-window-frame[data-layout="phone"] .settings-scroll input { min-height: 44px; }
+.settings-lock-reason { font-size: 12px; margin-top: 4px; opacity: 0.85; }
+.settings-menu-sheet { position: absolute; right: 12px; top: 60px; z-index: 5; min-width: 240px; max-width: calc(100% - 24px); }
+.settings-window-frame[data-layout="phone"] .settings-menu-sheet { left: 0; right: 0; top: auto; bottom: 0; border-radius: 16px 16px 0 0; max-height: 70%; overflow: auto; }
+.settings-cat-summary { display: block; font-size: 12px; opacity: 0.75; white-space: normal; }
+.settings-essentials-stack > * + * { margin-top: 0; }
+.settings-field-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.settings-window-frame[data-layout="desktop"] [data-testid="settings-essentials"] .settings-row { padding: 1px 0; }
+.settings-window-frame[data-layout="desktop"] [data-testid="settings-essentials"] .settings-row-control { display: flex; align-items: center; gap: 8px; }
+.settings-window-frame[data-layout="desktop"] [data-testid="settings-essentials"] .settings-row-control select,
+.settings-window-frame[data-layout="desktop"] [data-testid="settings-essentials"] .settings-row-control input { flex: 1; min-width: 0; min-height: 32px; padding-top: 2px; padding-bottom: 2px; }
+.settings-window-frame[data-layout="desktop"] .settings-ruleset-compact { gap: 2px; }
+.settings-window-frame[data-layout="desktop"] .settings-ruleset-compact p,
+.settings-window-frame[data-layout="desktop"] .settings-ruleset-compact label,
+.settings-window-frame[data-layout="desktop"] .settings-ruleset-compact .text-sm,
+.settings-window-frame[data-layout="desktop"] .settings-ruleset-compact .text-xs { line-height: 1.25; margin-top: 0; margin-bottom: 0; }
+.settings-window-frame[data-layout="phone"] [data-testid="settings-essentials"] .settings-row { padding: 1px 0; gap: 1px; }
+.settings-window-frame[data-layout="phone"] [data-testid="settings-essentials"] .settings-row-copy { display: flex; flex-wrap: wrap; column-gap: 6px; align-items: baseline; font-size: 13px; line-height: 1.15; }
+.settings-window-frame[data-layout="phone"] [data-testid="settings-essentials"] .font-semibold { font-size: 14px; }
+.settings-sound-control, .settings-scale-control { display: flex; align-items: center; gap: 8px; width: 100%; }
+.settings-sound-control input[type="range"], .settings-scale-control input[type="range"] { flex: 1; min-width: 0; }
+.settings-window-frame[data-layout="phone"] .settings-ruleset-compact { gap: 2px; }
+.settings-window-frame[data-layout="phone"] .settings-ruleset-compact .mt-2 { margin-top: 2px; }
+`;
+
+export function SettingsEssentialsPanel(props: {
+  gameSettings: GameSettingsState;
+  gameState: any;
+  uiState: any;
+  theme: any;
+  liveMatch: boolean;
+  changedKeys: string[];
+  onSettings: (label: string, updater: (prev: GameSettingsState) => GameSettingsState) => void;
+  onTheme: (theme: GameTheme) => void;
+  onDifficulty: (value: string) => void;
+  onAssistant: (level: AssistanceLevel) => void;
+  onOpenMechanics: () => void;
+  onResetKey: (key: string) => void;
+  changedOnly?: boolean;
+}) {
+  const rulesetId = v95RulesetId(props.gameSettings.rulesetPreset);
+  const bundle = v95RulesetBundle(rulesetId, props.gameSettings.rulesetIncludeV95Features === true);
+  const setByRuleset = rulesetId !== 'custom' && v95RulesetStillApplied(props.gameSettings);
+  const lockedKeys: string[] = props.gameSettings.smartSettingsProfile?.lockedSettingKeys || [];
+  const assistant = mapAssistanceLevelFromProfile(props.gameSettings.smartSettingsProfile, props.gameSettings);
+  const popups = Number(props.gameSettings.notificationSettings?.maxVisible ?? 3) <= 1 ? 'few' : 'normal';
+  const unlock = (key: string) => props.onSettings('Unlock', prev => ({
+    ...prev,
+    smartSettingsProfile: {
+      ...(prev.smartSettingsProfile || createDefaultSmartSettingsProfile()),
+      lockedSettingKeys: (prev.smartSettingsProfile?.lockedSettingKeys || []).filter(item => item !== key)
+    }
+  }));
+  const reasonFor = (key: string) => {
+    if (lockedKeys.includes(key)) return <div className="settings-lock-reason">Locked in Smart setup · <button type="button" className="underline" onClick={() => unlock(key)}>Unlock</button></div>;
+    if (setByRuleset && Object.prototype.hasOwnProperty.call(bundle, key)) {
+      return <div className="settings-lock-reason">Set by {V95_RULESET_LABEL[rulesetId]} · <button type="button" className="underline" onClick={() => props.onSettings('Ruleset', prev => ({ ...prev, rulesetPreset: 'custom' }))}>Change</button></div>;
+    }
+    return null;
+  };
+  const reset = (key: string) => props.changedKeys.includes(key)
+    ? <button type="button" className="underline text-xs mt-1" onClick={() => props.onResetKey(key)}>Reset</button>
+    : null;
+  const changedOnly = props.changedOnly === true;
+  const showRow = (key: string) => {
+    if (!changedOnly) return true;
+    const aliases: Record<string, string[]> = {
+      assistanceLevel: ['smartSettingsProfile'],
+      animationSpeed: ['notificationSettings'],
+      reducedMotion: ['accessibilitySettings'],
+      textScaleMultiplier: ['accessibilitySettings'],
+      highContrastFocusRings: ['accessibilitySettings'],
+      notificationSettings: ['notificationSettings'],
+      soundEnabled: ['soundEnabled', 'soundVolume'],
+      rulesetPreset: ['rulesetPreset', 'rulesetIncludeV95Features']
+    };
+    if (key === 'theme' || key === 'aiDifficulty' || key === 'how') return false;
+    return (aliases[key] || [key]).some(item => props.changedKeys.includes(item));
+  };
+  const access = props.gameSettings.accessibilitySettings || createDefaultAccessibilitySettings();
+  const patchAccess = (label: string, patch: Partial<AccessibilitySettings>) => props.onSettings(label, prev => ({
+    ...prev,
+    accessibilitySettings: { ...(prev.accessibilitySettings || createDefaultAccessibilitySettings()), ...patch }
+  }));
+  return (
+    <div data-testid="settings-essentials" className="settings-essentials-stack">
+      {showRow('rulesetPreset') && <V95CoreLoopSettings mode="ruleset" settings={props.gameSettings} theme={props.theme} onChange={(next, label) => props.onSettings(label, () => next)} />}
+      <div className="settings-row" id="settings-field-aiDifficulty" data-setting-key="aiDifficulty">
+        <div className="settings-row-copy">
+          <div className="font-semibold">AI opponent difficulty</div>
+          <div className="text-xs opacity-75">How strongly the opponent plays.</div>
+        </div>
+        <div className="settings-row-control">
+          <select id="settings-ai-difficulty" aria-label="AI opponent difficulty" className={`${props.theme.select} rounded px-3 py-2 w-full`} value={props.gameState.aiDifficulty} disabled={props.liveMatch} aria-disabled={props.liveMatch || undefined} data-lock-reason={props.liveMatch ? 'Applies next match' : undefined} onChange={event => props.onDifficulty(event.target.value)}>
+            {Object.keys(AI_DIFFICULTY_PROFILES).map(key => <option key={key} value={key}>{AI_DIFFICULTY_PROFILES[key].name}</option>)}
+          </select>
+          {props.liveMatch && <div className="settings-lock-reason">Applies next match</div>}
+        </div>
+      </div>
+      <div className="settings-row" data-setting-key="totalDays" style={{ display: showRow('totalDays') ? undefined : 'none' }}>
+        <div className="settings-row-copy"><div className="font-semibold">Game length</div><div className="text-xs opacity-75">How many days the match lasts.</div>{reasonFor('totalDays')}</div>
+        <div className="settings-row-control">
+          <input id="settings-total-days" aria-label="Game length" type="number" min={10} max={100} className={`${props.theme.input || props.theme.select} rounded px-3 py-2 w-full`} value={props.gameSettings.totalDays} onChange={event => props.onSettings('Game length', prev => ({ ...prev, totalDays: Math.max(10, Math.min(100, Math.floor(Number(event.target.value) || prev.totalDays))) }))} />
+          {reset('totalDays')}
+        </div>
+      </div>
+      <div className="settings-row" data-setting-key="playerActionsPerDay" style={{ display: showRow('playerActionsPerDay') ? undefined : 'none' }}>
+        <div className="settings-row-copy"><div className="font-semibold">Actions per day</div><div className="text-xs opacity-75">How many you can take each day.</div>{reasonFor('playerActionsPerDay')}</div>
+        <div className="settings-row-control">
+          <input id="settings-actions-per-day" aria-label="Actions per day" type="number" min={1} max={10} className={`${props.theme.input || props.theme.select} rounded px-3 py-2 w-full`} value={props.gameSettings.playerActionsPerDay} onChange={event => { const value = Math.max(1, Math.min(10, Math.floor(Number(event.target.value) || 1))); props.onSettings('Actions per day', prev => ({ ...prev, playerActionsPerDay: value, maxActionsPerTurn: value })); }} />
+          {reset('playerActionsPerDay')}
+        </div>
+      </div>
+      <div className="settings-row" data-setting-key="winCondition" style={{ display: showRow('winCondition') ? undefined : 'none' }}>
+        <div className="settings-row-copy"><div className="font-semibold">Win condition</div><div className="text-xs opacity-75">What decides the winner.</div>{reasonFor('winCondition')}</div>
+        <div className="settings-row-control">
+          <select id="settings-win-condition" aria-label="Win condition" className={`${props.theme.select} rounded px-3 py-2 w-full`} value={props.gameSettings.winCondition} onChange={event => props.onSettings('Win condition', prev => ({ ...prev, winCondition: normalizeWinMetric(event.target.value) }))}>
+            {WIN_METRIC_OPTIONS.map(option => <option key={option} value={option}>{WIN_METRIC_LABELS[option]}</option>)}
+          </select>
+          {reset('winCondition')}
+        </div>
+      </div>
+      <div className="settings-row" data-setting-key="assistanceLevel" style={{ display: showRow('assistanceLevel') ? undefined : 'none' }}>
+        <div className="settings-row-copy"><div className="font-semibold">Game Assistant</div><div className="text-xs opacity-75">{ASSISTANCE_LEVEL_BLURBS[assistant]}</div></div>
+        <div className="settings-row-control">
+          <select id="settings-assistant" aria-label="Game Assistant" className={`${props.theme.select} rounded px-3 py-2 w-full`} value={assistant} onChange={event => props.onAssistant(event.target.value as AssistanceLevel)}>
+            {(Object.keys(ASSISTANCE_LEVEL_LABELS) as AssistanceLevel[]).map(level => <option key={level} value={level}>{ASSISTANCE_LEVEL_LABELS[level]}</option>)}
+          </select>
+        </div>
+      </div>
+      {([
+        ['interactiveChallengesEnabled', 'Interactive challenges', 'A step before the challenge roll.'],
+        ['realMapEnabled', 'Real map', 'State shapes on the map.'],
+        ['expandedChallengesEnabled', 'Expanded challenges', 'Seasonal, chained and rare challenges.']
+      ] as const).map(([key, label, description]) => (
+        <div key={key} className="settings-row" data-setting-key={key} style={{ display: showRow(key) ? undefined : 'none' }}>
+          <div className="settings-row-copy"><div className="font-semibold">{label}</div><div className="text-xs opacity-75">{description}</div>{reasonFor(key)}</div>
+          <div className="settings-row-control">
+            <label className="inline-flex items-center gap-2"><input type="checkbox" checked={Boolean((props.gameSettings as any)[key])} onChange={event => props.onSettings(label, prev => ({ ...prev, [key]: event.target.checked }))} /> On</label>
+            {reset(key)}
+          </div>
+        </div>
+      ))}
+      <div className="settings-row" data-setting-key="soundEnabled" style={{ display: showRow('soundEnabled') ? undefined : 'none' }}>
+        <div className="settings-row-copy"><div className="font-semibold">Sound</div><div className="text-xs opacity-75">Tones for money, travel and challenges.</div>{reasonFor('soundEnabled')}</div>
+        <div className="settings-row-control settings-sound-control">
+          <label className="inline-flex items-center gap-2"><input type="checkbox" aria-label="Sound" checked={props.gameSettings.soundEnabled === true} onChange={event => props.onSettings('Sound', prev => ({ ...prev, soundEnabled: event.target.checked }))} /> Sound on</label>
+          <input id="settings-volume" aria-label="Volume" type="range" min={0} max={1} step={0.05} value={Number(props.gameSettings.soundVolume ?? 0.5)} onChange={event => props.onSettings('Volume', prev => ({ ...prev, soundVolume: Number(event.target.value) }))} className="w-full" />
+          {reset('soundEnabled')}
+        </div>
+      </div>
+      <div className="settings-row" data-setting-key="theme" style={{ display: showRow('theme') ? undefined : 'none' }}>
+        <div className="settings-row-copy"><div className="font-semibold">Theme</div><div className="text-xs opacity-75">Dark, light, retro, or match the device.</div></div>
+        <div className="settings-row-control">
+          <select id="settings-theme" aria-label="Theme" className={`${props.theme.select} rounded px-3 py-2 w-full`} value={props.uiState.theme || 'system'} onChange={event => props.onTheme(event.target.value as GameTheme)}>
+            <option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option><option value="retro">Retro</option>
+          </select>
+        </div>
+      </div>
+      <div className="settings-row" data-setting-key="animationSpeed" style={{ display: showRow('animationSpeed') ? undefined : 'none' }}>
+        <div className="settings-row-copy"><div className="font-semibold">Animation speed</div><div className="text-xs opacity-75">How quickly notices move.</div></div>
+        <div className="settings-row-control">
+          <select id="settings-anim-speed" aria-label="Animation speed" className={`${props.theme.select} rounded px-3 py-2 w-full`} value={String(props.gameSettings.notificationSettings?.animationSpeed ?? 0.5)} onChange={event => props.onSettings('Animation speed', prev => ({ ...prev, notificationSettings: { ...(prev.notificationSettings || createDefaultNotificationSettings()), animationSpeed: Number(event.target.value) || 0.5 } }))}>
+            <option value="0.3">Fast</option><option value="0.5">Normal</option><option value="1">Slow</option>
+          </select>
+        </div>
+      </div>
+      <div className="settings-row" data-setting-key="reducedMotion" style={{ display: showRow('reducedMotion') ? undefined : 'none' }}>
+        <div className="settings-row-copy"><div className="font-semibold">Reduced motion</div><div className="text-xs opacity-75">Keep movement short and still.</div></div>
+        <div className="settings-row-control"><label className="inline-flex items-center gap-2"><input type="checkbox" checked={access.reducedMotion === true} onChange={event => patchAccess('Reduced motion', { reducedMotion: event.target.checked })} /> Reduce motion</label></div>
+      </div>
+      <div className="settings-row" data-setting-key="textScaleMultiplier" style={{ display: showRow('textScaleMultiplier') ? undefined : 'none' }}>
+        <div className="settings-row-copy"><div className="font-semibold">Text size</div><div className="text-xs opacity-75">Scale interface text.</div></div>
+        <div className="settings-row-control settings-scale-control">
+          <label className="text-xs" htmlFor="settings-text-scale">Scale {Number(access.textScaleMultiplier || 1).toFixed(2)}</label>
+          <input id="settings-text-scale" aria-label="Text size" type="range" min={0.8} max={1.5} step={0.05} value={Number(access.textScaleMultiplier || 1)} onChange={event => patchAccess('Text size', { textScaleMultiplier: Number(event.target.value) })} className="w-full" />
+        </div>
+      </div>
+      <div className="settings-row" data-setting-key="highContrastFocusRings" style={{ display: showRow('highContrastFocusRings') ? undefined : 'none' }}>
+        <div className="settings-row-copy"><div className="font-semibold">High contrast focus</div><div className="text-xs opacity-75">Stronger keyboard outlines.</div></div>
+        <div className="settings-row-control"><label className="inline-flex items-center gap-2"><input type="checkbox" checked={access.highContrastFocusRings === true} onChange={event => patchAccess('High contrast focus', { highContrastFocusRings: event.target.checked })} /> High contrast focus</label></div>
+      </div>
+      <div className="settings-row" data-setting-key="notificationSettings" style={{ display: showRow('notificationSettings') ? undefined : 'none' }}>
+        <div className="settings-row-copy"><div className="font-semibold">Notifications</div><div className="text-xs opacity-75">How many pop-ups can sit on screen.</div></div>
+        <div className="settings-row-control">
+          <select id="settings-popups" aria-label="Notifications" className={`${props.theme.select} rounded px-3 py-2 w-full`} value={popups} onChange={event => props.onSettings('Notifications', prev => ({ ...prev, notificationSettings: { ...(prev.notificationSettings || createDefaultNotificationSettings()), maxVisible: event.target.value === 'few' ? 1 : 3 } }))}>
+            <option value="few">A few</option><option value="normal">Normal</option>
+          </select>
+        </div>
+      </div>
+      <div className="settings-row" data-setting-key="how" style={{ display: showRow('how') ? undefined : 'none' }}>
+        <div className="settings-row-copy"><div className="font-semibold">How the game works</div><div className="text-xs opacity-75">The mechanics directory.</div></div>
+        <div className="settings-row-control"><button type="button" className={`${props.theme.buttonSecondary} px-3 py-2 rounded`} onClick={props.onOpenMechanics}>How the game works</button></div>
+      </div>
+    </div>
+  );
+}
+
+export function SettingsPresetsDirectory(props: {
+  gameSettings: GameSettingsState;
+  theme: any;
+  onCommit: (label: string, updater: (prev: GameSettingsState) => GameSettingsState) => void;
+  onDifficulty: (value: string) => void;
+}) {
+  const [preview, setPreview] = useState<null | { title: string; rows: Array<{ key: string; from: string; to: string }>; apply: () => void }>(null);
+  const ask = (title: string, patch: Record<string, unknown>, apply: () => void) => {
+    setPreview({ title, rows: settingsPreviewRows(props.gameSettings, patch), apply });
+  };
+  const select = (id: string, label: string, options: Array<{ id: string; label: string }>, onChange: (id: string) => void) => (
+    <label className="block text-sm mb-3" htmlFor={id}>{label}
+      <select id={id} className={`${props.theme.select} rounded px-3 py-2 w-full mt-1`} defaultValue="" onChange={event => { if (event.target.value) onChange(event.target.value); event.target.value = ''; }}>
+        <option value="">Choose…</option>
+        {options.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+      </select>
+    </label>
+  );
+  return (
+    <div data-testid="settings-presets-directory" className="mb-4 space-y-3">
+      <section>
+        <h3 className="font-bold">Match presets</h3>
+        <p className="text-xs opacity-75 mb-2">A named bundle of match options, including assistance and difficulty.</p>
+        {select('preset-match', 'Match preset', Object.entries(SETTINGS_PRESETS).map(([id, preset]) => ({ id, label: preset.label })), id => {
+          const preset = SETTINGS_PRESETS[id as keyof typeof SETTINGS_PRESETS];
+          ask(preset.label, preset.settings || {}, () => {
+            props.onCommit(preset.label, prev => ({ ...prev, ...(preset.settings || {}) }));
+            if (preset.aiDifficulty) props.onDifficulty(String(preset.aiDifficulty));
+          });
+        })}
+      </section>
+      <section>
+        <h3 className="font-bold">Quick settings presets</h3>
+        <p className="text-xs opacity-75 mb-2">Short profiles for pace, guidance and how much the assistant speaks.</p>
+        {select('preset-quick', 'Quick preset', Object.entries(QUICK_SETTINGS_PRESETS).map(([id, preset]) => ({ id, label: preset.label || preset.name || id })), id => {
+          const preset = QUICK_SETTINGS_PRESETS[id];
+          ask(preset.label || id, { smartSettingsProfile: preset.profile }, () => props.onCommit(preset.label || id, prev => ({ ...prev, smartSettingsProfile: { ...(prev.smartSettingsProfile || createDefaultSmartSettingsProfile()), ...preset.profile } })));
+        })}
+      </section>
+      <section>
+        <h3 className="font-bold">Smart settings presets</h3>
+        <p className="text-xs opacity-75 mb-2">Experience Director profiles. They propose a setup; you still confirm it.</p>
+        {select('preset-smart', 'Smart preset', SMART_SETTINGS_PRESETS.map(preset => ({ id: preset.id, label: preset.label || preset.name || preset.id })), id => {
+          const preset = SMART_SETTINGS_PRESETS.find(item => item.id === id);
+          if (!preset) return;
+          ask(preset.label || preset.id, { smartSettingsProfile: preset.profile }, () => props.onCommit(preset.label || preset.id, prev => ({ ...prev, smartSettingsProfile: { ...(prev.smartSettingsProfile || createDefaultSmartSettingsProfile()), ...preset.profile } })));
+        })}
+      </section>
+      <section>
+        <h3 className="font-bold">Built-in profiles</h3>
+        <p className="text-xs opacity-75 mb-2">Ready-made settings files such as fast matches or deep simulations.</p>
+        {select('preset-builtin', 'Built-in profile', BUILT_IN_CUSTOM_SETTINGS_PRESETS.map(preset => ({ id: preset.id, label: preset.name })), id => {
+          const preset = BUILT_IN_CUSTOM_SETTINGS_PRESETS.find(item => item.id === id);
+          if (!preset) return;
+          ask(preset.name, preset.settings || {}, () => props.onCommit(preset.name, prev => ({ ...prev, ...(preset.settings || {}) })));
+        })}
+      </section>
+      <section>
+        <h3 className="font-bold">Auto Mode presets</h3>
+        <p className="text-xs opacity-75 mb-2">How strongly automatic assistance may change the match.</p>
+        {select('preset-auto', 'Auto Mode preset', Object.entries(AUTO_MODE_PRESETS).map(([id, preset]) => ({ id, label: preset.name })), id => {
+          const preset = AUTO_MODE_PRESETS[id as keyof typeof AUTO_MODE_PRESETS];
+          const patch = { autoModeSettings: { ...(props.gameSettings.autoModeSettings || {}), intensity: preset.intensity, permissionMode: preset.permissionMode, numericalLimits: preset.numericalLimits, categoryToggles: preset.categoryToggles } };
+          ask(preset.name, patch, () => props.onCommit(preset.name, prev => ({ ...prev, autoModeSettings: { ...(prev.autoModeSettings || createDefaultAutoModeGlobalSettings()), ...patch.autoModeSettings } })));
+        })}
+      </section>
+      <section>
+        <h3 className="font-bold">Team AI difficulty presets</h3>
+        <p className="text-xs opacity-75 mb-2">Friendly and enemy team styles used when Team Mode is on.</p>
+        {select('preset-team', 'Team difficulty', Object.entries(TEAM_MODE_AI_DIFFICULTY_PRESET_CONFIG).map(([id, preset]) => ({ id, label: preset.label })), id => {
+          const patch = applyTeamModeAiDifficultyPresetV67(id as TeamModeAiDifficultyPreset);
+          ask(TEAM_MODE_AI_DIFFICULTY_PRESET_CONFIG[id as TeamModeAiDifficultyPreset]?.label || id, patch, () => props.onCommit('Team difficulty', prev => ({ ...prev, ...patch })));
+        })}
+      </section>
+      <section>
+        <h3 className="font-bold">AI strategy lab presets</h3>
+        <p className="text-xs opacity-75 mb-2">Named weight sets for the strategy lab. The lab stays off until you open it.</p>
+        {select('preset-lab', 'Strategy preset', Object.keys(AI_STRATEGY_LAB_PRESETS_V63).map(id => ({ id, label: id })), id => {
+          ask(id, { aiStrategyLabPreset: id }, () => props.onCommit('Strategy preset', prev => ({ ...prev, aiStrategyLabPreset: id as any })));
+        })}
+      </section>
+      {preview && (
+        <div className={`${props.theme.card || ''} ${props.theme.border} border rounded-lg p-3`} role="dialog" aria-label="Preset changes">
+          <div className="font-semibold">{preview.title}</div>
+          {preview.rows.length === 0 ? <p className="text-xs opacity-75">This preset matches the current settings.</p> : (
+            <ul className="text-xs mt-2 space-y-1">{preview.rows.map(row => <li key={row.key}>{row.key}: {row.from} → {row.to}</li>)}</ul>
+          )}
+          <div className="flex gap-2 mt-3">
+            <button type="button" className={`${props.theme.button} text-white px-3 py-2 rounded`} onClick={() => { preview.apply(); setPreview(null); }}>Apply</button>
+            <button type="button" className={`${props.theme.buttonSecondary} px-3 py-2 rounded`} onClick={() => setPreview(null)}>Cancel</button>
+          </div>
+          <p className="text-xs opacity-75 mt-2">Undo is available for a few seconds after you apply.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 type SettingsHubChip =
   | string
@@ -87065,10 +87611,15 @@ export class GlobalUISurfaceManager {
       return UI_Z_INDEX_TIERS[surfaceId] || UI_Z_INDEX_TIER_2_HUD;
     }
     const def = UI_SURFACE_REGISTRY[surfaceId];
-    if (def) {
-      return UI_Z_INDEX_TIERS[def.tier];
-    }
-    return UI_Z_INDEX_TIER_6_SETTINGS_CENTERS;
+    const raw = def ? UI_Z_INDEX_TIERS[def.tier] : UI_Z_INDEX_TIER_6_SETTINGS_CENTERS;
+    const blockingId = this.state.activeBlockingModal;
+    if (!blockingId || blockingId === surfaceId) return raw;
+    if ((this.state.modalStack || []).includes(surfaceId)) return raw;
+    const blockingDef = UI_SURFACE_REGISTRY[blockingId];
+    const blockingZ = blockingDef ? UI_Z_INDEX_TIERS[blockingDef.tier] : UI_Z_INDEX_TIER_6_SETTINGS_CENTERS;
+    const tier = def ? def.tier : 4;
+    if (tier <= 5) return Math.min(raw, Math.max(1, blockingZ - 1));
+    return raw;
   }
 
   public getCollisionPriority(surfaceId: string): number {
@@ -88254,9 +88805,7 @@ export const NotificationLaneManager: React.FC<NotificationLaneManagerProps> = (
 
   // V7.2 R1 & R2: Hide ordinary notification toasts during active blocking modals while preserving critical alerts
   let activeToasts = notifications;
-  if (isBlockingModalOpen) {
-    activeToasts = notifications.filter(n => isCriticalNotification(n));
-  }
+  if (isBlockingModalOpen) return null;
 
   if (activeToasts.length === 0) return null;
 
@@ -88273,7 +88822,7 @@ export const NotificationLaneManager: React.FC<NotificationLaneManagerProps> = (
 
   if (isBlockingModalOpen) {
     // V7.2 R2: Reposition critical notifications to safe area bottom-8 right-8 z-[1000] during active blocking modals
-    positionClasses = "bottom-8 right-8 flex-col items-end z-[1000]";
+    positionClasses = "bottom-8 right-8 flex-col items-end z-[300]";
   } else {
     if (anchor === "top_center") positionClasses = "top-16 left-1/2 -translate-x-1/2 flex-col items-center z-[600]";
     else if (anchor === "bottom_right") positionClasses = "bottom-16 right-4 flex-col items-end z-[600]";
@@ -95076,9 +95625,20 @@ const SettingsSection: React.FC<{
   const effectiveTab: SettingsHubTabId = tab && SETTINGS_HUB_TAB_ORDER.includes(tab) ? tab : (SETTINGS_HUB_SECTION_INDEX.find(s => s.id === id)?.tab || 'home');
   const searching = ctx.searchMatchedIds !== null;
   const isMatchedBySearch = searching && ctx.searchMatchedIds!.has(id);
-  const tabActive = ctx.activeTab === effectiveTab;
-  if (!searching && !tabActive) return null;
-  if (searching && !isMatchedBySearch) return null;
+  const sectionCategory = settingsWindowCategoryFor(id, effectiveTab);
+  const query = String(ctx.searchQuery || '').trim().toLowerCase();
+  const categoryNameHit = searching && query.length > 0 && settingsWindowCategoryLabel(sectionCategory).toLowerCase().includes(query);
+  if (sectionCategory === 'developer' && ctx.showDeveloper !== true) return null;
+  if (ctx.windowCategory) {
+    if (searching) {
+      if (!isMatchedBySearch && !categoryNameHit) return null;
+    } else if (ctx.windowCategory === 'essentials' || sectionCategory !== ctx.windowCategory) return null;
+  } else {
+    const tabActive = ctx.activeTab === effectiveTab;
+    if (!searching && !tabActive) return null;
+    if (searching && !isMatchedBySearch && !categoryNameHit) return null;
+  }
+  if (!searching && ctx.showAdvanced === false && sectionCategory !== 'developer' && settingsSectionIsAdvanced(id, title, description, chips)) return null;
   const hasChangedField = fieldKeys.length === 0 || fieldKeys.some(k => ctx.changedFieldKeys.includes(k));
   if (ctx.changedOnly && fieldKeys.length > 0 && !hasChangedField) return null;
   const collapsed = searching ? false : (ctx.collapsedSections[id] ?? false);
@@ -95088,7 +95648,7 @@ const SettingsSection: React.FC<{
         <div className="flex items-center gap-2 flex-wrap">
           <h4 className="text-lg font-bold">{title}</h4>
           {searching && (
-            <span className={`text-[10px] px-2 py-0.5 rounded-full ${ctx.buttonSecondary}`}>{SETTINGS_HUB_TAB_LABELS[effectiveTab]}</span>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full ${ctx.buttonSecondary}`}>{settingsWindowCategoryLabel(sectionCategory)}</span>
           )}
           {chips.map(chip => (
             <span key={chip} className={`text-[10px] px-2 py-0.5 rounded-full ${ctx.buttonSecondary}`}>{chip}</span>
@@ -99006,6 +99566,20 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
   }, [isOpen, uiState?.settingsActiveTab]);
   const modalRef = React.useRef<HTMLDivElement>(null);
   const previouslyFocusedElementRef = React.useRef<HTMLElement | null>(null);
+  const [shellLayout, setShellLayout] = React.useState<'phone' | 'tablet' | 'desktop'>(() => {
+    if (typeof window === 'undefined') return 'desktop';
+    const width = window.innerWidth;
+    return width < 640 ? 'phone' : width < 1024 ? 'tablet' : 'desktop';
+  });
+  React.useEffect(() => {
+    const apply = () => {
+      const width = window.innerWidth;
+      setShellLayout(width < 640 ? 'phone' : width < 1024 ? 'tablet' : 'desktop');
+    };
+    apply();
+    window.addEventListener('resize', apply);
+    return () => window.removeEventListener('resize', apply);
+  }, []);
 
   const currentProfile = profile || gameSettings?.smartSettingsProfile || createDefaultSmartSettingsProfile();
 
@@ -99037,7 +99611,7 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
       // Target the settings search box specifically. Matching a bare
       // input[type="text"] picked up whichever free-text field happened to
       // come first in the DOM (the Natural Language Intent box).
-      const searchField = modalRef.current.querySelector<HTMLElement>('[data-settings-search]');
+      const searchField = Array.from(modalRef.current.querySelectorAll<HTMLElement>('[data-settings-search]')).find(el => el.getClientRects().length > 0);
       const focusables = modalRef.current.querySelectorAll<HTMLElement>(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
       );
@@ -99070,7 +99644,7 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
         el.scrollTo({ top: 0 });
       }
     });
-  }, [isOpen, viewMode]);
+  }, [isOpen, viewMode, uiState?.settingsWindowCategory, uiState?.settingsPhonePane]);
 
   React.useEffect(() => {
     if (!isOpen) return;
@@ -99084,7 +99658,7 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
           modalRef.current.querySelectorAll<HTMLElement>(
             'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
           )
-        ).filter(el => !el.hasAttribute('disabled'));
+        ).filter(el => !el.hasAttribute('disabled') && el.getClientRects().length > 0);
 
         if (focusables.length === 0) return;
 
@@ -99117,8 +99691,8 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
       tabIndex={-1}
       role="dialog"
       aria-modal="true"
-      aria-label="Settings and Experience Director Shell"
-      className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-hidden"
+      aria-label="Settings"
+      className={`fixed inset-0 bg-black/60 flex justify-center overflow-hidden ${shellLayout === 'phone' ? 'p-0 items-stretch' : 'p-4 items-center'}`}
       style={{ zIndex: globalUISurfaceManager.getZIndex("settings_hub") }}
       onClick={handleClose}
     >
@@ -99147,95 +99721,20 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
           : 'border-slate-200 bg-slate-50 text-slate-900';
         return (
           <div
-            className={`${modalBgClass} border rounded-xl max-w-5xl w-full flex flex-col overflow-hidden shadow-2xl h-[calc(100dvh-1.5rem)] max-h-[calc(100dvh-1.5rem)] my-auto`}
-            style={{ height: 'calc(100dvh - 1.5rem)', maxHeight: 'calc(100dvh - 1.5rem)' }}
+            className={`${modalBgClass} settings-window-frame border flex flex-col overflow-hidden shadow-2xl ${shellLayout === 'phone' ? 'w-full h-full max-h-full rounded-none self-stretch' : 'rounded-xl'}`}
+            data-testid="settings-window"
+            data-layout={shellLayout}
+            data-pane={uiState?.settingsPhonePane || 'list'}
+            data-settings-basic={uiState?.settingsViewMode === 'advanced' ? 'false' : 'true'}
+            data-show-developer={uiState?.settingsShowDeveloper ? 'true' : 'false'}
+            data-live-match={isLiveMatch ? 'true' : 'false'}
+            style={shellLayout === 'phone'
+              ? { width: '100%', height: '100%', maxHeight: '100%', borderRadius: 0 }
+              : { width: 'min(1100px, calc(100vw - 2rem))', height: 'min(90vh, 900px)', maxHeight: 'min(90vh, 900px)' }}
             onClick={e => e.stopPropagation()}
           >
-            {/* Top Header Navigation */}
-            <div className={`flex justify-between items-center px-3 sm:px-6 py-2 sm:py-4 border-b shrink-0 ${navBgClass}`}>
-              <div className="flex items-center gap-3">
-                <div className={`flex p-1 rounded-lg border ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('experience')}
-                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${
-                      viewMode === 'experience'
-                        ? 'bg-sky-600 text-white shadow'
-                        : isDark ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
-                    }`}
-                  >
-                    🎮 Game Experience
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('advanced')}
-                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${
-                      viewMode === 'advanced'
-                        ? 'bg-sky-600 text-white shadow'
-                        : isDark ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
-                    }`}
-                  >
-                    ⚙️ Advanced Settings
-                  </button>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleClose}
-                className={`px-3 py-1 rounded transition-colors text-xs font-bold ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white' : 'bg-slate-200 hover:bg-slate-300 text-slate-700 hover:text-slate-900'}`}
-              >
-                ✕
-              </button>
-            </div>
-
-        {/* Content Body */}
-        {viewMode === 'experience' ? (
-          <InlineRenderErrorBoundary fallbackTitle="Game Experience crashed after applying settings">
-          <GameExperienceScreen
-            profile={currentProfile}
-            gameSettings={gameSettings}
-            onUpdateProfile={onUpdateProfile}
-            onApplyPlan={onApplyPlan}
-            isLiveMatch={isLiveMatch}
-            settingsIntelligence={settingsIntelligence}
-            onOpenAdvancedSettings={(tab, section) => {
-              setViewMode('advanced');
-              if (updateUiState) {
-                updateUiState({
-                  showSettingsHub: true,
-                  settingsActiveTab: (tab as any) || 'home',
-                  pendingSettingsNavigation: section ? { sectionId: section } : null
-                });
-              }
-            }}
-            isDark={isDark}
-            isRetro={isRetro}
-          />
-          </InlineRenderErrorBoundary>
-        ) : (
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            <ExperienceStatusHeader
-              profile={currentProfile}
-              gameSettings={gameSettings}
-              onSwitchToExperience={() => setViewMode('experience')}
-              uiState={uiState}
-            />
-            {settingsIntelligence?.snapshot && (currentProfile.interfaceLevel === 'advanced' || currentProfile.interfaceLevel === 'expert') && (
-              <div className="px-3 sm:px-6 pt-2 shrink-0 max-h-[40vh] overflow-y-auto">
-                <SettingsIntelligenceAnnotations snapshot={settingsIntelligence.snapshot} level={currentProfile.interfaceLevel} isDark={isDark} />
-              </div>
-            )}
-            <AdvancedSettingsContainer
-              profile={currentProfile}
-              gameSettings={gameSettings}
-              uiState={uiState}
-              updateUiState={updateUiState}
-            >
-              {typeof renderAdvanced === 'function' ? renderAdvanced() : children}
-            </AdvancedSettingsContainer>
-          </div>
-        )}
-          </div>
+            {typeof renderAdvanced === 'function' ? renderAdvanced() : children}
+                  </div>
         );
       })()}
     </div>
@@ -99653,7 +100152,7 @@ export function exportSettingsToJson(settings: GameSettingsState, presetName?: s
   const payload = {
     version: '7.3',
     timestamp: new Date().toISOString(),
-    presetName: presetName || 'Antigravity Game Settings',
+    presetName: presetName || 'Game Settings',
     settingsCount: Object.keys(settings).length,
     settings: settings
   };
@@ -99683,7 +100182,7 @@ export function importSettingsFromJson(jsonString: string): { success: boolean; 
       validatedSettings.autoModeEnabled = false;
     }
     if (diffCount === 0) {
-      return { success: false, error: 'No recognized Antigravity game settings keys found in JSON file.' };
+      return { success: false, error: 'No recognized game settings keys found in JSON file.' };
     }
     return { success: true, settings: validatedSettings, diffCount };
   } catch (err: any) {
@@ -99959,7 +100458,7 @@ export const SettingsImportExportModal: React.FC<SettingsImportExportModalProps>
           {activeTab === 'export' ? (
             <div className="space-y-3">
               <p className="text-xs text-slate-300">
-                Copy or download your complete current Antigravity game configuration as JSON.
+                Copy or download your current game configuration as JSON.
               </p>
               <div className="relative">
                 <textarea
@@ -100003,7 +100502,7 @@ export const SettingsImportExportModal: React.FC<SettingsImportExportModalProps>
                 <textarea
                   value={importJsonText}
                   onChange={e => { setImportJsonText(e.target.value); setImportResult(null); }}
-                  placeholder="Paste Antigravity settings JSON here..."
+                  placeholder="Paste settings JSON here..."
                   rows={8}
                   className="w-full p-3 font-mono text-xs bg-slate-950 border border-slate-800 rounded-lg text-slate-200"
                 />
@@ -102214,7 +102713,7 @@ export const GameIntelligenceAnswerCard: React.FC<GameIntelligenceAnswerCardProp
   );
 };
 
-export type LabGroupId = 'ai_engine' | 'team' | 'assistants' | 'automation' | 'rules' | 'memory' | 'replay_diag' | 'settings';
+export type LabGroupId = 'ai_engine' | 'team' | 'assistants' | 'automation' | 'rules' | 'memory' | 'replay_diag' | 'settings' | 'developer';
 
 export const LAB_GROUP_META: Record<LabGroupId, { title: string; icon: string }> = {
   ai_engine: { title: 'AI Engine & Algorithms', icon: '⚙️' },
@@ -102224,7 +102723,8 @@ export const LAB_GROUP_META: Record<LabGroupId, { title: string; icon: string }>
   rules: { title: 'Rules & Simulation', icon: '📐' },
   memory: { title: 'AI Memory', icon: '🧠' },
   replay_diag: { title: 'Replay, Ledger & Diagnostics', icon: '🔬' },
-  settings: { title: 'Settings', icon: '🗂️' }
+  settings: { title: 'Settings', icon: '🗂️' },
+  developer: { title: 'Developer', icon: '🧪' }
 };
 
 export interface LabEntry {
@@ -119155,7 +119655,6 @@ export const SettingsIntelligencePanel: React.FC<{ binding: SettingsIntelligence
           {h.domains.map(d => (
             <div key={d.domain} title={d.reason}><div className="opacity-70">{d.label}</div><div className="flex items-center gap-1">{siChip(d.status)}</div>{level !== 'simple' && <div className="opacity-70 text-[11px] mt-0.5 line-clamp-2">{d.reason}</div>}</div>
           ))}
-          <div><div className="opacity-70">Inactive settings</div><div className="font-bold">{h.inertSettings.length}</div></div>
         </div>
       </div>
 
@@ -127930,12 +128429,13 @@ export function buildV9RegionContext(code: string, lr: LivingRegionsWorldView | 
 const V9_TONE: Record<'good' | 'warn' | 'bad' | 'info', string> = { good: 'border-emerald-500/60', warn: 'border-amber-500/70', bad: 'border-red-500/70', info: 'border-slate-500/50' };
 const V9_CONTROL_TONE: Record<V9Cohesion['header']['controlTone'], string> = { you: 'bg-emerald-600 text-white', copilot: 'bg-sky-600 text-white', rescue: 'bg-red-600 text-white', waiting: 'bg-slate-600 text-white' };
 
-export const V9MatchHeader: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() => void) | null; endTurnExtra?: React.ReactNode; onStanding: () => void; coachNode?: React.ReactNode; cashDelta?: UiFeedbackEvent | null; apDelta?: UiFeedbackEvent | null; apZero?: boolean; endgame?: boolean }> = ({ c, theme, onEndTurn, endTurnExtra, onStanding, coachNode = null, cashDelta = null, apDelta = null, apZero = false, endgame = false }) => {
+export const V9MatchHeader: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() => void) | null; endTurnExtra?: React.ReactNode; onStanding: () => void; coachNode?: React.ReactNode; cashDelta?: UiFeedbackEvent | null; apDelta?: UiFeedbackEvent | null; apZero?: boolean; endgame?: boolean; onOpenSettings?: () => void }> = ({ c, theme, onEndTurn, endTurnExtra, onStanding, coachNode = null, cashDelta = null, apDelta = null, apZero = false, endgame = false, onOpenSettings }) => {
   const h = c.header;
   const w = c.endTurnWarnings;
   return (
     <header className={`${theme.card} ${theme.border} border rounded-xl px-3 py-2 ${theme.shadow}`} data-testid="v9-match-header" aria-label="Match status">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+        {onOpenSettings ? <button type="button" className={`${theme.buttonSecondary} sm:hidden min-h-[44px] min-w-[44px] rounded-lg px-2`} aria-label="Settings" data-testid="settings-open-button" onClick={onOpenSettings}>⚙️</button> : null}
         <span key={h.dayLabel} className="font-semibold v94-fade" data-testid="v94-day">{h.dayLabel}</span>
         <span key={h.turnLabel} className="font-extrabold v94-enter" data-testid="v9-turn-owner">{h.turnLabel}</span>
         <span key={h.controlLabel} className={`v94-pop px-2 py-0.5 rounded-full text-xs font-extrabold ${V9_CONTROL_TONE[h.controlTone]}`} data-testid="v9-control-owner" role="status">{h.controlLabel}</span>
@@ -135871,6 +136371,7 @@ function v95NormalizeSuiteResults(raw: unknown): Array<{ name: string; passed: b
 }
 
 export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
+  { id: 'settings-layout', label: 'Settings layout check', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runSettingsLayoutCheck(typeof document !== 'undefined' ? document : null) },
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
@@ -181845,7 +182346,7 @@ export function V95SystemImpactPanel(props: { theme: any }) {
     </section>
   );
 }
-export function V95CoreLoopSettings(props: { settings: GameSettingsState; theme: any; onChange: (next: GameSettingsState, label: string) => void }) {
+export function V95CoreLoopSettings(props: { settings: GameSettingsState; theme: any; onChange: (next: GameSettingsState, label: string) => void; mode?: 'full' | 'ruleset' }) {
   const settings = props.settings;
   const [pick, setPick] = useState<V95RulesetId>(v95RulesetId(settings.rulesetPreset));
   const [include, setInclude] = useState(settings.rulesetIncludeV95Features === true);
@@ -181860,17 +182361,16 @@ export function V95CoreLoopSettings(props: { settings: GameSettingsState; theme:
     </label>
   );
   return (
-    <div className="space-y-4" data-testid="v95-core-loop-settings">
+    <div className={props.mode === 'ruleset' ? 'settings-ruleset-compact' : 'space-y-4'} data-testid="v95-core-loop-settings">
       <div>
         <div className="font-semibold">Ruleset: {V95_RULESET_LABEL[v95RulesetId(settings.rulesetPreset)]}</div>
-        <p className="text-xs opacity-75">Custom leaves the game as it is. Applying a ruleset can be undone. Changing any bundled setting afterwards returns the label to Custom.</p>
-        <label className="block text-sm mt-2" htmlFor="v95-ruleset">Ruleset to preview</label>
-        <select id="v95-ruleset" value={pick} onChange={event => setPick(v95RulesetId(event.target.value))} className={`${props.theme?.select || ''} rounded px-2 py-1`}>
+        <p className="text-xs opacity-75">{props.mode === 'ruleset' ? 'A hand edit switches the label to Custom.' : 'Custom leaves the game as it is. Applying a ruleset can be undone. Changing any bundled setting afterwards returns the label to Custom.'}</p>
+        <select id="v95-ruleset" aria-label="Ruleset to preview" value={pick} onChange={event => setPick(v95RulesetId(event.target.value))} className={`${props.theme?.select || ''} rounded px-2 py-1`}>
           {(Object.keys(V95_RULESET_LABEL) as V95RulesetId[]).map(id => <option key={id} value={id}>{V95_RULESET_LABEL[id]}</option>)}
         </select>
         <label className="flex items-start gap-2 text-sm mt-2">
           <input type="checkbox" checked={include} onChange={event => setInclude(event.target.checked)} />
-          <span>Include new V9.5 features (interactive challenges, real map, expanded challenges, sound). Unticked by default.</span>
+          <span>Include new features</span>
         </label>
         <div className="text-sm mt-2" aria-live="polite">
           {pick === 'custom' ? 'Custom applies nothing.' : diff.length ? `${diff.length} setting${diff.length === 1 ? '' : 's'} will change:` : 'This ruleset already matches the current settings.'}
@@ -181881,7 +182381,9 @@ export function V95CoreLoopSettings(props: { settings: GameSettingsState; theme:
           <button type="button" className={`${props.theme?.buttonSecondary || ''} px-3 py-1 rounded`} disabled={!settings.rulesetUndoSnapshot} onClick={() => props.onChange(v95UndoRuleset(settings), 'Undo V9.5 ruleset')}>Undo</button>
         </div>
       </div>
+      {props.mode !== 'ruleset' && <>
       {check('interactiveChallengesEnabled', 'Interactive challenges', 'A short interaction before a human challenge roll. Off uses the plain roll.')}
+      <div className="settings-advanced-block">
       <label className="block text-sm">Skill cap ({v95ClampModifierCap(settings.interactiveChallengeMaxModifier)})
         <input type="range" min={0.05} max={0.25} step={0.01} value={v95ClampModifierCap(settings.interactiveChallengeMaxModifier)} onChange={event => set('Interactive challenges', { interactiveChallengeMaxModifier: Number(event.target.value) })} className="w-full" />
       </label>
@@ -181892,12 +182394,14 @@ export function V95CoreLoopSettings(props: { settings: GameSettingsState; theme:
       <label className="block text-sm">AI skill score ({Number(settings.interactiveChallengeAiSimulatedScore || 0)})
         <input type="range" min={-1} max={1} step={0.1} disabled={!settings.interactiveChallengeAiSimulatedScoreEnabled} value={Number(settings.interactiveChallengeAiSimulatedScore || 0)} onChange={event => set('Interactive challenges', { interactiveChallengeAiSimulatedScore: Number(event.target.value) })} className="w-full" />
       </label>
+      </div>
       {check('realMapEnabled', 'Real map of Australia', 'Draws state shapes behind the existing region anchors.')}
       {check('expandedChallengesEnabled', 'Expanded challenge pool', 'Adds the seasonal, chained and rare challenges. Off keeps the original 32.')}
       {check('soundEnabled', 'Sound', 'Short synthesised tones. Off means silence, and no audio device is opened.')}
       <label className="block text-sm">Volume
         <input type="range" min={0} max={1} step={0.05} value={Number(settings.soundVolume ?? 0.5)} onChange={event => set('Sound', { soundVolume: Number(event.target.value) })} className="w-full" />
       </label>
+      <div className="settings-advanced-block">
       <fieldset className="text-sm">
         <legend className="font-semibold">Sound categories</legend>
         {(Object.keys(V95_SOUND_CATEGORIES_DEFAULT) as V95SoundCategory[]).map(cat => {
@@ -181924,7 +182428,9 @@ export function V95CoreLoopSettings(props: { settings: GameSettingsState; theme:
           {soundNote && <p className="text-xs mt-1" aria-live="polite">{soundNote}</p>}
         </div>
       )}
+      </div>
       {check('dailySeedEnabled', 'Daily Seed mode', 'Adds a Daily Seed option on the start screen. Off leaves the start screen unchanged.')}
+      </>}
     </div>
   );
 }
@@ -182516,6 +183022,9 @@ function AustraliaGame() {
   const [uiState, setUiState] = useState<UIState>({
     experienceLayer: 'play' as ExperienceLayer,
     settingsActiveTab: 'home' as SettingsHubTabId,
+    settingsWindowCategory: 'essentials',
+    settingsShowDeveloper: false,
+    settingsPhonePane: 'list',
     settingsViewMode: 'basic' as 'basic' | 'advanced',
     settingsSearchQuery: '',
     settingsChangedOnly: false,
@@ -183529,6 +184038,13 @@ function AustraliaGame() {
   }, [actorsById, teamsById, gameSettings, gameState.selectedMode, gameState.aiDifficulty]);
 
   const isTeamMode = useMemo(() => isTeamModeSelection(gameState.selectedMode), [gameState.selectedMode]);
+  useLayoutEffect(() => {
+    if (!uiState.showSettings) return;
+    annotateSettingsLockReasons(document.querySelector('[data-testid="settings-window"]'), {
+      teamMode: isTeamMode,
+      liveMatch: Boolean(gameState.gameStarted && !gameState.gameOver)
+    });
+  }, [uiState.showSettings, uiState.settingsWindowCategory, uiState.settingsViewMode, uiState.settingsPhonePane, uiState.settingsSearchQuery, gameSettings, isTeamMode, gameState.gameStarted, gameState.gameOver, gameState.aiDifficulty]);
   // Latest stored Team Operating System state for callbacks that run outside render (Strategic Command).
   const teamOsStateRef = useRef<TeamOperatingSystemState | undefined>(undefined);
   teamOsStateRef.current = (gameState as any).teamOperatingSystem;
@@ -184215,6 +184731,18 @@ function dispatchGameSettingsChange(
   // settings_change event per field that actually changed, rather than per call site, since a
   // single onChange can legitimately touch more than one field at once (e.g. applying a Team
   // Brain preset).
+  const [settingsUndoNotice, setSettingsUndoNotice] = useState<null | { label: string; snapshot: GameSettingsState; difficulty?: string; theme?: string }>(null);
+  const settingsUndoTimerRef = useRef<number | null>(null);
+  const settingsUndoStampRef = useRef(0);
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const [settingsResetList, setSettingsResetList] = useState<string[] | null>(null);
+  const [settingsLayoutReport, setSettingsLayoutReport] = useState<null | { passed: boolean; results: Array<{ id: string; passed: boolean; detail: string }> }>(null);
+  const noteSettingsUndo = (label: string, snapshot: GameSettingsState, extra?: { difficulty?: string; theme?: string }) => {
+    settingsUndoStampRef.current = Date.now();
+    if (settingsUndoTimerRef.current) window.clearTimeout(settingsUndoTimerRef.current);
+    setSettingsUndoNotice({ label, snapshot, difficulty: extra?.difficulty, theme: extra?.theme });
+    settingsUndoTimerRef.current = window.setTimeout(() => setSettingsUndoNotice(null), 6000);
+  };
   const trackedSetGameSettings = useCallback((
     source: SettingsChangeSource,
     section: string,
@@ -184223,8 +184751,12 @@ function dispatchGameSettingsChange(
     if (section.includes('Co-Pilot') || section.includes('Auto Mode') || source === 'preset') {
       setCoPilotManualOverride(false);
     }
+    const snapshot = gameSettings;
     dispatchGameSettingsChange(setGameSettings, updater, undefined, source, { section, day: gameState?.day, turn: gameState?.turnCounter }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent);
-  }, [gameSettings, setGameSettings, dispatchAuthoritativeGameActivityLedgerEvent]);
+    if (uiState.showSettings && (source === 'direct_player_change' || source === 'preset') && !section.startsWith('Undo ')) {
+      noteSettingsUndo(section, snapshot, { difficulty: gameState?.aiDifficulty });
+    }
+  }, [gameSettings, setGameSettings, dispatchAuthoritativeGameActivityLedgerEvent, uiState.showSettings, gameState?.day, gameState?.turnCounter, gameState?.aiDifficulty]);
 
   const setDirectiveStrengthState = useCallback((
     strength: DirectiveStrength,
@@ -191303,7 +191835,7 @@ function dispatchGameSettingsChange(
     if (!uiState.showSettings) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f')) {
-        const searchInput = document.querySelector('input[data-settings-search="true"]') as HTMLInputElement;
+        const searchInput = Array.from(document.querySelectorAll('input[data-settings-search="true"]')).find(el => (el as HTMLElement).getClientRects().length > 0) as HTMLInputElement | undefined;
         if (searchInput && document.activeElement !== searchInput) {
           e.preventDefault();
           searchInput.focus();
@@ -191351,9 +191883,13 @@ function dispatchGameSettingsChange(
     }
 
     setUiState(prev => {
+      const nextCategory = settingsWindowCategoryFor(resolvedSectionId || '', targetTab);
       const updates: Partial<typeof prev> = {
         showSettings: true,
         settingsActiveTab: targetTab,
+        settingsWindowCategory: nextCategory,
+        settingsPhonePane: 'detail',
+        settingsShowDeveloper: nextCategory === 'developer' ? true : prev.settingsShowDeveloper,
         settingsSearchViewMode: 'focused',
         focusedSearchResultIndex: options?.resultIndex ?? prev.focusedSearchResultIndex ?? 0,
         settingsSearchQuery: options?.clearSearch ? '' : (options?.searchQuery !== undefined ? options.searchQuery : prev.settingsSearchQuery),
@@ -211364,8 +211900,7 @@ function dispatchGameSettingsChange(
   }, [gameState, player.id, addNotification]);
 
   const settingsChangedFieldKeys = useMemo(() => {
-    return (Object.keys(DEFAULT_GAME_SETTINGS) as (keyof GameSettingsState)[])
-      .filter(k => JSON.stringify(gameSettings[k]) !== JSON.stringify(DEFAULT_GAME_SETTINGS[k]));
+    return settingsPlayerChangedKeys(gameSettings) as (keyof GameSettingsState)[];
   }, [gameSettings]);
 
   // SettingsSection was hoisted to module scope (above AustraliaGame) to give it a stable
@@ -215632,6 +216167,18 @@ function dispatchGameSettingsChange(
       id, group, title, description, onOpen: () => updateUiState(patch), available, unavailableReason
     });
     return [
+      {
+        id: 'settings_layout_check', group: 'developer', title: 'Settings layout check',
+        description: 'Opens Settings and checks the window, layers, overflow and labels.',
+        onOpen: () => {
+          updateUiState({ showSettings: true, settingsShowDeveloper: true, settingsWindowCategory: 'developer', settingsPhonePane: 'detail', settingsActiveTab: 'replayDiag' });
+          window.setTimeout(() => {
+            const report = runSettingsLayoutCheck(document);
+            setSettingsLayoutReport(report);
+            addNotification(report.passed ? 'Settings layout check passed' : 'Settings layout check failed: ' + report.results.filter(row => !row.passed).map(row => row.id).join(', '), report.passed ? 'info' : 'warning');
+          }, 400);
+        }
+      },
       settingsEntry('ai_difficulty', 'ai_engine', 'AI Difficulty & Engine', 'Rival and teammate AI difficulty, market modifiers and engine options.', 'aiTeams', 'ai.settings'),
       settingsEntry('ai_algorithms', 'ai_engine', 'AI Thinking & Algorithms', 'Planner algorithms, search depth and thinking styles.', 'aiTeams', 'teamModeAi.aiThinkingAlgorithm'),
       settingsEntry('ai_builder', 'ai_engine', 'AI Algorithm Builder', 'Compose custom AI thinking pipelines.', 'aiTeams', 'teamModeAi.algorithmBuilder'),
@@ -216548,17 +217095,7 @@ function dispatchGameSettingsChange(
     const isSearchActive = isSettingsFilteringActive;
 
     try {
-    return (
-      <SettingsExperienceShell
-        isOpen={uiState.showSettings}
-        onClose={() => {
-          setCoPilotStartPhase('settings_close');
-          updateUiState({ showSettings: false });
-        }}
-        gameSettings={gameSettings}
-        profile={gameSettings.smartSettingsProfile || createDefaultSmartSettingsProfile()}
-        settingsIntelligence={siBinding}
-        onApplyPlan={(plan) => {
+    const applySmartPlan = (plan: any) => {
           const autonomousJump = plan?.profile?.coPilotMode === 'autonomous_takeover'
             || plan?.profile?.coPilotMode === 'takeover_requested'
             || isHighRiskCoPilotOnlyPlan(plan);
@@ -216605,8 +217142,8 @@ function dispatchGameSettingsChange(
             return prev;
           }
         });
-        }}
-        onUpdateProfile={(updatedProfile) => {
+        };
+    const applySmartProfile = (updatedProfile: any) => {
           trackedSetGameSettings("direct_player_change", "Smart Settings", prev => {
             const nextAutoModeSettings = {
               ...(prev.autoModeSettings || createDefaultAutoModeGlobalSettings())
@@ -216682,7 +217219,20 @@ function dispatchGameSettingsChange(
               guardianAiSettings: sanitizeGuardianAiSettings(nextGuardianAiSettings)
             };
           });
+        };
+
+    return (
+      <SettingsExperienceShell
+        isOpen={uiState.showSettings}
+        onClose={() => {
+          setCoPilotStartPhase('settings_close');
+          updateUiState({ showSettings: false });
         }}
+        gameSettings={gameSettings}
+        profile={gameSettings.smartSettingsProfile || createDefaultSmartSettingsProfile()}
+        settingsIntelligence={siBinding}
+        onApplyPlan={applySmartPlan}
+        onUpdateProfile={applySmartProfile}
         onUpdateSettings={(updater) => {
           trackedSetGameSettings("direct_player_change", "Smart Settings", prev => updater(prev));
         }}
@@ -216693,858 +217243,93 @@ function dispatchGameSettingsChange(
           try {
             return (
           <>
-          {/* Fixed Header */}
-          <div className={`flex justify-between items-center px-4 py-2 sm:px-6 sm:py-2.5 border-b ${themeStyles.border} shrink-0`}>
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="flex items-center gap-3">
-              <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2"><span>⚙️ Settings Hub</span></h3>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setShowPresetManagerModal(true)}
-                  className="px-2.5 py-1 text-xs font-bold rounded bg-sky-600/80 hover:bg-sky-500 text-white flex items-center gap-1 shadow-sm transition"
-                  title="Open Settings Preset Manager"
-                >
-                  <span>🎨 Presets</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowImportExportModal(true)}
-                  className="px-2.5 py-1 text-xs font-bold rounded bg-slate-800 hover:bg-slate-700 text-sky-300 border border-sky-500/30 flex items-center gap-1 transition"
-                  title="Import or Export Settings JSON"
-                >
-                  <span>📥 Export/Import</span>
-                </button>
-              </div>
-            </div>
-              {(depReport.violations.length > 0 || depReport.conflicts.length > 0) && (
-                <span className="px-2 py-0.5 text-[11px] font-semibold rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center gap-1">
-                  ⚠️ {depReport.violations.length + depReport.conflicts.length} Warning{depReport.violations.length + depReport.conflicts.length > 1 ? 's' : ''}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Search / Scope / Basic-Advanced / Changed-only controls */}
-          <div className={`px-3 py-1.5 sm:px-6 sm:py-2 border-b ${themeStyles.border} flex flex-col sm:flex-row sm:items-center gap-2 shrink-0`}>
-            {/* Scope dropdown selector */}
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-xs font-semibold opacity-75">Scope:</span>
-              <select
-                aria-label="Settings search scope selector"
-                value={uiState.settingsSearchScope || 'all'}
-                onChange={(e) => updateUiState({ settingsSearchScope: e.target.value as SettingsSearchScope })}
-                className={`${themeStyles.select} rounded px-2.5 py-2 text-xs font-semibold`}
-              >
-                <option value="all">All Fields & Keywords</option>
-                <option value="current_category">Current Category Only</option>
-                <option value="section_names">Section Names Only</option>
-                <option value="individual_settings">Individual Settings Only</option>
-                <option value="label">Setting Label Only</option>
-                <option value="description">Description Only</option>
-                <option value="key">Setting Key Only</option>
-                <option value="category">Category Only</option>
-                <option value="tags">Tags Only</option>
-              </select>
-            </div>
-
-            <div className="relative flex-1 flex items-center">
+          <div className="flex flex-col h-full min-h-0 flex-1" data-show-developer={uiState.settingsShowDeveloper ? 'true' : 'false'}>
+          <style>{SETTINGS_WINDOW_CSS}</style>
+          <header className={`settings-header border-b ${themeStyles.border} shrink-0`}>
+            <button
+              type="button"
+              className={`settings-back ${themeStyles.buttonSecondary} px-3 rounded`}
+              aria-label="Back"
+              onClick={() => updateUiState({ settingsPhonePane: 'list' })}
+            >← Back</button>
+            <h2 className="text-lg font-bold shrink-0">
+              {((uiState.settingsPhonePane || 'list') === 'detail' && (typeof window !== 'undefined' && window.innerWidth < 640))
+                ? settingsWindowCategoryLabel((uiState.settingsWindowCategory || 'essentials') as SettingsWindowCategoryId)
+                : 'Settings'}
+            </h2>
+            <div className="settings-desktop-search relative">
               <input
                 type="text"
                 data-settings-search="true"
                 aria-label="Search settings"
                 value={localSettingsSearchQuery}
                 onChange={handleSettingsSearchChange}
-                placeholder="Search settings (label, description, tags like AI, Loans, Sabotage...)"
-                className={`${themeStyles.select} rounded px-3 py-2 w-full text-sm ${localSettingsSearchQuery ? 'pr-8' : ''}`}
+                placeholder="Search settings"
+                className={`${themeStyles.select} rounded px-3 py-2 w-full text-sm`}
               />
-              {isSearchActive && (
-                <span className="absolute right-7 text-[11px] font-bold text-sky-400 bg-sky-950/80 px-2 py-0.5 rounded border border-sky-500/30 shrink-0 pointer-events-none">
-                  {SETTINGS_HUB_SEARCH_INDEX.filter(entry =>
-                    evalSettingsSearchFilter(
-                      entry,
-                      (uiState.settingsSearchQuery || '').trim(),
-                      uiState.settingsSearchScope || 'all',
-                      uiState.settingsStateFilters || [],
-                      uiState.settingsFeatureFilters || [],
-                      uiState.settingsAvailabilityFilters || [],
-                      gameSettings,
-                      draftGameSettings,
-                      depReport,
-                      Boolean(gameState?.gameStarted && !gameState?.gameOver)
-                    )
-                  ).length} matches
-                </span>
-              )}
-              {localSettingsSearchQuery ? (
-                <button
-                  type="button"
-                  onClick={handleClearSettingsSearch}
-                  aria-label="Clear settings search"
-                  className="absolute right-2 text-slate-400 hover:text-white p-1 rounded text-xs transition-colors z-10"
-                  title="Clear settings search"
-                >
-                  ✕
-                </button>
-              ) : null}
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {/* Task 9: Filter icon button toggle */}
-              <button
-                type="button"
-                onClick={() => updateUiState({ showSettingsViewFiltersPanel: !uiState.showSettingsViewFiltersPanel })}
-                aria-label="Toggle settings view & filters panel"
-                className={`px-3 py-2 text-xs font-semibold rounded ${themeStyles.border} border ${uiState.showSettingsViewFiltersPanel ? themeStyles.button + ' text-white' : themeStyles.buttonSecondary} flex items-center gap-1.5 transition-colors`}
-                title="Toggle Settings View & Filters Panel"
-                aria-expanded={Boolean(uiState.showSettingsViewFiltersPanel)}
-              >
-                <span>🎛️ View & Filters</span>
-                <span className="text-[10px] opacity-75">{uiState.showSettingsViewFiltersPanel ? '▲' : '▼'}</span>
-              </button>
-
-              <div className={`flex ${themeStyles.border} border rounded overflow-hidden`}>
-                <button
-                  type="button"
-                  onClick={() => updateUiState({ settingsViewMode: 'basic' })}
-                  className={`px-3 py-2 text-xs font-semibold ${uiState.settingsViewMode === 'basic' ? themeStyles.button + ' text-white' : themeStyles.buttonSecondary}`}
-                  aria-pressed={uiState.settingsViewMode === 'basic'}
-                >
-                  Basic
-                </button>
-                <button
-                  type="button"
-                  onClick={() => updateUiState({ settingsViewMode: 'advanced' })}
-                  className={`px-3 py-2 text-xs font-semibold ${uiState.settingsViewMode === 'advanced' ? themeStyles.button + ' text-white' : themeStyles.buttonSecondary}`}
-                  aria-pressed={uiState.settingsViewMode === 'advanced'}
-                >
-                  Advanced
-                </button>
-              </div>
-              <label className="flex items-center gap-1 text-xs">
-                <input
-                  type="checkbox"
-                  checked={uiState.settingsChangedOnly}
-                  onChange={(e) => updateUiState({ settingsChangedOnly: e.target.checked })}
-                />
-                <span>Changed only</span>
-              </label>
-            </div>
-          </div>
-
-          {/* Task 11: Settings Section Collapse control beneath search area */}
-          <div className={`px-3 py-1 sm:px-6 border-b ${themeStyles.border} bg-black/20 flex flex-wrap items-center justify-between gap-2 text-[11px] shrink-0`}>
-            <div className="flex items-center gap-2 font-medium">
-              <span className="opacity-80 font-semibold">📂 Settings Section Collapse:</span>
-              <button
-                type="button"
-                onClick={collapseAllSettingsSections}
-                aria-label="Collapse all settings sections"
-                className={`px-2.5 py-1 rounded text-xs ${themeStyles.buttonSecondary} hover:bg-slate-700 transition-colors font-medium flex items-center gap-1`}
-              >
-                <span>📁 Collapse All Sections</span>
-              </button>
-              <button
-                type="button"
-                onClick={expandAllSettingsSections}
-                aria-label="Expand all settings sections"
-                className={`px-2.5 py-1 rounded text-xs ${themeStyles.buttonSecondary} hover:bg-slate-700 transition-colors font-medium flex items-center gap-1`}
-              >
-                <span>📂 Expand All Sections</span>
-              </button>
-            </div>
-            <div className="flex items-center gap-3 opacity-80 text-[11px]">
-              <span>
-                Collapsed Sections: <strong className="text-amber-400">{Object.keys(uiState.settingsCollapsedSections || {}).filter(k => uiState.settingsCollapsedSections[k]).length}</strong> / {SETTINGS_HUB_SECTION_INDEX.length}
-              </span>
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={Boolean(gameSettings.startSettingsCategoryCollapsed)}
-                  onChange={(e) => {
-                    updateGameSetting('startSettingsCategoryCollapsed', e.target.checked, {
-                      settingLabel: 'Start Settings Category Collapsed',
-                      section: 'Interface → Category Nav',
-                      source: 'direct_player_change'
-                    });
-                  }}
-                />
-                <span>Start Collapsed</span>
-              </label>
-            </div>
-          </div>
-
-          {/* Task 9 & Task 13: Settings View & Filters Panel */}
-          {uiState.showSettingsViewFiltersPanel && (
-            <div className={`p-3 sm:p-4 border-b ${themeStyles.border} bg-slate-900/90 space-y-3 shadow-inner max-h-[35vh] overflow-y-auto shrink-0`}>
-              <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <div className="font-bold text-sm flex items-center gap-2 text-sky-300">
-                  <span>🎛️ Advanced Settings View & Filter Engine</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => updateUiState({ showSettingsViewFiltersPanel: false })}
-                  className="text-xs opacity-60 hover:opacity-100 px-2 py-0.5 rounded"
-                >
-                  ✕ Close Panel
-                </button>
-              </div>
-
-              {/* 17 Built-In Filter Presets Strip */}
-              <div>
-                <div className="text-xs font-semibold text-amber-300 mb-1.5 flex items-center justify-between">
-                  <span>⚡ Built-In Search & Filter Presets (17 Presets)</span>
-                  {uiState.settingsActivePresetId && (
-                    <span className="text-[11px] text-sky-300 font-normal">Active Preset ID: {uiState.settingsActivePresetId}</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-                  {BUILT_IN_SETTINGS_SEARCH_PRESETS.map(preset => {
-                    const isActive = uiState.settingsActivePresetId === preset.id;
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => {
-                          if (isActive) {
-                            handleClearSettingsSearch();
-                          } else {
-                            updateUiState({
-                              settingsActivePresetId: preset.id,
-                              settingsSearchScope: preset.scope || 'all',
-                              settingsStateFilters: preset.stateFilters || [],
-                              settingsFeatureFilters: preset.featureFilters || [],
-                              settingsAvailabilityFilters: preset.availabilityFilters || [],
-                              settingsSearchQuery: preset.query || ''
-                            });
-                            if (preset.query !== undefined) {
-                              setLocalSettingsSearchQuery(preset.query);
-                            }
-                          }
-                        }}
-                        title={preset.description}
-                        className={`px-2.5 py-1 rounded text-xs font-semibold whitespace-nowrap transition-all border ${
-                          isActive
-                            ? 'bg-amber-500 text-black border-amber-400 font-bold shadow'
-                            : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
-                        }`}
-                      >
-                        {preset.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Advanced Filter Selectors */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-                {/* Scope & Mode */}
-                <div className={`p-2.5 rounded border ${themeStyles.border} bg-black/30 space-y-1.5`}>
-                  <div className="font-semibold text-sky-300">Search Scope</div>
-                  <select
-                    value={uiState.settingsSearchScope || 'all'}
-                    onChange={(e) => updateUiState({ settingsSearchScope: e.target.value as SettingsSearchScope })}
-                    className={`${themeStyles.select} w-full rounded px-2 py-1 text-xs font-semibold`}
-                  >
-                    <option value="all">All Fields & Keywords</option>
-                    <option value="current_category">Current Category Only</option>
-                    <option value="section_names">Section Names Only</option>
-                    <option value="individual_settings">Individual Settings Only</option>
-                    <option value="label">Setting Label Only</option>
-                    <option value="description">Description Only</option>
-                    <option value="key">Setting Key Only</option>
-                    <option value="category">Category Only</option>
-                    <option value="tags">Tags Only</option>
-                  </select>
-                </div>
-
-                {/* State Filters Dropdown */}
-                <div className={`p-2.5 rounded border ${themeStyles.border} bg-black/30 space-y-1.5`}>
-                  <div className="font-semibold text-sky-300">State Filter</div>
-                  <select
-                    value={uiState.settingsStateFilters?.[0] || ''}
-                    onChange={(e) => {
-                      const val = e.target.value as SettingsStateFilter;
-                      updateUiState({ settingsStateFilters: val ? [val] : [], settingsActivePresetId: undefined });
-                    }}
-                    className={`${themeStyles.select} w-full rounded px-2 py-1 text-xs font-semibold`}
-                  >
-                    <option value="">(All States)</option>
-                    <option value="modified">Modified (Non-default)</option>
-                    <option value="default">Default Values</option>
-                    <option value="locked">Locked / Smart Managed</option>
-                    <option value="overridden">Manual Override Active</option>
-                    <option value="system">System / Oversight Settings</option>
-                    <option value="custom">Custom Value Set</option>
-                    <option value="smart_managed">Smart Settings Managed</option>
-                    <option value="inert">Inert Sub-setting Warning</option>
-                    <option value="active">Active Non-Zero Value</option>
-                    <option value="conflicted">Conflict Rule Violation</option>
-                    <option value="has_warning">Any Dependency Warning</option>
-                    <option value="basic_only">Basic Settings Only</option>
-                    <option value="advanced_only">Advanced Settings Only</option>
-                    <option value="experimental">Experimental / Extreme</option>
-                    <option value="restart_required">Game Setup / Restart Required</option>
-                    <option value="preset_controlled">Preset Controlled</option>
-                    <option value="unsaved">Unsaved Draft Edits</option>
-                  </select>
-                </div>
-
-                {/* Feature Category Filter */}
-                <div className={`p-2.5 rounded border ${themeStyles.border} bg-black/30 space-y-1.5`}>
-                  <div className="font-semibold text-sky-300">Feature Domain Filter</div>
-                  <select
-                    value={uiState.settingsFeatureFilters?.[0] || ''}
-                    onChange={(e) => {
-                      const val = e.target.value as SettingsFeatureFilter;
-                      updateUiState({ settingsFeatureFilters: val ? [val] : [], settingsActivePresetId: undefined });
-                    }}
-                    className={`${themeStyles.select} w-full rounded px-2 py-1 text-xs font-semibold`}
-                  >
-                    <option value="">(All Feature Domains)</option>
-                    <option value="ux_assist">UX Assist & Presets</option>
-                    <option value="ai_behavior">AI Difficulty & Personalities</option>
-                    <option value="team_brain">Team Mode Brain & Synergy</option>
-                    <option value="economy">Economy, Cash & Cashout</option>
-                    <option value="loans_credit">Loans & Credit Score</option>
-                    <option value="sabotage">Sabotage & Wagers</option>
-                    <option value="investments">Investments & Equipment</option>
-                    <option value="regional_control">Regional Control & Travel</option>
-                    <option value="negotiations">Negotiations & Contracts</option>
-                    <option value="automation">Player Automation & Co-Pilot</option>
-                    <option value="governance">Economy Governor & Overseer</option>
-                    <option value="replay_safety">Replay Determinism & Safety</option>
-                    <option value="diagnostics">Diagnostics & Ledger</option>
-                    <option value="accessibility">Accessibility & Visuals</option>
-                    <option value="appearance">Appearance & Density</option>
-                    <option value="notifications">Notifications & Alerts</option>
-                    <option value="win_conditions">Win Goals & Victory Rules</option>
-                    <option value="action_limits">Daily Turn Action Limits</option>
-                  </select>
-                </div>
-
-                {/* Availability Filter */}
-                <div className={`p-2.5 rounded border ${themeStyles.border} bg-black/30 space-y-1.5`}>
-                  <div className="font-semibold text-sky-300">Availability Filter</div>
-                  <select
-                    value={uiState.settingsAvailabilityFilters?.[0] || ''}
-                    onChange={(e) => {
-                      const val = e.target.value as SettingsAvailabilityFilter;
-                      updateUiState({ settingsAvailabilityFilters: val ? [val] : [], settingsActivePresetId: undefined });
-                    }}
-                    className={`${themeStyles.select} w-full rounded px-2 py-1 text-xs font-semibold`}
-                  >
-                    <option value="">(All Availability Modes)</option>
-                    <option value="all_modes">All Game Modes</option>
-                    <option value="live_match_only">Live Match Editable</option>
-                    <option value="pre_match_only">Pre-Match Setup Only</option>
-                    <option value="singleplayer">Singleplayer Mode</option>
-                    <option value="multiplayer">Team / Multiplayer Mode</option>
-                    <option value="co_pilot_active">Co-Pilot Active</option>
-                    <option value="overseer_active">Overseer Active</option>
-                    <option value="sandbox_only">Balance Lab / Sandbox</option>
-                    <option value="developer_only">Developer / Diagnostic Only</option>
-                    <option value="unlocked_by_career">Career Unlocked</option>
-                    <option value="requires_ux_pack">Requires UX Assist Pack</option>
-                    <option value="requires_team_mode">Requires Team Mode</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Active Filter Chips Bar */}
-              {(uiState.settingsSearchQuery || uiState.settingsSearchScope !== 'all' || (uiState.settingsStateFilters && uiState.settingsStateFilters.length > 0) || (uiState.settingsFeatureFilters && uiState.settingsFeatureFilters.length > 0) || (uiState.settingsAvailabilityFilters && uiState.settingsAvailabilityFilters.length > 0) || uiState.settingsActivePresetId) && (
-                <div className="pt-2 border-t border-white/10 flex flex-wrap items-center justify-between gap-2 text-xs">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="font-semibold text-slate-400">Active Filters:</span>
-                    {uiState.settingsSearchQuery && (
-                      <span className="px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/40 font-mono flex items-center gap-1">
-                        <span>Query: "{uiState.settingsSearchQuery}"</span>
-                        <button type="button" onClick={() => { setLocalSettingsSearchQuery(''); updateUiState({ settingsSearchQuery: '' }); }} className="hover:text-white">✕</button>
-                      </span>
-                    )}
-                    {uiState.settingsSearchScope && uiState.settingsSearchScope !== 'all' && (
-                      <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center gap-1">
-                        <span>Scope: {uiState.settingsSearchScope}</span>
-                        <button type="button" onClick={() => updateUiState({ settingsSearchScope: 'all' })} className="hover:text-white">✕</button>
-                      </span>
-                    )}
-                    {uiState.settingsStateFilters?.map((sf: SettingsStateFilter) => (
-                      <span key={sf} className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1 uppercase text-[10px] font-bold">
-                        <span>State: {sf}</span>
-                        <button type="button" onClick={() => updateUiState({ settingsStateFilters: uiState.settingsStateFilters?.filter((f: SettingsStateFilter) => f !== sf) })} className="hover:text-white">✕</button>
-                      </span>
-                    ))}
-                    {uiState.settingsFeatureFilters?.map((ff: SettingsFeatureFilter) => (
-                      <span key={ff} className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 text-[11px] font-medium">
-                        <span>Feature: {ff}</span>
-                        <button type="button" onClick={() => updateUiState({ settingsFeatureFilters: uiState.settingsFeatureFilters?.filter((f: SettingsFeatureFilter) => f !== ff) })} className="hover:text-white">✕</button>
-                      </span>
-                    ))}
-                    {uiState.settingsAvailabilityFilters?.map((af: SettingsAvailabilityFilter) => (
-                      <span key={af} className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/40 flex items-center gap-1 text-[11px] font-medium">
-                        <span>Availability: {af}</span>
-                        <button type="button" onClick={() => updateUiState({ settingsAvailabilityFilters: uiState.settingsAvailabilityFilters?.filter((f: SettingsAvailabilityFilter) => f !== af) })} className="hover:text-white">✕</button>
-                      </span>
-                    ))}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleClearSettingsSearch}
-                    className="px-2.5 py-1 rounded text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 transition shrink-0"
-                  >
-                    Clear All Filters
-                  </button>
-                </div>
-              )}
-
-              {/* Task 12: Section Finder inside View & Filters panel */}
-              <div className="pt-2 border-t border-white/10">
-                <div className="font-semibold text-xs text-sky-300 mb-2">🔍 Section Finder (Authoritative Index Search)</div>
-                <SettingsSectionFinder
-                  onSelectSection={(sectionId, tab) => {
-                    navigateToSettings(tab as SettingsHubTabId, sectionId);
-                  }}
-                  className="w-full"
-                />
-              </div>
+            <button
+              type="button"
+              className={`${themeStyles.buttonSecondary} px-3 rounded`}
+              aria-label="Settings menu"
+              aria-expanded={settingsMenuOpen}
+              aria-haspopup="menu"
+              onClick={() => setSettingsMenuOpen(open => !open)}
+            >⋯</button>
+            <button
+              type="button"
+              className={`${themeStyles.buttonSecondary} px-3 rounded`}
+              aria-label="Close settings"
+              onClick={() => updateUiState({ showSettings: false })}
+            >✕</button>
+          </header>
+          {settingsMenuOpen && (
+            <div className={`settings-menu-sheet ${themeStyles.card} ${themeStyles.border} border shadow-xl p-2`} role="menu" aria-label="Settings menu">
+              <button type="button" role="menuitemcheckbox" aria-checked={uiState.settingsViewMode === 'advanced'} className={`${themeStyles.buttonSecondary} w-full text-left px-3 rounded mb-1`} onClick={() => updateUiState({ settingsViewMode: uiState.settingsViewMode === 'advanced' ? 'basic' : 'advanced' })}>{uiState.settingsViewMode === 'advanced' ? '✓ ' : ''}Show advanced settings</button>
+              <button type="button" role="menuitemcheckbox" aria-checked={Boolean(uiState.settingsShowDeveloper)} className={`${themeStyles.buttonSecondary} w-full text-left px-3 rounded mb-1`} onClick={() => updateUiState({ settingsShowDeveloper: !uiState.settingsShowDeveloper, settingsWindowCategory: !uiState.settingsShowDeveloper ? (uiState.settingsWindowCategory || 'essentials') : uiState.settingsWindowCategory })}>{uiState.settingsShowDeveloper ? '✓ ' : ''}Show developer settings</button>
+              <button type="button" role="menuitemcheckbox" aria-checked={Boolean(uiState.settingsChangedOnly)} className={`${themeStyles.buttonSecondary} w-full text-left px-3 rounded mb-1`} onClick={() => updateUiState({ settingsChangedOnly: !uiState.settingsChangedOnly })}>{uiState.settingsChangedOnly ? '✓ ' : ''}Changed only</button>
+              <button type="button" role="menuitem" className={`${themeStyles.buttonSecondary} w-full text-left px-3 rounded mb-1`} onClick={() => { collapseAllSettingsSections(); setSettingsMenuOpen(false); }}>Collapse all</button>
+              <button type="button" role="menuitem" className={`${themeStyles.buttonSecondary} w-full text-left px-3 rounded mb-1`} onClick={() => { expandAllSettingsSections(); setSettingsMenuOpen(false); }}>Expand all</button>
+              <button type="button" role="menuitem" className={`${themeStyles.buttonSecondary} w-full text-left px-3 rounded mb-1`} onClick={() => { setShowImportExportModal(true); setSettingsMenuOpen(false); }}>Export / Import</button>
+              <button type="button" role="menuitem" className={`${themeStyles.buttonSecondary} w-full text-left px-3 rounded`} onClick={() => { setSettingsResetList(settingsPlayerChangedKeys(gameSettings)); setSettingsMenuOpen(false); }}>Reset…</button>
             </div>
           )}
-
-          <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }} className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            {/* Task 16: Draft Unsaved Interface Preview Banner */}
-            <UnsavedInterfacePreviewBannerComponent
-              currentSettings={draftGameSettings ? { ...gameSettings, ...draftGameSettings } : gameSettings}
-              savedSettings={gameSettings}
-              onApplyChanges={() => {
-                if (draftGameSettings) {
-                  trackedSetGameSettings("direct_player_change", "Unsaved Draft Applied", prev => ({ ...prev, ...draftGameSettings }));
-                  setDraftGameSettings(null);
-                }
-              }}
-              onResetUnsaved={() => setDraftGameSettings(null)}
-              onOpenDiffModal={() => setShowUnsavedPreviewModal(true)}
-              className="mx-6 mt-3 mb-1"
-            />
-
-            {/* Task 16: Unsaved Interface Preview Modal */}
-            <UnsavedInterfacePreviewModal
-              isOpen={showUnsavedPreviewModal}
-              onClose={() => setShowUnsavedPreviewModal(false)}
-              gameSettings={gameSettings}
-              draftSettings={draftGameSettings || {}}
-              onApplyChanges={() => {
-                if (draftGameSettings) {
-                  trackedSetGameSettings("direct_player_change", "Unsaved Draft Applied", prev => ({ ...prev, ...draftGameSettings }));
-                  setDraftGameSettings(null);
-                }
-              }}
-              onDiscardDrafts={() => setDraftGameSettings(null)}
-              onDiscardSingleField={(key) => setDraftGameSettings(prev => {
-                if (!prev) return null;
-                const next = { ...prev };
-                delete next[key];
-                return Object.keys(next).length > 0 ? next : null;
-              })}
-              themeStyles={themeStyles}
-              depReport={depReport}
-            />
-
-            {/* Task 14, 15 & 16: Search & Filter Result Cards Panel */}
-            {isSearchActive && (
-              <div
-                ref={searchScrollRef}
-                onScroll={(e) => setSearchResultScrollPos(e.currentTarget.scrollTop)}
-                className="p-3 sm:p-4 space-y-2.5 border-b border-white/10 bg-slate-950/80 max-h-[40vh] overflow-y-auto shrink-0"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-sky-300 flex items-center gap-2">
-                      <span>🔍 Settings Search & Filter Results</span>
-                    </h3>
-                    <p className="text-xs opacity-75">
-                      Matching settings with active state badges, safe inline editing, and deep-link section navigation.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleClearSettingsSearch}
-                    className="px-3 py-1 rounded text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 transition"
-                  >
-                    Clear All Search Filters (✕)
-                  </button>
-                </div>
-
-                {/* Compute matching search entries for dual-state header & grid */}
-                {(() => {
-                  const q = (uiState.settingsSearchQuery || '').trim();
-                  const scope = uiState.settingsSearchScope || 'all';
-                  const stateFilters = uiState.settingsStateFilters || [];
-                  const featureFilters = uiState.settingsFeatureFilters || [];
-                  const availabilityFilters = uiState.settingsAvailabilityFilters || [];
-
-                  const matchingEntries = SETTINGS_HUB_SEARCH_INDEX.filter(entry =>
-                    evalSettingsSearchFilter(
-                      entry,
-                      q,
-                      scope,
-                      stateFilters,
-                      featureFilters,
-                      availabilityFilters,
-                      gameSettings,
-                      draftGameSettings,
-                      depReport,
-                      Boolean(gameState?.gameStarted && !gameState?.gameOver)
-                    )
-                  );
-
-                  return (
-                    <>
-                      {/* Dual-State Search Results & Focused Mode Header Panel */}
-                      {isSettingsFilteringActive && (
-                        <div className="mb-2">
-                          {uiState.settingsSearchViewMode === 'focused' ? (
-                            <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-2 p-3 rounded-lg bg-sky-950/90 border border-sky-500/40 shadow-lg backdrop-blur-md">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <button
-                                  type="button"
-                                  onClick={handleRestoreSearchResults}
-                                  className="px-3 py-1.5 text-xs font-bold rounded bg-sky-600 hover:bg-sky-500 text-white transition flex items-center gap-1 shadow-sm"
-                                  title="Return to full search result list"
-                                >
-                                  <span>← Back to {matchingEntries.length} Search Results for "{uiState.settingsSearchQuery || 'Active Filters'}"</span>
-                                </button>
-
-                                {/* Prev / Next Pagination Controls */}
-                                {matchingEntries.length > 0 && (
-                                  <div className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded border border-sky-500/30 text-xs text-sky-200">
-                                    <span className="font-semibold text-white">
-                                      Result {Math.min(matchingEntries.length, (uiState.focusedSearchResultIndex ?? 0) + 1)} of {matchingEntries.length}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      disabled={(uiState.focusedSearchResultIndex ?? 0) <= 0}
-                                      onClick={() => {
-                                        const newIdx = (uiState.focusedSearchResultIndex ?? 0) - 1;
-                                        const prevEntry = matchingEntries[newIdx];
-                                        if (prevEntry) {
-                                          const sec = SETTINGS_HUB_SECTION_INDEX.find(s => s.id === prevEntry.id || s.fieldKeys.includes(prevEntry.key as any));
-                                          navigateToSettings(prevEntry.tab, sec?.id || prevEntry.id, {
-                                            fieldKey: String(prevEntry.key || prevEntry.id),
-                                            highlight: true,
-                                            resultIndex: newIdx
-                                          });
-                                        }
-                                      }}
-                                      className="px-2 py-0.5 rounded bg-sky-800 hover:bg-sky-700 disabled:opacity-40 font-bold transition"
-                                    >
-                                      ‹ Prev
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={(uiState.focusedSearchResultIndex ?? 0) >= matchingEntries.length - 1}
-                                      onClick={() => {
-                                        const newIdx = (uiState.focusedSearchResultIndex ?? 0) + 1;
-                                        const nextEntry = matchingEntries[newIdx];
-                                        if (nextEntry) {
-                                          const sec = SETTINGS_HUB_SECTION_INDEX.find(s => s.id === nextEntry.id || s.fieldKeys.includes(nextEntry.key as any));
-                                          navigateToSettings(nextEntry.tab, sec?.id || nextEntry.id, {
-                                            fieldKey: String(nextEntry.key || nextEntry.id),
-                                            highlight: true,
-                                            resultIndex: newIdx
-                                          });
-                                        }
-                                      }}
-                                      className="px-2 py-0.5 rounded bg-sky-800 hover:bg-sky-700 disabled:opacity-40 font-bold transition"
-                                    >
-                                      Next ›
-                                    </button>
-                                  </div>
-                                )}
-
-                                {/* Breadcrumb Trail for Focused Entry */}
-                                {(() => {
-                                  const curIdx = Math.min(Math.max(0, uiState.focusedSearchResultIndex ?? 0), matchingEntries.length - 1);
-                                  const curEntry = matchingEntries[curIdx];
-                                  if (!curEntry) return null;
-                                  const sec = SETTINGS_HUB_SECTION_INDEX.find(s => s.id === curEntry.id || s.fieldKeys.includes(curEntry.key as any));
-                                  return (
-                                    <div className="flex items-center gap-1 text-[11px] font-medium text-slate-300 bg-slate-900/80 px-2.5 py-1 rounded border border-slate-700">
-                                      <span className="text-sky-300 font-semibold">{SETTINGS_HUB_TAB_LABELS[curEntry.tab] || curEntry.tab}</span>
-                                      <span>›</span>
-                                      <span>{sec?.title || curEntry.category || 'General'}</span>
-                                      <span>›</span>
-                                      <span className="font-bold text-amber-300">{curEntry.label || curEntry.id}</span>
-                                    </div>
-                                  );
-                                })()}
-                              </div>
-
-                              {/* Exit Search Button */}
-                              <button
-                                type="button"
-                                onClick={handleClearSettingsSearch}
-                                className="px-2.5 py-1 text-xs font-bold rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 transition"
-                                title="Clear all search filters and exit search"
-                              >
-                                Exit Search (✕)
-                              </button>
-                            </div>
-                          ) : null}
-                        </div>
-                      )}
-
-                      {/* Filter Result Cards List (Hidden when in focused mode) */}
-                      {uiState.settingsSearchViewMode !== 'focused' && (
-                        matchingEntries.length === 0 ? (
-                          <div className="p-6 text-center border border-dashed border-slate-700 rounded-lg text-slate-400">
-                            <div className="text-xl font-bold mb-1">🔍 No matching settings found</div>
-                            <div className="text-xs opacity-75">Try broadening your search term or clearing active scope and filters.</div>
-                            <button
-                              type="button"
-                              onClick={handleClearSettingsSearch}
-                              className="mt-3 px-3 py-1.5 rounded text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white"
-                            >
-                              Reset All Filters
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pr-1">
-                            {matchingEntries.map((entry, idx) => (
-                              <SettingsSearchResultCard
-                                key={entry.id}
-                                entry={entry}
-                                gameSettings={gameSettings}
-                                draftSettings={draftGameSettings}
-                                onUpdateSetting={(key, val) => {
-                                  setDraftGameSettings(prev => ({ ...(prev || {}), [key]: val }));
-                                }}
-                                onOpenSection={(tab, secId, fieldKey) => {
-                                  navigateToSettings(tab, secId, { highlight: true, fieldKey, resultIndex: idx });
-                                }}
-                                depReport={depReport}
-                                themeStyles={themeStyles}
-                              />
-                            ))}
-                          </div>
-                        )
-                      )}
-                    </>
-                  );
-                })()}
+          <div className="settings-content-row" data-testid="settings-content">
+            <nav className={`settings-nav border-r ${themeStyles.border} p-2`} aria-label="Settings categories">
+              <div className="settings-phone-search pb-2">
+                <input type="text" data-settings-search="true" aria-label="Search settings" value={localSettingsSearchQuery} onChange={handleSettingsSearchChange} placeholder="Search settings" className={`${themeStyles.select} rounded px-3 py-2 w-full text-sm`} />
               </div>
-            )}
-
-            {/* Task 10: 6 Category Navigation Modes */}
-            {(() => {
-              const navMode: SettingsCategoryNavigationMode = gameSettings.settingsCategoryNavigationMode || 'full';
-
-              if (navMode === 'hidden' || navMode === 'hidden_navigation') {
-                return null;
-              }
-
-              if (navMode === 'category_dropdown' || navMode === 'dropdown') {
-                return (
-                  <div
-                    className={`p-3 border-b ${themeStyles.border} ${isSearchActive ? 'opacity-70' : ''} flex items-center gap-3 shrink-0 bg-black/10`}
-                  >
-                    <label htmlFor="settings-category-dropdown-select" className="text-xs font-bold opacity-80 shrink-0">
-                      📂 Category Nav:
-                    </label>
-                    <select
-                      id="settings-category-dropdown-select"
-                      aria-label="Settings category dropdown navigation"
-                      value={uiState.settingsActiveTab}
-                      onChange={(e) => {
-                        updateUiState({ settingsActiveTab: e.target.value as SettingsHubTabId });
-                      }}
-                      className={`${themeStyles.select} rounded px-3 py-1.5 text-sm flex-1 max-w-md font-semibold`}
-                    >
-                      {SETTINGS_HUB_TAB_ORDER.map(tab => (
-                        <option key={tab} value={tab}>
-                          {SETTINGS_HUB_TAB_LABELS[tab]} ({SETTINGS_HUB_SECTION_INDEX.filter(s => s.tab === tab).length} sections)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                );
-              }
-
-              if (navMode === 'current_only' || navMode === 'current_category_only') {
-                const currentIndex = SETTINGS_HUB_TAB_ORDER.indexOf(uiState.settingsActiveTab);
-                const prevIndex = (currentIndex - 1 + SETTINGS_HUB_TAB_ORDER.length) % SETTINGS_HUB_TAB_ORDER.length;
-                const nextIndex = (currentIndex + 1) % SETTINGS_HUB_TAB_ORDER.length;
-                return (
-                  <div
-                    className={`p-3 border-b ${themeStyles.border} ${isSearchActive ? 'opacity-70' : ''} flex items-center justify-between gap-2 shrink-0 bg-black/10`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold opacity-75">Active Category:</span>
-                      <span className={`px-3 py-1.5 rounded text-sm font-bold shadow ${themeStyles.button} text-white`}>
-                        {SETTINGS_HUB_TAB_LABELS[uiState.settingsActiveTab as SettingsHubTabId] || uiState.settingsActiveTab}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          updateUiState({ settingsActiveTab: SETTINGS_HUB_TAB_ORDER[prevIndex] });
-                        }}
-                        className={`px-3 py-1.5 text-xs rounded font-medium ${themeStyles.buttonSecondary} hover:bg-slate-700`}
-                        title={`Previous: ${SETTINGS_HUB_TAB_LABELS[SETTINGS_HUB_TAB_ORDER[prevIndex]]}`}
-                      >
-                        ◀ Prev ({SETTINGS_HUB_TAB_LABELS[SETTINGS_HUB_TAB_ORDER[prevIndex]]})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          updateUiState({ settingsActiveTab: SETTINGS_HUB_TAB_ORDER[nextIndex] });
-                        }}
-                        className={`px-3 py-1.5 text-xs rounded font-medium ${themeStyles.buttonSecondary} hover:bg-slate-700`}
-                        title={`Next: ${SETTINGS_HUB_TAB_LABELS[SETTINGS_HUB_TAB_ORDER[nextIndex]]}`}
-                      >
-                        Next ({SETTINGS_HUB_TAB_LABELS[SETTINGS_HUB_TAB_ORDER[nextIndex]]}) ▶
-                      </button>
-                    </div>
-                  </div>
-                );
-              }
-
-              if (navMode === 'compact' || navMode === 'compact_categories') {
-                return (
-                  <div
-                    className={`px-3 py-1.5 border-b ${themeStyles.border} ${isSearchActive ? 'opacity-70' : ''} flex items-center gap-1.5 overflow-x-auto flex-nowrap shrink-0`}
-                  >
-                    {SETTINGS_HUB_TAB_ORDER.map(tab => (
-                      <button
-                        key={tab}
-                        type="button"
-                        onClick={() => {
-                          updateUiState({ settingsActiveTab: tab });
-                        }}
-                        className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                          !isSearchActive && uiState.settingsActiveTab === tab
-                            ? themeStyles.button + ' text-white font-semibold'
-                            : themeStyles.buttonSecondary + (isSearchActive ? ' hover:border-amber-500/40' : '')
-                        }`}
-                        style={{ flex: '0 0 auto' }}
-                      >
-                        {SETTINGS_HUB_TAB_LABELS[tab]}
-                      </button>
-                    ))}
-                  </div>
-                );
-              }
-
-              if (navMode === 'collapsed_active') {
-                const isNavExpanded = Boolean(uiState.settingsCategoryNavExpanded);
-                if (!isNavExpanded) {
-                  return (
-                    <div
-                      className={`p-3 border-b ${themeStyles.border} ${isSearchActive ? 'opacity-70' : ''} flex items-center justify-between gap-3 shrink-0 bg-black/10`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold opacity-75">📂 Category Nav (Collapsed):</span>
-                        <span className={`px-3.5 py-1.5 rounded-lg text-sm font-bold shadow ${themeStyles.button} text-white border border-white/20`}>
-                          {SETTINGS_HUB_TAB_LABELS[uiState.settingsActiveTab as SettingsHubTabId] || uiState.settingsActiveTab}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => updateUiState({ settingsCategoryNavExpanded: true })}
-                        className={`px-3 py-1.5 text-xs font-bold rounded ${themeStyles.buttonSecondary} hover:bg-slate-700 flex items-center gap-1.5`}
-                        title="Expand Category Navigation"
-                      >
-                        <span>Expand Categories</span>
-                        <span>▾</span>
-                      </button>
-                    </div>
-                  );
-                } else {
-                  return (
-                    <div
-                      className={`p-3 border-b ${themeStyles.border} ${isSearchActive ? 'opacity-70' : ''} flex flex-col gap-2 shrink-0 bg-black/10`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold opacity-80">📂 Category Navigation (Expanded):</span>
-                        <button
-                          type="button"
-                          onClick={() => updateUiState({ settingsCategoryNavExpanded: false })}
-                          className={`px-2.5 py-1 text-xs font-bold rounded ${themeStyles.buttonSecondary} hover:bg-slate-700 flex items-center gap-1`}
-                          title="Collapse Category Navigation"
-                        >
-                          <span>Collapse</span>
-                          <span>▴</span>
-                        </button>
-                      </div>
-                      <div className="flex items-center gap-1.5 overflow-x-auto flex-nowrap shrink-0 pb-1">
-                        {SETTINGS_HUB_TAB_ORDER.map(tab => (
-                          <button
-                            key={tab}
-                            type="button"
-                            onClick={() => {
-                              updateUiState({ settingsActiveTab: tab, settingsCategoryNavExpanded: false });
-                            }}
-                            className={`px-3 py-1.5 rounded text-xs transition-colors ${
-                              !isSearchActive && uiState.settingsActiveTab === tab
-                                ? themeStyles.button + ' text-white font-bold'
-                                : themeStyles.buttonSecondary + (isSearchActive ? ' hover:border-amber-500/40' : '')
-                            }`}
-                          >
-                            {SETTINGS_HUB_TAB_LABELS[tab]}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                }
-              }
-
-              // Default: 'full' or 'full_categories'
-              return (
-                <div
-                  className={`px-3 py-1.5 border-b ${themeStyles.border} ${isSearchActive ? 'opacity-70' : ''} flex items-center gap-1.5 overflow-x-auto flex-nowrap shrink-0`}
+              {SETTINGS_WINDOW_CATEGORIES.map(category => (
+                <button
+                  key={category.id}
+                  type="button"
+                  className={`settings-cat-${category.id} w-full text-left px-3 py-2 rounded mb-1 ${((uiState.settingsWindowCategory || 'essentials') === category.id) ? themeStyles.button + ' text-white' : themeStyles.buttonSecondary}`}
+                  aria-current={(uiState.settingsWindowCategory || 'essentials') === category.id ? 'page' : undefined}
+                  onClick={() => updateUiState({ settingsWindowCategory: category.id, settingsPhonePane: 'detail', settingsActiveTab: category.id === 'smart' ? 'home' : category.id === 'developer' ? 'replayDiag' : category.id === 'presets' ? 'quickSetup' : category.id === 'rules' ? 'gameplay' : category.id === 'interface' ? 'interfaceAcc' : category.id === 'ai' ? 'aiTeams' : category.id === 'assistance' ? 'automation' : category.id === 'economy' ? 'economy' : category.id === 'competition' ? 'competition' : uiState.settingsActiveTab })}
                 >
-                  {SETTINGS_HUB_TAB_ORDER.map(tab => (
-                    <button
-                      key={tab}
-                      type="button"
-                      onClick={() => {
-                        updateUiState({ settingsActiveTab: tab });
-                      }}
-                      className={`px-3 py-1.5 rounded text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
-                        !isSearchActive && uiState.settingsActiveTab === tab
-                          ? themeStyles.button + ' text-white font-bold'
-                          : themeStyles.buttonSecondary + (isSearchActive ? ' hover:border-amber-500/40' : '')
-                      }`}
-                    >
-                      <span>{SETTINGS_HUB_TAB_LABELS[tab]}</span>
-                      {isSearchActive && (() => {
-                        const count = SETTINGS_HUB_SEARCH_INDEX.filter(e => e.tab === tab && evalSettingsSearchFilter(
-                          e,
-                          (uiState.settingsSearchQuery || "").trim(),
-                          uiState.settingsSearchScope || "all",
-                          uiState.settingsStateFilters || [],
-                          uiState.settingsFeatureFilters || [],
-                          uiState.settingsAvailabilityFilters || [],
-                          gameSettings,
-                          draftGameSettings,
-                          depReport,
-                          Boolean(gameState?.gameStarted && !gameState?.gameOver)
-                        )).length;
-                        return count > 0 ? (
-                          <span className="ml-1 text-[10px] px-1.5 py-0.2 rounded-full bg-sky-500/30 text-sky-200 font-bold border border-sky-400/40">
-                            {count}
-                          </span>
-                        ) : null;
-                      })()}
-                    </button>
-                  ))}
-                </div>
-              );
-            })()}
+                  <span className="font-semibold">{category.icon} {category.label}</span>
+                  <span className="settings-cat-summary">{category.id === 'essentials' ? `${AI_DIFFICULTY_PROFILES[gameState.aiDifficulty]?.name || gameState.aiDifficulty} · ${gameSettings.totalDays} days · ${WIN_METRIC_LABELS[gameSettings.winCondition] || gameSettings.winCondition}` : category.summary}</span>
+                </button>
+              ))}
+            </nav>
+            <select
+              className={`settings-tablet-nav ${themeStyles.select} rounded px-3 py-2 m-2`}
+              aria-label="Settings category"
+              value={uiState.settingsWindowCategory || 'essentials'}
+              onChange={event => {
+                const id = event.target.value;
+                const category = SETTINGS_WINDOW_CATEGORIES.find(item => item.id === id);
+                if (!category) return;
+                updateUiState({ settingsWindowCategory: category.id, settingsPhonePane: 'detail', settingsActiveTab: category.id === 'smart' ? 'home' : category.id === 'developer' ? 'replayDiag' : category.id === 'presets' ? 'quickSetup' : category.id === 'rules' ? 'gameplay' : category.id === 'interface' ? 'interfaceAcc' : category.id === 'ai' ? 'aiTeams' : category.id === 'assistance' ? 'automation' : category.id === 'economy' ? 'economy' : category.id === 'competition' ? 'competition' : uiState.settingsActiveTab });
+              }}
+            >
+              {SETTINGS_WINDOW_CATEGORIES.filter(category => category.id !== 'developer' || uiState.settingsShowDeveloper).map(category => (
+                <option key={category.id} value={category.id}>{category.icon} {category.label}</option>
+              ))}
+            </select>
 
           {/* Scrollable Content */}
-          <div ref={settingsScrollRef} data-settings-scroll="true" className={`p-3 sm:p-6 pt-2 sm:pt-4 flex-1 min-h-0 overflow-y-auto ${themeStyles.scrollbar}`} style={{ flex: '1 1 0%', minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <div ref={settingsScrollRef} data-settings-scroll="true" className={`settings-scroll min-w-0 overflow-x-hidden flex-1 p-3 sm:p-6 pt-2 sm:pt-4 flex-1 min-h-0 overflow-y-auto ${themeStyles.scrollbar}`} style={{ flex: '1 1 0%', minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
             {(() => {
               const hint = settingsIntelligenceSearchHint(uiState.settingsSearchQuery || '');
               return hint ? (
@@ -217566,14 +217351,118 @@ function dispatchGameSettingsChange(
               collapsedSections: uiState.settingsCollapsedSections,
               onToggleCollapse: toggleSettingsSection,
               border: themeStyles.border,
-              buttonSecondary: themeStyles.buttonSecondary
+              buttonSecondary: themeStyles.buttonSecondary,
+              windowCategory: uiState.settingsWindowCategory || 'essentials',
+              showAdvanced: uiState.settingsViewMode === 'advanced',
+              showDeveloper: uiState.settingsShowDeveloper === true,
+              searchQuery: uiState.settingsSearchQuery || ''
             }}>
             <div className="space-y-6">
+              {(() => {
+                const category = (uiState.settingsWindowCategory || 'essentials') as SettingsWindowCategoryId;
+                const searching = Boolean((uiState.settingsSearchQuery || '').trim());
+                const liveMatch = Boolean(gameState.gameStarted && !gameState.gameOver);
+                const critical = (notifications || []).find((item: any) => isCriticalNotification(item));
+                const criticalText = critical ? String(critical.message || critical.text || critical.title || '') : '';
+                const changedKeys = settingsPlayerChangedKeys(gameSettings);
+                return (
+                  <>
+                    {criticalText ? <div role="alert" className="text-sm px-1">{criticalText.slice(0, 180)}</div> : null}
+                    {category === 'essentials' && !searching && (
+                      <SettingsEssentialsPanel
+                        gameSettings={gameSettings}
+                        gameState={gameState}
+                        uiState={uiState}
+                        theme={themeStyles}
+                        liveMatch={liveMatch}
+                        changedKeys={changedKeys}
+                        changedOnly={Boolean(uiState.settingsChangedOnly)}
+                        onSettings={(label, updater) => trackedSetGameSettings('direct_player_change', label, updater)}
+                        onTheme={(theme) => {
+                          const previous = String(uiState.theme || 'system');
+                          updateUiState({ theme });
+                          noteSettingsUndo('Theme', gameSettings, { theme: previous });
+                        }}
+                        onDifficulty={(value) => {
+                          if (liveMatch) return;
+                          const previous = String(gameState.aiDifficulty);
+                          dispatchGameState({ type: 'SET_AI_DIFFICULTY', payload: value });
+                          if (Date.now() - settingsUndoStampRef.current < 50) {
+                            setSettingsUndoNotice(current => current ? { ...current, difficulty: previous } : current);
+                          } else {
+                            noteSettingsUndo('AI opponent difficulty', gameSettings, { difficulty: previous });
+                          }
+                        }}
+                        onAssistant={applyAssistanceLevelFromHud}
+                        onOpenMechanics={() => updateUiState({
+                          settingsShowDeveloper: true,
+                          settingsWindowCategory: 'developer',
+                          settingsPhonePane: 'detail',
+                          settingsActiveTab: 'mechanicsDir',
+                          pendingSettingsNavigation: { tab: 'mechanicsDir', sectionId: 'mechanicsDirectory.directory', highlight: true, expandIfCollapsed: true, timestamp: Date.now() }
+                        })}
+                        onResetKey={(key) => trackedSetGameSettings('direct_player_change', 'Reset ' + key, prev => ({ ...prev, [key]: (DEFAULT_GAME_SETTINGS as any)[key] }))}
+                      />
+                    )}
+                    {category === 'presets' && !searching && (
+                      <SettingsPresetsDirectory
+                        gameSettings={gameSettings}
+                        theme={themeStyles}
+                        onCommit={(label, updater) => trackedSetGameSettings('preset', label, updater)}
+                        onDifficulty={(value) => {
+                          if (liveMatch) return;
+                          const previous = String(gameState.aiDifficulty);
+                          dispatchGameState({ type: 'SET_AI_DIFFICULTY', payload: value });
+                          if (Date.now() - settingsUndoStampRef.current < 50) {
+                            setSettingsUndoNotice(current => current ? { ...current, difficulty: previous } : current);
+                          } else {
+                            noteSettingsUndo('AI opponent difficulty', gameSettings, { difficulty: previous });
+                          }
+                        }}
+                      />
+                    )}
+                    {category === 'smart' && !searching && (
+                      <GameExperienceScreen
+                        profile={gameSettings.smartSettingsProfile || createDefaultSmartSettingsProfile()}
+                        gameSettings={gameSettings}
+                        onUpdateProfile={applySmartProfile}
+                        onApplyPlan={applySmartPlan}
+                        isLiveMatch={liveMatch}
+                        settingsIntelligence={siBinding}
+                        onOpenAdvancedSettings={(tab, section) => {
+                          const targetTab = (tab as SettingsHubTabId) || 'home';
+                          const nextCategory = settingsWindowCategoryFor(section || '', targetTab);
+                          updateUiState({
+                            settingsWindowCategory: nextCategory,
+                            settingsPhonePane: 'detail',
+                            settingsActiveTab: targetTab,
+                            settingsShowDeveloper: nextCategory === 'developer' ? true : uiState.settingsShowDeveloper,
+                            pendingSettingsNavigation: section ? { tab: targetTab, sectionId: section, highlight: true, expandIfCollapsed: true, timestamp: Date.now() } : null
+                          });
+                        }}
+                        isDark={resolveIsDarkTheme(uiState.theme, typeof window !== 'undefined' && typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)').matches : true)}
+                        isRetro={uiState.theme === 'retro'}
+                      />
+                    )}
+                    {category === 'developer' && (
+                      <div className="mb-3">
+                        <button type="button" className={`${themeStyles.buttonSecondary} px-3 py-2 rounded`} onClick={() => {
+                          const report = runSettingsLayoutCheck(document);
+                          setSettingsLayoutReport(report);
+                          addNotification(report.passed ? 'Settings layout check passed' : 'Settings layout check failed: ' + report.results.filter(row => !row.passed).map(row => row.id).join(', '), report.passed ? 'info' : 'warning');
+                        }}>Run settings layout check</button>
+                        {settingsLayoutReport && <ul className="text-xs mt-2 space-y-1">{settingsLayoutReport.results.map(row => <li key={row.id}>{row.passed ? 'Pass' : 'Fail'} · {row.id}: {row.detail}</li>)}</ul>}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+
               <SettingsSection
                 id="home.dashboard"
                 tab="home"
                 title="🏠 Settings Dashboard & Quick Overview"
-                description="Welcome to the Antigravity Settings Hub. Select a category below or use search to configure rules, AI behavior, and UI options."
+                description="Configuration health for this match. Search still reaches every setting."
               >
                 <div className="space-y-6">
                   {/* Top Settings Hub Metrics Bar */}
@@ -219351,7 +219240,7 @@ function dispatchGameSettingsChange(
                   </div>
 
                   {/* ACTION POINT CONSUMPTION CONFIGURATION PANEL */}
-                  <div className="border-t border-slate-700/60 pt-4 mt-4">
+                  <div className="border-t border-slate-700/60 pt-4 mt-4 settings-advanced-block">
                     <div className="font-semibold text-lg mb-1 text-slate-100">⚡ Action Point Consumption</div>
                     <div className="text-xs opacity-75 mb-3 text-slate-300">
                       Choose which gameplay actions count toward the action limit and how many action points each action uses.
@@ -227091,62 +226980,41 @@ function dispatchGameSettingsChange(
           </div>
           </div>
 
-          {/* Fixed Footer */}
-          <div className={`p-2 sm:p-4 border-t ${themeStyles.border} shrink-0`} style={{ flexShrink: 0 }}>
-            <button onClick={() => updateUiState({ showSettings: false })} className={`${themeStyles.button} text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg w-full font-bold text-sm sm:text-base`}>Close</button>
+          <div data-testid="settings-undo-bar" className="shrink-0 flex items-center justify-between gap-3 px-3 text-sm" style={{ maxHeight: 48, height: settingsUndoNotice ? 48 : 0, overflow: 'hidden' }} role="status" aria-live="polite">
+            {settingsUndoNotice && (
+              <>
+                <span>{settingsUndoNotice.label} changed</span>
+                <button type="button" className="underline min-h-[44px] px-2" onClick={() => {
+                  const notice = settingsUndoNotice;
+                  if (!notice) return;
+                  setSettingsUndoNotice(null);
+                  if (settingsUndoTimerRef.current) window.clearTimeout(settingsUndoTimerRef.current);
+                  trackedSetGameSettings('direct_player_change', 'Undo ' + notice.label, () => notice.snapshot);
+                  if (notice.difficulty && notice.difficulty !== gameState.aiDifficulty) {
+                    dispatchGameState({ type: 'SET_AI_DIFFICULTY', payload: notice.difficulty });
+                  }
+                  if (notice.theme && notice.theme !== uiState.theme) updateUiState({ theme: notice.theme });
+                }}>Undo</button>
+              </>
+            )}
           </div>
-      
-                    {settingsChangedFieldKeys.length > 0 && (
-            <div className="sticky bottom-0 z-30 p-3 bg-amber-950/90 border-t border-amber-500/50 backdrop-blur flex items-center justify-between shadow-2xl text-amber-100 shrink-0">
-              <div className="flex items-center gap-2 text-xs font-bold">
-                <span>⚠️ {settingsChangedFieldKeys.length} setting{settingsChangedFieldKeys.length !== 1 ? 's' : ''} modified from defaults</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowUnsavedPreviewModal(true)}
-                  className="px-3 py-1.5 text-xs font-bold rounded bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 transition"
-                >
-                  View Diff &amp; Revert
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    trackedSetGameSettings("direct_player_change", "Saved All Settings", prev => ({ ...prev }));
-                  }}
-                  className="px-4 py-1.5 text-xs font-bold rounded bg-amber-500 hover:bg-amber-400 text-black shadow transition"
-                >
-                  Save Changes
-                </button>
+          {settingsResetList !== null && (
+            <div role="alertdialog" aria-label="Reset settings" className={`absolute inset-x-3 bottom-16 z-10 rounded-lg border p-3 ${themeStyles.card} ${themeStyles.border}`}>
+              <div className="font-semibold">Reset all settings</div>
+              <p className="text-xs opacity-75 mt-1">These settings return to their defaults. Theme stays as it is. Guided learning progress stays.</p>
+              {settingsResetList.length === 0 ? <p className="text-xs mt-2">Nothing differs from the defaults.</p> : (
+                <ul className="text-xs mt-2 max-h-40 overflow-auto space-y-0.5">{settingsResetList.map(key => <li key={key}>{key}</li>)}</ul>
+              )}
+              <div className="flex gap-2 mt-3">
+                <button type="button" className={`${themeStyles.button} text-white px-3 py-2 rounded`} onClick={() => {
+                  trackedSetGameSettings('direct_player_change', 'Reset all settings', prev => ({ ...createDefaultGameSettings(), guidedLearning: prev.guidedLearning }));
+                  setSettingsResetList(null);
+                }}>Reset</button>
+                <button type="button" className={`${themeStyles.buttonSecondary} px-3 py-2 rounded`} onClick={() => setSettingsResetList(null)}>Cancel</button>
               </div>
             </div>
           )}
-
-          {settingsChangedFieldKeys.length > 0 && (
-            <div className="sticky bottom-0 z-30 p-3 bg-amber-950/90 border-t border-amber-500/50 backdrop-blur flex items-center justify-between shadow-2xl text-amber-100 shrink-0">
-              <div className="flex items-center gap-2 text-xs font-bold">
-                <span>⚠️ {settingsChangedFieldKeys.length} setting{settingsChangedFieldKeys.length !== 1 ? 's' : ''} modified from defaults</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowUnsavedPreviewModal(true)}
-                  className="px-3 py-1.5 text-xs font-bold rounded bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 transition"
-                >
-                  View Diff &amp; Revert
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    trackedSetGameSettings("direct_player_change", "Saved All Settings", prev => ({ ...prev }));
-                  }}
-                  className="px-4 py-1.5 text-xs font-bold rounded bg-amber-500 hover:bg-amber-400 text-black shadow transition"
-                >
-                  Save Changes
-                </button>
-              </div>
-            </div>
-          )}
+          </div>
 
           <SettingsPresetManagerModal
             isOpen={showPresetManagerModal}
@@ -228299,9 +228167,7 @@ function dispatchGameSettingsChange(
       Boolean(uiState?.showQuickActionsCustomizer);
     const settings = gameSettings.notificationSettings || createDefaultNotificationSettings();
     let filtered = notifications.filter(n => settings.typeFilters[n.notificationType || 'system']);
-    if (isBlockingModalOpen) {
-      filtered = filtered.filter(n => isCriticalNotification(n));
-    }
+    if (isBlockingModalOpen) return null;
     if (usesGuidedIntentChrome(gameSettings) && gameSettings.playerIntentExplainMode !== 'every' && !gameSettings.playerIntentExplainRoutineActions) {
       filtered = filtered.filter(n => {
         const prio = classifyNotificationPriority(n);
@@ -228322,7 +228188,7 @@ function dispatchGameSettingsChange(
     const isCoPilotHudActive = Boolean(takeoverSession || coPilotManualOverride);
 
     let positionClass = isBlockingModalOpen
-      ? 'bottom-8 right-8 flex-col items-end z-[1000]'
+      ? 'bottom-8 right-8 flex-col items-end z-[300]'
       : ({
           'top-left': 'top-16 left-4 z-[600]',
           'top-right': isCoPilotHudActive ? 'top-36 right-4 z-[600]' : 'top-16 right-4 z-[600]',
@@ -230440,6 +230306,8 @@ function dispatchGameSettingsChange(
       className?: string;
       badge?: number | string | null;
       title?: string;
+      ariaLabel?: string;
+      wrapperClassName?: string;
     };
     const actionDescriptors: Record<string, ActionDescriptor> = {
       guardianStatus: {
@@ -230580,8 +230448,10 @@ function dispatchGameSettingsChange(
       settings: {
         id: 'settings',
         icon: '⚙️',
-        label: '',
-        onClick: () => navigateToSettings('home'),
+        label: 'Settings',
+        ariaLabel: 'Settings',
+        wrapperClassName: 'hidden sm:flex',
+        onClick: () => updateUiState({ showSettings: true, settingsWindowCategory: 'essentials', settingsPhonePane: 'list' }),
         className: `${themeStyles.buttonSecondary} px-4 py-2 rounded-lg`
       },
       teamAiSettings: {
@@ -230633,7 +230503,7 @@ function dispatchGameSettingsChange(
         id: 'diagnostics',
         icon: '🔬',
         label: 'Diagnostics',
-        onClick: () => updateUiState({ showSettings: true, settingsActiveTab: 'replayDiag', showAutoModeDiagnosticsDrawer: true }),
+        onClick: () => updateUiState({ showSettings: true, settingsActiveTab: 'replayDiag', settingsWindowCategory: 'developer', settingsShowDeveloper: true, settingsPhonePane: 'detail', showAutoModeDiagnosticsDrawer: true }),
         className: actionButtonSecondaryClass
       }
     };
@@ -230642,11 +230512,13 @@ function dispatchGameSettingsChange(
       const disabled = Boolean(descriptor.disabled);
       const reason = getDisabledReasonForAction(descriptor.id, disabled);
       return (
-        <div key={descriptor.id} className="flex flex-col">
+        <div key={descriptor.id} className={descriptor.wrapperClassName || 'flex flex-col'}>
           <button
             onClick={descriptor.onClick}
             disabled={disabled}
             title={reason || descriptor.title}
+            aria-label={descriptor.ariaLabel || descriptor.label || undefined}
+            data-testid={descriptor.id === 'settings' ? 'settings-open-button' : undefined}
             className={descriptor.className || actionButtonClass}
           >
             <span>{descriptor.icon}</span>
@@ -231273,6 +231145,7 @@ function dispatchGameSettingsChange(
       return (
         <div role="tabpanel" id="v9-layer-panel-play" aria-labelledby="v9-layer-tab-play" className="mb-4 space-y-3 v94-fade" data-testid="v9-play-hud">
           <V9MatchHeader
+            onOpenSettings={() => updateUiState({ showSettings: true, settingsWindowCategory: 'essentials', settingsPhonePane: 'list' })}
             c={v9Cohesion}
             theme={themeStyles}
             onEndTurn={v9HumanCanAct ? v9EndTurn : null}
@@ -235533,7 +235406,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
           modalRef.current.querySelectorAll<HTMLElement>(
             'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
           )
-        ).filter(el => !el.hasAttribute('disabled'));
+        ).filter(el => !el.hasAttribute('disabled') && el.getClientRects().length > 0);
 
         if (focusables.length === 0) return;
 
