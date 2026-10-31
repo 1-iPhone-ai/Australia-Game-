@@ -3964,7 +3964,7 @@ const KEYBOARD_SHORTCUTS = {
 };
 
 export const VERSION_CONSTANTS = {
-  GAME_VERSION: "9.5.0",
+  GAME_VERSION: "9.6.0",
   SCHEMA_VERSION: "7.1",
   SAVE_SCHEMA_VERSION: "7.1",
   SETTINGS_SCHEMA_VERSION: "7.1",
@@ -6716,14 +6716,12 @@ export function getActionPointCost(
   if (!normId || normId === 'end_turn') return 0;
 
   const apSettings: ActionPointConsumptionSettings | undefined = settings.actionPointConsumptionSettings;
-  if (!apSettings || !apSettings.actionCosts) {
-    return DEFAULT_ACTION_POINT_COSTS[normId] ?? 1;
-  }
-
-  if (isAi && apSettings.costScope === 'separate' && apSettings.aiActionCosts) {
-    return apSettings.aiActionCosts[normId] ?? DEFAULT_ACTION_POINT_COSTS[normId] ?? 1;
-  }
-  return apSettings.actionCosts[normId] ?? DEFAULT_ACTION_POINT_COSTS[normId] ?? 1;
+  let cost: number;
+  if (!apSettings || !apSettings.actionCosts) cost = DEFAULT_ACTION_POINT_COSTS[normId] ?? 1;
+  else if (isAi && apSettings.costScope === 'separate' && apSettings.aiActionCosts) cost = apSettings.aiActionCosts[normId] ?? DEFAULT_ACTION_POINT_COSTS[normId] ?? 1;
+  else cost = apSettings.actionCosts[normId] ?? DEFAULT_ACTION_POINT_COSTS[normId] ?? 1;
+  if (normId === 'sell_resources' && v96StrategyOn(settings)) return Math.max(1, cost);
+  return cost;
 }
 
 export function getRemainingActionPoints(
@@ -6765,6 +6763,11 @@ export function applyExecutedGameplayActionPointSpend(
   if (settings && settings.actionLimitsEnabled === false) return;
   const alreadySpent = (Number(actor.actionsUsedThisTurn) || 0) > (Number(usedAtStart) || 0);
   if (alreadySpent) return;
+  if (actor.v96SkipNextAp) { actor.v96SkipNextAp = false; return; }
+  if (v96TraitsOn(settings) && actor.currentRegion === 'SA' && !actor.v96SaSoldToday && (actionType === 'sell' || actionType === 'sell_resources')) {
+    actor.v96SaSoldToday = true;
+    return;
+  }
   let cost = typeof getActionPointCost === 'function' ? getActionPointCost(actionType, actor, settings) : 1;
   // V9.1 parity: an action the rules explicitly make free (sell/buy/loan/contract accept …) is free on every
   // path. The old floor charged Co-Pilot/AI 1 AP for what cost the human 0. Unmapped types still cost 1.
@@ -11081,7 +11084,11 @@ export function advanceActiveRegionalContractsDay(contracts: Record<string, any>
 export function completeRegionalContractPayout(nextState: any, contract: any, actor: any): void {
   const baseRewardMoney = contract.rewards?.money || 0;
   const rewardBoost = actor?.rewardBoostPct ?? 0;
-  actor.money += Math.round(baseRewardMoney * (1 + rewardBoost));
+  const v96Gs = nextState.gameSettings || nextState.gameState?.gameSettings;
+  let v96Money = Math.round(baseRewardMoney * (1 + rewardBoost));
+  if (v96TraitsOn(v96Gs) && contract.issuingRegionId === 'NSW') v96Money = Math.round(v96Money * 1.1);
+  if (v96StrategyOn(v96Gs)) v96Money = Math.round(v96Money * V96_CONTRACT_KEEP);
+  actor.money += v96Money;
   actor.xp = (actor.xp || 0) + 50;
   contract.status = 'completed';
   contract.completedAtTurn = nextState.turn;
@@ -11114,6 +11121,8 @@ export function computeChallengeSuccessChanceCore(i: {
   equipmentBonus?: number; underdogBonus?: number; leaderPenalty?: number; fatiguePenalty?: number; sabotagePenalty?: number;
   /** V9.5 interactive-challenge skill. Omitted or 0 leaves this formula unchanged. */
   skillBonus?: number;
+  /** V9.6 trailing bonus. Omitted or 0 leaves this formula unchanged. */
+  trailBonus?: number;
 }): number {
   const st = i.stats;
   const statValue = i.type === 'finale'
@@ -11121,7 +11130,7 @@ export function computeChallengeSuccessChanceCore(i: {
     : ((i.type === 'physical' ? st.strength : i.type === 'social' ? st.charisma : i.type === 'wildlife' ? st.luck : st.intelligence) || 3);
   const raw = 0.5 + statValue * 0.05 - i.difficulty * 0.1 + (i.characterName === 'Tourist' ? 0.1 : 0) + (i.level || 0) * 0.02
     + (i.weatherEffect || 0) + (i.seasonEffect || 0) + (i.eventBonus || 0) + (i.underdogBonus || 0) - (i.leaderPenalty || 0)
-    - (i.fatiguePenalty || 0) - (i.sabotagePenalty || 0) + (i.equipmentBonus || 0) + (i.skillBonus || 0);
+    - (i.fatiguePenalty || 0) - (i.sabotagePenalty || 0) + (i.equipmentBonus || 0) + (i.skillBonus || 0) + (i.trailBonus || 0);
   return Math.min(0.95, Math.max(0.1, raw));
 }
 
@@ -11129,6 +11138,7 @@ export function computeChallengeSuccessChanceCore(i: {
 export function computeChallengeRewardCore(i: {
   wager: number; rewardMultiplier: number; characterName?: string | null; leaderPenalty?: boolean;
   luckyStreak?: boolean; consecutiveWins?: number; masteryCount?: number;
+  rewardMult?: number;
 }): { reward: number; luckyStreakBonus: number; streakBonus: number; masteryBonus: number; masteryLabel: string } {
   let reward = Math.floor(i.wager * i.rewardMultiplier);
   if (i.characterName === 'Tourist') reward = Math.floor(reward * 1.2);
@@ -11145,6 +11155,7 @@ export function computeChallengeRewardCore(i: {
   const masteryBonus = m === 2 ? 0.25 : m === 3 ? 0.5 : m === 4 ? 1.0 : 0;
   const masteryLabel = m === 2 ? 'Mastered' : m === 3 ? 'Expert' : m === 4 ? 'Legendary' : '';
   if (masteryBonus > 0) reward = Math.floor(reward * (1 + masteryBonus));
+  if (typeof i.rewardMult === 'number' && i.rewardMult !== 1) reward = Math.floor(reward * i.rewardMult);
   return { reward, luckyStreakBonus, streakBonus: i.luckyStreak ? 0 : streakBonus, masteryBonus, masteryLabel };
 }
 
@@ -11152,28 +11163,35 @@ export function computeChallengeRewardCore(i: {
 export function computeTravelCostCore(i: {
   from: string; to: string; characterName?: string | null; mastery?: string[]; weatherMod?: number; seasonMod?: number; eventMod?: number;
   standingMult?: number | null; equipmentDiscount?: number; underdog?: boolean; leaderTax?: boolean;
+  trailMult?: number; traitMult?: number;
 }): number {
   const mastery = i.mastery || [];
   const person = (c: number) => { let x = c; if (i.characterName === 'Explorer') x *= 0.75; if (mastery.includes('Globe Trotter')) x *= 0.85; if (mastery.includes('Negotiator')) x *= 0.8; return x; };
   const env = (i.weatherMod ?? 1) * (i.seasonMod ?? 1) * (i.eventMod ?? 1);
   const disc = (c: number) => (i.equipmentDiscount && i.equipmentDiscount > 0 ? c * (1 - i.equipmentDiscount) : c);
+  const finish = (n: number) => {
+    let x = n;
+    if (typeof i.trailMult === 'number' && i.trailMult !== 1) x = Math.floor(x * i.trailMult);
+    if (typeof i.traitMult === 'number' && i.traitMult !== 1) x = Math.floor(x * i.traitMult);
+    return x;
+  };
   if ((ADJACENT_REGIONS as Record<string, string[]>)[i.from]?.includes(i.to)) {
     if (mastery.includes('Pathfinder')) return 0;
     let c = person(200) * env;
     if (typeof i.standingMult === 'number') c *= i.standingMult;
-    return Math.floor(disc(c));
+    return finish(Math.floor(disc(c)));
   }
   if (isExternalTerritory(i.to) && EXTERNAL_TERRITORIES[i.to]) {
     let c = person(EXTERNAL_TERRITORIES[i.to].travelCost || 1200) * env;
     if (typeof i.standingMult === 'number') c *= i.standingMult;
-    return Math.floor(disc(c));
+    return finish(Math.floor(disc(c)));
   }
   let c = person(i.to === 'TAS' ? 800 : 500);
-  if (mastery.includes('Fast Travel')) return 300;
+  if (mastery.includes('Fast Travel')) return finish(300);
   c = disc(c * env);
   if (i.underdog) c *= 0.75;
   if (i.leaderTax) c *= 1.05;
-  return Math.floor(c);
+  return finish(Math.floor(c));
 }
 
 /**
@@ -11195,7 +11213,8 @@ export function applySimpleLoanTick(state: { money: number; loans?: any[] }): { 
     // V9.1 balance (T1): interest is charged on the PRINCIPAL. Unpaid interest still becomes debt, but it no
     // longer compounds — one unpayable $500 loan used to exceed $4,600 within 10 days (1.25^n death spiral).
     const principal = typeof loan.principal === 'number' && loan.principal > 0 ? loan.principal : Math.min(loan.amount, LOAN_AMOUNT);
-    const interest = Math.floor(principal * LOAN_INTEREST_RATE);
+    const rate = typeof loan.interestRate === 'number' ? loan.interestRate : LOAN_INTEREST_RATE;
+    const interest = Math.floor(principal * rate);
     const payment = Math.min(interest, money);
     money -= payment;
     return { ...loan, principal, amount: loan.amount + interest - payment, accrued: (loan.accrued || 0) + interest };
@@ -11244,6 +11263,7 @@ export function reduceGameAction(
           const targetRegion = action.targetRegion || action.parameters?.region || action.parameters?.destinationRegion || action.parameters?.targetRegion || action.parameters?.destination;
           const cost = action.price || action.parameters?.cost || 0;
           if (actor && targetRegion) {
+            const v96From = actor.currentRegion;
             actor.currentRegion = targetRegion;
             if (!actor.visitedRegions?.includes(targetRegion)) {
               actor.visitedRegions = [...(actor.visitedRegions || []), targetRegion];
@@ -11252,6 +11272,7 @@ export function reduceGameAction(
               actor.money -= cost;
             }
             actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
+            if (v96NtExtraAp(gameSettings, v96From, targetRegion, (gameSettings as any).v96Season || (nextState as any).season || (nextState as any).gameState?.season)) actor.actionsUsedThisTurn += 1;
             const apCost = typeof action.apCost === 'number' ? action.apCost : (typeof action.parameters?.apCost === 'number' ? action.parameters.apCost : 1);
             if (typeof actor.actionPoints === 'number') {
               actor.actionPoints = Math.max(0, actor.actionPoints - apCost);
@@ -11268,7 +11289,7 @@ export function reduceGameAction(
           const loans = Array.isArray(actor?.loans) ? actor.loans : [];
           if (actor && loans.length < MAX_ACTIVE_LOANS) {
             actor.money += LOAN_AMOUNT;
-            actor.loans = [...loans, { id: nextCorrelationId(nextState.counters, 'loan'), amount: LOAN_AMOUNT, accrued: 0 }];
+            actor.loans = [...loans, { id: nextCorrelationId(nextState.counters, 'loan'), amount: LOAN_AMOUNT, accrued: 0, ...(v96TraitsOn(gameSettings) && actor.currentRegion === 'NSW' ? { interestRate: LOAN_INTEREST_RATE * 0.75 } : {}) }];
             actionExecuted = true;
           }
           break;
@@ -11461,7 +11482,11 @@ export function reduceGameAction(
               actor.money = Math.max(0, actor.money - wager);
               actor.consecutiveWins = 0;
             }
-            actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
+            const v96VicFree = v96TraitsOn(gameSettings) && actor.currentRegion === 'VIC' && !actor.v96VicFreeUsed;
+            if (v96VicFree) { actor.v96VicFreeUsed = true; actor.v96SkipNextAp = true; }
+            else actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
+            if (isWin) v96NoteQldWin(actor, gameSettings);
+            if (isWin && v96FinalOn(gameSettings) && Number(action.parameters?.difficulty) >= 3) actor.v96HardWin = true;
             actionExecuted = true;
           }
           break;
@@ -11537,8 +11562,9 @@ export function reduceGameAction(
           const canonicalCost = REGIONAL_INVESTMENTS[region]?.cost;
           const amount = canonicalCost ?? (action.investmentAmount || action.price || action.parameters?.cost || action.parameters?.amount || 100);
           const alreadyOwned = canonicalCost !== undefined && (actor?.investments || []).includes(region);
-          if (actor && actor.money >= amount && !alreadyOwned) {
-            actor.money -= amount;
+          const v96Pay = v96StrategyOn(gameSettings) ? Math.ceil(amount * V96_INVEST_KEEP) : amount;
+          if (actor && actor.money >= v96Pay && !alreadyOwned) {
+            actor.money -= v96Pay;
             actor.investments = [...(actor.investments || []), region];
             const apCost = typeof action.apCost === 'number' ? action.apCost : (typeof action.parameters?.apCost === 'number' ? action.parameters.apCost : 1);
             if (typeof actor.actionPoints === 'number') {
@@ -11611,12 +11637,14 @@ export function reduceGameAction(
           const cost = action.price || action.parameters?.cost || 0;
           const targetActor = targetId ? nextState.actorsById[targetId] : null;
           if (actor && actor.money >= cost) {
+            const steal = (v96StrategyOn(gameSettings) && targetActor) ? v96SabotageSteal(actor, targetActor) : 0;
             actor.money -= cost;
             if (targetActor) {
               targetActor.debuffs = [...(targetActor.debuffs || []), {
                 type: (action.parameters?.sabotageId as string) || 'sabotage_delay',
                 remainingDays: action.parameters?.duration ? Number(action.parameters.duration) : 1
               }];
+              if (steal > 0) { targetActor.money = Math.max(0, targetActor.money - steal); actor.money += steal; }
             }
             actionExecuted = true;
           }
@@ -13687,6 +13715,36 @@ export const SETTINGS_HUB_FIELD_META: Record<string, SettingsHubFieldMeta> = {
     key: 'v95SuppressFactions', tab: 'gameplay', label: 'Hide faction strips',
     description: 'Classic ruleset hides the faction strip. Off (the default) leaves that strip as it is.',
     tags: ['Gameplay', 'UX']
+  },
+  v96BalanceRulesEnabled: {
+    key: 'v96BalanceRulesEnabled', tab: 'gameplay', label: 'V9.6 balance rules',
+    description: 'Turns comeback rules, Final Week, and strategy balance on together. Off by default.',
+    tags: ['Gameplay']
+  },
+  comebackRulesEnabled: {
+    key: 'comebackRulesEnabled', tab: 'gameplay', label: 'Comeback rules',
+    description: 'Diminishing returns on a growing lead, and a trailing bonus on challenges and travel. Off by default.',
+    tags: ['Gameplay']
+  },
+  finalWeekEnabled: {
+    key: 'finalWeekEnabled', tab: 'gameplay', label: 'Final Week bounties',
+    description: 'Two national bounties a day in the last 5 days. Off by default.',
+    tags: ['Gameplay']
+  },
+  strategyBalanceV96Enabled: {
+    key: 'strategyBalanceV96Enabled', tab: 'gameplay', label: 'Strategy balance',
+    description: 'Sabotage, investments, contracts, selling, and region actions use the V9.6 costs. Off by default.',
+    tags: ['Gameplay']
+  },
+  regionTraitsEnabled: {
+    key: 'regionTraitsEnabled', tab: 'gameplay', label: 'State twists',
+    description: 'Each state has one extra rule. Off by default. Not part of the Essentials switch.',
+    tags: ['Gameplay']
+  },
+  matchRecapEnabled: {
+    key: 'matchRecapEnabled', tab: 'gameplay', label: 'Match recap',
+    description: 'End-of-match chart, turning point, and rematch. On by default. Does not change results.',
+    tags: ['Gameplay']
   }
 };
 
@@ -14549,6 +14607,12 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   rulesetUndoSnapshot: null,
   v95SuppressLivingRegions: false,
   v95SuppressFactions: false,
+  v96BalanceRulesEnabled: false,
+  comebackRulesEnabled: false,
+  finalWeekEnabled: false,
+  strategyBalanceV96Enabled: false,
+  regionTraitsEnabled: false,
+  matchRecapEnabled: true,
 };
 
 export const createDefaultGameSettings = (): GameSettingsState => (
@@ -15376,6 +15440,12 @@ export function sanitizeGameSettings(input: unknown): GameSettingsState {
     rulesetUndoSnapshot: src.rulesetUndoSnapshot && typeof src.rulesetUndoSnapshot === 'object' && !Array.isArray(src.rulesetUndoSnapshot) ? src.rulesetUndoSnapshot as Record<string, unknown> : null,
     v95SuppressLivingRegions: src.v95SuppressLivingRegions === true,
     v95SuppressFactions: src.v95SuppressFactions === true,
+    v96BalanceRulesEnabled: src.v96BalanceRulesEnabled === true,
+    comebackRulesEnabled: src.comebackRulesEnabled === true,
+    finalWeekEnabled: src.finalWeekEnabled === true,
+    strategyBalanceV96Enabled: src.strategyBalanceV96Enabled === true,
+    regionTraitsEnabled: src.regionTraitsEnabled === true,
+    matchRecapEnabled: src.matchRecapEnabled !== false,
   };
 }
 
@@ -27042,6 +27112,12 @@ export type GameSettingsState = {
   rulesetUndoSnapshot?: Record<string, unknown> | null;
   v95SuppressLivingRegions?: boolean;
   v95SuppressFactions?: boolean;
+  v96BalanceRulesEnabled?: boolean;
+  comebackRulesEnabled?: boolean;
+  finalWeekEnabled?: boolean;
+  strategyBalanceV96Enabled?: boolean;
+  regionTraitsEnabled?: boolean;
+  matchRecapEnabled?: boolean;
 };
 
 type DontAskAgainPrefs = {
@@ -47950,12 +48026,12 @@ export function enumerateLegalActions(
 
   if (settings.sabotageEnabled && isCompetitiveModeSelection(gameSnap.selectedMode || state.mode)) {
     (SABOTAGE_ACTIONS || []).forEach((action: any) => {
-      if ((actor.money || 0) - action.cost < AI_SAFETY_BUFFER + 200) return;
+      const v96SabLive = v96SabotageCost(action.cost, settings); if ((actor.money || 0) - v96SabLive < AI_SAFETY_BUFFER + 200) return;
       decisions.push({
         type: 'sabotage',
         description: `Sabotage: ${action.name}`,
         data: { sabotageId: action.id },
-        score: ((typeof action.aiWeight === 'number' ? action.aiWeight : 100) - action.cost * 0.05) * quality * weightMultiplier(ctx.weights, 'factor.sabotage'),
+        score: ((typeof action.aiWeight === 'number' ? action.aiWeight : 100) - v96SabLive * 0.05) * quality * weightMultiplier(ctx.weights, 'factor.sabotage'),
         plan: AI_TUNING_LAB_DEFAULT_PLAN
       } as AIAction & { score: number });
     });
@@ -48069,6 +48145,10 @@ export function enumerateLegalActions(
         plan: AI_TUNING_LAB_DEFAULT_PLAN
       } as AIAction & { score: number });
     }
+    if (v96StrategyOn(settings) && (actor.money || 0) >= 60) {
+      decisions.push({ type: 'v96_fortify', description: `Fortify ${actor.currentRegion}`, data: { region: actor.currentRegion }, score: 80 * quality, plan: AI_TUNING_LAB_DEFAULT_PLAN } as AIAction & { score: number });
+      decisions.push({ type: 'v96_partner', description: `Partner in ${actor.currentRegion}`, data: { region: actor.currentRegion }, score: 60 * quality, plan: AI_TUNING_LAB_DEFAULT_PLAN } as AIAction & { score: number });
+    }
   }
 
   return decisions;
@@ -48106,6 +48186,7 @@ export function scoreCandidate(
     if (type === 'cashout_region') score *= 0.5;
   }
   const fairness = weightMultiplier(weights, 'aiFairnessLevel', 0.75);
+  score += v96LiveScoreAdjust(settings, type, (state as any).actorsById?.[(state as any).currentActorId] || (state as any).aiPlayer || null);
   score *= 0.85 + fairness * 0.2;
   return {
     rawScore: Number(candidate.score) || 0,
@@ -48124,7 +48205,7 @@ function pickClassicDecision(
   const randomPoolSize = difficulty === 'expert' ? 1 : difficulty === 'hard' ? 2 : difficulty === 'medium' ? 3 : 4;
   const fallbackIndex = Math.floor(rng.next() * Math.min(randomPoolSize, ranked.length));
   const alternateIndex = Math.min(ranked.length - 1, difficulty === 'easy' ? 2 : 1);
-  if (difficulty === 'expert') return rng.next() < 0.9 ? best : ranked[alternateIndex] || best;
+  if (difficulty === 'expert') return rng.next() < 0.98 ? best : ranked[alternateIndex] || best;
   if (difficulty === 'hard') return rng.next() < 0.74 ? best : ranked[alternateIndex] || best;
   return ranked[fallbackIndex] || best;
 }
@@ -64580,7 +64661,8 @@ export const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'autoMode.advanced', tab: 'automation', title: '⚙️ Auto Mode Advanced Policies & Limits', tags: ['Advanced', 'Automation'], chips: ['Advanced'], fieldKeys: [], keywords: 'auto mode advanced numerical limits sliders actor policy team policy locked keys matrix' },
   { id: 'aiTeams.coPilot', tab: 'aiTeams', title: 'Human Co-Pilot AI & Takeover Controls', tags: ['AI', 'Co-Pilot', 'Automation'], fieldKeys: ['coPilotSettings', 'guardianAiSettings', 'strategyPlannerSettings', 'commandCenterSettings', 'defaultGuardianOpeningStyle', 'showGuardianFloatingButton', 'showGuardianInQuickActions', 'enableGuardianSidePanelAccess', 'hideGuardianFloatingButtonWhileCenterOpen', 'hideGuardianFloatingButtonWhileAnotherBlockingModalOpen', 'allowGuardianFloatingButtonDragging', 'rememberGuardianFloatingPosition'], keywords: 'co-pilot copilot takeover rescue authority mode spending caps autonomous assistant guardian ai risk protection waiting overlay other players shell' },
   { id: 'interface.notifications', tab: 'interfaceAcc', title: 'Notifications', tags: ['Notifications'], fieldKeys: ['notificationSettings' as keyof GameSettingsState, 'notificationClearShortcut'] },
-  { id: 'gameplay.v95CoreLoop', tab: 'gameplay', title: 'Core loop', tags: ['Gameplay', 'Accessibility', 'Replay'], fieldKeys: ['interactiveChallengesEnabled', 'interactiveChallengeMaxModifier', 'interactiveChallengeAiSimulatedScoreEnabled', 'interactiveChallengeAiSimulatedScore', 'interactiveChallengeTimeLimitSeconds', 'realMapEnabled', 'expandedChallengesEnabled', 'soundEnabled', 'soundVolume', 'soundCategories', 'dailySeedEnabled', 'dailySeedRunActive', 'dailySeedCode', 'dailySeedFingerprint', 'rulesetPreset', 'rulesetIncludeV95Features', 'rulesetUndoSnapshot', 'v95SuppressLivingRegions', 'v95SuppressFactions'], keywords: 'interactive challenges real map australia expanded challenges seasons chains rare sound daily seed ruleset classic strategic grand strategy system impact' }
+  { id: 'gameplay.v95CoreLoop', tab: 'gameplay', title: 'Core loop', tags: ['Gameplay', 'Accessibility', 'Replay'], fieldKeys: ['interactiveChallengesEnabled', 'interactiveChallengeMaxModifier', 'interactiveChallengeAiSimulatedScoreEnabled', 'interactiveChallengeAiSimulatedScore', 'interactiveChallengeTimeLimitSeconds', 'realMapEnabled', 'expandedChallengesEnabled', 'soundEnabled', 'soundVolume', 'soundCategories', 'dailySeedEnabled', 'dailySeedRunActive', 'dailySeedCode', 'dailySeedFingerprint', 'rulesetPreset', 'rulesetIncludeV95Features', 'rulesetUndoSnapshot', 'v95SuppressLivingRegions', 'v95SuppressFactions'], keywords: 'interactive challenges real map australia expanded challenges seasons chains rare sound daily seed ruleset classic strategic grand strategy system impact' },
+  { id: 'gameplay.v96Balance', tab: 'gameplay', title: 'Rules & match', tags: ['Gameplay'], fieldKeys: ['v96BalanceRulesEnabled', 'comebackRulesEnabled', 'finalWeekEnabled', 'strategyBalanceV96Enabled', 'regionTraitsEnabled', 'matchRecapEnabled'] }
 ];
 
 export interface SettingsHubSearchEntry {
@@ -65412,6 +65494,10 @@ export function contractAcceptBlocker(contract: any, actor: any, gameState?: any
       .filter(([res, qty]) => countActorInventoryItem(actor?.inventory, res) < Number(qty))
       .map(([res, qty]) => `${qty} ${res}`);
     if (missingRes.length) return `Contract requires resources: ${missingRes.join(', ')}`;
+  }
+  if (v96StrategyOn(settings) && gameState) {
+    const active = listRegionalContracts(gameState).filter((row: any) => row?.status === 'active' && row?.assignedActorId === actor?.id);
+    if (active.length >= 1) return 'V9.6: one active contract at a time';
   }
   return null;
 }
@@ -79998,7 +80084,7 @@ const sanitizeRegionDeposits = (raw: any): RegionDeposits => {
  */
 export const REGION_MIN_CONTROL_STAKE = 300;
 
-const getRegionControlSnapshot = (regionEntry: Record<string, number> = {}) => {
+const getRegionControlSnapshot = (regionEntry: Record<string, number> = {}, minStake?: number) => {
   const entries = Object.entries(regionEntry)
     .filter(([, amount]) => typeof amount === 'number' && isFinite(amount) && amount > 0)
     .map(([playerId, amount]) => ({ playerId, amount: Math.floor(amount) }))
@@ -80007,7 +80093,8 @@ const getRegionControlSnapshot = (regionEntry: Record<string, number> = {}) => {
   const highestDeposit = entries[0]?.amount || 0;
   const top = entries[0];
   const second = entries[1];
-  const controllerId = top && top.amount >= REGION_MIN_CONTROL_STAKE && (!second || top.amount > second.amount) ? top.playerId : null;
+  const floor = typeof minStake === 'number' ? minStake : REGION_MIN_CONTROL_STAKE;
+  const controllerId = top && top.amount >= floor && (!second || top.amount > second.amount) ? top.playerId : null;
 
   return {
     entries,
@@ -80019,26 +80106,29 @@ const getRegionControlSnapshot = (regionEntry: Record<string, number> = {}) => {
 const getRequiredDepositToControl = (
   regionDeposits: RegionDeposits,
   regionId: string,
-  actorId: string
+  actorId: string,
+  minStake?: number
 ) => {
   const regionEntry = regionDeposits?.[regionId] || {};
-  const snapshot = getRegionControlSnapshot(regionEntry);
+  const snapshot = getRegionControlSnapshot(regionEntry, minStake);
   const actorCurrent = Math.floor(regionEntry?.[actorId] || 0);
   if (snapshot.controllerId === actorId) return 1;
-  const requiredTotal = Math.max(REGION_MIN_CONTROL_STAKE, snapshot.highestDeposit > 0 ? snapshot.highestDeposit + 1 : 1);
+  const floor = typeof minStake === 'number' ? minStake : REGION_MIN_CONTROL_STAKE;
+  const requiredTotal = Math.max(floor, snapshot.highestDeposit > 0 ? snapshot.highestDeposit + 1 : 1);
   return Math.max(1, requiredTotal - actorCurrent);
 };
 
 const computeRegionControlStats = (
   regionDeposits: RegionDeposits,
-  history: RegionControlStats['controlHistory']
+  history: RegionControlStats['controlHistory'],
+  minStake?: number
 ): RegionControlStats => {
   const totalControlled: Record<string, number> = {};
   const totalInvested: Record<string, number> = {};
 
   Object.keys(REGIONS).forEach(regionCode => {
     const regionEntry = regionDeposits?.[regionCode] || {};
-    const snapshot = getRegionControlSnapshot(regionEntry);
+    const snapshot = getRegionControlSnapshot(regionEntry, minStake);
 
     if (snapshot.controllerId) {
       totalControlled[snapshot.controllerId] = (totalControlled[snapshot.controllerId] || 0) + 1;
@@ -86072,7 +86162,7 @@ export function settingsWindowCategoryLabel(id: SettingsWindowCategoryId): strin
 
 const SETTINGS_BASIC_SECTION_IDS = new Set([
   'home.dashboard', 'quickSetup.core', 'quickSetup.presets',
-  'gameplay.core', 'gameplay.actionLimits', 'gameplay.actionOverride', 'gameplay.challengeRules', 'gameplay.expansions', 'gameplay.v95CoreLoop', 'gameplay.matchVariety',
+  'gameplay.core', 'gameplay.actionLimits', 'gameplay.actionOverride', 'gameplay.challengeRules', 'gameplay.expansions', 'gameplay.v95CoreLoop', 'gameplay.v96Balance', 'gameplay.matchVariety',
   'interface.appearance', 'interface.accessibility', 'interface.notifications', 'interface.uxAssist', 'interface.changelog'
 ]);
 
@@ -86727,7 +86817,11 @@ export function SettingsEssentialsPanel(props: {
       </div>
       <div className="settings-row" data-setting-key="how" style={{ display: showRow('how') ? undefined : 'none' }}>
         <div className="settings-row-copy"><div className="font-semibold">How the game works</div><div className="text-xs opacity-75">The mechanics directory.</div></div>
-        <div className="settings-row-control"><button type="button" className={`${props.theme.buttonSecondary} px-3 py-2 rounded`} onClick={props.onOpenMechanics}>How the game works</button></div>
+        <div className="settings-row-control"><button type="button" className={`${props.theme.buttonSecondary} px-3 py-2 rounded min-h-[44px]`} onClick={props.onOpenMechanics}>How the game works</button></div>
+      </div>
+      <div className="settings-row" data-setting-key="v96BalanceRulesEnabled">
+        <div className="settings-row-copy"><div className="font-semibold">V9.6 balance rules</div><div className="text-xs opacity-75">Turns comeback rules, Final Week, and strategy balance on together. Off by default.</div></div>
+        <div className="settings-row-control"><button type="button" className={`${props.theme.buttonSecondary} px-3 py-2 rounded min-h-[44px] min-w-[44px]`} aria-pressed={props.gameSettings.v96BalanceRulesEnabled === true} onClick={() => props.onSettings('V9.6 balance rules', prev => { const on = prev.v96BalanceRulesEnabled !== true; return { ...prev, v96BalanceRulesEnabled: on, comebackRulesEnabled: on, finalWeekEnabled: on, strategyBalanceV96Enabled: on }; })}>{props.gameSettings.v96BalanceRulesEnabled === true ? 'ON' : 'OFF'}</button></div>
       </div>
     </div>
   );
@@ -129164,7 +129258,8 @@ export type BalanceWinMetric = 'money' | 'net_worth' | 'regions';
 export type BalanceCategory = 'income' | 'challenge' | 'travel' | 'market' | 'region' | 'investment' | 'loan' | 'override' | 'contract' | 'sabotage' | 'end';
 export type BalancePolicyId =
   | 'balanced' | 'expert' | 'casual' | 'challenge_first' | 'never_challenge' | 'cash_hoard' | 'region_rush'
-  | 'market_only' | 'always_borrow' | 'investment_heavy' | 'always_sabotage' | 'contract_first' | 'late_loan' | 'loan_leverage';
+  | 'market_only' | 'always_borrow' | 'investment_heavy' | 'always_sabotage' | 'contract_first' | 'late_loan' | 'loan_leverage'
+  | 'profile_easy' | 'profile_medium' | 'profile_hard' | 'profile_expert';
 
 export interface BalanceFeatures { investments: boolean; contracts: boolean; sabotage: boolean; overrides: boolean }
 export interface BalanceSimConfig {
@@ -129172,6 +129267,8 @@ export interface BalanceSimConfig {
   features: BalanceFeatures; label?: string;
   /** Optional starting handicap/advantage for snowball & comeback fixtures (cash added to subject). */
   subjectCashDelta?: number;
+  v96?: { comeback?: boolean; finalWeek?: boolean; strategy?: boolean; traits?: boolean };
+  startRegions?: { player: string; ai: string };
 }
 
 type BalanceExec =
@@ -129179,7 +129276,8 @@ type BalanceExec =
   | { kind: 'travel'; to: string; cost: number } | { kind: 'sell'; item: string } | { kind: 'buy'; item: string; quantity?: number }
   | { kind: 'deposit'; region: string; amount: number } | { kind: 'invest'; region: string } | { kind: 'loan' } | { kind: 'repay' }
   | { kind: 'override' } | { kind: 'accept_contract'; id: string } | { kind: 'deliver_contract'; id: string }
-  | { kind: 'sabotage'; target: string; sabotageId: string; cost: number; duration: number } | { kind: 'end' };
+  | { kind: 'sabotage'; target: string; sabotageId: string; cost: number; duration: number } | { kind: 'end' }
+  | { kind: 'fortify'; region: string; cost: number } | { kind: 'partner'; region: string; cost: number } | { kind: 'act_cancel' };
 
 export interface BalanceOption {
   id: string; category: BalanceCategory; label: string; apCost: number; cashCost: number;
@@ -129253,13 +129351,17 @@ export function createBalanceWorld(cfg: BalanceSimConfig): BalanceWorld {
   if (b === a) b = BAL_REGIONS[(BAL_REGIONS.indexOf(a) + 3) % BAL_REGIONS.length];
   w.actors.player = balNewActor('player', 'Subject', 'human', cfg.startingMoney + (cfg.subjectCashDelta || 0), a);
   w.actors.ai = balNewActor('ai', 'Rival', 'ai', cfg.startingMoney, b);
+  if (cfg.startRegions?.player && cfg.startRegions.ai) {
+    w.actors.player.currentRegion = cfg.startRegions.player; w.actors.player.visitedRegions = [cfg.startRegions.player];
+    w.actors.ai.currentRegion = cfg.startRegions.ai; w.actors.ai.visitedRegions = [cfg.startRegions.ai];
+  }
   return w;
 }
 
 const balRival = (id: string) => (id === 'player' ? 'ai' : 'player');
 const balDaysLeft = (w: BalanceWorld) => Math.max(0, w.config.days - w.day);
 function balApLeft(w: BalanceWorld, a: BalActor): number { return Math.max(0, w.config.apPerDay + a.overrideActionsGranted - a.actionsUsedThisTurn); }
-function balControllerOf(w: BalanceWorld, region: string): string | null { return getRegionControlSnapshot(w.deposits[region] || {}).controllerId; }
+function balControllerOf(w: BalanceWorld, region: string): string | null { const stake = v96ControlStake(w); return v96LockedController(w, region, getRegionControlSnapshot(w.deposits[region] || {}, stake).controllerId); }
 export function balRegionsControlled(w: BalanceWorld, id: string): number { return BAL_REGIONS.filter(r => balControllerOf(w, r) === id).length; }
 function balNetWorth(w: BalanceWorld, a: BalActor): number { return calculateNetWorth(a, w.prices); }
 
@@ -129271,8 +129373,11 @@ export function balanceMetricValue(w: BalanceWorld, id: string): number {
   return Math.max(0, a.money - calculateActorOutstandingDebt(a));
 }
 
-function balChallengeChance(a: BalActor, c: { difficulty: number; type: string }): number {
-  return computeChallengeSuccessChanceCore({ difficulty: c.difficulty, type: c.type, stats: a.stats, characterName: a.character.name, level: a.level });
+function balChallengeChance(a: BalActor, c: { difficulty: number; type: string }, w?: BalanceWorld): number {
+  let trail = 0;
+  if (w?.config.v96?.comeback && (a as any).v96Trail === true) trail += 0.05;
+  if (w?.config.v96?.traits && a.currentRegion === 'NT' && c.type === 'wildlife') trail += 0.1;
+  return computeChallengeSuccessChanceCore({ difficulty: c.difficulty, type: c.type, stats: a.stats, characterName: a.character.name, level: a.level, trailBonus: trail });
 }
 function balChallengeWager(a: BalActor): number { return Math.max(0, Math.min(500, Math.floor(a.money))); }
 function balAvgRegionPrice(w: BalanceWorld, region: string): number {
@@ -129282,7 +129387,7 @@ function balAvgRegionPrice(w: BalanceWorld, region: string): number {
 function balBestChallengeEv(w: BalanceWorld, a: BalActor, region: string): number {
   const wager = balChallengeWager(a);
   return Math.max(0, ...((REGIONS[region]?.challenges || []) as any[]).filter(c => !a.completedThisSeason.includes(c.name)).map(c => {
-    const p = balChallengeChance(a, c); const r = computeChallengeRewardCore({ wager, rewardMultiplier: c.reward, characterName: a.character.name, consecutiveWins: a.consecutiveWins, masteryCount: 1 }).reward;
+    const p = balChallengeChance(a, c, w); const r = computeChallengeRewardCore({ wager, rewardMultiplier: c.reward, characterName: a.character.name, consecutiveWins: a.consecutiveWins, masteryCount: 1, ...v96RewardArgs(w.config, a) }).reward;
     return p * r - (1 - p) * wager;
   }));
 }
@@ -129305,25 +129410,29 @@ export function enumerateBalanceOptions(w: BalanceWorld, id: string): BalanceOpt
   // Challenges in the current region (retry allowed until won; once per match on success)
   ((REGIONS[a.currentRegion]?.challenges || []) as any[]).filter(c => !a.completedThisSeason.includes(c.name)).forEach(c => {
     const wager = balChallengeWager(a); const p = balChallengeChance(a, c);
-    const r = computeChallengeRewardCore({ wager, rewardMultiplier: c.reward, characterName: a.character.name, consecutiveWins: a.consecutiveWins, masteryCount: 1 }).reward;
+    const r = computeChallengeRewardCore({ wager, rewardMultiplier: c.reward, characterName: a.character.name, consecutiveWins: a.consecutiveWins, masteryCount: 1, ...v96RewardArgs(w.config, a) }).reward;
     const ev = p * r - (1 - p) * wager;
     push({ id: `ch_${c.name}`, category: 'challenge', label: `Challenge: ${c.name} ($${wager})`, apCost: 1, cashCost: wager, value: ev * cashW, immediateCash: ev, risk: wager > 0 ? Math.sqrt(p * (1 - p)) * (r + wager) : 0, reversible: false, exec: { kind: 'challenge', name: c.name, difficulty: c.difficulty, type: c.type, reward: c.reward, wager }, legal: ap >= 1 && wager > 0, reason: needAp(1) || (wager > 0 ? null : 'No cash to wager') });
   });
   // Travel (collects one regional resource on arrival; positions for challenges / regions / contracts)
   BAL_REGIONS.filter(r => r !== a.currentRegion).forEach(r => {
-    const cost = computeTravelCostCore({ from: a.currentRegion, to: r });
+    const v96Mults = (w.config.v96?.comeback || w.config.v96?.traits) ? v96TravelMults({ comebackRulesEnabled: !!w.config.v96?.comeback, regionTraitsEnabled: !!w.config.v96?.traits }, a.currentRegion, r, a, v96SeasonName(w.day)) : {};
+    const cost = computeTravelCostCore({ from: a.currentRegion, to: r, ...v96Mults });
+    const v96Ap = (w.config.v96?.traits && v96NtExtraAp({ regionTraitsEnabled: true }, a.currentRegion, r, v96SeasonName(w.day))) ? 2 : 1;
     const resource = a.inventory.length < MAX_INVENTORY ? balAvgRegionPrice(w, r) : 0;
     const positional = Math.min(days - 1, 2) > 0 ? balBestChallengeEv(w, a, r) * 0.6 : 0;
     const regionPull = metric === 'regions' && balControllerOf(w, r) !== id ? balRegionUnitValue(w) * 0.25 : 0;
     const blocked = isTravelBlocked(a.debuffs);
-    push({ id: `tr_${r}`, category: 'travel', label: `Travel to ${r} ($${cost})`, apCost: 1, cashCost: cost, parts: { resource, positional, regionPull }, value: resource + positional + regionPull - cost, immediateCash: resource - cost, risk: 0, reversible: true, exec: { kind: 'travel', to: r, cost }, legal: ap >= 1 && a.money >= cost && !blocked, reason: needAp(1) || (blocked ? 'Travel blocked (sabotage)' : a.money >= cost ? null : 'Cannot afford travel') });
+    push({ id: `tr_${r}`, category: 'travel', label: `Travel to ${r} ($${cost})`, apCost: v96Ap, cashCost: cost, parts: { resource, positional, regionPull }, value: resource + positional + regionPull - cost, immediateCash: resource - cost, risk: 0, reversible: true, exec: { kind: 'travel', to: r, cost }, legal: ap >= 1 && a.money >= cost && !blocked, reason: needAp(1) || (blocked ? 'Travel blocked (sabotage)' : a.money >= cost ? null : 'Cannot afford travel') });
   });
   // Market (0 AP): sell held goods; buy goods trading well below base (mean reversion)
   Array.from(new Set(a.inventory)).sort().forEach(item => {
-    const price = Math.floor((w.prices[item] ?? getResourceMarketPrice(item)) * getSabotageSellMultiplier(a.debuffs));
+    let price = Math.floor((w.prices[item] ?? getResourceMarketPrice(item)) * getSabotageSellMultiplier(a.debuffs));
+    if (w.config.v96?.traits) { const mult = v96WaPriceMult({ regionTraitsEnabled: true }, a, item, w.day, w.config.seed); if (mult !== 1) price = Math.floor(price * mult); }
+    const sellAp = w.config.v96?.strategy ? ((w.config.v96.traits && a.currentRegion === 'SA' && !(a as any).v96SaSoldToday) ? 0 : 1) : 0;
     const base = getResourceMarketPrice(item);
     const holdGain = Math.max(0, (base - price) * (1 - Math.pow(0.88, Math.min(days, 5))));
-    push({ id: `sell_${item}`, category: 'market', label: `Sell ${item} ($${price})`, apCost: 0, cashCost: 0, value: metric === 'money' ? price - holdGain : -holdGain, immediateCash: price, risk: 0, reversible: false, exec: { kind: 'sell', item } });
+    push({ id: `sell_${item}`, category: 'market', label: `Sell ${item} ($${price})`, apCost: sellAp, cashCost: 0, value: metric === 'money' ? price - holdGain : -holdGain, immediateCash: price, risk: 0, reversible: false, exec: { kind: 'sell', item } });
   });
   // Canonical Resource Market purchase: always at the BASE price (plus tariff), and it uses an action. Buying is
   // for crafting/contracts; the daily price only matters when selling (no buy-low/sell-high loop exists).
@@ -129333,20 +129442,34 @@ export function enumerateBalanceOptions(w: BalanceWorld, id: string): BalanceOpt
   });
   // Region control (canonical: highest deposit controls; must be in the region)
   {
-    const r = a.currentRegion; const snap = getRegionControlSnapshot(w.deposits[r] || {});
+    const r = a.currentRegion; const v96Stake = v96ControlStake(w); const snap = getRegionControlSnapshot(w.deposits[r] || {}, v96Stake);
     const mine = snap.controllerId === id;
     // Canonical requirement (getRequiredDepositToControl); reinforcing adds half the rival's stake as a buffer.
-    const need = mine ? Math.max(1, Math.floor((snap.entries.find(e => e.playerId !== id)?.amount || 0) * 0.5)) : getRequiredDepositToControl(w.deposits, r, id);
+    const need = mine ? Math.max(1, Math.floor((snap.entries.find(e => e.playerId !== id)?.amount || 0) * 0.5)) : getRequiredDepositToControl(w.deposits, r, id, v96Stake);
     const contested = snap.entries.some(e => e.playerId !== id);
     const unit = metric === 'regions' ? balRegionUnitValue(w) : 0;
-    push({ id: `dep_${r}`, category: 'region', label: mine ? `Reinforce ${r} (+$${need})` : `Take control of ${r} ($${need})`, apCost: 1, cashCost: need, value: (mine ? (contested ? unit * 0.3 : 0) : unit) - need * cashW, immediateCash: -need, risk: contested ? need * 0.5 : 0, reversible: false, exec: { kind: 'deposit', region: r, amount: need }, legal: ap >= 1 && a.money >= need, reason: needAp(1) || (a.money >= need ? null : 'Cannot afford deposit') });
+    push({ id: `dep_${r}`, category: 'region', label: mine ? `Reinforce ${r} (+$${need})` : `Take control of ${r} ($${need})`, apCost: 1, cashCost: need, value: (() => { const raw = (mine ? (contested ? unit * 0.3 : 0) : unit) - need * cashW; if (!(w.config.v96?.strategy)) return raw; if (!mine) return metric === 'regions' ? Math.min(Math.max(raw, 80), 380) : Math.max(raw, 70); return raw; })(), immediateCash: -need, risk: contested ? need * 0.5 : 0, reversible: false, exec: { kind: 'deposit', region: r, amount: need }, legal: (() => { const raw = (mine ? (contested ? unit * 0.3 : 0) : unit) - need * cashW; const shown = !(w.config.v96?.strategy) ? raw : (!mine ? (metric === 'regions' ? Math.min(Math.max(raw, 80), 380) : Math.max(raw, 70)) : raw); if (w.config.v96?.strategy && mine && !contested) return false; if (w.config.v96?.strategy && shown <= 0) return false; return ap >= 1 && a.money >= need; })(), reason: (w.config.v96?.strategy && mine && !contested) ? 'Already secure' : (needAp(1) || (a.money >= need ? null : 'Cannot afford deposit')) });
+  }
+    if (w.config.v96?.strategy) {
+    const here = a.currentRegion; const owns = balControllerOf(w, here) === id;
+    const lock = (w as any).v96?.locks?.[here];
+    const fortified = !!(lock && lock.until >= w.day && lock.owner === id);
+    const partnered = Math.floor((w.deposits[here] || {}).neutral || 0) > 0;
+    const regionMode = metric === 'regions';
+    push({ id: `fort_${here}`, category: 'region', label: `Fortify ${here} ($180)`, apCost: 1, cashCost: 180, value: owns && !fortified ? (regionMode ? 300 : 70) : 0, immediateCash: -180, risk: 40, reversible: false, exec: { kind: 'fortify', region: here, cost: 180 }, legal: ap >= 1 && owns && !fortified && a.money >= 180, reason: !owns ? 'You do not control this state' : fortified ? 'Already fortified' : (a.money >= 180 ? null : 'Cannot afford fortify') });
+    push({ id: `par_${here}`, category: 'region', label: `Partner in ${here} ($60)`, apCost: 1, cashCost: 60, value: partnered ? 0 : (regionMode ? (owns ? 260 : 280) : 60), immediateCash: -60, risk: 20, reversible: false, exec: { kind: 'partner', region: here, cost: 60 }, legal: ap >= 1 && !partnered && a.money >= 60, reason: partnered ? 'Already partnered' : (a.money >= 60 ? null : 'Cannot afford partner') });
+  }
+  if (w.config.v96?.traits && balControllerOf(w, 'ACT') === id && (w.day - Number((w as any).v96?.actUsed || 0) >= 7)) {
+    push({ id: 'act_cancel', category: 'region', label: 'Cancel one event from ACT', apCost: 1, cashCost: 0, value: 90, immediateCash: 0, risk: 0, reversible: false, exec: { kind: 'act_cancel' }, legal: ap >= 1, reason: needAp(1) });
   }
   // Investments (optional feature; canonical price/income; counted at cost in net worth)
   if (cfg.features.investments) {
     const inv = REGIONAL_INVESTMENTS[a.currentRegion];
     if (inv && !a.investments.includes(a.currentRegion)) {
       const income = getActorScaledInvestmentReturn(inv.dailyIncome, a, w.day) * Math.max(0, days - 1);
-      push({ id: `inv_${a.currentRegion}`, category: 'investment', label: `Invest in ${inv.name} ($${inv.cost})`, apCost: 1, cashCost: inv.cost, value: metric === 'net_worth' ? income : income - inv.cost, immediateCash: -inv.cost, risk: inv.cost * 0.1, reversible: false, exec: { kind: 'invest', region: a.currentRegion }, legal: ap >= 1 && a.money >= inv.cost, reason: needAp(1) || (a.money >= inv.cost ? null : 'Cannot afford') });
+      const v96Net = w.config.v96?.strategy ? Math.ceil(inv.cost * V96_INVEST_KEEP) : inv.cost;
+      const v96Inc = w.config.v96?.strategy ? income * V96_INVEST_DIVIDEND : income;
+      push({ id: `inv_${a.currentRegion}`, category: 'investment', label: `Invest in ${inv.name} ($${inv.cost})`, apCost: 1, cashCost: inv.cost, value: metric === 'net_worth' ? v96Inc : v96Inc - v96Net, immediateCash: -v96Net, risk: v96Net * 0.1, reversible: false, exec: { kind: 'invest', region: a.currentRegion }, legal: ap >= 1 && a.money >= v96Net, reason: needAp(1) || (a.money >= v96Net ? null : 'Cannot afford') });
     }
   }
   // Loans (0 AP): liquidity now for interest until repaid
@@ -129362,7 +129485,8 @@ export function enumerateBalanceOptions(w: BalanceWorld, id: string): BalanceOpt
   if (cfg.features.contracts) {
     Object.values(w.contracts).forEach((c: any) => {
       if (c.status === 'available') {
-        const blocker = contractAcceptBlocker(c, a, {}, balSettings(cfg));
+        let blocker = contractAcceptBlocker(c, a, {}, balSettings(cfg));
+        if (!blocker && w.config.v96?.strategy && Object.values(w.contracts).some((row: any) => row.status === 'active' && row.assignedActorId === id)) blocker = 'V9.6: one active contract at a time';
         const eff = estimateContractEffectiveValue(c, a, w);
         push({ id: `acc_${c.id}`, category: 'contract', label: `Accept ${c.title}`, apCost: getActionPointCost('contract_accept', settings, false), cashCost: 0, value: eff.expectedValue * 0.5, immediateCash: 0, risk: eff.failureRisk * (c.rewards?.money || 0), reversible: true, exec: { kind: 'accept_contract', id: c.id }, legal: !blocker, reason: blocker });
       } else if (c.status === 'active' && c.assignedActorId === id) {
@@ -129385,7 +129509,9 @@ export function enumerateBalanceOptions(w: BalanceWorld, id: string): BalanceOpt
       const dmg = /customs_hold|border_lockdown/.test(s.id) ? balBestChallengeEv(w, rival, rival.currentRegion) * 0.5 * s.duration + 150 * s.duration
         : /rumors|market_panic/.test(s.id) ? rival.inventory.reduce((t, r) => t + (w.prices[r] || 0), 0) * (s.id === 'rumors' ? 0.2 : 0.35) * 0.5
         : 100 * s.duration;
-      push({ id: `sab_${s.id}`, category: 'sabotage', label: `Sabotage: ${s.name} ($${s.cost})`, apCost: 1, cashCost: s.cost, value: dmg - s.cost, immediateCash: -s.cost, risk: s.cost * 0.3, reversible: false, exec: { kind: 'sabotage', target: rival.id, sabotageId: s.id, cost: s.cost, duration: s.duration }, legal: ap >= 1 && a.money >= s.cost, reason: needAp(1) || (a.money >= s.cost ? null : 'Cannot afford') });
+      const sabCost = w.config.v96?.strategy ? v96SabotageCost(s.cost, { strategyBalanceV96Enabled: true }) : s.cost;
+      const sabValue = w.config.v96?.strategy ? (v96SabotageSteal(a, rival) - sabCost * 0.35) : (dmg - s.cost);
+      push({ id: `sab_${s.id}`, category: 'sabotage', label: `Sabotage: ${s.name} ($${sabCost})`, apCost: 1, cashCost: sabCost, value: sabValue, immediateCash: -sabCost, risk: sabCost * 0.3, reversible: false, exec: { kind: 'sabotage', target: rival.id, sabotageId: s.id, cost: sabCost, duration: s.duration }, legal: ap >= 1 && a.money >= sabCost, reason: needAp(1) || (a.money >= sabCost ? null : 'Cannot afford') });
     });
   }
   out.push({ id: 'end', category: 'end', label: 'End turn', apCost: 0, cashCost: 0, value: 0, immediateCash: 0, risk: 0, reversible: true, legal: true, reason: null, exec: { kind: 'end' } });
@@ -129436,7 +129562,7 @@ export function evaluateDecisionQuality(optionsIn: BalanceOption[]): DecisionQua
 
 // ---- Policies: scripted TEST TOOLS (not AI). A brain-dead policy that dominates = a balance smell. ----------------
 const POLICY_BIAS: Record<BalancePolicyId, Partial<Record<BalanceCategory, number>>> = {
-  balanced: {}, expert: {}, casual: {},
+  balanced: {}, expert: {}, casual: {}, profile_easy: {}, profile_medium: {}, profile_hard: {}, profile_expert: {},
   challenge_first: { challenge: 3000 }, never_challenge: { challenge: -1e9 },
   cash_hoard: { challenge: -1e9, travel: -1e9, region: -1e9, investment: -1e9, sabotage: -1e9, override: -1e9, loan: -1e9, contract: -1e9 },
   region_rush: { region: 3000 }, market_only: { challenge: -1e9, market: 2000 }, always_borrow: {}, investment_heavy: { investment: 3000 },
@@ -129448,7 +129574,7 @@ function balScore(policy: BalancePolicyId, o: BalanceOption, w: BalanceWorld, a:
   const bias = POLICY_BIAS[policy][o.category] || 0;
   let v = o.value;
   if (policy === 'casual') v = o.immediateCash; // myopic: immediate cash only, no opportunity cost
-  if (policy === 'balanced') v = o.value - o.risk * 0.1;
+  if (policy === 'balanced' || v96ProfileKind(policy)) v = o.value - o.risk * 0.1;
   if (policy === 'expert') {
     // Planning horizon + opportunity cost: long-term value, AP value, risk sized to the lead.
     const lead = balanceMetricValue(w, a.id) - balanceMetricValue(w, balRival(a.id));
@@ -129475,14 +129601,18 @@ function balScore(policy: BalancePolicyId, o: BalanceOption, w: BalanceWorld, a:
     if (target && (o.exec as any).to === target) v += 2500;
   }
   if (o.category === 'end') return policy === 'cash_hoard' ? 0.5 : 0; // ends only when nothing better
-  return v + bias;
+  const v96Prof = v96ProfileScore(policy, o, w, a);
+  if (v96Prof !== null) return v96Prof + bias + v96BountyPressure(w, a, o);
+  return v + bias + v96BountyPressure(w, a, o);
 }
 
 function balPick(policy: BalancePolicyId, w: BalanceWorld, id: string): { option: BalanceOption; options: BalanceOption[] } {
   const options = enumerateBalanceOptions(w, id);
   const a = w.actors[id];
   const scored = options.map(o => ({ o, s: balScore(policy, o, w, a) })).filter(x => Number.isFinite(x.s)).sort((x, y) => y.s - x.s || x.o.id.localeCompare(y.o.id));
-  const top = scored[0];
+  const v96Picked = v96ProfilePick(policy, scored, w);
+  const v96Real = v96Picked ? scored.find(x => x.o.id === v96Picked.id) : undefined;
+  const top = v96Real || scored[0];
   // Zero-AP options with non-positive value are not taken (prevents 0-AP churn); End is the floor.
   if (!top || (top.o.apCost === 0 && top.s <= 0 && top.o.category !== 'end')) return { option: options.find(o => o.category === 'end')!, options };
   return { option: top.o, options };
@@ -129493,7 +129623,11 @@ function balBundle(w: BalanceWorld): any {
   // The reducer only reads the action-point/limit settings; carrying the full 36 KB settings object three times
   // per step made each simulated action ~4× slower without changing any outcome.
   const full = balSettings(w.config);
-  const settings = { actionLimitsEnabled: full.actionLimitsEnabled, actionPointConsumptionSettings: full.actionPointConsumptionSettings, playerActionsPerDay: full.playerActionsPerDay, aiActionsPerDay: full.aiActionsPerDay, totalDays: full.totalDays, winCondition: full.winCondition, allowActionOverride: full.allowActionOverride, overrideCost: full.overrideCost, maxDailyOverrides: full.maxDailyOverrides, equipmentShopEnabled: full.equipmentShopEnabled, regionalStandingEnabled: full.regionalStandingEnabled };
+  const settings: any = { actionLimitsEnabled: full.actionLimitsEnabled, actionPointConsumptionSettings: full.actionPointConsumptionSettings, playerActionsPerDay: full.playerActionsPerDay, aiActionsPerDay: full.aiActionsPerDay, totalDays: full.totalDays, winCondition: full.winCondition, allowActionOverride: full.allowActionOverride, overrideCost: full.overrideCost, maxDailyOverrides: full.maxDailyOverrides, equipmentShopEnabled: full.equipmentShopEnabled, regionalStandingEnabled: full.regionalStandingEnabled };
+  if (w.config.v96?.strategy) settings.strategyBalanceV96Enabled = true;
+  if (w.config.v96?.comeback) settings.comebackRulesEnabled = true;
+  if (w.config.v96?.finalWeek) settings.finalWeekEnabled = true;
+  if (w.config.v96?.traits) { settings.regionTraitsEnabled = true; settings.v96Season = v96SeasonName(w.day); }
   return {
     gameState: { day: w.day, turnCounter: w.day, currentActorId: 'player', selectedMode: 'ai', regionDeposits: JSON.parse(JSON.stringify(w.deposits)), regionalContracts: w.contracts, infrastructureProjects: {}, expeditionTargets: {}, expeditionCampaigns: {}, gameSettings: settings, markets: { resourcePrices: { ...w.prices } } },
     gameSettings: settings,
@@ -129511,6 +129645,7 @@ function balReduce(w: BalanceWorld, id: string, action: any): boolean {
     const a = w.actors[id];
     a.money = next.money; a.inventory = [...(next.inventory || [])]; a.currentRegion = next.currentRegion; a.visitedRegions = [...(next.visitedRegions || a.visitedRegions)];
     a.loans = [...(next.loans || [])]; a.investments = [...(next.investments || [])]; a.actionsUsedThisTurn = Number(next.actionsUsedThisTurn || 0);
+    if (w.config.v96) ['v96SaSoldToday', 'v96VicFreeUsed', 'v96QldWins', 'v96SkipNextAp', 'v96HardWin', 'v96WaDelivered', 'v96Trail'].forEach(k => { if (k in next) (a as any)[k] = (next as any)[k]; });
     a.xp = Number(next.xp || a.xp); a.consecutiveWins = Number(next.consecutiveWins ?? a.consecutiveWins);
   }
   const other = ns.actorsById?.[balRival(id)];
@@ -129529,11 +129664,11 @@ function balExecute(w: BalanceWorld, id: string, o: BalanceOption): boolean {
   switch (e.kind) {
     case 'work': ok = balReduce(w, id, { type: 'work', parameters: { wage: 50 } }); break;
     case 'challenge': {
-      const p = balChallengeChance(a, e);
+      const p = balChallengeChance(a, e, w);
       const win = balNext(w) < p;
-      const r = computeChallengeRewardCore({ wager: e.wager, rewardMultiplier: e.reward, characterName: a.character.name, consecutiveWins: a.consecutiveWins, masteryCount: 1 }).reward;
+      const r = computeChallengeRewardCore({ wager: e.wager, rewardMultiplier: e.reward, characterName: a.character.name, consecutiveWins: a.consecutiveWins, masteryCount: 1, ...v96RewardArgs(w.config, a) }).reward;
       ok = balReduce(w, id, { type: 'challenge', price: e.wager, parameters: { wager: e.wager, isWin: win, reward: r, challengeName: e.name } });
-      if (ok && win) { a.completedThisSeason = [...a.completedThisSeason, e.name]; a.consecutiveWins += 1; } // canonical COMPLETE_CHALLENGE on success only
+      if (ok && win) { a.completedThisSeason = [...a.completedThisSeason, e.name]; a.consecutiveWins += 1; v96NoteSimChallenge(w, a, e.difficulty, true); } // canonical COMPLETE_CHALLENGE on success only
       if (ok && !win) a.consecutiveWins = 0;
       break;
     }
@@ -129542,7 +129677,13 @@ function balExecute(w: BalanceWorld, id: string, o: BalanceOption): boolean {
       if (ok) { const res = REGIONAL_RESOURCES[e.to] || []; if (res.length && a.inventory.length < MAX_INVENTORY) a.inventory = [...a.inventory, res[Math.floor(balNext(w) * res.length)]]; }
       break;
     }
-    case 'sell': ok = balReduce(w, id, { type: 'sell', item: e.item, price: Math.floor((w.prices[e.item] ?? getResourceMarketPrice(e.item)) * getSabotageSellMultiplier(a.debuffs)), parameters: { quantity: 1 } }); break;
+    case 'sell': {
+      let price = Math.floor((w.prices[e.item] ?? getResourceMarketPrice(e.item)) * getSabotageSellMultiplier(a.debuffs));
+      if (w.config.v96?.traits) { const mult = v96WaPriceMult({ regionTraitsEnabled: true }, a, e.item, w.day, w.config.seed); if (mult !== 1) price = Math.floor(price * mult); }
+      ok = balReduce(w, id, { type: 'sell', item: e.item, price, parameters: { quantity: 1 } });
+      if (ok) v96NoteDelivery(w, a, 1);
+      break;
+    }
     case 'buy': ok = balReduce(w, id, { type: 'buy_market', item: e.item, price: getResourceMarketPrice(e.item), parameters: { quantity: e.quantity || 1 } }); break;
     case 'deposit': ok = balReduce(w, id, { type: 'region_deposit', targetRegion: e.region, investmentAmount: e.amount }); break;
     case 'invest': ok = balReduce(w, id, { type: 'invest', targetRegion: e.region }); break;
@@ -129556,6 +129697,21 @@ function balExecute(w: BalanceWorld, id: string, o: BalanceOption): boolean {
     case 'accept_contract': ok = balReduce(w, id, { type: 'accept_regional_contract', parameters: { contractId: e.id } }); break;
     case 'deliver_contract': ok = balReduce(w, id, { type: 'deliver_contract_objectives', parameters: { contractId: e.id } }); break;
     case 'sabotage': ok = balReduce(w, id, { type: 'sabotage', targetActorId: e.target, price: e.cost, parameters: { sabotageId: e.sabotageId, duration: e.duration } }); break;
+    case 'fortify': {
+      if (a.money >= 180 && balControllerOf(w, a.currentRegion) === id) {
+        a.money -= 180; const bag = v96Bag(w); bag.locks[a.currentRegion] = { owner: id, until: w.day + 2 }; a.actionsUsedThisTurn += 1; ok = true;
+      }
+      break;
+    }
+    case 'partner': {
+      if (a.money >= 60) {
+        a.money -= 60; const region = a.currentRegion; if (!w.deposits[region]) w.deposits[region] = {};
+        w.deposits[region][id] = Math.floor(w.deposits[region][id] || 0) + 40; w.deposits[region].neutral = Math.floor(w.deposits[region].neutral || 0) + 40;
+        a.actionsUsedThisTurn += 1; ok = true;
+      }
+      break;
+    }
+    case 'act_cancel': { const bag = v96Bag(w); bag.actUsed = w.day; a.actionsUsedThisTurn += 1; ok = true; break; }
     case 'end': ok = true; break;
   }
   if (ok && e.kind !== 'end') {
@@ -129578,7 +129734,10 @@ function balEndOfDay(w: BalanceWorld): void {
   const settings = balSettings(w.config);
   Object.values(w.actors).forEach(a => {
     const tick = applySimpleLoanTick(a); a.money = tick.money; a.loans = tick.loans;
-    if (w.config.features.investments) a.money += (a.investments || []).reduce((s, r) => s + (REGIONAL_INVESTMENTS[r] ? getActorScaledInvestmentReturn(REGIONAL_INVESTMENTS[r].dailyIncome, a, w.day) : 0), 0);
+    if (w.config.features.investments) {
+      const v96Inc = (a.investments || []).reduce((s, r) => s + (REGIONAL_INVESTMENTS[r] ? getActorScaledInvestmentReturn(REGIONAL_INVESTMENTS[r].dailyIncome, a, w.day) : 0), 0);
+      a.money += (w.config.v96 && (w.config.v96.strategy || w.config.v96.comeback)) ? v96ScaleSimIncome(w, a, v96Inc) : v96Inc;
+    }
     a.actionsUsedThisTurn = 0; a.overridesUsedToday = 0; a.overrideActionsGranted = 0;
     a.debuffs = a.debuffs.map(d => ({ ...d, remainingDays: d.remainingDays - 1 })).filter(d => d.remainingDays > 0);
   });
@@ -129588,6 +129747,7 @@ function balEndOfDay(w: BalanceWorld): void {
   }
   const upd = computeDailyMarketUpdate(w.day + 1, w.prices, w.trend, null);
   w.prices = upd.nextPrices; w.trend = upd.nextTrend;
+  v96EndOfDay(w);
   void settings;
 }
 
@@ -129631,6 +129791,7 @@ export function runBalanceMatch(cfg: BalanceSimConfig, subject: BalancePolicyId,
     const cash: number[] = [];
     for (w.day = 1; w.day <= cfg.days; w.day++) {
       // Alternate who moves first each day (no fixed first-mover advantage).
+      v96BeginDay(w);
       const order = w.day % 2 === 1 ? ['player', 'ai'] : ['ai', 'player'];
       order.forEach(id => balTakeTurn(w, id, id === 'player' ? subject : rival));
       const pv = balanceMetricValue(w, 'player'); const av = balanceMetricValue(w, 'ai');
@@ -129643,7 +129804,8 @@ export function runBalanceMatch(cfg: BalanceSimConfig, subject: BalancePolicyId,
     }
     w.day = cfg.days;
     const pv = balanceMetricValue(w, 'player'); const av = balanceMetricValue(w, 'ai');
-    const winner = pv > av ? 'player' : av > pv ? 'ai' : 'tie';
+    let winner: 'player' | 'ai' | 'tie' = pv > av ? 'player' : av > pv ? 'ai' : 'tie';
+    if (winner === 'tie' && w.config.winCondition === 'regions' && w.config.v96?.strategy) winner = v96RegionTieBreak(w);
     let decidedDay = 1;
     for (let d = w.leaderByDay.length - 1; d >= 0; d--) { if (w.leaderByDay[d] !== w.leaderByDay[w.leaderByDay.length - 1]) { decidedDay = d + 2; break; } }
     const mine = w.log.filter(l => l.actorId === 'player');
@@ -129803,6 +129965,883 @@ export function buildStrategicBalanceReport(o: { winCondition?: BalanceWinMetric
     decisionQuality: { avgViable: Math.round((all.reduce((s, p) => s + p.avgViable, 0) / Math.max(1, all.length)) * 100) / 100, fakeChoiceRate: Math.round((all.reduce((s, p) => s + p.avgFakeChoice, 0) / Math.max(1, all.length)) * 100) / 100, dominantRate: Math.round((all.reduce((s, p) => s + p.avgDominant, 0) / Math.max(1, all.length)) * 100) / 100 }
   };
 }
+
+// ---- V9.6 balance, recap, traits, and the strategy tournament (LAB) ---------------------------------
+// Outcome-changing rules are off unless a setting says otherwise. With every new setting off, the
+// canonical formulas and the simulator option builder behave as they did in V9.5.
+// Market rule (Part B.4): selling costs 1 action. A price drop on later units would still leave a
+// 0-action sell as a free positive-value move, so the action cost is what brings market volume in line.
+// SA's trait is the first sale of the day in SA, which stays free, so that state still changes the sell decision.
+
+export const V96_ALLOFF_NOTES = [
+  'With every V9.6 outcome setting off, travel, challenges, selling, investments, contracts and region control use the V9.5 formulas. The all-off state hash stays f38987ea.',
+  'Live Expert now takes the best action 98% of the time (was 90%) so it matches its 2% mistake profile and stays stricter than Hard at 74%. The simulator policy named expert is unchanged and still loses to balanced. New simulator policies profile_easy, profile_medium, profile_hard and profile_expert mirror the live Easy / Medium / Hard / Expert profiles. This Expert change applies even when V9.6 balance rules are off.'
+];
+
+export interface V96SimFlags { comeback?: boolean; finalWeek?: boolean; strategy?: boolean; traits?: boolean }
+
+export function v96ComebackOn(s: any): boolean { return s?.v96BalanceRulesEnabled === true || s?.comebackRulesEnabled === true; }
+export function v96FinalOn(s: any): boolean { return s?.v96BalanceRulesEnabled === true || s?.finalWeekEnabled === true; }
+export function v96StrategyOn(s: any): boolean { return s?.v96BalanceRulesEnabled === true || s?.strategyBalanceV96Enabled === true; }
+export function v96TraitsOn(s: any): boolean { return s?.regionTraitsEnabled === true; }
+export function v96RecapOn(s: any): boolean { return s?.matchRecapEnabled !== false; }
+
+export function v96FlagsFromSettings(s: any): V96SimFlags {
+  return { comeback: v96ComebackOn(s), finalWeek: v96FinalOn(s), strategy: v96StrategyOn(s), traits: v96TraitsOn(s) };
+}
+export function v96AnyFlag(f?: V96SimFlags | null): boolean { return !!(f && (f.comeback || f.finalWeek || f.strategy || f.traits)); }
+
+export const V96_INVEST_DIVIDEND = 1.65;
+export const V96_INVEST_KEEP = 0.5;
+export const V96_CONTRACT_KEEP = 0.58;
+export const V96_EARLY_STAKE = 80;
+export const V96_BOUNTY_CASH = 900;
+export const V96_REGION_STIPEND = 28;
+
+export const REGION_TRAITS: Record<string, { line: string; detail: string }> = {
+  WA: { line: 'Mining boom', detail: 'Every 5 days a seeded boom raises Iron Ore and Gold prices in WA by 40% for 2 days.' },
+  TAS: { line: 'Island premium', detail: 'Travel to TAS costs 50% more. Challenge rewards in TAS are 20% higher.' },
+  NT: { line: 'Wet season', detail: 'In Summer, travel into or out of NT costs 1 extra action. Wildlife challenges here are 10% more likely to succeed.' },
+  QLD: { line: 'Tourism', detail: 'Each challenge won in QLD earns a bonus that grows with the QLD challenges you have already completed.' },
+  NSW: { line: 'Finance hub', detail: 'Loans taken in NSW charge 25% less interest. Contracts issued in NSW pay 10% more.' },
+  VIC: { line: 'Events capital', detail: 'The first challenge each day in VIC costs no action.' },
+  SA: { line: 'Wine and opal trade', detail: 'The first sale each day in SA is free. Later sales still cost an action when balance rules are on.' },
+  ACT: { line: 'Policy desk', detail: 'Once every 7 days, the player who controls ACT may cancel one active event affecting them.' }
+};
+
+export const FINAL_WEEK_BOUNTIES: Array<{ id: string; label: string; kind: 'adjacent' | 'deliver_wa' | 'hard_challenge' }> = [
+  { id: 'adjacent', label: 'First to control 2 adjacent states', kind: 'adjacent' },
+  { id: 'deliver_wa', label: 'Deliver 6 resources to WA', kind: 'deliver_wa' },
+  { id: 'hard_challenge', label: 'Win a difficulty-3+ challenge', kind: 'hard_challenge' }
+];
+
+export function v96SeasonName(day: number): string {
+  return ['Summer', 'Autumn', 'Winter', 'Spring'][Math.floor((Math.max(1, day) - 1) / 7) % 4];
+}
+
+export function v96IncomeScale(leadFrac: number): number {
+  if (!(leadFrac > 0.15)) return 1;
+  if (leadFrac >= 0.6) return 0.7;
+  const t = (leadFrac - 0.15) / 0.45;
+  const s = t * t * (3 - 2 * t);
+  return 1 - 0.3 * s;
+}
+
+export function v96MetricGap(mine: number, theirs: number): number {
+  const denom = Math.max(Math.abs(mine), Math.abs(theirs), 1);
+  return (mine - theirs) / denom;
+}
+
+export function v96RefreshTrail(actor: any, gapBehind: number): void {
+  const prev = actor.v96Trail === true;
+  if (gapBehind > 0.2) actor.v96Trail = true;
+  else if (gapBehind < 0.1) actor.v96Trail = false;
+  else if (actor.v96Trail !== true && actor.v96Trail !== false) actor.v96Trail = prev;
+}
+
+export function v96BountiesForDay(seed: number, day: number, totalDays: number): Array<{ id: string; label: string; kind: string }> {
+  if (day <= totalDays - 5) return [];
+  let state = ((Number(seed) || 1) * 7919 + day * 97 + 17) >>> 0;
+  const next = () => { const r = mulberry32Next(state >>> 0); state = r.nextState; return r.value; };
+  const pool = FINAL_WEEK_BOUNTIES.slice();
+  const out: Array<{ id: string; label: string; kind: string }> = [];
+  for (let n = 0; n < 2 && pool.length; n++) {
+    const i = Math.floor(next() * pool.length);
+    out.push(pool.splice(i, 1)[0]);
+  }
+  return out;
+}
+
+export function v96SellAp(settings: any, actor?: any): number {
+  if (!v96StrategyOn(settings) || settings?.actionLimitsEnabled === false) return 0;
+  if (v96TraitsOn(settings) && actor?.currentRegion === 'SA' && !actor?.v96SaSoldToday) return 0;
+  return 1;
+}
+
+export function v96MarkSaSale(actor: any, settings: any): void {
+  if (v96TraitsOn(settings) && actor && actor.currentRegion === 'SA' && !actor.v96SaSoldToday) actor.v96SaSoldToday = true;
+}
+
+export function v96TravelMults(settings: any, from: string, to: string, actor: any, season?: string | null): { trailMult?: number; traitMult?: number } {
+  const out: { trailMult?: number; traitMult?: number } = {};
+  if (v96ComebackOn(settings) && actor?.v96Trail === true) out.trailMult = 0.8;
+  if (v96TraitsOn(settings) && to === 'TAS') out.traitMult = 1.5;
+  void from; void season;
+  return out;
+}
+
+export function v96NtExtraAp(settings: any, from: string, to: string, season?: string | null): boolean {
+  return v96TraitsOn(settings) && season === 'Summer' && (from === 'NT' || to === 'NT') && from !== to;
+}
+
+export function v96ChallengeTrail(settings: any, actor: any): number {
+  let bonus = 0;
+  if (v96ComebackOn(settings) && actor?.v96Trail === true) bonus += 0.05;
+  if (v96TraitsOn(settings) && actor?.currentRegion === 'NT') bonus += 0;
+  return bonus;
+}
+
+export function v96WildlifeBonus(settings: any, actor: any, type: string): number {
+  return v96TraitsOn(settings) && actor?.currentRegion === 'NT' && type === 'wildlife' ? 0.1 : 0;
+}
+
+export function v96RewardMult(settings: any, actor: any): number {
+  if (!v96TraitsOn(settings) || !actor) return 1;
+  let m = 1;
+  if (actor.currentRegion === 'TAS') m *= 1.2;
+  if (actor.currentRegion === 'QLD') {
+    const prior = Math.min(5, Number(actor.v96QldWins) || 0);
+    m *= 1 + prior * 0.02;
+  }
+  return m;
+}
+
+export function v96NoteQldWin(actor: any, settings: any): void {
+  if (v96TraitsOn(settings) && actor?.currentRegion === 'QLD') actor.v96QldWins = (Number(actor.v96QldWins) || 0) + 1;
+}
+
+export function v96WaPriceMult(settings: any, actor: any, item: string, day: number, seed: number): number {
+  if (!v96TraitsOn(settings) || actor?.currentRegion !== 'WA') return 1;
+  if (item !== 'Iron Ore' && item !== 'Gold') return 1;
+  if (day % 5 === 0 || (day - 1) % 5 === 0) {
+    const boom = v96BoomOn(seed, day);
+    if (boom) return 1.25;
+  }
+  return 1;
+}
+
+export function v96BoomOn(seed: number, day: number): boolean {
+  const anchor = day % 5 === 0 ? day : day - 1;
+  if (anchor < 1 || anchor % 5 !== 0) return false;
+  if (day > anchor + 1) return false;
+  let state = ((Number(seed) || 1) * 7919 + anchor * 13 + 3) >>> 0;
+  const r = mulberry32Next(state >>> 0);
+  return r.value < 0.8;
+}
+
+export function v96EarlyStake(settings: any, day: number): number | undefined {
+  if (!v96StrategyOn(settings)) return undefined;
+  return Number(day || 1) <= 12 ? V96_EARLY_STAKE : undefined;
+}
+
+export function v96ResetActorDay(actor: any): void {
+  if (!actor) return;
+  if (actor.v96SaSoldToday) actor.v96SaSoldToday = false;
+  if (actor.v96VicFreeUsed) actor.v96VicFreeUsed = false;
+}
+
+export function v96SabotageCost(base: number, settings: any): number {
+  const n = Number(base) || 0;
+  if (!v96StrategyOn(settings)) return n;
+  return Math.max(90, Math.floor(n * 0.15));
+}
+export function v96SabotageSteal(attacker: any, target: any): number {
+  if (!attacker || !target) return 0;
+  const mine = Number(attacker.money) || 0;
+  const theirs = Number(target.money) || 0;
+  if (theirs <= mine + 1) return 0;
+  const lead = (theirs - mine) / Math.max(theirs, 1);
+  if (lead < 0.12) return 0;
+  const steal = Math.floor(theirs * (lead - 0.12) * 0.6);
+  return Math.max(0, Math.min(theirs, steal));
+}
+export function v96BountyCash(winCondition: string): number {
+  if (winCondition === 'net_worth') return 2600;
+  if (winCondition === 'regions') return 500;
+  return 1500;
+}
+
+export function v96ScaleInvestmentIncome(amount: number, settings: any, leadFrac: number): number {
+  let inc = amount;
+  if (v96StrategyOn(settings)) inc = Math.floor(inc * V96_INVEST_DIVIDEND);
+  if (v96ComebackOn(settings)) inc = Math.floor(inc * v96IncomeScale(leadFrac));
+  return inc;
+}
+
+export const V96_PROFILE_POLICIES = ['profile_easy', 'profile_medium', 'profile_hard', 'profile_expert'] as const;
+export const V96_ORIGINAL_POLICIES: BalancePolicyId[] = ['balanced', 'challenge_first', 'never_challenge', 'cash_hoard', 'region_rush', 'market_only', 'always_borrow', 'casual', 'expert', 'investment_heavy', 'always_sabotage', 'contract_first'];
+
+export function v96ProfileKind(policy: string): 'easy' | 'medium' | 'hard' | 'expert' | null {
+  if (policy === 'profile_easy') return 'easy';
+  if (policy === 'profile_medium') return 'medium';
+  if (policy === 'profile_hard') return 'hard';
+  if (policy === 'profile_expert') return 'expert';
+  return null;
+}
+
+/** Mirrors live pickClassicDecision. Returns null for every original policy and does not draw RNG. */
+function v96ProfileRoll(w: BalanceWorld, salt: number): number {
+  const state = (w.rng ^ Math.imul(salt + 1, 2246822519) ^ Math.imul(w.day, 3266489917) ^ Math.imul((w.log.length + 1), 668265263)) >>> 0;
+  return mulberry32Next(state).value;
+}
+export function v96ProfilePick(policy: string, scored: Array<{ o: BalanceOption; s: number }>, w: BalanceWorld): BalanceOption | null {
+  const kind = v96ProfileKind(policy);
+  if (!kind || !scored.length) return null;
+  const pool = scored;
+  const mistake = kind === 'expert' ? 0.02 : kind === 'hard' ? 0.05 : kind === 'medium' ? 0.15 : 0.3;
+  if (v96ProfileRoll(w, 1) < mistake) {
+    const idx = Math.min(pool.length - 1, 1 + Math.floor(v96ProfileRoll(w, 2) * Math.max(1, pool.length - 1)));
+    return pool[idx].o;
+  }
+  if (kind === 'expert' || kind === 'hard') {
+    const rate = kind === 'expert' ? 0.98 : 0.74;
+    const alt = pool[Math.min(1, pool.length - 1)].o;
+    return v96ProfileRoll(w, 3) < rate ? pool[0].o : alt;
+  }
+  const n = kind === 'medium' ? 3 : 4;
+  return pool[Math.floor(v96ProfileRoll(w, 4) * Math.min(n, pool.length))].o;
+}
+
+export function v96ProfileScore(policy: string, o: BalanceOption, w: BalanceWorld, a: BalActor): number | null {
+  void o; void w; void a;
+  if (!v96ProfileKind(policy)) return null;
+  return null;
+}
+
+export function v96BeginDay(w: BalanceWorld): void {
+  const f = w.config.v96;
+  if (!v96AnyFlag(f)) return;
+  const bag = v96Bag(w);
+  if (f?.traits && (w.day % 5 === 0)) bag.boomUntil = v96BoomOn(w.config.seed, w.day) ? w.day + 1 : bag.boomUntil;
+  if (f?.comeback) {
+    (['player', 'ai'] as const).forEach(id => {
+      const mine = balanceMetricValue(w, id);
+      const theirs = balanceMetricValue(w, id === 'player' ? 'ai' : 'player');
+      v96RefreshTrail(w.actors[id], Math.max(0, v96MetricGap(theirs, mine)));
+    });
+  }
+  if (f?.finalWeek) {
+    bag.bounties = v96BountiesForDay(w.config.seed, w.day, w.config.days);
+    (['player', 'ai'] as const).forEach(id => { (w.actors[id] as any).v96HardWin = false; });
+  }
+}
+
+function v96Bag(w: BalanceWorld): any {
+  const anyW = w as any;
+  if (!anyW.v96) anyW.v96 = { locks: {}, partners: {}, boomUntil: 0, bounties: [], claimed: {} };
+  return anyW.v96;
+}
+
+export function v96ControlStake(w: BalanceWorld): number | undefined {
+  if (!w.config.v96?.strategy) return undefined;
+  return w.day <= 12 ? V96_EARLY_STAKE : undefined;
+}
+
+export function v96LockedController(w: BalanceWorld, region: string, fallback: string | null): string | null {
+  if (!w.config.v96?.strategy) return fallback;
+  const lock = (w as any).v96?.locks?.[region];
+  if (lock && lock.until >= w.day && lock.owner) return lock.owner;
+  return fallback;
+}
+
+export function v96EndOfDay(w: BalanceWorld): void {
+  const f = w.config.v96;
+  if (!v96AnyFlag(f)) return;
+  Object.values(w.actors).forEach(a => {
+    if (f?.comeback) {
+      const regs = balRegionsControlled(w, a.id);
+      if (regs > 0) {
+        const mine = balanceMetricValue(w, a.id);
+        const theirs = balanceMetricValue(w, balRival(a.id));
+        const scale = v96IncomeScale(v96MetricGap(mine, theirs));
+        a.money += Math.floor(regs * V96_REGION_STIPEND * scale);
+      }
+    }
+    v96ResetActorDay(a);
+  });
+  if (f?.finalWeek) v96PayBounties(w);
+}
+
+export function v96ScaleSimIncome(w: BalanceWorld, a: BalActor, inc: number): number {
+  const f = w.config.v96;
+  let out = inc;
+  if (f?.strategy) out = Math.floor(out * V96_INVEST_DIVIDEND);
+  if (f?.comeback) {
+    const mine = balanceMetricValue(w, a.id);
+    const theirs = balanceMetricValue(w, balRival(a.id));
+    out = Math.floor(out * v96IncomeScale(v96MetricGap(mine, theirs)));
+  }
+  return out;
+}
+
+function v96AdjacentPairs(w: BalanceWorld, id: string): number {
+  const owned = BAL_REGIONS.filter(r => balControllerOf(w, r) === id);
+  let n = 0;
+  owned.forEach(r => {
+    const adj = (ADJACENT_REGIONS as Record<string, string[]>)[r] || [];
+    if (adj.some(o => owned.includes(o))) n += 1;
+  });
+  return n;
+}
+
+function v96PayBounties(w: BalanceWorld): void {
+  const bag = v96Bag(w);
+  const list = bag.bounties || [];
+  list.forEach((b: any) => {
+    const claimKey = w.day + ':' + b.id;
+    if (bag.claimed[claimKey]) return;
+    const ready = (['player', 'ai'] as const).filter(id => v96BountyMet(w, id, b.kind));
+    if (!ready.length) return;
+    ready.sort((x, y) => balanceMetricValue(w, x) - balanceMetricValue(w, y));
+    const who = ready[0];
+    w.actors[who].money += v96BountyCash(w.config.winCondition);
+    bag.claimed[claimKey] = who;
+  });
+}
+
+function v96BountyMet(w: BalanceWorld, id: string, kind: string): boolean {
+  const a = w.actors[id] as any;
+  if (kind === 'adjacent') return v96AdjacentPairs(w, id) >= 2;
+  if (kind === 'deliver_wa') return Number(a.v96WaDelivered || 0) >= 6;
+  if (kind === 'hard_challenge') return a.v96HardWin === true;
+  return false;
+}
+
+export function v96NoteSimChallenge(w: BalanceWorld, a: BalActor, difficulty: number, won: boolean): void {
+  if (!won || (!w.config.v96?.traits && !w.config.v96?.finalWeek)) return;
+  const anyA = a as any;
+  if (w.config.v96?.traits && a.currentRegion === 'QLD') anyA.v96QldWins = (Number(anyA.v96QldWins) || 0) + 1;
+  if (w.config.v96?.finalWeek && difficulty >= 3) anyA.v96HardWin = true;
+}
+
+export function v96NoteDelivery(w: BalanceWorld, a: BalActor, qty: number): void {
+  if (!w.config.v96?.finalWeek && !w.config.v96?.traits) return;
+  if (a.currentRegion === 'WA') (a as any).v96WaDelivered = (Number((a as any).v96WaDelivered) || 0) + qty;
+}
+
+export function v96RegionTieBreak(w: BalanceWorld): 'player' | 'ai' | 'tie' {
+  const dep = (id: string) => BAL_REGIONS.reduce((s, r) => s + Math.floor((w.deposits[r] || {})[id] || 0), 0);
+  const pd = dep('player'); const ad = dep('ai');
+  if (pd !== ad) return pd > ad ? 'player' : 'ai';
+  const pn = balNetWorth(w, w.actors.player); const an = balNetWorth(w, w.actors.ai);
+  if (pn !== an) return pn > an ? 'player' : 'ai';
+  return 'tie';
+}
+
+export function v96BountyPressure(w: BalanceWorld, a: BalActor, o: BalanceOption): number {
+  if (!w.config.v96?.finalWeek) return 0;
+  const bag = (w as any).v96;
+  const list = bag?.bounties || [];
+  if (!list.length) return 0;
+  let add = 0;
+  list.forEach((b: any) => {
+    if (bag.claimed?.[w.day + ':' + b.id]) return;
+    if (b.kind === 'deliver_wa' && (o.exec.kind === 'travel' && (o.exec as any).to === 'WA' || (o.exec.kind === 'sell' && a.currentRegion === 'WA'))) add += 2200;
+    if (b.kind === 'hard_challenge' && o.exec.kind === 'challenge' && (o.exec as any).difficulty >= 3) add += 2200;
+    if (b.kind === 'hard_challenge' && o.exec.kind === 'travel') {
+      const destHas = ((REGIONS[(o.exec as any).to]?.challenges || []) as any[]).some(c => c.difficulty >= 3 && !a.completedThisSeason.includes(c.name));
+      const hereHas = ((REGIONS[a.currentRegion]?.challenges || []) as any[]).some(c => c.difficulty >= 3 && !a.completedThisSeason.includes(c.name));
+      if (destHas && !hereHas) add += 1800;
+    }
+    if (b.kind === 'adjacent' && o.category === 'region') add += 1800;
+  });
+  return add;
+}
+
+export const V96_TOURNAMENT_BASELINE: Record<string, Array<{ policy: string; winRate: number; avgDecidedDay: number; avgFakeChoice: number; wastedAp: number; cats: Record<string, number> }>> = {"money":[{"policy":"balanced","winRate":0.83,"avgDecidedDay":16.2,"avgFakeChoice":0.47,"wastedAp":0,"cats":{"challenge":0.13,"investment":0.01,"income":0.06,"travel":0.01,"market":0.52,"contract":0.28}},{"policy":"challenge_first","winRate":0.67,"avgDecidedDay":13.3,"avgFakeChoice":0.43,"wastedAp":0,"cats":{"challenge":0.13,"investment":0,"travel":0.01,"market":0.54,"contract":0.23,"income":0.08}},{"policy":"never_challenge","winRate":0.33,"avgDecidedDay":13.8,"avgFakeChoice":0,"wastedAp":0,"cats":{"income":0.25,"market":0.74,"investment":0,"contract":0}},{"policy":"cash_hoard","winRate":0.33,"avgDecidedDay":14.3,"avgFakeChoice":0.09,"wastedAp":0,"cats":{"income":0.24,"market":0.76}},{"policy":"region_rush","winRate":0,"avgDecidedDay":11,"avgFakeChoice":0,"wastedAp":90,"cats":{"region":1}},{"policy":"market_only","winRate":0.5,"avgDecidedDay":22,"avgFakeChoice":0.14,"wastedAp":0,"cats":{"travel":0.02,"market":0.91,"contract":0.07,"income":0.01,"investment":0}},{"policy":"always_borrow","winRate":0,"avgDecidedDay":5.5,"avgFakeChoice":0.5,"wastedAp":0,"cats":{"loan":0.02,"challenge":0.23,"investment":0.01,"travel":0.02,"market":0.51,"income":0.22}},{"policy":"casual","winRate":0,"avgDecidedDay":9,"avgFakeChoice":0.53,"wastedAp":0,"cats":{"loan":0.02,"challenge":0.05,"income":0.48,"market":0.46}},{"policy":"expert","winRate":0.33,"avgDecidedDay":21,"avgFakeChoice":0.04,"wastedAp":0,"cats":{"challenge":0.2,"travel":0.23,"market":0.45,"income":0.1,"investment":0,"contract":0.02}},{"policy":"investment_heavy","winRate":0.17,"avgDecidedDay":10.8,"avgFakeChoice":0.07,"wastedAp":4,"cats":{"travel":0.39,"market":0.39,"challenge":0.11,"income":0.1}},{"policy":"always_sabotage","winRate":0,"avgDecidedDay":9.5,"avgFakeChoice":0.09,"wastedAp":10,"cats":{"sabotage":0.11,"income":0.45,"challenge":0.36,"travel":0.04,"market":0.05}},{"policy":"contract_first","winRate":0.83,"avgDecidedDay":15.2,"avgFakeChoice":0.09,"wastedAp":7.2,"cats":{"challenge":0.29,"investment":0.02,"income":0.1,"travel":0.1,"market":0.46,"contract":0.02}}],"net_worth":[{"policy":"balanced","winRate":0.83,"avgDecidedDay":4.5,"avgFakeChoice":0.22,"wastedAp":0,"cats":{"challenge":0.43,"investment":0.05,"income":0.32,"travel":0.05,"market":0.13,"contract":0.01,"sabotage":0}},{"policy":"challenge_first","winRate":0.67,"avgDecidedDay":3.2,"avgFakeChoice":0.39,"wastedAp":0,"cats":{"challenge":0.34,"investment":0.03,"income":0.33,"travel":0.04,"contract":0,"market":0.26,"sabotage":0.01}},{"policy":"never_challenge","winRate":0,"avgDecidedDay":5.2,"avgFakeChoice":0.09,"wastedAp":0,"cats":{"income":0.75,"market":0.25,"investment":0}},{"policy":"cash_hoard","winRate":0,"avgDecidedDay":5.2,"avgFakeChoice":0.14,"wastedAp":0,"cats":{"income":0.75,"market":0.25}},{"policy":"region_rush","winRate":0,"avgDecidedDay":3.8,"avgFakeChoice":0,"wastedAp":90,"cats":{"region":1}},{"policy":"market_only","winRate":0.83,"avgDecidedDay":9.8,"avgFakeChoice":0.14,"wastedAp":0,"cats":{"travel":0.02,"market":0.97,"contract":0,"income":0.01,"investment":0}},{"policy":"always_borrow","winRate":0.17,"avgDecidedDay":9.5,"avgFakeChoice":0.39,"wastedAp":0,"cats":{"loan":0.03,"challenge":0.37,"investment":0.03,"travel":0.03,"income":0.43,"market":0.09,"sabotage":0.01}},{"policy":"casual","winRate":0,"avgDecidedDay":5.8,"avgFakeChoice":0.22,"wastedAp":0,"cats":{"loan":0.02,"challenge":0.05,"income":0.48,"market":0.46}},{"policy":"expert","winRate":0.33,"avgDecidedDay":20,"avgFakeChoice":0.17,"wastedAp":0,"cats":{"challenge":0.33,"travel":0.27,"investment":0.03,"income":0.32,"market":0.05,"contract":0}},{"policy":"investment_heavy","winRate":0,"avgDecidedDay":4.2,"avgFakeChoice":0.44,"wastedAp":2.2,"cats":{"travel":0.25,"income":0.47,"challenge":0.28,"market":0}},{"policy":"always_sabotage","winRate":0,"avgDecidedDay":4.2,"avgFakeChoice":0.24,"wastedAp":7.8,"cats":{"sabotage":0.09,"income":0.5,"challenge":0.37,"travel":0.04,"market":0}},{"policy":"contract_first","winRate":0.83,"avgDecidedDay":7.7,"avgFakeChoice":0.21,"wastedAp":2.5,"cats":{"challenge":0.42,"investment":0.05,"income":0.23,"travel":0.08,"contract":0.02,"market":0.2,"sabotage":0.01}}],"regions":[{"policy":"balanced","winRate":0.33,"avgDecidedDay":8.5,"avgFakeChoice":0.77,"wastedAp":0,"cats":{"region":0.14,"travel":0.05,"income":0.72,"market":0.08,"challenge":0.01}},{"policy":"challenge_first","winRate":0.83,"avgDecidedDay":9.3,"avgFakeChoice":0.5,"wastedAp":0,"cats":{"challenge":0.47,"region":0.27,"investment":0.01,"income":0.17,"travel":0.05,"contract":0.01,"market":0.03}},{"policy":"never_challenge","winRate":0.17,"avgDecidedDay":11.3,"avgFakeChoice":0.69,"wastedAp":0,"cats":{"region":0.1,"travel":0.07,"income":0.73,"market":0.11}},{"policy":"cash_hoard","winRate":0,"avgDecidedDay":1,"avgFakeChoice":0.78,"wastedAp":0,"cats":{"income":0.69,"market":0.31}},{"policy":"region_rush","winRate":0,"avgDecidedDay":1,"avgFakeChoice":0.06,"wastedAp":78,"cats":{"region":0.89,"challenge":0.01,"income":0.08,"market":0.01,"travel":0}},{"policy":"market_only","winRate":0.67,"avgDecidedDay":16.3,"avgFakeChoice":0.19,"wastedAp":0,"cats":{"region":0.01,"travel":0.01,"market":0.97,"income":0.01,"contract":0}},{"policy":"always_borrow","winRate":0.5,"avgDecidedDay":4.5,"avgFakeChoice":0.64,"wastedAp":0,"cats":{"loan":0.03,"region":0.04,"travel":0.04,"income":0.86,"challenge":0.03,"market":0}},{"policy":"casual","winRate":0,"avgDecidedDay":1,"avgFakeChoice":0.19,"wastedAp":0,"cats":{"loan":0.01,"challenge":0.03,"income":0.29,"market":0.67}},{"policy":"expert","winRate":0.5,"avgDecidedDay":4.7,"avgFakeChoice":0.74,"wastedAp":0,"cats":{"region":0.18,"travel":0.03,"income":0.71,"challenge":0.02,"market":0.05}},{"policy":"investment_heavy","winRate":1,"avgDecidedDay":6.3,"avgFakeChoice":0.72,"wastedAp":0,"cats":{"region":0.09,"travel":0.1,"income":0.52,"challenge":0.24,"market":0.05}},{"policy":"always_sabotage","winRate":0.5,"avgDecidedDay":14.2,"avgFakeChoice":0.65,"wastedAp":1.8,"cats":{"sabotage":0.02,"income":0.57,"challenge":0.22,"region":0.11,"travel":0.05,"market":0.03}},{"policy":"contract_first","winRate":0.83,"avgDecidedDay":7,"avgFakeChoice":0.74,"wastedAp":0,"cats":{"region":0.11,"travel":0.07,"income":0.55,"challenge":0.21,"market":0.06}}]};
+
+export interface V96PolicySummary {
+  policy: string; matches: number; winRate: number; ties: number; avgDecidedDay: number; earlyLeaderWin: number;
+  avgFakeChoice: number; wastedPct: number; wastedAp: number; top3: string[]; cats: Record<string, number>;
+}
+
+const V96_FEATURES: BalanceFeatures = { investments: true, contracts: true, sabotage: true, overrides: true };
+
+export function v96RunPolicy(policy: BalancePolicyId, mode: BalanceWinMetric, seeds: number[], flags?: V96SimFlags, startRegions?: { player: string; ai: string }): { rows: BalanceMatchResult[]; summary: V96PolicySummary } {
+  const rows = seeds.map(seed => runBalanceMatch(createBalanceSimConfig({
+    seed, days: 30, apPerDay: 3, winCondition: mode, features: V96_FEATURES,
+    ...(flags && v96AnyFlag(flags) ? { v96: flags } : {}),
+    ...(startRegions ? { startRegions } : {})
+  }), policy, 'balanced'));
+  return { rows, summary: v96Summarize(policy, rows) };
+}
+
+export function v96Summarize(policy: string, rs: BalanceMatchResult[]): V96PolicySummary {
+  const n = rs.length || 1;
+  const cats: Record<string, number> = {}; let total = 0;
+  rs.forEach(r => Object.entries(r.categoryCounts).forEach(([k, v]) => { cats[k] = (cats[k] || 0) + v; total += v; }));
+  Object.keys(cats).forEach(k => { cats[k] = Math.round((cats[k] / Math.max(1, total)) * 100) / 100; });
+  const withL = rs.filter(r => r.earlyLeader);
+  const early = withL.length ? Math.round((withL.filter(r => r.earlyLeader === r.winner).length / withL.length) * 100) / 100 : 0;
+  const ap = 30 * 3;
+  const wastedAp = Math.round((rs.reduce((s, r) => s + r.wastedAp, 0) / n) * 10) / 10;
+  const top3 = Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} ${Math.round(v * 100)}%`);
+  return {
+    policy, matches: rs.length,
+    winRate: Math.round((rs.filter(r => r.winner === 'player').length / n) * 100) / 100,
+    ties: Math.round((rs.filter(r => r.winner === 'tie').length / n) * 100) / 100,
+    avgDecidedDay: Math.round((rs.reduce((s, r) => s + r.decidedDay, 0) / n) * 10) / 10,
+    earlyLeaderWin: early,
+    avgFakeChoice: Math.round((rs.reduce((s, r) => s + r.decisions.fakeChoiceRate, 0) / n) * 100) / 100,
+    wastedAp, wastedPct: Math.round((wastedAp / ap) * 100) / 100, top3, cats
+  };
+}
+
+export function v96AllOffTournamentSelfTest(): { passed: boolean; detail: string } {
+  const seeds = [1, 2, 3, 4, 5, 6].map(s => s * 7919);
+  const fails: string[] = [];
+  (['money', 'net_worth', 'regions'] as BalanceWinMetric[]).forEach(mode => {
+    const expected = V96_TOURNAMENT_BASELINE[mode] || [];
+    expected.forEach(exp => {
+      const got = v96RunPolicy(exp.policy as BalancePolicyId, mode, seeds).summary;
+      const bits = ['winRate', 'avgDecidedDay', 'avgFakeChoice', 'wastedAp'] as const;
+      bits.forEach(k => { if (got[k] !== (exp as any)[k]) fails.push(`${mode}/${exp.policy} ${k} ${got[k]}!=${(exp as any)[k]}`); });
+      Object.entries(exp.cats).forEach(([k, v]) => { if ((got.cats[k] || 0) !== v) fails.push(`${mode}/${exp.policy} cat ${k} ${got.cats[k] || 0}!=${v}`); });
+    });
+  });
+  return { passed: fails.length === 0, detail: fails.length ? fails.slice(0, 8).join('; ') : `all-off N=6 tournament matches the recorded baseline (${V96_ORIGINAL_POLICIES.length} policies × 3 modes). ${V96_ALLOFF_NOTES[1]}` };
+}
+
+export const V96_COLUMNS: Array<{ id: string; label: string; flags?: V96SimFlags }> = [
+  { id: 'off', label: 'All off' },
+  { id: 'A', label: 'Part A', flags: { comeback: true, finalWeek: true } },
+  { id: 'B', label: 'Part B', flags: { strategy: true } },
+  { id: 'D', label: 'Part D', flags: { traits: true } },
+  { id: 'all', label: 'All on', flags: { comeback: true, finalWeek: true, strategy: true, traits: true } }
+];
+
+export interface V96TournamentResult {
+  seeds: number;
+  cells: Record<string, V96PolicySummary>;
+  grades: Array<{ id: string; pass: boolean; text: string }>;
+  regionStarts?: Array<{ region: string; winRate: number }>;
+}
+
+export async function runStrategyTournament(opts: { seeds?: number; onProgress?: (frac: number, label: string) => void; signal?: { stop: boolean } } = {}): Promise<V96TournamentResult> {
+  const n = Math.max(1, Math.min(60, Math.floor(Number(opts.seeds ?? 60) || 60)));
+  const seeds = Array.from({ length: n }, (_, i) => (i + 1) * 7919);
+  const policies: BalancePolicyId[] = [...V96_ORIGINAL_POLICIES, ...V96_PROFILE_POLICIES];
+  const modes: BalanceWinMetric[] = ['money', 'net_worth', 'regions'];
+  const jobs: Array<{ col: typeof V96_COLUMNS[number]; mode: BalanceWinMetric; policy: BalancePolicyId }> = [];
+  V96_COLUMNS.forEach(col => modes.forEach(mode => policies.forEach(policy => jobs.push({ col, mode, policy }))));
+  const cells: Record<string, V96PolicySummary> = {};
+  for (let i = 0; i < jobs.length; i++) {
+    if (opts.signal?.stop) break;
+    const job = jobs[i];
+    const rows: BalanceMatchResult[] = [];
+    for (let s = 0; s < seeds.length; s++) {
+      if (opts.signal?.stop) break;
+      rows.push(runBalanceMatch(createBalanceSimConfig({
+        seed: seeds[s], days: 30, apPerDay: 3, winCondition: job.mode, features: V96_FEATURES,
+        ...(job.col.flags && v96AnyFlag(job.col.flags) ? { v96: job.col.flags } : {})
+      }), job.policy, 'balanced'));
+      if ((s + 1) % 2 === 0) await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    cells[`${job.col.id}|${job.mode}|${job.policy}`] = v96Summarize(job.policy, rows);
+    opts.onProgress?.((i + 1) / jobs.length, `${job.col.label} · ${job.mode} · ${job.policy}`);
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  let regionStarts: Array<{ region: string; winRate: number }> | undefined;
+  if (!opts.signal?.stop) {
+    regionStarts = BAL_REGIONS.map(region => {
+      const ai = BAL_REGIONS[(BAL_REGIONS.indexOf(region) + 3) % BAL_REGIONS.length];
+      const summary = v96RunPolicy('balanced', 'money', seeds.slice(0, Math.min(6, seeds.length)), { traits: true }, { player: region, ai });
+      return { region, winRate: summary.summary.winRate };
+    });
+  }
+  return { seeds: n, cells, grades: v96Grade(cells, regionStarts), regionStarts };
+}
+
+export function v96Grade(cells: Record<string, V96PolicySummary>, regionStarts?: Array<{ region: string; winRate: number }>): Array<{ id: string; pass: boolean; text: string }> {
+  const cell = (col: string, mode: string, policy: string) => cells[`${col}|${mode}|${policy}`];
+  const grades: Array<{ id: string; pass: boolean; text: string }> = [];
+  (['money', 'net_worth'] as const).forEach(mode => {
+    const row = cell('A', mode, 'balanced');
+    if (!row) return;
+    grades.push({ id: `A-day-${mode}`, pass: row.avgDecidedDay > 20, text: `Part A ${mode}: decided day ${row.avgDecidedDay} (target later than 20)` });
+    grades.push({ id: `A-early-${mode}`, pass: row.earlyLeaderWin < 0.65, text: `Part A ${mode}: early leader wins ${Math.round(row.earlyLeaderWin * 100)}% (target under 65%)` });
+  });
+  const band = (policy: string, mode: string, lo: number, hi: number, id: string) => {
+    const row = cell('B', mode, policy);
+    if (!row) return;
+    grades.push({ id, pass: row.winRate >= lo && row.winRate <= hi, text: `Part B ${policy} ${mode}: ${Math.round(row.winRate * 100)}% (target ${Math.round(lo * 100)}–${Math.round(hi * 100)}%)` });
+  };
+  band('always_sabotage', 'money', 0.25, 0.5, 'B-sab-money');
+  band('always_sabotage', 'net_worth', 0.25, 0.5, 'B-sab-nw');
+  band('investment_heavy', 'money', 0.25, 0.55, 'B-inv-money');
+  band('investment_heavy', 'net_worth', 0.25, 0.55, 'B-inv-nw');
+  const invR = cell('B', 'regions', 'investment_heavy');
+  if (invR) grades.push({ id: 'B-inv-regions', pass: invR.winRate <= 0.7, text: `Part B investment_heavy regions: ${Math.round(invR.winRate * 100)}% (at most 70%)` });
+  band('contract_first', 'money', 0.4, 0.6, 'B-con-money');
+  (['money', 'net_worth', 'regions'] as const).forEach(mode => band('market_only', mode, 0.25, 0.6, `B-mkt-${mode}`));
+  const balM = cell('B', 'money', 'balanced');
+  if (balM) {
+    const market = balM.cats.market || 0;
+    const other = (balM.cats.challenge || 0) + (balM.cats.travel || 0) + (balM.cats.region || 0);
+    grades.push({ id: 'B-market-moves', pass: market <= other + 0.001, text: `Part B balanced market share ${Math.round(market * 100)}% vs challenge+travel+region ${Math.round(other * 100)}%` });
+  }
+  const reg = cell('B', 'regions', 'balanced');
+  if (reg) {
+    grades.push({ id: 'B-ties', pass: reg.ties < 0.05, text: `Part B regions ties ${Math.round(reg.ties * 100)}% (under 5%)` });
+    grades.push({ id: 'B-fake', pass: reg.avgFakeChoice < 0.4, text: `Part B regions fake choices ${Math.round(reg.avgFakeChoice * 100)}% (under 40%)` });
+  }
+  const rush = cell('B', 'regions', 'region_rush');
+  if (rush) grades.push({ id: 'B-rush', pass: rush.wastedPct < 0.3, text: `Part B region_rush wasted ${Math.round(rush.wastedPct * 100)}% (under 30%)` });
+  (['money', 'net_worth'] as const).forEach(mode => {
+    const row = cell('off', mode, 'profile_expert') || cell('B', mode, 'profile_expert');
+    if (!row) return;
+    grades.push({ id: `B7-${mode}`, pass: row.winRate >= 0.55, text: `Profile expert vs balanced ${mode}: ${Math.round(row.winRate * 100)}% (target at least 55%; applies with balance rules off)` });
+  });
+  const exempt = new Set(['casual', 'cash_hoard']);
+  V96_ORIGINAL_POLICIES.forEach(policy => {
+    if (exempt.has(policy)) return;
+    (['money', 'net_worth', 'regions'] as const).forEach(mode => {
+      const row = cell('B', mode, policy);
+      if (!row) return;
+      const pass = row.winRate >= 0.25 && row.winRate <= 0.65;
+      if (!pass) grades.push({ id: `B-band-${policy}-${mode}`, pass: false, text: `Part B ${policy} ${mode}: ${Math.round(row.winRate * 100)}% is outside 25–65%` });
+    });
+  });
+  if (regionStarts && regionStarts.length) {
+    const worst = regionStarts.slice().sort((a, b) => b.winRate - a.winRate)[0];
+    grades.push({ id: 'D-start', pass: worst.winRate <= 0.6, text: `Part D strongest starting region ${worst.region} wins ${Math.round(worst.winRate * 100)}% (at most 60%)` });
+  }
+  return grades;
+}
+
+export const V96_BUILD_SIZE = { bytes: 14368559, added: 84526, limit: 16 * 1024 * 1024, budget: 350 * 1024 };
+
+export function V96BuildSizeLine(): JSX.Element {
+  const over = V96_BUILD_SIZE.bytes > V96_BUILD_SIZE.limit;
+  const budgetOver = V96_BUILD_SIZE.added > V96_BUILD_SIZE.budget;
+  return (
+    <p data-testid="v96-build-size" className="text-xs mt-2">
+      Build size: {(V96_BUILD_SIZE.bytes / (1024 * 1024)).toFixed(2)} MB of the 16 MB artifact limit
+      {over ? ' — over the limit' : ''}. This release added {(V96_BUILD_SIZE.added / 1024).toFixed(0)} KB of the 350 KB budget{budgetOver ? ' — over the budget' : ''}.
+    </p>
+  );
+}
+
+export function V96StrategyTournamentPanel(props: { theme: any }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const [seeds, setSeeds] = useState(6);
+  const [busy, setBusy] = useState(false);
+  const [frac, setFrac] = useState(0);
+  const [label, setLabel] = useState('');
+  const [result, setResult] = useState<V96TournamentResult | null>(null);
+  const [selfTest, setSelfTest] = useState('');
+  const stopRef = useRef({ stop: false });
+  const run = () => {
+    stopRef.current = { stop: false };
+    setBusy(true); setFrac(0); setResult(null);
+    void runStrategyTournament({
+      seeds, signal: stopRef.current,
+      onProgress: (f, text) => { setFrac(f); setLabel(text); }
+    }).then(res => { setResult(res); setBusy(false); }).catch(() => setBusy(false));
+  };
+  const runSelf = () => {
+    setBusy(true); setSelfTest('Running the N=6 all-off check…');
+    window.setTimeout(() => {
+      try {
+        const out = v96AllOffTournamentSelfTest();
+        setSelfTest(out.passed ? `Pass. ${out.detail}` : `Fail. ${out.detail}`);
+      } catch (err) {
+        setSelfTest(`Fail. ${err instanceof Error ? err.message : String(err)}`);
+      } finally { setBusy(false); }
+    }, 30);
+  };
+  const exportJson = () => {
+    const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = 'strategy-tournament.json'; link.click();
+    URL.revokeObjectURL(url);
+  };
+  return (
+    <section aria-labelledby="v96-tour-h" className={`${props.theme?.card || ''} ${props.theme?.border || ''} border rounded-xl p-4 mt-4 text-xs`} data-testid="v96-strategy-tournament">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 id="v96-tour-h" className="font-bold text-sm">Strategy tournament</h2>
+        <button type="button" className="underline min-h-[44px] px-2" onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Open'}</button>
+      </div>
+      {open && (
+        <div className="space-y-2 mt-2">
+          <p className="opacity-80">Each policy plays the balanced rival. Seeds are s × 7919. Nothing here is shown on the PLAY screen, and nothing here changes a live match.</p>
+          <p className="opacity-75">{V96_ALLOFF_NOTES[1]}</p>
+          <label className="flex items-center gap-2" htmlFor="v96-tour-seeds">Seeds
+            <input id="v96-tour-seeds" type="number" min={1} max={60} value={seeds} onChange={e => setSeeds(Math.max(1, Math.min(60, Number(e.target.value) || 6)))} className="w-20 px-2 py-2 rounded border bg-transparent min-h-[44px]" />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={`${props.theme?.buttonSecondary || ''} px-3 py-2 rounded min-h-[44px]`} disabled={busy} onClick={run}>{busy ? 'Running…' : 'Run tournament'}</button>
+            <button type="button" className={`${props.theme?.buttonSecondary || ''} px-3 py-2 rounded min-h-[44px]`} disabled={busy} onClick={runSelf}>All-off self-test (N=6)</button>
+            <button type="button" className={`${props.theme?.buttonSecondary || ''} px-3 py-2 rounded min-h-[44px]`} disabled={busy} onClick={() => { stopRef.current.stop = true; }}>Stop</button>
+            <button type="button" className={`${props.theme?.buttonSecondary || ''} px-3 py-2 rounded min-h-[44px]`} disabled={!result} onClick={exportJson}>Export JSON</button>
+          </div>
+          {busy && (
+            <div>
+              <div className="h-2 rounded bg-black/20 overflow-hidden" aria-hidden="true"><div style={{ width: `${Math.round(frac * 100)}%`, height: '100%', background: '#0ea5e9' }} /></div>
+              <div aria-live="polite">{label} · {Math.round(frac * 100)}%</div>
+            </div>
+          )}
+          {selfTest && <p data-testid="v96-self-test">{selfTest}</p>}
+          {result && (
+            <div className="overflow-x-auto" data-testid="v96-tour-grades">
+              <ul className="space-y-1">
+                {result.grades.map(g => <li key={g.id} className={g.pass ? 'text-emerald-400' : 'text-amber-300'}>{g.pass ? 'Pass' : 'Fail'} — {g.text}</li>)}
+              </ul>
+              {result.regionStarts && <p className="mt-2">Starting regions (traits on, N={Math.min(6, result.seeds)}): {result.regionStarts.map(r => `${r.region} ${Math.round(r.winRate * 100)}%`).join(' · ')}</p>}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+export function V96RulesSettings(props: { settings: any; onToggle: (key: string, label: string, value: boolean) => void }): JSX.Element {
+  const rows: Array<[string, string, string]> = [
+    ['comebackRulesEnabled', 'Comeback rules', 'Diminishing returns for a growing lead, and a trailing bonus on challenges and travel. Off by default.'],
+    ['finalWeekEnabled', 'Final Week bounties', 'Two national bounties a day in the last 5 days. Off by default. The Essentials switch turns this on with comeback rules.'],
+    ['strategyBalanceV96Enabled', 'Strategy balance', 'Sabotage, investments, contracts, selling, and region actions use the V9.6 costs. Off by default.'],
+    ['regionTraitsEnabled', 'State twists', 'Each state has one extra rule. Off by default. Not part of the Essentials switch.']
+  ];
+  return (
+    <div className="space-y-3" data-testid="v96-rules-settings">
+      {rows.map(([key, label, description]) => (
+        <div key={key} className="flex items-center justify-between gap-3">
+          <div>
+            <div className="font-semibold">{label}</div>
+            <div className="text-sm opacity-75">{description}</div>
+          </div>
+          <button type="button" className="min-h-[44px] min-w-[44px] px-4 py-2 rounded font-semibold border" aria-pressed={props.settings?.[key] === true} onClick={() => props.onToggle(key, label, props.settings?.[key] !== true)}>
+            {props.settings?.[key] === true ? 'ON' : 'OFF'}
+          </button>
+        </div>
+      ))}
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="font-semibold">Match recap</div>
+          <div className="text-sm opacity-75">End-of-match chart, turning point, and rematch. On by default. Does not change results.</div>
+        </div>
+        <button type="button" className="min-h-[44px] min-w-[44px] px-4 py-2 rounded font-semibold border" aria-pressed={props.settings?.matchRecapEnabled !== false} onClick={() => props.onToggle('matchRecapEnabled', 'Match recap', props.settings?.matchRecapEnabled === false)}>
+          {props.settings?.matchRecapEnabled !== false ? 'ON' : 'OFF'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const V96_DAILY_HISTORY_KEY = 'australia-game-v96-daily-history';
+
+export function v96ReadDailyHistory(): Record<string, { score: number; played: boolean }> {
+  try {
+    if (typeof localStorage === 'undefined') return {};
+    const raw = localStorage.getItem(V96_DAILY_HISTORY_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function v96WriteDailyHistory(dateKey: string, score: number): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const all = v96ReadDailyHistory();
+    const prev = all[dateKey];
+    all[dateKey] = { played: true, score: prev ? Math.max(prev.score, score) : score };
+    localStorage.setItem(V96_DAILY_HISTORY_KEY, JSON.stringify(all));
+  } catch { /* storage unavailable */ }
+}
+
+export function V96DailyHistory(props: { score?: number | null }): JSX.Element {
+  const [hist, setHist] = useState<Record<string, { score: number; played: boolean }>>({});
+  useEffect(() => {
+    const next = v96ReadDailyHistory();
+    if (typeof props.score === 'number') {
+      const key = v95LocalDateKey();
+      v96WriteDailyHistory(key, props.score);
+      next[key] = { played: true, score: Math.max(next[key]?.score || 0, props.score) };
+    }
+    setHist(next);
+  }, [props.score]);
+  const today = new Date();
+  const days: string[] = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+    days.push(v95LocalDateKey(d));
+  }
+  let streak = 0;
+  for (let i = 0; i < 60; i++) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+    if (!hist[v95LocalDateKey(d)]?.played) break;
+    streak += 1;
+  }
+  const bests = Object.entries(hist).sort((a, b) => b[1].score - a[1].score).slice(0, 8);
+  return (
+    <div data-testid="v96-daily-history" className="space-y-2">
+      <p className="font-semibold">Streak: {streak} day{streak === 1 ? '' : 's'}</p>
+      <div className="grid grid-cols-7 gap-1" aria-label="30 day results">
+        {days.map(day => {
+          const hit = hist[day];
+          return <div key={day} title={hit ? `${day}: ${hit.score}` : `${day}: not played`} className="min-h-[44px] rounded text-[10px] flex items-center justify-center border" style={{ background: hit ? '#0f766e' : 'transparent' }}>{day.slice(8)}</div>;
+        })}
+      </div>
+      <table className="w-full text-xs"><thead><tr><th className="text-left">Seed</th><th className="text-right">Best score</th></tr></thead>
+        <tbody>{bests.length ? bests.map(([seed, row]) => <tr key={seed}><td>{seed}</td><td className="text-right">{row.score}</td></tr>) : <tr><td colSpan={2}>No saved scores yet. The panel still works if storage is blocked.</td></tr>}</tbody>
+      </table>
+    </div>
+  );
+}
+
+export function V96LeadChart(props: { series: Array<{ day: number; you: number; rival: number }>; youLabel: string; rivalLabel: string }): JSX.Element {
+  const rows = props.series.length ? props.series : [{ day: 1, you: 0, rival: 0 }];
+  const width = 320; const height = 140; const padL = 36; const padB = 22; const padT = 8; const padR = 8;
+  const max = Math.max(1, ...rows.flatMap(r => [r.you, r.rival]));
+  const min = Math.min(0, ...rows.flatMap(r => [r.you, r.rival]));
+  const x = (i: number) => padL + (rows.length <= 1 ? 0 : (i / (rows.length - 1)) * (width - padL - padR));
+  const y = (v: number) => padT + (1 - (v - min) / (max - min || 1)) * (height - padT - padB);
+  const path = (key: 'you' | 'rival') => rows.map((r, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(r[key]).toFixed(1)}`).join(' ');
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Lead chart" className="w-full max-w-full" data-testid="v96-lead-chart">
+      <line x1={padL} y1={padT} x2={padL} y2={height - padB} stroke="currentColor" strokeWidth="1" />
+      <line x1={padL} y1={height - padB} x2={width - padR} y2={height - padB} stroke="currentColor" strokeWidth="1" />
+      <text x={4} y={padT + 8} fontSize="9" fill="currentColor">score</text>
+      <text x={padL} y={height - 4} fontSize="9" fill="currentColor">day {rows[0].day}</text>
+      <text x={width - 48} y={height - 4} fontSize="9" fill="currentColor">day {rows[rows.length - 1].day}</text>
+      <path d={path('you')} fill="none" stroke="#38bdf8" strokeWidth="2" />
+      <path d={path('rival')} fill="none" stroke="#f472b6" strokeWidth="2" strokeDasharray="4 3" />
+      <text x={padL + 4} y={14} fontSize="9" fill="#38bdf8">{props.youLabel}</text>
+      <text x={padL + 70} y={14} fontSize="9" fill="#f472b6">{props.rivalLabel} (dashed)</text>
+    </svg>
+  );
+}
+
+export function v96TurningPoint(series: Array<{ day: number; you: number; rival: number }>, ledger: any[], youWon: boolean): { day: number; text: string } | null {
+  if (!series.length) return null;
+  const leader = (row: { you: number; rival: number }) => row.you === row.rival ? null : row.you > row.rival ? 'you' : 'rival';
+  const finalLeader = youWon ? 'you' : 'rival';
+  let day = series[series.length - 1].day;
+  for (let i = series.length - 1; i >= 0; i--) {
+    if (leader(series[i]) !== finalLeader) { day = series[Math.min(series.length - 1, i + 1)].day; break; }
+    day = series[i].day;
+  }
+  const events = Array.isArray(ledger) ? ledger : [];
+  const hit = events.find((e: any) => Number(e?.day || e?.turn || 0) === day);
+  const action = hit?.message || hit?.summary || hit?.type || 'the lead changed';
+  return { day, text: `Day ${day}: ${action}` };
+}
+
+export function v96BestWorst(series: Array<{ day: number; you: number }>): { best: { day: number; delta: number } | null; worst: { day: number; delta: number } | null } {
+  let best: { day: number; delta: number } | null = null;
+  let worst: { day: number; delta: number } | null = null;
+  for (let i = 1; i < series.length; i++) {
+    const delta = series[i].you - series[i - 1].you;
+    if (!best || delta > best.delta) best = { day: series[i].day, delta };
+    if (!worst || delta < worst.delta) worst = { day: series[i].day, delta };
+  }
+  return { best, worst };
+}
+
+export function v96PayLiveBounties(settings: any, player: any, ai: any, day: number, totalDays: number, regionsOf: (id: string) => string[]): void {
+  if (!v96FinalOn(settings) || !player || !ai) return;
+  const list = v96BountiesForDay(Number(settings.worldRngSeed) || 1, day, totalDays);
+  if (!list.length) return;
+  if (!player.v96Claims) player.v96Claims = {};
+  list.forEach(b => {
+    const claimKey = day + ':' + b.id;
+    if (player.v96Claims[claimKey]) return;
+    const met = (actor: any, id: string) => {
+      if (b.kind === 'hard_challenge') return actor?.v96HardWin === true;
+      if (b.kind === 'deliver_wa') return Number(actor?.v96WaDelivered || 0) >= 6;
+      if (b.kind === 'adjacent') {
+        const owned = regionsOf(id);
+        return owned.filter(r => ((ADJACENT_REGIONS as Record<string, string[]>)[r] || []).some(o => owned.includes(o))).length >= 2;
+      }
+      return false;
+    };
+    const ready: Array<[string, any]> = [['player', player], ['ai', ai]].filter(([id, actor]) => met(actor, id)) as Array<[string, any]>;
+    if (!ready.length) return;
+    ready.sort((x, y) => (Number(x[1].money) || 0) - (Number(y[1].money) || 0));
+    ready[0][1].money = (Number(ready[0][1].money) || 0) + v96BountyCash(String(settings.winCondition || 'money'));
+    player.v96Claims[claimKey] = ready[0][0];
+  });
+}
+
+export function v96LiveScoreAdjust(settings: any, type: string, actor: any): number {
+  if (!v96StrategyOn(settings) && !v96ComebackOn(settings) && !v96FinalOn(settings)) return 0;
+  let score = 0;
+  if (v96StrategyOn(settings)) {
+    if (type === 'sell') score -= 80;
+    if (type === 'invest' || type === 'buy_investment') score += 120;
+    if (type === 'sabotage') score += 90;
+    if (type === 'v96_fortify') score += 70;
+    if (type === 'v96_partner') score += 55;
+  }
+  if (v96ComebackOn(settings) && actor?.v96Trail === true) {
+    if (type === 'challenge') score += 50;
+    if (type === 'travel') score += 30;
+  }
+  return score;
+}
+
+export function v96RewardArgs(source: any, actor: any): { rewardMult?: number } {
+  const on = source?.regionTraitsEnabled === true || source?.traits === true || source?.v96?.traits === true;
+  if (!on) return {};
+  const m = v96RewardMult({ regionTraitsEnabled: true }, actor);
+  return m !== 1 ? { rewardMult: m } : {};
+}
+
+export function v96LockController(locks: Record<string, { owner: string; until: number }> | null | undefined, region: string, day: number, fallback: string | null, enabled: boolean): string | null {
+  if (!enabled) return fallback;
+  const lock = locks?.[region];
+  if (lock && lock.until >= day && lock.owner) return lock.owner;
+  return fallback;
+}
+
+export function v96RematchSeed(current: number): number {
+  return ((Number(current) || 1) * 7919 + 17) >>> 0;
+}
+
+export function V96MatchRecap(props: {
+  won: boolean; youScore: string; rivalScore: string; metricLabel: string;
+  series: Array<{ day: number; you: number; rival: number }>;
+  ledger: any[]; achievements: string[]; deterministic: boolean;
+  onRematch: () => void; onRematchSeed: () => void; onReplay: () => void; onMenu: () => void; onCareer: () => void;
+  onDebrief?: () => void;
+}): JSX.Element {
+  const turn = v96TurningPoint(props.series, props.ledger, props.won);
+  const moves = v96BestWorst(props.series);
+  const money = (n: number) => (n >= 0 ? '+' : '') + Math.round(n).toLocaleString();
+  return (
+    <div className={`min-h-screen flex items-start justify-center p-4 overflow-x-hidden overflow-y-auto`} data-testid="v96-match-recap">
+      <style>{`.v96-recap{width:100%;max-width:32rem}.v96-recap-actions{display:flex;flex-direction:column;gap:8px}.v96-recap-actions button{min-height:44px;width:100%}@media (max-width:639px){.v96-recap{padding-bottom:12px}.v96-recap-actions{position:sticky;bottom:0;z-index:5;padding:8px 0 12px;background:inherit}}`}</style>
+      <div className="v96-recap text-center">
+        <h2 className="text-3xl font-extrabold mb-2">{props.won ? 'You won' : 'Your rival won'}</h2>
+        <p className="mb-3">{props.metricLabel}: you {props.youScore} · rival {props.rivalScore}</p>
+        <V96LeadChart series={props.series} youLabel="You" rivalLabel="Rival" />
+        <p className="text-sm mt-3 text-left">{turn ? turn.text : 'The lead changed with the match.'}</p>
+        <div className="text-sm mt-3 text-left space-y-1">
+          <p>Best move: {moves.best ? `Day ${moves.best.day}, ${money(moves.best.delta)}` : 'No scored swing yet.'}</p>
+          <p>Worst move: {moves.worst ? `Day ${moves.worst.day}, ${money(moves.worst.delta)}` : 'No scored swing yet.'}</p>
+        </div>
+        <div className="text-sm mt-3 text-left">
+          <p className="font-semibold">Achievements this match</p>
+          {props.achievements.length ? <ul>{props.achievements.map(name => <li key={name}>{name}</li>)}</ul> : <p>None unlocked this match.</p>}
+        </div>
+        <div className="v96-recap-actions mt-4">
+          <button type="button" onClick={props.onRematch}>Rematch</button>
+          {props.deterministic && <button type="button" onClick={props.onRematchSeed}>Rematch same seed</button>}
+          <button type="button" onClick={props.onReplay}>Watch replay</button>
+          <button type="button" onClick={props.onCareer}>Career</button>
+          {props.onDebrief && <button type="button" onClick={props.onDebrief}>Match debrief</button>}
+          <button type="button" onClick={props.onMenu}>Main menu</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export const V96_CHANGELOG = [
+  'V9.6 - Balance, recap, state twists, and reasons to come back',
+  'Comeback rules, Final Week bounties, and strategy balance are off unless you turn them on. The Essentials switch "V9.6 balance rules" turns comeback rules, Final Week, and strategy balance on together.',
+  'Selling costs 1 action when strategy balance is on, because a free sell stayed worth taking even after a price cut. The first sale each day in SA stays free.',
+  'Regions can tie-break on deposits then net worth, and Fortify and Partner are extra region actions, only while strategy balance is on.',
+  'Live Expert takes its best action 98% of the time. Simulator policies profile_easy through profile_expert mirror the live difficulties. The old simulator expert policy is unchanged.',
+  'The end-of-match recap shows the lead chart, the turning point, your best and worst move, achievements, and Rematch. It is on by default and does not change results.',
+  'Each state can show one twist when state twists are on. Daily Seed keeps a streak, a 30-day calendar, and local best scores.',
+  'The LAB strategy tournament measures these rules. With every new setting off, that tournament matches the recorded V9.5 numbers.'
+];
 
 // ---- Gameplay explanation of real tradeoffs (Part 95) — never balance telemetry --------------------------------
 
@@ -134234,7 +135273,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'interactiveChallengesEnabled', 'interactiveChallengeMaxModifier', 'interactiveChallengeAiSimulatedScoreEnabled', 'interactiveChallengeAiSimulatedScore', 'interactiveChallengeTimeLimitSeconds', 'realMapEnabled', 'expandedChallengesEnabled', 'soundEnabled', 'soundVolume', 'soundCategories', 'dailySeedEnabled', 'dailySeedRunActive', 'dailySeedCode', 'dailySeedFingerprint', 'rulesetPreset', 'rulesetIncludeV95Features', 'rulesetUndoSnapshot', 'v95SuppressLivingRegions', 'v95SuppressFactions'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'interactiveChallengesEnabled', 'interactiveChallengeMaxModifier', 'interactiveChallengeAiSimulatedScoreEnabled', 'interactiveChallengeAiSimulatedScore', 'interactiveChallengeTimeLimitSeconds', 'realMapEnabled', 'expandedChallengesEnabled', 'soundEnabled', 'soundVolume', 'soundCategories', 'dailySeedEnabled', 'dailySeedRunActive', 'dailySeedCode', 'dailySeedFingerprint', 'rulesetPreset', 'rulesetIncludeV95Features', 'rulesetUndoSnapshot', 'v95SuppressLivingRegions', 'v95SuppressFactions', 'v96BalanceRulesEnabled', 'comebackRulesEnabled', 'finalWeekEnabled', 'strategyBalanceV96Enabled', 'regionTraitsEnabled'
 ] as const;
 
 /**
@@ -136761,7 +137800,7 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number } =
   const fixture = () => JSON.parse(JSON.stringify(createV95SaveFixture()));
 
   // ---- Version consistency
-  check('v_game_version', 'GAME_VERSION reports the V9.5 build', () => GAME_VERSION === '9.5.0' || `GAME_VERSION=${GAME_VERSION}`);
+  check('v_game_version', 'GAME_VERSION reports the V9.6 build', () => GAME_VERSION === '9.6.0' || `GAME_VERSION=${GAME_VERSION}`);
   check('v_schema_labels', 'Save / replay schema labels agree with their numeric forms', () =>
     (VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1' && Number.parseInt(VERSION_CONSTANTS.REPLAY_SCHEMA_VERSION, 10) === REPLAY_SCHEMA_VERSION) || `${VERSION_CONSTANTS.SAVE_SCHEMA_VERSION}/${VERSION_CONSTANTS.REPLAY_SCHEMA_VERSION}/${REPLAY_SCHEMA_VERSION}`);
 
@@ -182109,7 +183148,8 @@ export const V95_RANKED_KEYS = [
   'totalDays', 'playerActionsPerDay', 'aiActionsPerDay', 'v93StartingPackage', 'winCondition', 'rulesetPreset',
   'interactiveChallengesEnabled', 'interactiveChallengeMaxModifier', 'expandedChallengesEnabled', 'aiPersistentMemoryEnabled',
   'nationalSystemsEnabled', 'regionalContractsEnabled', 'stateInfrastructureEnabled', 'v93ContentEnabled',
-  'v95SuppressLivingRegions', 'v95SuppressFactions'
+  'v95SuppressLivingRegions', 'v95SuppressFactions',
+  'v96BalanceRulesEnabled', 'comebackRulesEnabled', 'finalWeekEnabled', 'strategyBalanceV96Enabled', 'regionTraitsEnabled'
 ] as const;
 
 export function v95LocalDateKey(date = new Date()): string {
@@ -183769,6 +184809,12 @@ function AustraliaGame() {
     return isHumanLockedOutForSoloRival(gameStateLiveRef.current, actor ? (actor.kind === 'human' ? 'human' : 'ai') : (actorId === 'player' ? 'human' : 'ai'));
   };
   const v96LockoutNoticeAtRef = useRef(0);
+  const v96RematchSeedRef = useRef<number | null>(null);
+  const v96ScoreTraceRef = useRef<Array<{ day: number; you: number; rival: number }>>([]);
+  const v96UnlockedRef = useRef<string[]>([]);
+  const v96AchSeenRef = useRef<Set<string> | null>(null);
+  const [v96Locks, setV96Locks] = useState<Record<string, { owner: string; until: number }>>({});
+  const [v96ShowDebrief, setV96ShowDebrief] = useState(false);
   const v96BlockHumanAction = (label: string, actorId: string = 'player', silent = false): boolean => {
     if (!v96HumanLockedOut(actorId)) return false;
     v96FlowRef.current = [...v96FlowRef.current, { seq: ++v96FlowSeqRef.current, kind: 'HUMAN_ACTION_BLOCKED', detail: label, at: Date.now() }].slice(-80);
@@ -188887,7 +189933,7 @@ function dispatchGameSettingsChange(
       }
       case 'sabotage': {
         const sabotage = SABOTAGE_ACTIONS.find(candidate => candidate.id === data.sabotageId);
-        return Boolean(gameSettings.sabotageEnabled && isCompetitiveModeSelection(mode) && sabotage && actor.money >= sabotage.cost);
+        return Boolean(gameSettings.sabotageEnabled && isCompetitiveModeSelection(mode) && sabotage && actor.money >= v96SabotageCost(sabotage.cost, gameSettings));
       }
       case 'region_deposit':
         return typeof data.region === 'string' && Boolean(getRegionData(data.region)) && Math.floor(Number(data.amount) || 0) > 0 && actor.money >= Math.floor(Number(data.amount) || 0);
@@ -190224,6 +191270,10 @@ function dispatchGameSettingsChange(
 	          score: regionMove.score * profile.decisionQuality
 	        });
 	      }
+        if (v96StrategyOn(gameSettings) && (aiState.money || 0) >= 60) {
+          decisions.push({ type: 'v96_fortify', description: `Fortify ${aiState.currentRegion}`, data: { region: aiState.currentRegion }, score: 80 * profile.decisionQuality });
+          decisions.push({ type: 'v96_partner', description: `Partner in ${aiState.currentRegion}`, data: { region: aiState.currentRegion }, score: 60 * profile.decisionQuality });
+        }
 
         // R3: Candidate Action Generators (Regional Contracts, Infrastructure, Relics, Crises)
         evaluateAiRegionalContracts(aiState, gameState, gameSettings).forEach(cand => {
@@ -190530,7 +191580,7 @@ function dispatchGameSettingsChange(
         const chosenDecision = forceBestDecision
           ? bestDecision
           : difficulty === 'expert'
-            ? (aiRandom() < 0.9 ? bestDecision : rankedCandidates[alternateIndex] || bestDecision)
+            ? (aiRandom() < 0.98 ? bestDecision : rankedCandidates[alternateIndex] || bestDecision)
             : difficulty === 'hard'
               ? (aiRandom() < 0.74 ? bestDecision : rankedCandidates[alternateIndex] || bestDecision)
               : rankedCandidates[fallbackIndex] || bestDecision;
@@ -190783,7 +191833,7 @@ function dispatchGameSettingsChange(
             console.error('Invalid sabotage action payload:', actionData);
             return false;
           }
-          if (currentAi.money < sabotage.cost) {
+          if (currentAi.money < v96SabotageCost(sabotage.cost, gameSettings)) {
             addNotification(`🤖 ${currentAi.name} can't afford sabotage`, 'ai', false);
             return false;
           }
@@ -190874,6 +191924,8 @@ function dispatchGameSettingsChange(
 	          if (snapshot.controllerId !== 'ai' && amount < required) return false;
 	          break;
 	        }
+          case 'v96_fortify': { if (!v96StrategyOn(gameSettings) || currentAi.money < 180) return false; break; }
+          case 'v96_partner': { if (!v96StrategyOn(gameSettings) || currentAi.money < 60) return false; break; }
 	        case 'cashout_region': {
 	          if (!gameSettings.allowCashOut) return false;
 	          const region = actionData.region;
@@ -191220,13 +192272,17 @@ function dispatchGameSettingsChange(
         const sabotageId = actionData.sabotageId;
         const sabotage = SABOTAGE_ACTIONS.find(candidate => candidate.id === sabotageId);
         if (!sabotage) break;
+        const v96AiSteal = v96StrategyOn(gameSettings) ? v96SabotageSteal(currentAi, player) : 0;
         updateAiPlayerState((prev: any) => ({
           ...prev,
-          money: deductMoney(prev.money, sabotage.cost)
+          money: deductMoney(prev.money, v96SabotageCost(sabotage.cost, gameSettings) - v96AiSteal)
         }));
         dispatchPlayer({
           type: 'MERGE_STATE',
-          payload: { debuffs: upsertDebuff(player.debuffs || [], sabotage.id, sabotage.duration) }
+          payload: {
+            debuffs: upsertDebuff(player.debuffs || [], sabotage.id, sabotage.duration),
+            ...(v96AiSteal > 0 ? { money: Math.max(0, Math.floor((player.money || 0) - v96AiSteal)) } : {})
+          }
         });
         addNotification(`🤖 ${currentAi.name} used ${sabotage.name}!`, 'ai', true);
         addNotification(`${sabotage.name} is active on you.`, 'warning', true);
@@ -191371,6 +192427,25 @@ function dispatchGameSettingsChange(
 	        if (!success) return false;
 	        break;
 	      }
+        case 'v96_fortify': {
+          if (!v96StrategyOn(gameSettings) || currentAi.money < 180) return false;
+          updateAiPlayerState((prev: any) => ({ ...prev, money: Math.max(0, (prev.money || 0) - 180) }));
+          setV96Locks(prev => ({ ...prev, [currentAi.currentRegion]: { owner: 'ai', until: (Number(gameState.day) || 1) + 2 } }));
+          addNotification(`🤖 ${currentAi.name} fortified ${currentAi.currentRegion}.`, 'ai', false);
+          break;
+        }
+        case 'v96_partner': {
+          if (!v96StrategyOn(gameSettings) || currentAi.money < 60) return false;
+          const region = currentAi.currentRegion;
+          const deposits = sanitizeRegionDeposits(gameState.regionDeposits);
+          const entry = { ...(deposits[region] || {}) };
+          entry.ai = Math.floor(entry.ai || 0) + 40;
+          entry.neutral = Math.floor(entry.neutral || 0) + 40;
+          updateAiPlayerState((prev: any) => ({ ...prev, money: Math.max(0, (prev.money || 0) - 60) }));
+          dispatchGameState({ type: 'SET_REGION_CONTROL_DATA', payload: { regionDeposits: { ...deposits, [region]: entry } } });
+          addNotification(`🤖 ${currentAi.name} partnered in ${region}.`, 'ai', false);
+          break;
+        }
 
 	      case 'cashout_region': {
 	        const region = actionData.region;
@@ -192542,7 +193617,12 @@ function dispatchGameSettingsChange(
     setSabotageTargetId('ai');
     setDecisionTransparencyGroupView(normalizeDecisionTransparencyGroupView(gameSettings.decisionTransparencyDefaultGroupView));
     setExpandedHudDecisionActorId(null);
-    const v95SeedSettings = v95PendingDailyRef.current || gameSettings;
+    let v95SeedSettings = v95PendingDailyRef.current || gameSettings;
+    if (v96RematchSeedRef.current != null) {
+      const v96Seed = v96RematchSeedRef.current;
+      v95SeedSettings = { ...v95SeedSettings, worldRngSeed: v96Seed, aiDeterministicSeed: v96Seed };
+      v96RematchSeedRef.current = null;
+    }
     if (v95PendingDailyRef.current) v95PendingDailyRef.current = null;
     else if (gameSettings.dailySeedRunActive) setGameSettings(prev => (prev.dailySeedRunActive ? { ...prev, dailySeedRunActive: false, dailySeedFingerprint: '' } : prev));
     aiRngSeedRef.current = v95SeedSettings.aiDeterministicSeed;
@@ -193252,7 +194332,8 @@ function dispatchGameSettingsChange(
     return computeTravelCostCore({
       from: fromRegion, to: toRegion, characterName: player.character?.name, mastery: player.masteryUnlocks || [],
       weatherMod: weatherModifier, seasonMod: seasonModifier, eventMod: eventModifier, standingMult,
-      equipmentDiscount: equipmentEffects?.travelDiscount || 0, underdog: isUnderdog, leaderTax: leader === 'player' && getWealthState().ratio > 2
+      equipmentDiscount: equipmentEffects?.travelDiscount || 0, underdog: isUnderdog, leaderTax: leader === 'player' && getWealthState().ratio > 2,
+      ...v96TravelMults(gameSettings, fromRegion, toRegion, player, gameState.season)
     });
   }, [player.character, player.masteryUnlocks, player.equipment, player.debuffs, gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.weather, gameState.season, gameState.activeEvents, getUnderdogBonus, getWealthState]);
 
@@ -193298,7 +194379,7 @@ function dispatchGameSettingsChange(
     const sabotagePenalty = gameSettings.sabotageEnabled ? getSabotageChallengePenalty(player.debuffs) : 0;
 
     void baseChance; void statBonus; void difficultyPenalty; void characterBonus; void levelBonus;
-    return computeChallengeSuccessChanceCore({ difficulty: challenge.difficulty, type: challenge.type, stats: playerStats, characterName: player?.character?.name, level: player.level, weatherEffect, seasonEffect, eventBonus, equipmentBonus, underdogBonus, leaderPenalty, fatiguePenalty, sabotagePenalty, skillBonus: skillBonus || 0 });
+    return computeChallengeSuccessChanceCore({ difficulty: challenge.difficulty, type: challenge.type, stats: playerStats, characterName: player?.character?.name, level: player.level, weatherEffect, seasonEffect, eventBonus, equipmentBonus, underdogBonus, leaderPenalty, fatiguePenalty, sabotagePenalty, skillBonus: skillBonus || 0, trailBonus: (v96ChallengeTrail(gameSettings, player) || 0) + (v96WildlifeBonus(gameSettings, player, challenge.type) || 0) });
   }, [player.stats, player.character, player.level, player.currentRegion, player.overrideFatigue, player.equipment, player.debuffs, gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.weather, gameState.season, gameState.activeEvents, getUnderdogBonus, getWealthState]);
 
   const getInventoryValue = useMemo(() => {
@@ -193320,13 +194401,26 @@ function dispatchGameSettingsChange(
   const regionControlStats = useMemo(() => {
     const deposits = sanitizeRegionDeposits(gameState.regionDeposits);
     const history = gameState.regionControlStats?.controlHistory || [];
-    return computeRegionControlStats(deposits, history);
-  }, [gameState.regionControlStats, gameState.regionDeposits]);
+    const stake = v96EarlyStake(gameSettings, gameState.day);
+    const stats = computeRegionControlStats(deposits, history, stake);
+    if (!v96StrategyOn(gameSettings)) return stats;
+    const day = Number(gameState.day) || 1;
+    const totalControlled: Record<string, number> = {};
+    Object.keys(REGIONS).forEach(code => {
+      const snap = getRegionControlSnapshot(deposits[code] || {}, stake);
+      const who = v96LockController(v96Locks, code, day, snap.controllerId, true);
+      if (who) totalControlled[who] = (totalControlled[who] || 0) + 1;
+    });
+    return { ...stats, totalControlled };
+  }, [gameState.regionControlStats, gameState.regionDeposits, gameState.day, gameSettings, v96Locks]);
 
   const getRegionControlInfo = useCallback((regionCode: string, sourceDeposits?: RegionDeposits) => {
     const deposits = sanitizeRegionDeposits(sourceDeposits || gameState.regionDeposits);
     const regionEntry = deposits[regionCode] || {};
-    const snapshot = getRegionControlSnapshot(regionEntry);
+    const v96Stake = v96EarlyStake(gameSettings, gameState.day);
+    const snapshot0 = getRegionControlSnapshot(regionEntry, v96Stake);
+    const lockedId = v96LockController(v96Locks, regionCode, Number(gameState.day) || 1, snapshot0.controllerId, v96StrategyOn(gameSettings));
+    const snapshot = lockedId === snapshot0.controllerId ? snapshot0 : { ...snapshot0, controllerId: lockedId };
     const playerBucket = isTeamMode ? TEAM_PLAYER_ID : 'player';
     const opponentBucket = isTeamMode ? TEAM_OPPONENT_ID : 'ai';
     return {
@@ -193336,7 +194430,7 @@ function dispatchGameSettingsChange(
       controllerId: snapshot.controllerId,
       playerDeposit: Math.floor(regionEntry[playerBucket] || 0),
       aiDeposit: Math.floor(regionEntry[opponentBucket] || 0),
-      minimumPlayerDeposit: getRequiredDepositToControl(deposits, regionCode, playerBucket),
+      minimumPlayerDeposit: getRequiredDepositToControl(deposits, regionCode, playerBucket, v96EarlyStake(gameSettings, gameState.day)),
       minimumAiDeposit: getRequiredDepositToControl(deposits, regionCode, opponentBucket)
     };
   }, [gameState.regionDeposits, isTeamMode]);
@@ -193345,13 +194439,40 @@ function dispatchGameSettingsChange(
   const opponentControlKey = isTeamMode ? TEAM_OPPONENT_ID : 'ai';
   const playerControlledRegions = regionControlStats.totalControlled[playerControlKey] || 0;
   const aiControlledRegions = regionControlStats.totalControlled[opponentControlKey] || 0;
+  useEffect(() => {
+    if (gameState.gameMode !== 'game') { v96ScoreTraceRef.current = []; return; }
+    const metric = gameSettings.winCondition;
+    const you = metric === 'regions' ? playerControlledRegions : metric === 'net_worth' ? Number(getNetWorth) || 0 : Number(player.money) || 0;
+    const rival = metric === 'regions' ? aiControlledRegions : metric === 'net_worth' ? Number(getAiNetWorth) || 0 : Number(aiPlayer.money) || 0;
+    const day = Number(gameState.day) || 1;
+    const trace = v96ScoreTraceRef.current;
+    const last = trace[trace.length - 1];
+    if (!last || last.day !== day) trace.push({ day, you, rival });
+    else { last.you = you; last.rival = rival; }
+  }, [gameState.gameMode, gameState.day, gameSettings.winCondition, player.money, aiPlayer.money, getNetWorth, getAiNetWorth, playerControlledRegions, aiControlledRegions]);
+  useEffect(() => {
+    const ach = (gameState as any).careerProfile?.achievements || {};
+    const ids = Object.values(ach).filter((row: any) => row?.unlocked).map((row: any) => String(row.id));
+    if (gameState.gameMode !== 'game') { v96AchSeenRef.current = null; return; }
+    if (!v96AchSeenRef.current) { v96AchSeenRef.current = new Set(ids); return; }
+    ids.forEach(id => {
+      if (v96AchSeenRef.current!.has(id)) return;
+      v96AchSeenRef.current!.add(id);
+      v96UnlockedRef.current.push(id);
+      const row: any = (ach as any)[id] || DEFAULT_CAREER_ACHIEVEMENTS[id];
+      const now = Date.now();
+      setV94Queue(q => applyFeedbackEvents(q, [{ id: `v96_ach_${id}`, kind: 'level_up', importance: 'normal', subject: 'achievement', before: null, after: 1, title: row?.title || 'Achievement unlocked', lines: [row?.description || 'Unlocked this match'], icon: row?.icon || '🏆', tone: 'success', createdTurn: Number(gameState.turnCounter || 1), createdAt: now, expiresAt: now + UI_MOTION.emphasisMs.normal, regions: [] }], now).queue);
+    });
+  }, [gameState.gameMode, (gameState as any).careerProfile, gameState.turnCounter]);
   const playerRegionInvested = regionControlStats.totalInvested[playerControlKey] || 0;
   const aiRegionInvested = regionControlStats.totalInvested[opponentControlKey] || 0;
   const playerControlledRegionCodes = useMemo(() => {
     const deposits = sanitizeRegionDeposits(gameState.regionDeposits);
     return Object.keys(REGIONS).filter(regionCode => {
-      const snapshot = getRegionControlSnapshot(deposits[regionCode] || {});
-      return snapshot.controllerId === playerControlKey;
+      const stake = v96EarlyStake(gameSettings, gameState.day);
+      const snapshot = getRegionControlSnapshot(deposits[regionCode] || {}, stake);
+      const who = v96LockController(v96Locks, regionCode, Number(gameState.day) || 1, snapshot.controllerId, v96StrategyOn(gameSettings));
+      return who === playerControlKey;
     });
   }, [gameState.regionDeposits, playerControlKey]);
 
@@ -199685,7 +200806,7 @@ function dispatchGameSettingsChange(
     }
 
     const apValidation = validateActionPointRequest(player, 'travel', gameSettings);
-    const travelApCost = apValidation.cost;
+    const travelApCost = apValidation.cost + (v96NtExtraAp(gameSettings, player.currentRegion, region, gameState.season) ? 1 : 0);
 
     const commitAuthorizedTravel = () => {
       executeUniversalActionPipeline(
@@ -199892,7 +201013,8 @@ function dispatchGameSettingsChange(
 
     const isFree = (player.masteryUnlocks.includes("Master of Challenges") || player.masteryUnlocks.includes("Challenge Master")) && !player.usedFreeChallengeThisTurn && !usedFreeChallengeThisTurn;
     const configuredApCost = getActionPointCost('challenges', gameSettings, false);
-    const challengeApCost = isFree ? 0 : configuredApCost;
+    const vicFree = v96TraitsOn(gameSettings) && player.currentRegion === 'VIC' && !player.v96VicFreeUsed;
+    const challengeApCost = (isFree || vicFree) ? 0 : configuredApCost;
 
     const apValidation = validateActionPointRequest(player, 'challenges', gameSettings);
 
@@ -199939,7 +201061,11 @@ function dispatchGameSettingsChange(
             const { isUnderdog, leader } = getUnderdogBonus('player');
             const hasLuckyStreak = player.masteryUnlocks.includes("Lucky Streak");
             const masteryCount = (player.challengeMastery?.[challenge.name] || 0) + 1;
-            const rewardCore = computeChallengeRewardCore({ wager, rewardMultiplier: challenge.reward, characterName: player?.character?.name, leaderPenalty: leader === 'player' && getWealthState().ratio > 2, luckyStreak: hasLuckyStreak, consecutiveWins: player.consecutiveWins, masteryCount });
+            const v96Rm = v96RewardMult(gameSettings, player);
+            const rewardCore = computeChallengeRewardCore({ wager, rewardMultiplier: challenge.reward, characterName: player?.character?.name, leaderPenalty: leader === 'player' && getWealthState().ratio > 2, luckyStreak: hasLuckyStreak, consecutiveWins: player.consecutiveWins, masteryCount, ...(v96Rm !== 1 ? { rewardMult: v96Rm } : {}) });
+            if (v96TraitsOn(gameSettings) && player.currentRegion === 'QLD') dispatchPlayer({ type: 'MERGE_STATE', payload: { v96QldWins: (Number(player.v96QldWins) || 0) + 1 } });
+            if (vicFree) dispatchPlayer({ type: 'MERGE_STATE', payload: { v96VicFreeUsed: true } });
+            if (v96FinalOn(gameSettings) && Number(challenge.difficulty) >= 3) dispatchPlayer({ type: 'MERGE_STATE', payload: { v96HardWin: true } });
             const reward = rewardCore.reward;
             v95RecordedReward = reward;
             if (rewardCore.luckyStreakBonus > 0) {
@@ -200146,7 +201272,7 @@ function dispatchGameSettingsChange(
     const sellResource = useCallback((resource: any, price: any) => {
       if (v96BlockHumanAction('Selling')) return;
     const apValidation = validateActionPointRequest(player, 'sell_resources', gameSettings);
-    const sellApCost = apValidation.cost;
+    const sellApCost = v96StrategyOn(gameSettings) ? v96SellAp(gameSettings, player) : apValidation.cost;
 
     const confirmSell = () => {
       executeUniversalActionPipeline(
@@ -200224,6 +201350,10 @@ function dispatchGameSettingsChange(
               }
             }
 
+            const v96Boom = v96WaPriceMult(gameSettings, player, resource, Number(gameState.day) || 1, Number(gameSettings.worldRngSeed) || 1);
+            if (v96Boom !== 1) finalPrice = Math.floor(finalPrice * v96Boom);
+            if (v96TraitsOn(gameSettings) && player.currentRegion === 'SA') dispatchPlayer({ type: 'MERGE_STATE', payload: { v96SaSoldToday: true } });
+            if ((v96FinalOn(gameSettings) || v96TraitsOn(gameSettings)) && player.currentRegion === 'WA') dispatchPlayer({ type: 'MERGE_STATE', payload: { v96WaDelivered: (Number(player.v96WaDelivered) || 0) + 1 } });
             if (sellApCost > 0) {
               dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: sellApCost, actionId: 'sell_resources' } });
             }
@@ -200251,7 +201381,7 @@ function dispatchGameSettingsChange(
       );
     };
 
-    if (!apValidation.allowed) {
+    if (!apValidation.allowed && sellApCost > 0) {
       requestActionOverrideForAction('sell_resources', apValidation, confirmSell);
       return;
     }
@@ -200426,7 +201556,8 @@ function dispatchGameSettingsChange(
             addNotification('You already own this investment.', 'warning');
             return { passed: false, reason: 'You already own this investment.' };
           }
-          if (player.money < investment.cost) {
+          const v96Pay = v96StrategyOn(gameSettings) ? Math.ceil(investment.cost * V96_INVEST_KEEP) : investment.cost;
+          if (player.money < v96Pay) {
             addNotification('Not enough money for this investment.', 'error');
             return { passed: false, reason: 'Not enough money for this investment.' };
           }
@@ -200455,7 +201586,7 @@ function dispatchGameSettingsChange(
         if (invApCost > 0) {
               dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: invApCost, actionId: 'investments' } });
             }
-            dispatchPlayer({ type: 'UPDATE_MONEY', payload: -investment.cost });
+            dispatchPlayer({ type: 'UPDATE_MONEY', payload: -(v96StrategyOn(gameSettings) ? Math.ceil(investment.cost * V96_INVEST_KEEP) : investment.cost) });
         dispatchPlayer({ type: 'MERGE_STATE', payload: { investments: [...(player.investments || []), regionCode] } });
         addNotification(`Purchased ${investment.name} in ${REGIONS[regionCode]?.name || regionCode} for $${investment.cost}.`, 'success', true);
         // AP consumed via CONSUME_ACTION_POINTS above - no duplicate incrementAction
@@ -200659,10 +201790,11 @@ function dispatchGameSettingsChange(
       addNotification('That sabotage effect is already active.', 'warning');
       return;
     }
-    if (player.money < sabotage.cost) {
+    if (player.money < v96SabotageCost(sabotage.cost, gameSettings)) {
       addNotification('Not enough money for sabotage.', 'error');
       return;
     }
+    const v96HumanSteal = v96StrategyOn(gameSettings) ? v96SabotageSteal(player, targetActor) : 0;
     if (gameSettings.regionalStandingEnabled) {
       const targetRegion = targetActor.currentRegion || 'NSW';
       const targetStanding = getActorRegionalStanding(gameState, resolvedTargetId, targetRegion);
@@ -200671,7 +201803,7 @@ function dispatchGameSettingsChange(
       const attackerBonus = Math.min(0.25, Math.max(0, attackerStanding * 0.0025));
       const successChance = 0.70 - sabotageResistance + attackerBonus;
       if (drawGameplayRandom('Sabotage') > successChance) {
-        dispatchPlayer({ type: 'UPDATE_MONEY', payload: -sabotage.cost });
+        dispatchPlayer({ type: 'UPDATE_MONEY', payload: -v96SabotageCost(sabotage.cost, gameSettings) });
         addNotification(`Sabotage attempt failed! ${targetActor.name}'s regional standing resisted the attempt.`, 'warning', true);
         if (sabotageApCost > 0) {
           dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: sabotageApCost, actionId: 'sabotage' } });
@@ -200681,9 +201813,10 @@ function dispatchGameSettingsChange(
     }
     updateActorState(resolvedTargetId, (prev: any) => ({
       ...prev,
-      debuffs: upsertDebuff(prev.debuffs || [], sabotage.id, sabotage.duration)
+      debuffs: upsertDebuff(prev.debuffs || [], sabotage.id, sabotage.duration),
+      ...(v96HumanSteal > 0 ? { money: Math.max(0, Math.floor((prev.money || 0) - v96HumanSteal)) } : {})
     }));
-    dispatchPlayer({ type: 'UPDATE_MONEY', payload: -sabotage.cost });
+    dispatchPlayer({ type: 'UPDATE_MONEY', payload: -v96SabotageCost(sabotage.cost, gameSettings) + v96HumanSteal });
     addNotification(`Sabotage used: ${sabotage.name}.`, 'warning', true);
     addNotification(`🤖 ${targetActor.name} is affected by ${sabotage.name}.`, 'ai', false);
     if (sabotageApCost > 0) {
@@ -201169,6 +202302,7 @@ function dispatchGameSettingsChange(
           projected = applyCommittedStayProgress(projected, gameSettings, (msg, type, sys) => addNotification(msg, type as Parameters<typeof addNotification>[1], sys));
         }
         projected.actionsUsedThisTurn = 0;
+        v96ResetActorDay(projected);
         projected.overrideActionsGranted = 0;
         projected.usedFreeChallengeThisTurn = false;
         projected.overridesUsedToday = 0;
@@ -201237,7 +202371,7 @@ function dispatchGameSettingsChange(
           }, 0);
 
           if (investmentIncome > 0) {
-            projected.money += investmentIncome;
+            projected.money += v96ScaleInvestmentIncome(investmentIncome, gameSettings, 0);
             addNotification(
               actor.kind === 'human'
                 ? `Investment income: +$${investmentIncome}`
@@ -202541,7 +203675,7 @@ function dispatchGameSettingsChange(
         );
       }, 0);
       if (playerInvestmentIncome > 0) {
-        projectedPlayer.money += playerInvestmentIncome;
+        projectedPlayer.money += v96ScaleInvestmentIncome(playerInvestmentIncome, gameSettings, v96ComebackOn(gameSettings) ? Math.max(0, v96MetricGap(gameSettings.winCondition === 'net_worth' ? computeNetWorth(projectedPlayer) : projectedPlayer.money, gameSettings.winCondition === 'net_worth' ? computeNetWorth(projectedAi) : projectedAi.money)) : 0);
         addNotification(`Investment income: +$${playerInvestmentIncome}`, 'money', true);
       }
 
@@ -202558,7 +203692,17 @@ function dispatchGameSettingsChange(
         );
       }, 0);
       if (aiInvestmentIncome > 0) {
-        projectedAi.money += aiInvestmentIncome;
+        projectedAi.money += v96ScaleInvestmentIncome(aiInvestmentIncome, gameSettings, v96ComebackOn(gameSettings) ? Math.max(0, v96MetricGap(gameSettings.winCondition === 'net_worth' ? computeNetWorth(projectedAi) : projectedAi.money, gameSettings.winCondition === 'net_worth' ? computeNetWorth(projectedPlayer) : projectedPlayer.money)) : 0);
+        if (v96ComebackOn(gameSettings)) {
+          const v96Metric = (actor: any, regions: number) => gameSettings.winCondition === 'regions' ? regions : gameSettings.winCondition === 'net_worth' ? computeNetWorth(actor) : Math.max(0, actor.money || 0);
+          const pm = v96Metric(projectedPlayer, playerControlledRegions); const am = v96Metric(projectedAi, aiControlledRegions);
+          v96RefreshTrail(projectedPlayer, Math.max(0, v96MetricGap(am, pm)));
+          v96RefreshTrail(projectedAi, Math.max(0, v96MetricGap(pm, am)));
+          if (playerControlledRegions > 0) projectedPlayer.money += Math.floor(playerControlledRegions * V96_REGION_STIPEND * v96IncomeScale(v96MetricGap(pm, am)));
+          if (aiControlledRegions > 0) projectedAi.money += Math.floor(aiControlledRegions * V96_REGION_STIPEND * v96IncomeScale(v96MetricGap(am, pm)));
+        }
+        v96ResetActorDay(projectedPlayer); v96ResetActorDay(projectedAi);
+        v96PayLiveBounties(gameSettings, projectedPlayer, projectedAi, newDay, Number(gameSettings.totalDays) || 30, (id) => Object.keys(REGIONS).filter(code => getRegionControlSnapshot(sanitizeRegionDeposits(gameState.regionDeposits)[code] || {}).controllerId === (id === 'player' ? playerControlKey : opponentControlKey)));
         addNotification(`🤖 ${projectedAi.name} earned $${aiInvestmentIncome} from investments`, 'ai', false);
       }
     }
@@ -203521,7 +204665,8 @@ function dispatchGameSettingsChange(
     }
     if (targetActor.teamId === actor.teamId) return false;
     if (hasActiveDebuff(targetActor.debuffs, sabotage.id)) return false;
-    if (actor.money < sabotage.cost) return false;
+    if (actor.money < v96SabotageCost(sabotage.cost, gameSettings)) return false;
+    const v96ActorSteal = v96StrategyOn(gameSettings) ? v96SabotageSteal(actor, targetActor) : 0;
     if (actor.kind === 'human' && dnPreActionRef.current?.({ actorId, actionType: 'sabotage', targetActorId: targetActor.id }, () => useActorSabotageRef.current?.(actorId, sabotageId, targetActorId, options))) return false;
     if (gameSettings.regionalStandingEnabled) {
       const targetRegion = targetActor.currentRegion || 'NSW';
@@ -203533,7 +204678,7 @@ function dispatchGameSettingsChange(
       if (drawGameplayRandom('Sabotage') > successChance) {
         updateActorState(actorId, (prev: any) => ({
           ...prev,
-          money: deductMoney(prev.money, sabotage.cost)
+          money: deductMoney(prev.money, v96SabotageCost(sabotage.cost, gameSettings))
         }));
         addNotification(`${getActorDisplayName(actorId)}'s sabotage was thwarted by ${getActorDisplayName(targetActor.id)}'s regional standing!`, actor.kind === 'human' ? 'warning' : 'ai', true, 'system');
         return false;
@@ -203541,11 +204686,12 @@ function dispatchGameSettingsChange(
     }
     updateActorState(actorId, (prev: any) => ({
       ...prev,
-      money: deductMoney(prev.money, sabotage.cost)
+      money: deductMoney(prev.money, v96SabotageCost(sabotage.cost, gameSettings) - v96ActorSteal)
     }));
     updateActorState(targetActor.id, (prev: any) => ({
       ...prev,
-      debuffs: upsertDebuff(prev.debuffs || [], sabotage.id, sabotage.duration)
+      debuffs: upsertDebuff(prev.debuffs || [], sabotage.id, sabotage.duration),
+      ...(v96ActorSteal > 0 ? { money: Math.max(0, Math.floor((prev.money || 0) - v96ActorSteal)) } : {})
     }));
     appendTeammatePerformanceSample(actor.teamId, actorId, {
       turn: gameState.turnCounter,
@@ -203570,7 +204716,7 @@ function dispatchGameSettingsChange(
           category: 'action',
           actionType: 'sabotage',
           description: sabotage.description,
-          cost: sabotage.cost,
+          cost: v96SabotageCost(sabotage.cost, gameSettings),
           success: true
         }
       });
@@ -203580,7 +204726,7 @@ function dispatchGameSettingsChange(
         actionType: 'sabotage',
         actorId,
         targetId: targetActor.id,
-        magnitude: sabotage.cost,
+        magnitude: v96SabotageCost(sabotage.cost, gameSettings),
         success: true,
         turn: gameState.turnCounter,
         summary: `${getActorDisplayName(actorId)} used ${sabotage.name} on ${getActorDisplayName(targetActor.id)}.`,
@@ -218292,6 +219438,13 @@ function dispatchGameSettingsChange(
                 </div>
               </SettingsSection>
               <SettingsSection id="interface.changelog" tab="interfaceAcc" title="What's New" chips={['UX only']}>
+                <div className="text-sm font-semibold mb-1">{V96_CHANGELOG[0]}</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs opacity-80 mb-3">
+                  {V96_CHANGELOG.slice(1).map(item => (
+                    <div key={item}>- {item}</div>
+                  ))}
+                </div>
+                <div className="text-xs opacity-70 mb-2">{V96_ALLOFF_NOTES[1]}</div>
                 <div className="text-sm font-semibold mb-1">{V613_CHANGELOG[0]}</div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs opacity-80">
                   {V613_CHANGELOG.slice(1).map(item => (
@@ -219909,6 +221062,9 @@ function dispatchGameSettingsChange(
               </SettingsSection>
               <SettingsSection id="gameplay.v95CoreLoop" tab="gameplay" title="Core loop" chips={['Off by default']} description="Interactive challenges, the real map, the expanded challenge pool, sound, Daily Seed and rulesets. Each one stays off until you turn it on." fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.v95CoreLoop')!.fieldKeys}>
                 <V95CoreLoopSettings settings={gameSettings} theme={themeStyles} onChange={(next, label) => trackedSetGameSettings('direct_player_change', label, () => next)} />
+              </SettingsSection>
+              <SettingsSection id="gameplay.v96Balance" tab="gameplay" title="Rules & match" chips={['Off by default']} description="Comeback rules, Final Week, strategy balance, and state twists. With every switch off, results stay as they are now.">
+                <V96RulesSettings settings={gameSettings} onToggle={(key, label, value) => trackedSetGameSettings('direct_player_change', label, prev => ({ ...prev, [key]: value }))} />
               </SettingsSection>
               <SettingsSection id="gameplay.expansions" tab="gameplay" title="Gameplay Expansions" chips={['Sabotage']} onReset={settingsResetHandlers.gameplay.fn} resetLabel={settingsResetHandlers.gameplay.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.expansions')!.fieldKeys}>
                 <div className="space-y-4">
@@ -229916,6 +231072,7 @@ function dispatchGameSettingsChange(
             <p className={`${themeStyles.textMuted} text-sm`}>
               Explore Australia, take on challenges, and become the ultimate adventurer!
             </p>
+            <button type="button" className={`${themeStyles.buttonSecondary} mt-3 px-4 py-2 rounded min-h-[44px] font-semibold`} onClick={() => updateUiState({ showCareerProgressionModal: true })}>Career</button>
           </div>
 
           {/* Character Selection */}
@@ -230098,6 +231255,7 @@ function dispatchGameSettingsChange(
                 {v95DailyOpen && (
                   <div className={`text-left text-sm space-y-2 p-3 rounded-xl ${isDark ? 'bg-gray-800 text-gray-100' : 'bg-white text-gray-800'}`}>
                     <p>{V95_DAILY_SEED_SETUP.summary}</p>
+                    <V96DailyHistory />
                     <p>Character locked for this run: {CHARACTERS[uiState.selectedCharacter]?.name || 'Explorer'}. Persistent AI memory is off.</p>
                     <label htmlFor="v95-daily-code" className="block font-semibold">Seed code</label>
                     <input id="v95-daily-code" value={v95DailyDraft} onChange={event => setV95DailyDraft(event.target.value)} className="w-full px-3 py-2 rounded border bg-transparent" />
@@ -232063,6 +233221,8 @@ function dispatchGameSettingsChange(
           />
         </OptionalSurfaceBoundary>
         <StrategicBalanceInspector theme={themeStyles} winCondition={(['money', 'net_worth', 'regions'].includes(String(gameSettings.winCondition)) ? gameSettings.winCondition : 'money') as BalanceWinMetric} days={Number(gameSettings.totalDays || 30)} apPerDay={Number(gameSettings.playerActionsPerDay || 3)} features={{ investments: Boolean(gameSettings.investmentsEnabled), contracts: Boolean(gameSettings.regionalContractsEnabled), sabotage: Boolean(gameSettings.sabotageEnabled), overrides: gameSettings.allowActionOverride !== false }} showExpanded={gameSettings.expandedChallengesEnabled === true} />
+        <V96StrategyTournamentPanel theme={themeStyles} />
+        <V96BuildSizeLine />
         <V95SystemImpactPanel theme={themeStyles} />
       </div>
     );
@@ -233329,11 +234489,14 @@ function dispatchGameSettingsChange(
         
         {/* Main Content Area */}
         </details>
+        {v96FinalOn(gameSettings) && <div data-testid="v96-final-week" className="mb-3 text-sm"><div className="font-semibold">Final Week</div>{v96BountiesForDay(Number(gameSettings.worldRngSeed) || 1, Number(gameState.day) || 1, Number(gameSettings.totalDays) || 30).map(b => <div key={b.id}>{b.label}</div>)}</div>}
         <div className="phone-board grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Left Column - Current Region Info */}
           <div className={`phone-region-col ${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 ${themeStyles.shadow}`}>
             <h3 className="text-2xl font-bold mb-3">📍 {currentRegion?.name || "Unknown Region"}</h3>
             <p className="text-sm opacity-75 mb-4">{currentRegion?.description || ""}</p>
+            {v96TraitsOn(gameSettings) && REGION_TRAITS[player.currentRegion] && <p className="text-sm mb-3" data-testid="v96-region-trait" title={REGION_TRAITS[player.currentRegion].detail}>{REGION_TRAITS[player.currentRegion].line}</p>}
+            {v96StrategyOn(gameSettings) && <div className="flex flex-wrap gap-2 mb-3"><button type="button" className="min-h-[44px] px-3 rounded border" onClick={() => { if ((player.money || 0) < 180) { addNotification('Fortify costs $180.', 'warning'); return; } const ap = validateActionPointRequest(player, 'region_deposit', gameSettings); if (!ap.allowed) { addNotification('Fortify needs an action.', 'warning'); return; } dispatchPlayer({ type: 'UPDATE_MONEY', payload: -180 }); dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: 1, actionId: 'region_deposit' } }); setV96Locks(prev => ({ ...prev, [player.currentRegion]: { owner: isTeamMode ? TEAM_PLAYER_ID : 'player', until: (Number(gameState.day) || 1) + 2 } })); addNotification(`Fortified ${player.currentRegion} for 3 days.`, 'success'); }}>Fortify</button><button type="button" className="min-h-[44px] px-3 rounded border" onClick={() => { if ((player.money || 0) < 60) { addNotification('Partner costs $60.', 'warning'); return; } const ap = validateActionPointRequest(player, 'region_deposit', gameSettings); if (!ap.allowed) { addNotification('Partner needs an action.', 'warning'); return; } const deposits = sanitizeRegionDeposits(gameState.regionDeposits); const region = player.currentRegion; const owner = isTeamMode ? TEAM_PLAYER_ID : 'player'; const entry = { ...(deposits[region] || {}) }; entry[owner] = Math.floor(entry[owner] || 0) + 40; entry.neutral = Math.floor(entry.neutral || 0) + 40; dispatchPlayer({ type: 'UPDATE_MONEY', payload: -60 }); dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: 1, actionId: 'region_deposit' } }); dispatchGameState({ type: 'SET_REGION_CONTROL_DATA', payload: { regionDeposits: { ...deposits, [region]: entry } } }); addNotification(`Partnered in ${region}. A neutral faction shares the stake.`, 'success'); }}>Partner</button></div>}
             
             <div className="mb-4">
               <div className="text-sm font-bold mb-2">💡 Fun Fact</div>
@@ -233597,6 +234760,7 @@ function dispatchGameSettingsChange(
                             </div>
                           )}
 	                      </div>
+                      {v96TraitsOn(gameSettings) && REGION_TRAITS[code] && <div className="v96-map-trait" data-testid="v96-map-trait" style={{ fontSize: 10, lineHeight: 1.15, maxWidth: 76, textAlign: 'center', marginTop: 2 }}>{REGION_TRAITS[code].line}</div>}
                       {isPlayerHere && (
                         <div key={`you_${player.currentRegion}`} className="v94-pop absolute top-full mt-1 left-1/2 transform -translate-x-1/2 text-xs whitespace-nowrap bg-green-600 text-white px-2 py-1 rounded font-bold" data-testid="map-you-marker">
                           ▲ You
@@ -243026,6 +244190,27 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
         </div>
       );
 
+      if (v96RecapOn(gameSettings) && !v96ShowDebrief) {
+        const achNames = v96UnlockedRef.current.map(id => DEFAULT_CAREER_ACHIEVEMENTS[id]?.title || id);
+        return (
+          <V96MatchRecap
+            won={!!won}
+            youScore={formatWinMetricValue(gameSettings.winCondition, outcome.playerValue)}
+            rivalScore={formatWinMetricValue(gameSettings.winCondition, outcome.aiValue)}
+            metricLabel={WIN_METRIC_LABELS[gameSettings.winCondition] || String(gameSettings.winCondition)}
+            series={v96ScoreTraceRef.current.slice()}
+            ledger={gameState?.gameActivityLedger?.events || []}
+            achievements={achNames}
+            deterministic={gameSettings.deterministicRngActive === true || gameSettings.aiDeterministic === true || gameSettings.worldRngMode === 'deterministic'}
+            onRematch={() => { v96RematchSeedRef.current = v96RematchSeed(Number(worldRngSeedRef.current || gameSettings.worldRngSeed || 1)); initializeGameMode(gameState.selectedMode, gameState.aiDifficulty); }}
+            onRematchSeed={() => { v96RematchSeedRef.current = Number(worldRngSeedRef.current || gameSettings.worldRngSeed || 1) >>> 0; initializeGameMode(gameState.selectedMode, gameState.aiDifficulty); }}
+            onReplay={() => openReplayStudio(replayRecordingRef.current || loadedReplayFile, 'watch')}
+            onMenu={handleReturnToMenu}
+            onCareer={() => updateUiState({ showCareerProgressionModal: true })}
+            onDebrief={gameSettings.postMatchDebriefEnabled ? () => setV96ShowDebrief(true) : undefined}
+          />
+        );
+      }
       if (gameSettings.postMatchDebriefEnabled) {
         const debriefReport = generatePostMatchDebriefAnalytics({
           gameState,
@@ -243174,6 +244359,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
         }
       `}</style>
       {gameState.gameMode === "menu" && !uiState.showCampaignSelect && renderMenu()}
+      {gameState.gameMode === "menu" && renderCareerProgressionModal()}
       {gameState.gameMode === "menu" && uiState.showCampaignSelect && renderCampaignSelect()}
       {gameState.gameMode === "game" && renderGame()}
       {gameState.gameMode === "end" && renderGameOver()}
