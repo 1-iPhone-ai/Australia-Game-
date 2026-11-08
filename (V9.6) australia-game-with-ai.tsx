@@ -14152,6 +14152,9 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   experienceMode: 'explorer' as ExperienceMode,
   /** V9.6 Challenge Decision System (SECTION 20AH) — off by default. */
   challengeApproachesEnabled: false,
+  /** V9.6 Challenge Content Expansion and generator (SECTION 20AI) — off by default. */
+  expandedChallengeContentEnabled: false,
+  proceduralChallengesEnabled: false,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -18325,6 +18328,28 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     valueType: 'boolean',
     defaultValue: false,
     validate: (v: any) => typeof v === 'boolean',
+    isLiveSafe: true,
+    affectsFairness: false,
+  },
+  {
+    key: 'expandedChallengeContentEnabled',
+    category: 'difficulty',
+    label: 'Expanded Challenge Content',
+    description: '128 more hand-written challenges across the eight regions, shown on a rotating 4-slot board you can scout.',
+    valueType: 'boolean',
+    defaultValue: false,
+    validate: (v: unknown) => typeof v === 'boolean',
+    isLiveSafe: true,
+    affectsFairness: false,
+  },
+  {
+    key: 'proceduralChallengesEnabled',
+    category: 'difficulty',
+    label: 'Procedural Challenges',
+    description: 'Deterministic template-generated challenges fill a region\'s board once its hand-written ones are used up.',
+    valueType: 'boolean',
+    defaultValue: false,
+    validate: (v: unknown) => typeof v === 'boolean',
     isLiveSafe: true,
     affectsFairness: false,
   },
@@ -26548,6 +26573,10 @@ export type GameSettingsState = {
   experienceMode?: ExperienceMode;
   /** V9.6 Challenge Decision System (SECTION 20AH): approaches, regional reputation and challenge chains. Off = V9.5 challenges. */
   challengeApproachesEnabled?: boolean;
+  /** V9.6 Challenge Content Expansion (SECTION 20AI): 128 hand-written challenges on a rotating 4-slot board. */
+  expandedChallengeContentEnabled?: boolean;
+  /** V9.6 (SECTION 20AI): template generator that tops up a region's board once its hand-written pool is exhausted. */
+  proceduralChallengesEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -64428,7 +64457,7 @@ export const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'economy.winCondition', tab: 'economy', title: 'Win Condition & Cash-Out', tags: ['Economy'], fieldKeys: ['winCondition', 'winConditionTieBreakers', 'allowCashOut', 'negotiationMode'] },
   { id: 'gameplay.actionLimits', tab: 'gameplay', title: 'Action Limits', tags: [], fieldKeys: ['actionLimitsEnabled', 'maxActionsPerTurn', 'aiMaxActionsPerTurn', 'actionPointConsumptionSettings'] },
   { id: 'gameplay.actionOverride', tab: 'gameplay', title: 'Action Override', tags: [], fieldKeys: ['allowActionOverride', 'overrideCost'] },
-  { id: 'gameplay.challengeRules', tab: 'gameplay', title: 'Challenge Rules', tags: [], fieldKeys: ['dynamicWagerEnabled', 'doubleOrNothingEnabled', 'challengeApproachesEnabled'], keywords: 'challenge approaches reputation chains odds side effects' },
+  { id: 'gameplay.challengeRules', tab: 'gameplay', title: 'Challenge Rules', tags: [], fieldKeys: ['dynamicWagerEnabled', 'doubleOrNothingEnabled', 'challengeApproachesEnabled', 'expandedChallengeContentEnabled', 'proceduralChallengesEnabled'], keywords: 'challenge approaches reputation chains odds side effects expanded content board rotation scout procedural generator templates' },
   { id: 'gameplay.expansions', tab: 'gameplay', title: 'Gameplay Expansions', tags: ['Sabotage'], fieldKeys: ['investmentsEnabled', 'equipmentShopEnabled', 'sabotageEnabled', 'aiSabotagePriority', 'aiInvestmentPriority', 'aiEquipmentPurchasePriority', 'aiInfrastructurePriority', 'aiCrisisMitigationPriority'] },
   // SH2: Added 14 uncovered keys to ai.settings
   { id: 'ai.settings', tab: 'aiTeams', title: 'AI Difficulty', tags: ['AI'], fieldKeys: ['aiUsesMarketModifiers', 'aiSpecialAbilitiesEnabled', 'aiAffectsEconomy', 'aiWinConditionSpendingEnabled', 'aiWinConditionAdaptationV2Enabled', 'aiRegionsMajorityRushEnabled', 'teammatePerformanceSyncEnabled', 'directiveStrength', 'directiveBudgetEnabled', 'directivesPerTurn', 'directiveEscalationCost', 'aiDeterministic', 'aiFairnessLevel', 'aiPersonalityVariance', 'aiPlanningDepth', 'aiReplayRecordingEnabled', 'aiReplayMaxEvents', 'aiReplayPolicy', 'aiEngineVersion', 'aiGrandTourPriority', 'aiMarketModifierAwareness', 'aiSpecialAbilityPriority', 'aiEconomyInteractionWeight', 'aiWinConditionSpendingStrength', 'aiRegionRushIntensity', 'aiNegotiationParticipationWeight', 'aiNegotiationValuationWeight', 'teammatePerformanceSyncStrength', 'aiEffectivenessScorecardEnabled', 'aiEffectivenessBlunderThresholdRoi', 'aiEffectivenessTrackCompliance', 'aiEconomicCheats'] },
@@ -71615,7 +71644,7 @@ export function generateCoPilotPlayerActionCandidates(
 
   // V9.6 (SECTION 20AH): approach challenges — the Co-Pilot names the best approach, its odds and the chain it advances.
   if (gameSettings?.challengeApproachesEnabled === true) {
-    buildCoPilotApproachCandidates({ actor: actorObj, world: gs, cash, reserve: minReserveFloor, apRemaining: ap, makeId }).forEach(c => candidates.push(c));
+    buildCoPilotApproachCandidates({ actor: actorObj, world: gs, cash, reserve: minReserveFloor, apRemaining: ap, makeId, settings: gameSettings, seed: Number(gameSettings?.worldRngSeed) || 1 }).forEach(c => candidates.push(c));
   }
 
   // Category 6: Expedition / Discovery
@@ -133348,7 +133377,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'experienceMode', 'challengeApproachesEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'experienceMode', 'challengeApproachesEnabled', 'expandedChallengeContentEnabled', 'proceduralChallengesEnabled'
 ] as const;
 
 /**
@@ -133682,7 +133711,9 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         opponentModels,
         // V9.6 (SECTION 20AH): optional; absent in V9.5 saves (reputation then reads as 50 everywhere, no unlocks).
         ...(data && data.regionalReputation !== undefined ? { regionalReputation: sanitizeRegionalReputation(data.regionalReputation) } : {}),
-        ...(data && data.unlockedChallengeIds !== undefined ? { unlockedChallengeIds: sanitizeUnlockedChallengeIds(data.unlockedChallengeIds) } : {})
+        ...(data && data.unlockedChallengeIds !== undefined ? { unlockedChallengeIds: sanitizeUnlockedChallengeIds(data.unlockedChallengeIds) } : {}),
+        // V9.6 (SECTION 20AI): which regions' next board rotation the actor has scouted (optional).
+        ...(data && data.scoutedChallengeBoards !== undefined ? { scoutedChallengeBoards: sanitizeScoutedChallengeBoards(data.scoutedChallengeBoards) } : {})
       };
     };
 
@@ -135764,6 +135795,7 @@ function v95NormalizeSuiteResults(raw: unknown): Array<{ name: string; passed: b
 export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v96em', label: 'V9.6 Experience Modes', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96ExperienceModesSelfTests() },
   { id: 'v96cd', label: 'V9.6 Challenge Decision System', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96ChallengeDecisionSelfTests() },
+  { id: 'v96ex', label: 'V9.6 Challenge Content Expansion', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96ChallengeContentSelfTests() },
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
@@ -181651,8 +181683,12 @@ export function describeChainCompletion(chain: ChallengeChainDefinition): string
   return `${chain.icon} Chain complete: ${chain.title}! +$${chain.completionReward.money}${reps ? `, reputation ${reps}` : ''}${chain.completionReward.item ? `, ${chain.completionReward.item}` : ''}`;
 }
 
-/** The region's challenge list for the given flags. Flags off → exactly the V9.5 four. */
-export function listRegionChallengeDefinitions(region: string, ctx: { settings: { challengeApproachesEnabled?: boolean } | null | undefined; completedNames: readonly string[]; unlockedIds: readonly string[] }): ChallengeDefinition[] {
+/** The region's challenge list for the given flags. Flags off → exactly the V9.5 four; WP3 content flags → the rotating board (SECTION 20AI). */
+export function listRegionChallengeDefinitions(region: string, ctx: { settings: ChallengeContentSettingsLike | null | undefined; completedNames: readonly string[]; unlockedIds: readonly string[]; day?: number; seed?: number; seasonNames?: readonly string[]; themes?: readonly ContentTheme[] }): ChallengeDefinition[] {
+  if (isChallengeBoardActive(ctx.settings)) {
+    const board = computeChallengeBoard(region, challengeBoardRotationIndex(ctx.day ?? 1), { settings: ctx.settings, seed: Number(ctx.seed) || 1, seasonNames: ctx.seasonNames || [], completedNames: ctx.completedNames, unlockedIds: ctx.unlockedIds, themesOverride: ctx.themes });
+    return [...board.slots, ...board.pinned];
+  }
   const base = LEGACY_CHALLENGE_DEFINITIONS.filter(d => d.region === region);
   if (!ctx.settings || ctx.settings.challengeApproachesEnabled !== true) return base;
   return [...base, ...visibleFollowUpsForRegion(region, ctx.completedNames, ctx.unlockedIds)];
@@ -181779,12 +181815,12 @@ export function approachSituationalFromWorld(world: { weather?: unknown; season?
   return { situational: w + s + e, eventBonus: e };
 }
 /** Up to two `challenge_approach` candidates: the best approach (by expected value) for the best challenges in the actor's region. */
-export function buildCoPilotApproachCandidates(i: { actor: ApproachActorLike & { id?: string }; world: { weather?: unknown; season?: unknown; activeEvents?: unknown } | null | undefined; cash: number; reserve: number; apRemaining: number; makeId: (catIdx: number, slug: string) => string }): CoPilotActionCandidate[] {
+export function buildCoPilotApproachCandidates(i: { actor: ApproachActorLike & { id?: string }; world: { weather?: unknown; season?: unknown; activeEvents?: unknown; day?: unknown } | null | undefined; cash: number; reserve: number; apRemaining: number; makeId: (catIdx: number, slug: string) => string; settings?: ChallengeContentSettingsLike | null; seed?: number }): CoPilotActionCandidate[] {
   const region = String(i.actor.currentRegion || '');
   if (!isChallengeRegionCode(region)) return [];
   const completed = Array.isArray(i.actor.challengesCompleted) ? i.actor.challengesCompleted : [];
   const season = i.actor.completedThisSeason || [];
-  const defs = listRegionChallengeDefinitions(region, { settings: { challengeApproachesEnabled: true }, completedNames: completed, unlockedIds: sanitizeUnlockedChallengeIds(i.actor.unlockedChallengeIds) }).filter(d => !season.includes(d.name));
+  const defs = listRegionChallengeDefinitions(region, { settings: { ...(i.settings || {}), challengeApproachesEnabled: true }, completedNames: completed, unlockedIds: sanitizeUnlockedChallengeIds(i.actor.unlockedChallengeIds), day: Number(i.world?.day) || 1, seed: i.seed, seasonNames: season }).filter(d => !season.includes(d.name));
   const spendable = Math.max(0, i.cash - i.reserve);
   const wager = Math.max(MINIMUM_WAGER, Math.min(300, Math.round(spendable * 0.15)));
   const options = defs.map(def => {
@@ -181838,6 +181874,10 @@ export interface ChallengeAdvisorContext {
   region: string;
   world?: { weather?: unknown; season?: unknown; activeEvents?: unknown } | null;
   wager: number;
+  settings?: ChallengeContentSettingsLike | null;
+  day?: number;
+  seed?: number;
+  themes?: readonly ContentTheme[];
 }
 export function buildChallengeAdvisorAnswer(query: string, topic: ChallengeAdvisorTopic, ctx: ChallengeAdvisorContext): GameIntelligenceAnswer {
   const completed = Array.isArray(ctx.actor.challengesCompleted) ? ctx.actor.challengesCompleted : [];
@@ -181868,7 +181908,7 @@ export function buildChallengeAdvisorAnswer(query: string, topic: ChallengeAdvis
   } else {
     const region = isChallengeRegionCode(ctx.region) ? ctx.region : null;
     title = region ? `Best approaches in ${region}` : 'Best approaches';
-    const defs = region ? listRegionChallengeDefinitions(region, { settings: { challengeApproachesEnabled: true }, completedNames: completed, unlockedIds: unlocked }).filter(d => !season.includes(d.name)) : [];
+    const defs = region ? listRegionChallengeDefinitions(region, { settings: { ...(ctx.settings || {}), challengeApproachesEnabled: true }, completedNames: completed, unlockedIds: unlocked, day: ctx.day, seed: ctx.seed, seasonNames: season, themes: ctx.themes }).filter(d => !season.includes(d.name)) : [];
     if (!defs.length) lines.push('No open challenges here right now — travel to a region with challenges you have not completed this season.');
     defs.forEach(def => {
       const legacyType = LEGACY_TYPE_FOR_TAG[def.type];
@@ -182230,6 +182270,730 @@ export function runV96ChallengeDecisionSelfTests(): V9SelfTestResult[] {
   });
   return results;
 }
+
+// ============================================================================
+// SECTION 20AI: V9.6 CHALLENGE CONTENT EXPANSION — 128 NEW CHALLENGES, A TEMPLATE GENERATOR, A ROTATING BOARD
+// ----------------------------------------------------------------------------
+//   • `expandedChallengeContentEnabled` adds 128 hand-written challenges (16 per region) in the
+//     SECTION 20AH ChallengeDefinition shape: real places, 2–3 approaches, side effects.
+//   • `proceduralChallengesEnabled` adds a TEMPLATE GENERATOR (28 parameterised templates with
+//     region fill tables) that fills a region's board once its hand-written pool is exhausted.
+//   • With either flag on, each region shows a CHALLENGE BOARD of 4 at a time that rotates every
+//     3 days; a SCOUT action (1 action point) previews the next rotation.
+//   • V9.3 content themes / regional openings choose which pools are active (tourism always is).
+// Both flags default OFF; with both off the region list is exactly V9.5 (or WP2's list).
+// Generation and rotation are deterministic: a private GameplayRngRegistry seeded from the
+// world seed, region and rotation — the named stream system, never Math.random.
+// ============================================================================
+
+const AUTHORED_SHIFT: Readonly<Record<ChallengeApproachStyle, number>> = { bold: 0.4, steady: -0.6, social: -0.1, clever: 0 };
+const AUTHORED_FAIL: Readonly<Record<ChallengeApproachStyle, number>> = { bold: 1, steady: 0.5, social: 0.8, clever: 0.8 };
+export function describeAuthoredApproach(style: ChallengeApproachStyle, stat: ChallengeStat, region: ChallengeRegionCode): string {
+  switch (style) {
+    case 'bold': return `Push your ${CHALLENGE_STAT_LABEL[stat]} for the biggest payout — a failure costs the full wager.`;
+    case 'steady': return 'Pay to prepare properly: easier odds, and you only lose part of the wager if it goes wrong.';
+    case 'social': return `Do it with the locals — good company and better standing in ${region}.`;
+    default: return `Lean on ${CHALLENGE_STAT_LABEL[stat]} and timing rather than brute effort.`;
+  }
+}
+type AuthoredApproachSpec = readonly [ChallengeApproachStyle, string, string, ChallengeStat, number, (readonly ChallengeSideEffect[])?, { shift?: number; cost?: number; fail?: number }?];
+function authoredChallenge(region: ChallengeRegionCode, name: string, difficulty: 1 | 2 | 3, reward: number, type: ChallengeTypeTag, themes: readonly ContentTheme[], blurb: string, specs: readonly AuthoredApproachSpec[]): ChallengeDefinition {
+  const approaches = specs.map(([style, id, label, stat, r, fx, o]) => apx(id, label, stat, style, o?.shift ?? AUTHORED_SHIFT[style], r, o?.cost ?? (style === 'steady' ? 20 + 30 * difficulty : 0), o?.fail ?? AUTHORED_FAIL[style], fx || [], describeAuthoredApproach(style, stat, region)));
+  return { id: challengeIdFor(region, name), name, region, difficulty, reward, type, approaches, source: 'authored', hiddenUntilUnlocked: false, blurb, tags: themes };
+}
+
+export const EXPANDED_CHALLENGES: readonly ChallengeDefinition[] = [
+  // ---- QLD ----
+  authoredChallenge('QLD', 'Climb the Story Bridge', 2, 2.0, 'adventure', ['tourism'], "Brisbane's heritage cantilever bridge at dusk.", [
+    ['bold', 'race', 'Race the guide to the summit', 'strength', 2.6, [fxDebuff('injury', 1)]], ['steady', 'twilight', 'Book the twilight climb', 'intelligence', 1.6], ['social', 'group', "Climb with a hens' party", 'charisma', 2.0, [fxRep('QLD', 3)]]]),
+  authoredChallenge('QLD', 'Cuddle a koala at Lone Pine', 1, 1.5, 'wildlife', ['tourism', 'environment'], "The world's first and largest koala sanctuary.", [
+    ['steady', 'keeper', "Follow the keeper's handling rules", 'intelligence', 1.2], ['social', 'school', 'Help with a school group visit', 'charisma', 1.5, [fxRep('QLD', 3)]], ['clever', 'awake', 'Hope the koala is awake', 'luck', 1.8]]),
+  authoredChallenge('QLD', 'Ride the Gold Coast theme-park coasters', 1, 1.6, 'physical', ['tourism'], 'Dreamworld, Movie World and the rest in a day.', [
+    ['bold', 'everyride', 'Ride every coaster back to back', 'strength', 2.0, [fxDebuff('exhaustion', 1)]], ['steady', 'express', 'Buy the express pass', 'intelligence', 1.3, [], { cost: 60 }], ['social', 'crew', 'Go with a crew of backpackers', 'charisma', 1.6, [fxRep('QLD', 2)]]]),
+  authoredChallenge('QLD', 'Sail the Whitsunday Islands', 2, 2.4, 'adventure', ['tourism', 'water'], 'Whitehaven Beach and Hill Inlet by yacht.', [
+    ['bold', 'bareboat', 'Skipper a bareboat charter yourself', 'intelligence', 3.0, [fxDebuff('exhaustion', 1)], { shift: 0.5 }], ['steady', 'maxi', 'Join a crewed maxi-yacht trip', 'intelligence', 1.9, [], { cost: 120 }], ['social', 'flotilla', 'Raft up with a holiday flotilla', 'charisma', 2.3, [fxRep('QLD', 3)]]]),
+  authoredChallenge('QLD', 'Harvest sugar cane in Bundaberg', 2, 1.9, 'physical', ['agriculture'], 'Cane fields, a rum distillery and a long hot day.', [
+    ['bold', 'handcut', 'Cut by hand like the old gangs', 'strength', 2.5, [fxItem('Sugar Cane'), fxDebuff('injury', 1)]], ['steady', 'harvester', 'Ride along on the mechanical harvester', 'intelligence', 1.5, [fxItem('Sugar Cane')]], ['social', 'coop', "Help the growers' cooperative", 'charisma', 1.9, [fxRep('QLD', 3)]]]),
+  authoredChallenge('QLD', "Taste tropical fruit at Rusty's Markets", 1, 1.4, 'culinary', ['agriculture', 'trade'], "Cairns' famous weekend market.", [
+    ['bold', 'durian', 'Eat a whole durian', 'luck', 1.9, [fxDebuff('bad_press', 1)]], ['steady', 'farmer', "Take the fruit farmer's tasting tour", 'intelligence', 1.2, [fxItem('Tropical Fruit')]], ['social', 'stories', 'Swap stories with the stallholders', 'charisma', 1.5, [fxRep('QLD', 3)]]]),
+  authoredChallenge('QLD', 'Spot platypus at Eungella', 2, 2.1, 'wildlife', ['environment'], 'The Broken River viewing platform in the Mackay hinterland.', [
+    ['bold', 'rain', 'Wait alone at dawn in the rain', 'luck', 2.7, [fxDebuff('exhaustion', 1)]], ['steady', 'ranger', "Join the ranger's evening talk", 'intelligence', 1.7], ['social', 'birders', 'Team up with visiting birdwatchers', 'charisma', 2.0, [fxRep('QLD', 2)]]]),
+  authoredChallenge('QLD', 'Snorkel the Great Keppel reefs', 1, 1.6, 'wildlife', ['tourism', 'water'], 'Fringing reefs off the Capricorn Coast.', [
+    ['bold', 'bommies', 'Swim to the outer bommies', 'strength', 2.1, [fxDebuff('injury', 1)]], ['steady', 'semisub', 'Take the semi-submersible', 'intelligence', 1.3, [], { cost: 40 }], ['clever', 'turtles', 'Follow the turtles', 'luck', 1.8, [fxItem('Coral')]]]),
+  authoredChallenge('QLD', 'Learn Torres Strait Island dance', 2, 2.0, 'cultural', ['tourism'], 'At a Cairns cultural festival.', [
+    ['steady', 'workshop', 'Book a dance workshop', 'intelligence', 1.6, [fxRep('QLD', 3)]], ['social', 'festival', 'Join in at the festival', 'charisma', 2.1, [fxRep('QLD', 4)]]]),
+  authoredChallenge('QLD', 'Explore Carnarvon Gorge', 3, 2.8, 'physical', ['exploration', 'environment'], 'Sandstone cliffs, side gorges and ancient rock art.', [
+    ['bold', 'bigloop', 'Hike to the Art Gallery and Amphitheatre in a day', 'strength', 3.4, [fxDebuff('exhaustion', 2)]], ['steady', 'camp', 'Camp three days with a ranger', 'intelligence', 2.2], ['social', 'bidjara', 'Join the Bidjara cultural walk', 'charisma', 2.6, [fxRep('QLD', 4)]]]),
+  authoredChallenge('QLD', 'Crack a Moreton Bay bug feast', 1, 1.5, 'culinary', ['trade', 'water'], 'Brisbane bayside seafood at its best.', [
+    ['bold', 'catch', 'Catch your own off the jetty', 'luck', 1.9], ['steady', 'class', 'Take a seafood cooking class', 'intelligence', 1.2, [fxItem('Seafood')]], ['social', 'trivia', 'Share a platter at pub trivia', 'charisma', 1.5, [fxRep('QLD', 2)]]]),
+  authoredChallenge('QLD', 'Canoe the Noosa Everglades', 2, 2.1, 'adventure', ['environment', 'water'], 'The river of mirrors.', [
+    ['bold', 'upper', 'Paddle the upper river solo', 'strength', 2.7, [fxDebuff('exhaustion', 1)]], ['steady', 'guided', 'Take the guided canoe tour', 'intelligence', 1.7], ['clever', 'mirror', 'Time it for glassy water', 'luck', 2.2]]),
+  authoredChallenge('QLD', 'Dig for sapphires at the Gemfields', 2, 2.2, 'adventure', ['mining'], 'Rubyvale and Sapphire in central Queensland.', [
+    ['bold', 'shaft', 'Go down a private claim shaft', 'luck', 2.9, [fxDebuff('injury', 1)]], ['steady', 'bucket', 'Buy a wash bucket at the fossicking park', 'intelligence', 1.7, [], { cost: 40 }], ['social', 'miners', 'Chat up the old miners', 'charisma', 2.2, [fxRep('QLD', 3)]]]),
+  authoredChallenge('QLD', 'Cheer the Broncos at Suncorp Stadium', 1, 1.5, 'social', ['tourism'], 'Rugby league on a Friday night.', [
+    ['bold', 'chant', 'Paint your face and lead the chant', 'charisma', 2.0, [fxDebuff('bad_press', 1)]], ['steady', 'tour', 'Take the stadium tour first', 'intelligence', 1.2], ['social', 'diehards', 'Sit with the die-hard fans', 'charisma', 1.6, [fxRep('QLD', 3)]]]),
+  authoredChallenge('QLD', "Visit the Stockman's Hall of Fame", 1, 1.4, 'educational', ['agriculture', 'exploration'], 'Outback heritage in Longreach.', [
+    ['steady', 'exhibits', 'Read every exhibit', 'intelligence', 1.2, [fxRep('QLD', 1)]], ['social', 'drover', "Hear a drover's yarn at the show", 'charisma', 1.5, [fxRep('QLD', 3)]]]),
+  authoredChallenge('QLD', 'Catch a barramundi in the Gulf', 3, 2.7, 'wildlife', ['water', 'exploration'], 'Karumba, at the mouth of the Norman River.', [
+    ['bold', 'tinnie', 'Take a tinnie into croc country', 'luck', 3.3, [fxItem('Seafood'), fxDebuff('injury', 2)]], ['steady', 'charter', 'Book a fishing charter', 'intelligence', 2.1, [fxItem('Seafood')], { cost: 150 }], ['social', 'locals', 'Fish with the Karumba locals', 'charisma', 2.5, [fxRep('QLD', 4)]]]),
+  // ---- NSW ----
+  authoredChallenge('NSW', 'Climb the Sydney Harbour Bridge', 2, 2.0, 'adventure', ['tourism'], 'The Coathanger, from the top arch.', [
+    ['bold', 'noon', 'Take the summit climb at noon', 'strength', 2.6, [fxDebuff('exhaustion', 1)]], ['steady', 'dawn', 'Book the dawn climb with a guide', 'intelligence', 1.6, [], { cost: 120 }], ['social', 'charity', 'Climb with a charity group', 'charisma', 2.0, [fxRep('NSW', 3)]]]),
+  authoredChallenge('NSW', 'Walk the Spit Bridge to Manly track', 1, 1.5, 'physical', ['tourism', 'water'], 'Harbour beaches, bushland and a ferry home.', [
+    ['bold', 'run', 'Run the 10 km coastal track', 'strength', 2.0, [fxDebuff('exhaustion', 1)]], ['steady', 'heritage', 'Walk it with a heritage map', 'intelligence', 1.2], ['social', 'club', 'Join a local walking club', 'charisma', 1.5, [fxRep('NSW', 3)]]]),
+  authoredChallenge('NSW', 'Fossick for opals at Lightning Ridge', 2, 2.3, 'adventure', ['mining'], 'Home of the black opal.', [
+    ['bold', 'noodle', 'Noodle the mullock heaps all day', 'luck', 2.9, [fxItem('Opals'), fxDebuff('exhaustion', 1)]], ['steady', 'mine', 'Take an underground mine tour', 'intelligence', 1.8, [fxItem('Opals')], { cost: 70 }], ['social', 'miners', 'Yarn with the black-opal miners', 'charisma', 2.2, [fxRep('NSW', 3)]]]),
+  authoredChallenge('NSW', 'Go whale watching at Port Stephens', 1, 1.6, 'wildlife', ['tourism', 'water'], 'Humpbacks on the eastern migration.', [
+    ['bold', 'kayak', 'Kayak out to the migration path', 'strength', 2.1, [fxDebuff('injury', 1)]], ['steady', 'cruise', 'Book the marine-biologist cruise', 'intelligence', 1.3, [], { cost: 60 }], ['clever', 'headland', 'Watch from Tomaree Head', 'luck', 1.8]]),
+  authoredChallenge('NSW', 'Taste wine in the Hunter Valley', 1, 1.7, 'culinary', ['agriculture', 'tourism'], "Australia's oldest wine region.", [
+    ['bold', 'cycle', 'Cycle between cellar doors', 'strength', 2.2, [fxDebuff('exhaustion', 1)]], ['steady', 'semillon', 'Book a semillon masterclass', 'intelligence', 1.4, [fxItem('Wine')]], ['social', 'lunch', 'Join a long-table lunch', 'charisma', 1.7, [fxRep('NSW', 3)]]]),
+  authoredChallenge('NSW', 'Ski the slopes at Thredbo', 3, 2.7, 'physical', ['tourism'], 'The Snowy Mountains in full winter.', [
+    ['bold', 'black', 'Take the black runs off the Kosciuszko Express', 'strength', 3.4, [fxDebuff('injury', 2)]], ['steady', 'lessons', 'Book ski lessons', 'intelligence', 2.1, [], { cost: 140 }], ['social', 'apres', 'Ski with the locals, then join après', 'charisma', 2.6, [fxRep('NSW', 3)]]]),
+  authoredChallenge('NSW', 'Summit Mount Kosciuszko', 2, 2.3, 'physical', ['exploration', 'environment'], "Australia's highest peak.", [
+    ['bold', 'mainrange', 'Walk the Main Range loop', 'strength', 2.9, [fxDebuff('exhaustion', 2)]], ['steady', 'chairlift', 'Take the chairlift and summit path', 'intelligence', 1.8], ['clever', 'clearday', 'Pick a clear day', 'luck', 2.3]]),
+  authoredChallenge('NSW', 'Explore the Jenolan Caves', 2, 2.0, 'educational', ['exploration'], 'Limestone caverns in the Blue Mountains.', [
+    ['bold', 'adventure', 'Crawl the adventure cave', 'strength', 2.6, [fxDebuff('injury', 1)]], ['steady', 'lucas', 'Take the Lucas Cave guided tour', 'intelligence', 1.6, [], { cost: 50 }], ['clever', 'ghost', 'Ask about the guesthouse ghost', 'luck', 2.0]]),
+  authoredChallenge('NSW', 'Paddle with dolphins at Jervis Bay', 1, 1.6, 'wildlife', ['water', 'environment'], 'Whiter-than-white sand and resident dolphins.', [
+    ['bold', 'swim', 'Swim out to the pod', 'strength', 2.1, [fxDebuff('exhaustion', 1)]], ['steady', 'eco', 'Take the eco-cruise', 'intelligence', 1.3, [], { cost: 50 }], ['social', 'sup', 'Join a paddleboard school', 'charisma', 1.6, [fxRep('NSW', 2)]]]),
+  authoredChallenge('NSW', 'Bid at the Sydney Fish Market auction', 1, 1.5, 'culinary', ['trade', 'water'], "The southern hemisphere's biggest seafood auction.", [
+    ['bold', 'bid', 'Bid at the dawn auction', 'charisma', 2.0, [fxDebuff('bad_press', 1)]], ['steady', 'school', 'Take the seafood school class', 'intelligence', 1.2, [fxItem('Seafood')]], ['social', 'mongers', 'Chat with the fishmongers', 'charisma', 1.5, [fxRep('NSW', 3)]]]),
+  authoredChallenge('NSW', 'Watch a Test match at the SCG', 1, 1.4, 'social', ['tourism'], 'Cricket at the Sydney Cricket Ground.', [
+    ['steady', 'members', "Book members' stand tickets", 'intelligence', 1.1, [], { cost: 60 }], ['social', 'hill', 'Sit on the Hill with the fans', 'charisma', 1.5, [fxRep('NSW', 3)]]]),
+  authoredChallenge('NSW', 'Shear a sheep in the Riverina', 2, 2.0, 'physical', ['agriculture'], 'Merino country around Hay and Deniliquin.', [
+    ['bold', 'gun', "Race the shed's gun shearer", 'strength', 2.6, [fxItem('Wool'), fxDebuff('injury', 1)]], ['steady', 'school', 'Take a shearing-school lesson', 'intelligence', 1.6, [fxItem('Wool')]], ['social', 'shedhands', 'Help the shed hands', 'charisma', 2.0, [fxRep('NSW', 3)]]]),
+  authoredChallenge('NSW', 'Ride the Broken Hill outback mail run', 2, 2.2, 'adventure', ['exploration', 'logistics'], 'Station to station across the far west.', [
+    ['bold', 'drive', 'Drive the mail route yourself', 'luck', 2.8, [fxDebuff('exhaustion', 1)]], ['steady', 'plane', 'Fly with the outback mail plane', 'intelligence', 1.8, [], { cost: 110 }], ['social', 'tea', 'Stop for tea at every station', 'charisma', 2.2, [fxRep('NSW', 4)]]]),
+  authoredChallenge('NSW', 'Learn to surf at Byron Bay', 1, 1.6, 'physical', ['tourism'], "Australia's most easterly point.", [
+    ['bold', 'pass', 'Surf The Pass with the experts', 'strength', 2.1, [fxDebuff('injury', 1)]], ['steady', 'lesson', 'Take a surf-school lesson', 'intelligence', 1.3, [], { cost: 50 }], ['social', 'markets', 'Paddle out with the market crowd', 'charisma', 1.6, [fxRep('NSW', 3)]]]),
+  authoredChallenge('NSW', 'Tour the Parkes radio telescope', 2, 1.9, 'educational', ['research', 'technology'], 'The Dish that relayed the Moon landing.', [
+    ['steady', 'talk', "Attend the astronomer's talk", 'intelligence', 1.5, [fxItem('Research Funds')]], ['clever', 'pulsar', 'Volunteer for a pulsar observation', 'intelligence', 2.2], ['social', 'picnic', 'Picnic under the Dish with locals', 'charisma', 1.9, [fxRep('NSW', 3)]]]),
+  authoredChallenge('NSW', 'Walk the Bondi to Coogee coastal trail', 1, 1.5, 'physical', ['tourism'], 'Sandstone cliffs and ocean pools.', [
+    ['bold', 'sunrise', 'Run it at sunrise', 'strength', 1.9, [fxDebuff('exhaustion', 1)]], ['steady', 'sculpture', 'Time it for Sculpture by the Sea', 'intelligence', 1.2], ['social', 'icebergs', 'Join the Icebergs winter swimmers', 'charisma', 1.6, [fxRep('NSW', 3)]]]),
+  // ---- VIC ----
+  authoredChallenge('VIC', 'Watch the Phillip Island penguin parade', 1, 1.5, 'wildlife', ['tourism', 'environment'], 'Little penguins coming ashore at dusk.', [
+    ['steady', 'platform', 'Book the ranger-guided platform', 'intelligence', 1.2, [], { cost: 40 }], ['clever', 'beach', 'Wait on the beach at dusk', 'luck', 1.8], ['social', 'counters', 'Help the penguin counters', 'charisma', 1.5, [fxRep('VIC', 3)]]]),
+  authoredChallenge('VIC', 'Ride the Puffing Billy steam train', 1, 1.4, 'educational', ['tourism'], 'A century-old railway through the Dandenongs.', [
+    ['bold', 'legs', 'Sit with your legs over the side', 'luck', 1.8], ['steady', 'volunteers', 'Ride with the heritage volunteers', 'intelligence', 1.1], ['social', 'singalong', 'Sing along in the open carriage', 'charisma', 1.4, [fxRep('VIC', 3)]]]),
+  authoredChallenge('VIC', 'Find the best laneway coffee in Melbourne', 1, 1.5, 'culinary', ['tourism', 'trade'], 'Degraves Street, Centre Place and beyond.', [
+    ['bold', 'twenty', 'Drink twenty flat whites', 'luck', 1.9, [fxDebuff('exhaustion', 1)]], ['steady', 'roaster', 'Take a coffee-roaster tour', 'intelligence', 1.2], ['social', 'baristas', 'Befriend the baristas', 'charisma', 1.5, [fxRep('VIC', 3)]]]),
+  authoredChallenge('VIC', 'Ski Mount Buller', 2, 2.3, 'physical', ['tourism'], "Victoria's biggest ski resort.", [
+    ['bold', 'trees', 'Ski off-piste in the trees', 'strength', 2.9, [fxDebuff('injury', 2)]], ['steady', 'lessons', 'Book group lessons', 'intelligence', 1.8, [], { cost: 100 }], ['social', 'lodge', 'Stay in a club lodge', 'charisma', 2.2, [fxRep('VIC', 3)]]]),
+  authoredChallenge('VIC', 'Pan for gold at Sovereign Hill', 1, 1.6, 'educational', ['mining', 'tourism'], 'Ballarat\'s living goldfields museum.', [
+    ['bold', 'creek', 'Pan the creek all day', 'luck', 2.1, [fxItem('Gold'), fxDebuff('exhaustion', 1)]], ['steady', 'demo', 'Follow the panning demonstration', 'intelligence', 1.3], ['social', 'redcoats', 'Chat with the redcoat soldiers', 'charisma', 1.6, [fxRep('VIC', 3)]]]),
+  authoredChallenge('VIC', 'Hike Wilsons Promontory to Sealers Cove', 2, 2.2, 'physical', ['environment', 'exploration'], 'The southernmost tip of mainland Australia.', [
+    ['bold', 'oneday', 'Do the return trip in one day', 'strength', 2.8, [fxDebuff('exhaustion', 2)]], ['steady', 'permit', 'Camp overnight with a permit', 'intelligence', 1.8, [], { cost: 40 }], ['clever', 'wombats', 'Look for wombats at Tidal River', 'luck', 2.2]]),
+  authoredChallenge('VIC', 'Milk cows on a Gippsland dairy farm', 1, 1.5, 'physical', ['agriculture'], 'Green paddocks and a 4 am start.', [
+    ['bold', 'fouram', 'Do the 4 am milking alone', 'strength', 1.9, [fxItem('Dairy'), fxDebuff('exhaustion', 1)]], ['steady', 'farmer', 'Learn from the farmer', 'intelligence', 1.2, [fxItem('Dairy')]], ['social', 'cheese', 'Help at the cheese cellar door', 'charisma', 1.5, [fxRep('VIC', 3)]]]),
+  authoredChallenge('VIC', 'Cheer at the MCG on Grand Final day', 2, 2.0, 'social', ['tourism'], '100,000 fans at the G.', [
+    ['bold', 'queue', 'Queue overnight for tickets', 'luck', 2.6, [fxDebuff('exhaustion', 1)]], ['steady', 'guestpass', "Use a member's guest pass", 'intelligence', 1.6, [], { cost: 80 }], ['social', 'cheersquad', 'Join the cheer squad', 'charisma', 2.0, [fxRep('VIC', 4)]]]),
+  authoredChallenge('VIC', 'Explore the Dandenong Ranges', 1, 1.5, 'physical', ['environment'], 'Mountain ash forest an hour from Melbourne.', [
+    ['bold', 'steps', 'Run the 1000 Steps', 'strength', 1.9, [fxDebuff('exhaustion', 1)]], ['steady', 'gardens', 'Tour the rhododendron gardens', 'intelligence', 1.2], ['social', 'tea', 'Take Devonshire tea with locals', 'charisma', 1.5, [fxRep('VIC', 3)]]]),
+  authoredChallenge('VIC', 'Shear a merino on a Western District station', 2, 2.0, 'physical', ['agriculture'], 'Fine wool country near Hamilton.', [
+    ['bold', 'clock', 'Shear against the clock', 'strength', 2.6, [fxItem('Wool'), fxDebuff('injury', 1)]], ['steady', 'school', 'Learn at shearing school', 'intelligence', 1.6, [fxItem('Wool')]], ['social', 'roustabout', 'Work as a roustabout', 'charisma', 2.0, [fxRep('VIC', 3)]]]),
+  authoredChallenge('VIC', 'Visit the Old Melbourne Gaol', 1, 1.4, 'educational', ['governance', 'tourism'], 'Where Ned Kelly was hanged in 1880.', [
+    ['bold', 'night', 'Take the night ghost tour', 'luck', 1.8], ['steady', 'files', 'Read the Ned Kelly files', 'intelligence', 1.2, [fxRep('VIC', 1)]], ['social', 'watchhouse', 'Join the Watch House experience', 'charisma', 1.4, [fxRep('VIC', 2)]]]),
+  authoredChallenge('VIC', 'Soak in the Peninsula Hot Springs', 1, 1.4, 'social', ['tourism', 'water'], 'Geothermal pools on the Mornington Peninsula.', [
+    ['steady', 'sunrise', 'Book a sunrise session', 'intelligence', 1.1, [], { cost: 60 }], ['social', 'hilltop', 'Share the hilltop pool', 'charisma', 1.5, [fxRep('VIC', 2)]], ['clever', 'stars', 'Wait for a clear night', 'luck', 1.7]]),
+  authoredChallenge('VIC', 'Balloon over the Yarra Valley', 2, 2.2, 'adventure', ['tourism', 'agriculture'], 'Vineyards and mist at sunrise.', [
+    ['bold', 'gusty', 'Fly in gusty conditions', 'luck', 2.8, [fxDebuff('injury', 1)]], ['steady', 'calm', 'Book a calm-morning flight', 'intelligence', 1.7, [], { cost: 130 }], ['social', 'breakfast', 'Share the champagne breakfast', 'charisma', 2.1, [fxRep('VIC', 3)]]]),
+  authoredChallenge('VIC', 'Paddle the Murray River at Echuca', 2, 2.0, 'adventure', ['water', 'trade'], 'The old river port and its paddle steamers.', [
+    ['bold', 'current', 'Paddle against the current', 'strength', 2.6, [fxDebuff('exhaustion', 1)]], ['steady', 'steamer', 'Ride a paddle steamer with the historian', 'intelligence', 1.6, [], { cost: 50 }], ['social', 'houseboats', 'Raft up with houseboat crews', 'charisma', 2.0, [fxRep('VIC', 3)]]]),
+  authoredChallenge('VIC', 'Climb Hanging Rock', 1, 1.5, 'adventure', ['exploration'], 'The volcanic mamelon of picnic legend.', [
+    ['bold', 'boulders', 'Scramble the summit boulders', 'strength', 1.9, [fxDebuff('injury', 1)]], ['steady', 'path', 'Take the summit path with a guide', 'intelligence', 1.2], ['clever', 'picnic', "Brave the Valentine's Day picnic", 'luck', 1.8]]),
+  authoredChallenge('VIC', 'Photograph Loch Ard Gorge', 1, 1.6, 'educational', ['tourism', 'water'], 'The shipwreck coast near Port Campbell.', [
+    ['bold', 'hightide', 'Climb down to the beach at high tide', 'strength', 2.1, [fxDebuff('injury', 1)]], ['steady', 'wreck', 'Learn the shipwreck story', 'intelligence', 1.3, [fxRep('VIC', 1)]], ['clever', 'golden', 'Wait for golden hour', 'luck', 1.8]]),
+  // ---- TAS ----
+  authoredChallenge('TAS', 'Walk to the Wineglass Bay lookout', 1, 1.5, 'physical', ['tourism', 'environment'], 'Freycinet National Park\'s famous curve.', [
+    ['bold', 'beach', 'Go down to the beach and back', 'strength', 1.9, [fxDebuff('exhaustion', 1)]], ['steady', 'lookout', 'Take the lookout track', 'intelligence', 1.2], ['social', 'group', 'Walk with a hiking group', 'charisma', 1.5, [fxRep('TAS', 3)]]]),
+  authoredChallenge('TAS', 'Taste oysters at Freycinet', 1, 1.5, 'culinary', ['water', 'agriculture'], 'Coles Bay oyster leases.', [
+    ['bold', 'shuck', 'Shuck a dozen yourself', 'strength', 1.9, [fxDebuff('injury', 1)]], ['steady', 'waders', 'Tour the oyster farm in waders', 'intelligence', 1.2, [fxItem('Seafood')]], ['social', 'shed', 'Chat with the farmers at the shed', 'charisma', 1.5, [fxRep('TAS', 3)]]]),
+  authoredChallenge('TAS', 'Explore Salamanca Market', 1, 1.4, 'social', ['trade', 'tourism'], "Hobart's Saturday market by the docks.", [
+    ['bold', 'haggle', 'Haggle for a Huon pine bowl', 'charisma', 1.9, [fxDebuff('bad_press', 1)]], ['steady', 'foodmap', 'Follow a local food map', 'intelligence', 1.1], ['social', 'buskers', 'Join the buskers', 'charisma', 1.5, [fxRep('TAS', 3)]]]),
+  authoredChallenge('TAS', 'Climb kunanyi / Mount Wellington', 2, 2.1, 'physical', ['environment'], 'Hobart\'s mountain and the Organ Pipes.', [
+    ['bold', 'zigzag', 'Run the Zig Zag track to the summit', 'strength', 2.7, [fxDebuff('exhaustion', 1)]], ['steady', 'organ', 'Walk the Organ Pipes with a guide', 'intelligence', 1.7, [], { cost: 40 }], ['clever', 'cloud', 'Hope the clouds clear', 'luck', 2.1]]),
+  authoredChallenge('TAS', 'Camp at the Bay of Fires', 2, 2.0, 'adventure', ['environment', 'water'], 'Orange lichen, white sand, turquoise water.', [
+    ['bold', 'wild', 'Wild camp on the beach', 'luck', 2.6, [fxDebuff('exhaustion', 1)]], ['steady', 'walk', 'Take the guided Bay of Fires walk', 'intelligence', 1.6, [], { cost: 150 }], ['social', 'families', 'Camp near the fishing families', 'charisma', 2.0, [fxRep('TAS', 3)]]]),
+  authoredChallenge('TAS', 'Pick lavender at Bridestowe', 1, 1.4, 'culinary', ['agriculture', 'tourism'], 'Purple rows near Nabowla in summer.', [
+    ['steady', 'harvest', 'Help with the harvest', 'intelligence', 1.1], ['social', 'festival', 'Join the lavender festival', 'charisma', 1.5, [fxRep('TAS', 3)]]]),
+  authoredChallenge('TAS', 'Cruise Macquarie Harbour to Sarah Island', 2, 2.1, 'educational', ['water', 'governance'], 'Through Hells Gates to a convict island.', [
+    ['bold', 'hellsgates', 'Cross Hells Gates in rough seas', 'luck', 2.7, [fxDebuff('exhaustion', 1)]], ['steady', 'heritage', 'Take the heritage cruise', 'intelligence', 1.7, [], { cost: 90 }], ['social', 'play', "Watch 'The Ship That Never Was'", 'charisma', 2.0, [fxRep('TAS', 3)]]]),
+  authoredChallenge('TAS', 'Spot a platypus at Latrobe', 1, 1.6, 'wildlife', ['environment'], 'The self-proclaimed platypus capital.', [
+    ['bold', 'creek', 'Wade the creek at dusk', 'luck', 2.1, [fxDebuff('exhaustion', 1)]], ['steady', 'tour', 'Join the platypus-house tour', 'intelligence', 1.3], ['social', 'cafe', 'Ask the café owners', 'charisma', 1.6, [fxRep('TAS', 2)]]]),
+  authoredChallenge('TAS', 'Taste whisky at a Hobart distillery', 1, 1.6, 'culinary', ['manufacturing', 'agriculture'], 'Tasmanian single malt, born near the Derwent.', [
+    ['bold', 'cask', 'Taste cask strength neat', 'luck', 2.1, [fxDebuff('bad_press', 1)]], ['steady', 'masterclass', "Take the distiller's masterclass", 'intelligence', 1.3, [], { cost: 60 }], ['social', 'bar', 'Chat at the cellar bar', 'charisma', 1.6, [fxRep('TAS', 3)]]]),
+  authoredChallenge('TAS', 'Ride the West Coast Wilderness Railway', 1, 1.5, 'educational', ['tourism', 'mining'], 'Rack-and-pinion rails from Queenstown to Strahan.', [
+    ['steady', 'guide', 'Ride with the heritage guide', 'intelligence', 1.2], ['social', 'carriage', 'Share the carriage with locals', 'charisma', 1.5, [fxRep('TAS', 3)]], ['clever', 'rack', 'Watch the rack-and-pinion climb', 'luck', 1.8]]),
+  authoredChallenge('TAS', 'Dive the Tasman Peninsula kelp forests', 3, 2.7, 'wildlife', ['water', 'environment'], 'Sea caves and giant kelp off Eaglehawk Neck.', [
+    ['bold', 'drift', 'Drift dive the sea caves', 'strength', 3.3, [fxDebuff('injury', 2)]], ['steady', 'operator', 'Dive with a licensed operator', 'intelligence', 2.1, [], { cost: 150 }], ['clever', 'seadragon', 'Hunt for weedy seadragons', 'luck', 2.6]]),
+  authoredChallenge('TAS', 'Walk the Three Capes Track', 3, 2.8, 'physical', ['environment', 'exploration'], 'The tallest sea cliffs in the southern hemisphere.', [
+    ['bold', 'twodays', 'Do it in two days', 'strength', 3.4, [fxDebuff('exhaustion', 2)]], ['steady', 'huts', 'Book the hut-to-hut walk', 'intelligence', 2.2, [], { cost: 200 }], ['social', 'party', 'Walk with a friendly party', 'charisma', 2.6, [fxRep('TAS', 4)]]]),
+  authoredChallenge('TAS', 'Harvest apples in the Huon Valley', 1, 1.5, 'physical', ['agriculture'], 'The Apple Isle\'s orchard heartland.', [
+    ['bold', 'ladders', 'Pick from the tall ladders', 'strength', 1.9, [fxDebuff('injury', 1)]], ['steady', 'orchardist', 'Learn from the orchardist', 'intelligence', 1.2], ['social', 'cider', 'Help at the cider house', 'charisma', 1.5, [fxRep('TAS', 3)]]]),
+  authoredChallenge('TAS', 'Feed the devils at Bonorong', 1, 1.5, 'wildlife', ['environment', 'tourism'], 'A wildlife sanctuary and rescue service.', [
+    ['steady', 'keeper', "Follow the keeper's rules", 'intelligence', 1.2], ['social', 'night', 'Join the night tour group', 'charisma', 1.5, [fxRep('TAS', 3)]], ['clever', 'joey', 'Hope to see a joey', 'luck', 1.8]]),
+  authoredChallenge('TAS', "Kayak Hobart's waterfront", 1, 1.5, 'adventure', ['water', 'tourism'], 'Constitution Dock to Battery Point.', [
+    ['bold', 'derwent', 'Paddle across the Derwent', 'strength', 1.9, [fxDebuff('exhaustion', 1)]], ['steady', 'guided', 'Join the guided paddle', 'intelligence', 1.2], ['social', 'punts', 'End at the floating fish punts', 'charisma', 1.5, [fxRep('TAS', 2), fxItem('Seafood')]]]),
+  authoredChallenge('TAS', 'See the aurora australis from Cockle Creek', 2, 2.3, 'educational', ['environment', 'exploration'], "The end of Australia's southernmost road.", [
+    ['bold', 'allnight', 'Stay up all night in the cold', 'luck', 2.9, [fxDebuff('exhaustion', 2)]], ['steady', 'forecast', 'Watch the space-weather forecast', 'intelligence', 1.8], ['social', 'chasers', 'Join the aurora chasers', 'charisma', 2.2, [fxRep('TAS', 3)]]]),
+  // ---- SA ----
+  authoredChallenge('SA', 'Swim with sea lions at Baird Bay', 2, 2.2, 'wildlife', ['water', 'environment'], 'Playful pups on the Eyre Peninsula.', [
+    ['bold', 'beyond', 'Swim out beyond the colony', 'strength', 2.8, [fxDebuff('injury', 1)]], ['steady', 'operator', 'Book the family operator', 'intelligence', 1.8, [], { cost: 120 }], ['clever', 'pups', 'Let the pups come to you', 'luck', 2.2]]),
+  authoredChallenge('SA', "Explore Coober Pedy's underground town", 2, 2.1, 'adventure', ['mining', 'exploration'], "The world's opal capital, lived in below ground.", [
+    ['bold', 'noodle', 'Noodle for opals in the heat', 'luck', 2.7, [fxItem('Opals'), fxDebuff('exhaustion', 1)]], ['steady', 'dugout', 'Stay in a dugout and take the mine tour', 'intelligence', 1.7, [fxItem('Opals')]], ['social', 'churches', 'Visit the underground churches with locals', 'charisma', 2.1, [fxRep('SA', 3)]]]),
+  authoredChallenge('SA', 'Taste riesling in the Clare Valley', 1, 1.6, 'culinary', ['agriculture'], 'Cool nights and limestone soil.', [
+    ['bold', 'trail', 'Cycle the Riesling Trail', 'strength', 2.0, [fxDebuff('exhaustion', 1)]], ['steady', 'masterclass', 'Book a riesling masterclass', 'intelligence', 1.3, [fxItem('Wine')]], ['social', 'party', 'Join a cellar-door party', 'charisma', 1.6, [fxRep('SA', 3)]]]),
+  authoredChallenge('SA', 'Ride the Victor Harbor horse-drawn tram', 1, 1.4, 'educational', ['tourism'], 'Clydesdales across the causeway to Granite Island.', [
+    ['steady', 'historian', 'Ride with the tram historian', 'intelligence', 1.1], ['social', 'causeway', 'Walk the causeway with locals', 'charisma', 1.4, [fxRep('SA', 3)]], ['clever', 'penguins', 'Look for the Granite Island penguins', 'luck', 1.8]]),
+  authoredChallenge('SA', 'Explore the Naracoorte fossil caves', 2, 2.0, 'educational', ['research'], 'World Heritage megafauna fossils.', [
+    ['bold', 'crawl', 'Crawl the adventure caves', 'strength', 2.6, [fxDebuff('injury', 1)]], ['steady', 'palaeo', 'Tour with the palaeontologist', 'intelligence', 1.6, [fxItem('Research Funds')], { cost: 60 }], ['clever', 'bats', 'Watch the bent-wing bats emerge', 'luck', 2.0]]),
+  authoredChallenge('SA', 'Watch giant cuttlefish spawn at Whyalla', 2, 2.2, 'wildlife', ['water'], 'A winter aggregation found nowhere else.', [
+    ['bold', 'freedive', 'Free-dive the spawning grounds', 'strength', 2.8, [fxDebuff('exhaustion', 1)]], ['steady', 'snorkel', 'Snorkel with the local guide', 'intelligence', 1.8, [], { cost: 60 }], ['social', 'diveclub', 'Join the dive-club trip', 'charisma', 2.2, [fxRep('SA', 3)]]]),
+  authoredChallenge('SA', 'Taste Adelaide Hills cheese and cider', 1, 1.5, 'culinary', ['agriculture', 'trade'], 'Hahndorf, Woodside and Lobethal.', [
+    ['steady', 'trail', 'Follow the food trail', 'intelligence', 1.2, [fxItem('Dairy')]], ['social', 'feast', 'Join a Hahndorf German feast', 'charisma', 1.5, [fxRep('SA', 3)]]]),
+  authoredChallenge('SA', 'Cycle the Mawson Trail', 3, 2.7, 'physical', ['exploration'], '900 km from Adelaide to Blinman.', [
+    ['bold', 'stage', 'Ride a 150 km stage', 'strength', 3.3, [fxDebuff('exhaustion', 2)]], ['steady', 'supported', 'Book a supported tour', 'intelligence', 2.1, [], { cost: 180 }], ['social', 'peloton', 'Ride with a club peloton', 'charisma', 2.6, [fxRep('SA', 3)]]]),
+  authoredChallenge('SA', 'Watch the Tour Down Under', 1, 1.5, 'social', ['tourism'], "Pro cycling on Adelaide's hills.", [
+    ['bold', 'willunga', 'Ride up Willunga Hill ahead of the race', 'strength', 1.9, [fxDebuff('exhaustion', 1)]], ['steady', 'grandstand', 'Book a grandstand seat', 'intelligence', 1.2, [], { cost: 40 }], ['social', 'roadside', 'Cheer with the roadside crowd', 'charisma', 1.6, [fxRep('SA', 3)]]]),
+  authoredChallenge('SA', 'Stargaze at Arkaroola', 2, 2.1, 'educational', ['research', 'exploration'], 'Dark skies in the northern Flinders Ranges.', [
+    ['bold', 'ridgetop', 'Take the Ridgetop Tour at night', 'luck', 2.7, [fxDebuff('exhaustion', 1)]], ['steady', 'observatory', 'Book the observatory session', 'intelligence', 1.7, [fxItem('Research Funds')], { cost: 80 }], ['social', 'campfire', 'Share a campfire with astronomers', 'charisma', 2.1, [fxRep('SA', 3)]]]),
+  authoredChallenge('SA', "Explore Adelaide's Botanic Garden", 1, 1.4, 'educational', ['environment'], 'The Palm House and the giant waterlilies.', [
+    ['steady', 'volunteer', "Take the volunteer guide's walk", 'intelligence', 1.1], ['social', 'concert', 'Picnic at a garden concert', 'charisma', 1.5, [fxRep('SA', 3)]]]),
+  authoredChallenge('SA', "Sail Port Lincoln's tuna farms", 2, 2.0, 'adventure', ['water', 'trade'], 'Southern bluefin in Boston Bay.', [
+    ['bold', 'pen', 'Swim in the tuna pen', 'strength', 2.6, [fxDebuff('injury', 1)]], ['steady', 'farmtour', 'Take the farm tour', 'intelligence', 1.6, [fxItem('Seafood')], { cost: 70 }], ['social', 'families', 'Share lunch with the fishing families', 'charisma', 2.0, [fxRep('SA', 3)]]]),
+  authoredChallenge('SA', 'Ride the Ghan north from Adelaide', 2, 2.3, 'adventure', ['logistics', 'tourism'], 'The legendary train to Darwin.', [
+    ['bold', 'freight', 'Ride the freight section', 'luck', 2.9, [fxDebuff('exhaustion', 1)]], ['steady', 'gold', 'Book Gold Service', 'intelligence', 1.8, [], { cost: 180 }], ['social', 'lounge', 'Swap stories in the lounge car', 'charisma', 2.2, [fxRep('SA', 3)]]]),
+  authoredChallenge('SA', 'Paddle the Coorong', 2, 2.1, 'adventure', ['water', 'environment'], 'Lagoons, dunes and pelicans at the Murray Mouth.', [
+    ['bold', 'mouth', 'Paddle to the Murray Mouth', 'strength', 2.7, [fxDebuff('exhaustion', 1)]], ['steady', 'ngarrindjeri', 'Take a Ngarrindjeri-guided tour', 'intelligence', 1.7, [fxRep('SA', 3)], { cost: 70 }], ['clever', 'pelicans', 'Follow the pelicans', 'luck', 2.1]]),
+  authoredChallenge('SA', 'Shop the Barossa Farmers Market', 1, 1.4, 'culinary', ['agriculture', 'trade'], 'Saturday mornings at Angaston.', [
+    ['bold', 'buyout', 'Buy out a whole stall', 'charisma', 1.8, [fxDebuff('bad_press', 1)]], ['steady', 'growers', "Follow the growers' tasting map", 'intelligence', 1.1], ['social', 'breakfast', 'Join the community breakfast', 'charisma', 1.5, [fxRep('SA', 3)]]]),
+  authoredChallenge('SA', 'Learn Kaurna culture at Tarndanyangga', 1, 1.5, 'cultural', ['governance', 'tourism'], "Victoria Square, Adelaide's red kangaroo dreaming place.", [
+    ['steady', 'walk', 'Take the Kaurna cultural walk', 'intelligence', 1.2, [fxRep('SA', 4)]], ['social', 'welcome', 'Join a smoking-ceremony welcome', 'charisma', 1.6, [fxRep('SA', 3)]]]),
+  // ---- WA ----
+  authoredChallenge('WA', 'Meet the quokkas on Rottnest Island', 1, 1.5, 'wildlife', ['tourism', 'environment'], "Wadjemup's famously cheerful residents.", [
+    ['bold', 'selfie', 'Chase the perfect quokka selfie', 'luck', 1.9, [fxDebuff('bad_press', 1)]], ['steady', 'ranger', "Join the ranger's island tour", 'intelligence', 1.2], ['social', 'cycle', 'Cycle the island with friends', 'charisma', 1.5, [fxRep('WA', 3)]]]),
+  authoredChallenge('WA', 'Walk the Valley of the Giants treetop walk', 1, 1.5, 'adventure', ['environment'], 'Forty metres up among the tingle trees.', [
+    ['bold', 'sway', 'Bounce the swaying walkway', 'luck', 1.9, [fxDebuff('exhaustion', 1)]], ['steady', 'talk', 'Join the tingle-tree ranger talk', 'intelligence', 1.2], ['social', 'school', 'Guide a school group', 'charisma', 1.5, [fxRep('WA', 3)]]]),
+  authoredChallenge('WA', "Explore Karijini's gorges", 3, 2.9, 'adventure', ['exploration', 'environment'], 'Banded-iron chasms in the Pilbara.', [
+    ['bold', 'spider', 'Spider-walk Hancock Gorge', 'strength', 3.5, [fxDebuff('injury', 2)]], ['steady', 'guided', 'Book the guided gorge tour', 'intelligence', 2.2, [], { cost: 150 }], ['social', 'campers', 'Explore with the campers at Dales', 'charisma', 2.7, [fxRep('WA', 4)]]]),
+  authoredChallenge('WA', 'Prospect for gold in Kalgoorlie', 2, 2.0, 'adventure', ['mining'], 'The Golden Mile and the Super Pit.', [
+    ['bold', 'detect', 'Detect the old diggings alone', 'luck', 2.6, [fxItem('Gold'), fxDebuff('exhaustion', 1)]], ['steady', 'superpit', 'Tour the Super Pit', 'intelligence', 1.6, [], { cost: 60 }], ['social', 'exchange', 'Swap prospecting tips at the Exchange Hotel', 'charisma', 2.0, [fxRep('WA', 3)]]]),
+  authoredChallenge('WA', 'Meet the dolphins at Monkey Mia', 1, 1.6, 'wildlife', ['water', 'environment'], 'Shark Bay World Heritage Area.', [
+    ['bold', 'swim', 'Swim out to the pod', 'strength', 2.1, [fxDebuff('exhaustion', 1)]], ['steady', 'feeding', 'Join the ranger feeding', 'intelligence', 1.3], ['social', 'volunteer', 'Volunteer with the dolphin rangers', 'charisma', 1.6, [fxRep('WA', 3)]]]),
+  authoredChallenge('WA', 'Fly over the Bungle Bungles', 2, 2.4, 'adventure', ['exploration'], 'Purnululu\'s striped beehive domes.', [
+    ['bold', 'doorsoff', 'Fly doors-off in a helicopter', 'luck', 3.0, [fxDebuff('exhaustion', 1)]], ['steady', 'scenic', 'Take the scenic flight', 'intelligence', 1.9, [], { cost: 180 }], ['social', 'cathedral', 'Walk Cathedral Gorge with a local guide', 'charisma', 2.3, [fxRep('WA', 4)]]]),
+  authoredChallenge('WA', 'Ride a camel on Cable Beach', 1, 1.5, 'adventure', ['tourism'], 'Broome\'s 22 km of white sand.', [
+    ['bold', 'trot', 'Ask to trot along the waterline', 'luck', 1.9, [fxDebuff('injury', 1)]], ['steady', 'sunset', 'Book the sunset ride', 'intelligence', 1.2, [], { cost: 60 }], ['social', 'caravan', 'Join the tourist caravan', 'charisma', 1.5, [fxRep('WA', 3)]]]),
+  authoredChallenge('WA', 'Taste wine in the Swan Valley', 1, 1.5, 'culinary', ['agriculture'], "WA's oldest wine region, up the river from Perth.", [
+    ['steady', 'masterclass', 'Take a winery masterclass', 'intelligence', 1.2, [fxItem('Wine')]], ['social', 'partyboat', 'Cruise up on a party boat', 'charisma', 1.6, [fxRep('WA', 3)]], ['bold', 'cycle', 'Cycle between wineries', 'strength', 1.9, [fxDebuff('exhaustion', 1)]]]),
+  authoredChallenge('WA', 'Explore the Fremantle Prison tunnels', 2, 2.0, 'educational', ['governance'], 'Convict-dug tunnels beneath the limestone.', [
+    ['bold', 'flooded', 'Paddle the flooded tunnels', 'strength', 2.6, [fxDebuff('exhaustion', 1)]], ['steady', 'convict', 'Take the convict tour', 'intelligence', 1.6], ['social', 'markets', 'Finish at the Fremantle markets', 'charisma', 2.0, [fxRep('WA', 3)]]]),
+  authoredChallenge('WA', 'Drift snorkel Turquoise Bay', 2, 2.2, 'wildlife', ['water'], 'Ningaloo Reef straight off the beach.', [
+    ['bold', 'current', 'Ride the drift in the current', 'strength', 2.8, [fxDebuff('injury', 1)]], ['steady', 'guide', 'Snorkel with a guide', 'intelligence', 1.8, [], { cost: 80 }], ['clever', 'turtles', 'Look for nesting turtles', 'luck', 2.2]]),
+  authoredChallenge('WA', 'Climb the Gloucester Tree', 2, 2.0, 'physical', ['environment'], 'A 53-metre karri fire-lookout near Pemberton.', [
+    ['bold', 'top', 'Climb all 153 pegs to the top', 'strength', 2.6, [fxDebuff('injury', 1)]], ['steady', 'spotter', "Climb with a ranger's spotting", 'intelligence', 1.6], ['clever', 'nerves', 'Trust your nerves', 'luck', 2.0]]),
+  authoredChallenge('WA', 'Visit Wave Rock', 1, 1.5, 'educational', ['exploration'], 'A 15-metre granite wave near Hyden.', [
+    ['bold', 'runup', 'Run up the wave', 'strength', 1.9, [fxDebuff('injury', 1)]], ['steady', 'geology', 'Take the geology walk', 'intelligence', 1.2], ['social', 'yawn', "Hear Hippo's Yawn stories from locals", 'charisma', 1.5, [fxRep('WA', 3)]]]),
+  authoredChallenge('WA', 'Catch a western rock lobster at Geraldton', 2, 2.1, 'culinary', ['water', 'trade'], "The Batavia Coast's crayfishing fleet.", [
+    ['bold', 'dive', 'Free-dive for crays', 'strength', 2.7, [fxItem('Seafood'), fxDebuff('injury', 1)]], ['steady', 'boat', 'Ride with a licensed cray boat', 'intelligence', 1.7, [fxItem('Seafood')]], ['social', 'coop', 'Help at the fishing cooperative', 'charisma', 2.1, [fxRep('WA', 3)]]]),
+  authoredChallenge('WA', 'Tour the Pilbara iron ore mines', 2, 2.0, 'educational', ['mining', 'logistics'], 'Haul trucks, ore trains and red dirt.', [
+    ['bold', 'haultruck', 'Ride in a haul truck', 'luck', 2.6, [fxDebuff('exhaustion', 1)]], ['steady', 'sitetour', 'Take the mine-site tour', 'intelligence', 1.6, [fxItem('Iron Ore')]], ['social', 'fifo', 'Share a camp meal with FIFO workers', 'charisma', 2.0, [fxRep('WA', 3)]]]),
+  authoredChallenge('WA', 'Watch the Staircase to the Moon at Broome', 1, 1.6, 'educational', ['tourism'], 'Full-moon reflections over Roebuck Bay.', [
+    ['clever', 'tides', 'Time it with the tide charts', 'intelligence', 1.8], ['social', 'nightmarket', 'Join the night-market crowd', 'charisma', 1.6, [fxRep('WA', 3)]], ['bold', 'mudflats', 'Walk out on the mudflats', 'luck', 2.0, [fxDebuff('injury', 1)]]]),
+  authoredChallenge('WA', 'Explore Kings Park in Perth', 1, 1.4, 'educational', ['environment', 'tourism'], 'Bushland and botanic garden above the Swan.', [
+    ['steady', 'guided', 'Take the botanic garden guided walk', 'intelligence', 1.1], ['social', 'concert', 'Picnic at a Kings Park concert', 'charisma', 1.5, [fxRep('WA', 3)]]]),
+  // ---- NT ----
+  authoredChallenge('NT', "Walk Kata Tjuta's Valley of the Winds", 2, 2.2, 'physical', ['exploration', 'environment'], 'The domes beside Uluru.', [
+    ['bold', 'heat', 'Walk it in the afternoon heat', 'strength', 2.8, [fxDebuff('exhaustion', 2)]], ['steady', 'dawn', 'Start at dawn with a ranger', 'intelligence', 1.8, [], { cost: 50 }], ['social', 'centre', 'Visit the cultural centre first', 'charisma', 2.2, [fxRep('NT', 4)]]]),
+  authoredChallenge('NT', 'Cruise Nitmiluk (Katherine) Gorge', 1, 1.6, 'adventure', ['water', 'tourism'], 'Thirteen gorges carved by the Katherine River.', [
+    ['bold', 'canoe', 'Canoe the gorges yourself', 'strength', 2.1, [fxDebuff('exhaustion', 1)]], ['steady', 'jawoyn', 'Take the Jawoyn-guided cruise', 'intelligence', 1.3, [fxRep('NT', 2)], { cost: 60 }], ['clever', 'freshies', 'Look for freshwater crocs', 'luck', 1.8]]),
+  authoredChallenge('NT', 'Try a crocodile burger in Darwin', 1, 1.4, 'culinary', ['trade'], 'Top End street food.', [
+    ['bold', 'plate', 'Order the croc, buffalo and camel plate', 'luck', 1.8], ['steady', 'chef', 'Ask the chef how it is farmed', 'intelligence', 1.1], ['social', 'mindil', 'Eat at the Mindil Beach sunset market', 'charisma', 1.5, [fxRep('NT', 3)]]]),
+  authoredChallenge('NT', 'Visit Karlu Karlu (Devils Marbles)', 1, 1.5, 'cultural', ['exploration'], 'Granite boulders sacred to the Warumungu.', [
+    ['steady', 'signs', 'Walk with the interpretive signs', 'intelligence', 1.2, [fxRep('NT', 2)]], ['social', 'ranger', 'Listen to a Warumungu ranger', 'charisma', 1.5, [fxRep('NT', 4)]], ['clever', 'glow', 'Wait for the sunset glow', 'luck', 1.8]]),
+  authoredChallenge('NT', 'Fish for barramundi at Shady Camp', 2, 2.3, 'wildlife', ['water'], 'The Mary River barrage — big barra, bigger crocs.', [
+    ['bold', 'bank', 'Fish from the bank at dusk', 'luck', 2.9, [fxDebuff('injury', 2)]], ['steady', 'guide', 'Hire a fishing guide', 'intelligence', 1.8, [fxItem('Seafood')], { cost: 120 }], ['social', 'locals', 'Fish with the Top End locals', 'charisma', 2.3, [fxRep('NT', 3)]]]),
+  authoredChallenge('NT', 'Hike the Larapinta Trail', 3, 2.9, 'physical', ['exploration'], '223 km along the West MacDonnell Ranges.', [
+    ['bold', 'solo', 'Walk the toughest section solo', 'strength', 3.5, [fxDebuff('exhaustion', 2)]], ['steady', 'supported', 'Join a supported trek', 'intelligence', 2.3, [], { cost: 220 }], ['social', 'trekkers', 'Walk with a trekking group', 'charisma', 2.8, [fxRep('NT', 4)]]]),
+  authoredChallenge('NT', 'Learn dot painting in Alice Springs', 1, 1.6, 'cultural', ['tourism'], 'From the artists of Mparntwe.', [
+    ['steady', 'workshop', 'Book an Aboriginal-run workshop', 'intelligence', 1.3, [fxItem('Aboriginal Art')], { cost: 60 }], ['social', 'artcentre', 'Visit the art centre and meet artists', 'charisma', 1.7, [fxRep('NT', 4)]]]),
+  authoredChallenge('NT', 'Explore the Alice Springs Desert Park', 1, 1.5, 'wildlife', ['environment'], 'Bilbies, birds of prey and desert habitats.', [
+    ['steady', 'talks', 'Attend the keeper talks', 'intelligence', 1.2], ['social', 'nocturnal', 'Join the nocturnal tour', 'charisma', 1.5, [fxRep('NT', 2)]], ['clever', 'bilby', 'Hope to spot a bilby', 'luck', 1.8]]),
+  authoredChallenge('NT', 'Watch the Uluru Camel Cup', 2, 2.0, 'social', ['tourism'], 'Camel racing in the Red Centre.', [
+    ['bold', 'jockey', 'Enter as a novice jockey', 'strength', 2.6, [fxDebuff('injury', 1)]], ['steady', 'form', 'Study the form guide', 'intelligence', 1.6], ['social', 'raceday', 'Party with the race-day crowd', 'charisma', 2.0, [fxRep('NT', 3)]]]),
+  authoredChallenge('NT', "Swim at Litchfield's Wangi Falls", 1, 1.6, 'physical', ['environment'], 'Twin falls into a monsoon-forest pool.', [
+    ['bold', 'across', 'Swim straight across the plunge pool', 'strength', 2.1, [fxDebuff('exhaustion', 1)]], ['steady', 'boardwalk', 'Walk the boardwalk loop', 'intelligence', 1.3], ['clever', 'termites', 'Visit the magnetic termite mounds', 'luck', 1.8]]),
+  authoredChallenge('NT', 'Visit the Tiwi Islands', 2, 2.2, 'cultural', ['tourism', 'governance'], 'Bathurst and Melville islands, 80 km north of Darwin.', [
+    ['bold', 'charter', 'Charter a boat yourself', 'luck', 2.8, [fxDebuff('exhaustion', 1)]], ['steady', 'tiwitour', 'Take the Tiwi-guided day tour', 'intelligence', 1.8, [fxRep('NT', 4)], { cost: 160 }], ['social', 'footy', 'Watch the Tiwi Grand Final', 'charisma', 2.3, [fxRep('NT', 4)]]]),
+  authoredChallenge('NT', "Tour Darwin's WWII oil tunnels", 1, 1.4, 'educational', ['governance'], 'Built after the 1942 bombing of Darwin.', [
+    ['steady', 'history', 'Take the history tour', 'intelligence', 1.1], ['social', 'veterans', "Hear stories from a veterans' group", 'charisma', 1.5, [fxRep('NT', 3)]]]),
+  authoredChallenge('NT', 'Paddle the Daly River', 2, 2.1, 'adventure', ['water'], 'Barramundi country south-west of Darwin.', [
+    ['bold', 'rapids', 'Paddle the rapids in the wet', 'strength', 2.7, [fxDebuff('injury', 1)]], ['steady', 'nauiyu', 'Paddle with a Nauiyu guide', 'intelligence', 1.7, [fxRep('NT', 3)], { cost: 70 }], ['clever', 'drift', 'Drift and spot birds', 'luck', 2.1]]),
+  authoredChallenge('NT', 'Spot jabirus at Fogg Dam', 1, 1.5, 'wildlife', ['environment'], 'Wetland birdlife on the Adelaide River floodplain.', [
+    ['bold', 'wade', 'Wade off the causeway', 'luck', 1.9, [fxDebuff('injury', 1)]], ['steady', 'ranger', 'Walk with the ranger', 'intelligence', 1.2], ['social', 'count', "Join the birdwatchers' count", 'charisma', 1.5, [fxRep('NT', 3)]]]),
+  authoredChallenge('NT', "Explore Tennant Creek's gold history", 1, 1.4, 'educational', ['mining'], "Australia's last great gold rush, 1932.", [
+    ['steady', 'battery', 'Tour the old stamp battery', 'intelligence', 1.1], ['clever', 'fossick', 'Fossick at the old diggings', 'luck', 1.8, [fxItem('Gold')]], ['social', 'nyinkka', 'Visit the Nyinkka Nyunyu art centre', 'charisma', 1.5, [fxRep('NT', 3)]]]),
+  authoredChallenge('NT', 'Ride a quad bike in the Red Centre', 2, 2.0, 'adventure', ['exploration'], 'Red sand and mulga scrub near Uluru.', [
+    ['bold', 'dunes', 'Ride the dunes flat out', 'strength', 2.6, [fxDebuff('injury', 1)]], ['steady', 'guided', 'Join the guided quad tour', 'intelligence', 1.6, [], { cost: 90 }], ['social', 'station', 'Ride with the station hands', 'charisma', 2.0, [fxRep('NT', 3)]]]),
+  // ---- ACT ----
+  authoredChallenge('ACT', 'Tour the National Gallery of Australia', 1, 1.4, 'educational', ['governance', 'tourism'], 'Blue Poles, the Aboriginal Memorial and more.', [
+    ['steady', 'curator', 'Take the curator-led tour', 'intelligence', 1.1], ['social', 'late', 'Join the gallery late night', 'charisma', 1.5, [fxRep('ACT', 3)]], ['clever', 'bluepoles', 'Find Blue Poles on your own', 'luck', 1.7]]),
+  authoredChallenge('ACT', 'Visit Questacon science centre', 1, 1.5, 'educational', ['research', 'technology'], 'The National Science and Technology Centre.', [
+    ['bold', 'freefall', 'Ride the free-fall slide', 'luck', 1.9], ['steady', 'every', 'Try every exhibit', 'intelligence', 1.2, [fxItem('Education')]], ['social', 'show', 'Help with a school science show', 'charisma', 1.5, [fxRep('ACT', 3)]]]),
+  authoredChallenge('ACT', 'Cycle around Lake Burley Griffin', 1, 1.5, 'physical', ['tourism'], 'The heart of the planned capital.', [
+    ['bold', 'peloton', 'Race the commuter peloton', 'strength', 1.9, [fxDebuff('exhaustion', 1)]], ['steady', 'loop', 'Ride the central basin loop', 'intelligence', 1.2], ['social', 'social', 'Join a Saturday social ride', 'charisma', 1.5, [fxRep('ACT', 3)]]]),
+  authoredChallenge('ACT', 'Climb Mount Ainslie at sunrise', 1, 1.5, 'physical', ['tourism', 'environment'], 'The view down Anzac Parade to Parliament.', [
+    ['bold', 'kokoda', 'Run the Kokoda memorial track', 'strength', 1.9, [fxDebuff('exhaustion', 1)]], ['steady', 'thermos', 'Walk up with a thermos', 'intelligence', 1.2], ['clever', 'fog', 'Hope for a fog-filled valley', 'luck', 1.8]]),
+  authoredChallenge('ACT', 'Taste cool-climate wine in Murrumbateman', 1, 1.5, 'culinary', ['agriculture'], 'Shiraz-viognier on the capital\'s doorstep.', [
+    ['steady', 'masterclass', 'Book a shiraz-viognier masterclass', 'intelligence', 1.2, [fxItem('Wine')]], ['social', 'cellars', 'Chat at the cellar doors', 'charisma', 1.6, [fxRep('ACT', 3)]]]),
+  authoredChallenge('ACT', 'Attend a Senate Estimates hearing', 2, 1.9, 'social', ['governance'], 'Where officials answer to senators.', [
+    ['bold', 'question', 'Pass a question to a senator', 'charisma', 2.5, [fxDebuff('bad_press', 1)]], ['steady', 'papers', 'Read the briefing papers first', 'intelligence', 1.6], ['social', 'journalists', 'Sit with the journalists', 'charisma', 1.9, [fxRep('ACT', 3)]]]),
+  authoredChallenge('ACT', 'Explore the National Arboretum', 1, 1.4, 'educational', ['environment'], '94 forests of rare and endangered trees.', [
+    ['steady', 'forest', 'Take the forest walk with a volunteer', 'intelligence', 1.1], ['social', 'pod', 'Picnic at the Pod Playground', 'charisma', 1.4, [fxRep('ACT', 3)]], ['clever', 'bonsai', 'Find the rarest bonsai', 'luck', 1.7]]),
+  authoredChallenge('ACT', 'Tour Mount Stromlo Observatory', 2, 1.9, 'educational', ['research'], 'Rebuilt after the 2003 bushfires.', [
+    ['bold', 'overnight', 'Stay for the night observing', 'luck', 2.5, [fxDebuff('exhaustion', 1)]], ['steady', 'astronomer', "Join an astronomer's talk", 'intelligence', 1.6, [fxItem('Research Funds')]], ['social', 'stargazers', 'Join the amateur stargazers', 'charisma', 1.9, [fxRep('ACT', 3)]]]),
+  authoredChallenge('ACT', 'Hike Namadgi National Park', 2, 2.1, 'physical', ['environment', 'exploration'], 'Granite tors and alpine plains south of the city.', [
+    ['bold', 'gudgenby', 'Climb Mount Gudgenby', 'strength', 2.7, [fxDebuff('exhaustion', 2)]], ['steady', 'yankeehat', 'Walk the Yankee Hat rock-art trail with a ranger', 'intelligence', 1.7, [fxRep('ACT', 3)]], ['clever', 'brumbies', 'Look for the wild horses', 'luck', 2.1]]),
+  authoredChallenge('ACT', 'Paddle the Molonglo at dawn', 1, 1.5, 'adventure', ['water'], 'Mist on the river below the city.', [
+    ['bold', 'rapids', 'Paddle down to the rapids', 'strength', 1.9, [fxDebuff('injury', 1)]], ['steady', 'basin', 'Hire a kayak and stay in the basin', 'intelligence', 1.2], ['social', 'rowing', 'Join the rowing club session', 'charisma', 1.5, [fxRep('ACT', 3)]]]),
+  authoredChallenge('ACT', 'See Floriade in bloom', 1, 1.4, 'social', ['tourism', 'environment'], "Spring flowers in Commonwealth Park.", [
+    ['steady', 'gardener', "Take the head gardener's tour", 'intelligence', 1.1], ['social', 'nightfest', 'Join NightFest', 'charisma', 1.5, [fxRep('ACT', 3)]]]),
+  authoredChallenge('ACT', 'Visit the High Court of Australia', 1, 1.4, 'educational', ['governance'], 'The apex of the Australian judiciary.', [
+    ['steady', 'hearing', 'Watch a full-bench hearing', 'intelligence', 1.2, [fxRep('ACT', 2)]], ['social', 'tour', 'Take the public tour', 'charisma', 1.4, [fxRep('ACT', 2)]]]),
+  authoredChallenge('ACT', 'Explore Old Parliament House (MoAD)', 1, 1.4, 'educational', ['governance', 'tourism'], 'The Museum of Australian Democracy.', [
+    ['steady', 'exhibits', 'Study the democracy exhibits', 'intelligence', 1.1], ['social', 'tentembassy', 'Visit the Aboriginal Tent Embassy across the lawn', 'charisma', 1.5, [fxRep('ACT', 4)]]]),
+  authoredChallenge('ACT', 'Watch the Brumbies play rugby', 1, 1.5, 'social', ['tourism'], 'Super Rugby at Canberra Stadium.', [
+    ['bold', 'chant', 'Lead the stadium chant', 'charisma', 1.9, [fxDebuff('bad_press', 1)]], ['steady', 'training', 'Watch training first', 'intelligence', 1.2], ['social', 'supporters', "Join the supporters' club", 'charisma', 1.6, [fxRep('ACT', 3)]]]),
+  authoredChallenge('ACT', 'Tour the Royal Australian Mint', 1, 1.4, 'educational', ['finance', 'manufacturing'], 'Where every Australian coin is struck.', [
+    ['steady', 'strike', 'Strike your own coin', 'intelligence', 1.2], ['clever', 'error', 'Hunt for an error coin', 'luck', 1.8]]),
+  authoredChallenge('ACT', 'Fly over the Brindabella Ranges', 3, 2.6, 'adventure', ['exploration'], 'A light aircraft over the capital\'s mountains.', [
+    ['bold', 'controls', 'Take the controls on a trial flight', 'luck', 3.2, [fxDebuff('exhaustion', 1)]], ['steady', 'instructor', 'Fly with an instructor', 'intelligence', 2.0, [], { cost: 200 }], ['social', 'aeroclub', 'Fly with the aero club', 'charisma', 2.5, [fxRep('ACT', 3)]]]),
+  // ---- Cultural experiences led by Traditional Owners and community institutions ----
+  authoredChallenge('NSW', 'Walk the Harbour with a Gadigal guide', 1, 1.5, 'cultural', ['tourism'], 'Barangaroo and the stories of Warrane (Sydney Cove).', [
+    ['steady', 'barangaroo', 'Take the Gadigal-led walk at Barangaroo', 'intelligence', 1.2, [fxRep('NSW', 4)]], ['social', 'yabun', 'Join the Yabun Festival', 'charisma', 1.6, [fxRep('NSW', 3)]]]),
+  authoredChallenge('VIC', 'Walk the Birrarung with a Wurundjeri guide', 1, 1.5, 'cultural', ['tourism', 'governance'], 'The Yarra River through Kulin eyes.', [
+    ['steady', 'wurundjeri', 'Book the Wurundjeri-led walk', 'intelligence', 1.2, [fxRep('VIC', 4)]], ['social', 'koorie', 'Visit the Koorie Heritage Trust', 'charisma', 1.5, [fxRep('VIC', 3)]]]),
+  authoredChallenge('TAS', "Explore the palawa galleries at TMAG", 1, 1.4, 'cultural', ['governance', 'tourism'], 'The Tasmanian Museum and Art Gallery, Hobart.', [
+    ['steady', 'curator', "Take the curator's talk", 'intelligence', 1.2, [fxRep('TAS', 3)]], ['social', 'openday', 'Join the community open day', 'charisma', 1.5, [fxRep('TAS', 3)]]]),
+  authoredChallenge('WA', 'Join a Noongar Six Seasons walk', 1, 1.5, 'cultural', ['environment', 'tourism'], 'Birak, Bunuru, Djeran, Makuru, Djilba and Kambarang in Kings Park.', [
+    ['steady', 'noongar', 'Walk with a Noongar guide', 'intelligence', 1.2, [fxRep('WA', 4)]], ['social', 'bushtucker', 'Join the bush-tucker tasting', 'charisma', 1.6, [fxRep('WA', 3)]]])
+];
+
+// ---- Template generator ------------------------------------------------------------------------------------
+export type ChallengeFillSlot = 'sport' | 'trade' | 'problem' | 'animal' | 'place' | 'dish' | 'landmark' | 'festival' | 'river' | 'craft' | 'town' | 'building' | 'produce' | 'drink';
+export const CHALLENGE_FILL_SLOTS: readonly ChallengeFillSlot[] = ['sport', 'trade', 'problem', 'animal', 'place', 'dish', 'landmark', 'festival', 'river', 'craft', 'town', 'building', 'produce', 'drink'];
+export const CHALLENGE_REGION_ADJECTIVE: Readonly<Record<ChallengeRegionCode, string>> = { QLD: 'Queensland', NSW: 'New South Wales', VIC: 'Victorian', TAS: 'Tasmanian', SA: 'South Australian', WA: 'West Australian', NT: 'Territory', ACT: 'Canberra' };
+export const CHALLENGE_REGION_FILLS: Readonly<Record<ChallengeRegionCode, Readonly<Record<ChallengeFillSlot, readonly string[]>>>> = {
+  QLD: { sport: ['surf lifesaving', 'rugby league', 'beach volleyball', 'outrigger canoe'], trade: ['banana grower', 'reef skipper', 'cane farmer', 'prawn trawlerman'], problem: ['a cyclone clean-up', 'a broken irrigation pump', 'a flooded packing shed', 'a stranded tour boat'], animal: ['cassowaries', 'green turtles', 'saltwater crocodiles', 'humpback whales'], place: ['Mission Beach', 'the Atherton Tablelands', 'Hinchinbrook Island', 'Lamington National Park'], dish: ['mud crab curry', 'Moreton Bay bug rolls', 'mango pavlova', 'barramundi wings'], landmark: ['the Big Pineapple', 'Paronella Park', 'the Glass House Mountains', 'Cape Tribulation'], festival: ['the Woodford Folk Festival', 'the Cairns Indigenous Art Fair', 'Brisbane Riverfire', 'Noosa Eat & Drink'], river: ['the Brisbane River', 'the Daintree River', 'the Noosa River', 'the Tully River'], craft: ['weaving pandanus baskets', 'painting reef murals', 'shaping surfboards', 'carving mango wood'], town: ['Townsville', 'Cairns', 'Toowoomba', 'Rockhampton', 'Mackay'], building: ['Queenslander cottage', 'sugar mill', 'outback pub', 'cane-train shed'], produce: ['mangoes', 'macadamias', 'avocados', 'pineapples'], drink: ['ginger beer', 'Bundaberg rum', 'tropical cordial', 'cold-brew coffee'] },
+  NSW: { sport: ['rugby league', 'surfing', 'cricket', 'rowing'], trade: ['oyster farmer', 'Hunter vigneron', 'merino breeder', 'ferry master'], problem: ['a bushfire recovery', 'a leaking woolshed roof', 'a lost flock', 'a festival rain-out'], animal: ['koalas', 'lyrebirds', 'wombats', 'gang-gang cockatoos'], place: ['the Royal National Park', 'Barrington Tops', 'the Warrumbungles', 'Myall Lakes'], dish: ['meat pies', 'Sydney rock oysters', 'lamingtons', 'barbecued snags'], landmark: ['the Three Sisters', 'Cape Byron Lighthouse', 'the Big Banana', 'Wollemi National Park'], festival: ['Vivid Sydney', 'the Tamworth Country Music Festival', 'the Parkes Elvis Festival', 'the Royal Easter Show'], river: ['the Hawkesbury River', 'the Murrumbidgee', 'the Shoalhaven River', 'the Clarence River'], craft: ['saddle making', 'wheel-thrown pottery', 'opal cutting', 'bush-timber furniture'], town: ['Tamworth', 'Dubbo', 'Wagga Wagga', 'Orange', 'Mudgee'], building: ['woolshed', 'country railway station', 'sandstone church', 'pub verandah'], produce: ['apples', 'cherries', 'lamb', 'honey'], drink: ['craft beer', 'apple cider', 'billy tea', 'Hunter shiraz'] },
+  VIC: { sport: ['Australian rules football', 'cycling', 'tennis', 'horse racing'], trade: ['dairy farmer', 'Yarra Valley winemaker', 'tram driver', 'cheesemaker'], problem: ['a storm-damaged vineyard', 'a muddy dairy yard', 'a lost truffle dog', 'a stalled paddle steamer'], animal: ['platypus', 'little penguins', 'eastern grey kangaroos', 'superb fairy-wrens'], place: ['the Grampians', 'the Otways', 'the Mornington Peninsula', 'the High Country'], dish: ['dim sims', 'souvlaki', 'potato cakes', 'chicken parmas'], landmark: ['Flinders Street Station', 'the Shrine of Remembrance', 'Mount Hotham', 'the Royal Exhibition Building'], festival: ['the Melbourne International Comedy Festival', 'Moomba', 'the Port Fairy Folk Festival', 'the Bright Autumn Festival'], river: ['the Yarra', 'the Murray at Echuca', 'the Snowy', 'the Glenelg River'], craft: ['glass blowing', 'leather work', 'street art', 'blacksmithing'], town: ['Ballarat', 'Bendigo', 'Geelong', 'Mildura', 'Bright'], building: ['goldfields hotel', 'bluestone cottage', 'country football clubhouse', 'heritage tram depot'], produce: ['cheese', 'olives', 'truffles', 'stone fruit'], drink: ['flat whites', 'pinot noir', 'craft gin', 'hot chocolate'] },
+  TAS: { sport: ['rowing', 'trail running', 'sailing', 'woodchopping'], trade: ['salmon farmer', 'apple orchardist', 'whisky distiller', 'abalone diver'], problem: ['a snow-blocked road', 'a torn fishing net', 'a hungry possum invasion', 'a flooded orchard'], animal: ['Tasmanian devils', 'wombats', 'pademelons', 'echidnas'], place: ['the Tarkine', 'Maria Island', 'Bruny Island', 'the Central Highlands'], dish: ['scallop pies', 'leatherwood honey cakes', 'Bruny Island cheese', 'salmon chowder'], landmark: ['the Nut at Stanley', 'Richmond Bridge', 'the Painted Cliffs', 'Cataract Gorge'], festival: ['Dark Mofo', 'the Taste of Tasmania', 'Festivale', 'the Australian Wooden Boat Festival'], river: ['the Derwent', 'the Tamar', 'the Huon River', 'the Gordon River'], craft: ['wooden boat building', 'Huon pine carving', 'wool felting', 'shell-necklace making'], town: ['Launceston', 'Devonport', 'Strahan', 'Stanley', 'Deloraine'], building: ['convict-built cottage', 'apple shed', "lighthouse keeper's cottage", 'timber jetty'], produce: ['cherries', 'Pink Lady apples', 'oysters', 'lavender'], drink: ['single malt whisky', 'cool-climate pinot', 'Huon cider', 'leatherwood mead'] },
+  SA: { sport: ['road cycling', 'sailing', 'Australian rules football', 'cricket'], trade: ['tuna fisher', 'opal miner', 'wheat farmer', 'Barossa cooper'], problem: ['a dust-storm clean-up', 'a dry dam', 'a broken grape picker', 'a beached boat'], animal: ['southern right whales', 'Australian sea lions', 'western grey kangaroos', 'leafy seadragons'], place: ['the Eyre Peninsula', 'the Flinders Ranges', 'the Limestone Coast', 'Kangaroo Island'], dish: ['pie floaters', 'Fritz sandwiches', 'King George whiting', 'Kitchener buns'], landmark: ['the Big Lobster', "Mount Gambier's Blue Lake", 'the Remarkable Rocks', 'Glenelg Jetty'], festival: ['the Adelaide Fringe', 'WOMADelaide', 'the Barossa Vintage Festival', 'the Royal Adelaide Show'], river: ['the Murray at Renmark', 'the River Torrens', 'the Onkaparinga', 'the Coorong lagoons'], craft: ['opal polishing', 'German baking', 'stone masonry', 'basket weaving'], town: ['Mount Gambier', 'Port Augusta', 'Whyalla', 'Renmark', 'Tanunda'], building: ['stone cellar', 'Lutheran church', 'dugout home', 'grain silo'], produce: ['almonds', 'Riverland oranges', 'olives', 'shiraz grapes'], drink: ['Barossa shiraz', 'Coopers pale ale', 'Clare riesling', 'tawny port'] },
+  WA: { sport: ['big-wave surfing', 'yachting', 'Australian rules football', 'outback cricket'], trade: ['pearl diver', 'cray fisher', 'Wheatbelt farmer', 'mining engineer'], problem: ['a cyclone warning', 'a broken windmill', 'a stuck road train', 'a dried-up waterhole'], animal: ['quokkas', 'whale sharks', 'emus', 'humpback whales off the coast'], place: ['the Kimberley', 'the Pilbara', 'the Wheatbelt', 'the Great Southern'], dish: ['a Rottnest seafood platter', 'chilli mussels', 'marron', 'Broome pearl meat'], landmark: ['the Horizontal Falls', 'Cape Leeuwin Lighthouse', 'the Busselton Jetty', 'Mount Augustus'], festival: ['Perth Festival', 'the Shinju Matsuri', 'Gourmet Escape', 'the Kalgoorlie Race Round'], river: ['the Swan River', 'the Fitzroy River', 'the Ord River', 'the Murchison River'], craft: ['pearl jewellery', 'jarrah woodwork', 'silversmithing', 'boab-nut carving'], town: ['Broome', 'Albany', 'Esperance', 'Geraldton', 'Carnarvon'], building: ['pearling lugger', 'goldfields pub', 'jarrah homestead', 'whaling station'], produce: ['wheat', 'avocados', 'Manjimup truffles', 'bananas'], drink: ['Margaret River chardonnay', 'craft lager', 'sandalwood tea', 'bush lemonade'] },
+  NT: { sport: ['rodeo', 'barra fishing', 'Australian rules football', 'camel racing'], trade: ['cattle station hand', 'croc farmer', 'barra fisher', 'park ranger'], problem: ['a wet-season washout', 'a broken bore pump', 'a buffalo in the garden', 'a lost swag'], animal: ['frill-necked lizards', 'wallaroos', 'brolgas', 'black cockatoos'], place: ['Arnhem Land', 'the MacDonnell Ranges', 'Watarrka', 'Mary River National Park'], dish: ['damper', 'kangaroo-tail stew', 'barramundi in paperbark', 'crocodile skewers'], landmark: ['Standley Chasm', 'Rainbow Valley', 'Ubirr', 'the Old Telegraph Station'], festival: ['the Darwin Festival', 'the Henley-on-Todd Regatta', 'the Barunga Festival', 'the Garma Festival'], river: ['the Katherine River', 'the Adelaide River', 'the Mary River', 'the Finke River'], craft: ['dot painting', 'spinifex weaving', 'boomerang making', 'bark painting'], town: ['Katherine', 'Tennant Creek', 'Alice Springs', 'Nhulunbuy', 'Mataranka'], building: ['stockyard', 'telegraph station', 'tin-roofed pub', 'mission church'], produce: ['Top End mangoes', 'melons', 'bush tomatoes', 'Kakadu plums'], drink: ['billy tea', 'Kakadu plum juice', 'mango smoothies', 'iced coffee'] },
+  ACT: { sport: ['rugby union', 'rowing', 'mountain biking', 'cross-country running'], trade: ['public servant', 'Murrumbateman winemaker', 'astronomer', 'museum curator'], problem: ['a frosty-morning breakdown', 'a lost parliamentary pass', 'a jammed telescope', 'a kangaroo on the roundabout'], animal: ['eastern grey kangaroos in the suburbs', 'Canberra platypus', 'superb lyrebirds', 'gang-gangs over the city'], place: ['Namadgi', 'the Molonglo Valley', 'Black Mountain', 'Lake Ginninderra'], dish: ['truffle pasta', 'Canberra cherry pie', 'a Sunday lamb roast', 'farmers-market sourdough'], landmark: ['Telstra Tower', 'the National Carillon', 'Anzac Parade', 'Lanyon Homestead'], festival: ['Floriade', 'the Canberra Balloon Spectacular', 'Enlighten', 'the National Folk Festival'], river: ['the Murrumbidgee at Tharwa', 'the Molonglo', 'the Cotter River', 'the Gudgenby River'], craft: ['glass making', 'woodturning', 'printmaking', 'calligraphy'], town: ['Gungahlin', 'Tuggeranong', 'Belconnen', 'Queanbeyan', 'Hall'], building: ['heritage homestead', 'old church hall', 'Manuka Pool kiosk', 'Calthorpes House'], produce: ['black truffles', 'cool-climate cherries', 'Canberra honey', 'wine grapes'], drink: ['cool-climate shiraz', 'craft cider', 'chai', 'single-origin espresso'] }
+};
+
+type TemplateApproachSpec = readonly [ChallengeApproachStyle, string, string, ChallengeStat];
+export interface ChallengeTemplate {
+  readonly id: string;
+  readonly pattern: string;
+  readonly type: ChallengeTypeTag;
+  readonly difficulty: readonly [1 | 2 | 3, 1 | 2 | 3];
+  readonly themes: readonly ContentTheme[];
+  readonly approaches: readonly TemplateApproachSpec[];
+}
+export const CHALLENGE_TEMPLATES: readonly ChallengeTemplate[] = [
+  { id: 'championship', pattern: 'Compete in the {regionName} {sport} championship', type: 'physical', difficulty: [2, 3], themes: ['tourism'], approaches: [['bold', 'title', 'Go for the title', 'strength'], ['steady', 'coach', 'Train with a local coach first', 'intelligence'], ['social', 'club', 'Enter with the local club', 'charisma']] },
+  { id: 'help_trade', pattern: 'Help a {town} {trade} with {problem}', type: 'social', difficulty: [1, 2], themes: ['agriculture', 'trade'], approaches: [['bold', 'alone', 'Take the whole job on yourself', 'strength'], ['steady', 'plan', 'Make a careful plan first', 'intelligence'], ['social', 'neighbours', 'Rally the neighbours to help', 'charisma']] },
+  { id: 'photo_animal', pattern: 'Photograph {animal} at {place}', type: 'wildlife', difficulty: [1, 2], themes: ['environment', 'tourism'], approaches: [['bold', 'close', 'Get dangerously close', 'luck'], ['steady', 'hide', "Wait in a ranger's hide", 'intelligence'], ['clever', 'light', 'Let the light and luck do the work', 'luck']] },
+  { id: 'cook_dish', pattern: 'Cook {dish} with a {regionName} family', type: 'culinary', difficulty: [1, 2], themes: ['agriculture', 'tourism'], approaches: [['bold', 'twist', 'Improvise your own twist', 'luck'], ['steady', 'recipe', "Follow Nan's recipe exactly", 'intelligence'], ['social', 'feast', 'Turn it into a street feast', 'charisma']] },
+  { id: 'guide_landmark', pattern: 'Guide visitors around {landmark}', type: 'educational', difficulty: [1, 2], themes: ['tourism'], approaches: [['steady', 'research', 'Research every detail first', 'intelligence'], ['social', 'stories', "Tell the locals' stories", 'charisma'], ['bold', 'adlib', 'Ad-lib the whole tour', 'charisma']] },
+  { id: 'volunteer_festival', pattern: 'Volunteer at {festival}', type: 'social', difficulty: [1, 2], themes: ['tourism'], approaches: [['social', 'gate', 'Work the busiest gate', 'charisma'], ['steady', 'roster', 'Take the organised roster shift', 'intelligence'], ['bold', 'stage', 'Talk your way onto the stage crew', 'charisma']] },
+  { id: 'kayak_river', pattern: 'Kayak {river}', type: 'adventure', difficulty: [2, 3], themes: ['water', 'environment'], approaches: [['bold', 'fastwater', 'Paddle the fast water', 'strength'], ['steady', 'guide', 'Paddle with a licensed guide', 'intelligence'], ['clever', 'level', 'Wait for the right water level', 'luck']] },
+  { id: 'track_animal', pattern: 'Track {animal} through {place}', type: 'wildlife', difficulty: [2, 3], themes: ['environment', 'exploration'], approaches: [['bold', 'offtrack', 'Go off track', 'strength'], ['steady', 'ranger', 'Track with a ranger', 'intelligence'], ['clever', 'signs', 'Read the signs and get lucky', 'luck']] },
+  { id: 'learn_craft', pattern: 'Learn {craft} from a {regionName} artisan', type: 'cultural', difficulty: [1, 2], themes: ['manufacturing', 'tourism'], approaches: [['steady', 'apprentice', 'Apprentice for the day', 'intelligence'], ['social', 'workshop', 'Join the community workshop', 'charisma'], ['bold', 'sunset', 'Promise a finished piece by sunset', 'luck']] },
+  { id: 'fun_run', pattern: 'Run the {town} fun run', type: 'physical', difficulty: [1, 2], themes: ['tourism'], approaches: [['bold', 'first', 'Race for first place', 'strength'], ['steady', 'pace', 'Run your own pace plan', 'intelligence'], ['social', 'costume', 'Run in costume for charity', 'charisma']] },
+  { id: 'trivia', pattern: 'Win the {town} pub trivia night', type: 'educational', difficulty: [1, 2], themes: ['tourism'], approaches: [['clever', 'memory', 'Play solo and trust your memory', 'intelligence'], ['social', 'regulars', "Join the regulars' team", 'charisma'], ['bold', 'jackpot', 'Bet the bar tab on the jackpot round', 'luck']] },
+  { id: 'restore_building', pattern: 'Restore a heritage {building} in {town}', type: 'physical', difficulty: [2, 3], themes: ['governance', 'manufacturing'], approaches: [['bold', 'heavy', 'Do the heavy work yourself', 'strength'], ['steady', 'architect', 'Follow the heritage architect', 'intelligence'], ['social', 'workingbee', 'Run a community working bee', 'charisma']] },
+  { id: 'map_track', pattern: 'Map a forgotten walking track near {place}', type: 'adventure', difficulty: [2, 3], themes: ['exploration'], approaches: [['bold', 'bushbash', 'Bush-bash the old route', 'strength'], ['steady', 'archives', 'Start from the archives', 'intelligence'], ['clever', 'instinct', 'Follow your instinct', 'luck']] },
+  { id: 'judge_contest', pattern: 'Judge the {dish} contest at {festival}', type: 'culinary', difficulty: [1, 2], themes: ['agriculture', 'tourism'], approaches: [['steady', 'criteria', 'Score by strict criteria', 'intelligence'], ['social', 'crowd', "Let the crowd's cheers guide you", 'charisma'], ['bold', 'outsider', 'Crown an outsider', 'luck']] },
+  { id: 'radio_story', pattern: 'Tell the story of {landmark} on community radio', type: 'cultural', difficulty: [1, 2], themes: ['governance', 'tourism'], approaches: [['steady', 'script', 'Script it carefully', 'intelligence'], ['social', 'talkback', 'Take talkback callers live', 'charisma'], ['bold', 'nonotes', 'Go live with no notes', 'charisma']] },
+  { id: 'muster', pattern: 'Help muster cattle on a {town} station', type: 'physical', difficulty: [2, 3], themes: ['agriculture'], approaches: [['bold', 'horseback', 'Muster on horseback', 'strength'], ['steady', 'stockman', "Follow the head stockman's plan", 'intelligence'], ['social', 'jackaroos', 'Ride with the jackaroos', 'charisma']] },
+  { id: 'rescue_animal', pattern: 'Rescue stranded {animal} near {place}', type: 'wildlife', difficulty: [2, 3], themes: ['environment'], approaches: [['bold', 'goin', 'Go in yourself', 'strength'], ['steady', 'carers', 'Call in the wildlife carers and help', 'intelligence'], ['clever', 'calm', 'Stay calm and let it come to you', 'luck']] },
+  { id: 'sell_produce', pattern: 'Sell {produce} at the {town} market', type: 'social', difficulty: [1, 2], themes: ['trade', 'agriculture'], approaches: [['bold', 'haggle', 'Price it high and haggle', 'charisma'], ['steady', 'samples', 'Hand out samples', 'intelligence'], ['social', 'shared', 'Share a stall with locals', 'charisma']] },
+  { id: 'survey_flowers', pattern: 'Survey wildflowers at {place}', type: 'educational', difficulty: [1, 2], themes: ['environment', 'research'], approaches: [['steady', 'botanist', 'Survey with a botanist', 'intelligence'], ['clever', 'orchid', 'Hunt for a rare orchid', 'luck'], ['bold', 'wholereserve', 'Cover the whole reserve in a day', 'strength']] },
+  { id: 'busk', pattern: 'Busk on the main street of {town}', type: 'social', difficulty: [1, 2], themes: ['tourism'], approaches: [['bold', 'crowd', 'Play for the biggest crowd', 'charisma'], ['steady', 'setlist', 'Rehearse a tight set', 'intelligence'], ['clever', 'corner', 'Find the luckiest corner', 'luck']] },
+  { id: 'cleanup', pattern: 'Lead a clean-up at {place}', type: 'physical', difficulty: [1, 2], themes: ['environment'], approaches: [['bold', 'alone', 'Clear the whole stretch alone', 'strength'], ['steady', 'council', 'Organise it with the council', 'intelligence'], ['social', 'volunteers', 'Rally local volunteers', 'charisma']] },
+  { id: 'kids_match', pattern: 'Organise a {sport} match for {town} kids', type: 'social', difficulty: [1, 2], themes: ['tourism'], approaches: [['social', 'parents', 'Get the parents involved', 'charisma'], ['steady', 'draw', 'Plan the draw and rules', 'intelligence'], ['bold', 'carnival', 'Make it a town-wide carnival', 'charisma']] },
+  { id: 'brew', pattern: 'Brew a batch of {drink} in {town}', type: 'culinary', difficulty: [1, 2], themes: ['manufacturing', 'agriculture'], approaches: [['bold', 'experiment', 'Experiment with the recipe', 'luck'], ['steady', 'brewer', 'Work under the head brewer', 'intelligence'], ['social', 'tasting', 'Host a tasting night', 'charisma']] },
+  { id: 'navigate', pattern: 'Navigate to {landmark} without a map', type: 'adventure', difficulty: [2, 3], themes: ['exploration'], approaches: [['bold', 'direct', 'Head straight across country', 'strength'], ['steady', 'compass', 'Use the compass and stars', 'intelligence'], ['clever', 'hunch', 'Trust your hunch', 'luck']] },
+  { id: 'record_story', pattern: 'Record an oral history of {landmark}', type: 'cultural', difficulty: [1, 2], themes: ['governance', 'tourism'], approaches: [['steady', 'protocols', 'Learn the protocols first', 'intelligence'], ['social', 'listen', 'Spend the day listening', 'charisma']] },
+  { id: 'landcare', pattern: 'Plant trees with {town} Landcare', type: 'physical', difficulty: [1, 2], themes: ['environment'], approaches: [['bold', 'thousand', 'Plant a thousand seedlings', 'strength'], ['steady', 'species', 'Match species to the soil', 'intelligence'], ['social', 'weekend', 'Join the weekend crew', 'charisma']] },
+  { id: 'night_walk', pattern: 'Spot {animal} on a night walk at {place}', type: 'wildlife', difficulty: [1, 2], themes: ['environment', 'tourism'], approaches: [['clever', 'torch', 'Torch the treeline and hope', 'luck'], ['steady', 'guide', 'Walk with a night guide', 'intelligence'], ['bold', 'midnight', 'Go out alone after midnight', 'luck']] },
+  { id: 'sunset_photo', pattern: 'Photograph the sunset over {landmark}', type: 'educational', difficulty: [1, 2], themes: ['tourism'], approaches: [['clever', 'perfect', 'Wait for perfect light', 'luck'], ['steady', 'tripod', 'Plan the shot carefully', 'intelligence'], ['bold', 'angle', 'Climb for the dramatic angle', 'strength']] }
+];
+
+/** FNV-1a over a string → uint32 (seed mixing for boards and generated variants). */
+export function challengeSeedHash(text: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h >>> 0;
+}
+export function mixChallengeSeed(...parts: Array<string | number>): number { return challengeSeedHash(parts.map(String).join('|')) || 1; }
+/** A private draw function on the existing named-stream registry ('Challenges' stream) — never touches the live game's RNG. */
+export function challengeDrawFor(seed: number): () => number {
+  const registry = new GameplayRngRegistry((seed >>> 0) || 1);
+  return () => registry.draw('Challenges');
+}
+function templateSlots(pattern: string): string[] { return Array.from(pattern.matchAll(/\{(\w+)\}/g)).map(m => m[1]); }
+const r1 = (n: number) => Math.round(n * 10) / 10;
+const clampReward = (n: number) => Math.max(1, Math.min(4, r1(n)));
+
+/** One deterministic variant of a template for a region. Same (template, region, seed) → same challenge. */
+export function generateChallengeVariant(template: ChallengeTemplate, region: ChallengeRegionCode, seed: number): ChallengeDefinition {
+  const draw = challengeDrawFor(mixChallengeSeed(seed, region, template.id));
+  const fills = CHALLENGE_REGION_FILLS[region];
+  const values: Record<string, string> = { regionName: CHALLENGE_REGION_ADJECTIVE[region] };
+  templateSlots(template.pattern).forEach(slot => {
+    if (values[slot]) return;
+    const table = (fills as Record<string, readonly string[]>)[slot] || ['somewhere'];
+    values[slot] = table[Math.min(table.length - 1, Math.floor(draw() * table.length))];
+  });
+  const fill = (text: string) => text.replace(/\{(\w+)\}/g, (_m, k: string) => values[k] || k);
+  const name = fill(template.pattern).replace(/^./, c => c.toUpperCase());
+  const [lo, hi] = template.difficulty;
+  const difficulty = Math.min(hi, lo + Math.floor(draw() * (hi - lo + 1))) as 1 | 2 | 3;
+  const reward = r1(1.4 + (difficulty - 1) * 0.6 + draw() * 0.3);
+  const rewardFor = (style: ChallengeApproachStyle) => clampReward(style === 'bold' ? reward * 1.25 : style === 'steady' ? Math.max(1.1, reward * 0.8) : style === 'clever' ? reward * 1.1 : reward);
+  const fxFor = (style: ChallengeApproachStyle): ChallengeSideEffect[] => style === 'bold' ? [fxDebuff('exhaustion', 1)] : style === 'social' ? [fxRep(region, 3)] : [];
+  const approaches = template.approaches.map(([style, id, label, stat]) => apx(id, fill(label), stat, style, AUTHORED_SHIFT[style], rewardFor(style), style === 'steady' ? 20 + 30 * difficulty : 0, AUTHORED_FAIL[style], fxFor(style), describeAuthoredApproach(style, stat, region)));
+  return { id: `gen_${region.toLowerCase()}_${template.id}_${challengeSeedHash(name).toString(36)}`, name, region, difficulty, reward, type: template.type, approaches, source: 'generated', hiddenUntilUnlocked: false, blurb: `A local opportunity in ${CHALLENGE_REGION_ADJECTIVE[region] === 'Territory' ? 'the Territory' : CHALLENGE_REGION_ADJECTIVE[region]} country.`, tags: template.themes };
+}
+
+/** `count` unique generated challenges for a region, avoiding `excludeNames`; templates matching `themes` first. */
+export function generateRegionChallenges(region: ChallengeRegionCode, seed: number, count: number, excludeNames: ReadonlySet<string>, themes: readonly ContentTheme[] = []): ChallengeDefinition[] {
+  const preferred = themes.length ? CHALLENGE_TEMPLATES.filter(t => t.themes.some(th => themes.includes(th) || th === 'tourism')) : CHALLENGE_TEMPLATES;
+  const templates = preferred.length ? preferred : CHALLENGE_TEMPLATES;
+  const draw = challengeDrawFor(mixChallengeSeed(seed, region, 'board-generator'));
+  const out: ChallengeDefinition[] = [];
+  const names = new Set(excludeNames);
+  for (let attempt = 0; attempt < count * 12 && out.length < count; attempt++) {
+    const template = templates[Math.min(templates.length - 1, Math.floor(draw() * templates.length))];
+    const def = generateChallengeVariant(template, region, mixChallengeSeed(seed, attempt));
+    if (names.has(def.name)) continue;
+    names.add(def.name);
+    out.push(def);
+  }
+  return out;
+}
+
+// ---- Pools, themes and the rotating board ----------------------------------------------------------------------
+export const CHALLENGE_BOARD_SIZE = 4;
+export const CHALLENGE_BOARD_ROTATION_DAYS = 3;
+export function challengeBoardRotationIndex(day: number): number { return Math.floor(Math.max(0, (Number(day) || 1) - 1) / CHALLENGE_BOARD_ROTATION_DAYS); }
+export function daysUntilNextRotation(day: number): number { const d = Math.max(1, Number(day) || 1); return CHALLENGE_BOARD_ROTATION_DAYS - ((d - 1) % CHALLENGE_BOARD_ROTATION_DAYS); }
+
+export interface ChallengeContentSettingsLike {
+  challengeApproachesEnabled?: boolean;
+  expandedChallengeContentEnabled?: boolean;
+  proceduralChallengesEnabled?: boolean;
+  v93ContentEnabled?: boolean;
+  v93ContentThemes?: readonly string[];
+  v93RegionalOpening?: string;
+}
+export function isChallengeBoardActive(settings: ChallengeContentSettingsLike | null | undefined): boolean {
+  return Boolean(settings && (settings.expandedChallengeContentEnabled === true || settings.proceduralChallengesEnabled === true));
+}
+/** V9.3 themes → active challenge pools: the chosen content themes, else the regional opening's themes. Empty = every pool. */
+export function activeChallengeThemes(settings: ChallengeContentSettingsLike | null | undefined, seed: number): ContentTheme[] {
+  if (!settings || settings.v93ContentEnabled === false) return [];
+  const chosen = (settings.v93ContentThemes || []).filter((t): t is ContentTheme => (CONTENT_THEMES as readonly string[]).includes(t));
+  if (chosen.length) return chosen;
+  try { return [...resolveRegionalOpening(settings.v93RegionalOpening || 'none', seed).themes]; } catch { return []; }
+}
+/** The always-on pool (classic travel content) plus themes; a challenge is in pool if a tag matches. */
+export function isInActiveChallengePool(def: ChallengeDefinition, themes: readonly ContentTheme[]): boolean {
+  if (def.source === 'legacy' || !themes.length) return true;
+  const tags = def.tags || [];
+  return tags.includes('tourism') || tags.some(t => (themes as readonly string[]).includes(t));
+}
+export function challengePoolForRegion(region: string, settings: ChallengeContentSettingsLike | null | undefined, themes: readonly ContentTheme[]): ChallengeDefinition[] {
+  const legacy = LEGACY_CHALLENGE_DEFINITIONS.filter(d => d.region === region);
+  const authored = settings && settings.expandedChallengeContentEnabled === true ? EXPANDED_CHALLENGES.filter(d => d.region === region && isInActiveChallengePool(d, themes)) : [];
+  return [...legacy, ...authored];
+}
+function seededOrder<T>(items: readonly T[], seed: number): T[] {
+  const out = [...items];
+  const draw = challengeDrawFor(seed);
+  for (let i = out.length - 1; i > 0; i--) { const j = Math.min(i, Math.floor(draw() * (i + 1))); const t = out[i]; out[i] = out[j]; out[j] = t; }
+  return out;
+}
+
+export interface ChallengeBoardContext {
+  settings: ChallengeContentSettingsLike | null | undefined;
+  seed: number;
+  seasonNames: readonly string[];
+  completedNames: readonly string[];
+  unlockedIds: readonly string[];
+  /** The live V9.3 content profile's themes when a match has one (else themes come from the settings + opening). */
+  themesOverride?: readonly ContentTheme[];
+}
+export interface ChallengeBoard {
+  region: string;
+  rotation: number;
+  /** Up to CHALLENGE_BOARD_SIZE rotating slots. */
+  slots: ChallengeDefinition[];
+  /** Unlocked follow-ups (SECTION 20AH) that stay pinned until done — approaches on only. */
+  pinned: ChallengeDefinition[];
+  generatedCount: number;
+  themes: ContentTheme[];
+}
+const challengeBoardCache = new Map<string, ChallengeBoard>();
+/** The region's board for a rotation. Deterministic in (seed, region, rotation, flags, themes, season completions). */
+export function computeChallengeBoard(region: string, rotation: number, ctx: ChallengeBoardContext): ChallengeBoard {
+  const themes = ctx.themesOverride ? [...ctx.themesOverride] : activeChallengeThemes(ctx.settings, ctx.seed);
+  const key = JSON.stringify([region, rotation, ctx.seed, Boolean(ctx.settings?.expandedChallengeContentEnabled), Boolean(ctx.settings?.proceduralChallengesEnabled), Boolean(ctx.settings?.challengeApproachesEnabled), themes, [...ctx.seasonNames].sort(), [...ctx.unlockedIds].sort(), ctx.completedNames.length]);
+  const cached = challengeBoardCache.get(key);
+  if (cached) return cached;
+  const pool = challengePoolForRegion(region, ctx.settings, themes);
+  const order = seededOrder(pool, mixChallengeSeed(ctx.seed, region, rotation, 'board'));
+  const open = order.filter(d => !ctx.seasonNames.includes(d.name));
+  const slots = open.slice(0, CHALLENGE_BOARD_SIZE);
+  let generatedCount = 0;
+  if (slots.length < CHALLENGE_BOARD_SIZE && ctx.settings?.proceduralChallengesEnabled === true && isChallengeRegionCode(region)) {
+    const staticNames = new Set<string>([...LEGACY_CHALLENGE_DEFINITIONS, ...CHALLENGE_FOLLOW_UPS, ...EXPANDED_CHALLENGES].map(d => d.name));
+    ctx.seasonNames.forEach(n => staticNames.add(n));
+    const generated = generateRegionChallenges(region, mixChallengeSeed(ctx.seed, region, rotation, 'fill'), CHALLENGE_BOARD_SIZE - slots.length, staticNames, themes);
+    registerChallengeDefinitions(generated);
+    slots.push(...generated);
+    generatedCount = generated.length;
+  }
+  if (slots.length < CHALLENGE_BOARD_SIZE) slots.push(...order.filter(d => !slots.includes(d)).slice(0, CHALLENGE_BOARD_SIZE - slots.length));
+  const pinned = ctx.settings?.challengeApproachesEnabled === true ? visibleFollowUpsForRegion(region, ctx.completedNames, ctx.unlockedIds).filter(d => !ctx.seasonNames.includes(d.name)) : [];
+  const board: ChallengeBoard = { region, rotation, slots, pinned, generatedCount, themes };
+  if (challengeBoardCache.size > 96) challengeBoardCache.clear();
+  challengeBoardCache.set(key, board);
+  return board;
+}
+
+// ---- Scouting ---------------------------------------------------------------------------------------------------
+export type ScoutedChallengeBoards = Partial<Record<ChallengeRegionCode, number>>;
+export function sanitizeScoutedChallengeBoards(raw: unknown): ScoutedChallengeBoards {
+  const out: ScoutedChallengeBoards = {};
+  if (!raw || typeof raw !== 'object') return out;
+  Object.entries(raw as Record<string, unknown>).forEach(([k, v]) => { if (isChallengeRegionCode(k) && typeof v === 'number' && Number.isFinite(v) && v >= 0) out[k] = Math.floor(v); });
+  return out;
+}
+export function hasScoutedNextRotation(scouted: unknown, region: string, day: number): boolean {
+  if (!isChallengeRegionCode(region)) return false;
+  return sanitizeScoutedChallengeBoards(scouted)[region] === challengeBoardRotationIndex(day) + 1;
+}
+export function markNextRotationScouted(scouted: unknown, region: string, day: number): ScoutedChallengeBoards {
+  const out = sanitizeScoutedChallengeBoards(scouted);
+  if (isChallengeRegionCode(region)) out[region] = challengeBoardRotationIndex(day) + 1;
+  return out;
+}
+
+// ---- UI ------------------------------------------------------------------------------------------------------------
+export interface ChallengeBoardPanelProps {
+  board: ChallengeBoard;
+  day: number;
+  scoutedPreview: ChallengeBoard | null;
+  canScout: boolean;
+  scoutReason: string | null;
+  theme: { buttonSecondary: string; border: string };
+  onScout: () => void;
+}
+export const ChallengeBoardPanel = React.memo(function ChallengeBoardPanel(p: ChallengeBoardPanelProps) {
+  const nextIn = daysUntilNextRotation(p.day);
+  return (
+    <div className={`${p.theme.border} border rounded-lg p-3 mb-3 text-xs`} data-testid="challenge-board" data-rotation={p.board.rotation}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-semibold">📋 Challenge board · rotation {p.board.rotation + 1} · {CHALLENGE_BOARD_SIZE} on offer · next rotation in {nextIn} day{nextIn === 1 ? '' : 's'}</span>
+        {!p.scoutedPreview && (
+          <button type="button" onClick={p.onScout} disabled={!p.canScout} title={p.scoutReason || 'Preview the next rotation'} className={`${p.theme.buttonSecondary} px-2 py-1 rounded disabled:opacity-50`} data-testid="scout-board">🔭 Scout next rotation (1 AP)</button>
+        )}
+      </div>
+      {p.board.themes.length > 0 && <div className="opacity-70 mt-1">Active pools: tourism · {p.board.themes.join(' · ')}</div>}
+      {p.board.generatedCount > 0 && <div className="opacity-70 mt-1">{p.board.generatedCount} local opportunit{p.board.generatedCount === 1 ? 'y' : 'ies'} generated — the hand-written challenges here are exhausted for the season.</div>}
+      {p.scoutedPreview && (
+        <div className="mt-2" data-testid="scout-preview">
+          <span className="font-semibold">🔭 Next rotation:</span> {p.scoutedPreview.slots.map(d => d.name).join(' · ')}
+        </div>
+      )}
+    </div>
+  );
+});
+
+// ---- Self-tests (ex01–ex36) ------------------------------------------------------------------------------------------
+export function runV96ChallengeContentSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const validItems = new Set(Object.values(REGIONAL_RESOURCES).flat());
+  const staticDefs = [...LEGACY_CHALLENGE_DEFINITIONS, ...CHALLENGE_FOLLOW_UPS, ...EXPANDED_CHALLENGES];
+  const on = { expandedChallengeContentEnabled: true, proceduralChallengesEnabled: false };
+  const both = { expandedChallengeContentEnabled: true, proceduralChallengesEnabled: true };
+  const proc = { expandedChallengeContentEnabled: false, proceduralChallengesEnabled: true };
+  const ctx = (settings: ChallengeContentSettingsLike, o: Partial<ChallengeBoardContext> = {}): ChallengeBoardContext => ({ settings, seed: 20002, seasonNames: [], completedNames: [], unlockedIds: [], ...o });
+
+  check('ex01_count', '≥120 new hand-written challenges', () => EXPANDED_CHALLENGES.length >= 120 || `n=${EXPANDED_CHALLENGES.length}`);
+  check('ex02_per_region', '≥15 new challenges in every region', () => {
+    const bad = CHALLENGE_REGION_CODES.filter(r => EXPANDED_CHALLENGES.filter(d => d.region === r).length < 15);
+    return bad.length === 0 || bad.map(r => `${r}=${EXPANDED_CHALLENGES.filter(d => d.region === r).length}`).join(',');
+  });
+  check('ex03_unique_ids', 'Every authored challenge has a unique id (also vs V9.5 and follow-ups)', () => new Set(staticDefs.map(d => d.id)).size === staticDefs.length || 'duplicate id');
+  check('ex04_unique_names', 'No duplicate names within a region (and none across the static registry)', () => {
+    const dup = CHALLENGE_REGION_CODES.filter(r => { const n = staticDefs.filter(d => d.region === r).map(d => d.name); return new Set(n).size !== n.length; });
+    return (dup.length === 0 && new Set(staticDefs.map(d => d.name)).size === staticDefs.length) || dup.join(',');
+  });
+  check('ex05_valid_region', 'Every authored challenge has a valid region and difficulty 1–3', () => EXPANDED_CHALLENGES.every(d => isChallengeRegionCode(d.region) && d.difficulty >= 1 && d.difficulty <= 3 && d.reward >= 1.4 && d.reward <= 3.2) || 'invalid region/difficulty/reward');
+  check('ex06_approach_count', 'Every authored challenge offers 2–3 approaches with unique ids', () => {
+    const bad = EXPANDED_CHALLENGES.filter(d => d.approaches.length < 2 || d.approaches.length > 3 || new Set(d.approaches.map(a => a.id)).size !== d.approaches.length);
+    return bad.length === 0 || bad.map(b => b.id).slice(0, 5).join(',');
+  });
+  check('ex07_stat_refs', 'Approach stats and styles are valid; rewards 1–4; fees ≥ 0; failure share 0–1', () => {
+    const bad = EXPANDED_CHALLENGES.flatMap(d => d.approaches.filter(a => !CHALLENGE_STATS.includes(a.stat) || !(a.style in APPROACH_STYLE_LABEL) || a.rewardMultiplier < 1 || a.rewardMultiplier > 4 || a.upfrontCost < 0 || a.failureWagerShare < 0 || a.failureWagerShare > 1 || !a.description).map(a => `${d.id}.${a.id}`));
+    return bad.length === 0 || bad.slice(0, 5).join(',');
+  });
+  check('ex08_side_effects', 'Side effects reference sellable items, known debuffs, real regions and existing challenges', () => {
+    const bad: string[] = [];
+    EXPANDED_CHALLENGES.forEach(d => d.approaches.forEach(a => a.sideEffects.forEach(fx => {
+      if (fx.kind === 'item' && !validItems.has(fx.item)) bad.push(`${d.id}:${fx.item}`);
+      if (fx.kind === 'debuff' && !isChallengeDebuffId(fx.debuff)) bad.push(`${d.id}:debuff`);
+      if (fx.kind === 'reputation' && !isChallengeRegionCode(fx.region)) bad.push(`${d.id}:rep`);
+      if (fx.kind === 'unlock' && !getChallengeDefinition(fx.challengeId)) bad.push(`${d.id}:unlock`);
+    })));
+    return bad.length === 0 || bad.slice(0, 5).join(',');
+  });
+  check('ex09_type_spread', 'All seven types are well represented (≥8 each)', () => {
+    const counts = CHALLENGE_TYPE_TAGS.map(t => [t, EXPANDED_CHALLENGES.filter(d => d.type === t).length] as const);
+    return counts.every(([, n]) => n >= 8) || counts.map(([t, n]) => `${t}=${n}`).join(',');
+  });
+  check('ex10_themes', 'Every authored challenge carries ≥1 valid V9.3 content theme', () => EXPANDED_CHALLENGES.every(d => (d.tags || []).length > 0 && (d.tags || []).every(t => (CONTENT_THEMES as readonly string[]).includes(t))) || 'theme missing');
+  check('ex11_legacy_shape', 'Authored challenges convert to the V9.5 shape with a legacy type the odds formula knows', () => EXPANDED_CHALLENGES.every(d => ['physical', 'social', 'educational', 'wildlife'].includes(toLegacyChallenge(d).type) && toLegacyChallenge(d).name === d.name) || 'bad legacy type');
+  check('ex12_templates', '≥25 templates, each with a region-specific slot and 2–3 approaches', () => {
+    const regional = ['regionName', 'town', 'place', 'landmark', 'river', 'festival'];
+    const bad = CHALLENGE_TEMPLATES.filter(t => !templateSlots(t.pattern).some(s => regional.includes(s)) || t.approaches.length < 2 || t.approaches.length > 3);
+    return (CHALLENGE_TEMPLATES.length >= 25 && bad.length === 0 && new Set(CHALLENGE_TEMPLATES.map(t => t.id)).size === CHALLENGE_TEMPLATES.length) || `n=${CHALLENGE_TEMPLATES.length} bad=${bad.map(b => b.id).join(',')}`;
+  });
+  check('ex13_fill_tables', 'Every region has ≥3 fills for every slot the templates use', () => {
+    const used = new Set(CHALLENGE_TEMPLATES.flatMap(t => templateSlots(t.pattern)).filter(s => s !== 'regionName'));
+    const bad = CHALLENGE_REGION_CODES.flatMap(r => Array.from(used).filter(s => ((CHALLENGE_REGION_FILLS[r] as Record<string, readonly string[]>)[s] || []).length < 3).map(s => `${r}.${s}`));
+    return bad.length === 0 || bad.join(',');
+  });
+  check('ex14_generator_deterministic', 'The generator is deterministic for a seed', () => {
+    const a = generateRegionChallenges('NSW', 777, 6, new Set()); const b = generateRegionChallenges('NSW', 777, 6, new Set());
+    return (JSON.stringify(a) === JSON.stringify(b) && a.length === 6) || 'differs';
+  });
+  check('ex15_generator_varies', 'Different seeds give different variants', () => {
+    const a = generateRegionChallenges('WA', 1, 4, new Set()).map(d => d.name).join('|'); const b = generateRegionChallenges('WA', 2, 4, new Set()).map(d => d.name).join('|');
+    return a !== b || 'same output for different seeds';
+  });
+  check('ex16_generator_unique_names', 'No duplicate generated names within a region, across many seeds and excluded names honoured', () => {
+    const bad: string[] = [];
+    CHALLENGE_REGION_CODES.forEach(r => [3, 9, 27].forEach(seed => { const g = generateRegionChallenges(r, seed, 10, new Set(['Kayak the Yarra'])); if (new Set(g.map(d => d.name)).size !== g.length || g.some(d => d.name === 'Kayak the Yarra')) bad.push(`${r}/${seed}`); }));
+    return bad.length === 0 || bad.join(',');
+  });
+  check('ex17_generated_valid', 'Generated challenges validate: region, 2–3 approaches, stats, fills resolved, legacy type', () => {
+    const bad = CHALLENGE_REGION_CODES.flatMap(r => generateRegionChallenges(r, 42, 8, new Set()).filter(d => d.region !== r || d.approaches.length < 2 || d.approaches.length > 3 || d.approaches.some(a => !CHALLENGE_STATS.includes(a.stat) || a.rewardMultiplier < 1 || a.rewardMultiplier > 4 || /\{/.test(a.label)) || /\{|\}/.test(d.name) || d.source !== 'generated').map(d => d.id));
+    return bad.length === 0 || bad.slice(0, 4).join(',');
+  });
+  check('ex18_generated_ids_stable', 'Generated ids are stable and every template can produce a variant in every region', () => {
+    const bad = CHALLENGE_TEMPLATES.flatMap(t => CHALLENGE_REGION_CODES.filter(r => { const a = generateChallengeVariant(t, r, 5); const b = generateChallengeVariant(t, r, 5); return a.id !== b.id || !a.id.startsWith(`gen_${r.toLowerCase()}_${t.id}_`); }).map(r => `${t.id}/${r}`));
+    return bad.length === 0 || bad.slice(0, 4).join(',');
+  });
+  check('ex19_board_size', 'Boards show 4 challenges at a time', () => {
+    const bad = CHALLENGE_REGION_CODES.filter(r => computeChallengeBoard(r, 0, ctx(on)).slots.length !== CHALLENGE_BOARD_SIZE);
+    return bad.length === 0 || bad.join(',');
+  });
+  check('ex20_board_deterministic', 'A board is identical for the same seed, region and rotation', () => {
+    const a = computeChallengeBoard('VIC', 2, ctx(on)).slots.map(d => d.id).join(','); challengeBoardCache.clear();
+    const b = computeChallengeBoard('VIC', 2, ctx(on)).slots.map(d => d.id).join(',');
+    return a === b || `${a} vs ${b}`;
+  });
+  check('ex21_rotation', 'Boards rotate every 3 days', () => {
+    const r0 = challengeBoardRotationIndex(1), r3 = challengeBoardRotationIndex(3), r4 = challengeBoardRotationIndex(4);
+    const rotations = [0, 1, 2, 3, 4, 5].map(k => computeChallengeBoard('QLD', k, ctx(on)).slots.map(d => d.id).join(','));
+    return (r0 === 0 && r3 === 0 && r4 === 1 && daysUntilNextRotation(1) === 3 && daysUntilNextRotation(3) === 1 && new Set(rotations).size > 1) || `${r0},${r3},${r4}`;
+  });
+  check('ex22_board_skips_completed', 'Challenges completed this season leave the board while others remain', () => {
+    const first = computeChallengeBoard('TAS', 0, ctx(on)).slots.map(d => d.name);
+    const after = computeChallengeBoard('TAS', 0, ctx(on, { seasonNames: first.slice(0, 2) })).slots.map(d => d.name);
+    return (after.length === 4 && !after.includes(first[0]) && !after.includes(first[1])) || JSON.stringify(after);
+  });
+  check('ex23_exhausted_generates', 'An exhausted hand-written pool is topped up by the generator when procedural is on', () => {
+    const legacyNames = LEGACY_CHALLENGE_DEFINITIONS.filter(d => d.region === 'NT').map(d => d.name);
+    const b = computeChallengeBoard('NT', 0, ctx(proc, { seasonNames: legacyNames }));
+    return (b.slots.length === 4 && b.generatedCount === 4 && b.slots.every(d => d.source === 'generated' && getChallengeDefinition(d.id) !== null)) || JSON.stringify({ n: b.slots.length, g: b.generatedCount });
+  });
+  check('ex24_exhausted_without_generator', 'Without the generator an exhausted pool falls back to completed challenges (shown done)', () => {
+    const legacyNames = LEGACY_CHALLENGE_DEFINITIONS.filter(d => d.region === 'ACT').map(d => d.name);
+    const b = computeChallengeBoard('ACT', 0, ctx({ expandedChallengeContentEnabled: false, proceduralChallengesEnabled: false }, { seasonNames: legacyNames }));
+    return (b.generatedCount === 0 && b.slots.length === 4 && b.slots.every(d => legacyNames.includes(d.name))) || JSON.stringify(b.slots.map(d => d.name));
+  });
+  check('ex25_theme_pools', 'V9.3 themes select pools: chosen themes win, else the opening\'s themes; tourism is always active', () => {
+    const chosen = activeChallengeThemes({ v93ContentThemes: ['mining'], v93RegionalOpening: 'technology_race' }, 1);
+    const opening = activeChallengeThemes({ v93ContentThemes: [], v93RegionalOpening: 'technology_race' }, 1);
+    const pool = challengePoolForRegion('WA', on, ['mining']).map(d => d.name);
+    const kalgoorlie = pool.includes('Prospect for gold in Kalgoorlie'); const quokka = pool.includes('Meet the quokkas on Rottnest Island'); const gloucester = pool.includes('Climb the Gloucester Tree');
+    return (chosen.join() === 'mining' && opening.join() === 'technology,research,finance' && kalgoorlie && quokka && !gloucester) || JSON.stringify([chosen, opening, kalgoorlie, quokka, gloucester]);
+  });
+  check('ex26_no_themes_all_pools', 'With no themes (or V9.3 content off) every authored challenge is in pool', () => {
+    const all = challengePoolForRegion('SA', on, []).length;
+    return (all === 4 + EXPANDED_CHALLENGES.filter(d => d.region === 'SA').length && activeChallengeThemes({ v93ContentEnabled: false, v93ContentThemes: ['mining'] }, 1).length === 0) || `all=${all}`;
+  });
+  check('ex27_flags_off', 'Both flags off: region lists are exactly V9.5 (board inactive)', () => {
+    const off = listRegionChallengeDefinitions('QLD', { settings: { challengeApproachesEnabled: false }, completedNames: [], unlockedIds: [], day: 7, seed: 5 }).map(d => d.name);
+    return (!isChallengeBoardActive({}) && JSON.stringify(off) === JSON.stringify(LEGACY_CHALLENGE_DEFINITIONS.filter(d => d.region === 'QLD').map(d => d.name))) || JSON.stringify(off);
+  });
+  check('ex28_flag_on_board', 'Expanded content on: the region list is the 4-slot board drawn from V9.5 + new challenges', () => {
+    const list = listRegionChallengeDefinitions('NSW', { settings: on, completedNames: [], unlockedIds: [], day: 1, seed: 20002 });
+    const pool = new Set(challengePoolForRegion('NSW', on, []).map(d => d.id));
+    return (isChallengeBoardActive(on) && list.length === 4 && list.every(d => pool.has(d.id))) || JSON.stringify(list.map(d => d.id));
+  });
+  check('ex29_scout_preview', 'Scouting previews exactly the next rotation and is remembered per region', () => {
+    const scouted = markNextRotationScouted({}, 'VIC', 4);
+    const preview = computeChallengeBoard('VIC', challengeBoardRotationIndex(4) + 1, ctx(on)).slots.map(d => d.id).join();
+    const later = computeChallengeBoard('VIC', 2, ctx(on)).slots.map(d => d.id).join();
+    return (scouted.VIC === 2 && hasScoutedNextRotation(scouted, 'VIC', 4) && !hasScoutedNextRotation(scouted, 'VIC', 7) && !hasScoutedNextRotation(scouted, 'NSW', 4) && preview === later) || JSON.stringify(scouted);
+  });
+  check('ex30_scout_sanitize', 'Scout memory sanitizer drops bad regions and values', () => JSON.stringify(sanitizeScoutedChallengeBoards({ VIC: 2.7, XYZ: 1, NSW: -1, QLD: 'x', TAS: 0 })) === JSON.stringify({ VIC: 2, TAS: 0 }) || 'sanitize wrong');
+  check('ex31_settings', 'Both content flags default OFF, are registered, match-scoped and indexed', () =>
+    (DEFAULT_GAME_SETTINGS.expandedChallengeContentEnabled === false && DEFAULT_GAME_SETTINGS.proceduralChallengesEnabled === false && ['expandedChallengeContentEnabled', 'proceduralChallengesEnabled'].every(k => SMART_CONTROLLABLE_SETTINGS_REGISTRY.some(s => s.key === k) && (V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes(k) && SETTINGS_HUB_SECTION_INDEX.some(s => (s.fieldKeys as readonly string[]).includes(k)))) || 'settings wiring missing');
+  check('ex32_save_roundtrip', 'Scout memory survives validateSaveDataCore; V9.5 saves load without it', () => {
+    const f = JSON.parse(JSON.stringify(createV95SaveFixture())) as SaveGameData;
+    (f.player as unknown as Record<string, unknown>).scoutedChallengeBoards = { VIC: 3, BAD: 1 };
+    const v = validateSaveDataCore(f).player as unknown as Record<string, unknown>;
+    const legacy = validateSaveDataCore(JSON.parse(JSON.stringify(createV95SaveFixture())) as SaveGameData).player as unknown as Record<string, unknown>;
+    return (JSON.stringify(v.scoutedChallengeBoards) === JSON.stringify({ VIC: 3 }) && legacy.scoutedChallengeBoards === undefined) || JSON.stringify(v.scoutedChallengeBoards);
+  });
+  check('ex33_pinned_follow_ups', 'With approaches on, unlocked follow-ups stay pinned beside the rotating board', () => {
+    const b = computeChallengeBoard('NT', 0, ctx({ ...on, challengeApproachesEnabled: true }, { completedNames: ['Visit Uluru'] }));
+    const off = computeChallengeBoard('NT', 0, ctx(on, { completedNames: ['Visit Uluru'] }));
+    return (b.pinned.some(d => d.name === 'Kings Canyon Rim Walk') && off.pinned.length === 0) || JSON.stringify(b.pinned.map(d => d.name));
+  });
+  check('ex34_generated_resolvable', 'A generated board challenge resolves through the canonical approach resolver', () => {
+    const legacyNames = LEGACY_CHALLENGE_DEFINITIONS.filter(d => d.region === 'SA').map(d => d.name);
+    const g = computeChallengeBoard('SA', 1, ctx(proc, { seasonNames: legacyNames })).slots.find(d => d.source === 'generated');
+    if (!g) return 'no generated challenge';
+    const res = resolveCanonicalChallengeApproach({ money: 2000, currentRegion: 'SA', stats: { strength: 4, charisma: 4, luck: 4, intelligence: 4 }, level: 1, challengesCompleted: [], completedThisSeason: [] }, { challengeId: g.id, approachId: g.approaches[0].id, wager: 100 }, () => 0);
+    return (res.ok && res.success && res.moneyDelta > 0) || String(res.reason);
+  });
+  check('ex35_type_and_place_realism', 'Authored challenges name real places: every blurb is non-empty and names are sentence-case', () =>
+    EXPANDED_CHALLENGES.every(d => Boolean(d.blurb && d.blurb.length > 8) && /^[A-Z]/.test(d.name)) || 'blurb/name missing');
+  check('ex36_generator_respects_themes', 'Generator prefers templates in the active themes (plus tourism)', () => {
+    const g = generateRegionChallenges('QLD', 11, 8, new Set(), ['mining']);
+    const allowed = new Set(CHALLENGE_TEMPLATES.filter(t => t.themes.some(th => th === 'mining' || th === 'tourism')).map(t => t.id));
+    return g.every(d => allowed.has(d.id.split('_').slice(2, -1).join('_'))) || g.map(d => d.id).join(',');
+  });
+  return results;
+}
+
+// Register the authored content so the shared registry, picker and canonical resolver can find it.
+registerChallengeDefinitions(EXPANDED_CHALLENGES);
 
 function AustraliaGame() {
   // DIAG2: Mount detection for StrictMode double-invocation tracking
@@ -187542,6 +188306,12 @@ function dispatchGameSettingsChange(
   const wp2AiPlanRef = useRef<((challenge: LegacyChallengeShape, aiState: ApproachActorLike, wager: number, approachId: string) => ChallengeApproachPlan | null) | null>(null);
   const wp2AiOutcomeRef = useRef<((plan: ChallengeApproachPlan, aiState: ApproachActorLike & { name?: string }, success: boolean) => void) | null>(null);
   const wp2AdvisorRef = useRef<((query: string) => GameIntelligenceAnswer | null) | null>(null);
+  // V9.6 (SECTION 20AI): the live V9.3 content profile's themes (null before a match has content state).
+  const wp3LiveThemesRef = useRef<ContentTheme[] | null>(null);
+  {
+    const wp3Profile = (gameState as unknown as { contentState?: { profile?: { themes?: unknown } } }).contentState?.profile;
+    wp3LiveThemesRef.current = wp3Profile ? (Array.isArray(wp3Profile.themes) ? wp3Profile.themes : []).filter((t: unknown): t is ContentTheme => typeof t === 'string' && (CONTENT_THEMES as readonly string[]).includes(t)) : null;
+  }
 
   const aiRandom = useCallback(() => {
     return drawGameplayRandom('AIReasoning');
@@ -189255,11 +190025,14 @@ function dispatchGameSettingsChange(
 
       // Evaluate challenges in current region
       const currentRegion = REGIONS[aiState.currentRegion];
-      const availableChallenges = [
+      const availableChallenges = (isChallengeBoardActive(gameSettings)
+        // V9.6 (SECTION 20AI): with the board on, the AI picks from the same rotating board as the human.
+        ? listRegionChallengeDefinitions(String(aiState.currentRegion || ''), { settings: gameSettings, completedNames: aiState.challengesCompleted || [], unlockedIds: sanitizeUnlockedChallengeIds(aiState.unlockedChallengeIds), day: Number(gameState.day) || 1, seed: Number(gameSettings.worldRngSeed) || 1, seasonNames: aiState.completedThisSeason || [], themes: wp3LiveThemesRef.current || undefined }).map(toLegacyChallenge)
+        : [
         ...(currentRegion?.challenges || []),
         // V9.6 (SECTION 20AH): unlocked follow-ups in the AI's region join its options when approaches are on.
         ...(gameSettings.challengeApproachesEnabled === true ? visibleFollowUpsForRegion(String(aiState.currentRegion || ''), aiState.challengesCompleted || [], sanitizeUnlockedChallengeIds(aiState.unlockedChallengeIds)).map(toLegacyChallenge) : [])
-      ].filter((c: any) =>
+      ]).filter((c: any) =>
         !(aiState.completedThisSeason || []).includes(c.name)
       );
       const aiGrandTourProgress = getGrandTourProgress(gameState.grandTourState, aiState.id || 'ai');
@@ -199061,7 +199834,7 @@ function dispatchGameSettingsChange(
       if (gameSettings.challengeApproachesEnabled !== true) return null;
       const topic = detectChallengeAdvisorQuery(query);
       if (!topic) return null;
-      return buildChallengeAdvisorAnswer(query, topic, { actor: player, region: String(player.currentRegion || ''), world: { weather: gameState.weather, season: gameState.season, activeEvents: gameState.activeEvents }, wager: Math.max(MINIMUM_WAGER, Math.min(Number(uiState.wagerAmount) || 100, Number(player.money) || 0)) });
+      return buildChallengeAdvisorAnswer(query, topic, { actor: player, region: String(player.currentRegion || ''), world: { weather: gameState.weather, season: gameState.season, activeEvents: gameState.activeEvents }, wager: Math.max(MINIMUM_WAGER, Math.min(Number(uiState.wagerAmount) || 100, Number(player.money) || 0)), settings: gameSettings, day: Number(gameState.day) || 1, seed: Number(gameSettings.worldRngSeed) || 1, themes: wp3LiveThemesRef.current || undefined });
     };
 
     const takeChallenge = useCallback((challengeInput: any, wager: any, approachPlan?: ChallengeApproachPlan | null) => {
@@ -219623,6 +220396,23 @@ function dispatchGameSettingsChange(
                       {gameSettings.challengeApproachesEnabled ? 'ON' : 'OFF'}
                     </button>
                   </div>
+                  {([
+                    ['expandedChallengeContentEnabled', 'Expanded Challenge Content (V9.6)', '128 more hand-written challenges on a rotating 4-slot board per region (scout the next rotation for 1 AP). Your V9.3 themes and opening choose the active pools.'],
+                    ['proceduralChallengesEnabled', 'Procedural Challenges (V9.6)', 'Deterministic template-generated challenges top up a board once its hand-written ones are used up this season.']
+                  ] as Array<['expandedChallengeContentEnabled' | 'proceduralChallengesEnabled', string, string]>).map(([key, label, desc]) => (
+                    <div key={key} className="flex items-center justify-between" data-testid={`setting-${key}`}>
+                      <div>
+                        <div className="font-semibold">{label}</div>
+                        <div className="text-sm opacity-75">{desc}</div>
+                      </div>
+                      <button
+                        onClick={() => trackedSetGameSettings("direct_player_change", "🎰 Challenge Rules", prev => ({ ...prev, [key]: !prev[key] }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings[key] ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                      >
+                        {gameSettings[key] ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </SettingsSection>
               <SettingsSection id="gameplay.expansions" tab="gameplay" title="Gameplay Expansions" chips={['Sabotage']} onReset={settingsResetHandlers.gameplay.fn} resetLabel={settingsResetHandlers.gameplay.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.expansions')!.fieldKeys}>
@@ -230367,6 +231157,25 @@ function dispatchGameSettingsChange(
       !playerGrandTourProgress.finalCompleted
         ? [...(currentRegion?.challenges || []), GRAND_TOUR_FINAL_CHALLENGE]
         : (currentRegion?.challenges || []);
+    // V9.6 (SECTIONS 20AH / 20AI): the region's challenge list for the active flags (exactly V9.5 when they are off).
+    const wp3Region = String(player.currentRegion || '');
+    const wp3Day = Number(gameState.day) || 1;
+    const wp3BoardCtx: ChallengeBoardContext = { settings: gameSettings, seed: Number(gameSettings.worldRngSeed) || 1, seasonNames: player.completedThisSeason || [], completedNames: player.challengesCompleted || [], unlockedIds: sanitizeUnlockedChallengeIds(player.unlockedChallengeIds), themesOverride: wp3LiveThemesRef.current || undefined };
+    const wp3Board = isChallengeBoardActive(gameSettings) ? computeChallengeBoard(wp3Region, challengeBoardRotationIndex(wp3Day), wp3BoardCtx) : null;
+    const wp3Preview = wp3Board && hasScoutedNextRotation(player.scoutedChallengeBoards, wp3Region, wp3Day) ? computeChallengeBoard(wp3Region, wp3Board.rotation + 1, wp3BoardCtx) : null;
+    const wp23ChallengeList: LegacyChallengeShape[] = wp3Board
+      ? [...[...wp3Board.slots, ...wp3Board.pinned].map(toLegacyChallenge), ...(grandTourChallenges.includes(GRAND_TOUR_FINAL_CHALLENGE) ? [GRAND_TOUR_FINAL_CHALLENGE] : [])]
+      : gameSettings.challengeApproachesEnabled === true
+        ? [...grandTourChallenges, ...visibleFollowUpsForRegion(wp3Region, player.challengesCompleted || [], sanitizeUnlockedChallengeIds(player.unlockedChallengeIds)).map(toLegacyChallenge)]
+        : grandTourChallenges;
+    const wp3ScoutReason = !isPlayerTurn ? 'Wait for your turn' : (gameSettings.actionLimitsEnabled !== false && getRemainingActionPoints(player, gameSettings) < 1) ? 'No action points left' : null;
+    const wp3ScoutBoard = () => {
+      if (wp3ScoutReason) { addNotification(`Cannot scout: ${wp3ScoutReason}.`, 'warning'); return; }
+      if (gameSettings.actionLimitsEnabled !== false) dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: 1, actionId: 'scout_board' } });
+      dispatchPlayer({ type: 'MERGE_STATE', payload: { scoutedChallengeBoards: markNextRotationScouted(player.scoutedChallengeBoards, wp3Region, wp3Day) } });
+      addNotification(`🔭 You scouted the next challenge rotation in ${wp3Region}.`, 'info');
+      dispatchAuthoritativeGameActivityLedgerEvent('action', { actorId: player.id || 'player', actionType: 'scout_challenge_board', summary: `Scouted the next challenge rotation in ${wp3Region}.`, payload: { region: wp3Region, rotation: (wp3Board?.rotation ?? 0) + 1 } });
+    };
     const isUxAssistFeatureActive = (key: typeof UX_ASSIST_SETTING_KEYS[number]) => (
       gameSettings.uxAssistPackEnabled && Boolean(gameSettings[key])
     );
@@ -231662,7 +232471,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV96ExperienceModesSelfTests(), ...v95WithIsolatedGlobals(() => runV96ChallengeDecisionSelfTests()), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV96ExperienceModesSelfTests(), ...v95WithIsolatedGlobals(() => runV96ChallengeDecisionSelfTests()), ...v95WithIsolatedGlobals(() => runV96ChallengeContentSelfTests()), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
@@ -234347,11 +235156,11 @@ function dispatchGameSettingsChange(
                 </div>
               </div>
 
+              {wp3Board && (
+                <ChallengeBoardPanel board={wp3Board} day={wp3Day} scoutedPreview={wp3Preview} canScout={!wp3ScoutReason} scoutReason={wp3ScoutReason} theme={themeStyles} onScout={wp3ScoutBoard} />
+              )}
               <div className={`space-y-3 flex-1 min-h-0 overflow-y-auto ${themeStyles.scrollbar}`}>
-                {(gameSettings.challengeApproachesEnabled === true
-                  // V9.6 (SECTION 20AH): unlocked follow-ups appear alongside the region's four challenges.
-                  ? [...grandTourChallenges, ...visibleFollowUpsForRegion(String(player.currentRegion || ''), player.challengesCompleted || [], sanitizeUnlockedChallengeIds(player.unlockedChallengeIds)).map(toLegacyChallenge)]
-                  : grandTourChallenges).map((challenge: any, index: number) => {
+                {wp23ChallengeList.map((challenge: any, index: number) => {
                   const isGrandTourFinale = gameState.selectedMode === 'grand_tour' && challenge.name === GRAND_TOUR_FINAL_CHALLENGE.name;
                   const isCompleted = isGrandTourFinale
                     ? playerGrandTourProgress.finalCompleted
