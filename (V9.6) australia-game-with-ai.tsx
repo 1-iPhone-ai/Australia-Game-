@@ -164087,7 +164087,10 @@ export function computeNationalStateCapacity(
 
   // V10.0 National Systems maturity
   if (inputs.nationalSystems?.national) {
-    const nets = Object.values(inputs.nationalSystems.national);
+    // V9.6 fix: NationalSystemsSummary also carries resilience fields and strongest/weakestSystem (null on a calm day),
+    // so iterate the network keys instead of Object.values — the old form threw on day 1 and white-screened the match.
+    const natSummary = inputs.nationalSystems.national;
+    const nets = NATIONAL_NETWORKS.map(k => natSummary[k]).filter(n => Boolean(n) && typeof n === 'object');
     const healthyCount = nets.filter(n => n.condition === 'healthy' || n.condition === 'surplus').length;
     if (healthyCount >= 3) {
       const bonus = Math.min(6, healthyCount * 1.2);
@@ -180488,7 +180491,7 @@ export function experienceVisibilityMatrix(base: ExperienceSettingsLike = DEFAUL
   return out;
 }
 
-// ---- Deterministic self-tests (em01–em38) ----------------------------------------------------------
+// ---- Deterministic self-tests (em01–em39) ----------------------------------------------------------
 
 export function runV96ExperienceModesSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
@@ -180680,6 +180683,13 @@ export function runV96ExperienceModesSelfTests(): V9SelfTestResult[] {
   });
   check('em38_labels', 'Every mode has a label helper that includes its icon and name', () =>
     EXPERIENCE_MODES.every(m => experienceModeLabel(m).includes(EXPERIENCE_MODE_OPTION_BY_ID[m].label) && experienceModeLabel(m).includes(EXPERIENCE_MODE_OPTION_BY_ID[m].icon)) || 'label wrong');
+  check('em39_day1_state_capacity_no_crash', 'Nation/Full day 1: state capacity accepts a national summary whose strongest/weakest system is null (regression: white screen on match start)', () => {
+    const ns = computeNationalSystems(createNationalSystemsFixtureInputs({ turn: 1 }), null, { emit: false }).state;
+    ns.national.strongestSystem = null;
+    ns.national.weakestSystem = null;
+    const res = computeNationalStateCapacity({ turn: 1, viewerId: 'player', programs: [], crises: [], stakeholders: [], nationalSystems: ns }, null);
+    return (Boolean(res.state) && Boolean(res.persisted)) || 'no state';
+  });
 
   return results;
 }
