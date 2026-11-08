@@ -166,6 +166,10 @@ export function migrateAiMemoriesFromSave(raw: unknown): AiMemoriesByActor {
 function classifyMemoryAction(actionType: string): { category: typeof MEM_BELIEF_KEYS[number] | null; hostility: number; support: number } {
   const t = String(actionType || '').toLowerCase();
   if (/sabotag|steal|attack|hostile|undercut|block/.test(t)) return { category: 'aggressive', hostility: 1, support: 0 };
+  // V9.6 (SECTION 20AH): approach choices teach opponent models the actor's style.
+  if (/^challenge_approach_bold/.test(t)) return { category: 'aggressive', hostility: 0.3, support: 0 };
+  if (/^challenge_approach_(steady|clever)/.test(t)) return { category: 'economic', hostility: 0, support: 0 };
+  if (/^challenge_approach_social/.test(t)) return { category: 'cooperative', hostility: 0, support: 0 };
   if (/challenge/.test(t)) return { category: 'aggressive', hostility: 0.3, support: 0 };
   if (/deposit|region|control|expand|claim|travel|expedition/.test(t)) return { category: 'expansion', hostility: 0.35, support: 0 };
   if (/support|gift|fund|assist|help|proposal_accepted|share|donat/.test(t)) return { category: 'cooperative', hostility: 0, support: 1 };
@@ -6630,7 +6634,7 @@ export function normalizeActionPointId(actionId: string): ActionPointActionId | 
   const key = actionId.toLowerCase().trim();
   // CPFIX1: Map candidate generator action types and canonical aliases to ActionPointActionId targets
   if (key === 'travel' || key === 'move' || key === 'movement') return 'travel';
-  if (key === 'challenges' || key === 'challenge' || key === 'complete_challenge') return 'challenges';
+  if (key === 'challenges' || key === 'challenge' || key === 'complete_challenge' || key === 'challenge_approach') return 'challenges';
   if (key === 'gather' || key === 'collect_resources' || key === 'work') return 'gather';
   if (key === 'explore' || key === 'discover') return 'explore';
   if (key === 'support_ally' || key === 'supportally') return 'support_ally';
@@ -11445,6 +11449,35 @@ export function reduceGameAction(
           break;
         }
 
+        case 'challenge_approach': {
+          // V9.6 (SECTION 20AH): resolve an approach challenge canonically (Co-Pilot / automation). Off → not executed.
+          if (actor && gameSettings.challengeApproachesEnabled === true) {
+            const wp2World = nextState as unknown as { weather?: string; season?: string; activeEvents?: unknown; gameState?: { weather?: string; season?: string; activeEvents?: unknown } };
+            const res = resolveCanonicalChallengeApproach(actor, action.parameters || null, () => drawGameplayRandom('Challenges'), { weather: wp2World.weather || wp2World.gameState?.weather, season: wp2World.season || wp2World.gameState?.season, activeEvents: wp2World.activeEvents || wp2World.gameState?.activeEvents });
+            if (res.ok && res.plan && res.resolution) {
+              const def = getChallengeDefinition(res.plan.challengeId);
+              const chainRep: RegionalReputationMap = {};
+              const chainItems: string[] = [];
+              res.chainsCompleted.forEach(id => { const c = CHALLENGE_CHAIN_BY_ID[id]; (Object.keys(c.completionReward.reputation) as ChallengeRegionCode[]).forEach(r => { chainRep[r] = (chainRep[r] || 0) + (c.completionReward.reputation[r] || 0); }); if (c.completionReward.item) chainItems.push(c.completionReward.item); });
+              const patch = applyApproachResolutionToActor(actor, res.resolution, chainRep, chainItems);
+              const name = def ? def.name : res.plan.challengeName;
+              const completed: string[] = Array.isArray(actor.challengesCompleted) ? actor.challengesCompleted : [];
+              const season: string[] = Array.isArray(actor.completedThisSeason) ? actor.completedThisSeason : [];
+              const mastery: Record<string, number> = actor.challengeMastery && typeof actor.challengeMastery === 'object' ? actor.challengeMastery : {};
+              const update: Record<string, unknown> = {
+                money: Math.max(0, (Number(actor.money) || 0) + res.moneyDelta), xp: (Number(actor.xp) || 0) + res.xpGain,
+                consecutiveWins: res.success ? (Number(actor.consecutiveWins) || 0) + 1 : 0,
+                ...(res.success ? { challengesCompleted: [...completed, name], completedThisSeason: season.includes(name) ? season : [...season, name], challengeMastery: { ...mastery, [name]: (mastery[name] || 0) + 1 } } : {}),
+                regionalReputation: patch.regionalReputation, unlockedChallengeIds: patch.unlockedChallengeIds, debuffs: patch.debuffs, inventory: patch.inventory
+              };
+              const copies: unknown[] = [actor, nextState.player, nextState.aiPlayer, ...Object.values(nextState.actorsById || {})];
+              copies.forEach(target => { if (target && typeof target === 'object' && (target === actor || (target as { id?: unknown }).id === actor.id)) Object.assign(target as Record<string, unknown>, update); });
+              actionExecuted = true;
+            }
+          }
+          break;
+        }
+
         case 'challenge': {
           const wager = action.parameters?.wager || action.price || 0;
           const isWin = action.parameters?.isWin !== false;
@@ -14117,6 +14150,8 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   householdsEnabled: true,
   /** V9.6 Experience mode — fresh matches start focused on the explorer game; saves without the key load as 'full' (SECTION 20AG). */
   experienceMode: 'explorer' as ExperienceMode,
+  /** V9.6 Challenge Decision System (SECTION 20AH) — off by default. */
+  challengeApproachesEnabled: false,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -18290,6 +18325,17 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     valueType: 'boolean',
     defaultValue: false,
     validate: (v: any) => typeof v === 'boolean',
+    isLiveSafe: true,
+    affectsFairness: false,
+  },
+  {
+    key: 'challengeApproachesEnabled',
+    category: 'difficulty',
+    label: 'Challenge Approaches',
+    description: 'Every challenge offers 2–3 approaches with their own stat, odds, reward, failure cost and side effects; adds regional reputation and challenge chains.',
+    valueType: 'boolean',
+    defaultValue: false,
+    validate: (v: unknown) => typeof v === 'boolean',
     isLiveSafe: true,
     affectsFairness: false,
   },
@@ -26500,6 +26546,8 @@ export type GameSettingsState = {
   householdsEnabled?: boolean;
   /** V9.6 Experience mode (SECTION 20AG): 'explorer' hides the national systems and skips their processing, 'nation' foregrounds them, 'full' is the V9.5 arrangement. A missing key means 'full' so pre-V9.6 saves lose nothing. */
   experienceMode?: ExperienceMode;
+  /** V9.6 Challenge Decision System (SECTION 20AH): approaches, regional reputation and challenge chains. Off = V9.5 challenges. */
+  challengeApproachesEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -64380,7 +64428,7 @@ export const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'economy.winCondition', tab: 'economy', title: 'Win Condition & Cash-Out', tags: ['Economy'], fieldKeys: ['winCondition', 'winConditionTieBreakers', 'allowCashOut', 'negotiationMode'] },
   { id: 'gameplay.actionLimits', tab: 'gameplay', title: 'Action Limits', tags: [], fieldKeys: ['actionLimitsEnabled', 'maxActionsPerTurn', 'aiMaxActionsPerTurn', 'actionPointConsumptionSettings'] },
   { id: 'gameplay.actionOverride', tab: 'gameplay', title: 'Action Override', tags: [], fieldKeys: ['allowActionOverride', 'overrideCost'] },
-  { id: 'gameplay.challengeRules', tab: 'gameplay', title: 'Challenge Rules', tags: [], fieldKeys: ['dynamicWagerEnabled', 'doubleOrNothingEnabled'] },
+  { id: 'gameplay.challengeRules', tab: 'gameplay', title: 'Challenge Rules', tags: [], fieldKeys: ['dynamicWagerEnabled', 'doubleOrNothingEnabled', 'challengeApproachesEnabled'], keywords: 'challenge approaches reputation chains odds side effects' },
   { id: 'gameplay.expansions', tab: 'gameplay', title: 'Gameplay Expansions', tags: ['Sabotage'], fieldKeys: ['investmentsEnabled', 'equipmentShopEnabled', 'sabotageEnabled', 'aiSabotagePriority', 'aiInvestmentPriority', 'aiEquipmentPurchasePriority', 'aiInfrastructurePriority', 'aiCrisisMitigationPriority'] },
   // SH2: Added 14 uncovered keys to ai.settings
   { id: 'ai.settings', tab: 'aiTeams', title: 'AI Difficulty', tags: ['AI'], fieldKeys: ['aiUsesMarketModifiers', 'aiSpecialAbilitiesEnabled', 'aiAffectsEconomy', 'aiWinConditionSpendingEnabled', 'aiWinConditionAdaptationV2Enabled', 'aiRegionsMajorityRushEnabled', 'teammatePerformanceSyncEnabled', 'directiveStrength', 'directiveBudgetEnabled', 'directivesPerTurn', 'directiveEscalationCost', 'aiDeterministic', 'aiFairnessLevel', 'aiPersonalityVariance', 'aiPlanningDepth', 'aiReplayRecordingEnabled', 'aiReplayMaxEvents', 'aiReplayPolicy', 'aiEngineVersion', 'aiGrandTourPriority', 'aiMarketModifierAwareness', 'aiSpecialAbilityPriority', 'aiEconomyInteractionWeight', 'aiWinConditionSpendingStrength', 'aiRegionRushIntensity', 'aiNegotiationParticipationWeight', 'aiNegotiationValuationWeight', 'teammatePerformanceSyncStrength', 'aiEffectivenessScorecardEnabled', 'aiEffectivenessBlunderThresholdRoi', 'aiEffectivenessTrackCompliance', 'aiEconomicCheats'] },
@@ -71563,6 +71611,11 @@ export function generateCoPilotPlayerActionCandidates(
       invalidationReason: 'No active contract to fulfil',
       parameters: { contractId: sampleContractId }
     });
+  }
+
+  // V9.6 (SECTION 20AH): approach challenges — the Co-Pilot names the best approach, its odds and the chain it advances.
+  if (gameSettings?.challengeApproachesEnabled === true) {
+    buildCoPilotApproachCandidates({ actor: actorObj, world: gs, cash, reserve: minReserveFloor, apRemaining: ap, makeId }).forEach(c => candidates.push(c));
   }
 
   // Category 6: Expedition / Discovery
@@ -133295,7 +133348,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'experienceMode'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'experienceMode', 'challengeApproachesEnabled'
 ] as const;
 
 /**
@@ -133626,7 +133679,10 @@ export function validateSaveDataCore(raw: any): SaveGameData {
           ...(data?.contributionStats || {})
         },
         actionCalibrationMultipliers,
-        opponentModels
+        opponentModels,
+        // V9.6 (SECTION 20AH): optional; absent in V9.5 saves (reputation then reads as 50 everywhere, no unlocks).
+        ...(data && data.regionalReputation !== undefined ? { regionalReputation: sanitizeRegionalReputation(data.regionalReputation) } : {}),
+        ...(data && data.unlockedChallengeIds !== undefined ? { unlockedChallengeIds: sanitizeUnlockedChallengeIds(data.unlockedChallengeIds) } : {})
       };
     };
 
@@ -135707,6 +135763,7 @@ function v95NormalizeSuiteResults(raw: unknown): Array<{ name: string; passed: b
 
 export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v96em', label: 'V9.6 Experience Modes', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96ExperienceModesSelfTests() },
+  { id: 'v96cd', label: 'V9.6 Challenge Decision System', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96ChallengeDecisionSelfTests() },
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
@@ -180773,6 +180830,1407 @@ export function runV96ExperienceModesSelfTests(): V9SelfTestResult[] {
   return results;
 }
 
+// ============================================================================
+// SECTION 20AH: V9.6 CHALLENGE DECISION SYSTEM — A CHALLENGE IS A DECISION, NOT A DICE ROLL
+// ----------------------------------------------------------------------------
+// With `challengeApproachesEnabled` on, every challenge offers 2–3 APPROACHES. Each approach
+// names the stat it tests, shifts the difficulty, pays its own reward multiplier, costs its own
+// failure share (and sometimes an up-front fee) and carries SIDE EFFECTS: regional reputation,
+// an item, an unlocked follow-up challenge, a change in how the rival AI sees you, or a debuff.
+//
+//   • ChallengeDefinition replaces the inline {name, difficulty, reward, type} shape. The 32
+//     V9.5 challenges are converted (toChallengeDefinition / toLegacyChallenge) and keep their
+//     names, so completion logs, mastery and Grand Tour progress are untouched.
+//   • Regional REPUTATION (0–100, missing = 50) lives on each actor. It moves challenge odds
+//     (±10%), shop prices (±10%) and how strongly regional events affect you in that region.
+//   • CHALLENGE CHAINS: ten multi-step chains rooted in the existing 32 challenges, five of them
+//     crossing regions. Hidden follow-ups appear once the previous steps are done.
+//   • The rival AI picks approaches from its own stats, personality, mood and remembered rivalry;
+//     every approach choice is committed to AI memory so opponent belief models learn your style.
+//   • Co-Pilot proposes the best approach (canonical `challenge_approach` action) and Ask-the-Game
+//     answers "which approach / what chains / my reputation" questions.
+//
+// With the flag OFF nothing here runs: challenges, odds and payouts are exactly V9.5.
+// All randomness is the existing named RNG stream system ('Combat' for the human roll, the AI's
+// stream for the AI, 'Challenges' inside the canonical reducer). No Math.random.
+// ============================================================================
+
+export type ChallengeStat = 'strength' | 'charisma' | 'luck' | 'intelligence';
+export const CHALLENGE_STATS: readonly ChallengeStat[] = ['strength', 'charisma', 'luck', 'intelligence'];
+export const CHALLENGE_STAT_LABEL: Readonly<Record<ChallengeStat, string>> = { strength: 'Strength', charisma: 'Charisma', luck: 'Luck', intelligence: 'Intelligence' };
+export const CHALLENGE_STAT_ICON: Readonly<Record<ChallengeStat, string>> = { strength: '💪', charisma: '🗣️', luck: '🍀', intelligence: '🧠' };
+
+export type ChallengeRegionCode = 'NSW' | 'VIC' | 'QLD' | 'WA' | 'SA' | 'TAS' | 'NT' | 'ACT';
+export const CHALLENGE_REGION_CODES: readonly ChallengeRegionCode[] = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'];
+export function isChallengeRegionCode(value: unknown): value is ChallengeRegionCode {
+  return typeof value === 'string' && (CHALLENGE_REGION_CODES as readonly string[]).includes(value);
+}
+
+export type ChallengeTypeTag = 'physical' | 'social' | 'educational' | 'wildlife' | 'cultural' | 'culinary' | 'adventure';
+export const CHALLENGE_TYPE_TAGS: readonly ChallengeTypeTag[] = ['physical', 'social', 'educational', 'wildlife', 'cultural', 'culinary', 'adventure'];
+/** The four V9.5 types the legacy odds formula and the weather / season / event modifiers understand. */
+export type LegacyChallengeType = 'physical' | 'social' | 'educational' | 'wildlife';
+export const LEGACY_TYPE_FOR_TAG: Readonly<Record<ChallengeTypeTag, LegacyChallengeType>> = {
+  physical: 'physical', social: 'social', educational: 'educational', wildlife: 'wildlife',
+  cultural: 'educational', culinary: 'social', adventure: 'physical'
+};
+export function isChallengeTypeTag(value: unknown): value is ChallengeTypeTag {
+  return typeof value === 'string' && (CHALLENGE_TYPE_TAGS as readonly string[]).includes(value);
+}
+/** The stat the V9.5 formula reads for a challenge type (physical→STR, social→CHA, wildlife→LCK, anything else→INT). */
+export function legacyStatForType(type: string): ChallengeStat {
+  return type === 'physical' ? 'strength' : type === 'social' ? 'charisma' : type === 'wildlife' ? 'luck' : 'intelligence';
+}
+
+export type ChallengeApproachStyle = 'bold' | 'steady' | 'social' | 'clever';
+export const APPROACH_STYLE_LABEL: Readonly<Record<ChallengeApproachStyle, string>> = { bold: 'Bold', steady: 'Steady', social: 'Social', clever: 'Clever' };
+export const APPROACH_STYLE_ICON: Readonly<Record<ChallengeApproachStyle, string>> = { bold: '🔥', steady: '🛡️', social: '🤝', clever: '🎲' };
+export type ChallengeEffectTrigger = 'success' | 'failure' | 'always';
+export type ChallengeDebuffId = 'injury' | 'exhaustion' | 'bad_press';
+export const CHALLENGE_DEBUFFS: Readonly<Record<ChallengeDebuffId, { label: string; icon: string; description: string; penalty: number; stat: ChallengeStat | null }>> = {
+  injury: { label: 'Injured', icon: '🩹', description: '−10% on Strength approaches while it lasts.', penalty: 0.10, stat: 'strength' },
+  exhaustion: { label: 'Exhausted', icon: '😮‍💨', description: '−5% on every approach while it lasts.', penalty: 0.05, stat: null },
+  bad_press: { label: 'Bad press', icon: '📰', description: '−8% on Charisma approaches while it lasts.', penalty: 0.08, stat: 'charisma' }
+};
+export function isChallengeDebuffId(value: unknown): value is ChallengeDebuffId {
+  return value === 'injury' || value === 'exhaustion' || value === 'bad_press';
+}
+export type ApproachRelationshipField = 'trust' | 'respect' | 'rivalry' | 'grievance' | 'gratitude';
+
+export type ChallengeSideEffect =
+  | { readonly kind: 'reputation'; readonly region: ChallengeRegionCode; readonly delta: number; readonly on: ChallengeEffectTrigger }
+  | { readonly kind: 'item'; readonly item: string; readonly on: ChallengeEffectTrigger }
+  | { readonly kind: 'unlock'; readonly challengeId: string; readonly on: ChallengeEffectTrigger }
+  | { readonly kind: 'relationship'; readonly field: ApproachRelationshipField; readonly delta: number; readonly on: ChallengeEffectTrigger }
+  | { readonly kind: 'debuff'; readonly debuff: ChallengeDebuffId; readonly days: number; readonly on: ChallengeEffectTrigger };
+
+export interface ChallengeApproach {
+  readonly id: string;
+  readonly label: string;
+  readonly description: string;
+  readonly stat: ChallengeStat;
+  readonly style: ChallengeApproachStyle;
+  /** Added to the challenge difficulty for this approach's odds (−1 easier … +1 harder). */
+  readonly difficultyShift: number;
+  readonly rewardMultiplier: number;
+  /** Money paid whatever the outcome (guide fees, gear hire, permits). */
+  readonly upfrontCost: number;
+  /** Share of the wager lost on failure (1 = the whole wager). */
+  readonly failureWagerShare: number;
+  readonly sideEffects: readonly ChallengeSideEffect[];
+}
+
+export type ChallengeDefinitionSource = 'legacy' | 'chain' | 'authored' | 'generated';
+
+export interface ChallengeDefinition {
+  readonly id: string;
+  readonly name: string;
+  readonly region: ChallengeRegionCode;
+  readonly difficulty: 1 | 2 | 3;
+  /** The V9.5 reward multiplier (used whenever approaches are off). */
+  readonly reward: number;
+  readonly type: ChallengeTypeTag;
+  readonly approaches: readonly ChallengeApproach[];
+  readonly source: ChallengeDefinitionSource;
+  /** Follow-ups stay off the board until a chain step or an approach side effect unlocks them. */
+  readonly hiddenUntilUnlocked: boolean;
+  readonly blurb?: string;
+  readonly tags?: readonly string[];
+}
+
+/** The inline shape V9.5 code passes around ({name, difficulty, reward, type}). */
+export interface LegacyChallengeShape {
+  name: string;
+  difficulty: number;
+  reward: number;
+  type: string;
+  challengeId?: string;
+  tag?: ChallengeTypeTag;
+}
+
+export function challengeSlug(text: string): string {
+  return String(text || '').toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+export function challengeIdFor(region: string, name: string): string {
+  return `${String(region || '').toLowerCase()}_${challengeSlug(name)}`;
+}
+
+// ---- Authoring helpers --------------------------------------------------------------------------------
+const fxRep = (region: ChallengeRegionCode, delta: number, on: ChallengeEffectTrigger = 'success'): ChallengeSideEffect => ({ kind: 'reputation', region, delta, on });
+const fxItem = (item: string, on: ChallengeEffectTrigger = 'success'): ChallengeSideEffect => ({ kind: 'item', item, on });
+const fxUnlock = (challengeId: string, on: ChallengeEffectTrigger = 'success'): ChallengeSideEffect => ({ kind: 'unlock', challengeId, on });
+const fxRel = (field: ApproachRelationshipField, delta: number, on: ChallengeEffectTrigger = 'success'): ChallengeSideEffect => ({ kind: 'relationship', field, delta, on });
+const fxDebuff = (debuff: ChallengeDebuffId, days: number, on: ChallengeEffectTrigger = 'failure'): ChallengeSideEffect => ({ kind: 'debuff', debuff, days, on });
+/** Positional approach factory: id, label, stat, style, difficultyShift, reward, upfrontCost, failureShare, sideEffects, description. */
+function apx(id: string, label: string, stat: ChallengeStat, style: ChallengeApproachStyle, shift: number, reward: number, cost: number, fail: number, fx: readonly ChallengeSideEffect[], text: string): ChallengeApproach {
+  return { id, label, description: text, stat, style, difficultyShift: shift, rewardMultiplier: reward, upfrontCost: cost, failureWagerShare: fail, sideEffects: fx };
+}
+
+// ---- Hand-written approaches for the 32 V9.5 challenges (keyed by their unchanged names) ---------------
+export const LEGACY_CHALLENGE_APPROACHES: Readonly<Record<string, readonly ChallengeApproach[]>> = {
+  // QLD
+  'Surf at Gold Coast': [
+    apx('snapper', 'Paddle out at Snapper Rocks', 'strength', 'bold', 0.5, 2.2, 0, 1, [fxRep('QLD', 2), fxDebuff('exhaustion', 1)], 'Take on the Superbank in front of the pros. Big payout if you hold your own.'),
+    apx('school', 'Take a surf-school lesson', 'intelligence', 'steady', -0.6, 1.4, 60, 0.5, [fxRep('QLD', 1)], 'Soft boards, a patient instructor and gentle Currumbin whitewash.'),
+    apx('locals', "Join the locals' dawn session", 'charisma', 'social', 0, 1.8, 0, 1, [fxRep('QLD', 4), fxRep('QLD', -1, 'failure'), fxUnlock("qld_drive_the_kgari_fraser_island_beach_highway")], 'Earn a wave with good manners — and maybe hear about K\'gari.')
+  ],
+  'Feed kangaroos': [
+    apx('paddock', 'Wander into the paddock', 'luck', 'bold', 0.3, 1.8, 0, 1, [fxDebuff('injury', 1)], 'No keeper, no rules — a big buck might not appreciate it.'),
+    apx('keeper', 'Book a keeper session', 'intelligence', 'steady', -0.6, 1.2, 40, 0.5, [fxRep('QLD', 1)], 'Learn what to feed, where to stand and how to read a mob.'),
+    apx('volunteer', 'Help the sanctuary volunteers', 'charisma', 'social', 0, 1.5, 0, 0.8, [fxRep('QLD', 3), fxRel('respect', 2)], 'Morning feed rounds at a wildlife rescue — word gets around.')
+  ],
+  'Tour Great Barrier Reef': [
+    apx('freedive', 'Free-dive the outer reef', 'strength', 'bold', 0.6, 3.0, 0, 1, [fxItem('Coral'), fxDebuff('injury', 2)], 'No tank, no guide — just you, the drop-off and your lungs.'),
+    apx('biologist', 'Go with a marine biologist', 'intelligence', 'steady', -0.5, 2.0, 120, 0.6, [fxRep('QLD', 2), fxItem('Coral')], 'A citizen-science trip logging coral health on Agincourt Reef.'),
+    apx('glassboat', 'Glass-bottom boat with a tour group', 'charisma', 'social', -0.2, 2.2, 0, 0.8, [fxRep('QLD', 3)], 'Chat your way onto the best seat and the skipper\'s favourite bommie.')
+  ],
+  'Explore Daintree Rainforest': [
+    apx('bushbash', 'Bush-bash off the boardwalk', 'strength', 'bold', 0.5, 3.5, 0, 1, [fxRel('respect', 2), fxDebuff('injury', 2)], 'Push into the oldest rainforest on Earth without a track.'),
+    apx('kukuyalanji', 'Walk with a Kuku Yalanji guide', 'intelligence', 'steady', -0.7, 2.4, 150, 0.5, [fxRep('QLD', 5)], 'Bush tucker, healing plants and Dreaming stories of Mossman Gorge.'),
+    apx('spotlight', 'Night spotlighting for cassowaries', 'luck', 'clever', 0, 3.0, 0, 0.8, [fxRep('QLD', 2)], 'Wait quietly by the creek and hope the rarest bird shows up.')
+  ],
+  // NSW
+  'Visit Sydney Opera House': [
+    apx('backstage', 'Bluff your way backstage', 'charisma', 'bold', 0.6, 2.0, 0, 1, [fxDebuff('bad_press', 2), fxRep('NSW', -3, 'failure')], 'Talk your way past security for a look at the Joan Sutherland stage.'),
+    apx('architecture', 'Take the architecture tour', 'intelligence', 'steady', -0.6, 1.2, 45, 0.5, [fxRep('NSW', 1)], 'Utzon\'s sails, the ribbed ceilings and the story of the design.'),
+    apx('busk', 'Busk on the forecourt', 'charisma', 'social', 0, 1.6, 0, 0.8, [fxRep('NSW', 3), fxRel('respect', 1)], 'Win over the harbour-side crowd with a song.')
+  ],
+  'Make a rock carving': [
+    apx('improvise', 'Improvise on a sandstone slab', 'luck', 'bold', 0.4, 2.5, 0, 1, [fxRep('NSW', -2, 'failure')], 'Carve without guidance and hope it turns out respectful and right.'),
+    apx('workshop', 'Book a Dharug cultural workshop', 'intelligence', 'steady', -0.6, 1.6, 80, 0.5, [fxRep('NSW', 4)], 'Learn engraving techniques and protocol from a Dharug artist.'),
+    apx('artgroup', 'Carve alongside the community art group', 'charisma', 'social', -0.1, 1.9, 0, 0.8, [fxRep('NSW', 3)], 'A Saturday session with locals — share tools and stories.')
+  ],
+  'Tour the Blue Mountains': [
+    apx('hike', 'Hike it', 'strength', 'bold', 0.3, 2.8, 0, 1, [fxDebuff('injury', 2)], 'Take the Giant Stairway on foot. High reward, but a slip leaves you injured.'),
+    apx('guide', 'Hire a guide', 'intelligence', 'steady', -0.8, 1.8, 100, 0.4, [fxUnlock('nsw_walk_the_grand_canyon_track')], 'Safe, paid and informative — and guides know the trails tourists miss.'),
+    apx('tourgroup', 'Join a tour group', 'charisma', 'social', -0.3, 2.1, 0, 0.8, [fxRep('NSW', 4)], 'A moderate reward, good company and a better name in New South Wales.')
+  ],
+  'Surf at Bondi Beach': [
+    apx('rip', "Charge the Backpackers' Express rip", 'strength', 'bold', 0.6, 2.1, 0, 1, [fxDebuff('injury', 1), fxRep('NSW', -1, 'failure')], 'The fastest way out the back — if the lifeguards don\'t have to fetch you.'),
+    apx('flags', 'Surf between the flags', 'intelligence', 'steady', -0.6, 1.3, 0, 0.5, [fxRep('NSW', 1)], 'Patrolled, predictable and perfectly respectable.'),
+    apx('crew', 'Paddle out with the Bondi crew', 'charisma', 'social', 0, 1.6, 0, 0.8, [fxRep('NSW', 3)], 'Share the North Bondi peak with the regulars.')
+  ],
+  // VIC
+  'Tour Great Ocean Road': [
+    apx('overnight', 'Drive it overnight in one go', 'luck', 'bold', 0.5, 2.6, 0, 1, [fxDebuff('exhaustion', 2)], 'Torquay to Warrnambool before breakfast — tiring and risky.'),
+    apx('heritage', 'Hire a heritage guide', 'intelligence', 'steady', -0.7, 1.6, 90, 0.5, [fxRep('VIC', 2)], 'Learn how returned soldiers built the road by hand.'),
+    apx('coach', 'Ride the coach with backpackers', 'charisma', 'social', -0.2, 1.9, 0, 0.8, [fxRep('VIC', 3)], 'Cheap, cheerful and full of new friends.')
+  ],
+  'Visit Melbourne Museum': [
+    apx('sprint', 'Sprint every gallery before close', 'luck', 'bold', 0.4, 1.9, 0, 1, [fxDebuff('exhaustion', 1)], 'Phar Lap, the dinosaurs and the forest gallery in one frantic hour.'),
+    apx('curator', 'Attend the curator talk', 'intelligence', 'steady', -0.6, 1.2, 30, 0.5, [fxRep('VIC', 1)], 'Hear the stories behind the Bunjilaka Aboriginal Cultural Centre.'),
+    apx('members', "Join the members' night", 'charisma', 'social', 0, 1.5, 0, 0.8, [fxRep('VIC', 3)], 'Mingle with Melbourne\'s museum regulars after hours.')
+  ],
+  'Wine tasting tour': [
+    apx('blind', 'Taste blind and call the vintages', 'luck', 'bold', 0.5, 2.3, 0, 1, [fxDebuff('bad_press', 1)], 'Name the Yarra Valley pinot by nose alone — or look silly.'),
+    apx('sommelier', 'Hire a sommelier', 'intelligence', 'steady', -0.5, 1.4, 70, 0.5, [fxItem('Wine')], 'Structured tasting notes and a case to take home.'),
+    apx('cellardoor', 'Charm the cellar door', 'charisma', 'social', 0, 1.7, 0, 0.8, [fxRep('VIC', 3)], 'Friendly questions open the back-vintage bottles.')
+  ],
+  'Explore Grampians National Park': [
+    apx('freeclimb', 'Free-climb the Pinnacle route', 'strength', 'bold', 0.5, 3.4, 0, 1, [fxRel('respect', 2), fxDebuff('injury', 3)], 'Gariwerd\'s sandstone at its steepest. Glory or a long recovery.'),
+    apx('instructor', 'Book a climbing instructor', 'intelligence', 'steady', -0.7, 2.2, 140, 0.5, [fxRep('VIC', 2)], 'Ropes, a belay and a route matched to your skill.'),
+    apx('club', 'Hike with the bushwalking club', 'charisma', 'social', -0.2, 2.6, 0, 0.8, [fxRep('VIC', 4)], 'Mackenzie Falls and the Balconies with experienced locals.')
+  ],
+  // TAS
+  'Hike Cradle Mountain': [
+    apx('onepush', 'Summit in one push', 'strength', 'bold', 0.4, 3.3, 0, 1, [fxDebuff('injury', 2), fxDebuff('exhaustion', 1)], 'Dove Lake to the summit boulders and back before the weather turns.'),
+    apx('parksguide', 'Hire a Tasmania Parks guide', 'intelligence', 'steady', -0.7, 2.1, 130, 0.5, [fxRep('TAS', 3)], 'Wombats, pencil pines and a guide who reads the clouds.'),
+    apx('window', 'Wait for a weather window', 'luck', 'clever', -0.2, 2.6, 0, 0.8, [fxRep('TAS', 1)], 'Patience — and luck — decide Cradle Mountain.')
+  ],
+  'Visit Port Arthur': [
+    apx('ghost', 'Take the midnight ghost tour', 'luck', 'bold', 0.4, 2.0, 0, 1, [fxDebuff('exhaustion', 1)], 'Lantern-lit ruins and the convict stories that never left.'),
+    apx('archive', 'Study the convict archive', 'intelligence', 'steady', -0.5, 1.2, 0, 0.5, [fxRep('TAS', 2)], 'Trace a single convict\'s life through the records.'),
+    apx('heritage', 'Volunteer at the heritage site', 'charisma', 'social', 0, 1.4, 0, 0.8, [fxRep('TAS', 4)], 'Help with conservation work and meet the historians.')
+  ],
+  'Spot Tasmanian Devils': [
+    apx('stakeout', 'Stake out the forest alone at night', 'luck', 'bold', 0.5, 2.8, 0, 1, [fxDebuff('exhaustion', 2)], 'Cold, dark and very quiet — until the screeching starts.'),
+    apx('survey', 'Join a conservation spotlight survey', 'intelligence', 'steady', -0.6, 1.7, 60, 0.5, [fxRep('TAS', 3), fxRel('respect', 2)], 'Help count devils for the Save the Tasmanian Devil Program.'),
+    apx('farmers', 'Ask the farmers where they roam', 'charisma', 'social', 0, 2.1, 0, 0.8, [fxRep('TAS', 2)], 'Locals know which paddock the devils raid.')
+  ],
+  'Tour MONA Art Museum': [
+    apx('partydeck', "Ride the ferry's party deck", 'charisma', 'bold', 0.5, 2.0, 0, 1, [fxDebuff('bad_press', 1)], 'Arrive loud, leave legendary — or leave a bad impression.'),
+    apx('odevice', 'Use the O device for every work', 'intelligence', 'steady', -0.5, 1.3, 0, 0.5, [fxRep('TAS', 1)], 'Read every artist interview in David Walsh\'s underground maze.'),
+    apx('festival', 'Join the Mona Foma crowd', 'charisma', 'social', 0, 1.6, 0, 0.8, [fxRep('TAS', 3)], 'Experimental music, art and a very Hobart night out.')
+  ],
+  // SA
+  'Wine tour in Barossa Valley': [
+    apx('cycle', 'Cycle the cellar doors', 'strength', 'bold', 0.4, 2.2, 0, 1, [fxDebuff('exhaustion', 1)], 'The Barossa Trail by bike — scenic, hilly and warm.'),
+    apx('masterclass', "Book a winemaker's masterclass", 'intelligence', 'steady', -0.6, 1.4, 80, 0.5, [fxItem('Wine')], 'Old-vine shiraz from barrel to bottle.'),
+    apx('vintage', 'Join the vintage festival crowd', 'charisma', 'social', 0, 1.7, 0, 0.8, [fxRep('SA', 3)], 'Grape stomping and long tables in Tanunda.')
+  ],
+  'Explore Adelaide Central Market': [
+    apx('haggle', 'Haggle every stall', 'charisma', 'bold', 0.5, 1.9, 0, 1, [fxDebuff('bad_press', 1), fxRep('SA', -2, 'failure')], 'Great deals — if the stallholders find it charming.'),
+    apx('foodmap', "Follow a food-writer's map", 'intelligence', 'steady', -0.6, 1.1, 0, 0.5, [fxRep('SA', 1)], 'Fritz, yiros and the best bienenstich in town.'),
+    apx('stallholders', 'Chat with the stallholders', 'charisma', 'social', -0.2, 1.4, 0, 0.8, [fxRep('SA', 3), fxUnlock('sa_trace_the_ochre_pits_of_the_flinders_ranges')], 'They\'ll tell you about the Flinders Ranges if you ask nicely.')
+  ],
+  'Visit Kangaroo Island': [
+    apx('selfdrive', 'Self-drive the gravel roads', 'luck', 'bold', 0.5, 2.6, 0, 1, [fxDebuff('exhaustion', 1)], 'Remarkable Rocks to Seal Bay on unsealed roads.'),
+    apx('naturalist', 'Book a naturalist tour', 'intelligence', 'steady', -0.6, 1.7, 90, 0.5, [fxRep('SA', 2)], 'Sea lions, echidnas and the island\'s bushfire recovery story.'),
+    apx('farmstay', 'Stay with a farming family', 'charisma', 'social', 0, 2.0, 0, 0.8, [fxRep('SA', 4)], 'Ligurian bees, sheep and island hospitality.')
+  ],
+  'Dive with Great White Sharks': [
+    apx('cageless', 'Go cageless with the operators', 'strength', 'bold', 0.6, 3.8, 0, 1, [fxRel('rivalry', 3), fxRel('respect', 3), fxDebuff('injury', 3)], 'Neptune Islands, no bars. The rival will hear about this either way.'),
+    apx('cage', 'Cage dive with a licensed crew', 'intelligence', 'steady', -0.7, 2.5, 160, 0.5, [fxRep('SA', 2)], 'Port Lincoln\'s licensed operators keep you safe and the sharks wild.'),
+    apx('documentary', 'Film it for the documentary team', 'luck', 'clever', 0, 3.1, 0, 0.8, [fxRep('SA', 2), fxRel('rivalry', 2)], 'Get the shot of the season — luck decides whether the shark cooperates.')
+  ],
+  // WA
+  'Explore Pinnacles Desert': [
+    apx('midday', 'Trek out at midday', 'strength', 'bold', 0.5, 2.6, 0, 1, [fxDebuff('exhaustion', 2)], 'Limestone spires in 40°C heat — no shade, big story.'),
+    apx('stargazing', 'Join a stargazing tour', 'intelligence', 'steady', -0.6, 1.6, 70, 0.5, [fxRep('WA', 2)], 'The Milky Way above Nambung National Park with an astronomer.'),
+    apx('cameraclub', 'Photograph it with the camera club', 'charisma', 'social', -0.2, 1.9, 0, 0.8, [fxRep('WA', 3)], 'Golden-hour shots and swapped lenses with Perth photographers.')
+  ],
+  'Swim with whale sharks': [
+    apx('ahead', 'Jump in ahead of the spotter', 'strength', 'bold', 0.5, 3.5, 0, 1, [fxDebuff('injury', 2)], 'Beat the group to the biggest fish in the sea at Ningaloo.'),
+    apx('briefing', 'Follow the spotter-plane briefing', 'intelligence', 'steady', -0.7, 2.3, 150, 0.5, [fxRep('WA', 2)], 'Licensed operators, strict distances and a near-certain encounter.'),
+    apx('luck', "Trust the reef's luck", 'luck', 'clever', 0, 3.0, 0, 0.8, [fxRep('WA', 1)], 'Cheaper boat, no plane — sometimes the whale shark finds you.')
+  ],
+  'Tour Margaret River': [
+    apx('surferspoint', "Surf Surfers Point after the tour", 'strength', 'bold', 0.5, 2.1, 0, 1, [fxDebuff('injury', 1)], 'Big Indian Ocean swell straight after lunch.'),
+    apx('caves', 'Take the caves and coast guided tour', 'intelligence', 'steady', -0.5, 1.3, 50, 0.5, [fxRep('WA', 1)], 'Lake Cave, Cape Leeuwin and the region\'s geology.'),
+    apx('longlunch', 'Join a long lunch at a winery', 'charisma', 'social', 0, 1.6, 0, 0.8, [fxRep('WA', 3), fxItem('Wine')], 'Chardonnay, marron and new friends.')
+  ],
+  'Visit the pink Lake Hillier': [
+    apx('roughflight', 'Charter a light plane in rough weather', 'luck', 'bold', 0.5, 2.9, 0, 1, [fxDebuff('exhaustion', 1)], 'The pink lake from above — if the Recherche winds allow.'),
+    apx('science', 'Join the science cruise', 'intelligence', 'steady', -0.6, 1.8, 120, 0.5, [fxRep('WA', 2)], 'Learn why salt-loving algae turn Middle Island\'s lake bubble-gum pink.'),
+    apx('sharecharter', 'Share the charter with other travellers', 'charisma', 'social', -0.2, 2.1, 0, 0.8, [fxRep('WA', 3)], 'Split the cost from Esperance and swap window seats.')
+  ],
+  // NT
+  'Visit Uluru': [
+    apx('sunrise', 'Race the sunrise on foot', 'strength', 'bold', 0.4, 2.7, 0, 1, [fxDebuff('exhaustion', 2)], 'Run the 10 km base walk to catch first light on the eastern face.'),
+    apx('anangu', 'Walk the base with an Anangu guide', 'intelligence', 'steady', -0.7, 1.8, 90, 0.5, [fxRep('NT', 5)], 'Tjukurpa stories from the traditional owners of Uluṟu-Kata Tjuṯa.'),
+    apx('fieldoflight', 'Join the Field of Light crowd', 'charisma', 'social', -0.2, 2.1, 0, 0.8, [fxRep('NT', 3)], 'Fifty thousand lights in the desert and a night of conversation.')
+  ],
+  'Crocodile spotting': [
+    apx('wade', 'Wade in for a closer look', 'luck', 'bold', 0.6, 2.7, 0, 1, [fxDebuff('injury', 3), fxRep('NT', -2, 'failure')], 'Never smile at a crocodile — and never wade at Cahill\'s Crossing.'),
+    apx('jumpingcroc', 'Book a jumping-croc cruise', 'intelligence', 'steady', -0.6, 1.6, 70, 0.5, [fxRep('NT', 2)], 'The Adelaide River, a safe boat and a five-metre saltie.'),
+    apx('rangers', 'Ask the rangers where they bask', 'charisma', 'social', -0.1, 1.9, 0, 0.8, [fxRep('NT', 3)], 'Local knowledge finds the big ones without the danger.')
+  ],
+  'Explore Kakadu National Park': [
+    apx('jimjim', 'Hike to Jim Jim Falls in the dry heat', 'strength', 'bold', 0.5, 2.7, 0, 1, [fxDebuff('exhaustion', 2)], 'Boulder-hopping to a 200-metre plunge pool.'),
+    apx('rockart', 'Tour the rock-art galleries with a ranger', 'intelligence', 'steady', -0.6, 1.7, 80, 0.5, [fxRep('NT', 3)], 'Ubirr and Nourlangie, explained by the people who care for them.'),
+    apx('yellowwater', 'Camp with the Yellow Water birdwatchers', 'charisma', 'social', 0, 2.0, 0, 0.8, [fxRep('NT', 2)], 'Jabirus, sea eagles and dawn on the billabong.')
+  ],
+  'Swim at Florence Falls': [
+    apx('ledge', 'Dive from the top ledge', 'strength', 'bold', 0.6, 2.3, 0, 1, [fxDebuff('injury', 2)], 'A thrilling plunge into Litchfield\'s twin falls.'),
+    apx('plungepool', 'Swim the marked plunge pool', 'intelligence', 'steady', -0.5, 1.3, 0, 0.5, [fxRep('NT', 1)], 'Croc-safe, signposted and beautiful.'),
+    apx('picnic', 'Picnic with the Batchelor locals', 'charisma', 'social', 0, 1.6, 0, 0.8, [fxRep('NT', 3)], 'Mango season, swimming holes and good company.')
+  ],
+  // ACT
+  'Tour Parliament House': [
+    apx('gatecrash', 'Gatecrash a committee hearing', 'charisma', 'bold', 0.6, 1.9, 0, 1, [fxDebuff('bad_press', 2), fxRep('ACT', -3, 'failure')], 'Ask a question from the gallery and see what happens.'),
+    apx('official', 'Take the official guided tour', 'intelligence', 'steady', -0.6, 1.1, 0, 0.5, [fxRep('ACT', 2)], 'Both chambers, the Magna Carta and the marble foyer.'),
+    apx('localmp', 'Meet your local MP', 'charisma', 'social', 0, 1.4, 0, 0.8, [fxRep('ACT', 3), fxItem('Government Grants')], 'A handshake, a photo and a grant application form.')
+  ],
+  'Visit Australian War Memorial': [
+    apx('servicerecord', 'Research a family service record', 'intelligence', 'clever', -0.2, 1.6, 0, 0.6, [fxRep('ACT', 3)], 'Find a name in the archives and on the Roll of Honour.'),
+    apx('lastpost', 'Attend the Last Post Ceremony', 'charisma', 'social', -0.4, 1.3, 0, 0.5, [fxRep('ACT', 4)], 'A quiet, moving tribute held every evening at the Pool of Reflection.')
+  ],
+  'Explore Tidbinbilla Nature Reserve': [
+    apx('dusk', 'Track platypus at dusk alone', 'luck', 'bold', 0.5, 2.4, 0, 1, [fxDebuff('exhaustion', 1)], 'Sit still by the Sanctuary ponds and wait for ripples.'),
+    apx('rangerwalk', 'Join a ranger-led platypus walk', 'intelligence', 'steady', -0.6, 1.5, 40, 0.5, [fxRep('ACT', 2)], 'Rangers know exactly where the burrows are.'),
+    apx('deepspace', 'Help at the Deep Space tracking open day', 'intelligence', 'clever', 0, 1.9, 0, 0.8, [fxItem('Research Funds'), fxRel('trust', 2)], 'Volunteer next door at the NASA dish complex — and share what you learn.')
+  ],
+  'Hot air ballooning over Canberra': [
+    apx('marginal', 'Fly in marginal winds', 'luck', 'bold', 0.6, 2.7, 0, 1, [fxDebuff('injury', 1), fxDebuff('exhaustion', 1)], 'Lake Burley Griffin at dawn — unless the wind picks up.'),
+    apx('calmslot', "Book the licensed pilot's calm-morning slot", 'intelligence', 'steady', -0.6, 1.6, 110, 0.5, [fxRep('ACT', 2)], 'Wait for still air and a textbook flight.'),
+    apx('spectacular', 'Share a basket at the Balloon Spectacular', 'charisma', 'social', -0.2, 2.0, 0, 0.8, [fxRep('ACT', 3)], 'Fly with the Enlighten festival crowd.')
+  ]
+};
+
+// ---- Follow-up challenges (hidden until a chain step or an approach unlocks them) ----------------------
+function followUp(region: ChallengeRegionCode, name: string, difficulty: 1 | 2 | 3, reward: number, type: ChallengeTypeTag, approaches: readonly ChallengeApproach[], blurb: string): ChallengeDefinition {
+  return { id: challengeIdFor(region, name), name, region, difficulty, reward, type, approaches, source: 'chain', hiddenUntilUnlocked: true, blurb };
+}
+
+export const CHALLENGE_FOLLOW_UPS: readonly ChallengeDefinition[] = [
+  followUp('QLD', 'Night snorkel at Lady Elliot Island', 2, 2.4, 'wildlife', [
+    apx('manta', 'Chase the manta rays', 'strength', 'bold', 0.5, 3.0, 0, 1, [fxDebuff('exhaustion', 1)], 'Swim hard after the mantas beyond the lagoon.'),
+    apx('naturalist', 'Snorkel with the resort naturalist', 'intelligence', 'steady', -0.6, 1.9, 90, 0.5, [fxRep('QLD', 2)], 'A torch-lit lagoon tour with someone who knows every turtle.'),
+    apx('drift', 'Drift and hope for turtles', 'luck', 'clever', 0, 2.4, 0, 0.8, [fxItem('Coral')], 'Float quietly over the bommies and let the reef come to you.')
+  ], 'The southern tip of the Great Barrier Reef at night.'),
+  followUp('VIC', 'Ride the Bells Beach Easter swell', 3, 2.9, 'physical', [
+    apx('charge', 'Charge the biggest set', 'strength', 'bold', 0.5, 3.6, 0, 1, [fxRel('respect', 3), fxDebuff('injury', 2)], 'Drop in on the set of the day in front of the Easter crowd.'),
+    apx('read', 'Read the break from the cliffs first', 'intelligence', 'steady', -0.6, 2.3, 0, 0.5, [fxRep('VIC', 1)], 'Watch the swell lines all morning before paddling out.'),
+    apx('torquay', 'Paddle out with the Torquay crew', 'charisma', 'social', -0.1, 2.8, 0, 0.8, [fxRep('VIC', 4)], 'Earn a spot in the lineup by being polite and patient.')
+  ], 'The finale of the Coastal Surf Circuit.'),
+  followUp('NT', 'Kings Canyon Rim Walk', 2, 2.3, 'physical', [
+    apx('midday', 'Walk the rim at midday', 'strength', 'bold', 0.5, 2.9, 0, 1, [fxDebuff('exhaustion', 2)], 'Beat the crowds by walking when everyone else rests.'),
+    apx('dawnranger', 'Start at dawn with a ranger', 'intelligence', 'steady', -0.7, 1.9, 60, 0.5, [fxRep('NT', 3)], 'Cool air, the Garden of Eden waterhole and stories of Watarrka.'),
+    apx('resortgroup', 'Join the resort walking group', 'charisma', 'social', -0.2, 2.2, 0, 0.8, [fxRep('NT', 2)], 'Safety in numbers on the steep first climb.')
+  ], 'Watarrka National Park, three hours from Uluru.'),
+  followUp('SA', 'Cross the Lake Eyre salt flats', 3, 2.8, 'adventure', [
+    apx('oodnadatta', 'Drive the Oodnadatta Track solo', 'luck', 'bold', 0.5, 3.4, 0, 1, [fxDebuff('exhaustion', 2)], 'Hundreds of kilometres of gravel to the edge of Kati Thanda.'),
+    apx('scenicflight', 'Take a scenic flight over the lake', 'intelligence', 'steady', -0.8, 2.2, 180, 0.4, [fxRep('SA', 2)], 'See the salt crust and pink algae from above.'),
+    apx('convoy', 'Join a 4WD convoy', 'charisma', 'social', -0.2, 2.7, 0, 0.8, [fxRep('SA', 3)], 'Share recovery gear and campfire stories.')
+  ], 'Kati Thanda–Lake Eyre, Australia\'s lowest point.'),
+  followUp('VIC', 'Volunteer at Healesville Sanctuary', 1, 1.8, 'wildlife', [
+    apx('keeper', 'Shadow a platypus keeper', 'intelligence', 'steady', -0.5, 1.5, 0, 0.5, [fxRep('VIC', 3)], 'Learn the feeding rounds from a decades-long keeper.'),
+    apx('hospital', 'Work a wildlife-hospital shift', 'strength', 'bold', 0.3, 2.2, 0, 1, [fxRel('respect', 2), fxDebuff('exhaustion', 1)], 'Long hours caring for injured animals.'),
+    apx('appeal', 'Run the visitor fundraising appeal', 'charisma', 'social', 0, 1.8, 0, 0.8, [fxRep('VIC', 4), fxRel('trust', 2)], 'Charm visitors into adopting a koala.')
+  ], 'The final step of the Wildlife Rescue Trail.'),
+  followUp('WA', 'Blend a vintage at Margaret River', 2, 2.2, 'culinary', [
+    apx('palate', 'Trust your palate', 'luck', 'bold', 0.4, 2.8, 0, 1, [fxDebuff('bad_press', 1)], 'Blend by instinct and hope the critics agree.'),
+    apx('headwinemaker', 'Work under the head winemaker', 'intelligence', 'steady', -0.6, 1.8, 80, 0.5, [fxItem('Wine')], 'Measure, taste, adjust — the methodical way.'),
+    apx('host', 'Host the cellar-door tasting', 'charisma', 'social', -0.1, 2.2, 0, 0.8, [fxRep('WA', 4)], 'Pour your blend for visitors and win them over.')
+  ], 'The final step of the Wine Country Grand Tour.'),
+  followUp('SA', 'Whale-watch at the Head of Bight', 2, 2.3, 'wildlife', [
+    apx('cliffs', 'Clamber down the cliffs for a closer view', 'strength', 'bold', 0.5, 2.9, 0, 1, [fxDebuff('injury', 2)], 'Get closer than the platform allows.'),
+    apx('platform', 'Wait patiently on the platform', 'intelligence', 'steady', -0.6, 1.8, 0, 0.5, [fxRep('SA', 2)], 'Southern right whales calve right below the Nullarbor cliffs.'),
+    apx('mirning', 'Learn the whale stories from Mirning elders', 'charisma', 'social', -0.3, 2.2, 40, 0.6, [fxRep('SA', 4)], 'Why the whales return to the Bight every winter.')
+  ], 'The final step of Ocean Giants.'),
+  followUp('ACT', 'Earn a press gallery pass for Question Time', 2, 2.0, 'social', [
+    apx('scoop', 'Chase a scoop in the corridors', 'charisma', 'bold', 0.5, 2.7, 0, 1, [fxRel('rivalry', 2), fxDebuff('bad_press', 2)], 'Doorstop ministers and hope for a headline.'),
+    apx('brief', 'Prepare a policy brief', 'intelligence', 'steady', -0.6, 1.7, 0, 0.5, [fxRep('ACT', 3)], 'Impress the gallery with homework rather than noise.'),
+    apx('bar', 'Work the press-gallery bar', 'charisma', 'social', -0.1, 2.1, 50, 0.8, [fxRep('ACT', 2), fxItem('Research Funds')], 'Befriend the veterans who decide who gets a pass.')
+  ], 'The final step of Capital Stories.'),
+  followUp('TAS', 'Overland Track to Lake St Clair', 3, 2.9, 'physical', [
+    apx('fastpack', 'Fastpack it in three days', 'strength', 'bold', 0.5, 3.5, 0, 1, [fxDebuff('injury', 2)], '65 kilometres of alpine track at a run.'),
+    apx('huts', 'Walk hut to hut with a guided party', 'intelligence', 'steady', -0.7, 2.3, 200, 0.5, [fxRep('TAS', 3)], 'Six days, a guide and dry boots every night.'),
+    apx('forecast', 'Wait for a clear forecast window', 'luck', 'clever', -0.2, 2.8, 0, 0.8, [fxRep('TAS', 1)], 'Tasmanian weather decides everything — pick your moment.')
+  ], 'Step two of Wild Tasmania.'),
+  followUp('TAS', 'Kayak the Franklin River', 3, 3.0, 'adventure', [
+    apx('ravine', 'Run the Great Ravine rapids', 'strength', 'bold', 0.6, 3.7, 0, 1, [fxRel('respect', 3), fxDebuff('injury', 3)], 'The most famous whitewater in Australia, unportaged.'),
+    apx('expedition', 'Join a ten-day rafting expedition', 'intelligence', 'steady', -0.8, 2.4, 250, 0.4, [fxRep('TAS', 4)], 'Guides, safety kayaks and portages around the worst drops.'),
+    apx('blockade', 'Paddle in the footsteps of the 1983 blockade', 'charisma', 'social', -0.2, 2.8, 0, 0.8, [fxRep('TAS', 5)], 'Retrace the Franklin Dam campaign with a local storyteller.')
+  ], 'The final step of Wild Tasmania.'),
+  followUp('VIC', 'Twelve Apostles helicopter at dawn', 2, 2.4, 'educational', [
+    apx('doorsoff', 'Fly doors-off in the sea wind', 'luck', 'bold', 0.5, 3.0, 0, 1, [fxDebuff('exhaustion', 1)], 'The best photos — if the gusts cooperate.'),
+    apx('calm', "Book the pilot's calm-morning slot", 'intelligence', 'steady', -0.6, 1.9, 150, 0.5, [fxRep('VIC', 2)], 'Glassy conditions and a perfect sunrise.'),
+    apx('photoclass', 'Share the flight with a photography class', 'charisma', 'social', -0.2, 2.3, 60, 0.7, [fxRep('VIC', 3)], 'Split the cost, swap tips and the window seat.')
+  ], 'Step two of the Great Ocean Odyssey.'),
+  followUp('NT', 'Arnhem Land rock-art walk with a ranger', 2, 2.5, 'cultural', [
+    apx('alone', 'Arrange your own permit and go alone', 'luck', 'bold', 0.5, 3.0, 0, 1, [fxRep('NT', -3, 'failure')], 'Fewer people, more risk of breaking protocol.'),
+    apx('ranger', 'Walk with an Indigenous ranger', 'intelligence', 'steady', -0.6, 2.0, 120, 0.5, [fxRep('NT', 5)], 'Learn which galleries may be visited, and why.'),
+    apx('artcentre', 'Join the community art-centre visit', 'charisma', 'social', -0.3, 2.4, 0, 0.8, [fxRep('NT', 4), fxItem('Aboriginal Art')], 'Meet artists continuing a tradition tens of thousands of years old.')
+  ], 'The final step of the Top End Adventure.'),
+  followUp('NSW', 'Walk the Grand Canyon Track', 2, 2.4, 'physical', [
+    apx('loop', 'Run the full loop', 'strength', 'bold', 0.4, 3.0, 0, 1, [fxDebuff('exhaustion', 1)], 'Down into the canyon and back up the stairs at pace.'),
+    apx('notes', "Take your time with the guide's notes", 'intelligence', 'steady', -0.6, 2.0, 0, 0.5, [fxRep('NSW', 2)], 'Your guide\'s tips make the slippery steps easy.')
+  ], 'A Blackheath secret your Blue Mountains guide told you about.'),
+  followUp('QLD', "Drive the K'gari (Fraser Island) beach highway", 2, 2.3, 'adventure', [
+    apx('tide', 'Beat the incoming tide', 'luck', 'bold', 0.5, 2.9, 0, 1, [fxDebuff('exhaustion', 1)], 'Seventy-Five Mile Beach is a highway — until the tide comes in.'),
+    apx('tour', 'Ride with a licensed 4WD tour', 'intelligence', 'steady', -0.7, 1.8, 110, 0.5, [fxRep('QLD', 2)], 'Eli Creek, the Maheno wreck and the coloured sands, safely.'),
+    apx('fishing', 'Camp with the local fishing crew', 'charisma', 'social', -0.1, 2.3, 0, 0.8, [fxRep('QLD', 3), fxItem('Seafood')], 'They know where the tailor are biting.')
+  ], 'The Gold Coast locals told you about the world\'s largest sand island.'),
+  followUp('SA', 'Trace the ochre pits of the Flinders Ranges', 2, 2.2, 'cultural', [
+    apx('stmary', "Hike Wilpena Pound's rim", 'strength', 'bold', 0.4, 2.8, 0, 1, [fxDebuff('exhaustion', 1)], 'A long, hot climb to St Mary Peak.'),
+    apx('adnyamathanha', 'Walk with an Adnyamathanha guide', 'intelligence', 'steady', -0.6, 1.9, 90, 0.5, [fxRep('SA', 5)], 'Creation stories of Ikara and ochre traded across the continent.')
+  ], 'The market stallholders told you where the ochre came from.')
+];
+
+// ---- Chains --------------------------------------------------------------------------------------------
+export interface ChallengeChainDefinition {
+  readonly id: string;
+  readonly title: string;
+  readonly icon: string;
+  readonly description: string;
+  /** Challenge ids in order. Step 1 is always one of the 32 V9.5 challenges. */
+  readonly steps: readonly string[];
+  readonly completionReward: { readonly money: number; readonly reputation: Partial<Record<ChallengeRegionCode, number>>; readonly item?: string };
+}
+
+export const CHALLENGE_CHAINS: readonly ChallengeChainDefinition[] = [
+  { id: 'reef_to_rainforest', title: 'Reef to Rainforest', icon: '🐠', description: 'From the outer reef to the oldest rainforest on Earth.', steps: ['qld_tour_great_barrier_reef', 'qld_night_snorkel_at_lady_elliot_island', 'qld_explore_daintree_rainforest'], completionReward: { money: 600, reputation: { QLD: 6 }, item: 'Tropical Fruit' } },
+  { id: 'coastal_surf_circuit', title: 'Coastal Surf Circuit', icon: '🏄', description: 'Bondi, the Gold Coast and finally Bells Beach.', steps: ['nsw_surf_at_bondi_beach', 'qld_surf_at_gold_coast', 'vic_ride_the_bells_beach_easter_swell'], completionReward: { money: 700, reputation: { NSW: 3, QLD: 3, VIC: 4 } } },
+  { id: 'red_centre_odyssey', title: 'Red Centre Odyssey', icon: '🏜️', description: 'Uluru, Kings Canyon and across the salt to Kati Thanda.', steps: ['nt_visit_uluru', 'nt_kings_canyon_rim_walk', 'sa_cross_the_lake_eyre_salt_flats'], completionReward: { money: 800, reputation: { NT: 5, SA: 4 } } },
+  { id: 'wildlife_rescue_trail', title: 'Wildlife Rescue Trail', icon: '🦘', description: 'Kangaroos, devils and a sanctuary shift.', steps: ['qld_feed_kangaroos', 'tas_spot_tasmanian_devils', 'vic_volunteer_at_healesville_sanctuary'], completionReward: { money: 500, reputation: { QLD: 2, TAS: 3, VIC: 4 } } },
+  { id: 'wine_country_grand_tour', title: 'Wine Country Grand Tour', icon: '🍷', description: 'Barossa, the Yarra and your own Margaret River blend.', steps: ['sa_wine_tour_in_barossa_valley', 'vic_wine_tasting_tour', 'wa_blend_a_vintage_at_margaret_river'], completionReward: { money: 650, reputation: { SA: 3, VIC: 3, WA: 4 }, item: 'Wine' } },
+  { id: 'ocean_giants', title: 'Ocean Giants', icon: '🐋', description: 'Whale sharks, great whites and southern right whales.', steps: ['wa_swim_with_whale_sharks', 'sa_dive_with_great_white_sharks', 'sa_whale_watch_at_the_head_of_bight'], completionReward: { money: 900, reputation: { WA: 4, SA: 4 } } },
+  { id: 'capital_stories', title: 'Capital Stories', icon: '🏛️', description: 'Parliament, the Memorial and the press gallery.', steps: ['act_tour_parliament_house', 'act_visit_australian_war_memorial', 'act_earn_a_press_gallery_pass_for_question_time'], completionReward: { money: 450, reputation: { ACT: 6 }, item: 'Government Grants' } },
+  { id: 'wild_tasmania', title: 'Wild Tasmania', icon: '⛰️', description: 'Cradle Mountain, the Overland Track and the Franklin.', steps: ['tas_hike_cradle_mountain', 'tas_overland_track_to_lake_st_clair', 'tas_kayak_the_franklin_river'], completionReward: { money: 900, reputation: { TAS: 7 }, item: 'Timber' } },
+  { id: 'great_ocean_odyssey', title: 'Great Ocean Odyssey', icon: '🌊', description: 'The road, the Apostles from the air, then the Grampians.', steps: ['vic_tour_great_ocean_road', 'vic_twelve_apostles_helicopter_at_dawn', 'vic_explore_grampians_national_park'], completionReward: { money: 650, reputation: { VIC: 6 } } },
+  { id: 'top_end_adventure', title: 'Top End Adventure', icon: '🐊', description: 'Crocodiles, Kakadu and the rock art of Arnhem Land.', steps: ['nt_crocodile_spotting', 'nt_explore_kakadu_national_park', 'nt_arnhem_land_rock_art_walk_with_a_ranger'], completionReward: { money: 700, reputation: { NT: 6 }, item: 'Aboriginal Art' } }
+];
+export const CHALLENGE_CHAIN_BY_ID: Readonly<Record<string, ChallengeChainDefinition>> = CHALLENGE_CHAINS.reduce((acc, c) => { acc[c.id] = c; return acc; }, {} as Record<string, ChallengeChainDefinition>);
+
+// ---- Converter + registry ------------------------------------------------------------------------------
+/** Generic approaches for a challenge nobody has hand-written yet (also used by the template generator). */
+export function synthesizeDefaultApproaches(region: ChallengeRegionCode, type: ChallengeTypeTag, difficulty: number, reward: number): ChallengeApproach[] {
+  const primary = legacyStatForType(LEGACY_TYPE_FOR_TAG[type]);
+  const r2 = (n: number) => Math.round(n * 10) / 10;
+  return [
+    apx('direct', 'Take it on directly', primary, 'bold', 0.3, r2(reward * 1.2), 0, 1, [], 'Go hard at it with your strongest skill for the biggest payout.'),
+    apx('prepared', 'Prepare and play it safe', 'intelligence', 'steady', -0.6, r2(Math.max(1.1, reward * 0.8)), 30 * Math.max(1, Math.round(difficulty)), 0.5, [], 'Pay for preparation, lower the stakes, lose less if it goes wrong.'),
+    apx('locals', 'Go with the locals', 'charisma', 'social', -0.1, r2(reward), 0, 0.8, [fxRep(region, 3)], 'Do it the local way and earn some standing in the region.')
+  ];
+}
+
+/** V9.5 inline challenge → ChallengeDefinition (hand-written approaches when they exist). */
+export function toChallengeDefinition(region: string, legacy: LegacyChallengeShape): ChallengeDefinition {
+  const code: ChallengeRegionCode = isChallengeRegionCode(region) ? region : 'NSW';
+  const tag: ChallengeTypeTag = legacy.tag && isChallengeTypeTag(legacy.tag) ? legacy.tag : isChallengeTypeTag(legacy.type) ? legacy.type : 'educational';
+  const difficulty: 1 | 2 | 3 = legacy.difficulty >= 3 ? 3 : legacy.difficulty <= 1 ? 1 : 2;
+  const reward = Number.isFinite(legacy.reward) && legacy.reward > 0 ? legacy.reward : 1.5;
+  const authored = LEGACY_CHALLENGE_APPROACHES[legacy.name];
+  return {
+    id: legacy.challengeId || challengeIdFor(code, legacy.name),
+    name: legacy.name, region: code, difficulty, reward, type: tag,
+    approaches: authored && authored.length ? authored : synthesizeDefaultApproaches(code, tag, difficulty, reward),
+    source: 'legacy', hiddenUntilUnlocked: false
+  };
+}
+
+/** ChallengeDefinition → the inline shape every V9.5 code path accepts (type mapped to one the odds formula knows). */
+export function toLegacyChallenge(def: ChallengeDefinition): LegacyChallengeShape {
+  return { name: def.name, difficulty: def.difficulty, reward: def.reward, type: LEGACY_TYPE_FOR_TAG[def.type], challengeId: def.id, tag: def.type };
+}
+
+function readLegacyRegionChallenges(code: ChallengeRegionCode): LegacyChallengeShape[] {
+  const regionRecord: { challenges?: unknown } | undefined = REGIONS[code];
+  const raw = regionRecord && Array.isArray(regionRecord.challenges) ? regionRecord.challenges : [];
+  const out: LegacyChallengeShape[] = [];
+  raw.forEach((c: unknown) => {
+    if (!c || typeof c !== 'object') return;
+    const o = c as { name?: unknown; difficulty?: unknown; reward?: unknown; type?: unknown };
+    if (typeof o.name !== 'string') return;
+    out.push({ name: o.name, difficulty: Number(o.difficulty) || 1, reward: Number(o.reward) || 1.5, type: typeof o.type === 'string' ? o.type : 'educational' });
+  });
+  return out;
+}
+
+export const LEGACY_CHALLENGE_DEFINITIONS: readonly ChallengeDefinition[] = CHALLENGE_REGION_CODES.flatMap(code => readLegacyRegionChallenges(code).map(c => toChallengeDefinition(code, c)));
+
+/** Extra definitions registered by later sections (WP3 authored content). */
+const challengeDefinitionExtensions: ChallengeDefinition[] = [];
+let challengeRegistryCache: { size: number; byId: Map<string, ChallengeDefinition>; byName: Map<string, ChallengeDefinition> } | null = null;
+export function registerChallengeDefinitions(defs: readonly ChallengeDefinition[]): void {
+  defs.forEach(d => { if (!challengeDefinitionExtensions.some(x => x.id === d.id)) challengeDefinitionExtensions.push(d); });
+  challengeRegistryCache = null;
+}
+function challengeRegistry(): { byId: Map<string, ChallengeDefinition>; byName: Map<string, ChallengeDefinition> } {
+  const all = [...LEGACY_CHALLENGE_DEFINITIONS, ...CHALLENGE_FOLLOW_UPS, ...challengeDefinitionExtensions];
+  if (challengeRegistryCache && challengeRegistryCache.size === all.length) return challengeRegistryCache;
+  const byId = new Map<string, ChallengeDefinition>();
+  const byName = new Map<string, ChallengeDefinition>();
+  all.forEach(d => { if (!byId.has(d.id)) byId.set(d.id, d); if (!byName.has(d.name)) byName.set(d.name, d); });
+  challengeRegistryCache = { size: all.length, byId, byName };
+  return challengeRegistryCache;
+}
+export function allRegisteredChallengeDefinitions(): ChallengeDefinition[] { return Array.from(challengeRegistry().byId.values()); }
+export function getChallengeDefinition(id: string): ChallengeDefinition | null { return challengeRegistry().byId.get(String(id || '')) || null; }
+export function getChallengeDefinitionByName(name: string): ChallengeDefinition | null { return challengeRegistry().byName.get(String(name || '')) || null; }
+/** Resolve whatever a code path holds (definition id, legacy object or name) to a definition. */
+export function resolveChallengeDefinition(input: { challengeId?: unknown; name?: unknown } | string | null | undefined, region?: string): ChallengeDefinition | null {
+  if (!input) return null;
+  if (typeof input === 'string') return getChallengeDefinition(input) || getChallengeDefinitionByName(input);
+  if (typeof input.challengeId === 'string') { const d = getChallengeDefinition(input.challengeId); if (d) return d; }
+  if (typeof input.name === 'string') {
+    const d = getChallengeDefinitionByName(input.name);
+    if (d) return d;
+    if (region && isChallengeRegionCode(region)) return toChallengeDefinition(region, { name: input.name, difficulty: 1, reward: 1.5, type: 'educational' });
+  }
+  return null;
+}
+
+// ---- Regional reputation -------------------------------------------------------------------------------
+export const DEFAULT_REGIONAL_REPUTATION = 50;
+export type RegionalReputationMap = Partial<Record<ChallengeRegionCode, number>>;
+const repClamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
+export function sanitizeRegionalReputation(raw: unknown): RegionalReputationMap {
+  const out: RegionalReputationMap = {};
+  if (!raw || typeof raw !== 'object') return out;
+  Object.entries(raw as Record<string, unknown>).forEach(([k, v]) => {
+    if (isChallengeRegionCode(k) && typeof v === 'number' && Number.isFinite(v)) out[k] = repClamp(v);
+  });
+  return out;
+}
+export function getActorRegionalReputation(actor: { regionalReputation?: unknown } | null | undefined, region: string): number {
+  if (!actor || !isChallengeRegionCode(region)) return DEFAULT_REGIONAL_REPUTATION;
+  const map = actor.regionalReputation;
+  if (!map || typeof map !== 'object') return DEFAULT_REGIONAL_REPUTATION;
+  const v = (map as Record<string, unknown>)[region];
+  return typeof v === 'number' && Number.isFinite(v) ? repClamp(v) : DEFAULT_REGIONAL_REPUTATION;
+}
+export function applyReputationDeltas(current: unknown, deltas: RegionalReputationMap): RegionalReputationMap {
+  const out = sanitizeRegionalReputation(current);
+  (Object.keys(deltas) as ChallengeRegionCode[]).forEach(r => {
+    const d = deltas[r];
+    if (typeof d !== 'number' || !Number.isFinite(d) || d === 0) return;
+    out[r] = repClamp((out[r] ?? DEFAULT_REGIONAL_REPUTATION) + d);
+  });
+  return out;
+}
+export function reputationBand(rep: number): { label: string; tone: 'bad' | 'warn' | 'info' | 'good' } {
+  if (rep >= 80) return { label: 'Local legend', tone: 'good' };
+  if (rep >= 60) return { label: 'Welcome', tone: 'good' };
+  if (rep >= 40) return { label: 'Neutral', tone: 'info' };
+  if (rep >= 20) return { label: 'Wary', tone: 'warn' };
+  return { label: 'Unwelcome', tone: 'bad' };
+}
+/** Challenge odds: rep 0 → −10%, 50 → 0, 100 → +10%. */
+export function reputationOddsBonus(rep: number): number { return (repClamp(rep) - 50) / 500; }
+/** Shop prices: rep 100 → 10% cheaper, rep 0 → 10% dearer. */
+export function reputationPriceMultiplier(rep: number): number { return 1 - (repClamp(rep) - 50) / 500; }
+/** Helpful regional-event effects scale 0.5× … 1.5× with reputation (exactly 1× at 50). */
+export function reputationFavourableEventFactor(rep: number): number { return 0.5 + repClamp(rep) / 100; }
+/** Harmful regional-event effects scale 1.5× … 0.5× with reputation (exactly 1× at 50). */
+export function reputationAdverseEventFactor(rep: number): number { return 1.5 - repClamp(rep) / 100; }
+export function scaleFavourableEventMultiplier(multiplier: number, rep: number): number { return 1 + (multiplier - 1) * reputationFavourableEventFactor(rep); }
+export function scaleAdverseEventMultiplier(multiplier: number, rep: number): number { return 1 + (multiplier - 1) * reputationAdverseEventFactor(rep); }
+/** Shop price with reputation applied — unchanged unless approaches are on. */
+export function applyReputationToShopPrice(cost: number, actor: { regionalReputation?: unknown } | null | undefined, region: string, settings: { challengeApproachesEnabled?: boolean } | null | undefined): number {
+  if (!settings || settings.challengeApproachesEnabled !== true || !(cost > 0)) return cost;
+  return Math.max(0, Math.round(cost * reputationPriceMultiplier(getActorRegionalReputation(actor, region))));
+}
+/** Sum of active regional-event challenge bonuses for a type in a region (the V9.5 eventBonus term). */
+export function regionalEventChallengeBonus(activeEvents: unknown, region: string, type: string): number {
+  if (!Array.isArray(activeEvents)) return 0;
+  let sum = 0;
+  activeEvents.forEach((e: unknown) => {
+    if (!e || typeof e !== 'object') return;
+    const ev = e as { region?: unknown; effect?: { challengeBonus?: Record<string, unknown> } };
+    const b = ev.region === region ? ev.effect?.challengeBonus?.[type] : undefined;
+    if (typeof b === 'number' && Number.isFinite(b)) sum += b;
+  });
+  return sum;
+}
+
+// ---- Odds ------------------------------------------------------------------------------------------------
+export interface ApproachDebuffLike { type: string; remainingDays: number }
+export function approachDebuffPenalty(debuffs: readonly ApproachDebuffLike[] | null | undefined, stat: ChallengeStat): number {
+  if (!Array.isArray(debuffs)) return 0;
+  let p = 0;
+  (Object.keys(CHALLENGE_DEBUFFS) as ChallengeDebuffId[]).forEach(id => {
+    const active = debuffs.some(d => d && d.type === id && d.remainingDays > 0);
+    const def = CHALLENGE_DEBUFFS[id];
+    if (active && (def.stat === null || def.stat === stat)) p += def.penalty;
+  });
+  return p;
+}
+
+export interface ApproachOddsInput {
+  difficulty: number;
+  stat: ChallengeStat;
+  stats: { strength: number; charisma: number; luck: number; intelligence: number };
+  difficultyShift?: number;
+  characterName?: string | null;
+  level?: number;
+  /** Weather + season + event + equipment + underdog − leader − fatigue − sabotage, from the live pipeline. */
+  situational?: number;
+  /** The event part of `situational`; reputation rescales it. */
+  eventBonus?: number;
+  reputation?: number;
+  debuffs?: readonly ApproachDebuffLike[] | null;
+  /** Upper clamp (human 0.95, AI 0.98 — the V9.5 caps). */
+  cap?: number;
+}
+export interface ApproachOddsBreakdown {
+  statValue: number;
+  statContribution: number;
+  difficultyContribution: number;
+  characterContribution: number;
+  levelContribution: number;
+  situationalContribution: number;
+  reputationContribution: number;
+  debuffContribution: number;
+  raw: number;
+  final: number;
+  clamped: 'floor' | 'ceiling' | null;
+  lines: string[];
+}
+const pct = (n: number) => `${n >= 0 ? '+' : '−'}${Math.round(Math.abs(n) * 100)}%`;
+
+/** The V9.5 formula (0.5 + stat×5% − difficulty×10% + Tourist 10% + level×2% + situational), on the approach's stat. */
+export function computeApproachOdds(i: ApproachOddsInput): ApproachOddsBreakdown {
+  const statValue = (i.stats && typeof i.stats[i.stat] === 'number' ? i.stats[i.stat] : 3) || 3;
+  const difficulty = Math.max(0, (Number(i.difficulty) || 1) + (i.difficultyShift || 0));
+  const rep = typeof i.reputation === 'number' ? i.reputation : DEFAULT_REGIONAL_REPUTATION;
+  const statContribution = statValue * 0.05;
+  const difficultyContribution = -difficulty * 0.1;
+  const characterContribution = i.characterName === 'Tourist' ? 0.1 : 0;
+  const levelContribution = (i.level || 0) * 0.02;
+  const eventBonus = i.eventBonus || 0;
+  const situationalContribution = (i.situational || 0) + eventBonus * (reputationFavourableEventFactor(rep) - 1);
+  const reputationContribution = reputationOddsBonus(rep);
+  const debuffContribution = -approachDebuffPenalty(i.debuffs, i.stat);
+  const raw = 0.5 + statContribution + difficultyContribution + characterContribution + levelContribution + situationalContribution + reputationContribution + debuffContribution;
+  const cap = typeof i.cap === 'number' ? i.cap : 0.95;
+  const final = Math.min(cap, Math.max(0.1, raw));
+  const lines = [
+    `Base chance 50%`,
+    `${CHALLENGE_STAT_ICON[i.stat]} ${CHALLENGE_STAT_LABEL[i.stat]} ${statValue} → ${pct(statContribution)}`,
+    `Difficulty ${difficulty.toFixed(1)}${i.difficultyShift ? ` (approach ${i.difficultyShift > 0 ? '+' : ''}${i.difficultyShift})` : ''} → ${pct(difficultyContribution)}`
+  ];
+  if (characterContribution) lines.push(`Tourist perk → ${pct(characterContribution)}`);
+  if (levelContribution) lines.push(`Level ${i.level} → ${pct(levelContribution)}`);
+  if (Math.abs(situationalContribution) >= 0.005) lines.push(`Weather, season, events, gear & standing → ${pct(situationalContribution)}`);
+  if (reputationContribution) lines.push(`Regional reputation ${repClamp(rep)} → ${pct(reputationContribution)}`);
+  if (debuffContribution) lines.push(`Conditions → ${pct(debuffContribution)}`);
+  const clamped = raw > cap ? 'ceiling' : raw < 0.1 ? 'floor' : null;
+  if (clamped) lines.push(clamped === 'ceiling' ? `Capped at ${Math.round(cap * 100)}%` : 'Never below 10%');
+  return { statValue, statContribution, difficultyContribution, characterContribution, levelContribution, situationalContribution, reputationContribution, debuffContribution, raw, final, clamped, lines };
+}
+
+// ---- Plans -----------------------------------------------------------------------------------------------
+export interface ApproachPlanContext {
+  stats: { strength: number; charisma: number; luck: number; intelligence: number };
+  characterName?: string | null;
+  level?: number;
+  situational?: number;
+  eventBonus?: number;
+  reputation?: number;
+  debuffs?: readonly ApproachDebuffLike[] | null;
+  wager: number;
+  cap?: number;
+}
+export interface ChallengeApproachPlan {
+  challengeId: string;
+  challengeName: string;
+  region: ChallengeRegionCode;
+  approachId: string;
+  label: string;
+  description: string;
+  stat: ChallengeStat;
+  style: ChallengeApproachStyle;
+  successChance: number;
+  odds: ApproachOddsBreakdown;
+  rewardMultiplier: number;
+  upfrontCost: number;
+  wager: number;
+  failureLoss: number;
+  /** Gross money on success before streak / mastery bonuses (floor(wager × multiplier)). */
+  basePayout: number;
+  expectedValue: number;
+  /** Spread of the money outcome (√(p(1−p)) × (payout + loss)). */
+  volatility: number;
+  sideEffects: readonly ChallengeSideEffect[];
+  effectLines: string[];
+}
+
+export function describeSideEffect(fx: ChallengeSideEffect): string {
+  const when = fx.on === 'success' ? 'On success' : fx.on === 'failure' ? 'On failure' : 'Always';
+  switch (fx.kind) {
+    case 'reputation': return `${when}: ${fx.delta >= 0 ? '+' : ''}${fx.delta} reputation in ${fx.region}`;
+    case 'item': return `${when}: receive ${fx.item}`;
+    case 'unlock': { const d = getChallengeDefinition(fx.challengeId); return `${when}: unlocks “${d ? d.name : fx.challengeId}”${d ? ` (${d.region})` : ''}`; }
+    case 'relationship': return `${when}: rival ${fx.field} ${fx.delta >= 0 ? '+' : ''}${fx.delta}`;
+    case 'debuff': return `${when}: ${CHALLENGE_DEBUFFS[fx.debuff].icon} ${CHALLENGE_DEBUFFS[fx.debuff].label} for ${fx.days} day${fx.days === 1 ? '' : 's'}`;
+    default: return when;
+  }
+}
+
+export function buildChallengeApproachPlan(def: ChallengeDefinition, approach: ChallengeApproach, ctx: ApproachPlanContext): ChallengeApproachPlan {
+  const odds = computeApproachOdds({ difficulty: def.difficulty, stat: approach.stat, stats: ctx.stats, difficultyShift: approach.difficultyShift, characterName: ctx.characterName, level: ctx.level, situational: ctx.situational, eventBonus: ctx.eventBonus, reputation: ctx.reputation, debuffs: ctx.debuffs, cap: ctx.cap });
+  const wager = Math.max(0, Math.floor(Number(ctx.wager) || 0));
+  const p = odds.final;
+  const basePayout = Math.floor(wager * approach.rewardMultiplier);
+  const failureLoss = Math.round(wager * Math.max(0, Math.min(1, approach.failureWagerShare)));
+  const expectedValue = p * basePayout - (1 - p) * failureLoss - approach.upfrontCost;
+  const volatility = Math.sqrt(Math.max(0, p * (1 - p))) * (basePayout + failureLoss);
+  const effectLines = [
+    `Reward ×${approach.rewardMultiplier} (wins $${basePayout} on $${wager})`,
+    `Failure costs $${failureLoss}${approach.failureWagerShare < 1 ? ` (${Math.round(approach.failureWagerShare * 100)}% of the wager)` : ''}`,
+    ...(approach.upfrontCost > 0 ? [`Up-front fee $${approach.upfrontCost}`] : []),
+    `On success: +2 reputation in ${def.region}`,
+    ...approach.sideEffects.map(describeSideEffect)
+  ];
+  return { challengeId: def.id, challengeName: def.name, region: def.region, approachId: approach.id, label: approach.label, description: approach.description, stat: approach.stat, style: approach.style, successChance: p, odds, rewardMultiplier: approach.rewardMultiplier, upfrontCost: approach.upfrontCost, wager, failureLoss, basePayout, expectedValue, volatility, sideEffects: approach.sideEffects, effectLines };
+}
+export function buildAllApproachPlans(def: ChallengeDefinition, ctx: ApproachPlanContext): ChallengeApproachPlan[] {
+  return def.approaches.map(a => buildChallengeApproachPlan(def, a, ctx));
+}
+
+// ---- Outcome --------------------------------------------------------------------------------------------
+export interface ApproachEffectResolution {
+  success: boolean;
+  reputation: RegionalReputationMap;
+  items: string[];
+  unlocks: string[];
+  relationship: Array<{ field: ApproachRelationshipField; delta: number }>;
+  debuffs: Array<{ debuff: ChallengeDebuffId; days: number }>;
+  lines: string[];
+}
+/** Which side effects fire for this outcome (+2 reputation in the challenge's region on every success). */
+export function resolveApproachSideEffects(plan: { region: ChallengeRegionCode; sideEffects: readonly ChallengeSideEffect[] }, success: boolean): ApproachEffectResolution {
+  const out: ApproachEffectResolution = { success, reputation: {}, items: [], unlocks: [], relationship: [], debuffs: [], lines: [] };
+  const fires = (on: ChallengeEffectTrigger) => on === 'always' || (on === 'success' && success) || (on === 'failure' && !success);
+  if (success) out.reputation[plan.region] = 2;
+  plan.sideEffects.forEach(fx => {
+    if (!fires(fx.on)) return;
+    switch (fx.kind) {
+      case 'reputation': out.reputation[fx.region] = (out.reputation[fx.region] || 0) + fx.delta; break;
+      case 'item': out.items.push(fx.item); break;
+      case 'unlock': if (!out.unlocks.includes(fx.challengeId)) out.unlocks.push(fx.challengeId); break;
+      case 'relationship': out.relationship.push({ field: fx.field, delta: fx.delta }); break;
+      case 'debuff': out.debuffs.push({ debuff: fx.debuff, days: Math.max(1, Math.round(fx.days)) }); break;
+    }
+  });
+  (Object.keys(out.reputation) as ChallengeRegionCode[]).forEach(r => { const d = out.reputation[r] || 0; if (d) out.lines.push(`${d > 0 ? '⭐' : '⚠️'} Reputation in ${r} ${d > 0 ? '+' : ''}${d}`); });
+  out.items.forEach(i => out.lines.push(`🎁 Received ${i}`));
+  out.unlocks.forEach(id => { const d = getChallengeDefinition(id); out.lines.push(`🔓 Unlocked “${d ? d.name : id}”${d ? ` in ${d.region}` : ''}`); });
+  out.debuffs.forEach(d => out.lines.push(`${CHALLENGE_DEBUFFS[d.debuff].icon} ${CHALLENGE_DEBUFFS[d.debuff].label} for ${d.days} day${d.days === 1 ? '' : 's'}`));
+  return out;
+}
+
+export interface ApproachActorLike {
+  money?: number;
+  stats?: { strength?: number; charisma?: number; luck?: number; intelligence?: number } | null;
+  startingStats?: { strength?: number; charisma?: number; luck?: number; intelligence?: number } | null;
+  level?: number;
+  xp?: number;
+  character?: { name?: string } | null;
+  currentRegion?: string;
+  challengesCompleted?: string[];
+  completedThisSeason?: string[];
+  challengeMastery?: Record<string, number>;
+  consecutiveWins?: number;
+  regionalReputation?: unknown;
+  debuffs?: ApproachDebuffLike[];
+  inventory?: string[];
+  unlockedChallengeIds?: unknown;
+  masteryUnlocks?: string[];
+}
+export interface ApproachActorPatch {
+  regionalReputation: RegionalReputationMap;
+  unlockedChallengeIds: string[];
+  debuffs: ApproachDebuffLike[];
+  inventory: string[];
+}
+export function sanitizeUnlockedChallengeIds(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  raw.forEach(v => { if (typeof v === 'string' && v && !out.includes(v)) out.push(v); });
+  return out.slice(-200);
+}
+/** The non-money part of an outcome as a state patch (reputation, unlocks, debuffs, items). */
+export function applyApproachResolutionToActor(actor: ApproachActorLike, res: ApproachEffectResolution, extraReputation: RegionalReputationMap = {}, extraItems: readonly string[] = []): ApproachActorPatch {
+  let rep = applyReputationDeltas(actor.regionalReputation, res.reputation);
+  rep = applyReputationDeltas(rep, extraReputation);
+  const unlocked = sanitizeUnlockedChallengeIds(actor.unlockedChallengeIds);
+  res.unlocks.forEach(id => { if (!unlocked.includes(id)) unlocked.push(id); });
+  let debuffs: ApproachDebuffLike[] = Array.isArray(actor.debuffs) ? actor.debuffs.filter(d => d && d.remainingDays > 0).map(d => ({ type: d.type, remainingDays: d.remainingDays })) : [];
+  res.debuffs.forEach(d => {
+    const existing = debuffs.find(x => x.type === d.debuff);
+    debuffs = existing ? debuffs.map(x => x.type === d.debuff ? { ...x, remainingDays: Math.max(x.remainingDays, d.days) } : x) : [...debuffs, { type: d.debuff, remainingDays: d.days }];
+  });
+  const inventory = [...(Array.isArray(actor.inventory) ? actor.inventory : []), ...res.items, ...extraItems];
+  return { regionalReputation: rep, unlockedChallengeIds: unlocked, debuffs, inventory };
+}
+
+// ---- Chains: progress, visibility, completion -------------------------------------------------------------
+export interface ChallengeChainProgress {
+  chainId: string;
+  /** Leading steps completed at least once (prefix). Hidden step k is visible once this is ≥ k. */
+  stepsDone: number;
+  total: number;
+  completed: boolean;
+  nextChallengeId: string | null;
+}
+function challengeNameForId(id: string): string | null { const d = getChallengeDefinition(id); return d ? d.name : null; }
+export function computeChainProgress(chain: ChallengeChainDefinition, completedNames: readonly string[]): ChallengeChainProgress {
+  const done = new Set(completedNames || []);
+  let stepsDone = 0;
+  for (const id of chain.steps) { const n = challengeNameForId(id); if (n && done.has(n)) stepsDone += 1; else break; }
+  const allDone = chain.steps.every(id => { const n = challengeNameForId(id); return Boolean(n && done.has(n)); });
+  return { chainId: chain.id, stepsDone, total: chain.steps.length, completed: allDone, nextChallengeId: allDone ? null : chain.steps[stepsDone] || null };
+}
+export function chainsForChallenge(challengeId: string): ChallengeChainDefinition[] { return CHALLENGE_CHAINS.filter(c => c.steps.includes(challengeId)); }
+export function newlyCompletedChains(before: readonly string[], after: readonly string[]): ChallengeChainDefinition[] {
+  return CHALLENGE_CHAINS.filter(c => !computeChainProgress(c, before).completed && computeChainProgress(c, after).completed);
+}
+/** A definition is on the board when it is not hidden, was unlocked by a side effect, or its chain reached it. */
+export function isChallengeDefinitionVisible(def: ChallengeDefinition, completedNames: readonly string[], unlockedIds: readonly string[]): boolean {
+  if (!def.hiddenUntilUnlocked) return true;
+  if ((unlockedIds || []).includes(def.id)) return true;
+  return chainsForChallenge(def.id).some(c => computeChainProgress(c, completedNames).stepsDone >= c.steps.indexOf(def.id));
+}
+export function visibleFollowUpsForRegion(region: string, completedNames: readonly string[], unlockedIds: readonly string[]): ChallengeDefinition[] {
+  return allRegisteredChallengeDefinitions().filter(d => d.hiddenUntilUnlocked && d.region === region && isChallengeDefinitionVisible(d, completedNames, unlockedIds));
+}
+export function chainStepNote(def: ChallengeDefinition, completedNames: readonly string[]): string | null {
+  const chain = chainsForChallenge(def.id)[0];
+  if (!chain) return null;
+  const prog = computeChainProgress(chain, completedNames);
+  const idx = chain.steps.indexOf(def.id);
+  const nextId = chain.steps[idx + 1];
+  const next = nextId ? getChallengeDefinition(nextId) : null;
+  return `${chain.icon} ${chain.title} — step ${idx + 1} of ${chain.steps.length}${prog.completed ? ' (chain complete)' : ''}${next ? `; next: ${next.name} (${next.region})` : `; completes the chain (+$${chain.completionReward.money})`}`;
+}
+export function describeChainCompletion(chain: ChallengeChainDefinition): string {
+  const reps = (Object.keys(chain.completionReward.reputation) as ChallengeRegionCode[]).map(r => `+${chain.completionReward.reputation[r]} ${r}`).join(', ');
+  return `${chain.icon} Chain complete: ${chain.title}! +$${chain.completionReward.money}${reps ? `, reputation ${reps}` : ''}${chain.completionReward.item ? `, ${chain.completionReward.item}` : ''}`;
+}
+
+/** The region's challenge list for the given flags. Flags off → exactly the V9.5 four. */
+export function listRegionChallengeDefinitions(region: string, ctx: { settings: { challengeApproachesEnabled?: boolean } | null | undefined; completedNames: readonly string[]; unlockedIds: readonly string[] }): ChallengeDefinition[] {
+  const base = LEGACY_CHALLENGE_DEFINITIONS.filter(d => d.region === region);
+  if (!ctx.settings || ctx.settings.challengeApproachesEnabled !== true) return base;
+  return [...base, ...visibleFollowUpsForRegion(region, ctx.completedNames, ctx.unlockedIds)];
+}
+
+// ---- Rival AI: choosing an approach ----------------------------------------------------------------------
+export interface ApproachAppetiteInput {
+  personality?: string | null;
+  aiStrategy?: string | null;
+  mood?: string | null;
+  /** Remembered rivalry toward the human (0–100) from AI memory. */
+  rivalry?: number | null;
+  /** AI net worth ÷ opponent net worth. */
+  wealthRatio?: number | null;
+}
+const APPROACH_PERSONALITY_RISK: Readonly<Record<string, number>> = { balanced: 1.0, aggressive: 1.35, saver: 0.65, investor: 0.95, resource_trader: 0.9, challenge_hunter: 1.15, saboteur: 1.15, support_teammate: 0.85 };
+const APPROACH_MOOD_RISK: Readonly<Record<string, number>> = { confident: 1.2, neutral: 1.0, desperate: 0.7, aggressive: 1.4 };
+/** −1 (only safe approaches) … +1 (only high-variance approaches). Aggressive personalities and moods push up; savers and money-focused characters push down. */
+export function deriveApproachRiskAppetite(i: ApproachAppetiteInput): number {
+  let a = ((APPROACH_PERSONALITY_RISK[String(i.personality || 'balanced')] ?? 1) - 1) * 1.5;
+  const strat = String(i.aiStrategy || '');
+  if (strat === 'money-focused') a -= 0.3;
+  else if (strat === 'challenge-focused') a += 0.2;
+  else if (strat === 'exploration-focused') a += 0.1;
+  a += ((APPROACH_MOOD_RISK[String(i.mood || 'neutral')] ?? 1) - 1) * 0.75;
+  if (typeof i.rivalry === 'number' && Number.isFinite(i.rivalry)) a += Math.max(0, Math.min(100, i.rivalry)) / 250;
+  if (typeof i.wealthRatio === 'number' && Number.isFinite(i.wealthRatio)) { if (i.wealthRatio < 0.9) a += 0.15; else if (i.wealthRatio > 1.2) a -= 0.15; }
+  return Math.max(-1, Math.min(1, Math.round(a * 1000) / 1000));
+}
+/** Money expectation, plus or minus a volatility term by appetite, plus the value of side effects. */
+export function scoreApproachPlanForAi(plan: ChallengeApproachPlan, appetite: number): number {
+  const p = plan.successChance;
+  let fxValue = 0;
+  plan.sideEffects.forEach(fx => {
+    const w = fx.on === 'success' ? p : fx.on === 'failure' ? 1 - p : 1;
+    if (fx.kind === 'reputation') fxValue += w * fx.delta * 6;
+    else if (fx.kind === 'item') fxValue += w * 40;
+    else if (fx.kind === 'unlock') fxValue += w * 60;
+    else if (fx.kind === 'debuff') fxValue -= w * fx.days * 30;
+  });
+  return Math.round((plan.expectedValue + appetite * 0.6 * plan.volatility + fxValue + p * 12) * 100) / 100;
+}
+export function chooseAiApproach(plans: readonly ChallengeApproachPlan[], appetite: number): { plan: ChallengeApproachPlan; score: number; scores: Array<{ approachId: string; score: number }> } | null {
+  if (!plans.length) return null;
+  const scores = plans.map(p => ({ approachId: p.approachId, score: scoreApproachPlanForAi(p, appetite) }));
+  let best = 0;
+  scores.forEach((s, i) => { if (s.score > scores[best].score || (s.score === scores[best].score && s.approachId.localeCompare(scores[best].approachId) < 0)) best = i; });
+  return { plan: plans[best], score: scores[best].score, scores };
+}
+
+// ---- Memory: approach choices feed the opponent belief model -------------------------------------------
+/** The CommittedMemoryAction type an approach choice is recorded as (classified bold→aggressive, steady/clever→economic, social→cooperative). */
+export function approachMemoryActionType(style: ChallengeApproachStyle): string { return `challenge_approach_${style}`; }
+/** Apply approach relationship side effects to every AI observer's view of the actor (bounded 0–100). */
+export function applyApproachRelationshipDeltas(memories: AiMemoriesByActor, actorId: string, observerIds: readonly string[], deltas: ReadonlyArray<{ field: ApproachRelationshipField; delta: number }>, turn: number): AiMemoriesByActor {
+  if (!deltas.length) return memories;
+  const out: AiMemoriesByActor = { ...memories };
+  observerIds.forEach(ownerId => {
+    if (!ownerId || ownerId === actorId) return;
+    const mem = out[ownerId];
+    if (!mem) return;
+    const prev = mem.relationships[actorId] || { actorId, trust: 50, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, grievance: 0, gratitude: 0, lastUpdatedTurn: turn };
+    const rel: AiRelationship = { ...prev, lastUpdatedTurn: turn };
+    deltas.forEach(d => { rel[d.field] = Math.max(0, Math.min(100, Math.round((rel[d.field] + d.delta) * 100) / 100)); });
+    out[ownerId] = { ...mem, relationships: { ...mem.relationships, [actorId]: rel } };
+  });
+  return out;
+}
+
+// ---- Canonical resolution (Co-Pilot / automation path through reduceGameAction) ----------------------------
+export interface CanonicalApproachResult {
+  ok: boolean;
+  reason: string | null;
+  success: boolean;
+  plan: ChallengeApproachPlan | null;
+  moneyDelta: number;
+  xpGain: number;
+  resolution: ApproachEffectResolution | null;
+  chainsCompleted: string[];
+}
+/** Resolve `challenge_approach` for one actor. `draw` is only called once the request is valid. Mutates nothing. */
+export function resolveCanonicalChallengeApproach(actor: ApproachActorLike, params: { challengeId?: unknown; approachId?: unknown; wager?: unknown } | null | undefined, draw: () => number, world?: { weather?: string; season?: string; activeEvents?: unknown }): CanonicalApproachResult {
+  const fail = (reason: string): CanonicalApproachResult => ({ ok: false, reason, success: false, plan: null, moneyDelta: 0, xpGain: 0, resolution: null, chainsCompleted: [] });
+  const def = typeof params?.challengeId === 'string' ? getChallengeDefinition(params.challengeId) : null;
+  if (!def) return fail('Unknown challenge');
+  const approach = def.approaches.find(a => a.id === params?.approachId);
+  if (!approach) return fail('Unknown approach');
+  if (actor.currentRegion && actor.currentRegion !== def.region) return fail(`You must be in ${def.region}`);
+  const completed = Array.isArray(actor.challengesCompleted) ? actor.challengesCompleted : [];
+  if (!isChallengeDefinitionVisible(def, completed, sanitizeUnlockedChallengeIds(actor.unlockedChallengeIds))) return fail('Challenge is still locked');
+  if ((actor.completedThisSeason || []).includes(def.name)) return fail('Already completed this season');
+  const wager = Math.max(MINIMUM_WAGER, Math.floor(Number(params?.wager) || MINIMUM_WAGER));
+  const money = Number(actor.money) || 0;
+  if (money < wager + approach.upfrontCost) return fail('Not enough money for the wager and fee');
+  const legacyType = LEGACY_TYPE_FOR_TAG[def.type];
+  const weatherMod = world?.weather ? Number(WEATHER_EFFECTS[world.weather]?.challengeModifier?.[legacyType]) || 0 : 0;
+  const seasonMod = world?.season ? Number(SEASON_EFFECTS[world.season]?.challengeModifier?.[legacyType]) || 0 : 0;
+  const eventBonus = regionalEventChallengeBonus(world?.activeEvents, def.region, legacyType);
+  const plan = buildChallengeApproachPlan(def, approach, { stats: getActorStats(actor), characterName: actor.character?.name || null, level: actor.level || 0, situational: weatherMod + seasonMod + eventBonus, eventBonus, reputation: getActorRegionalReputation(actor, def.region), debuffs: actor.debuffs || [], wager });
+  const success = draw() < plan.successChance;
+  const resolution = resolveApproachSideEffects(plan, success);
+  let moneyDelta = -approach.upfrontCost;
+  let xpGain = 0;
+  let chainsCompleted: string[] = [];
+  if (success) {
+    const mastery = (actor.challengeMastery?.[def.name] || 0) + 1;
+    const core = computeChallengeRewardCore({ wager, rewardMultiplier: plan.rewardMultiplier, characterName: actor.character?.name || null, luckyStreak: Boolean(actor.masteryUnlocks?.includes('Lucky Streak')), consecutiveWins: actor.consecutiveWins || 0, masteryCount: mastery });
+    moneyDelta += core.reward;
+    xpGain = def.difficulty * 20;
+    chainsCompleted = newlyCompletedChains(completed, [...completed, def.name]).map(c => c.id);
+    chainsCompleted.forEach(id => { moneyDelta += CHALLENGE_CHAIN_BY_ID[id].completionReward.money; });
+  } else {
+    moneyDelta -= plan.failureLoss;
+  }
+  return { ok: true, reason: null, success, plan, moneyDelta, xpGain, resolution, chainsCompleted };
+}
+
+// ---- Co-Pilot -----------------------------------------------------------------------------------------------
+/** Situational odds terms the module-level Co-Pilot can see (weather, season and regional events). */
+export function approachSituationalFromWorld(world: { weather?: unknown; season?: unknown; activeEvents?: unknown } | null | undefined, region: string, legacyType: string): { situational: number; eventBonus: number } {
+  const w = world && typeof world.weather === 'string' ? Number(WEATHER_EFFECTS[world.weather]?.challengeModifier?.[legacyType]) || 0 : 0;
+  const s = world && typeof world.season === 'string' ? Number(SEASON_EFFECTS[world.season]?.challengeModifier?.[legacyType]) || 0 : 0;
+  const e = regionalEventChallengeBonus(world?.activeEvents, region, legacyType);
+  return { situational: w + s + e, eventBonus: e };
+}
+/** Up to two `challenge_approach` candidates: the best approach (by expected value) for the best challenges in the actor's region. */
+export function buildCoPilotApproachCandidates(i: { actor: ApproachActorLike & { id?: string }; world: { weather?: unknown; season?: unknown; activeEvents?: unknown } | null | undefined; cash: number; reserve: number; apRemaining: number; makeId: (catIdx: number, slug: string) => string }): CoPilotActionCandidate[] {
+  const region = String(i.actor.currentRegion || '');
+  if (!isChallengeRegionCode(region)) return [];
+  const completed = Array.isArray(i.actor.challengesCompleted) ? i.actor.challengesCompleted : [];
+  const season = i.actor.completedThisSeason || [];
+  const defs = listRegionChallengeDefinitions(region, { settings: { challengeApproachesEnabled: true }, completedNames: completed, unlockedIds: sanitizeUnlockedChallengeIds(i.actor.unlockedChallengeIds) }).filter(d => !season.includes(d.name));
+  const spendable = Math.max(0, i.cash - i.reserve);
+  const wager = Math.max(MINIMUM_WAGER, Math.min(300, Math.round(spendable * 0.15)));
+  const options = defs.map(def => {
+    const legacyType = LEGACY_TYPE_FOR_TAG[def.type];
+    const world = approachSituationalFromWorld(i.world, region, legacyType);
+    const plans = buildAllApproachPlans(def, { stats: getActorStats(i.actor), characterName: i.actor.character?.name || null, level: i.actor.level || 0, situational: world.situational, eventBonus: world.eventBonus, reputation: getActorRegionalReputation(i.actor, region), debuffs: i.actor.debuffs || [], wager });
+    const choice = chooseAiApproach(plans, 0);
+    return choice ? { def, plan: choice.plan } : null;
+  }).filter((x): x is { def: ChallengeDefinition; plan: ChallengeApproachPlan } => Boolean(x))
+    .sort((a, b) => b.plan.expectedValue - a.plan.expectedValue || a.def.id.localeCompare(b.def.id))
+    .slice(0, 2);
+  return options.map(({ def, plan }) => {
+    const chainNote = chainStepNote(def, completed);
+    const blocker = spendable < wager + plan.upfrontCost ? 'Not enough spare cash above your reserve for the wager and fee' : i.apRemaining <= 0 ? 'No action points left this turn' : null;
+    return {
+      id: i.makeId(5, `approach_${def.id}_${plan.approachId}`),
+      category: 'challenges',
+      categoryIndex: 5,
+      categoryName: 'Challenge / Quest Execution',
+      title: `Attempt ${def.name} — ${plan.label} (${Math.round(plan.successChance * 100)}%)`,
+      description: `${APPROACH_STYLE_ICON[plan.style]} ${APPROACH_STYLE_LABEL[plan.style]} approach using ${CHALLENGE_STAT_LABEL[plan.stat]}: ×${plan.rewardMultiplier}, failure costs $${plan.failureLoss}${plan.upfrontCost ? `, fee $${plan.upfrontCost}` : ''}.${chainNote ? ` ${chainNote}.` : ''}`,
+      actionType: 'challenge_approach',
+      apCost: 1,
+      costEstimate: wager + plan.upfrontCost,
+      expectedOutcome: `${Math.round(plan.successChance * 100)}% to win $${plan.basePayout}; ${plan.effectLines.slice(3).join('; ') || 'no side effects'}`,
+      utilityScore: Math.max(40, Math.min(95, Math.round(60 + plan.expectedValue / 10 + (chainNote ? 8 : 0)))),
+      riskFactor: Math.round((1 - plan.successChance) * 100),
+      rewardScore: Math.max(10, Math.min(100, Math.round(plan.rewardMultiplier * 30))),
+      longTermScore: chainNote ? 80 : 55,
+      expectedStateDelta: { cashDelta: Math.round(plan.expectedValue), apDelta: -1, standingDelta: 2 },
+      isValid: !blocker,
+      invalidationReason: blocker || undefined,
+      targetId: def.id,
+      parameters: { challengeId: def.id, approachId: plan.approachId, wager, region }
+    };
+  });
+}
+
+// ---- Ask-the-Game ------------------------------------------------------------------------------------------------
+export type ChallengeAdvisorTopic = 'approach' | 'chains' | 'reputation';
+export function detectChallengeAdvisorQuery(raw: string): ChallengeAdvisorTopic | null {
+  const q = ` ${String(raw || '').toLowerCase().replace(/[?!.,]/g, ' ').replace(/\s+/g, ' ').trim()} `;
+  if (/\breputation\b|\bstanding with (the )?locals\b|\bhow do (the )?locals see me\b/.test(q)) return 'reputation';
+  if (/\b(challenge )?chains?\b|\bfollow[- ]?ups?\b|\bunlock(s|ed)? (a |the |any )?(challenge|follow)/.test(q)) return 'chains';
+  if (/\bapproach(es)?\b|\bbest way to\b|\bhow should i (do|tackle|attempt|take|approach)\b|\bwhich way should\b/.test(q)) return 'approach';
+  if (/\bchallenge(s)?\b/.test(q) && /\b(best|which|should|safest|riskiest)\b/.test(q)) return 'approach';
+  return null;
+}
+export interface ChallengeAdvisorContext {
+  actor: ApproachActorLike;
+  region: string;
+  world?: { weather?: unknown; season?: unknown; activeEvents?: unknown } | null;
+  wager: number;
+}
+export function buildChallengeAdvisorAnswer(query: string, topic: ChallengeAdvisorTopic, ctx: ChallengeAdvisorContext): GameIntelligenceAnswer {
+  const completed = Array.isArray(ctx.actor.challengesCompleted) ? ctx.actor.challengesCompleted : [];
+  const season = ctx.actor.completedThisSeason || [];
+  const unlocked = sanitizeUnlockedChallengeIds(ctx.actor.unlockedChallengeIds);
+  const lines: string[] = [];
+  const evidence: GameIntelligenceEvidence[] = [];
+  let title = '';
+  if (topic === 'reputation') {
+    title = 'Your regional reputation';
+    CHALLENGE_REGION_CODES.forEach(r => {
+      const rep = getActorRegionalReputation(ctx.actor, r);
+      const band = reputationBand(rep);
+      lines.push(`${r}: ${rep}/100 (${band.label}) — challenge odds ${pct(reputationOddsBonus(rep))}, shop prices ${pct(reputationPriceMultiplier(rep) - 1)}, regional events ×${reputationFavourableEventFactor(rep).toFixed(2)} when they help you.`);
+    });
+    lines.push('Reputation rises with successful challenges (+2 each) and with social approaches; reckless failures can cost it.');
+    evidence.push({ source: 'Challenge Decision System', detail: 'Reputation stored on your character (missing regions count as 50).' });
+  } else if (topic === 'chains') {
+    title = 'Challenge chains';
+    CHALLENGE_CHAINS.forEach(c => {
+      const p = computeChainProgress(c, completed);
+      const next = p.nextChallengeId ? getChallengeDefinition(p.nextChallengeId) : null;
+      lines.push(`${c.icon} ${c.title}: ${p.completed ? 'complete ✅' : `${p.stepsDone}/${p.total}${next ? ` — next: ${next.name} (${next.region})` : ''}`} · reward $${c.completionReward.money}`);
+    });
+    const secrets = CHALLENGE_FOLLOW_UPS.filter(d => !chainsForChallenge(d.id).length);
+    lines.push(`Some approaches unlock secret follow-ups too (${secrets.filter(d => unlocked.includes(d.id)).length}/${secrets.length} found).`);
+    evidence.push({ source: 'Challenge Decision System', detail: 'Chain progress counts leading steps you have completed at least once.' });
+  } else {
+    const region = isChallengeRegionCode(ctx.region) ? ctx.region : null;
+    title = region ? `Best approaches in ${region}` : 'Best approaches';
+    const defs = region ? listRegionChallengeDefinitions(region, { settings: { challengeApproachesEnabled: true }, completedNames: completed, unlockedIds: unlocked }).filter(d => !season.includes(d.name)) : [];
+    if (!defs.length) lines.push('No open challenges here right now — travel to a region with challenges you have not completed this season.');
+    defs.forEach(def => {
+      const legacyType = LEGACY_TYPE_FOR_TAG[def.type];
+      const w = approachSituationalFromWorld(ctx.world, def.region, legacyType);
+      const plans = buildAllApproachPlans(def, { stats: getActorStats(ctx.actor), characterName: ctx.actor.character?.name || null, level: ctx.actor.level || 0, situational: w.situational, eventBonus: w.eventBonus, reputation: getActorRegionalReputation(ctx.actor, def.region), debuffs: ctx.actor.debuffs || [], wager: ctx.wager });
+      const best = chooseAiApproach(plans, 0);
+      if (!best) return;
+      const others = plans.filter(p => p.approachId !== best.plan.approachId).map(p => `${p.label} ${Math.round(p.successChance * 100)}% ×${p.rewardMultiplier}`).join('; ');
+      const note = chainStepNote(def, completed);
+      lines.push(`${def.name}: best is “${best.plan.label}” (${CHALLENGE_STAT_LABEL[best.plan.stat]}, ${Math.round(best.plan.successChance * 100)}%, ×${best.plan.rewardMultiplier}${best.plan.upfrontCost ? `, fee $${best.plan.upfrontCost}` : ''}). Others: ${others}.${note ? ` ${note}.` : ''}`);
+    });
+    lines.push('Bold approaches pay most but risk debuffs; steady ones cost a fee and lose less; social ones build regional reputation.');
+    evidence.push({ source: 'Challenge Decision System', detail: `Odds from your stats, level, reputation, conditions, weather, season and events at a $${ctx.wager} wager.` });
+  }
+  return { id: nextIntelligenceAnswerId('chal'), query, kind: 'next_step', title, lines: lines.slice(0, 14), evidence, buttons: [], sourceSystems: ['Challenge Decision System'], grounded: true };
+}
+
+// ---- UI ----------------------------------------------------------------------------------------------------------
+export interface ChallengeApproachTheme { card: string; border: string; button: string; buttonSecondary: string }
+
+export const RegionReputationBar = React.memo(function RegionReputationBar(props: { region: string; reputation: number; conditions?: readonly ApproachDebuffLike[] | null }) {
+  const band = reputationBand(props.reputation);
+  const color = band.tone === 'good' ? 'bg-emerald-500' : band.tone === 'info' ? 'bg-sky-500' : band.tone === 'warn' ? 'bg-amber-500' : 'bg-red-500';
+  const active = (props.conditions || []).filter(d => isChallengeDebuffId(d.type) && d.remainingDays > 0);
+  return (
+    <div className="mb-4" data-testid="region-reputation" data-reputation={props.reputation}>
+      <div className="flex items-center justify-between text-sm font-bold mb-1">
+        <span>⭐ Reputation in {props.region}</span>
+        <span className="text-xs opacity-80">{props.reputation}/100 · {band.label}</span>
+      </div>
+      <div className="w-full h-2 rounded bg-black/30 overflow-hidden" role="meter" aria-label={`Reputation in ${props.region}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={props.reputation}>
+        <div className={`h-2 ${color}`} style={{ width: `${props.reputation}%` }} />
+      </div>
+      <div className="text-[11px] opacity-70 mt-1">Odds {pct(reputationOddsBonus(props.reputation))} · shop prices {pct(reputationPriceMultiplier(props.reputation) - 1)} · helpful events ×{reputationFavourableEventFactor(props.reputation).toFixed(2)}</div>
+      {active.length > 0 && <div className="text-[11px] mt-1" data-testid="approach-conditions">{active.map(d => `${CHALLENGE_DEBUFFS[d.type as ChallengeDebuffId].icon} ${CHALLENGE_DEBUFFS[d.type as ChallengeDebuffId].label} (${d.remainingDays}d)`).join(' · ')}</div>}
+    </div>
+  );
+});
+
+export interface ChallengeApproachPickerProps {
+  definition: ChallengeDefinition;
+  plans: readonly ChallengeApproachPlan[];
+  stats: { strength: number; charisma: number; luck: number; intelligence: number };
+  wager: number;
+  minWager: number;
+  maxWager: number;
+  money: number;
+  canAct: boolean;
+  chainNote: string | null;
+  reputation: number;
+  conditions?: readonly ApproachDebuffLike[] | null;
+  theme: ChallengeApproachTheme;
+  onWagerChange: (wager: number) => void;
+  onChoose: (approachId: string) => void;
+  onClose: () => void;
+}
+export const ChallengeApproachPicker = React.memo(function ChallengeApproachPicker(p: ChallengeApproachPickerProps) {
+  const best = chooseAiApproach(p.plans, 0);
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50" role="dialog" aria-modal="true" aria-label={`Choose how to attempt ${p.definition.name}`} data-testid="approach-picker" onClick={p.onClose}>
+      <div className={`${p.theme.card} ${p.theme.border} border rounded-xl p-5 max-w-3xl w-full max-h-[calc(100dvh-2rem)] overflow-y-auto`} onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start gap-3 mb-2">
+          <div>
+            <h3 className="text-xl font-bold">🎯 {p.definition.name}</h3>
+            <div className="text-xs opacity-75">{p.definition.region} · {'⭐'.repeat(p.definition.difficulty)} · {p.definition.type}{p.definition.blurb ? ` · ${p.definition.blurb}` : ''}</div>
+            {p.chainNote && <div className="text-xs mt-1 text-amber-300" data-testid="approach-chain-note">{p.chainNote}</div>}
+          </div>
+          <button type="button" onClick={p.onClose} className={`${p.theme.buttonSecondary} px-3 py-1 rounded`} aria-label="Close approach picker">✕</button>
+        </div>
+        <div className="flex items-center gap-2 text-sm mb-3">
+          <label htmlFor="approach-wager" className="font-semibold">Wager</label>
+          <input id="approach-wager" type="range" min={p.minWager} max={Math.max(p.minWager, p.maxWager)} value={Math.min(Math.max(p.wager, p.minWager), Math.max(p.minWager, p.maxWager))} onChange={e => p.onWagerChange(parseInt(e.target.value, 10) || p.minWager)} className="flex-1" aria-label="Wager amount" />
+          <span className="font-bold w-16 text-right">${p.wager}</span>
+          <span className="text-xs opacity-70">· reputation {p.reputation}/100</span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {p.plans.map(plan => {
+            const affordable = p.money >= plan.wager + plan.upfrontCost;
+            const isBest = best?.plan.approachId === plan.approachId;
+            return (
+              <div key={plan.approachId} className={`${p.theme.border} border rounded-lg p-3 flex flex-col ${isBest ? 'ring-2 ring-emerald-400/60' : ''}`} data-testid={`approach-${plan.approachId}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold">{plan.label}</span>
+                  <span className="text-[10px] uppercase tracking-wide opacity-80">{APPROACH_STYLE_ICON[plan.style]} {APPROACH_STYLE_LABEL[plan.style]}</span>
+                </div>
+                <div className="text-xs opacity-80 mt-1">{plan.description}</div>
+                <div className="mt-2 inline-flex items-center gap-1 self-start rounded px-2 py-0.5 text-xs font-bold bg-sky-500/20 text-sky-200" data-testid="approach-stat">{CHALLENGE_STAT_ICON[plan.stat]} {CHALLENGE_STAT_LABEL[plan.stat]} {p.stats[plan.stat]}</div>
+                <div className={`text-2xl font-black mt-2 ${plan.successChance >= 0.5 ? 'text-emerald-400' : 'text-amber-400'}`} data-testid="approach-odds">{Math.round(plan.successChance * 100)}%</div>
+                <ul className="text-xs mt-1 space-y-0.5 list-disc list-inside">
+                  {plan.effectLines.map((l, idx) => <li key={idx}>{l}</li>)}
+                </ul>
+                <details className="text-xs mt-2">
+                  <summary className="cursor-pointer underline opacity-80">Why these odds?</summary>
+                  <ul className="mt-1 space-y-0.5">{plan.odds.lines.map((l, idx) => <li key={idx}>{l}</li>)}</ul>
+                </details>
+                <div className="flex-1" />
+                <button type="button" disabled={!p.canAct || !affordable} onClick={() => p.onChoose(plan.approachId)} className={`${p.theme.button} text-white px-3 py-2 rounded-lg mt-3 disabled:opacity-50`} data-testid={`approach-choose-${plan.approachId}`}>
+                  {affordable ? `${plan.label} ($${plan.wager}${plan.upfrontCost ? ` + $${plan.upfrontCost} fee` : ''})` : 'Not enough money'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        {(p.conditions || []).some(d => isChallengeDebuffId(d.type) && d.remainingDays > 0) && (
+          <div className="text-xs mt-3 opacity-80" data-testid="approach-picker-conditions">Active conditions: {(p.conditions || []).filter(d => isChallengeDebuffId(d.type) && d.remainingDays > 0).map(d => `${CHALLENGE_DEBUFFS[d.type as ChallengeDebuffId].icon} ${CHALLENGE_DEBUFFS[d.type as ChallengeDebuffId].label} (${d.remainingDays}d) — ${CHALLENGE_DEBUFFS[d.type as ChallengeDebuffId].description}`).join(' · ')}</div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+// ---- Self-tests (cd01–cd40) -----------------------------------------------------------------------------------
+export function runV96ChallengeDecisionSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const stats3 = { strength: 3, charisma: 3, luck: 3, intelligence: 3 };
+  const legacyAll = CHALLENGE_REGION_CODES.flatMap(code => readLegacyRegionChallenges(code).map(c => ({ code, c })));
+  const validItems = new Set(Object.values(REGIONAL_RESOURCES).flat());
+  const blue = getChallengeDefinitionByName('Tour the Blue Mountains');
+  const ctx = (o: Partial<ApproachPlanContext> = {}): ApproachPlanContext => ({ stats: stats3, characterName: null, level: 1, situational: 0, eventBonus: 0, reputation: 50, debuffs: [], wager: 200, ...o });
+
+  check('cd01_legacy_registry', '32 legacy challenges converted with 2–3 approaches and unique ids', () => {
+    const ids = new Set(LEGACY_CHALLENGE_DEFINITIONS.map(d => d.id));
+    const bad = LEGACY_CHALLENGE_DEFINITIONS.filter(d => d.approaches.length < 2 || d.approaches.length > 3);
+    return (LEGACY_CHALLENGE_DEFINITIONS.length === 32 && ids.size === 32 && bad.length === 0) || `n=${LEGACY_CHALLENGE_DEFINITIONS.length} ids=${ids.size} bad=${bad.map(d => d.id).join(',')}`;
+  });
+  check('cd02_converter_roundtrip', 'toLegacyChallenge(toChallengeDefinition(x)) keeps name, difficulty, reward and type for all 32', () => {
+    const bad = legacyAll.filter(({ code, c }) => { const l = toLegacyChallenge(toChallengeDefinition(code, c)); return l.name !== c.name || l.difficulty !== c.difficulty || l.reward !== c.reward || l.type !== c.type; });
+    return bad.length === 0 || bad.map(b => b.c.name).join(', ');
+  });
+  check('cd03_all_authored', 'Every V9.5 challenge has hand-written approaches (none synthesized)', () => {
+    const missing = legacyAll.filter(({ c }) => !LEGACY_CHALLENGE_APPROACHES[c.name]);
+    const extra = Object.keys(LEGACY_CHALLENGE_APPROACHES).filter(n => !legacyAll.some(x => x.c.name === n));
+    return (missing.length === 0 && extra.length === 0) || `missing=${missing.map(m => m.c.name).join(',')} extra=${extra.join(',')}`;
+  });
+  const allDefs = allRegisteredChallengeDefinitions();
+  check('cd04_approach_fields_valid', 'Approach stats, styles, rewards, fees and failure shares are valid; ids unique per challenge', () => {
+    const bad: string[] = [];
+    allDefs.forEach(d => {
+      const ids = new Set(d.approaches.map(a => a.id));
+      if (ids.size !== d.approaches.length) bad.push(`${d.id}:dup`);
+      d.approaches.forEach(a => {
+        if (!CHALLENGE_STATS.includes(a.stat) || !(a.style in APPROACH_STYLE_LABEL) || !(a.rewardMultiplier >= 1 && a.rewardMultiplier <= 4) || !(a.failureWagerShare >= 0 && a.failureWagerShare <= 1) || a.upfrontCost < 0 || Math.abs(a.difficultyShift) > 1 || !a.label || !a.description) bad.push(`${d.id}.${a.id}`);
+      });
+    });
+    return bad.length === 0 || bad.slice(0, 6).join(', ');
+  });
+  check('cd05_side_effect_refs', 'Side effects reference real regions, sellable items, known debuffs and existing unlock targets', () => {
+    const bad: string[] = [];
+    allDefs.forEach(d => d.approaches.forEach(a => a.sideEffects.forEach(fx => {
+      if (fx.kind === 'reputation' && !isChallengeRegionCode(fx.region)) bad.push(`${d.id}.${a.id}:region`);
+      if (fx.kind === 'item' && !validItems.has(fx.item)) bad.push(`${d.id}.${a.id}:item ${fx.item}`);
+      if (fx.kind === 'debuff' && (!isChallengeDebuffId(fx.debuff) || fx.days < 1)) bad.push(`${d.id}.${a.id}:debuff`);
+      if (fx.kind === 'unlock' && !getChallengeDefinition(fx.challengeId)) bad.push(`${d.id}.${a.id}:unlock ${fx.challengeId}`);
+    })));
+    return bad.length === 0 || bad.slice(0, 6).join(', ');
+  });
+  check('cd06_follow_ups', 'Follow-ups are hidden, unique, in valid regions and either chain steps or unlock targets', () => {
+    const unlockTargets = new Set(allDefs.flatMap(d => d.approaches.flatMap(a => a.sideEffects.filter(fx => fx.kind === 'unlock').map(fx => fx.kind === 'unlock' ? fx.challengeId : ''))));
+    const bad = CHALLENGE_FOLLOW_UPS.filter(d => !d.hiddenUntilUnlocked || !isChallengeRegionCode(d.region) || (!chainsForChallenge(d.id).length && !unlockTargets.has(d.id)));
+    const names = new Set(allDefs.map(d => d.name));
+    return (bad.length === 0 && names.size === allDefs.length && CHALLENGE_FOLLOW_UPS.length >= 12) || `bad=${bad.map(b => b.id).join(',')} names=${names.size}/${allDefs.length}`;
+  });
+  check('cd07_chains', '≥8 chains, every step exists, step 1 is a V9.5 challenge, ≥4 cross regions', () => {
+    const legacyIds = new Set(LEGACY_CHALLENGE_DEFINITIONS.map(d => d.id));
+    const bad = CHALLENGE_CHAINS.filter(c => c.steps.length < 2 || !legacyIds.has(c.steps[0]) || c.steps.some(s => !getChallengeDefinition(s)));
+    const cross = CHALLENGE_CHAINS.filter(c => new Set(c.steps.map(s => getChallengeDefinition(s)?.region)).size > 1).length;
+    return (CHALLENGE_CHAINS.length >= 8 && bad.length === 0 && cross >= 4) || `chains=${CHALLENGE_CHAINS.length} bad=${bad.map(b => b.id).join(',')} cross=${cross}`;
+  });
+  check('cd08_odds_parity', 'Neutral approach odds equal computeChallengeSuccessChanceCore for every V9.5 challenge and several stat lines', () => {
+    const profiles = [stats3, { strength: 5, charisma: 2, luck: 4, intelligence: 6 }, { strength: 9, charisma: 9, luck: 9, intelligence: 9 }];
+    const bad: string[] = [];
+    legacyAll.forEach(({ c }) => profiles.forEach((st, pi) => [0, 3].forEach(level => ['Tourist', 'Explorer'].forEach(ch => {
+      const core = computeChallengeSuccessChanceCore({ difficulty: c.difficulty, type: c.type, stats: st, characterName: ch, level, weatherEffect: 0.05, eventBonus: 0.1 });
+      const mine = computeApproachOdds({ difficulty: c.difficulty, stat: legacyStatForType(c.type), stats: st, characterName: ch, level, situational: 0.15, eventBonus: 0.1, reputation: 50 }).final;
+      if (Math.abs(core - mine) > 1e-9) bad.push(`${c.name}/p${pi}/l${level}/${ch}`);
+    }))));
+    return bad.length === 0 || bad.slice(0, 4).join(', ');
+  });
+  check('cd09_stat_drives_odds', 'A higher approach stat raises the odds', () => {
+    const lo = computeApproachOdds({ difficulty: 2, stat: 'strength', stats: { ...stats3, strength: 2 } }).final;
+    const hi = computeApproachOdds({ difficulty: 2, stat: 'strength', stats: { ...stats3, strength: 8 } }).final;
+    return hi > lo || `${lo} vs ${hi}`;
+  });
+  check('cd10_difficulty_shift', 'A harder approach (positive shift) lowers the odds; an easier one raises them', () => {
+    const base = computeApproachOdds({ difficulty: 2, stat: 'luck', stats: stats3 }).final;
+    const hard = computeApproachOdds({ difficulty: 2, stat: 'luck', stats: stats3, difficultyShift: 0.5 }).final;
+    const easy = computeApproachOdds({ difficulty: 2, stat: 'luck', stats: stats3, difficultyShift: -0.5 }).final;
+    return (hard < base && easy > base) || `${hard} ${base} ${easy}`;
+  });
+  check('cd11_reputation_odds', 'Reputation moves odds by at most ±10% (0 → −10%, 50 → 0, 100 → +10%)', () =>
+    (Math.abs(reputationOddsBonus(0) + 0.1) < 1e-9 && reputationOddsBonus(50) === 0 && Math.abs(reputationOddsBonus(100) - 0.1) < 1e-9 && reputationOddsBonus(250) === reputationOddsBonus(100)) || 'bonus wrong');
+  check('cd12_clamps', 'Odds clamp to [10%, cap] with the cap honoured', () => {
+    const floor = computeApproachOdds({ difficulty: 3, stat: 'charisma', stats: { ...stats3, charisma: 1 }, difficultyShift: 1, reputation: 0, debuffs: [{ type: 'exhaustion', remainingDays: 1 }, { type: 'bad_press', remainingDays: 1 }] });
+    const ceil = computeApproachOdds({ difficulty: 1, stat: 'charisma', stats: { ...stats3, charisma: 20 }, level: 10, cap: 0.98 });
+    return (floor.final === 0.1 && floor.clamped === 'floor' && ceil.final === 0.98 && ceil.clamped === 'ceiling') || `${floor.final} ${ceil.final}`;
+  });
+  check('cd13_debuffs', 'Injury hits only Strength, bad press only Charisma, exhaustion everything', () => {
+    const d = (type: string) => [{ type, remainingDays: 2 }];
+    return (approachDebuffPenalty(d('injury'), 'strength') === 0.1 && approachDebuffPenalty(d('injury'), 'luck') === 0 && approachDebuffPenalty(d('bad_press'), 'charisma') === 0.08 && approachDebuffPenalty(d('bad_press'), 'strength') === 0 && approachDebuffPenalty(d('exhaustion'), 'intelligence') === 0.05 && approachDebuffPenalty([{ type: 'injury', remainingDays: 0 }], 'strength') === 0) || 'penalties wrong';
+  });
+  check('cd14_why_lines', '"Why these odds" lists base, stat and difficulty, plus reputation and conditions when they apply', () => {
+    const b = computeApproachOdds({ difficulty: 2, stat: 'intelligence', stats: stats3, reputation: 80, debuffs: [{ type: 'exhaustion', remainingDays: 1 }] });
+    return (b.lines[0].startsWith('Base') && b.lines.some(l => l.includes('Intelligence')) && b.lines.some(l => l.startsWith('Difficulty')) && b.lines.some(l => l.includes('reputation')) && b.lines.some(l => l.startsWith('Conditions'))) || b.lines.join(' | ');
+  });
+  check('cd15_plan_money', 'Plan money: payout floor(w×m), loss round(w×share), EV and volatility consistent', () => {
+    if (!blue) return 'Blue Mountains missing';
+    const guide = blue.approaches.find(a => a.id === 'guide');
+    if (!guide) return 'guide missing';
+    const plan = buildChallengeApproachPlan(blue, guide, ctx({ wager: 250 }));
+    const ev = plan.successChance * plan.basePayout - (1 - plan.successChance) * plan.failureLoss - plan.upfrontCost;
+    return (plan.basePayout === Math.floor(250 * guide.rewardMultiplier) && plan.failureLoss === Math.round(250 * guide.failureWagerShare) && Math.abs(plan.expectedValue - ev) < 1e-9 && plan.volatility > 0 && plan.upfrontCost === 100) || JSON.stringify([plan.basePayout, plan.failureLoss, plan.expectedValue]);
+  });
+  check('cd16_side_effect_triggers', 'Success effects fire on success only, failure effects on failure only', () => {
+    if (!blue) return 'missing';
+    const hike = buildChallengeApproachPlan(blue, blue.approaches[0], ctx());
+    const s = resolveApproachSideEffects(hike, true); const f = resolveApproachSideEffects(hike, false);
+    return (s.debuffs.length === 0 && f.debuffs.length === 1 && f.debuffs[0].debuff === 'injury' && f.debuffs[0].days === 2) || JSON.stringify([s.debuffs, f.debuffs]);
+  });
+  check('cd17_base_reputation', 'Every success adds +2 reputation in the challenge region; failures add none by default', () => {
+    if (!blue) return 'missing';
+    const plan = buildChallengeApproachPlan(blue, blue.approaches[2], ctx());
+    const s = resolveApproachSideEffects(plan, true); const f = resolveApproachSideEffects(plan, false);
+    return (s.reputation.NSW === 6 && f.reputation.NSW === undefined) || JSON.stringify([s.reputation, f.reputation]);
+  });
+  check('cd18_apply_reputation', 'applyReputationDeltas defaults to 50 and clamps to 0–100', () => {
+    const r = applyReputationDeltas({ NSW: 98, QLD: 3 }, { NSW: 9, QLD: -10, VIC: 4 });
+    return (r.NSW === 100 && r.QLD === 0 && r.VIC === 54) || JSON.stringify(r);
+  });
+  check('cd19_sanitize_reputation', 'sanitizeRegionalReputation drops unknown regions and non-numbers', () => {
+    const r = sanitizeRegionalReputation({ NSW: 70.4, XYZ: 5, QLD: 'high', TAS: 140, VIC: Number.NaN });
+    return (JSON.stringify(r) === JSON.stringify({ NSW: 70, TAS: 100 }) && JSON.stringify(sanitizeRegionalReputation(null)) === '{}') || JSON.stringify(r);
+  });
+  check('cd20_shop_prices', 'Shop multiplier 0.9 at 100, 1.0 at 50, 1.1 at 0; unchanged while approaches are off', () => {
+    const a = { regionalReputation: { NSW: 100 } };
+    return (Math.abs(reputationPriceMultiplier(100) - 0.9) < 1e-9 && reputationPriceMultiplier(50) === 1 && Math.abs(reputationPriceMultiplier(0) - 1.1) < 1e-9 && applyReputationToShopPrice(200, a, 'NSW', { challengeApproachesEnabled: false }) === 200 && applyReputationToShopPrice(200, a, 'NSW', { challengeApproachesEnabled: true }) === 180) || 'shop wrong';
+  });
+  check('cd21_event_scaling', 'Event scaling is exactly 1× at reputation 50; helpful effects grow and harmful ones shrink with reputation', () =>
+    (Math.abs(scaleFavourableEventMultiplier(1.4, 50) - 1.4) < 1e-12 && Math.abs(scaleAdverseEventMultiplier(1.4, 50) - 1.4) < 1e-12 && scaleFavourableEventMultiplier(1.4, 100) > 1.4 && scaleAdverseEventMultiplier(1.4, 100) < 1.4 && scaleAdverseEventMultiplier(1.4, 0) > 1.4) || 'scaling wrong');
+  check('cd22_chain_visibility', 'Hidden chain steps appear only after the steps before them are done', () => {
+    const lady = getChallengeDefinition('qld_night_snorkel_at_lady_elliot_island');
+    if (!lady) return 'missing';
+    const before = isChallengeDefinitionVisible(lady, [], []);
+    const after = isChallengeDefinitionVisible(lady, ['Tour Great Barrier Reef'], []);
+    const prog = computeChainProgress(CHALLENGE_CHAIN_BY_ID.reef_to_rainforest, ['Explore Daintree Rainforest']);
+    return (!before && after && prog.stepsDone === 0 && !prog.completed) || JSON.stringify([before, after, prog]);
+  });
+  check('cd23_chain_completion_once', 'newlyCompletedChains reports a chain exactly when its last step completes', () => {
+    const steps = ['Visit Uluru', 'Kings Canyon Rim Walk'];
+    const done = newlyCompletedChains(steps, [...steps, 'Cross the Lake Eyre salt flats']).map(c => c.id);
+    const again = newlyCompletedChains([...steps, 'Cross the Lake Eyre salt flats'], [...steps, 'Cross the Lake Eyre salt flats', 'Visit Uluru']).map(c => c.id);
+    return (done.join(',') === 'red_centre_odyssey' && again.length === 0) || JSON.stringify([done, again]);
+  });
+  check('cd24_unlock_effect', 'An unlock side effect makes its secret challenge visible', () => {
+    const gc = getChallengeDefinition('nsw_walk_the_grand_canyon_track');
+    if (!gc || !blue) return 'missing';
+    const plan = buildChallengeApproachPlan(blue, blue.approaches[1], ctx());
+    const patch = applyApproachResolutionToActor({ unlockedChallengeIds: [] }, resolveApproachSideEffects(plan, true));
+    return (!isChallengeDefinitionVisible(gc, [], []) && isChallengeDefinitionVisible(gc, [], patch.unlockedChallengeIds)) || JSON.stringify(patch.unlockedChallengeIds);
+  });
+  check('cd25_region_list_flag', 'Region list: flag off = the V9.5 four (same names); on adds only visible follow-ups', () => {
+    const off = listRegionChallengeDefinitions('NT', { settings: { challengeApproachesEnabled: false }, completedNames: ['Visit Uluru'], unlockedIds: [] }).map(d => d.name);
+    const on = listRegionChallengeDefinitions('NT', { settings: { challengeApproachesEnabled: true }, completedNames: ['Visit Uluru'], unlockedIds: [] }).map(d => d.name);
+    const legacy = readLegacyRegionChallenges('NT').map(c => c.name);
+    return (JSON.stringify(off) === JSON.stringify(legacy) && on.length === 5 && on.includes('Kings Canyon Rim Walk') && !on.includes('Arnhem Land rock-art walk with a ranger')) || JSON.stringify([off, on]);
+  });
+  check('cd26_appetite', 'Risk appetite: aggressive > balanced > saver; money-focused lowers it; rivalry raises it; bounded ±1', () => {
+    const ag = deriveApproachRiskAppetite({ personality: 'aggressive' }); const ba = deriveApproachRiskAppetite({ personality: 'balanced' }); const sa = deriveApproachRiskAppetite({ personality: 'saver' });
+    const money = deriveApproachRiskAppetite({ aiStrategy: 'money-focused' }); const riv = deriveApproachRiskAppetite({ rivalry: 100 });
+    const extreme = deriveApproachRiskAppetite({ personality: 'aggressive', mood: 'aggressive', rivalry: 100, wealthRatio: 0.5, aiStrategy: 'challenge-focused' });
+    return (ag > ba && ba > sa && money < 0 && riv > 0 && extreme <= 1) || JSON.stringify([ag, ba, sa, money, riv, extreme]);
+  });
+  check('cd27_ai_style_choice', 'On the Blue Mountains an aggressive AI picks the high-variance hike, a saver the guide', () => {
+    if (!blue) return 'missing';
+    const plans = buildAllApproachPlans(blue, ctx({ stats: { strength: 5, charisma: 3, luck: 3, intelligence: 4 }, wager: 400 }));
+    const bold = chooseAiApproach(plans, deriveApproachRiskAppetite({ personality: 'aggressive', mood: 'aggressive', rivalry: 80 }));
+    const safe = chooseAiApproach(plans, deriveApproachRiskAppetite({ personality: 'saver', aiStrategy: 'money-focused' }));
+    const maxVol = plans.reduce((a, b) => (b.volatility > a.volatility ? b : a));
+    const minVol = plans.reduce((a, b) => (b.volatility < a.volatility ? b : a));
+    return (bold?.plan.approachId === maxVol.approachId && safe?.plan.approachId === minVol.approachId && bold.plan.approachId !== safe.plan.approachId) || JSON.stringify([bold?.plan.approachId, safe?.plan.approachId, maxVol.approachId, minVol.approachId]);
+  });
+  check('cd28_ai_deterministic', 'The AI choice is identical across repeated calls and JSON clones', () => {
+    if (!blue) return 'missing';
+    const plans = buildAllApproachPlans(blue, ctx());
+    const a = chooseAiApproach(plans, 0.3); const b = chooseAiApproach(JSON.parse(JSON.stringify(plans)) as ChallengeApproachPlan[], 0.3);
+    return (a?.plan.approachId === b?.plan.approachId && JSON.stringify(a?.scores) === JSON.stringify(b?.scores)) || 'differs';
+  });
+  check('cd29_memory_beliefs', 'Approach choices feed AI belief models: bold→aggressive, steady→economic, social→cooperative', () => {
+    const top = (style: ChallengeApproachStyle) => {
+      let m = createFreshAiMemories(['ai']);
+      for (let t = 1; t <= 6; t++) m = applyCommittedActionToAiMemories(m, { actionType: approachMemoryActionType(style), actorId: 'player', regionId: 'NSW', success: true, turn: t, summary: 's', stableKey: `k_${style}_${t}` }, [{ id: 'ai', kind: 'ai', isAi: true }]);
+      const beliefs = m.ai.opponentModels.player.beliefs;
+      return Object.values(beliefs).sort((x, y) => y.value - x.value || x.key.localeCompare(y.key))[0].key;
+    };
+    return (top('bold') === 'aggressive' && top('steady') === 'economic' && top('social') === 'cooperative' && top('clever') === 'economic') || [top('bold'), top('steady'), top('social'), top('clever')].join(',');
+  });
+  check('cd30_relationship_deltas', 'Relationship side effects change only AI observers, clamped 0–100', () => {
+    const m = applyApproachRelationshipDeltas(createFreshAiMemories(['ai', 'ally_ai']), 'player', ['ai', 'player'], [{ field: 'respect', delta: 3 }, { field: 'rivalry', delta: 150 }], 4);
+    const rel = m.ai.relationships.player;
+    return (rel.respect === 53 && rel.rivalry === 100 && !m.ally_ai.relationships.player && !m.player) || JSON.stringify(rel);
+  });
+  const actor = (o: Partial<ApproachActorLike> = {}): ApproachActorLike => ({ money: 1000, stats: stats3, level: 1, character: { name: 'Explorer' }, currentRegion: 'NSW', challengesCompleted: [], completedThisSeason: [], challengeMastery: {}, consecutiveWins: 0, debuffs: [], inventory: [], masteryUnlocks: [], ...o });
+  check('cd31_canonical_success_failure', 'Canonical resolve: success pays reward − fee; failure loses the share + fee', () => {
+    const s = resolveCanonicalChallengeApproach(actor(), { challengeId: 'nsw_tour_the_blue_mountains', approachId: 'guide', wager: 200 }, () => 0);
+    const f = resolveCanonicalChallengeApproach(actor(), { challengeId: 'nsw_tour_the_blue_mountains', approachId: 'guide', wager: 200 }, () => 0.999);
+    const reward = computeChallengeRewardCore({ wager: 200, rewardMultiplier: 1.8, characterName: 'Explorer', masteryCount: 1 }).reward;
+    return (s.ok && s.success && s.moneyDelta === reward - 100 && s.xpGain === 40 && f.ok && !f.success && f.moneyDelta === -(80 + 100) && f.resolution?.unlocks.length === 0 && s.resolution?.unlocks[0] === 'nsw_walk_the_grand_canyon_track') || JSON.stringify([s.moneyDelta, f.moneyDelta, reward]);
+  });
+  check('cd32_canonical_rejects', 'Canonical resolve rejects unknown ids, wrong region, locked follow-ups and short money — without drawing', () => {
+    let draws = 0; const d = () => { draws += 1; return 0; };
+    const r1 = resolveCanonicalChallengeApproach(actor(), { challengeId: 'nope', approachId: 'x' }, d);
+    const r2 = resolveCanonicalChallengeApproach(actor(), { challengeId: 'nsw_tour_the_blue_mountains', approachId: 'zzz' }, d);
+    const r3 = resolveCanonicalChallengeApproach(actor({ currentRegion: 'QLD' }), { challengeId: 'nsw_tour_the_blue_mountains', approachId: 'guide' }, d);
+    const r4 = resolveCanonicalChallengeApproach(actor(), { challengeId: 'nsw_walk_the_grand_canyon_track', approachId: 'loop' }, d);
+    const r5 = resolveCanonicalChallengeApproach(actor({ money: 60 }), { challengeId: 'nsw_tour_the_blue_mountains', approachId: 'guide', wager: 50 }, d);
+    return (!r1.ok && !r2.ok && !r3.ok && !r4.ok && !r5.ok && draws === 0) || JSON.stringify([r1.reason, r2.reason, r3.reason, r4.reason, r5.reason, draws]);
+  });
+  check('cd33_reducer_gate', "reduceGameAction 'challenge_approach' runs only with the flag on", () => {
+    const bundle = (on: boolean) => ({ gameState: { gameMode: 'game', selectedMode: 'ai', currentTurn: 'player', turnCounter: 3 }, player: { ...initialPlayerState, id: 'player', kind: 'human', money: 1000, currentRegion: 'NSW', actionsUsedThisTurn: 0 }, aiPlayer: { ...initialPlayerState, id: 'ai', kind: 'ai', isAi: true }, gameSettings: { ...DEFAULT_GAME_SETTINGS, experienceMode: 'full', challengeApproachesEnabled: on } });
+    const act = { type: 'challenge_approach', actorId: 'player', parameters: { challengeId: 'nsw_tour_the_blue_mountains', approachId: 'guide', wager: 100 } };
+    const off = v95WithIsolatedGlobals(() => reduceGameAction(bundle(false) as unknown as CanonicalGameState, act as unknown as GameAction));
+    const on = v95WithIsolatedGlobals(() => reduceGameAction(bundle(true) as unknown as CanonicalGameState, act as unknown as GameAction));
+    const money = (r: ActionTransitionResult) => Number((r.nextState as unknown as { player?: { money?: number } }).player?.money);
+    return (!off.success && on.success && money(on) !== 1000) || JSON.stringify([off.success, on.success, money(on)]);
+  });
+  check('cd34_copilot_candidates', 'Co-Pilot proposes the best approach with odds and chain notes', () => {
+    const cands = buildCoPilotApproachCandidates({ actor: actor({ currentRegion: 'NT', challengesCompleted: ['Visit Uluru'] }), world: { weather: 'Sunny', season: 'Summer', activeEvents: [] }, cash: 1000, reserve: 250, apRemaining: 3, makeId: (c, s) => `c${c}_${s}` });
+    return (cands.length >= 1 && cands.length <= 2 && cands.every(c => c.actionType === 'challenge_approach' && /%\)$/.test(c.title) && typeof c.parameters?.approachId === 'string') && cands.some(c => /step/.test(c.description) || /Rim Walk|Uluru|Kakadu|Crocodile|Florence/.test(c.title))) || JSON.stringify(cands.map(c => c.title));
+  });
+  check('cd35_advisor_detector', 'Ask-the-Game detector maps approach, chain and reputation questions', () =>
+    (detectChallengeAdvisorQuery('What is the best approach for the Blue Mountains?') === 'approach' && detectChallengeAdvisorQuery('which challenge should I do') === 'approach' && detectChallengeAdvisorQuery('what challenge chains are there') === 'chains' && detectChallengeAdvisorQuery('how is my reputation in NSW?') === 'reputation' && detectChallengeAdvisorQuery('sell my wool') === null) || 'detector wrong');
+  check('cd36_advisor_answers', 'Advisor answers name best approaches, chain progress and all eight regions', () => {
+    const a = buildChallengeAdvisorAnswer('best approach', 'approach', { actor: actor(), region: 'NSW', wager: 200 });
+    const c = buildChallengeAdvisorAnswer('chains', 'chains', { actor: actor({ challengesCompleted: ['Visit Uluru'] }), region: 'NT', wager: 200 });
+    const r = buildChallengeAdvisorAnswer('reputation', 'reputation', { actor: actor({ regionalReputation: { NSW: 90 } }), region: 'NSW', wager: 200 });
+    return (a.lines.some(l => l.startsWith('Tour the Blue Mountains: best is')) && c.lines.some(l => l.includes('Red Centre Odyssey: 1/3')) && r.lines.filter(l => /^[A-Z]{2,3}: \d+\/100/.test(l)).length === 8 && r.lines[0].startsWith('NSW: 90/100') && a.grounded) || JSON.stringify([a.lines[0], c.lines[2], r.lines[0]]);
+  });
+  check('cd37_settings', 'challengeApproachesEnabled defaults OFF, is registered, match-scoped and indexed', () =>
+    (DEFAULT_GAME_SETTINGS.challengeApproachesEnabled === false && SMART_CONTROLLABLE_SETTINGS_REGISTRY.some(s => s.key === 'challengeApproachesEnabled') && (V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes('challengeApproachesEnabled') && SETTINGS_HUB_SECTION_INDEX.some(s => (s.fieldKeys as readonly string[]).includes('challengeApproachesEnabled'))) || 'settings wiring missing');
+  check('cd38_save_roundtrip', 'Reputation and unlocks survive validateSaveDataCore; bad values are sanitized; V9.5 saves load without them', () => {
+    const f = JSON.parse(JSON.stringify(createV95SaveFixture())) as SaveGameData;
+    const p = f.player as unknown as Record<string, unknown>;
+    p.regionalReputation = { NSW: 77, XYZ: 3, QLD: 400 }; p.unlockedChallengeIds = ['nsw_walk_the_grand_canyon_track', 7, 'nsw_walk_the_grand_canyon_track'];
+    const v = validateSaveDataCore(f).player as unknown as Record<string, unknown>;
+    const legacy = validateSaveDataCore(JSON.parse(JSON.stringify(createV95SaveFixture())) as SaveGameData).player as unknown as Record<string, unknown>;
+    return (JSON.stringify(v.regionalReputation) === JSON.stringify({ NSW: 77, QLD: 100 }) && JSON.stringify(v.unlockedChallengeIds) === JSON.stringify(['nsw_walk_the_grand_canyon_track']) && legacy.regionalReputation === undefined && getActorRegionalReputation(legacy, 'NSW') === 50) || JSON.stringify([v.regionalReputation, v.unlockedChallengeIds, legacy.regionalReputation]);
+  });
+  check('cd39_ap_cost', "'challenge_approach' costs the same action points as a challenge", () => {
+    const s = { ...DEFAULT_GAME_SETTINGS, actionLimitsEnabled: true };
+    return (normalizeActionPointId('challenge_approach') === 'challenges' && getActionPointCost('challenge_approach', s) === getActionPointCost('challenge', s)) || 'ap differs';
+  });
+  check('cd40_plans_order', 'buildAllApproachPlans keeps the authored order, labels and stats', () => {
+    if (!blue) return 'missing';
+    const plans = buildAllApproachPlans(blue, ctx());
+    return (plans.map(p => p.approachId).join(',') === 'hike,guide,tourgroup' && plans[0].stat === 'strength' && plans[1].stat === 'intelligence' && plans[2].stat === 'charisma') || plans.map(p => p.approachId).join(',');
+  });
+  return results;
+}
+
 function AustraliaGame() {
   // DIAG2: Mount detection for StrictMode double-invocation tracking
   useEffect(() => {
@@ -181433,7 +182891,7 @@ function AustraliaGame() {
 
   // Special ability state tracking
   const [activeSpecialAbility, setActiveSpecialAbility] = useState<string | null>(null);
-  const [failedChallengeData, setFailedChallengeData] = useState<{challenge: any, wager: number} | null>(null);
+  const [failedChallengeData, setFailedChallengeData] = useState<{challenge: any, wager: number, approachPlan?: ChallengeApproachPlan | null} | null>(null);
   const [usedFreeChallengeThisTurn, setUsedFreeChallengeThisTurn] = useState(false);
 
   // Day transition state
@@ -186077,6 +187535,14 @@ function dispatchGameSettingsChange(
   // =========================================
 
   // Refactored aiRandom and worldRandom directly connected to GameplayRngRegistry
+  // V9.6 (SECTION 20AH): Challenge Decision System bridges (assigned each render before takeChallenge).
+  const [wp2PickerChallengeId, setWp2PickerChallengeId] = useState<string | null>(null);
+  const wp2HumanOutcomeRef = useRef<((plan: ChallengeApproachPlan, success: boolean) => void) | null>(null);
+  const wp2AiApproachRef = useRef<((challenge: LegacyChallengeShape, aiState: ApproachActorLike & { id?: string; aiPersonality?: string; aiMood?: string; character?: { name?: string; aiStrategy?: string } | null }, wager: number) => { plan: ChallengeApproachPlan; score: number } | null) | null>(null);
+  const wp2AiPlanRef = useRef<((challenge: LegacyChallengeShape, aiState: ApproachActorLike, wager: number, approachId: string) => ChallengeApproachPlan | null) | null>(null);
+  const wp2AiOutcomeRef = useRef<((plan: ChallengeApproachPlan, aiState: ApproachActorLike & { name?: string }, success: boolean) => void) | null>(null);
+  const wp2AdvisorRef = useRef<((query: string) => GameIntelligenceAnswer | null) | null>(null);
+
   const aiRandom = useCallback(() => {
     return drawGameplayRandom('AIReasoning');
   }, []);
@@ -186841,7 +188307,7 @@ function dispatchGameSettingsChange(
     return finalPrice;
   }, [gameSettings.aiUsesMarketModifiers, gameSettings.aiSpecialAbilitiesEnabled, gameSettings.sabotageEnabled, gameState.activeEvents, gameState.season, calculateAiRegionalBonus, calculateAiSupplyDemandModifier, getUnderdogBonus, getWealthState]);
 
-  const calculateAiSuccessChance = useCallback((challenge: any,aiState: any) => {
+  const calculateAiSuccessChance = useCallback((challenge: any,aiState: any, mode?: 'situational') => {
     const baseChance = 0.5;
     const stats = getActorStats(aiState);
     const statValue = challenge.type === 'finale'
@@ -186894,10 +188360,12 @@ function dispatchGameSettingsChange(
     }
 
     if (guaranteeSuccess) {
-      return 1.0;
+      return mode === 'situational' ? Number.POSITIVE_INFINITY : 1.0;
     }
 
     const autoModeDiceBonus = aiState?.diceFavorabilityBonus || 0;
+    // V9.6 (SECTION 20AH): the modifier sum without the stat/difficulty/level terms (approach odds add their own).
+    if (mode === 'situational') return weatherEffect + seasonEffect + eventBonus + underdogBonus - leaderPenalty - fatiguePenalty - sabotagePenalty + abilityBonus + equipmentBonus + autoModeDiceBonus;
     return Math.min(
       0.98,
       Math.max(
@@ -187787,9 +189255,13 @@ function dispatchGameSettingsChange(
 
       // Evaluate challenges in current region
       const currentRegion = REGIONS[aiState.currentRegion];
-      const availableChallenges = currentRegion?.challenges.filter((c: any) =>
+      const availableChallenges = [
+        ...(currentRegion?.challenges || []),
+        // V9.6 (SECTION 20AH): unlocked follow-ups in the AI's region join its options when approaches are on.
+        ...(gameSettings.challengeApproachesEnabled === true ? visibleFollowUpsForRegion(String(aiState.currentRegion || ''), aiState.challengesCompleted || [], sanitizeUnlockedChallengeIds(aiState.unlockedChallengeIds)).map(toLegacyChallenge) : [])
+      ].filter((c: any) =>
         !(aiState.completedThisSeason || []).includes(c.name)
-      ) || [];
+      );
       const aiGrandTourProgress = getGrandTourProgress(gameState.grandTourState, aiState.id || 'ai');
       if (
         gameState.selectedMode === 'grand_tour' &&
@@ -187804,13 +189276,17 @@ function dispatchGameSettingsChange(
         try {
           const evaluation = evaluateChallenge(challenge, aiState, difficulty);
           if (evaluation.score > 0 && aiState.money >= evaluation.wager) {
-            decisions.push({
+            // V9.6 (SECTION 20AH): with approaches on, the AI also decides HOW — from its stats, personality, mood and remembered rivalry.
+            const wp2Choice = gameSettings.challengeApproachesEnabled === true ? (wp2AiApproachRef.current?.(challenge, aiState, evaluation.wager) || null) : null;
+            const wp2Affordable = !wp2Choice || aiState.money >= evaluation.wager + wp2Choice.plan.upfrontCost;
+            if (wp2Affordable) decisions.push({
               type: 'challenge',
-              description: `Attempt ${challenge.name}`,
+              description: wp2Choice ? `Attempt ${challenge.name} (${wp2Choice.plan.label})` : `Attempt ${challenge.name}`,
               data: {
                 challenge,
                 wager: evaluation.wager,
-                successChance: evaluation.successChance
+                successChance: wp2Choice ? wp2Choice.plan.successChance : evaluation.successChance,
+                ...(wp2Choice ? { approachId: wp2Choice.plan.approachId, challengeId: wp2Choice.plan.challengeId, memoryActionType: approachMemoryActionType(wp2Choice.plan.style) } : {})
               },
               score: evaluation.score * profile.decisionQuality
             });
@@ -188605,11 +190081,13 @@ function dispatchGameSettingsChange(
       case 'challenge':
         const challenge = actionData.challenge;
         const wager = actionData.wager;
-        const successChance = calculateAiSuccessChance(challenge, currentAi);
+        // V9.6 (SECTION 20AH): an approach decision re-plans against the AI's state at execution time.
+        const wp2Plan = gameSettings.challengeApproachesEnabled === true && typeof actionData.approachId === 'string' ? (wp2AiPlanRef.current?.(challenge, currentAi, wager, actionData.approachId) || null) : null;
+        const successChance = wp2Plan ? wp2Plan.successChance : calculateAiSuccessChance(challenge, currentAi);
         const success = aiRandom() < successChance;
 
         if (success) {
-          let reward = Math.floor(wager * challenge.reward);
+          let reward = Math.floor(wager * (wp2Plan ? wp2Plan.rewardMultiplier : challenge.reward));
 
           if (currentAi.character.name === "Tourist") {
             reward = Math.floor(reward * 1.2);
@@ -188759,16 +190237,17 @@ function dispatchGameSettingsChange(
         } else {
           updateAiPlayerState((prev: any) => ({
             ...prev,
-            money: deductMoney(prev.money, wager),
+            money: deductMoney(prev.money, wp2Plan ? wp2Plan.failureLoss : wager),
             consecutiveWins: 0
           }));
 
           addNotification(
-            `🤖 ${currentAi.name} failed ${challenge.name} and lost $${wager}`,
+            `🤖 ${currentAi.name} failed ${challenge.name} and lost $${wp2Plan ? wp2Plan.failureLoss : wager}`,
             'ai',
             false
           );
         }
+        if (wp2Plan) wp2AiOutcomeRef.current?.(wp2Plan, currentAi, success);
         if (gameSettings.aiSpecialAbilitiesEnabled &&
             (aiActiveSpecialAbilityRef.current === 'Tourist Luck' || aiActiveSpecialAbilityRef.current === 'Calculate Odds')) {
           setAiActiveSpecialAbility(null);
@@ -189134,7 +190613,7 @@ function dispatchGameSettingsChange(
     }
 
     commitMatchMemory({
-      actionType: action.type,
+      actionType: typeof action.data?.memoryActionType === 'string' ? action.data.memoryActionType : action.type,
       actorId: currentAi.id || 'ai',
       targetId: action.data?.targetActorId || (action.type === 'sabotage' ? 'player' : undefined),
       regionId: action.data?.region,
@@ -190902,7 +192381,8 @@ function dispatchGameSettingsChange(
     let eventModifier = 1.0;
     gameState.activeEvents.forEach((event: any) => {
       if (event.region === toRegion && event.effect?.travelCost) {
-        eventModifier *= event.effect.travelCost;
+        // V9.6 (SECTION 20AH): good standing in the destination softens event surcharges (exactly 1× at reputation 50).
+        eventModifier *= gameSettings.challengeApproachesEnabled === true ? scaleAdverseEventMultiplier(event.effect.travelCost, getActorRegionalReputation(player, toRegion)) : event.effect.travelCost;
       }
     });
     const standingMult = gameSettings.regionalStandingEnabled
@@ -190914,9 +192394,9 @@ function dispatchGameSettingsChange(
       weatherMod: weatherModifier, seasonMod: seasonModifier, eventMod: eventModifier, standingMult,
       equipmentDiscount: equipmentEffects?.travelDiscount || 0, underdog: isUnderdog, leaderTax: leader === 'player' && getWealthState().ratio > 2
     });
-  }, [player.character, player.masteryUnlocks, player.equipment, player.debuffs, gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.weather, gameState.season, gameState.activeEvents, getUnderdogBonus, getWealthState]);
+  }, [player.character, player.masteryUnlocks, player.equipment, player.debuffs, player.regionalReputation, gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameSettings.challengeApproachesEnabled, gameState.weather, gameState.season, gameState.activeEvents, getUnderdogBonus, getWealthState]);
 
-  const calculateSuccessChance = useCallback((challenge: any) => {
+  const calculateSuccessChance = useCallback((challenge: any, mode?: 'situational') => {
     const baseChance = 0.5;
     const playerStats = getActorStats(player);
     const statValue = challenge.type === 'finale'
@@ -190958,6 +192438,8 @@ function dispatchGameSettingsChange(
     const sabotagePenalty = gameSettings.sabotageEnabled ? getSabotageChallengePenalty(player.debuffs) : 0;
 
     void baseChance; void statBonus; void difficultyPenalty; void characterBonus; void levelBonus;
+    // V9.6 (SECTION 20AH): the modifier sum without the stat/difficulty/level terms (approach odds add their own).
+    if (mode === 'situational') return weatherEffect + seasonEffect + eventBonus + equipmentBonus + underdogBonus - leaderPenalty - fatiguePenalty - sabotagePenalty;
     return computeChallengeSuccessChanceCore({ difficulty: challenge.difficulty, type: challenge.type, stats: playerStats, characterName: player?.character?.name, level: player.level, weatherEffect, seasonEffect, eventBonus, equipmentBonus, underdogBonus, leaderPenalty, fatiguePenalty, sabotagePenalty });
   }, [player.stats, player.character, player.level, player.currentRegion, player.overrideFatigue, player.equipment, player.debuffs, gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.weather, gameState.season, gameState.activeEvents, getUnderdogBonus, getWealthState]);
 
@@ -197514,12 +198996,81 @@ function dispatchGameSettingsChange(
     );
   }, [gameState.doubleOrNothingAvailable, gameState.lastChallengeReward, addNotification, updatePersonalRecords, player, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent]);
 
-    const takeChallenge = useCallback((challengeInput: any, wager: any) => {
+    // V9.6 (SECTION 20AH): bridges between the pure Challenge Decision System and live state (re-assigned every render).
+    wp2HumanOutcomeRef.current = (plan: ChallengeApproachPlan, success: boolean) => {
+      const def = getChallengeDefinition(plan.challengeId);
+      if (!def) return;
+      const res = resolveApproachSideEffects(plan, success);
+      const before: string[] = Array.isArray(player.challengesCompleted) ? player.challengesCompleted : [];
+      const chains = success ? newlyCompletedChains(before, [...before, def.name]) : [];
+      const chainRep: RegionalReputationMap = {};
+      const chainItems: string[] = [];
+      let chainMoney = 0;
+      chains.forEach(c => { chainMoney += c.completionReward.money; (Object.keys(c.completionReward.reputation) as ChallengeRegionCode[]).forEach(r => { chainRep[r] = (chainRep[r] || 0) + (c.completionReward.reputation[r] || 0); }); if (c.completionReward.item) chainItems.push(c.completionReward.item); });
+      dispatchPlayer({ type: 'MERGE_STATE', payload: applyApproachResolutionToActor(player, res, chainRep, chainItems) });
+      const moneyDelta = chainMoney - plan.upfrontCost;
+      if (moneyDelta !== 0) dispatchPlayer({ type: 'UPDATE_MONEY', payload: moneyDelta });
+      if (plan.upfrontCost > 0) addNotification(`💳 Paid $${plan.upfrontCost} for “${plan.label}”.`, 'info');
+      res.lines.forEach(line => addNotification(line, success ? 'success' : 'warning'));
+      chains.forEach(c => addNotification(describeChainCompletion(c), 'levelup', true));
+      commitMatchMemory({ actionType: approachMemoryActionType(plan.style), actorId: player.id || 'player', regionId: def.region, success, turn: gameState.turnCounter, amount: plan.wager, summary: `${player.name || 'Player'} chose “${plan.label}” (${APPROACH_STYLE_LABEL[plan.style]}) for ${def.name}.`, stableKey: `approach:${gameState.turnCounter}:${def.id}:${plan.approachId}:${success ? 'w' : 'l'}:${before.length}` });
+      if (res.relationship.length && gameSettings.aiMemoryEnabled !== false) {
+        const observers = collectMemoryObservers().filter(o => isAiActor(o)).map(o => resolveAiMemoryActorId(o.id));
+        const next = applyApproachRelationshipDeltas(aiMemoriesRef.current || {}, resolveAiMemoryActorId(player.id || 'player'), observers, res.relationship, Number(gameState.turnCounter) || 0);
+        aiMemoriesRef.current = next;
+        dispatchGameState({ type: 'LOAD_STATE', payload: { aiMemoriesByActor: next } });
+      }
+    };
+    const wp2AiCtx = (challenge: LegacyChallengeShape, aiState: ApproachActorLike, wager: number): { def: ChallengeDefinition; plans: ChallengeApproachPlan[] } | null => {
+      const def = resolveChallengeDefinition(challenge, String(aiState.currentRegion || ''));
+      if (!def) return null;
+      const situational = calculateAiSuccessChance(challenge, aiState, 'situational');
+      const cap = 0.98;
+      if (!Number.isFinite(situational)) return { def, plans: buildAllApproachPlans(def, { stats: getActorStats(aiState), characterName: aiState.character?.name || null, level: aiState.level || 0, situational: 5, reputation: getActorRegionalReputation(aiState, def.region), debuffs: aiState.debuffs || [], wager, cap: 1 }) };
+      return { def, plans: buildAllApproachPlans(def, { stats: getActorStats(aiState), characterName: aiState.character?.name || null, level: aiState.level || 0, situational, eventBonus: regionalEventChallengeBonus(gameState.activeEvents, def.region, LEGACY_TYPE_FOR_TAG[def.type]), reputation: getActorRegionalReputation(aiState, def.region), debuffs: aiState.debuffs || [], wager, cap }) };
+    };
+    wp2AiApproachRef.current = (challenge, aiState, wager) => {
+      const c = wp2AiCtx(challenge, aiState, wager);
+      if (!c) return null;
+      const aiId = resolveAiMemoryActorId(String(aiState.id || 'ai'));
+      const rivalry = aiMemoriesRef.current?.[aiId]?.relationships?.[resolveAiMemoryActorId(player.id || 'player')]?.rivalry ?? null;
+      const wealth = getWealthState();
+      const appetite = deriveApproachRiskAppetite({ personality: aiState.aiPersonality || null, aiStrategy: aiState.character?.aiStrategy || null, mood: aiState.aiMood || gameState.aiMood || null, rivalry, wealthRatio: wealth.aiWorth > 0 ? wealth.aiWorth / Math.max(wealth.playerWorth, 1) : 1 });
+      const choice = chooseAiApproach(c.plans, appetite);
+      return choice ? { plan: choice.plan, score: choice.score } : null;
+    };
+    wp2AiPlanRef.current = (challenge, aiState, wager, approachId) => {
+      const c = wp2AiCtx(challenge, aiState, wager);
+      return c ? c.plans.find(p => p.approachId === approachId) || null : null;
+    };
+    wp2AiOutcomeRef.current = (plan, aiState, success) => {
+      const def = getChallengeDefinition(plan.challengeId);
+      if (!def) return;
+      const res = resolveApproachSideEffects(plan, success);
+      const before: string[] = Array.isArray(aiState.challengesCompleted) ? aiState.challengesCompleted : [];
+      const chains = success ? newlyCompletedChains(before, [...before, def.name]) : [];
+      const chainRep: RegionalReputationMap = {};
+      const chainItems: string[] = [];
+      let chainMoney = 0;
+      chains.forEach(c => { chainMoney += c.completionReward.money; (Object.keys(c.completionReward.reputation) as ChallengeRegionCode[]).forEach(r => { chainRep[r] = (chainRep[r] || 0) + (c.completionReward.reputation[r] || 0); }); if (c.completionReward.item) chainItems.push(c.completionReward.item); });
+      updateAiPlayerState((prev: ApproachActorLike) => ({ ...prev, ...applyApproachResolutionToActor(prev, res, chainRep, chainItems), money: Math.max(0, (Number(prev.money) || 0) + chainMoney - plan.upfrontCost) }));
+      addNotification(`🤖 ${aiState.name || 'Rival'} chose “${plan.label}” (${APPROACH_STYLE_LABEL[plan.style]}) for ${def.name}.`, 'ai', false);
+      chains.forEach(c => addNotification(`🤖 ${aiState.name || 'Rival'} completed the ${c.title} chain.`, 'ai', false));
+    };
+    wp2AdvisorRef.current = (query: string) => {
+      if (gameSettings.challengeApproachesEnabled !== true) return null;
+      const topic = detectChallengeAdvisorQuery(query);
+      if (!topic) return null;
+      return buildChallengeAdvisorAnswer(query, topic, { actor: player, region: String(player.currentRegion || ''), world: { weather: gameState.weather, season: gameState.season, activeEvents: gameState.activeEvents }, wager: Math.max(MINIMUM_WAGER, Math.min(Number(uiState.wagerAmount) || 100, Number(player.money) || 0)) });
+    };
+
+    const takeChallenge = useCallback((challengeInput: any, wager: any, approachPlan?: ChallengeApproachPlan | null) => {
       if (v96BlockHumanAction('Challenge')) return;
     const challengeName = typeof challengeInput === 'object' ? challengeInput.name : challengeInput;
     const challenge = typeof challengeInput === 'object' ? challengeInput : (REGIONS[player.currentRegion]?.challenges || []).find((c: any) => c.name === challengeName) || { name: challengeName, difficulty: 1, reward: 1.5 };
 
-    let successChance = calculateSuccessChance(challenge);
+    // V9.6 (SECTION 20AH): an approach brings its own odds (abilities below still apply).
+    let successChance = approachPlan ? approachPlan.successChance : calculateSuccessChance(challenge);
 
     // Calculate Odds: Guarantee success on challenges under difficulty 2
     const hasCalculateOdds = activeSpecialAbility === 'Calculate Odds';
@@ -197557,7 +199108,7 @@ function dispatchGameSettingsChange(
           getActorState: () => player,
           getTeamState: () => (isTeamMode ? (player.teamId ? (teamsByIdRef.current[player.teamId] || null) : null) : null),
           checkRequirements: () => {
-            if (player.money < wager) {
+            if (player.money < wager + (approachPlan ? approachPlan.upfrontCost : 0)) {
               addNotification('Not enough money!', 'error');
               return { passed: false, reason: 'Not enough money' };
             }
@@ -197568,7 +199119,7 @@ function dispatchGameSettingsChange(
           }
         },
         (attempt) => {
-          if (player.money < wager) {
+          if (player.money < wager + (approachPlan ? approachPlan.upfrontCost : 0)) {
             addNotification('Not enough money!', 'error');
             return;
           }
@@ -197580,7 +199131,7 @@ function dispatchGameSettingsChange(
             const { isUnderdog, leader } = getUnderdogBonus('player');
             const hasLuckyStreak = player.masteryUnlocks.includes("Lucky Streak");
             const masteryCount = (player.challengeMastery?.[challenge.name] || 0) + 1;
-            const rewardCore = computeChallengeRewardCore({ wager, rewardMultiplier: challenge.reward, characterName: player?.character?.name, leaderPenalty: leader === 'player' && getWealthState().ratio > 2, luckyStreak: hasLuckyStreak, consecutiveWins: player.consecutiveWins, masteryCount });
+            const rewardCore = computeChallengeRewardCore({ wager, rewardMultiplier: approachPlan ? approachPlan.rewardMultiplier : challenge.reward, characterName: player?.character?.name, leaderPenalty: leader === 'player' && getWealthState().ratio > 2, luckyStreak: hasLuckyStreak, consecutiveWins: player.consecutiveWins, masteryCount });
             const reward = rewardCore.reward;
             if (rewardCore.luckyStreakBonus > 0) {
               addNotification(`Lucky Streak! +${Math.round(rewardCore.luckyStreakBonus * 100)}% bonus`, 'success');
@@ -197609,6 +199160,7 @@ function dispatchGameSettingsChange(
             }
 
             dispatchPlayer({ type: 'UPDATE_MONEY', payload: reward });
+            if (approachPlan) wp2HumanOutcomeRef.current?.(approachPlan, true);
             dispatchPlayer({ type: 'COMPLETE_CHALLENGE', payload: { name: challenge.name, apCost: 0 } });
             dispatchGameState({
               type: 'ADD_CHALLENGE_COMPLETION',
@@ -197670,7 +199222,8 @@ function dispatchGameSettingsChange(
               dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: challengeApCost, actionId: 'challenges' } });
             }
 
-            dispatchPlayer({ type: 'UPDATE_MONEY', payload: -wager });
+            dispatchPlayer({ type: 'UPDATE_MONEY', payload: -(approachPlan ? approachPlan.failureLoss : wager) });
+            if (approachPlan) wp2HumanOutcomeRef.current?.(approachPlan, false);
             dispatchPlayer({ type: 'RESET_STREAK' });
             dispatchAuthoritativeGameActivityLedgerEvent('action', {
               actorId: 'player',
@@ -197678,12 +199231,12 @@ function dispatchGameSettingsChange(
               summary: `${player.name || 'Player'} failed challenge ${challenge.name}.`,
               payload: { challengeName: challenge.name, wager, success: false }
             });
-            addNotification(`${challenge.name} failed. Lost $${wager}`, 'error');
+            addNotification(`${challenge.name} failed. Lost $${approachPlan ? approachPlan.failureLoss : wager}`, 'error');
 
             dispatchGameState({ type: 'SET_DOUBLE_OR_NOTHING', payload: { available: false, reward: 0 } });
 
             if (player.character.name === "Tourist" && player.specialAbilityUses > 0 && !activeSpecialAbility) {
-              setFailedChallengeData({ challenge, wager });
+              setFailedChallengeData({ challenge, wager, approachPlan: approachPlan || null });
               addNotification('Tourist Luck available! You can retry this challenge.', 'info', true);
             }
 
@@ -197799,7 +199352,7 @@ function dispatchGameSettingsChange(
 
             gameState.activeEvents.forEach((event: any) => {
               if (event.effect?.resourcePrice?.[resource]) {
-                finalPrice = Math.floor(finalPrice * event.effect.resourcePrice[resource]);
+                finalPrice = Math.floor(finalPrice * (gameSettings.challengeApproachesEnabled === true && event.region === player.currentRegion ? scaleFavourableEventMultiplier(event.effect.resourcePrice[resource], getActorRegionalReputation(player, event.region)) : event.effect.resourcePrice[resource]));
               }
             });
 
@@ -198085,7 +199638,8 @@ function dispatchGameSettingsChange(
     if (!gameSettings.equipmentShopEnabled || !isHumanPlayerTurn(gameState)) return;
     const item = SHOP_ITEMS.find(candidate => candidate.id === itemId || candidate.name === itemId || candidate.id.toLowerCase() === itemId.toLowerCase());
     if (!item) return;
-    const effectiveCost = getEffectiveItemCost(item, player, gameState);
+    // V9.6 (SECTION 20AH): regional reputation moves shop prices ±10% (unchanged while approaches are off).
+    const effectiveCost = applyReputationToShopPrice(getEffectiveItemCost(item, player, gameState), player, player.currentRegion, gameSettings);
 
     const equipApCost = getActionPointCost('equipment_purchase', gameSettings, false);
     const { afford: apAfford, remaining: apRemaining } = canActorAffordActionPoints(player, 'equipment_purchase', gameSettings);
@@ -198317,7 +199871,7 @@ function dispatchGameSettingsChange(
     }
 
     setActiveSpecialAbility('Tourist Luck');
-    takeChallenge(failedChallengeData.challenge, failedChallengeData.wager);
+    takeChallenge(failedChallengeData.challenge, failedChallengeData.wager, failedChallengeData.approachPlan || null);
   }, [failedChallengeData, player.specialAbilityUses, addNotification, takeChallenge]);
 
   const handleEndTurn = useCallback(() => {
@@ -213796,6 +215350,9 @@ function dispatchGameSettingsChange(
     if (!query || v9IntelBusy) return;
     setV9IntelQuery('');
     updateUiState({ experienceLayer: 'intelligence' });
+    // V9.6 (SECTION 20AH): approach / chain / reputation questions are answered by the Challenge Decision System.
+    const wp2Answer = wp2AdvisorRef.current?.(query) || null;
+    if (wp2Answer) { pushIntelAnswer(wp2Answer); return; }
     giQueryCounterRef.current += 1;
     setV9IntelBusy(true);
     try {
@@ -218052,6 +219609,18 @@ function dispatchGameSettingsChange(
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.doubleOrNothingEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.doubleOrNothingEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between" data-testid="challenge-approaches-setting">
+                    <div>
+                      <div className="font-semibold">Challenge Approaches (V9.6)</div>
+                      <div className="text-sm opacity-75">Choose how to attempt each challenge — stat, odds, reward, failure cost and side effects. Adds regional reputation and challenge chains.</div>
+                    </div>
+                    <button
+                      onClick={() => trackedSetGameSettings("direct_player_change", "🎰 Challenge Rules", prev => ({ ...prev, challengeApproachesEnabled: !prev.challengeApproachesEnabled }))}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.challengeApproachesEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                    >
+                      {gameSettings.challengeApproachesEnabled ? 'ON' : 'OFF'}
                     </button>
                   </div>
                 </div>
@@ -230093,7 +231662,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV96ExperienceModesSelfTests(), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV96ExperienceModesSelfTests(), ...v95WithIsolatedGlobals(() => runV96ChallengeDecisionSelfTests()), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
@@ -231400,6 +232969,9 @@ function dispatchGameSettingsChange(
               <div className="text-sm font-bold mb-2">💡 Fun Fact</div>
               <p className="text-sm opacity-75">{currentRegion?.funFact || ""}</p>
             </div>
+            {gameSettings.challengeApproachesEnabled === true && (
+              <RegionReputationBar region={String(player.currentRegion || '')} reputation={getActorRegionalReputation(player, String(player.currentRegion || ''))} conditions={player.debuffs || []} />
+            )}
             
 	            <div className="mb-4">
 	              <div className="text-sm font-bold mb-2">📦 Resources</div>
@@ -231745,6 +233317,9 @@ function dispatchGameSettingsChange(
                       <h4 className="text-lg font-bold">{selectedPreviewRegion.name}</h4>
                       <p className="text-sm opacity-80 mt-1">{selectedPreviewRegion.description}</p>
                       <div className="text-xs opacity-75 mt-2">Fun fact: {selectedPreviewRegion.funFact}</div>
+                      {gameSettings.challengeApproachesEnabled === true && selectedPreviewRegionCode && (
+                        <div className="mt-2"><RegionReputationBar region={String(selectedPreviewRegionCode)} reputation={getActorRegionalReputation(player, String(selectedPreviewRegionCode))} /></div>
+                      )}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 text-sm">
                         <div>
                           <div className="font-semibold mb-1">Resources</div>
@@ -232705,6 +234280,37 @@ function dispatchGameSettingsChange(
           </div>
         )}
         
+        {/* V9.6 (SECTION 20AH): approach picker */}
+        {gameSettings.challengeApproachesEnabled === true && wp2PickerChallengeId && (() => {
+          const def = getChallengeDefinition(wp2PickerChallengeId);
+          if (!def) return null;
+          const legacy = toLegacyChallenge(def);
+          const dynamicMaxWager = gameSettings.dynamicWagerEnabled ? calculateMaxWager(legacy) : 500;
+          const maxWager = Math.max(MINIMUM_WAGER, Math.min(player.money, dynamicMaxWager));
+          const wager = Math.max(MINIMUM_WAGER, Math.min(uiState.wagerAmount, maxWager));
+          const rep = getActorRegionalReputation(player, def.region);
+          const plans = buildAllApproachPlans(def, { stats: getActorStats(player), characterName: player?.character?.name || null, level: player.level || 0, situational: calculateSuccessChance(legacy, 'situational'), eventBonus: regionalEventChallengeBonus(gameState.activeEvents, def.region, legacy.type), reputation: rep, debuffs: player.debuffs || [], wager });
+          return (
+            <ChallengeApproachPicker
+              definition={def}
+              plans={plans}
+              stats={getActorStats(player)}
+              wager={wager}
+              minWager={MINIMUM_WAGER}
+              maxWager={maxWager}
+              money={Number(player.money) || 0}
+              canAct={isPlayerTurn}
+              chainNote={chainStepNote(def, player.challengesCompleted || [])}
+              reputation={rep}
+              conditions={player.debuffs || []}
+              theme={themeStyles}
+              onWagerChange={w => updateUiState({ wagerAmount: w })}
+              onChoose={approachId => { const plan = plans.find(x => x.approachId === approachId); setWp2PickerChallengeId(null); if (plan) takeChallenge(legacy, wager, plan); }}
+              onClose={() => setWp2PickerChallengeId(null)}
+            />
+          );
+        })()}
+
         {/* Challenges Modal */}
         {uiState.showChallenges && (
           <div className={`fixed inset-0 ${(!surfaceState.backdropOwner || surfaceState.backdropOwner === "challenges_modal") ? "bg-black bg-opacity-50" : "bg-transparent"} flex items-center justify-center p-4`} style={{ zIndex: globalUISurfaceManager.getZIndex("challenges_modal") }} onClick={() => updateUiState({ showChallenges: false })}>
@@ -232742,7 +234348,10 @@ function dispatchGameSettingsChange(
               </div>
 
               <div className={`space-y-3 flex-1 min-h-0 overflow-y-auto ${themeStyles.scrollbar}`}>
-                {grandTourChallenges.map((challenge: any, index: number) => {
+                {(gameSettings.challengeApproachesEnabled === true
+                  // V9.6 (SECTION 20AH): unlocked follow-ups appear alongside the region's four challenges.
+                  ? [...grandTourChallenges, ...visibleFollowUpsForRegion(String(player.currentRegion || ''), player.challengesCompleted || [], sanitizeUnlockedChallengeIds(player.unlockedChallengeIds)).map(toLegacyChallenge)]
+                  : grandTourChallenges).map((challenge: any, index: number) => {
                   const isGrandTourFinale = gameState.selectedMode === 'grand_tour' && challenge.name === GRAND_TOUR_FINAL_CHALLENGE.name;
                   const isCompleted = isGrandTourFinale
                     ? playerGrandTourProgress.finalCompleted
@@ -232820,6 +234429,16 @@ function dispatchGameSettingsChange(
                           </div>
 
                           <div className="flex space-x-2">
+                            {gameSettings.challengeApproachesEnabled === true && !isGrandTourFinale && resolveChallengeDefinition(challenge, player.currentRegion) ? (
+                              <button
+                                onClick={() => setWp2PickerChallengeId(resolveChallengeDefinition(challenge, player.currentRegion)?.id || null)}
+                                disabled={player.money < 50 || !isPlayerTurn}
+                                className={`${themeStyles.button} text-white px-4 py-2 rounded-lg flex-1 disabled:opacity-50`}
+                                data-testid="choose-approach"
+                              >
+                                🎯 Choose approach…
+                              </button>
+                            ) : (
                             <button
                               onClick={() => takeChallenge(challenge, Math.min(uiState.wagerAmount, maxWager))}
                               disabled={player.money < 50 || !isPlayerTurn}
@@ -232827,6 +234446,7 @@ function dispatchGameSettingsChange(
                             >
                               Take Challenge (${Math.min(uiState.wagerAmount, maxWager)})
                             </button>
+                            )}
                             {/* Max button only shows when dynamic wager is enabled */}
                             {gameSettings.dynamicWagerEnabled && maxWager >= 200 && (
                               <button
@@ -233304,7 +234924,7 @@ function dispatchGameSettingsChange(
                     const recruitmentAvail = gameSettings.regionalStandingEnabled
                       ? getRegionalRecruitmentAvailability(player.id || 'player', player.currentRegion, gameState)
                       : { available: true, costMultiplier: 1.0 };
-                    const effectiveCost = Math.round(getEffectiveItemCost(item, player, gameState) * recruitmentAvail.costMultiplier);
+                    const effectiveCost = Math.round(applyReputationToShopPrice(getEffectiveItemCost(item, player, gameState), player, player.currentRegion, gameSettings) * recruitmentAvail.costMultiplier);
                     const owned = (player.equipment || []).includes(item.id);
                     const canAfford = player.money >= effectiveCost;
                     const priceDiffers = effectiveCost !== item.cost;
