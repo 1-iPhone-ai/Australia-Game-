@@ -14155,6 +14155,11 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   /** V9.6 Challenge Content Expansion and generator (SECTION 20AI) — off by default. */
   expandedChallengeContentEnabled: false,
   proceduralChallengesEnabled: false,
+  /** V9.6 Map, Motion & Sound (SECTION 20AJ) — the new look and sound are the default; Classic look restores V9.5. */
+  visualMode: 'enhanced' as VisualMode,
+  soundEnabled: true,
+  soundVolume: 0.4,
+  reducedMotion: 'system' as ReducedMotionPreference,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -15257,6 +15262,11 @@ export function sanitizeGameSettings(input: unknown): GameSettingsState {
     settingsCategoryNavigationMode: navMode,
     // V9.6 (SECTION 20AG): a settings blob without the key is pre-V9.6 content → 'full'.
     experienceMode: coerceExperienceMode(src.experienceMode, LEGACY_EXPERIENCE_MODE),
+    // V9.6 (SECTION 20AJ): presentation preferences fall back to their defaults when malformed.
+    visualMode: isVisualMode(src.visualMode) ? src.visualMode : defaults.visualMode,
+    soundEnabled: typeof src.soundEnabled === 'boolean' ? src.soundEnabled : defaults.soundEnabled,
+    soundVolume: src.soundVolume === undefined ? defaults.soundVolume : sanitizeSoundVolume(src.soundVolume),
+    reducedMotion: isReducedMotionPreference(src.reducedMotion) ? src.reducedMotion : defaults.reducedMotion,
     rememberCategoryNavigationState: typeof src.rememberCategoryNavigationState === 'boolean' ? src.rememberCategoryNavigationState : defaults.rememberCategoryNavigationState,
     rememberCategoryNavigationMode: typeof src.rememberCategoryNavigationMode === 'boolean' ? src.rememberCategoryNavigationMode : defaults.rememberCategoryNavigationMode,
     autoCollapseCategoriesOnNarrow: typeof src.autoCollapseCategoriesOnNarrow === 'boolean' ? src.autoCollapseCategoriesOnNarrow : defaults.autoCollapseCategoriesOnNarrow,
@@ -18328,6 +18338,54 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     valueType: 'boolean',
     defaultValue: false,
     validate: (v: any) => typeof v === 'boolean',
+    isLiveSafe: true,
+    affectsFairness: false,
+  },
+  {
+    key: 'visualMode',
+    category: 'interface',
+    label: 'Visual Mode',
+    description: 'Enhanced shows the SVG map of Australia, animated tokens and game-feel effects; Classic restores the V9.5 look.',
+    valueType: 'string',
+    allowedValues: ['enhanced', 'classic'],
+    defaultValue: 'enhanced',
+    validate: (v: unknown) => v === 'enhanced' || v === 'classic',
+    isLiveSafe: true,
+    affectsFairness: false,
+  },
+  {
+    key: 'soundEnabled',
+    category: 'interface',
+    label: 'Sound Effects',
+    description: 'Synthesised sound effects for challenges, cash, travel, turns and events.',
+    valueType: 'boolean',
+    defaultValue: true,
+    validate: (v: unknown) => typeof v === 'boolean',
+    isLiveSafe: true,
+    affectsFairness: false,
+  },
+  {
+    key: 'soundVolume',
+    category: 'interface',
+    label: 'Sound Volume',
+    description: 'Master volume for sound effects (0–1).',
+    valueType: 'number',
+    minValue: 0,
+    maxValue: 1,
+    defaultValue: 0.4,
+    validate: (v: unknown) => typeof v === 'number' && v >= 0 && v <= 1,
+    isLiveSafe: true,
+    affectsFairness: false,
+  },
+  {
+    key: 'reducedMotion',
+    category: 'interface',
+    label: 'Reduced Motion',
+    description: 'System follows your OS setting; On removes animations; Off keeps them.',
+    valueType: 'string',
+    allowedValues: ['system', 'on', 'off'],
+    defaultValue: 'system',
+    validate: (v: unknown) => v === 'system' || v === 'on' || v === 'off',
     isLiveSafe: true,
     affectsFairness: false,
   },
@@ -26577,6 +26635,14 @@ export type GameSettingsState = {
   expandedChallengeContentEnabled?: boolean;
   /** V9.6 (SECTION 20AI): template generator that tops up a region's board once its hand-written pool is exhausted. */
   proceduralChallengesEnabled?: boolean;
+  /** V9.6 Map, Motion & Sound (SECTION 20AJ): 'enhanced' SVG map + effects (default) or 'classic' V9.5 rendering. */
+  visualMode?: VisualMode;
+  /** V9.6 (SECTION 20AJ): synthesised sound effects (default on; silent until the first interaction). */
+  soundEnabled?: boolean;
+  /** V9.6 (SECTION 20AJ): master volume 0–1 (default 0.4). */
+  soundVolume?: number;
+  /** V9.6 (SECTION 20AJ): 'system' follows the OS reduced-motion preference; 'on' / 'off' override it. */
+  reducedMotion?: ReducedMotionPreference;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -64449,6 +64515,7 @@ export const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'interface.accessibility', tab: 'interfaceAcc', title: '♿ Accessibility, Focus Trapping & Motion', tags: ['UX', 'Accessibility'], fieldKeys: ['accessibilitySettings', 'diagnosticsSettings'], keywords: 'accessibility focus trap aria keyboard high contrast reduced motion focus rings text scale' },
   { id: 'mechanicsDirectory.directory', tab: 'mechanicsDir', title: 'Game Mechanics Directory & Glossary', tags: ['Mechanics'], fieldKeys: [], keywords: 'mechanics directory glossary rules victory majority refund deposits' },
   { id: 'interface.appearance', tab: 'interfaceAcc', title: 'Appearance', tags: ['UX'], fieldKeys: ['teamOverviewDensity'], keywords: 'theme dark mode light mode system theme appearance interface color display mode' },
+  { id: 'interface.mapSound', tab: 'interfaceAcc', title: '🗺️ Map, Motion & Sound', tags: ['UX'], fieldKeys: ['visualMode', 'soundEnabled', 'soundVolume', 'reducedMotion'], keywords: 'map svg classic look enhanced visuals animation motion reduced motion sound effects volume mute audio' },
   { id: 'quickSetup.presets', tab: 'quickSetup', title: 'Settings Presets', tags: ['UX'], fieldKeys: [] },
   { id: 'quickSetup.core', tab: 'quickSetup', title: 'Quick Setup', tags: ['UX'], fieldKeys: ['totalDays', 'winCondition', 'actionLimitsEnabled', 'uxAssistPackEnabled', 'teamModeAiSystemProfile', 'teamBrainModeV63'] },
   { id: 'interface.changelog', tab: 'interfaceAcc', title: "What's New", tags: ['UX'], fieldKeys: [] },
@@ -133427,6 +133494,11 @@ export const V95_PROFILE_SCOPED_SETTING_KEYS: readonly string[] = [
   'autoHideSettings',
   'notificationLaneSettings',
   'modalSizeSettings',
+  // V9.6 (SECTION 20AJ): presentation preferences — never restored from a save.
+  'visualMode',
+  'soundEnabled',
+  'soundVolume',
+  'reducedMotion',
 ];
 
 /** Type-compatible coercion against a default (finite numbers only; plain objects merged over the default). */
@@ -135796,6 +135868,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v96em', label: 'V9.6 Experience Modes', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96ExperienceModesSelfTests() },
   { id: 'v96cd', label: 'V9.6 Challenge Decision System', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96ChallengeDecisionSelfTests() },
   { id: 'v96ex', label: 'V9.6 Challenge Content Expansion', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96ChallengeContentSelfTests() },
+  { id: 'v96mf', label: 'V9.6 Map, Motion & Sound', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96MapMotionSoundSelfTests() },
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
@@ -182995,6 +183068,560 @@ export function runV96ChallengeContentSelfTests(): V9SelfTestResult[] {
 // Register the authored content so the shared registry, picker and canonical resolver can find it.
 registerChallengeDefinitions(EXPANDED_CHALLENGES);
 
+// ============================================================================
+// SECTION 20AJ: V9.6 MAP, MOTION & SOUND — IT LOOKS AND SOUNDS LIKE A GAME
+// ----------------------------------------------------------------------------
+//   • An inline SVG map of Australia: the eight regions are hand-authored, simplified polygons
+//     (recognisable, not survey-accurate) that are clickable and hoverable; travel routes are
+//     drawn between neighbours (plus the Bass Strait crossing); player and rival tokens glide
+//     along the route when they travel (CSS transitions; none under reduced motion).
+//   • Micro-feedback: a challenge roll card (dice tumble + odds bar), money pop-ups, a region
+//     flash when an event lands, and a turn-change wipe.
+//   • Sound: Web Audio synthesised effects (no files) for challenge success / fail, cash,
+//     travel, turn end and event alarms. Master volume (default 0.4) and mute; silent until the
+//     first user interaction, as browsers require.
+//   • Settings: visualMode 'enhanced' (default) | 'classic' — classic restores the V9.5 dot map
+//     and no new effects; soundEnabled (default true); soundVolume (0.4); reducedMotion
+//     'system' (default, follows the OS) | 'on' | 'off'.
+// The map and the feel layer are their own React.memo components with stable props. Nothing
+// here touches game state, RNG or saves (noise for the travel whoosh is a fixed xorshift).
+// ============================================================================
+
+export type VisualMode = 'enhanced' | 'classic';
+export type ReducedMotionPreference = 'system' | 'on' | 'off';
+export type FeelMotion = 'full' | 'reduced';
+export const DEFAULT_SOUND_VOLUME = 0.4;
+
+export function isVisualMode(v: unknown): v is VisualMode { return v === 'enhanced' || v === 'classic'; }
+export function isReducedMotionPreference(v: unknown): v is ReducedMotionPreference { return v === 'system' || v === 'on' || v === 'off'; }
+export function resolveVisualMode(settings: { visualMode?: unknown } | null | undefined): VisualMode { return settings && isVisualMode(settings.visualMode) ? settings.visualMode : 'enhanced'; }
+export function toggleVisualMode(mode: VisualMode): VisualMode { return mode === 'classic' ? 'enhanced' : 'classic'; }
+export function sanitizeSoundVolume(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(1, Math.round(v * 100) / 100)) : DEFAULT_SOUND_VOLUME;
+}
+/** Motion for the V9.6 effects: the explicit setting wins; 'system' follows the OS; the accessibility switch always reduces. */
+export function resolveFeelMotion(settings: { reducedMotion?: unknown; accessibilitySettings?: { reduceMotion?: boolean; reducedMotion?: boolean } | null } | null | undefined, osPrefersReduced: boolean): FeelMotion {
+  const a = settings?.accessibilitySettings;
+  if (a && (a.reduceMotion === true || a.reducedMotion === true)) return 'reduced';
+  const pref: ReducedMotionPreference = settings && isReducedMotionPreference(settings.reducedMotion) ? settings.reducedMotion : 'system';
+  if (pref === 'on') return 'reduced';
+  if (pref === 'off') return 'full';
+  return osPrefersReduced ? 'reduced' : 'full';
+}
+/** Live `prefers-reduced-motion` (false where matchMedia is unavailable). */
+export function useOsReducedMotion(): boolean {
+  const query = '(prefers-reduced-motion: reduce)';
+  const read = () => (typeof window !== 'undefined' && typeof window.matchMedia === 'function' ? window.matchMedia(query).matches : false);
+  const [reduced, setReduced] = useState<boolean>(read);
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia(query);
+    const onChange = () => setReduced(mq.matches);
+    if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onChange);
+    return () => { if (typeof mq.removeEventListener === 'function') mq.removeEventListener('change', onChange); };
+  }, []);
+  return reduced;
+}
+
+// ---- Map geometry (percent space: x 0–100 left→right, y 0–100 top→bottom) -----------------------------------
+export type MapPoint = readonly [number, number];
+export interface AustraliaMapRegionShape { readonly points: readonly MapPoint[]; readonly anchor: { readonly x: number; readonly y: number }; readonly fillHint: string }
+export const AUSTRALIA_MAP_REGIONS: Readonly<Record<ChallengeRegionCode, AustraliaMapRegionShape>> = {
+  WA: { anchor: { x: 15, y: 55 }, fillHint: '#d97706', points: [[36, 14], [32, 15], [28, 17], [24, 20], [20, 24], [16, 28], [12, 30], [8, 34], [6, 40], [4, 46], [3, 52], [5, 60], [6, 68], [8, 74], [12, 78], [20, 80], [26, 79], [32, 77], [36, 75], [36, 52]] },
+  NT: { anchor: { x: 45, y: 35 }, fillHint: '#b45309', points: [[36, 14], [40, 10], [44, 8], [48, 9], [52, 7], [56, 9], [59, 13], [58, 18], [60, 20], [60, 52], [36, 52]] },
+  QLD: { anchor: { x: 80, y: 35 }, fillHint: '#f4a261', points: [[60, 20], [62, 26], [65, 27], [67, 22], [69, 16], [71, 9], [73, 3], [75, 2], [76, 7], [78, 13], [81, 18], [85, 23], [89, 28], [92, 33], [95, 40], [97, 47], [97, 56], [64, 56], [64, 52], [60, 52]] },
+  SA: { anchor: { x: 45, y: 75 }, fillHint: '#e9c46a', points: [[36, 52], [64, 52], [64, 86], [60, 84], [57, 80], [54, 78], [52, 81], [50, 77], [48, 79], [46, 81], [42, 78], [38, 76], [36, 75]] },
+  NSW: { anchor: { x: 80, y: 65 }, fillHint: '#e76f51', points: [[64, 56], [97, 56], [96, 62], [95, 68], [93, 74], [92, 80], [84, 77], [78, 76], [70, 74], [64, 76]] },
+  VIC: { anchor: { x: 65, y: 85 }, fillHint: '#264653', points: [[64, 76], [70, 74], [78, 76], [84, 77], [92, 80], [92, 83], [86, 85], [80, 86], [76, 88], [70, 87], [64, 86]] },
+  ACT: { anchor: { x: 75, y: 70 }, fillHint: '#6d597a', points: [[75, 67.5], [77.5, 70], [75, 72.5], [72.5, 70]] },
+  TAS: { anchor: { x: 75.5, y: 94.5 }, fillHint: '#2a9d8f', points: [[70, 91], [74, 90], [79, 90], [82, 92], [81, 96], [78, 99], [74, 99], [71, 96]] }
+};
+export type MapRouteKind = 'land' | 'sea';
+/** Neighbour routes (ADJACENT_REGIONS) plus the Bass Strait crossing. */
+export const AUSTRALIA_MAP_ROUTES: ReadonlyArray<readonly [ChallengeRegionCode, ChallengeRegionCode, MapRouteKind]> = (() => {
+  const out: Array<readonly [ChallengeRegionCode, ChallengeRegionCode, MapRouteKind]> = [];
+  const adj = ADJACENT_REGIONS as Record<string, string[]>;
+  CHALLENGE_REGION_CODES.forEach(a => (adj[a] || []).forEach(b => {
+    if (!isChallengeRegionCode(b)) return;
+    if (!out.some(([x, y]) => (x === a && y === b) || (x === b && y === a))) out.push([a, b, 'land']);
+  }));
+  out.push(['VIC', 'TAS', 'sea']);
+  return out;
+})();
+export function mapPolygonPath(points: readonly MapPoint[]): string {
+  return points.length ? `M ${points.map(([x, y]) => `${x} ${y}`).join(' L ')} Z` : '';
+}
+export function mapPolygonArea(points: readonly MapPoint[]): number {
+  let a = 0;
+  for (let i = 0; i < points.length; i++) { const [x1, y1] = points[i]; const [x2, y2] = points[(i + 1) % points.length]; a += x1 * y2 - x2 * y1; }
+  return Math.abs(a) / 2;
+}
+export function mapPointInPolygon(x: number, y: number, points: readonly MapPoint[]): boolean {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const [xi, yi] = points[i]; const [xj, yj] = points[j];
+    if (((yi > y) !== (yj > y)) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-9) + xi) inside = !inside;
+  }
+  return inside;
+}
+/** Where a region's marker sits: the V9.5 `position` in classic mode (kept as the fallback), the map anchor otherwise. */
+export function regionAnchor(code: string, mode: VisualMode): { x: number; y: number } {
+  const region: { position?: { x?: unknown; y?: unknown } } | undefined = REGIONS[code];
+  const classic = { x: Number(region?.position?.x) || 50, y: Number(region?.position?.y) || 50 };
+  if (mode === 'classic' || !isChallengeRegionCode(code)) return classic;
+  return { ...AUSTRALIA_MAP_REGIONS[code].anchor };
+}
+
+// ---- Map model (the memoised component's only data prop) -------------------------------------------------------
+export type MapControl = 'player' | 'ai' | 'neutral';
+export interface MapRegionView { code: string; name: string; control: MapControl; visited: boolean; hasEvent: boolean; reachable: boolean; selected: boolean; current: boolean }
+export interface MapTokenView { id: string; label: string; kind: 'player' | 'ally' | 'ai'; region: string }
+export interface AustraliaMapModel { regions: MapRegionView[]; tokens: MapTokenView[]; currentRegion: string; signature: string }
+export function buildAustraliaMapModel(i: { regions: MapRegionView[]; tokens: MapTokenView[]; currentRegion: string }): AustraliaMapModel {
+  const signature = JSON.stringify([i.currentRegion, i.regions.map(r => [r.code, r.control, r.visited, r.hasEvent, r.reachable, r.selected, r.current]), i.tokens.map(t => [t.id, t.label, t.kind, t.region])]);
+  return { regions: i.regions, tokens: i.tokens, currentRegion: i.currentRegion, signature };
+}
+/** Keep the previous model object while nothing visible changed, so React.memo can skip the map. */
+export function stabilizeMapModel(cache: { current: AustraliaMapModel | null }, next: AustraliaMapModel): AustraliaMapModel {
+  if (cache.current && cache.current.signature === next.signature) return cache.current;
+  cache.current = next;
+  return next;
+}
+export const MAP_CONTROL_FILL: Readonly<Record<MapControl, string>> = { player: '#3b82f6', ai: '#ec4899', neutral: '#64748b' };
+export function regionFill(view: MapRegionView): { fill: string; opacity: number } {
+  if (view.control !== 'neutral') return { fill: MAP_CONTROL_FILL[view.control], opacity: 0.62 };
+  const hint = isChallengeRegionCode(view.code) ? AUSTRALIA_MAP_REGIONS[view.code].fillHint : MAP_CONTROL_FILL.neutral;
+  return { fill: hint, opacity: view.visited ? 0.55 : 0.32 };
+}
+/** Regions whose events are new since the last signature (for the flash). */
+export function newEventRegions(previous: readonly string[], current: readonly string[]): string[] {
+  return current.filter(r => !previous.includes(r));
+}
+export function mapTransitionMs(motion: FeelMotion, kind: 'token' | 'hover' | 'flash'): number {
+  if (motion === 'reduced') return 0;
+  return kind === 'token' ? 900 : kind === 'hover' ? 160 : 2400;
+}
+
+export const WP4_FEEL_CSS = `
+@keyframes wp4-flash { 0% { fill-opacity: 0.95 } 35% { fill-opacity: 0.3 } 70% { fill-opacity: 0.9 } 100% { fill-opacity: inherit } }
+@keyframes wp4-draw { from { stroke-dashoffset: 100 } to { stroke-dashoffset: 0 } }
+@keyframes wp4-rise { 0% { opacity: 0; transform: translateY(6px) } 15% { opacity: 1; transform: none } 75% { opacity: 1 } 100% { opacity: 0; transform: translateY(-18px) } }
+@keyframes wp4-wipe { 0% { transform: translateX(-100%) } 45%, 55% { transform: translateX(0) } 100% { transform: translateX(100%) } }
+@keyframes wp4-tumble { from { transform: rotate(0deg) } to { transform: rotate(720deg) } }
+@keyframes wp4-fill { from { width: 0 } }
+.wp4-region { cursor: pointer; transition: fill-opacity 160ms ease, stroke-width 160ms ease }
+.wp4-region:hover, .wp4-region:focus-visible { fill-opacity: 0.85; stroke-width: 0.9 }
+.wp4-region.wp4-flashing { animation: wp4-flash 2400ms ease-out 1 }
+.wp4-journey { stroke-dasharray: 100; animation: wp4-draw 900ms ease-out both }
+.wp4-pop { animation: wp4-rise 1400ms ease-out both }
+.wp4-wipe { animation: wp4-wipe 900ms cubic-bezier(0.4, 0, 0.2, 1) both }
+.wp4-dice { display: inline-block; animation: wp4-tumble 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both }
+.wp4-oddsbar { animation: wp4-fill 700ms ease-out both }
+[data-wp4-motion="reduced"] *, [data-wp4-motion="reduced"] *::before, [data-wp4-motion="reduced"] *::after { animation: none !important; transition: none !important }
+`;
+
+export interface AustraliaMapSvgProps { model: AustraliaMapModel; motion: FeelMotion; onActivate: (code: string) => void }
+/** The enhanced map layer: polygons, routes and tokens. Sits under the existing region markers (which keep every badge). */
+export const AustraliaMapSvg = React.memo(function AustraliaMapSvg({ model, motion, onActivate }: AustraliaMapSvgProps) {
+  const [flash, setFlash] = useState<string[]>([]);
+  const [journey, setJourney] = useState<{ from: string; to: string; key: number } | null>(null);
+  const prevEvents = useRef<string[] | null>(null);
+  const prevRegion = useRef<string | null>(null);
+  const eventRegions = model.regions.filter(r => r.hasEvent).map(r => r.code);
+  const eventKey = eventRegions.join(',');
+  useEffect(() => {
+    const prev = prevEvents.current;
+    prevEvents.current = eventRegions;
+    if (!prev) return;
+    const fresh = newEventRegions(prev, eventRegions);
+    if (!fresh.length) return;
+    setFlash(fresh);
+    const t = setTimeout(() => setFlash([]), mapTransitionMs(motion, 'flash') || 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventKey]);
+  useEffect(() => {
+    const prev = prevRegion.current;
+    prevRegion.current = model.currentRegion;
+    if (prev && prev !== model.currentRegion) setJourney(j => ({ from: prev, to: model.currentRegion, key: (j?.key || 0) + 1 }));
+  }, [model.currentRegion]);
+  const tokenMs = mapTransitionMs(motion, 'token');
+  const tokensByRegion: Record<string, MapTokenView[]> = {};
+  model.tokens.forEach(t => { (tokensByRegion[t.region] = tokensByRegion[t.region] || []).push(t); });
+  const current = model.currentRegion;
+  return (
+    <div className="absolute inset-0" data-testid="enhanced-map" data-wp4-motion={motion}>
+      <style>{WP4_FEEL_CSS}</style>
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full" role="img" aria-label="Map of Australia's states and territories">
+        <defs>
+          <radialGradient id="wp4-sea" cx="60%" cy="45%" r="75%"><stop offset="0%" stopColor="#1e3a5f" /><stop offset="100%" stopColor="#0b1726" /></radialGradient>
+        </defs>
+        <rect x="0" y="0" width="100" height="100" fill="url(#wp4-sea)" />
+        {AUSTRALIA_MAP_ROUTES.map(([a, b, kind]) => {
+          const pa = AUSTRALIA_MAP_REGIONS[a].anchor; const pb = AUSTRALIA_MAP_REGIONS[b].anchor;
+          const fromCurrent = a === current || b === current;
+          const other = a === current ? b : a;
+          const reachable = fromCurrent && Boolean(model.regions.find(r => r.code === other)?.reachable);
+          return <line key={`${a}-${b}`} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y} stroke={reachable ? '#facc15' : '#94a3b8'} strokeOpacity={reachable ? 0.9 : 0.35} strokeWidth={reachable ? 0.7 : 0.4} strokeDasharray={kind === 'sea' ? '1.2 1.2' : reachable ? undefined : '0.8 0.8'} vectorEffect="non-scaling-stroke" data-testid={`map-route-${a}-${b}`} />;
+        })}
+        {model.regions.map(r => {
+          const shape = isChallengeRegionCode(r.code) ? AUSTRALIA_MAP_REGIONS[r.code] : null;
+          if (!shape) return null;
+          const f = regionFill(r);
+          return (
+            <path key={r.code} d={mapPolygonPath(shape.points)} className={`wp4-region${flash.includes(r.code) ? ' wp4-flashing' : ''}`} fill={f.fill} fillOpacity={f.opacity}
+              stroke={r.current ? '#4ade80' : r.selected ? '#ffffff' : '#0f172a'} strokeWidth={r.current || r.selected ? 0.8 : 0.35} vectorEffect="non-scaling-stroke"
+              onClick={() => onActivate(r.code)} data-testid={`map-shape-${r.code}`} data-control={r.control} data-flash={flash.includes(r.code) ? 'true' : undefined}>
+              <title>{r.name}</title>
+            </path>
+          );
+        })}
+        {journey && isChallengeRegionCode(journey.from) && isChallengeRegionCode(journey.to) && (
+          <line key={journey.key} className="wp4-journey" x1={AUSTRALIA_MAP_REGIONS[journey.from].anchor.x} y1={AUSTRALIA_MAP_REGIONS[journey.from].anchor.y} x2={AUSTRALIA_MAP_REGIONS[journey.to].anchor.x} y2={AUSTRALIA_MAP_REGIONS[journey.to].anchor.y} pathLength={100} stroke="#4ade80" strokeWidth={1} vectorEffect="non-scaling-stroke" data-testid="map-journey" />
+        )}
+      </svg>
+      {model.tokens.map(t => {
+        const at = regionAnchor(t.region, 'enhanced');
+        const stack = tokensByRegion[t.region] || [];
+        const idx = stack.indexOf(t);
+        const dy = t.kind === 'ai' ? -5.5 : 5.5 + Math.max(0, idx) * 0.5;
+        return (
+          <div key={t.id} className="absolute pointer-events-none z-30" data-testid={`map-token-${t.id}`} data-region={t.region}
+            style={{ left: `${at.x}%`, top: `${Math.max(2, Math.min(98, at.y + dy))}%`, transform: 'translate(-50%, -50%)', transition: tokenMs ? `left ${tokenMs}ms cubic-bezier(0.4, 0, 0.2, 1), top ${tokenMs}ms cubic-bezier(0.4, 0, 0.2, 1)` : 'none' }}>
+            <span className={`text-[11px] whitespace-nowrap px-2 py-0.5 rounded-full font-bold shadow ${t.kind === 'ai' ? 'bg-pink-700 text-pink-50 border border-pink-300' : t.kind === 'ally' ? 'bg-sky-700 text-sky-50' : 'bg-green-600 text-white'}`}>
+              {t.kind === 'ai' ? '◆' : '▲'} {t.label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+});
+
+// ---- Game-feel bus (presentation events that are not state changes) ---------------------------------------------
+export type GameFeelEvent = { kind: 'challenge'; actor: 'human' | 'ai'; success: boolean; odds: number; label: string };
+const gameFeelListeners = new Set<(e: GameFeelEvent) => void>();
+export function emitGameFeel(e: GameFeelEvent): void { gameFeelListeners.forEach(l => { try { l(e); } catch { /* presentation only */ } }); }
+export function subscribeGameFeel(listener: (e: GameFeelEvent) => void): () => void {
+  if (gameFeelListeners.size > 16) gameFeelListeners.clear();
+  gameFeelListeners.add(listener);
+  return () => { gameFeelListeners.delete(listener); };
+}
+export function formatMoneyDelta(delta: number): string {
+  const v = Math.round(delta);
+  return `${v >= 0 ? '+' : '−'}$${Math.abs(v).toLocaleString('en-AU')}`;
+}
+export function turnWipeLabel(isHumanTurn: boolean, actorName: string): string { return isHumanTurn ? 'Your turn' : `${actorName || 'Rival'}'s turn`; }
+/** Odds-bar width (%) and tone for the roll card. */
+export function rollCardModel(odds: number, success: boolean): { width: number; tone: 'good' | 'bad'; label: string } {
+  const w = Math.max(0, Math.min(100, Math.round(odds * 100)));
+  return { width: w, tone: success ? 'good' : 'bad', label: `${w}% — ${success ? 'success' : 'failed'}` };
+}
+
+// ---- Sound (Web Audio, synthesised) -----------------------------------------------------------------------------
+export type GameSoundKind = 'success' | 'fail' | 'cash' | 'travel' | 'turn' | 'alarm';
+export const GAME_SOUND_KINDS: readonly GameSoundKind[] = ['success', 'fail', 'cash', 'travel', 'turn', 'alarm'];
+export type SynthWave = 'sine' | 'square' | 'sawtooth' | 'triangle';
+export interface SynthTone { start: number; duration: number; freq: number; endFreq?: number; wave: SynthWave; gain: number }
+export interface SynthSound { tones: SynthTone[]; noise?: { start: number; duration: number; gain: number; filterFrom: number; filterTo: number } }
+export const GAME_SOUND_SPECS: Readonly<Record<GameSoundKind, SynthSound>> = {
+  success: { tones: [{ start: 0, duration: 0.12, freq: 523.25, wave: 'triangle', gain: 0.5 }, { start: 0.1, duration: 0.12, freq: 659.25, wave: 'triangle', gain: 0.5 }, { start: 0.2, duration: 0.26, freq: 783.99, wave: 'triangle', gain: 0.55 }] },
+  fail: { tones: [{ start: 0, duration: 0.18, freq: 311.13, endFreq: 261.63, wave: 'sawtooth', gain: 0.32 }, { start: 0.17, duration: 0.34, freq: 233.08, endFreq: 155.56, wave: 'sawtooth', gain: 0.32 }] },
+  cash: { tones: [{ start: 0, duration: 0.07, freq: 1318.5, wave: 'square', gain: 0.22 }, { start: 0.08, duration: 0.14, freq: 1760, wave: 'square', gain: 0.22 }] },
+  travel: { tones: [{ start: 0, duration: 0.45, freq: 220, endFreq: 440, wave: 'sine', gain: 0.18 }], noise: { start: 0, duration: 0.55, gain: 0.25, filterFrom: 400, filterTo: 2400 } },
+  turn: { tones: [{ start: 0, duration: 0.18, freq: 659.25, wave: 'sine', gain: 0.4 }, { start: 0.16, duration: 0.3, freq: 880, wave: 'sine', gain: 0.35 }] },
+  alarm: { tones: [0, 1, 2, 3, 4, 5].map(k => ({ start: k * 0.13, duration: 0.11, freq: k % 2 ? 660 : 880, wave: 'square' as SynthWave, gain: 0.2 })) }
+};
+export function synthSoundDuration(s: SynthSound): number {
+  return Math.max(0, ...s.tones.map(t => t.start + t.duration), s.noise ? s.noise.start + s.noise.duration : 0);
+}
+/** Deterministic white-ish noise (xorshift32) — the whoosh never needs Math.random. */
+export function deterministicNoise(length: number, seed = 0x9e3779b9): Float32Array {
+  const out = new Float32Array(Math.max(0, Math.floor(length)));
+  let s = (seed >>> 0) || 1;
+  for (let i = 0; i < out.length; i++) { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; out[i] = (s / 0xffffffff) * 2 - 1; }
+  return out;
+}
+export function shouldPlayGameSound(settings: { soundEnabled?: unknown; soundVolume?: unknown } | null | undefined, unlocked: boolean): boolean {
+  if (!unlocked || !settings) return false;
+  if (settings.soundEnabled === false) return false;
+  return sanitizeSoundVolume(settings.soundVolume) > 0;
+}
+type AudioCtor = new () => AudioContext;
+class GameAudioEngine {
+  private ctx: AudioContext | null = null;
+  private unlocked = false;
+  private noiseBuffer: AudioBuffer | null = null;
+  isUnlocked(): boolean { return this.unlocked; }
+  /** Call from a user gesture (pointerdown / keydown) — creates or resumes the AudioContext. */
+  unlock(): void {
+    if (typeof window === 'undefined') return;
+    try {
+      if (!this.ctx) {
+        const w = window as unknown as { AudioContext?: AudioCtor; webkitAudioContext?: AudioCtor };
+        const Ctor = w.AudioContext || w.webkitAudioContext;
+        if (!Ctor) return;
+        this.ctx = new Ctor();
+      }
+      if (this.ctx.state === 'suspended') void this.ctx.resume();
+      this.unlocked = true;
+    } catch { this.unlocked = false; }
+  }
+  play(kind: GameSoundKind, settings: { soundEnabled?: unknown; soundVolume?: unknown } | null | undefined): void {
+    if (!shouldPlayGameSound(settings, this.unlocked) || !this.ctx) return;
+    const ctx = this.ctx;
+    const spec = GAME_SOUND_SPECS[kind];
+    const volume = sanitizeSoundVolume(settings?.soundVolume);
+    try {
+      const master = ctx.createGain();
+      master.gain.value = volume;
+      master.connect(ctx.destination);
+      const t0 = ctx.currentTime + 0.01;
+      spec.tones.forEach(tone => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = tone.wave;
+        osc.frequency.setValueAtTime(tone.freq, t0 + tone.start);
+        if (tone.endFreq) osc.frequency.exponentialRampToValueAtTime(tone.endFreq, t0 + tone.start + tone.duration);
+        g.gain.setValueAtTime(0.0001, t0 + tone.start);
+        g.gain.exponentialRampToValueAtTime(Math.max(0.0002, tone.gain), t0 + tone.start + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + tone.start + tone.duration);
+        osc.connect(g); g.connect(master);
+        osc.start(t0 + tone.start); osc.stop(t0 + tone.start + tone.duration + 0.02);
+      });
+      if (spec.noise) {
+        if (!this.noiseBuffer) {
+          const data = deterministicNoise(Math.floor(ctx.sampleRate * 0.6));
+          const buf = ctx.createBuffer(1, data.length, ctx.sampleRate);
+          buf.getChannelData(0).set(data);
+          this.noiseBuffer = buf;
+        }
+        const src = ctx.createBufferSource();
+        src.buffer = this.noiseBuffer;
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(spec.noise.filterFrom, t0 + spec.noise.start);
+        filter.frequency.exponentialRampToValueAtTime(spec.noise.filterTo, t0 + spec.noise.start + spec.noise.duration);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t0 + spec.noise.start);
+        g.gain.exponentialRampToValueAtTime(spec.noise.gain, t0 + spec.noise.start + spec.noise.duration * 0.4);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + spec.noise.start + spec.noise.duration);
+        src.connect(filter); filter.connect(g); g.connect(master);
+        src.start(t0 + spec.noise.start); src.stop(t0 + spec.noise.start + spec.noise.duration + 0.02);
+      }
+      setTimeout(() => { try { master.disconnect(); } catch { /* already gone */ } }, Math.ceil(synthSoundDuration(spec) * 1000) + 200);
+    } catch { /* audio is best-effort */ }
+  }
+}
+export const gameAudio = new GameAudioEngine();
+
+// ---- Feel layer: pop-ups, wipe, roll card and the sound triggers ----------------------------------------------------
+export interface GameFeelLayerProps {
+  money: number;
+  turnKey: string;
+  isHumanTurn: boolean;
+  actorName: string;
+  eventKey: string;
+  region: string;
+  visualMode: VisualMode;
+  motion: FeelMotion;
+  soundEnabled: boolean;
+  soundVolume: number;
+  live: boolean;
+}
+export const GameFeelLayer = React.memo(function GameFeelLayer(p: GameFeelLayerProps) {
+  const [pops, setPops] = useState<Array<{ id: number; text: string; positive: boolean }>>([]);
+  const [wipe, setWipe] = useState<{ id: number; text: string } | null>(null);
+  const [roll, setRoll] = useState<{ id: number; label: string; odds: number; success: boolean; actor: 'human' | 'ai' } | null>(null);
+  const seq = useRef(0);
+  const prev = useRef<{ money: number; turnKey: string; eventKey: string; region: string } | null>(null);
+  const sound = useRef({ soundEnabled: p.soundEnabled, soundVolume: p.soundVolume });
+  sound.current = { soundEnabled: p.soundEnabled, soundVolume: p.soundVolume };
+  const enhanced = p.visualMode === 'enhanced';
+  useEffect(() => {
+    const unlock = () => gameAudio.unlock();
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => { window.removeEventListener('pointerdown', unlock); window.removeEventListener('keydown', unlock); };
+  }, []);
+  useEffect(() => subscribeGameFeel(e => {
+    gameAudio.play(e.success ? 'success' : 'fail', sound.current);
+    if (!enhanced) return;
+    seq.current += 1;
+    const id = seq.current;
+    setRoll({ id, label: e.label, odds: e.odds, success: e.success, actor: e.actor });
+    setTimeout(() => setRoll(r => (r && r.id === id ? null : r)), 1600);
+  }), [enhanced]);
+  useEffect(() => {
+    const before = prev.current;
+    prev.current = { money: p.money, turnKey: p.turnKey, eventKey: p.eventKey, region: p.region };
+    if (!before || !p.live) return;
+    const timers: Array<ReturnType<typeof setTimeout>> = [];
+    const delta = Math.round(p.money - before.money);
+    if (delta !== 0 && Math.abs(delta) < 1000000) {
+      if (delta >= 50) gameAudio.play('cash', sound.current);
+      if (enhanced) {
+        seq.current += 1;
+        const id = seq.current;
+        setPops(list => [...list, { id, text: formatMoneyDelta(delta), positive: delta > 0 }].slice(-4));
+        timers.push(setTimeout(() => setPops(list => list.filter(x => x.id !== id)), 1500));
+      }
+    }
+    if (p.region && before.region && p.region !== before.region) gameAudio.play('travel', sound.current);
+    if (p.turnKey !== before.turnKey) {
+      gameAudio.play('turn', sound.current);
+      if (enhanced) {
+        seq.current += 1;
+        const id = seq.current;
+        setWipe({ id, text: turnWipeLabel(p.isHumanTurn, p.actorName) });
+        timers.push(setTimeout(() => setWipe(w => (w && w.id === id ? null : w)), p.motion === 'reduced' ? 700 : 950));
+      }
+    }
+    const beforeEvents = before.eventKey ? before.eventKey.split(',') : [];
+    const nowEvents = p.eventKey ? p.eventKey.split(',') : [];
+    if (newEventRegions(beforeEvents, nowEvents).length) gameAudio.play('alarm', sound.current);
+    return () => { timers.forEach(clearTimeout); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.money, p.turnKey, p.eventKey, p.region, p.live]);
+  if (!enhanced) return null;
+  const rc = roll ? rollCardModel(roll.odds, roll.success) : null;
+  return (
+    <div className="pointer-events-none" data-testid="game-feel-layer" data-wp4-motion={p.motion}>
+      <style>{WP4_FEEL_CSS}</style>
+      <div className="fixed top-16 right-4 z-[60] flex flex-col items-end gap-1" aria-live="polite">
+        {pops.map(x => <div key={x.id} className={`wp4-pop text-sm font-extrabold px-2 py-0.5 rounded shadow ${x.positive ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`} data-testid="money-pop">{x.text}</div>)}
+      </div>
+      {wipe && (
+        <div className="fixed inset-x-0 top-1/3 z-[55] overflow-hidden" aria-hidden="true">
+          <div key={wipe.id} className={`${p.motion === 'reduced' ? '' : 'wp4-wipe'} bg-gradient-to-r from-transparent via-black/70 to-transparent text-white text-center py-4 text-2xl font-black tracking-wide`} data-testid="turn-wipe">{wipe.text}</div>
+        </div>
+      )}
+      {roll && rc && (
+        <div key={roll.id} className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-slate-900/95 text-white rounded-xl px-4 py-3 shadow-xl w-72 text-sm" role="status" data-testid="roll-card" data-success={roll.success ? 'true' : 'false'}>
+          <div className="flex items-center gap-2 font-bold"><span className="wp4-dice text-xl">🎲</span><span className="truncate">{roll.actor === 'ai' ? '🤖 ' : ''}{roll.label}</span></div>
+          <div className="mt-2 h-2 rounded bg-white/15 overflow-hidden"><div className={`wp4-oddsbar h-2 ${rc.tone === 'good' ? 'bg-emerald-400' : 'bg-red-400'}`} style={{ width: `${rc.width}%` }} /></div>
+          <div className="mt-1 text-xs opacity-90">{roll.success ? '✅' : '❌'} {rc.label}</div>
+        </div>
+      )}
+    </div>
+  );
+});
+
+// ---- Self-tests (mf01–mf34) -----------------------------------------------------------------------------------------
+export function runV96MapMotionSoundSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const codes = CHALLENGE_REGION_CODES;
+  const view = (o: Partial<MapRegionView> = {}): MapRegionView => ({ code: 'NSW', name: 'New South Wales', control: 'neutral', visited: false, hasEvent: false, reachable: false, selected: false, current: false, ...o });
+
+  check('mf01_regions', 'The map has a polygon for each of the 8 regions', () => codes.every(c => AUSTRALIA_MAP_REGIONS[c].points.length >= 4) || 'missing polygon');
+  check('mf02_bounds', 'Every polygon point lies inside the 0–100 map space', () => codes.every(c => AUSTRALIA_MAP_REGIONS[c].points.every(([x, y]) => x >= 0 && x <= 100 && y >= 0 && y <= 100)) || 'point out of bounds');
+  check('mf03_area', 'Polygons are non-degenerate and sized sensibly (WA largest, ACT smallest)', () => {
+    const areas = codes.map(c => [c, mapPolygonArea(AUSTRALIA_MAP_REGIONS[c].points)] as const);
+    const max = areas.reduce((a, b) => (b[1] > a[1] ? b : a)); const min = areas.reduce((a, b) => (b[1] < a[1] ? b : a));
+    return (areas.every(([, a]) => a > 5) && max[0] === 'WA' && min[0] === 'ACT') || JSON.stringify(areas);
+  });
+  check('mf04_anchors_inside', 'Each anchor sits inside its own polygon', () => {
+    const bad = codes.filter(c => !mapPointInPolygon(AUSTRALIA_MAP_REGIONS[c].anchor.x, AUSTRALIA_MAP_REGIONS[c].anchor.y, AUSTRALIA_MAP_REGIONS[c].points));
+    return bad.length === 0 || bad.join(',');
+  });
+  check('mf05_anchors_match_positions', 'Anchors keep the V9.5 positions (TAS lifted on-screen), so overlays stay aligned', () => {
+    const bad = codes.filter(c => { const a = AUSTRALIA_MAP_REGIONS[c].anchor; const p = REGIONS[c].position; return Math.abs(a.x - p.x) > 1 || Math.abs(a.y - p.y) > (c === 'TAS' ? 6 : 1); });
+    return bad.length === 0 || bad.join(',');
+  });
+  check('mf06_act_inside_nsw', 'The ACT sits inside New South Wales', () => AUSTRALIA_MAP_REGIONS.ACT.points.every(([x, y]) => mapPointInPolygon(x, y, AUSTRALIA_MAP_REGIONS.NSW.points)) || 'ACT outside NSW');
+  check('mf07_tas_island', 'Tasmania is an island (no shared points with the mainland, sea route only)', () => {
+    const tas = AUSTRALIA_MAP_REGIONS.TAS.points;
+    const mainland = codes.filter(c => c !== 'TAS').flatMap(c => AUSTRALIA_MAP_REGIONS[c].points);
+    const routes = AUSTRALIA_MAP_ROUTES.filter(([a, b]) => a === 'TAS' || b === 'TAS');
+    return (!tas.some(([x, y]) => mainland.some(([mx, my]) => mx === x && my === y)) && routes.length === 1 && routes[0][2] === 'sea') || 'TAS not an island';
+  });
+  check('mf08_routes_cover_adjacency', 'A land route exists for every ADJACENT_REGIONS pair, none duplicated', () => {
+    const adj = ADJACENT_REGIONS as Record<string, string[]>;
+    const missing = codes.flatMap(a => (adj[a] || []).filter(b => !AUSTRALIA_MAP_ROUTES.some(([x, y]) => (x === a && y === b) || (x === b && y === a))).map(b => `${a}-${b}`));
+    const keys = AUSTRALIA_MAP_ROUTES.map(([a, b]) => [a, b].sort().join('-'));
+    return (missing.length === 0 && new Set(keys).size === keys.length) || missing.join(',');
+  });
+  check('mf09_path', 'mapPolygonPath builds a closed SVG path', () => mapPolygonPath([[0, 0], [10, 0], [10, 10]]) === 'M 0 0 L 10 0 L 10 10 Z' || mapPolygonPath([[0, 0], [10, 0], [10, 10]]));
+  check('mf10_point_in_polygon', 'Point-in-polygon works on a square', () => (mapPointInPolygon(5, 5, [[0, 0], [10, 0], [10, 10], [0, 10]]) && !mapPointInPolygon(15, 5, [[0, 0], [10, 0], [10, 10], [0, 10]])) || 'pip wrong');
+  check('mf11_classic_fallback', 'Classic mode positions markers exactly at the V9.5 REGIONS position', () => codes.every(c => { const a = regionAnchor(c, 'classic'); return a.x === REGIONS[c].position.x && a.y === REGIONS[c].position.y; }) || 'classic anchor moved');
+  check('mf12_enhanced_anchor', 'Enhanced mode uses the map anchors', () => codes.every(c => JSON.stringify(regionAnchor(c, 'enhanced')) === JSON.stringify(AUSTRALIA_MAP_REGIONS[c].anchor)) || 'anchor wrong');
+  check('mf13_fill', 'Region fill shows control (blue you, pink rival) and dims unvisited neutral regions', () => {
+    const you = regionFill(view({ control: 'player' })); const rival = regionFill(view({ control: 'ai' })); const fresh = regionFill(view()); const seen = regionFill(view({ visited: true }));
+    return (you.fill === '#3b82f6' && rival.fill === '#ec4899' && fresh.opacity < seen.opacity && fresh.fill === AUSTRALIA_MAP_REGIONS.NSW.fillHint) || JSON.stringify([you, rival, fresh, seen]);
+  });
+  check('mf14_model_signature', 'The model signature changes only when something visible changes', () => {
+    const a = buildAustraliaMapModel({ regions: [view()], tokens: [{ id: 'p', label: 'You', kind: 'player', region: 'NSW' }], currentRegion: 'NSW' });
+    const b = buildAustraliaMapModel({ regions: [view()], tokens: [{ id: 'p', label: 'You', kind: 'player', region: 'NSW' }], currentRegion: 'NSW' });
+    const c = buildAustraliaMapModel({ regions: [view({ hasEvent: true })], tokens: [{ id: 'p', label: 'You', kind: 'player', region: 'NSW' }], currentRegion: 'NSW' });
+    return (a.signature === b.signature && a.signature !== c.signature) || 'signature wrong';
+  });
+  check('mf15_stabilize', 'stabilizeMapModel reuses the previous object while the signature is unchanged (memo-friendly)', () => {
+    const cache: { current: AustraliaMapModel | null } = { current: null };
+    const m1 = stabilizeMapModel(cache, buildAustraliaMapModel({ regions: [view()], tokens: [], currentRegion: 'NSW' }));
+    const m2 = stabilizeMapModel(cache, buildAustraliaMapModel({ regions: [view()], tokens: [], currentRegion: 'NSW' }));
+    const m3 = stabilizeMapModel(cache, buildAustraliaMapModel({ regions: [view({ control: 'ai' })], tokens: [], currentRegion: 'NSW' }));
+    return (m1 === m2 && m3 !== m2) || 'not stable';
+  });
+  check('mf16_new_events', 'newEventRegions reports only regions whose events are new', () => JSON.stringify(newEventRegions(['QLD'], ['QLD', 'WA'])) === '["WA"]' && newEventRegions(['QLD'], []).length === 0 || 'diff wrong');
+  check('mf17_motion_resolution', 'Motion: system follows the OS, on reduces, off animates, accessibility always reduces', () =>
+    (resolveFeelMotion({ reducedMotion: 'system' }, true) === 'reduced' && resolveFeelMotion({ reducedMotion: 'system' }, false) === 'full' && resolveFeelMotion({ reducedMotion: 'on' }, false) === 'reduced' && resolveFeelMotion({ reducedMotion: 'off' }, true) === 'full' && resolveFeelMotion({ reducedMotion: 'off', accessibilitySettings: { reduceMotion: true } }, false) === 'reduced' && resolveFeelMotion({}, false) === 'full') || 'motion wrong');
+  check('mf18_transition_ms', 'Reduced motion removes token, hover and flash transitions', () =>
+    (mapTransitionMs('reduced', 'token') === 0 && mapTransitionMs('reduced', 'flash') === 0 && mapTransitionMs('full', 'token') > 0 && mapTransitionMs('full', 'flash') > mapTransitionMs('full', 'token')) || 'durations wrong');
+  check('mf19_css_reduced', 'The stylesheet disables every animation and transition under reduced motion', () => /\[data-wp4-motion="reduced"\] \*[\s\S]*animation: none !important; transition: none !important/.test(WP4_FEEL_CSS) || 'reduced rule missing');
+  check('mf20_money_delta', 'Money pop-ups format signs and thousands', () => (formatMoneyDelta(1250) === '+$1,250' && formatMoneyDelta(-80) === '−$80' && formatMoneyDelta(0) === '+$0') || formatMoneyDelta(1250));
+  check('mf21_turn_wipe', 'Turn wipe labels the new turn owner', () => (turnWipeLabel(true, 'Ana') === 'Your turn' && turnWipeLabel(false, 'Ana') === "Ana's turn" && turnWipeLabel(false, '') === "Rival's turn") || 'label wrong');
+  check('mf22_roll_card', 'Roll card fills the odds bar to the odds and colours by outcome', () => { const a = rollCardModel(0.734, true); const b = rollCardModel(1.4, false); return (a.width === 73 && a.tone === 'good' && b.width === 100 && b.tone === 'bad' && /failed/.test(b.label)) || JSON.stringify([a, b]); });
+  check('mf23_feel_bus', 'The feel bus delivers to subscribers and stops after unsubscribe', () => {
+    const got: string[] = [];
+    const off = subscribeGameFeel(e => got.push(e.label));
+    emitGameFeel({ kind: 'challenge', actor: 'human', success: true, odds: 0.5, label: 'a' }); off();
+    emitGameFeel({ kind: 'challenge', actor: 'human', success: true, odds: 0.5, label: 'b' });
+    return got.join() === 'a' || got.join();
+  });
+  check('mf24_sound_specs', 'Every sound kind has a spec with audible frequencies, short duration and bounded gain', () => {
+    const bad = GAME_SOUND_KINDS.filter(k => { const s = GAME_SOUND_SPECS[k]; return !s || !s.tones.length || s.tones.some(t => t.freq < 80 || t.freq > 5000 || t.gain <= 0 || t.gain > 0.6 || t.duration <= 0) || synthSoundDuration(s) > 1.5; });
+    return bad.length === 0 || bad.join(',');
+  });
+  check('mf25_sound_distinct', 'Success rises, fail falls, alarm alternates', () => {
+    const s = GAME_SOUND_SPECS.success.tones; const f = GAME_SOUND_SPECS.fail.tones; const a = GAME_SOUND_SPECS.alarm.tones;
+    return (s[2].freq > s[0].freq && (f[1].endFreq || 0) < f[0].freq && a.length >= 4 && a[0].freq !== a[1].freq) || 'shapes wrong';
+  });
+  check('mf26_noise_deterministic', 'Travel noise is deterministic, bounded and not constant', () => {
+    const a = deterministicNoise(256); const b = deterministicNoise(256);
+    let same = true; let min = 1; let max = -1;
+    for (let i = 0; i < a.length; i++) { if (a[i] !== b[i]) same = false; min = Math.min(min, a[i]); max = Math.max(max, a[i]); }
+    return (same && min >= -1 && max <= 1 && max - min > 1) || `same=${same} range=${min}..${max}`;
+  });
+  check('mf27_sound_gating', 'Sound plays only after a user interaction, when enabled and with volume > 0', () =>
+    (!shouldPlayGameSound({ soundEnabled: true, soundVolume: 0.4 }, false) && shouldPlayGameSound({ soundEnabled: true, soundVolume: 0.4 }, true) && !shouldPlayGameSound({ soundEnabled: false, soundVolume: 0.4 }, true) && !shouldPlayGameSound({ soundEnabled: true, soundVolume: 0 }, true) && shouldPlayGameSound({}, true)) || 'gating wrong');
+  check('mf28_volume', 'Volume defaults to 0.4 and clamps to 0–1', () => (sanitizeSoundVolume(undefined) === 0.4 && sanitizeSoundVolume(2) === 1 && sanitizeSoundVolume(-1) === 0 && sanitizeSoundVolume(Number.NaN) === 0.4 && sanitizeSoundVolume(0.255) === 0.26) || 'volume wrong');
+  check('mf29_visual_mode', 'visualMode defaults to enhanced; classic toggles one click away and back', () =>
+    (resolveVisualMode({}) === 'enhanced' && resolveVisualMode({ visualMode: 'classic' }) === 'classic' && resolveVisualMode({ visualMode: 'x' }) === 'enhanced' && toggleVisualMode('enhanced') === 'classic' && toggleVisualMode('classic') === 'enhanced') || 'visual mode wrong');
+  check('mf30_settings_defaults', 'Defaults: enhanced visuals, sound on at 0.4, reduced motion follows the OS', () =>
+    (DEFAULT_GAME_SETTINGS.visualMode === 'enhanced' && DEFAULT_GAME_SETTINGS.soundEnabled === true && DEFAULT_GAME_SETTINGS.soundVolume === 0.4 && DEFAULT_GAME_SETTINGS.reducedMotion === 'system') || 'defaults wrong');
+  check('mf31_settings_wiring', 'Map/motion/sound settings are registered, profile-scoped (never restored from saves) and indexed', () => {
+    const keys = ['visualMode', 'soundEnabled', 'soundVolume', 'reducedMotion'];
+    return keys.every(k => SMART_CONTROLLABLE_SETTINGS_REGISTRY.some(s => s.key === k) && V95_PROFILE_SCOPED_SETTING_KEYS.includes(k) && SETTINGS_HUB_SECTION_INDEX.some(s => (s.fieldKeys as readonly string[]).includes(k))) || 'wiring missing';
+  });
+  check('mf32_sanitize', 'sanitizeGameSettings coerces bad map/sound values to defaults', () => {
+    const s = sanitizeGameSettings({ visualMode: 'neon', soundVolume: 9, reducedMotion: 'maybe', soundEnabled: 'yes' });
+    return (s.visualMode === 'enhanced' && s.soundVolume === 1 && s.reducedMotion === 'system' && s.soundEnabled === true) || JSON.stringify([s.visualMode, s.soundVolume, s.reducedMotion, s.soundEnabled]);
+  });
+  check('mf33_classic_untouched', 'Classic mode keeps V9.5 map data: REGIONS positions are unchanged', () => {
+    const v95 = { QLD: [80, 35], NSW: [80, 65], VIC: [65, 85], TAS: [75, 100], SA: [45, 75], WA: [15, 55], NT: [45, 35], ACT: [75, 70] } as Record<string, number[]>;
+    return codes.every(c => REGIONS[c].position.x === v95[c][0] && REGIONS[c].position.y === v95[c][1]) || 'positions changed';
+  });
+  check('mf34_engine_safe', 'The audio engine is a no-op before unlock (never throws without an AudioContext)', () => {
+    gameAudio.play('success', { soundEnabled: true, soundVolume: 0.4 });
+    return gameAudio.isUnlocked() === false || gameAudio.isUnlocked() === true || 'engine state invalid';
+  });
+  return results;
+}
+
 function AustraliaGame() {
   // DIAG2: Mount detection for StrictMode double-invocation tracking
   useEffect(() => {
@@ -188306,6 +188933,11 @@ function dispatchGameSettingsChange(
   const wp2AiPlanRef = useRef<((challenge: LegacyChallengeShape, aiState: ApproachActorLike, wager: number, approachId: string) => ChallengeApproachPlan | null) | null>(null);
   const wp2AiOutcomeRef = useRef<((plan: ChallengeApproachPlan, aiState: ApproachActorLike & { name?: string }, success: boolean) => void) | null>(null);
   const wp2AdvisorRef = useRef<((query: string) => GameIntelligenceAnswer | null) | null>(null);
+  // V9.6 (SECTION 20AJ): OS motion preference, stable map activation and the memo cache for the map model.
+  const wp4OsReduced = useOsReducedMotion();
+  const wp4RegionActionsRef = useRef<Record<string, () => void>>({});
+  const wp4Activate = useCallback((code: string) => { wp4RegionActionsRef.current[code]?.(); }, []);
+  const wp4ModelCacheRef = useRef<AustraliaMapModel | null>(null);
   // V9.6 (SECTION 20AI): the live V9.3 content profile's themes (null before a match has content state).
   const wp3LiveThemesRef = useRef<ContentTheme[] | null>(null);
   {
@@ -190858,6 +191490,7 @@ function dispatchGameSettingsChange(
         const wp2Plan = gameSettings.challengeApproachesEnabled === true && typeof actionData.approachId === 'string' ? (wp2AiPlanRef.current?.(challenge, currentAi, wager, actionData.approachId) || null) : null;
         const successChance = wp2Plan ? wp2Plan.successChance : calculateAiSuccessChance(challenge, currentAi);
         const success = aiRandom() < successChance;
+        emitGameFeel({ kind: 'challenge', actor: 'ai', success, odds: Math.min(1, successChance), label: String(challenge?.name || 'Challenge') });
 
         if (success) {
           let reward = Math.floor(wager * (wp2Plan ? wp2Plan.rewardMultiplier : challenge.reward));
@@ -199898,6 +200531,8 @@ function dispatchGameSettingsChange(
           }
 
           const success = drawGameplayRandom('Combat') < successChance;
+          // V9.6 (SECTION 20AJ): presentation-only roll card + sound.
+          emitGameFeel({ kind: 'challenge', actor: 'human', success, odds: Math.min(1, successChance), label: approachPlan ? `${challenge.name} — ${approachPlan.label}` : String(challenge.name) });
 
           if (success) {
             // V9.1: the payout arithmetic is the canonical computeChallengeRewardCore (shared with balance simulation).
@@ -218770,6 +219405,34 @@ function dispatchGameSettingsChange(
                   </div>
                 </div>
               </SettingsSection>
+              <SettingsSection id="interface.mapSound" tab="interfaceAcc" title="🗺️ Map, Motion & Sound" chips={['UX only']} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'interface.mapSound')!.fieldKeys}>
+                <div className="space-y-3 text-sm" data-testid="map-sound-settings">
+                  <div className="flex items-center justify-between gap-2">
+                    <div><div className="font-semibold">Visual mode</div><div className="text-xs opacity-75">Enhanced: SVG map, animated tokens, pop-ups and turn wipes. Classic: the V9.5 look.</div></div>
+                    <select value={resolveVisualMode(gameSettings)} onChange={e => trackedSetGameSettings('direct_player_change', '🗺️ Map, Motion & Sound', prev => ({ ...prev, visualMode: isVisualMode(e.target.value) ? e.target.value : 'enhanced' }))} className={`${themeStyles.select} rounded px-3 py-2 text-sm`} data-testid="visual-mode-select" aria-label="Visual mode">
+                      <option value="enhanced">✨ Enhanced</option>
+                      <option value="classic">🎨 Classic look</option>
+                    </select>
+                  </div>
+                  <label className="flex items-center justify-between gap-2">
+                    <span><span className="font-semibold">Sound effects</span><span className="block text-xs opacity-75">Synthesised in the browser; silent until you first click or press a key.</span></span>
+                    <input type="checkbox" checked={gameSettings.soundEnabled !== false} onChange={e => trackedSetGameSettings('direct_player_change', '🗺️ Map, Motion & Sound', prev => ({ ...prev, soundEnabled: e.target.checked }))} data-testid="sound-enabled-toggle" />
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <span className="font-semibold w-28">Volume</span>
+                    <input type="range" min={0} max={100} value={Math.round(sanitizeSoundVolume(gameSettings.soundVolume) * 100)} disabled={gameSettings.soundEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🗺️ Map, Motion & Sound', prev => ({ ...prev, soundVolume: sanitizeSoundVolume((parseInt(e.target.value, 10) || 0) / 100) }))} className="flex-1" aria-label="Sound volume" data-testid="sound-volume" />
+                    <span className="w-10 text-right">{Math.round(sanitizeSoundVolume(gameSettings.soundVolume) * 100)}%</span>
+                  </label>
+                  <div className="flex items-center justify-between gap-2">
+                    <div><div className="font-semibold">Reduced motion</div><div className="text-xs opacity-75">System follows your device setting. The Accessibility switch always reduces motion.</div></div>
+                    <select value={isReducedMotionPreference(gameSettings.reducedMotion) ? gameSettings.reducedMotion : 'system'} onChange={e => trackedSetGameSettings('direct_player_change', '🗺️ Map, Motion & Sound', prev => ({ ...prev, reducedMotion: isReducedMotionPreference(e.target.value) ? e.target.value : 'system' }))} className={`${themeStyles.select} rounded px-3 py-2 text-sm`} data-testid="reduced-motion-select" aria-label="Reduced motion">
+                      <option value="system">Follow system</option>
+                      <option value="on">On — no animations</option>
+                      <option value="off">Off — always animate</option>
+                    </select>
+                  </div>
+                </div>
+              </SettingsSection>
               <SettingsSection id="interface.changelog" tab="interfaceAcc" title="What's New" chips={['UX only']}>
                 <div className="text-sm font-semibold mb-1">{V613_CHANGELOG[0]}</div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs opacity-80">
@@ -231157,6 +231820,10 @@ function dispatchGameSettingsChange(
       !playerGrandTourProgress.finalCompleted
         ? [...(currentRegion?.challenges || []), GRAND_TOUR_FINAL_CHALLENGE]
         : (currentRegion?.challenges || []);
+    // V9.6 (SECTION 20AJ): visual mode and motion for the map and feel layer.
+    const wp4Mode = resolveVisualMode(gameSettings);
+    const wp4Enhanced = wp4Mode === 'enhanced';
+    const wp4Motion = resolveFeelMotion(gameSettings, wp4OsReduced);
     // V9.6 (SECTIONS 20AH / 20AI): the region's challenge list for the active flags (exactly V9.5 when they are off).
     const wp3Region = String(player.currentRegion || '');
     const wp3Day = Number(gameState.day) || 1;
@@ -232471,7 +233138,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV96ExperienceModesSelfTests(), ...v95WithIsolatedGlobals(() => runV96ChallengeDecisionSelfTests()), ...v95WithIsolatedGlobals(() => runV96ChallengeContentSelfTests()), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV96ExperienceModesSelfTests(), ...v95WithIsolatedGlobals(() => runV96ChallengeDecisionSelfTests()), ...v95WithIsolatedGlobals(() => runV96ChallengeContentSelfTests()), ...runV96MapMotionSoundSelfTests(), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
@@ -232635,6 +233302,20 @@ function dispatchGameSettingsChange(
       <div className={`min-h-screen ${themeStyles.background} ${themeStyles.text} p-4`}>
         {/* Notification Bar */}
         {renderNotificationBar()}
+        {/* V9.6 (SECTION 20AJ): money pop-ups, turn wipe, roll card and sound triggers. */}
+        <GameFeelLayer
+          money={Number(player.money) || 0}
+          turnKey={`${gameState.turnCounter}|${gameState.currentTurn}|${gameState.currentActorId || ''}`}
+          isHumanTurn={isPlayerTurn}
+          actorName={String(aiPlayer?.name || 'Rival')}
+          eventKey={(gameState.activeEvents || []).map((e: { region?: string }) => String(e.region || '')).filter(Boolean).sort().join(',')}
+          region={String(player.currentRegion || '')}
+          visualMode={wp4Mode}
+          motion={wp4Motion}
+          soundEnabled={gameSettings.soundEnabled !== false}
+          soundVolume={sanitizeSoundVolume(gameSettings.soundVolume)}
+          live={gameState.gameMode === 'game'}
+        />
         
         {/* Turn Indicator / Transit banner — in PLAY the unified Match Header carries both (no duplicate floating pill). */}
         {(experienceLayer !== 'play' || (gameState.gameMode === 'game' && gameState.selectedMode === 'ai')) && renderTurnIndicator()}
@@ -233917,6 +234598,16 @@ function dispatchGameSettingsChange(
                   </label>
                 )}
                 <button
+                  type="button"
+                  onClick={() => trackedSetGameSettings('direct_player_change', '🗺️ Map, Motion & Sound', prev => ({ ...prev, visualMode: toggleVisualMode(resolveVisualMode(prev)) }))}
+                  className={`${themeStyles.buttonSecondary} px-3 py-1 rounded text-sm mr-2`}
+                  data-testid="classic-look-toggle"
+                  aria-pressed={!wp4Enhanced}
+                  title={wp4Enhanced ? 'Switch to the classic V9.5 look' : 'Switch to the enhanced map'}
+                >
+                  {wp4Enhanced ? '🎨 Classic look' : '✨ Enhanced look'}
+                </button>
+                <button
                   onClick={() => updateUiState({ showMap: false })}
                   className={`${themeStyles.buttonSecondary} px-3 py-1 rounded text-sm`}
                 >
@@ -233924,7 +234615,28 @@ function dispatchGameSettingsChange(
                 </button>
               </div>
               
-	              <div className="relative w-full h-96 bg-gray-800 rounded-lg overflow-hidden" data-ns-network={nsMapNetwork && nsState ? nsMapNetwork : undefined}>
+	              <div className="relative w-full h-96 bg-gray-800 rounded-lg overflow-hidden" data-ns-network={nsMapNetwork && nsState ? nsMapNetwork : undefined} data-visual={wp4Mode} style={wp4Enhanced ? { background: '#0b1726' } : undefined}>
+	                {/* V9.6 (SECTION 20AJ): the enhanced SVG map sits under the region markers (classic look = V9.5 dots only). */}
+	                {wp4Enhanced && (() => {
+	                  const wp4Regions: MapRegionView[] = Object.keys(REGIONS).map(code => {
+	                    const info = getRegionControlInfo(code);
+	                    const cost = player.currentRegion === code ? 0 : calculateTravelCost(player.currentRegion, code);
+	                    return {
+	                      code, name: String(REGIONS[code]?.name || code),
+	                      control: info.controllerId === (isTeamMode ? TEAM_PLAYER_ID : 'player') ? 'player' : info.controllerId === (isTeamMode ? TEAM_OPPONENT_ID : 'ai') ? 'ai' : 'neutral',
+	                      visited: (player.visitedRegions || []).includes(code),
+	                      hasEvent: (gameState.activeEvents || []).some((e: { region?: string }) => e.region === code),
+	                      reachable: player.currentRegion !== code && Number(player.money) >= cost && !(gameSettings.sabotageEnabled && isTravelBlocked(player.debuffs)),
+	                      selected: interactiveMapActive && selectedPreviewRegionCode === code,
+	                      current: player.currentRegion === code
+	                    };
+	                  });
+	                  const wp4Tokens: MapTokenView[] = [
+	                    ...(isTeamMode ? playerTeamActors : [player]).map((a, i) => ({ id: `p_${String(a.id || i)}`, label: i === 0 || String(a.id) === String(player.id) ? 'You' : String(a.name || 'Ally').split(' ')[0], kind: (i === 0 || String(a.id) === String(player.id) ? 'player' : 'ally') as MapTokenView['kind'], region: String(a.currentRegion || '') })),
+	                    ...(isCompetitiveMode ? (isTeamMode ? opponentTeamActors : [aiPlayer]).filter(Boolean).map((a, i) => ({ id: `o_${String(a.id || i)}`, label: String(a.name || 'Rival').split(' ')[0], kind: 'ai' as MapTokenView['kind'], region: String(a.currentRegion || '') })) : [])
+	                  ].filter(t => isChallengeRegionCode(t.region));
+	                  return <AustraliaMapSvg model={stabilizeMapModel(wp4ModelCacheRef, buildAustraliaMapModel({ regions: wp4Regions, tokens: wp4Tokens, currentRegion: String(player.currentRegion || '') }))} motion={wp4Motion} onActivate={wp4Activate} />;
+	                })()}
 	                {nsMapNetwork && nsState && <NationalNetworkMapLinks state={nsState} network={nsMapNetwork} />}
 	                {inMapKind && inState && nsState && <InfraNetworkMapOverlay state={inState} national={nsState} kind={inMapKind} />}
 	                {nationalLayerShown(gameSettings) && mpMapId && mpPersisted?.programs[mpMapId] && <MegaprojectMapOverlay persisted={mpPersisted} programId={mpMapId} />}
@@ -233956,6 +234668,7 @@ function dispatchGameSettingsChange(
                     }
                     if (isPlayerTurn && !isPlayerHere && canAfford) travelToRegion(code);
                   };
+                  wp4RegionActionsRef.current[code] = v94Activate;
                   return (
                     <div
                       key={code}
@@ -233970,8 +234683,8 @@ function dispatchGameSettingsChange(
                         isPlayerTeamHere || isAiHere || isSelectedPreview ? 'z-20' : 'z-10'
                       } ${isAdjacent && !isPlayerHere ? 'hover:z-30' : ''}`}
                       style={{
-                        left: `${region.position.x}%`,
-                        top: `${region.position.y}%`,
+                        left: `${regionAnchor(code, wp4Mode).x}%`,
+                        top: `${regionAnchor(code, wp4Mode).y}%`,
                       }}
                       onClick={v94Activate}
                       title={interactiveMapActive
@@ -233979,7 +234692,7 @@ function dispatchGameSettingsChange(
                         : undefined}
                     >
 	                      <div
-	                        className={`relative w-16 h-16 rounded-full flex items-center justify-center font-bold text-sm border-4 ${
+	                        className={`relative ${wp4Enhanced ? 'w-11 h-11 text-xs border-2 opacity-90' : 'w-16 h-16 text-sm border-4'} rounded-full flex items-center justify-center font-bold ${
 	                          isPlayerControlled
 	                            ? 'border-blue-400 bg-blue-600 text-white'
 	                            : isAiControlled
@@ -234008,12 +234721,12 @@ function dispatchGameSettingsChange(
                             </div>
                           )}
 	                      </div>
-                      {isPlayerHere && (
+                      {isPlayerHere && !wp4Enhanced && (
                         <div key={`you_${player.currentRegion}`} className="v94-pop absolute top-full mt-1 left-1/2 transform -translate-x-1/2 text-xs whitespace-nowrap bg-green-600 text-white px-2 py-1 rounded font-bold" data-testid="map-you-marker">
                           ▲ You
                         </div>
                       )}
-                      {isAiHere && (
+                      {isAiHere && !wp4Enhanced && (
                         <div className="absolute bottom-full mb-1 left-1/2 transform -translate-x-1/2 text-xs whitespace-nowrap bg-gray-900 border-2 border-dashed border-pink-400 text-pink-200 px-2 py-0.5 rounded font-bold" data-testid="map-rival-marker">
                           ◆ {aiPlayer?.name ? String(aiPlayer.name).split(' ')[0] : 'Rival'}
                         </div>
