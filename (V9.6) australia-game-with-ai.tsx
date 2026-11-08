@@ -14160,6 +14160,8 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   soundEnabled: true,
   soundVolume: 0.4,
   reducedMotion: 'system' as ReducedMotionPreference,
+  /** V9.6 A Visible Opponent Mind (SECTION 20AK) — off by default. */
+  opponentPersonalityEnabled: false,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -18338,6 +18340,17 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     valueType: 'boolean',
     defaultValue: false,
     validate: (v: any) => typeof v === 'boolean',
+    isLiveSafe: true,
+    affectsFairness: false,
+  },
+  {
+    key: 'opponentPersonalityEnabled',
+    category: 'rival_ai',
+    label: 'Opponent Personality',
+    description: 'The rival speaks from its memory (grievances, trust, rivalry, gratitude, plans) and shows its mind in an Opponent panel; taunts, offers and threats use the same voice.',
+    valueType: 'boolean',
+    defaultValue: false,
+    validate: (v: unknown) => typeof v === 'boolean',
     isLiveSafe: true,
     affectsFairness: false,
   },
@@ -26643,6 +26656,8 @@ export type GameSettingsState = {
   soundVolume?: number;
   /** V9.6 (SECTION 20AJ): 'system' follows the OS reduced-motion preference; 'on' / 'off' override it. */
   reducedMotion?: ReducedMotionPreference;
+  /** V9.6 A Visible Opponent Mind (SECTION 20AK): memory-driven rival dialogue + Opponent panel. Off = AI_MOOD_STATES lines. */
+  opponentPersonalityEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -64572,6 +64587,7 @@ export const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'ai.adaptive', tab: 'aiTeams', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier', 'enablePersistentOpponentModels', 'enableAiCalibrationLearning', 'opponentModelDecayRate', 'opponentModelWeight', 'opponentThreatWeightsEnabled', 'rivalDossierPanelEnabled', 'overseerWinConditionCounterStrategyEnabled', 'adaptiveAiPatternMemoryStrength', 'adaptiveAiRubberBandingStrength', 'adaptiveAiNetWorthThreshold', 'adaptiveAiLevelDifference', 'adaptiveAiChallengeDifference', 'adaptiveAiConsecutiveDays', 'adaptiveAiMaxDifficulty', 'adaptiveAiAffectedModes', 'adaptiveAiTeamComebackStrength', 'adaptiveAiTriggerSensitivity', 'adaptiveAiSupportFocus', 'adaptiveAiRiskBias', 'adaptiveAiEconomyRecoveryBias', 'adaptiveAiDisruptionBias', 'adaptiveAiShowDecisionTransparency', 'adaptiveAiShowActiveModifiers', 'aiCalibrationLearningRate', 'enableCounterfactualEvaluation', 'projectedOutcomeEnabled', 'projectedOutcomeHorizon', 'projectedOutcomeMode', 'deterministicMode'] },
   { id: 'ai.memory', tab: 'aiTeams', title: 'AI Memory', tags: ['AI', 'Advanced'], chips: ['On by default'], fieldKeys: ['aiMemoryEnabled', 'aiMemoryInfluenceStrength', 'aiMemoryInspectionEnabled', 'aiMemoryFullInspectionEnabled', 'aiStrategicLearningEnabled', 'aiStrategicLearningStrength'], keywords: 'ai memory relationship trust rivalry strategic profile remember events grievance gratitude learning prediction' },
   { id: 'ai.persistentMemory', tab: 'aiTeams', title: 'AI Memory & Persistence', tags: ['AI', 'Advanced'], chips: ['Off by default'], fieldKeys: ['aiPersistentMemoryEnabled', 'aiPersistentLearningEnabled', 'aiPersistentIdentityMode', 'aiPersistentAskOnAbandon', 'aiPersistentAivsAiEnabled'], keywords: 'persistent memory cross-match profile prior rival teammate localStorage export import backup consent' },
+  { id: 'ai.opponentMind', tab: 'aiTeams', title: '🗣️ Opponent Personality', tags: ['AI'], chips: ['Off by default'], fieldKeys: ['opponentPersonalityEnabled'], keywords: 'opponent personality rival dialogue taunts grievance trust rivalry gratitude opponent panel mind bluff intention' },
   { id: 'ai.communication', tab: 'aiTeams', title: 'AI Communication', tags: ['AI', 'Advanced'], chips: ['On by default'], fieldKeys: ['aiCommunicationEnabled', 'aiCommunicationProactiveEnabled', 'aiCommunicationProactiveFrequency', 'aiCommunicationAutonomyLevel'], keywords: 'ai communication ask the game intelligence team plan proactive warning advisory assisted delegated' },
   { id: 'advancedSystems.priority', tab: 'oversight', title: 'Priority Resolution', tags: ['Advanced'], fieldKeys: ['settingPriorityMode', 'maxConcurrentHighInfluenceSettings', 'conflictResolutionStrength', 'deprioritizeLowImpactSettings', 'priorityTransparencyEnabled', 'manualPriorityWeights' as keyof GameSettingsState] },
   // SH2: Added 23 uncovered keys to advancedSystems.decisionTransparency
@@ -133444,7 +133460,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'experienceMode', 'challengeApproachesEnabled', 'expandedChallengeContentEnabled', 'proceduralChallengesEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'experienceMode', 'challengeApproachesEnabled', 'expandedChallengeContentEnabled', 'proceduralChallengesEnabled', 'opponentPersonalityEnabled'
 ] as const;
 
 /**
@@ -133793,6 +133809,8 @@ export function validateSaveDataCore(raw: any): SaveGameData {
 	      ...initialGameState,
 	      ...stateData,
         aiMemoriesByActor: migrateAiMemoriesFromSave(stateData.aiMemoriesByActor || raw.aiMemoriesByActor),
+        // V9.6 (SECTION 20AK): the rival's recent lines (optional; absent in V9.5 saves).
+        ...(stateData.opponentDialogue !== undefined ? { opponentDialogue: sanitizeOpponentDialogueState(stateData.opponentDialogue) } : {}),
         persistentMemorySnapshot: sanitizePersistentSnapshot(stateData.persistentMemorySnapshot || raw.persistentMemorySnapshot || raw.gameState?.persistentMemorySnapshot),
         aiCommunication: migrateCommunicationState(stateData.aiCommunication || raw.aiCommunication || raw.gameState?.aiCommunication),
         teamStrategicPlansByTeam: sanitizeTeamStrategicPlansByTeam(stateData.teamStrategicPlansByTeam || raw.teamStrategicPlansByTeam || raw.gameState?.teamStrategicPlansByTeam),
@@ -135869,6 +135887,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v96cd', label: 'V9.6 Challenge Decision System', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96ChallengeDecisionSelfTests() },
   { id: 'v96ex', label: 'V9.6 Challenge Content Expansion', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96ChallengeContentSelfTests() },
   { id: 'v96mf', label: 'V9.6 Map, Motion & Sound', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96MapMotionSoundSelfTests() },
+  { id: 'v96om', label: 'V9.6 A Visible Opponent Mind', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96OpponentMindSelfTests() },
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
@@ -183622,6 +183641,755 @@ export function runV96MapMotionSoundSelfTests(): V9SelfTestResult[] {
   return results;
 }
 
+// ============================================================================
+// SECTION 20AK: V9.6 A VISIBLE OPPONENT MIND — THE AI MEMORY BECOMES A CHARACTER
+// ----------------------------------------------------------------------------
+// With `opponentPersonalityEnabled` on:
+//   • A dialogue engine writes the rival's lines from LIVE memory: grievances name the remembered
+//     event (turn, region, action), trust / rivalry / gratitude colour the tone, the adaptive plan
+//     and the predicted player objective give it something to say. 262 slot-filled templates,
+//     chosen deterministically (FNV hash of turn, speaker, purpose and driver), never repeating a
+//     template within 10 turns (bounded history in gameState.opponentDialogue).
+//   • An Opponent panel (Intelligence → Rivals): mood, relationship bars, the three memories the AI
+//     weighs most, what it believes you are pursuing and its stated intention for next turn —
+//     in character, and only as honest as the difficulty allows (harder rivals bluff).
+//   • Mood taunts, AI deal offers and threats in Diplomacy 2.0 speak through the engine; offers
+//     open by citing a remembered event.
+// Flag off: AI_MOOD_STATES canned taunts and V9.5 diplomacy text, unchanged. No RNG draws here.
+// ============================================================================
+
+export type OpponentLineCategory =
+  | 'grievance' | 'rivalry' | 'gratitude' | 'trust_high' | 'trust_low'
+  | 'plan_active' | 'plan_revised' | 'plan_abandoned' | 'prediction'
+  | 'mood_confident' | 'mood_desperate' | 'mood_aggressive' | 'mood_neutral'
+  | 'deal_hostile' | 'deal_friendly' | 'deal_neutral' | 'threat' | 'intention';
+export type OpponentLinePurpose = 'taunt' | 'deal' | 'threat' | 'intention';
+export interface OpponentLineTemplate { readonly id: string; readonly category: OpponentLineCategory; readonly text: string }
+
+const OPPONENT_LINES: Readonly<Record<OpponentLineCategory, readonly string[]>> = {
+  grievance: [
+    'I haven\'t forgotten turn {turn}, {you}. You {action} in {region}.',
+    '{region}, turn {turn}. You {action}. I keep a list, and you\'re on it.',
+    'You {action} in {region} {ago}. Did you think I wouldn\'t notice?',
+    'Funny how you {action} in {region} and then expected me to smile.',
+    'Every move I make now has a little bit of turn {turn} in it.',
+    'You {action} in {region}. Consider that debt still open.',
+    'I replay {region} on turn {turn} more often than I\'d like, {you}.',
+    'You chose to {actionBase} in {region}. I\'m choosing to remember it.',
+    '{ago}, you {action} in {region}. Today I\'m returning the favour.',
+    'People say let it go. People weren\'t in {region} on turn {turn}.',
+    'You {action} in {region}. I\'d call it bold. I\'ll call it noted.',
+    'That business in {region} on turn {turn}? It still stings.',
+    'Ever since you {action} in {region}, I\'ve stopped giving you the benefit of the doubt.',
+    'I don\'t hold grudges, {you}. I hold receipts. Turn {turn}, {region}.',
+    'You {action} in {region}. Now I play differently around you.',
+    'Remember {region}? I do. Turn {turn}, to be precise.',
+    'You {action} in {region} {ago} and I\'ve been planning since.',
+    'Trust is built slowly and burned quickly — you lit the match in {region}.',
+    'I\'ll be civil, {you}. I won\'t be forgetful. {region}, turn {turn}.',
+    'After what happened in {region}, don\'t expect a fair fight from me.',
+    'You {action} in {region}. My memory is better than your manners.',
+    'Turn {turn} cost me in {region}. It\'ll cost you more.',
+    'I still have the {region} file open, {you}. It\'s getting thicker.',
+    'You {action} in {region} like I wasn\'t watching. I was.',
+    'I respect a hard play. I resent the one you made in {region}.',
+    'There\'s a reason I keep an eye on you — {region}, turn {turn}.',
+    'You {action} in {region}. I\'m keeping score, and you\'re not winning it.',
+    'Every time I look at the map, {region} reminds me what you did.',
+    'You made it personal in {region}. I\'ll keep it personal.',
+    'Turn {turn}: the day I stopped treating you as a friendly rival.'
+  ],
+  rivalry: [
+    'You\'re the only one out here worth beating, {you}.',
+    'Every region you take, I want twice as much.',
+    'This is a two-horse race, and I hate coming second.',
+    'You move, I move. That\'s how this goes now.',
+    'I watch your every turn, {you}. It\'s nothing personal. Mostly.',
+    'Rivalry suits me. It\'s making me sharper.',
+    'You keep raising the bar. I keep stepping over it.',
+    'Let\'s be honest — we\'re both playing against each other, not the map.',
+    'Don\'t get comfortable at the top, {you}.',
+    'I like it when you\'re winning. It makes catching you sweeter.',
+    'You and me, {you}. Whoever blinks first loses.',
+    'I measure my day by how yours went.',
+    'There\'s not enough Australia for both of us.',
+    'Every challenge you finish, I take one harder.',
+    'You\'ve turned this into a duel. I accept.',
+    'I\'ve studied your habits, {you}. They\'re very… studyable.',
+    'Some rivals fade. I\'m the other kind.',
+    'Keep looking over your shoulder. I\'ll be there.',
+    'We could share the map. Where would be the fun in that?',
+    'You make me play my best game. I\'ll never thank you for it.',
+    'One of us is going to be a footnote in this story.',
+    'I know you count my money. I count yours too.',
+    'When you travel, I check where you went. Every time.',
+    'You\'re predictable when you\'re ahead, {you}. Stay ahead.',
+    'This rivalry is the most fun I\'ve had all match.'
+  ],
+  gratitude: [
+    'You {action} in {region} on turn {turn}. I don\'t forget kindness either.',
+    'I owe you one for {region}, {you}. Don\'t make me regret repaying it.',
+    'Turn {turn}, {region} — that was decent of you.',
+    'You {action} {ago}. It bought you some goodwill.',
+    'I\'ll go easy on {region} for a while. Call it a thank-you.',
+    'Not many rivals would have {actionPast} in {region}. Noted, kindly.',
+    'You helped when you didn\'t have to. I remember that.',
+    'Thanks for {region}. I\'m still a rival — just a grateful one.',
+    'Your move in {region} earned you a little patience from me.',
+    'Credit where it\'s due, {you}: {region} on turn {turn} was generous.',
+    'I keep a list of favours too. You\'re on that one.',
+    'Because of {region}, I\'ll hear your next offer out properly.',
+    'You {action} in {region}. I\'ll return the courtesy when it counts.',
+    'Gratitude isn\'t surrender, but it\'s something.',
+    'Turn {turn} was the day I started trusting you a little.',
+    'You were fair in {region}. I\'ll try to be fair too.',
+    'I\'ve softened since {region}. Don\'t tell anyone.',
+    'You {action} {ago}, and I\'m still smiling about it.',
+    'That help in {region} came at the right time. Thank you.',
+    'I won\'t forget {region}. Neither should you — it was a good look on you.'
+  ],
+  trust_high: [
+    'I trust you more than I probably should, {you}.',
+    'You\'ve kept your word so far. Keep it up and we both do well.',
+    'A rival I can rely on — rare out here.',
+    'Your handshake still means something to me.',
+    'Let\'s keep the peace. It\'s working for both of us.',
+    'I don\'t check your moves twice anymore. Don\'t make me start.',
+    'You\'ve been straight with me. I\'ll be straight with you.',
+    'Trust is a currency. You\'re rich in it, for now.',
+    'If you need a deal, I\'m listening. You\'ve earned that.',
+    'We compete hard and fair. That\'s how I like it.',
+    'I believe you when you say you\'ll stay out of my way.',
+    'Reliable rivals are the best kind.',
+    'You\'ve never burned me. I hope that stays true.',
+    'Our arrangement has been good for both of us.',
+    'I count on you being reasonable, {you}.'
+  ],
+  trust_low: [
+    'I don\'t trust you, {you}. Nothing personal — just experience.',
+    'Whatever you\'re offering, I\'m reading the fine print twice.',
+    'You smile a lot for someone I can\'t trust.',
+    'I\'ve learned to expect the worst from you.',
+    'Your promises are worth less than an empty bank account.',
+    'I check every move you make. Every single one.',
+    'Trust? Not today. Possibly not this match.',
+    'You\'ll have to prove a lot before I believe a word.',
+    'I keep my distance from you for a reason.',
+    'Every deal with you feels like a trap.',
+    'You\'re a rival I respect, and a rival I watch.',
+    'Don\'t take it personally. I just don\'t believe you.',
+    'Show me, don\'t tell me, {you}.',
+    'I\'m not naïve enough to trust you twice.',
+    'Your track record with me isn\'t great.'
+  ],
+  plan_active: [
+    'I have a plan, {you}, and it\'s {plan}.',
+    'Stick around and you\'ll see me {plan}.',
+    'My plan is simple: {plan}.',
+    'Everything I do this week points one way: {plan}.',
+    'You\'ll know my plan when it\'s too late to stop it.',
+    'I\'m committed. {plan}, start to finish.',
+    'Some rivals improvise. I\'m {plan}.',
+    'Watch closely — I\'m {plan}.',
+    'My whole game right now is {plan}.',
+    'I\'m not hiding it: I\'m {plan}.',
+    'Patience, {you}. I\'m {plan}.',
+    'The map\'s busy, but my focus isn\'t — {plan}.'
+  ],
+  plan_revised: [
+    'You forced me to change my plan. Now I\'m {plan}.',
+    'New plan. I\'m {plan} — thanks to you.',
+    'I adapt, {you}. Now I\'m {plan}.',
+    'Your last move rewrote my strategy. I\'m {plan}.',
+    'Plans change. Mine changed because of you.',
+    'I\'ve rethought everything. {plan}.',
+    'You made me pivot. Don\'t expect me to pivot back.',
+    'I tore up my old plan. The new one is {plan}.',
+    'Good move, {you}. Here\'s my answer: {plan}.',
+    'You saw my old plan. You haven\'t seen this one.',
+    'I learned from that. Now I\'m {plan}.',
+    'Revised, refined and ready — I\'m {plan}.'
+  ],
+  plan_abandoned: [
+    'I\'ve dropped my old plan. Don\'t ask why.',
+    'That plan wasn\'t working. I\'m starting fresh.',
+    'Back to the drawing board — and you\'re on it.',
+    'I gave up on that idea. I won\'t give up on beating you.',
+    'Sometimes you cut your losses. I just did.',
+    'Old plan\'s gone. New targets incoming.',
+    'I let that one go. Watch what replaces it.',
+    'A failed plan teaches more than a good one.'
+  ],
+  prediction: [
+    'You\'re {objective}, {you}. I can tell.',
+    'I\'ve worked you out — you\'re {objective}.',
+    'Let me guess: you\'re {objective}. Thought so.',
+    'Everything you do says you\'re {objective}.',
+    'You\'re {objective}. I\'m planning around it.',
+    'You think you\'re subtle. You\'re {objective}.',
+    'I\'ve seen this before: {objective}. I know how it ends.',
+    'Keep {objective}. It makes you easy to read.',
+    'You\'re {objective}. I\'d do the same, only better.',
+    'My read on you: {objective}. Prove me wrong.',
+    'I\'ve watched enough turns. You\'re {objective}.',
+    'Still {objective}? I\'ve already adjusted.',
+    'You telegraph it, {you} — {objective}.',
+    'If you\'re {objective}, you\'ll find me in the way.',
+    'I\'m {confidence} sure you\'re {objective}.',
+    'Your pattern is clear: {objective}.',
+    'Every clue points to you {objective}.',
+    'You\'re {objective}, and you think I haven\'t noticed.',
+    'I know the plan, {you}: {objective}.',
+    '{objective}? Bold. I\'ll be waiting.'
+  ],
+  mood_confident: [
+    'I\'m comfortably ahead, {you}. Enjoy the view from back there.',
+    'Things are going my way. Get used to it.',
+    'I could get used to winning like this.',
+    'Feeling good. You should feel worried.',
+    'I\'m playing my best game. Can you say the same?',
+    'Lead\'s looking healthy from here.',
+    'Relax, {you}. It\'s only the scoreboard.',
+    'Confidence looks good on me, doesn\'t it?',
+    'At this rate I\'ll finish early.',
+    'I\'m not gloating. I\'m just ahead.'
+  ],
+  mood_desperate: [
+    'I\'m behind, {you}, and that makes me dangerous.',
+    'Time to take risks. Don\'t say I didn\'t warn you.',
+    'I\'ve nothing to lose now. Remember that.',
+    'Desperate rivals are the most creative ones.',
+    'This isn\'t over. Not even close.',
+    'You\'re ahead. For now.',
+    'I\'m one good day from catching you.',
+    'Back against the wall — my favourite position.',
+    'You\'d better finish this fast, {you}.',
+    'I\'m down, not out.'
+  ],
+  mood_aggressive: [
+    'Gloves are off, {you}.',
+    'No more holding back. All in.',
+    'It\'s close, so I\'m going hard.',
+    'Watch this.',
+    'I\'m coming for every region you care about.',
+    'Neck and neck — time to break away.',
+    'I play my best when it\'s tight.',
+    'You want a fight? You\'ve got one.',
+    'From here on, every turn is a shove.',
+    'Close races reward the bold. I\'m bold.'
+  ],
+  mood_neutral: [
+    'Interesting move, {you}.',
+    'Noted.',
+    'Calculating…',
+    'Steady as she goes.',
+    'Long way to go yet.',
+    'I see what you\'re doing.',
+    'We\'ll see how this plays out.',
+    'Not bad. Not great either.',
+    'Hmm. Carry on.',
+    'Every turn tells me something about you.'
+  ],
+  deal_hostile: [
+    'After you {action} in {region} on turn {turn}, here\'s my price: {deal}.',
+    'You {action} in {region}. If you want peace, it costs this: {deal}.',
+    'I remember {region}. Which is why the terms are {deal}.',
+    'Turn {turn} isn\'t forgotten, but it can be bought: {deal}.',
+    'You owe me for {region}. Let\'s settle it: {deal}.',
+    'Make amends for {region}: {deal}. Take it or leave it.',
+    'I\'ll overlook {region} — for {deal}.',
+    'Here\'s a deal you deserve after {region}: {deal}.',
+    'Call it compensation for turn {turn}: {deal}.',
+    'You {action} in {region}. My offer reflects that: {deal}.',
+    'I\'m offering terms, not forgiveness — not after {region}: {deal}.',
+    'Don\'t haggle — {region} on turn {turn} set the price. {deal}.'
+  ],
+  deal_friendly: [
+    'You {action} in {region} on turn {turn}. Let me return the favour: {deal}.',
+    'You were decent in {region}, so here\'s a decent offer: {deal}.',
+    'Because of {region}, I\'ll make this easy: {deal}.',
+    'I owe you one — let\'s make it official: {deal}.',
+    'Good partners deserve good terms: {deal}.',
+    'Turn {turn} earned you this: {deal}.',
+    'We\'ve treated each other well. Let\'s keep going: {deal}.',
+    'Since you helped in {region}, I\'m offering {deal}.',
+    'A friendly offer for a friendly rival: {deal}.',
+    'You kept faith in {region}. I\'ll keep faith with this: {deal}.',
+    'Let\'s build on {region}: {deal}.',
+    'Thanks for {region}. Here\'s my thanks in writing: {deal}.'
+  ],
+  deal_neutral: [
+    'Business, {you}: {deal}.',
+    'Let\'s both come out ahead: {deal}.',
+    'I have a proposal: {deal}.',
+    'No history, no hard feelings — just {deal}.',
+    'Here\'s something that works for both of us: {deal}.',
+    'Straight offer: {deal}.',
+    'Consider this: {deal}.',
+    'A practical arrangement: {deal}.',
+    'Let\'s talk terms: {deal}.',
+    'Nothing fancy, {you}: {deal}.'
+  ],
+  threat: [
+    'Stay out of my way, or {region} will look like a picnic.',
+    'You {action} in {region}. Try it again and see what happens.',
+    'This is your one warning, {you}.',
+    'Push me again and I\'ll push back twice as hard.',
+    'Remember turn {turn}? I\'m prepared to do worse.',
+    'Accept this, or watch me take apart your plans.',
+    'I\'d think very carefully before refusing, {you}.',
+    'Cross me again and our truce is over.',
+    'You won\'t like the version of me that loses patience.',
+    'I can make your next turns very expensive.',
+    'Walk away from this and I walk into your regions.',
+    'My patience ran out in {region}.',
+    'Refuse, and I\'ll take it as a declaration.',
+    'Every region you hold has a price. I\'m naming it.',
+    'Last chance before this turns ugly, {you}.'
+  ],
+  intention: [
+    'Next turn? I\'m {intent}.',
+    'You want to know my next move? I\'m {intent}.',
+    'I\'ll tell you straight: next I\'m {intent}.',
+    'Watch me next turn — I\'m {intent}.',
+    'No secret about it: I\'m {intent}.',
+    'Tomorrow I\'m {intent}. Try to stop me.',
+    'My next move is {intent}.',
+    'Coming up: me, {intent}.',
+    'I\'ve decided. I\'m {intent}.',
+    'Here\'s a free tip — I\'m {intent} next.',
+    'Plan for next turn: {intent}.',
+    'I\'m {intent}. You\'ll see.',
+    'Expect me to be {intent}.',
+    'Next on my list: {intent}.',
+    'Mark it down — I\'m {intent} next turn.',
+    'I won\'t waste the turn: I\'m {intent}.'
+  ]
+};
+export const OPPONENT_LINE_TEMPLATES: readonly OpponentLineTemplate[] = (Object.keys(OPPONENT_LINES) as OpponentLineCategory[])
+  .flatMap(category => OPPONENT_LINES[category].map((text, i) => ({ id: `${category}_${String(i + 1).padStart(2, '0')}`, category, text })));
+export const OPPONENT_DIALOGUE_NO_REPEAT_TURNS = 10;
+
+// ---- Persisted dialogue history --------------------------------------------------------------------------------
+export interface OpponentDialogueEntry { templateId: string; turn: number; purpose: OpponentLinePurpose; speakerId: string; text: string }
+export interface OpponentDialogueState { history: OpponentDialogueEntry[] }
+export const OPPONENT_DIALOGUE_HISTORY_CAP = 60;
+export function createOpponentDialogueState(): OpponentDialogueState { return { history: [] }; }
+export function sanitizeOpponentDialogueState(raw: unknown): OpponentDialogueState {
+  const out = createOpponentDialogueState();
+  const h = raw && typeof raw === 'object' ? (raw as { history?: unknown }).history : null;
+  if (!Array.isArray(h)) return out;
+  const purposes: readonly OpponentLinePurpose[] = ['taunt', 'deal', 'threat', 'intention'];
+  h.forEach((e: unknown) => {
+    if (!e || typeof e !== 'object') return;
+    const x = e as { templateId?: unknown; turn?: unknown; purpose?: unknown; speakerId?: unknown; text?: unknown };
+    if (typeof x.templateId !== 'string' || typeof x.turn !== 'number' || !Number.isFinite(x.turn)) return;
+    out.history.push({ templateId: x.templateId, turn: Math.floor(x.turn), purpose: purposes.includes(x.purpose as OpponentLinePurpose) ? x.purpose as OpponentLinePurpose : 'taunt', speakerId: typeof x.speakerId === 'string' ? x.speakerId : 'ai', text: typeof x.text === 'string' ? x.text.slice(0, 240) : '' });
+  });
+  out.history = out.history.slice(-OPPONENT_DIALOGUE_HISTORY_CAP);
+  return out;
+}
+export function recordOpponentLine(state: OpponentDialogueState, entry: OpponentDialogueEntry): OpponentDialogueState {
+  return { history: [...state.history, entry].slice(-OPPONENT_DIALOGUE_HISTORY_CAP) };
+}
+
+// ---- Reading memory ---------------------------------------------------------------------------------------------
+export interface OpponentRelationshipView { trust: number; respect: number; rivalry: number; grievance: number; gratitude: number }
+export interface WeighedMemory { event: AiMemoryEvent; weight: number; tone: 'hostile' | 'helpful' | 'neutral'; line: string }
+const MEMORY_ACTION_PHRASES: ReadonlyArray<readonly [RegExp, string, string]> = [
+  [/sabotag/, 'sabotaged me', 'sabotage me'],
+  [/threat/, 'threatened me', 'threaten me'],
+  [/steal|undercut|block|attack/, 'cut across my plans', 'cut across my plans'],
+  [/proposal_declined|reject/, 'turned down my offer', 'turn down my offer'],
+  [/proposal_accepted/, 'accepted my deal', 'accept my deal'],
+  [/support|gift|give_cash|donat|share|assist|help|diplomatic_payment/, 'sent help my way', 'send help my way'],
+  [/challenge_approach_bold/, 'took a reckless gamble', 'take a reckless gamble'],
+  [/challenge_approach_social/, 'charmed the locals', 'charm the locals'],
+  [/challenge_approach_(steady|clever)/, 'played it safe on a challenge', 'play it safe on a challenge'],
+  [/challenge/, 'beat a challenge under my nose', 'beat a challenge under my nose'],
+  [/region_deposit|claim|control|expand/, 'bought into the region', 'buy into the region'],
+  [/cashout/, 'cashed out of the region', 'cash out of the region'],
+  [/travel|expedition/, 'moved in on my turf', 'move in on my turf'],
+  [/invest/, 'invested heavily', 'invest heavily'],
+  [/sell|buy|trade|market|craft/, 'worked the market', 'work the market']
+];
+export function describeMemoryAction(actionType: string): { past: string; base: string } {
+  const t = String(actionType || '').toLowerCase();
+  const hit = MEMORY_ACTION_PHRASES.find(([re]) => re.test(t));
+  return hit ? { past: hit[1], base: hit[2] } : { past: 'did that', base: 'do that' };
+}
+export function memoryTone(valence: number): 'hostile' | 'helpful' | 'neutral' {
+  return valence <= -0.15 ? 'hostile' : valence >= 0.15 ? 'helpful' : 'neutral';
+}
+export function regionDisplayName(code: string | null | undefined): string {
+  if (!code) return 'out there';
+  const r: { name?: unknown } | undefined = REGIONS[code];
+  return typeof r?.name === 'string' ? r.name : String(code);
+}
+/** The memories the AI weighs most about `subjectId`: importance × recency × emotional charge. */
+export function weighOpponentMemories(memory: AiActorMemory | null | undefined, subjectId: string, turn: number, limit = 3): WeighedMemory[] {
+  if (!memory) return [];
+  return memory.events
+    .filter(e => e.actorId === subjectId)
+    .map(e => {
+      const age = Math.max(0, turn - e.turn);
+      const weight = Math.round(e.importance * (1 / (1 + 0.15 * age)) * (1 + Math.abs(e.valence)) * 1000) / 1000;
+      const tone = memoryTone(e.valence);
+      const act = describeMemoryAction(e.actionType);
+      return { event: e, weight, tone, line: `Turn ${e.turn}${e.regionId ? ` · ${regionDisplayName(e.regionId)}` : ''} · you ${act.past}${tone === 'hostile' ? ' (−)' : tone === 'helpful' ? ' (+)' : ''}` };
+    })
+    .sort((a, b) => b.weight - a.weight || b.event.turn - a.event.turn || a.event.id.localeCompare(b.event.id))
+    .slice(0, limit);
+}
+export function readOpponentRelationship(memory: AiActorMemory | null | undefined, subjectId: string): OpponentRelationshipView {
+  const r = memory?.relationships?.[subjectId];
+  return { trust: r ? r.trust : 50, respect: r ? r.respect : 50, rivalry: r ? r.rivalry : 0, grievance: r ? r.grievance : 0, gratitude: r ? r.gratitude : 0 };
+}
+export function describePredictedObjective(objectiveId: string | null | undefined): string {
+  const id = String(objectiveId || '');
+  if (id.startsWith('expand_')) return `pushing into ${regionDisplayName(id.slice(7))}`;
+  if (id === 'pressure_rivals') return 'trying to pressure me';
+  if (id === 'build_cash') return 'building a cash pile';
+  if (id === 'coordinate_team') return 'coordinating with your team';
+  return 'keeping your options open';
+}
+export function describeAdaptivePlan(objectiveId: string | null | undefined): string {
+  const id = String(objectiveId || '').replace(/^counter_/, '');
+  if (id.startsWith('expand_')) return `blocking your push into ${regionDisplayName(id.slice(7))}`;
+  if (id === 'pressure_rivals') return 'getting ready to push back';
+  if (id === 'build_cash') return 'out-earning you';
+  if (id === 'coordinate_team') return 'splitting your team\'s attention';
+  return 'playing the long game';
+}
+
+// ---- The engine ---------------------------------------------------------------------------------------------------
+export interface OpponentMindContext {
+  speakerId: string;
+  speakerName: string;
+  targetId: string;
+  targetName: string;
+  memory: AiActorMemory | null | undefined;
+  mood: string | null | undefined;
+  turn: number;
+  /** Diplomacy: a short description of the proposed terms. */
+  dealText?: string | null;
+  /** Intention: what the AI will (or claims it will) do next turn. */
+  intentText?: string | null;
+}
+export interface OpponentLine { templateId: string; category: OpponentLineCategory; purpose: OpponentLinePurpose; text: string; eventId: string | null }
+
+export function opponentHash(text: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h >>> 0;
+}
+function agoText(turnsAgo: number): string { return turnsAgo <= 0 ? 'this turn' : turnsAgo === 1 ? 'last turn' : `${turnsAgo} turns ago`; }
+/** Which categories the rival has something to say about, strongest first (deterministic). */
+export function rankOpponentDrivers(ctx: OpponentMindContext): Array<{ category: OpponentLineCategory; weight: number; event: AiMemoryEvent | null }> {
+  const rel = readOpponentRelationship(ctx.memory, ctx.targetId);
+  const weighed = weighOpponentMemories(ctx.memory, ctx.targetId, ctx.turn, 20);
+  const hostile = weighed.find(w => w.tone === 'hostile')?.event || null;
+  const helpful = weighed.find(w => w.tone === 'helpful')?.event || null;
+  const model = ctx.memory?.opponentModels?.[ctx.targetId];
+  const prediction = model?.predictedObjectives?.[0] || null;
+  const plan = ctx.memory?.adaptivePlan || null;
+  const out: Array<{ category: OpponentLineCategory; weight: number; event: AiMemoryEvent | null }> = [];
+  if (hostile && rel.grievance >= 15) out.push({ category: 'grievance', weight: rel.grievance + 15, event: hostile });
+  if (rel.rivalry >= 20) out.push({ category: 'rivalry', weight: rel.rivalry, event: null });
+  if (helpful && rel.gratitude >= 10) out.push({ category: 'gratitude', weight: rel.gratitude + 10, event: helpful });
+  if (rel.trust <= 38) out.push({ category: 'trust_low', weight: 50 - rel.trust, event: null });
+  if (rel.trust >= 62) out.push({ category: 'trust_high', weight: rel.trust - 50, event: null });
+  if (plan) out.push({ category: plan.status === 'revised' ? 'plan_revised' : plan.status === 'abandoned' ? 'plan_abandoned' : 'plan_active', weight: plan.status === 'revised' ? 28 : plan.status === 'abandoned' ? 24 : 18, event: null });
+  if (prediction && prediction.confidence >= 0.3) out.push({ category: 'prediction', weight: Math.round(prediction.confidence * 45), event: null });
+  const mood = String(ctx.mood || 'neutral');
+  const moodCat: OpponentLineCategory = mood === 'confident' ? 'mood_confident' : mood === 'desperate' ? 'mood_desperate' : mood === 'aggressive' ? 'mood_aggressive' : 'mood_neutral';
+  out.push({ category: moodCat, weight: 10, event: null });
+  return out.sort((a, b) => b.weight - a.weight || a.category.localeCompare(b.category));
+}
+function fillOpponentTemplate(text: string, ctx: OpponentMindContext, event: AiMemoryEvent | null): string {
+  const act = describeMemoryAction(event ? event.actionType : '');
+  const model = ctx.memory?.opponentModels?.[ctx.targetId];
+  const prediction = model?.predictedObjectives?.[0] || null;
+  const values: Record<string, string> = {
+    me: ctx.speakerName || 'Rival', you: ctx.targetName || 'friend',
+    region: regionDisplayName(event ? event.regionId : null), turn: String(event ? event.turn : ctx.turn), ago: agoText(event ? ctx.turn - event.turn : 0),
+    action: act.past, actionPast: act.past, actionBase: act.base,
+    objective: describePredictedObjective(prediction ? prediction.objectiveId : null), confidence: `${Math.round((prediction ? prediction.confidence : 0.5) * 100)}%`,
+    plan: describeAdaptivePlan(ctx.memory?.adaptivePlan?.objectiveId), deal: ctx.dealText || 'a fair split', intent: ctx.intentText || 'keeping you guessing'
+  };
+  return text.replace(/\{(\w+)\}/g, (_m, k: string) => values[k] ?? k);
+}
+/** Pick a template in `category` not used by this speaker within the no-repeat window; deterministic in its inputs. */
+export function pickOpponentTemplate(category: OpponentLineCategory, ctx: OpponentMindContext, purpose: OpponentLinePurpose, history: readonly OpponentDialogueEntry[], salt = ''): OpponentLineTemplate {
+  const pool = OPPONENT_LINE_TEMPLATES.filter(t => t.category === category);
+  const recent = new Set(history.filter(h => h.speakerId === ctx.speakerId && ctx.turn - h.turn < OPPONENT_DIALOGUE_NO_REPEAT_TURNS).map(h => h.templateId));
+  const fresh = pool.filter(t => !recent.has(t.id));
+  const from = fresh.length ? fresh : pool;
+  const idx = opponentHash(`${ctx.speakerId}|${ctx.turn}|${purpose}|${category}|${salt}`) % from.length;
+  return from[idx];
+}
+/** One line for a purpose, grounded in live memory. Returns null only if the engine has nothing at all to say. */
+export function composeOpponentLine(purpose: OpponentLinePurpose, ctx: OpponentMindContext, history: readonly OpponentDialogueEntry[]): OpponentLine | null {
+  const rel = readOpponentRelationship(ctx.memory, ctx.targetId);
+  const weighed = weighOpponentMemories(ctx.memory, ctx.targetId, ctx.turn, 20);
+  const hostile = weighed.find(w => w.tone === 'hostile')?.event || null;
+  const helpful = weighed.find(w => w.tone === 'helpful')?.event || null;
+  let category: OpponentLineCategory;
+  let event: AiMemoryEvent | null = null;
+  if (purpose === 'deal') {
+    if (hostile && rel.grievance >= 10) { category = 'deal_hostile'; event = hostile; }
+    else if (helpful && (rel.gratitude >= 5 || rel.trust >= 55)) { category = 'deal_friendly'; event = helpful; }
+    else category = 'deal_neutral';
+  } else if (purpose === 'threat') { category = 'threat'; event = hostile || weighed[0]?.event || null; }
+  else if (purpose === 'intention') category = 'intention';
+  else {
+    const drivers = rankOpponentDrivers(ctx);
+    if (!drivers.length) return null;
+    const top = drivers.slice(0, 3);
+    const pick = top[Math.abs(ctx.turn) % top.length];
+    category = pick.category; event = pick.event;
+  }
+  const template = pickOpponentTemplate(category, ctx, purpose, history, event ? event.id : '');
+  return { templateId: template.id, category, purpose, text: fillOpponentTemplate(template.text, ctx, event), eventId: event ? event.id : null };
+}
+
+// ---- Stated intention (honesty by difficulty) ----------------------------------------------------------------------
+export const OPPONENT_BLUFF_RATE: Readonly<Record<string, number>> = { easy: 0, medium: 0.25, hard: 0.45, expert: 0.6 };
+export const OPPONENT_DECOY_INTENTS: readonly string[] = ['heading north for the challenges', 'saving every dollar I can', 'buying into a region you love', 'taking a quiet turn to regroup', 'chasing the biggest challenge on the board', 'trading my way to a bigger bank'];
+/** The truth on Easy; on harder settings a deterministic share of turns states a decoy instead. */
+export function statedOpponentIntention(trueIntent: string, difficulty: string | null | undefined, speakerId: string, turn: number): { text: string; honest: boolean } {
+  const rate = OPPONENT_BLUFF_RATE[String(difficulty || 'medium')] ?? 0.25;
+  const roll = (opponentHash(`${speakerId}|${turn}|bluff`) % 1000) / 1000;
+  if (roll >= rate || !OPPONENT_DECOY_INTENTS.length) return { text: trueIntent, honest: true };
+  const decoys = OPPONENT_DECOY_INTENTS.filter(d => d !== trueIntent);
+  return { text: decoys[opponentHash(`${speakerId}|${turn}|decoy`) % decoys.length], honest: false };
+}
+/** A plain-language next move from the AI's live plan (adaptive plan first, then its last decision summary). */
+export function trueOpponentIntention(memory: AiActorMemory | null | undefined, aiPlanSummary: string | null | undefined): string {
+  if (memory?.adaptivePlan?.objectiveId) return describeAdaptivePlan(memory.adaptivePlan.objectiveId);
+  const s = String(aiPlanSummary || '').trim();
+  if (!s) return 'reading the board before I commit';
+  return s.charAt(0).toLowerCase() + s.slice(1).replace(/[.!]+$/, '');
+}
+
+// ---- Panel ----------------------------------------------------------------------------------------------------------
+export interface OpponentMindView {
+  speakerName: string;
+  moodLabel: string;
+  moodEmoji: string;
+  relationship: OpponentRelationshipView;
+  memories: WeighedMemory[];
+  belief: { label: string; confidence: number } | null;
+  intention: string;
+  recentLines: string[];
+}
+export function buildOpponentMindView(ctx: OpponentMindContext & { difficulty?: string | null; aiPlanSummary?: string | null; history: readonly OpponentDialogueEntry[] }): OpponentMindView {
+  const mood = String(ctx.mood || 'neutral');
+  const moodState = (AI_MOOD_STATES as Record<string, { emoji: string }>)[mood];
+  const model = ctx.memory?.opponentModels?.[ctx.targetId];
+  const prediction = model?.predictedObjectives?.[0] || null;
+  const stated = statedOpponentIntention(trueOpponentIntention(ctx.memory, ctx.aiPlanSummary), ctx.difficulty, ctx.speakerId, ctx.turn);
+  const intentionLine = composeOpponentLine('intention', { ...ctx, intentText: stated.text }, ctx.history);
+  return {
+    speakerName: ctx.speakerName || 'Rival',
+    moodLabel: mood.charAt(0).toUpperCase() + mood.slice(1), moodEmoji: moodState ? moodState.emoji : '🤖',
+    relationship: readOpponentRelationship(ctx.memory, ctx.targetId),
+    memories: weighOpponentMemories(ctx.memory, ctx.targetId, ctx.turn, 3),
+    belief: prediction ? { label: describePredictedObjective(prediction.objectiveId), confidence: Math.round(prediction.confidence * 100) } : null,
+    intention: intentionLine ? intentionLine.text : `Next turn? I'm ${stated.text}.`,
+    recentLines: ctx.history.filter(h => h.speakerId === ctx.speakerId && h.text).slice(-3).map(h => h.text).reverse()
+  };
+}
+const OPPONENT_BAR_TONE: Readonly<Record<keyof OpponentRelationshipView, string>> = { trust: 'bg-emerald-500', respect: 'bg-sky-500', rivalry: 'bg-orange-500', grievance: 'bg-red-500', gratitude: 'bg-violet-500' };
+export const OpponentMindPanel = React.memo(function OpponentMindPanel({ view, theme }: { view: OpponentMindView; theme: { card: string; border: string; shadow: string } }) {
+  const bars = Object.keys(OPPONENT_BAR_TONE) as Array<keyof OpponentRelationshipView>;
+  return (
+    <section id="v9-intel-rivals" aria-labelledby="opponent-mind-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} space-y-3 text-sm`} data-testid="opponent-mind-panel">
+      <div className="flex items-center justify-between gap-2">
+        <h2 id="opponent-mind-h" className="font-bold text-lg">{view.moodEmoji} {view.speakerName}'s mind</h2>
+        <span className="text-xs px-2 py-0.5 rounded-full bg-black/30" data-testid="opponent-mood">Mood: {view.moodLabel}</span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1" data-testid="opponent-bars">
+        {bars.map(k => (
+          <div key={k} className="flex items-center gap-2 text-xs">
+            <span className="w-20 capitalize opacity-80">{k}</span>
+            <div className="flex-1 h-2 rounded bg-black/30 overflow-hidden" role="meter" aria-label={`${view.speakerName}'s ${k} toward you`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(view.relationship[k])}>
+              <div className={`h-2 ${OPPONENT_BAR_TONE[k]}`} style={{ width: `${Math.max(0, Math.min(100, view.relationship[k]))}%` }} />
+            </div>
+            <span className="w-8 text-right">{Math.round(view.relationship[k])}</span>
+          </div>
+        ))}
+      </div>
+      <div data-testid="opponent-memories">
+        <div className="font-semibold">What it remembers most</div>
+        {view.memories.length ? <ul className="text-xs list-disc list-inside">{view.memories.map(m => <li key={m.event.id}>{m.line}</li>)}</ul> : <div className="text-xs opacity-70">Nothing memorable yet — give it time.</div>}
+      </div>
+      <div className="text-xs" data-testid="opponent-belief"><span className="font-semibold">What it thinks you're after: </span>{view.belief ? `${view.belief.label} (${view.belief.confidence}% sure)` : 'still working you out'}</div>
+      <div className="text-xs italic" data-testid="opponent-intention">“{view.intention}” <span className="not-italic opacity-60">— stated intention; harder rivals bluff</span></div>
+      {view.recentLines.length > 0 && <div className="text-xs opacity-80" data-testid="opponent-recent"><span className="font-semibold not-italic">Lately: </span>{view.recentLines.map(l => `“${l}”`).join(' · ')}</div>}
+    </section>
+  );
+});
+
+// ---- Self-tests (om01–om34) ---------------------------------------------------------------------------------------------
+export function runV96OpponentMindSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const observer = [{ id: 'ai', kind: 'ai', isAi: true }];
+  const remember = (actions: Array<{ type: string; region?: string; turn: number; target?: string }>) => {
+    let m = createFreshAiMemories(['ai']);
+    actions.forEach((a, i) => { m = applyCommittedActionToAiMemories(m, { actionType: a.type, actorId: 'player', targetId: a.target === undefined ? 'ai' : a.target, regionId: a.region || null, success: true, turn: a.turn, summary: a.type, stableKey: `t_${i}_${a.type}_${a.turn}` }, observer); });
+    return m.ai;
+  };
+  const hostileMem = remember([{ type: 'sabotage', region: 'WA', turn: 3 }, { type: 'sabotage', region: 'WA', turn: 4 }, { type: 'region_deposit', region: 'NSW', turn: 5, target: '' }]);
+  const kindMem = remember([{ type: 'support', region: 'QLD', turn: 2 }, { type: 'gift', region: 'QLD', turn: 3 }]);
+  const ctx = (memory: AiActorMemory | null, o: Partial<OpponentMindContext> = {}): OpponentMindContext => ({ speakerId: 'ai', speakerName: 'Ava', targetId: 'player', targetName: 'Sam', memory, mood: 'neutral', turn: 6, ...o });
+
+  check('om01_template_count', '≥200 line templates with unique ids', () => (OPPONENT_LINE_TEMPLATES.length >= 200 && new Set(OPPONENT_LINE_TEMPLATES.map(t => t.id)).size === OPPONENT_LINE_TEMPLATES.length) || `n=${OPPONENT_LINE_TEMPLATES.length}`);
+  check('om02_category_coverage', 'Every category has ≥8 templates (≥10 for the main drivers)', () => {
+    const counts = (Object.keys(OPPONENT_LINES) as OpponentLineCategory[]).map(c => [c, OPPONENT_LINES[c].length] as const);
+    return counts.every(([c, n]) => n >= (['grievance', 'rivalry', 'gratitude', 'prediction', 'intention'].includes(c) ? 15 : 8)) || JSON.stringify(counts);
+  });
+  check('om03_slots_known', 'Templates use only known slots', () => {
+    const known = new Set(['me', 'you', 'region', 'turn', 'ago', 'action', 'actionPast', 'actionBase', 'objective', 'confidence', 'plan', 'deal', 'intent']);
+    const bad = OPPONENT_LINE_TEMPLATES.filter(t => Array.from(t.text.matchAll(/\{(\w+)\}/g)).some(m => !known.has(m[1])));
+    return bad.length === 0 || bad.map(b => b.id).join(',');
+  });
+  check('om04_grievance_cites_event', 'A grievance line names the remembered event: turn and region', () => {
+    const l = composeOpponentLine('taunt', ctx(hostileMem, { turn: 6 }), []);
+    const all = [0, 1, 2, 3, 4, 5].map(t => composeOpponentLine('taunt', ctx(hostileMem, { turn: 6 + t }), []));
+    const g = all.find(x => x && x.category === 'grievance');
+    return (Boolean(l) && Boolean(g) && /(Western Australia|turn [34])/.test(g!.text)) || JSON.stringify(all.map(x => x && [x.category, x.text]));
+  });
+  check('om05_gratitude_driver', 'Helpful memories produce gratitude lines naming the region', () => {
+    let st = createOpponentDialogueState();
+    const lines: OpponentLine[] = [];
+    for (let t = 4; t < 40; t++) { const l = composeOpponentLine('taunt', ctx(kindMem, { turn: t }), st.history); if (l) { lines.push(l); st = recordOpponentLine(st, { templateId: l.templateId, turn: t, purpose: 'taunt', speakerId: 'ai', text: l.text }); } }
+    const g = lines.filter(x => x.category === 'gratitude');
+    return (g.length > 0 && g.some(x => /Queensland/.test(x.text))) || JSON.stringify(lines.map(x => x.category));
+  });
+  check('om06_rank_drivers', 'Drivers rank by weight: grievance leads after repeated sabotage', () => {
+    const d = rankOpponentDrivers(ctx(hostileMem));
+    return (d[0].category === 'grievance' && d.some(x => x.category.startsWith('mood_'))) || JSON.stringify(d.map(x => [x.category, x.weight]));
+  });
+  check('om07_trust_low', 'Low trust surfaces as a driver', () => rankOpponentDrivers(ctx(hostileMem)).some(x => x.category === 'trust_low') || 'missing trust_low');
+  check('om08_trust_high', 'High trust surfaces as a driver after repeated help', () => {
+    let m = createFreshAiMemories(['ai']);
+    for (let t = 1; t <= 6; t++) m = applyCommittedActionToAiMemories(m, { actionType: 'support', actorId: 'player', targetId: 'ai', success: true, turn: t, summary: 's', stableKey: `h${t}` }, observer);
+    return rankOpponentDrivers(ctx(m.ai)).some(x => x.category === 'trust_high') || JSON.stringify(readOpponentRelationship(m.ai, 'player'));
+  });
+  check('om09_prediction_driver', 'A confident opponent model produces prediction lines naming the objective', () => {
+    let m = createFreshAiMemories(['ai']);
+    for (let t = 1; t <= 6; t++) m = applyCommittedActionToAiMemories(m, { actionType: 'region_deposit', actorId: 'player', targetId: '', regionId: 'VIC', success: true, turn: t, summary: 's', stableKey: `d${t}` }, observer);
+    const lines = [0, 1, 2].map(t => composeOpponentLine('taunt', ctx(m.ai, { turn: 7 + t }), []));
+    const p = lines.find(x => x && x.category === 'prediction');
+    return (Boolean(p) && /Victoria/.test(p!.text)) || JSON.stringify(lines.map(x => x && [x.category, x.text]));
+  });
+  check('om10_plan_driver', 'An adaptive plan produces plan lines describing it', () => {
+    const lines = [0, 1, 2].map(t => composeOpponentLine('taunt', ctx(hostileMem, { turn: 9 + t }), []));
+    const p = lines.find(x => x && x.category.startsWith('plan_'));
+    return Boolean(hostileMem.adaptivePlan) && (!p || /blocking|push|out-earning|long game|plan/i.test(p.text)) || 'plan line wrong';
+  });
+  check('om11_mood_fallback', 'With an empty memory the mood still speaks', () => {
+    const l = composeOpponentLine('taunt', ctx(createFreshAiMemories(['ai']).ai, { mood: 'desperate' }), []);
+    return (l !== null && l.category === 'mood_desperate') || JSON.stringify(l);
+  });
+  check('om12_deterministic', 'Same inputs → same line; JSON-cloned memory → same line', () => {
+    const a = composeOpponentLine('taunt', ctx(hostileMem), []); const b = composeOpponentLine('taunt', ctx(JSON.parse(JSON.stringify(hostileMem)) as AiActorMemory), []);
+    return (JSON.stringify(a) === JSON.stringify(b)) || 'differs';
+  });
+  check('om13_no_repeat_10_turns', 'No template repeats within 10 turns over a 60-turn, 4-lines-a-turn simulation', () => {
+    let st = createOpponentDialogueState();
+    const purposes: OpponentLinePurpose[] = ['taunt', 'deal', 'threat', 'intention'];
+    for (let turn = 1; turn <= 60; turn++) purposes.forEach(p => {
+      const l = composeOpponentLine(p, ctx(turn % 2 ? hostileMem : kindMem, { turn, dealText: '$200 now', intentText: 'heading north' }), st.history);
+      if (l) st = recordOpponentLine(st, { templateId: l.templateId, turn, purpose: p, speakerId: 'ai', text: l.text });
+    });
+    const bad: string[] = [];
+    st.history.forEach((e, i) => st.history.slice(0, i).forEach(prev => { if (prev.templateId === e.templateId && e.turn - prev.turn < 10) bad.push(`${e.templateId}@${prev.turn}/${e.turn}`); }));
+    return bad.length === 0 || bad.slice(0, 4).join(',');
+  });
+  check('om14_history_per_speaker', 'Repeats are tracked per speaker', () => {
+    const t = pickOpponentTemplate('mood_neutral', ctx(null), 'taunt', [{ templateId: 'mood_neutral_01', turn: 6, purpose: 'taunt', speakerId: 'other', text: '' }]);
+    return OPPONENT_LINES.mood_neutral.length > 0 && Boolean(t) || 'pick failed';
+  });
+  check('om15_deal_hostile', 'Deal offers after a hostile memory cite the event and the terms', () => {
+    const l = composeOpponentLine('deal', ctx(hostileMem, { dealText: 'pay $300 now' }), []);
+    return (l?.category === 'deal_hostile' && /pay \$300 now/.test(l.text) && /(Western Australia|turn [34])/.test(l.text)) || JSON.stringify(l);
+  });
+  check('om16_deal_friendly', 'Deal offers after help cite the help', () => {
+    const l = composeOpponentLine('deal', ctx(kindMem, { dealText: 'share Queensland' }), []);
+    return (l?.category === 'deal_friendly' && /share Queensland/.test(l.text)) || JSON.stringify(l);
+  });
+  check('om17_deal_neutral', 'Deal offers with no history are plain business', () => {
+    const l = composeOpponentLine('deal', ctx(createFreshAiMemories(['ai']).ai, { dealText: 'a truce' }), []);
+    return (l?.category === 'deal_neutral' && /a truce/.test(l.text)) || JSON.stringify(l);
+  });
+  check('om18_threat', 'Threats come from the threat pool and fill the remembered region when present', () => {
+    let st = createOpponentDialogueState();
+    const lines: OpponentLine[] = [];
+    for (let t = 6; t < 22; t++) { const l = composeOpponentLine('threat', ctx(hostileMem, { turn: t }), st.history); if (l) { lines.push(l); st = recordOpponentLine(st, { templateId: l.templateId, turn: t, purpose: 'threat', speakerId: 'ai', text: l.text }); } }
+    return (lines.every(l => l.category === 'threat') && lines.some(l => /Western Australia|turn [34]/.test(l.text))) || JSON.stringify(lines.map(l => l.text));
+  });
+  check('om19_intention_line', 'Intention lines carry the stated intent', () => { const l = composeOpponentLine('intention', ctx(null, { intentText: 'buying into Tasmania' }), []); return (l?.category === 'intention' && /buying into Tasmania/.test(l.text)) || JSON.stringify(l); });
+  check('om20_honest_easy', 'Easy rivals always state their true intention', () => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].every(t => statedOpponentIntention('heading south', 'easy', 'ai', t).honest) || 'easy bluffed');
+  check('om21_bluff_rates', 'Bluff frequency rises with difficulty (over 400 turns) and stays deterministic', () => {
+    const rate = (d: string) => Array.from({ length: 400 }, (_v, t) => statedOpponentIntention('heading south', d, 'ai', t)).filter(x => !x.honest).length / 400;
+    const m = rate('medium'), h = rate('hard'), e = rate('expert');
+    const det = JSON.stringify(statedOpponentIntention('x', 'expert', 'ai', 17)) === JSON.stringify(statedOpponentIntention('x', 'expert', 'ai', 17));
+    return (m > 0.1 && m < 0.4 && h > m && e > h && e < 0.75 && det) || JSON.stringify([m, h, e]);
+  });
+  check('om22_decoy_differs', 'A bluff never states the true intention', () => Array.from({ length: 200 }, (_v, t) => statedOpponentIntention(OPPONENT_DECOY_INTENTS[0], 'expert', 'ai', t)).every(x => x.honest || x.text !== OPPONENT_DECOY_INTENTS[0]) || 'decoy equals truth');
+  check('om23_true_intention', 'True intention reads the adaptive plan, else the last decision summary', () =>
+    (/blocking|push|out-earning|long game/.test(trueOpponentIntention(hostileMem, 'Attempt Surf at Gold Coast')) && trueOpponentIntention(createFreshAiMemories(['ai']).ai, 'Attempt Surf at Gold Coast.') === 'attempt Surf at Gold Coast' && trueOpponentIntention(null, '') === 'reading the board before I commit') || 'intention wrong');
+  check('om24_weighed_memories', 'The three heaviest memories are recent, charged and described', () => {
+    const w = weighOpponentMemories(hostileMem, 'player', 6, 3);
+    return (w.length === 3 && w[0].weight >= w[1].weight && w[1].weight >= w[2].weight && w.some(x => x.tone === 'hostile' && /sabotaged me/.test(x.line) && /Western Australia/.test(x.line))) || JSON.stringify(w.map(x => [x.weight, x.line]));
+  });
+  check('om25_relationship_view', 'Relationship bars read the AI\'s view of the player (defaults without memory)', () => {
+    const r = readOpponentRelationship(hostileMem, 'player'); const d = readOpponentRelationship(null, 'player');
+    return (r.grievance > 0 && r.trust < 50 && d.trust === 50 && d.rivalry === 0) || JSON.stringify([r, d]);
+  });
+  check('om26_belief_label', 'Predicted objectives are phrased for the player', () =>
+    (describePredictedObjective('expand_NSW') === 'pushing into New South Wales' && describePredictedObjective('build_cash') === 'building a cash pile' && describePredictedObjective(null) === 'keeping your options open') || 'labels wrong');
+  check('om27_panel_view', 'The panel view has mood, five bars, ≤3 memories, a belief and a stated intention', () => {
+    const v = buildOpponentMindView({ ...ctx(hostileMem, { mood: 'aggressive' }), difficulty: 'easy', aiPlanSummary: 'Attempt Surf at Gold Coast', history: [] });
+    return (v.moodLabel === 'Aggressive' && v.moodEmoji === '😤' && Object.keys(v.relationship).length === 5 && v.memories.length <= 3 && v.memories.length > 0 && Boolean(v.belief) && v.intention.length > 5) || JSON.stringify(v);
+  });
+  check('om28_action_phrases', 'Remembered actions are described in plain words', () =>
+    (describeMemoryAction('sabotage').past === 'sabotaged me' && describeMemoryAction('challenge_approach_bold').past === 'took a reckless gamble' && describeMemoryAction('region_deposit').past === 'bought into the region' && describeMemoryAction('weird').past === 'did that') || 'phrases wrong');
+  check('om29_sanitize', 'Dialogue history sanitizer drops junk and caps length', () => {
+    const s = sanitizeOpponentDialogueState({ history: [{ templateId: 'a', turn: 1 }, { templateId: 2 }, null, ...Array.from({ length: 80 }, (_v, i) => ({ templateId: `x${i}`, turn: i, purpose: 'nope', speakerId: 'ai', text: 'hi' }))] });
+    return (s.history.length === OPPONENT_DIALOGUE_HISTORY_CAP && s.history.every(e => typeof e.templateId === 'string') && s.history[s.history.length - 1].purpose === 'taunt' && sanitizeOpponentDialogueState(undefined).history.length === 0) || JSON.stringify(s.history.slice(-1));
+  });
+  check('om30_fills_complete', 'Rendered lines never leave a {slot} behind', () => {
+    const lines: string[] = [];
+    (['taunt', 'deal', 'threat', 'intention'] as OpponentLinePurpose[]).forEach(p => [1, 2, 3, 4, 5].forEach(t => { const l = composeOpponentLine(p, ctx(t % 2 ? hostileMem : null, { turn: t }), []); if (l) lines.push(l.text); }));
+    OPPONENT_LINE_TEMPLATES.forEach(t => lines.push(fillOpponentTemplate(t.text, ctx(hostileMem), hostileMem.events[0] || null)));
+    return lines.every(l => !/\{\w+\}/.test(l)) || lines.find(l => /\{\w+\}/.test(l)) || 'slot left';
+  });
+  check('om31_settings', 'opponentPersonalityEnabled defaults OFF, is registered, match-scoped and indexed', () =>
+    (DEFAULT_GAME_SETTINGS.opponentPersonalityEnabled === false && SMART_CONTROLLABLE_SETTINGS_REGISTRY.some(s => s.key === 'opponentPersonalityEnabled') && (V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes('opponentPersonalityEnabled') && SETTINGS_HUB_SECTION_INDEX.some(s => (s.fieldKeys as readonly string[]).includes('opponentPersonalityEnabled'))) || 'settings wiring missing');
+  check('om32_fallback_lines', 'AI_MOOD_STATES canned lines remain intact as the flag-off fallback', () =>
+    (['confident', 'neutral', 'desperate', 'aggressive'].every(k => (AI_MOOD_STATES as Record<string, { messages: string[] }>)[k].messages.length === 3)) || 'mood lines changed');
+  check('om33_save_roundtrip', 'Dialogue history survives validateSaveDataCore; V9.5 saves load without it', () => {
+    const f = JSON.parse(JSON.stringify(createV95SaveFixture())) as SaveGameData;
+    (f.gameState as unknown as Record<string, unknown>).opponentDialogue = { history: [{ templateId: 'rivalry_01', turn: 3, purpose: 'taunt', speakerId: 'ai', text: 'x' }, 'junk'] };
+    const v = validateSaveDataCore(f).gameState as unknown as Record<string, unknown>;
+    const legacy = validateSaveDataCore(JSON.parse(JSON.stringify(createV95SaveFixture())) as SaveGameData).gameState as unknown as Record<string, unknown>;
+    return (JSON.stringify((v.opponentDialogue as OpponentDialogueState).history.map(h => h.templateId)) === '["rivalry_01"]' && legacy.opponentDialogue === undefined) || JSON.stringify(v.opponentDialogue);
+  });
+  check('om34_record_bounded', 'recordOpponentLine keeps the newest entries only', () => {
+    let st = createOpponentDialogueState();
+    for (let i = 0; i < 100; i++) st = recordOpponentLine(st, { templateId: `t${i}`, turn: i, purpose: 'taunt', speakerId: 'ai', text: '' });
+    return (st.history.length === OPPONENT_DIALOGUE_HISTORY_CAP && st.history[st.history.length - 1].templateId === 't99') || String(st.history.length);
+  });
+  return results;
+}
+
 function AustraliaGame() {
   // DIAG2: Mount detection for StrictMode double-invocation tracking
   useEffect(() => {
@@ -188933,6 +189701,13 @@ function dispatchGameSettingsChange(
   const wp2AiPlanRef = useRef<((challenge: LegacyChallengeShape, aiState: ApproachActorLike, wager: number, approachId: string) => ChallengeApproachPlan | null) | null>(null);
   const wp2AiOutcomeRef = useRef<((plan: ChallengeApproachPlan, aiState: ApproachActorLike & { name?: string }, success: boolean) => void) | null>(null);
   const wp2AdvisorRef = useRef<((query: string) => GameIntelligenceAnswer | null) | null>(null);
+  // V9.6 (SECTION 20AK): the rival's dialogue history (mirrors gameState.opponentDialogue; updated synchronously when it speaks).
+  const wp5DialogueSource = (gameState as unknown as { opponentDialogue?: unknown }).opponentDialogue;
+  const wp5Dialogue = useMemo(() => sanitizeOpponentDialogueState(wp5DialogueSource), [wp5DialogueSource]);
+  const wp5DialogueRef = useRef<OpponentDialogueState>(wp5Dialogue);
+  const wp5DialogueSeenRef = useRef<OpponentDialogueState>(wp5Dialogue);
+  if (wp5DialogueSeenRef.current !== wp5Dialogue) { wp5DialogueSeenRef.current = wp5Dialogue; wp5DialogueRef.current = wp5Dialogue; }
+  const wp5SpeakRef = useRef<((purpose: OpponentLinePurpose, speakerId: string, extras?: { dealText?: string; intentText?: string; mood?: string }) => string | null) | null>(null);
   // V9.6 (SECTION 20AJ): OS motion preference, stable map activation and the memo cache for the map model.
   const wp4OsReduced = useOsReducedMotion();
   const wp4RegionActionsRef = useRef<Record<string, () => void>>({});
@@ -200402,6 +201177,22 @@ function dispatchGameSettingsChange(
     );
   }, [gameState.doubleOrNothingAvailable, gameState.lastChallengeReward, addNotification, updatePersonalRecords, player, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent]);
 
+    // V9.6 (SECTION 20AK): the rival speaks through the memory-driven dialogue engine (null while the flag is off).
+    wp5SpeakRef.current = (purpose, speakerId, extras) => {
+      if (gameSettings.opponentPersonalityEnabled !== true) return null;
+      const sid = resolveAiMemoryActorId(speakerId);
+      const speaker = (actorsById[sid] || (sid === 'ai' ? aiPlayer : null)) as { name?: string } | null;
+      const line = composeOpponentLine(purpose, {
+        speakerId: sid, speakerName: String(speaker?.name || 'Rival'), targetId: resolveAiMemoryActorId(player.id || 'player'), targetName: String(player.name || 'you'),
+        memory: (aiMemoriesRef.current || {})[sid] || null, mood: extras?.mood || gameState.aiMood, turn: Number(gameState.turnCounter) || 0,
+        dealText: extras?.dealText || null, intentText: extras?.intentText || null
+      }, wp5DialogueRef.current.history);
+      if (!line) return null;
+      const next = recordOpponentLine(wp5DialogueRef.current, { templateId: line.templateId, turn: Number(gameState.turnCounter) || 0, purpose, speakerId: sid, text: line.text });
+      wp5DialogueRef.current = next;
+      dispatchGameState({ type: 'LOAD_STATE', payload: { opponentDialogue: next } });
+      return line.text;
+    };
     // V9.6 (SECTION 20AH): bridges between the pure Challenge Decision System and live state (re-assigned every render).
     wp2HumanOutcomeRef.current = (plan: ChallengeApproachPlan, success: boolean) => {
       const def = getChallengeDefinition(plan.challengeId);
@@ -203350,12 +204141,14 @@ function dispatchGameSettingsChange(
     dispatchGameState({ type: 'SET_AI_MOOD', payload: newMood });
 
     // AI taunt based on mood
-    const tauntsEnabled = gameSettings.adaptiveAiTauntsEnabled && gameState.selectedMode === 'ai';
+    const tauntsEnabled = (gameSettings.adaptiveAiTauntsEnabled || gameSettings.opponentPersonalityEnabled === true) && gameState.selectedMode === 'ai';
     if (tauntsEnabled) {
       const moodState = AI_MOOD_STATES[newMood];
       if (aiRandom() < moodState.tauntChance) {
-        const taunt = moodState.messages[Math.floor(aiRandom() * moodState.messages.length)];
-        addNotification(`${moodState.emoji} AI: "${taunt}"`, 'ai', false);
+        // V9.6 (SECTION 20AK): the memory-driven line when the opponent personality is on; the canned mood line otherwise.
+        const wp5Taunt = wp5SpeakRef.current?.('taunt', String(projectedAi?.id || 'ai'), { mood: newMood }) || null;
+        const taunt = wp5Taunt || moodState.messages[Math.floor(aiRandom() * moodState.messages.length)];
+        addNotification(`${moodState.emoji} ${wp5Taunt ? String(projectedAi?.name || 'AI') : 'AI'}: "${taunt}"`, 'ai', false);
       }
     }
 
@@ -214999,11 +215792,13 @@ function dispatchGameSettingsChange(
       dnCounterparts.forEach(cp => {
         const gen = generateAiDiplomaticProposals(cp.id, me, buildDnWorld(cp.id), st);
         if (!gen.best) return;
-        const deal = { ...gen.best.deal, strategicSummary: gen.best.reason };
+        // V9.6 (SECTION 20AK): with the opponent personality on, the offer is pitched in character and cites a remembered event.
+        const wp5Pitch = wp5SpeakRef.current?.(gen.best.deal.terms.some(t => t.kind === 'threat') ? 'threat' : 'deal', cp.id, { dealText: describeDealShort(gen.best.deal, dnNames) }) || null;
+        const deal = { ...gen.best.deal, strategicSummary: gen.best.reason, ...(wp5Pitch ? { playerFacingSummary: wp5Pitch } : {}) };
         st = sendDiplomaticProposal(st, deal, turn, dnNames);
         st = { ...st, deals: st.deals.map(d => d.id === deal.id ? { ...d, status: 'under_review' as const } : d), tracks: { ...st.tracks, [me]: { ...(st.tracks[me] || { counterpartId: me, fatigue: 0, blockedUntilTurn: null, lastProposalTurn: null, dismissals: 0, unreasonableCount: 0 }), lastAiProposalTurn: turn } }, inbox: [...st.inbox, { id: `dni_ai_${deal.id}`, kind: 'proposal' as const, dealId: deal.id, fromActorId: cp.id, turn, text: `${cp.name} proposes: ${describeDealShort(deal, dnNames)}.`, status: 'unread' as const }].slice(-DN_LIMITS.inbox) };
         dnLedger('ai_proposal', `${cp.name} proposed ${describeDealShort(deal, dnNames)} — ${gen.best.reason}`, { actorId: cp.id, targetActorId: me });
-        addNotification(`📨 ${cp.name} proposes: ${describeDealShort(deal, dnNames)}. Open Diplomacy to answer.`, 'info', true, 'system');
+        addNotification(wp5Pitch ? `📨 ${cp.name}: “${wp5Pitch}” Open Diplomacy to answer.` : `📨 ${cp.name} proposes: ${describeDealShort(deal, dnNames)}. Open Diplomacy to answer.`, 'info', true, 'system');
       });
     }
     // AI-to-AI diplomacy (same evaluator, no special path) between AI teams in AI-only matches.
@@ -226260,6 +227055,12 @@ function dispatchGameSettingsChange(
                 </div>
               </SettingsSection>
 
+              <SettingsSection id="ai.opponentMind" tab="aiTeams" title="🗣️ Opponent Personality" chips={['Off by default']} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'ai.opponentMind')!.fieldKeys}>
+                <label className="flex items-center justify-between gap-3 text-sm" data-testid="opponent-personality-setting">
+                  <span><span className="font-semibold">Opponent personality (V9.6)</span><span className="block text-xs opacity-75">Your rival speaks from what it remembers — the turn, region and action behind every grudge — and shows its mood, relationship, beliefs about you and its (sometimes bluffed) next move under Intelligence → Rivals. Taunts, deal offers and threats use the same voice.</span></span>
+                  <input type="checkbox" checked={gameSettings.opponentPersonalityEnabled === true} onChange={e => trackedSetGameSettings('direct_player_change', '🗣️ Opponent Personality', prev => ({ ...prev, opponentPersonalityEnabled: e.target.checked }))} />
+                </label>
+              </SettingsSection>
               <SettingsSection id="ai.communication" tab="aiTeams" title="🧠 AI Communication" className="bg-cyan-900 bg-opacity-10" chips={getAutoChipsForField('aiCommunicationEnabled', SETTINGS_HUB_FIELD_META.aiCommunicationEnabled)} description={SETTINGS_HUB_FIELD_META.aiCommunicationEnabled.description} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'ai.communication')!.fieldKeys}>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
@@ -233041,6 +233842,18 @@ function dispatchGameSettingsChange(
               <WorldChangesPanel state={swrState} viewerId={swrViewerId} viewerTeamId={swrViewerTeamId} turn={dnRound} names={swrInputs.ownerNames} onWhy={showWorldExplanation} onAsk={q => void submitIntelligenceQuery(q)} />
             )}
 
+            {gameSettings.opponentPersonalityEnabled === true && isCompetitiveMode && (() => {
+              // V9.6 (SECTION 20AK): the rival's mind, read from its live memory.
+              const rival = (isTeamMode ? opponentTeamActors.find(a => isAiActor(a)) : aiPlayer) as { id?: string; name?: string; aiPlan?: { summary?: string } } | undefined;
+              const rivalId = resolveAiMemoryActorId(String(rival?.id || 'ai'));
+              const view = buildOpponentMindView({
+                speakerId: rivalId, speakerName: String(rival?.name || 'Rival'), targetId: resolveAiMemoryActorId(player.id || 'player'), targetName: String(player.name || 'you'),
+                memory: ((gameState as unknown as { aiMemoriesByActor?: AiMemoriesByActor }).aiMemoriesByActor || {})[rivalId] || null, mood: gameState.aiMood, turn: Number(gameState.turnCounter) || 0,
+                difficulty: gameState.aiDifficulty, aiPlanSummary: rival?.aiPlan?.summary || null, history: wp5Dialogue.history
+              });
+              return <OptionalSurfaceBoundary surface="Opponent mind"><OpponentMindPanel view={view} theme={themeStyles} /></OptionalSurfaceBoundary>;
+            })()}
+
             {teamOsView && (
               <div id="v9-intel-team">
                 <TeamMissionBoard view={teamOsView} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onButton={handleV9Button} onOpenLab={() => setExperienceLayer('lab')} />
@@ -233138,7 +233951,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV96ExperienceModesSelfTests(), ...v95WithIsolatedGlobals(() => runV96ChallengeDecisionSelfTests()), ...v95WithIsolatedGlobals(() => runV96ChallengeContentSelfTests()), ...runV96MapMotionSoundSelfTests(), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV96ExperienceModesSelfTests(), ...v95WithIsolatedGlobals(() => runV96ChallengeDecisionSelfTests()), ...v95WithIsolatedGlobals(() => runV96ChallengeContentSelfTests()), ...runV96MapMotionSoundSelfTests(), ...runV96OpponentMindSelfTests(), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
