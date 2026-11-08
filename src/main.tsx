@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import AustraliaGame from "../(V8.2) australia-game-with-ai.tsx";
+import AustraliaGame from "../(V9.6) australia-game-with-ai.tsx";
 
 const root = document.getElementById("root");
 if (!root) {
