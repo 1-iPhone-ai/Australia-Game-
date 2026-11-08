@@ -11213,8 +11213,9 @@ export function reduceGameAction(
 ): ActionTransitionResult {
 
   // CPFIX1: Removed stray console.log debug statements from reduceGameAction
-  const canonical = canonicalStateFromLiveRuntime(state);
-  const nextState: CanonicalGameState = JSON.parse(JSON.stringify(canonical));
+  // V9.6 (SECTION 20AM): inside a Background-AI simulation batch one serialisation of the same live state is shared
+  // (identical JSON); every call still parses its own fresh clone.
+  const nextState: CanonicalGameState = JSON.parse(canonicalStateJson(state));
   if (!nextState.counters) {
     nextState.counters = createInitialDeterministicCounters();
   }
@@ -101905,7 +101906,7 @@ export interface ExperienceLayerNavProps {
 }
 
 /** PLAY | INTELLIGENCE | LAB — an ARIA tablist with arrow / Home / End keyboard support. */
-export const ExperienceLayerNav: React.FC<ExperienceLayerNavProps> = ({ active, onChange, theme, badges }) => {
+const ExperienceLayerNavView: React.FC<ExperienceLayerNavProps> = ({ active, onChange, theme, badges }) => {
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
   const focusLayer = (layer: ExperienceLayer) => {
     onChange(layer);
@@ -101950,6 +101951,8 @@ export const ExperienceLayerNav: React.FC<ExperienceLayerNavProps> = ({ active, 
     </div>
   );
 };
+/** V9.6 (SECTION 20AM): memoised — skips renders whose props did not change (counted by the render counter). */
+export const ExperienceLayerNav = React.memo(withRenderCount('ExperienceLayerNav', ExperienceLayerNavView));
 
 export interface PlayerControlStatusBarProps {
   control: PlayerControlState;
@@ -101963,7 +101966,7 @@ export interface PlayerControlStatusBarProps {
 }
 
 /** The persistent "who controls my player" indicator. Exactly one headline — never contradictory. */
-export const PlayerControlStatusBar: React.FC<PlayerControlStatusBarProps> = ({ control, theme, onTakeControl, onStart, onResume, onOpenControl, onReviewApproval, lastDeltas }) => {
+const PlayerControlStatusBarView: React.FC<PlayerControlStatusBarProps> = ({ control, theme, onTakeControl, onStart, onResume, onOpenControl, onReviewApproval, lastDeltas }) => {
   const tone = V9_TONE_CLASSES[control.tone] || V9_TONE_CLASSES.neutral;
   const facts: string[] = [];
   if (control.objective && control.copilotHoldsControl) facts.push(`Objective: ${control.objective}`);
@@ -102032,6 +102035,8 @@ export const PlayerControlStatusBar: React.FC<PlayerControlStatusBarProps> = ({ 
     </div>
   );
 };
+/** V9.6 (SECTION 20AM): memoised — skips renders whose props did not change (counted by the render counter). */
+export const PlayerControlStatusBar = React.memo(withRenderCount('PlayerControlStatusBar', PlayerControlStatusBarView));
 
 export interface PlayerControlModeSelectorProps {
   control: PlayerControlState;
@@ -115920,7 +115925,8 @@ export function prepareBackgroundSimulations(world: GIWorld, evals: BackgroundMo
   if (budget <= 0) return [];
   const exposure = threats.find(t => t.status === 'active' && t.type === 'region_vulnerable')?.exposure || 0;
   const out: BackgroundPreparedSimulation[] = [];
-  evals.slice(0, budget).forEach(e => {
+  // V9.6 (SECTION 20AM): the candidates below simulate against one unchanged world — serialise it once.
+  withCanonicalCloneBatch(() => evals.slice(0, budget).forEach(e => {
     const cached = prev.find(p => p.actionId === e.actionId && p.stateHash === stateHash);
     if (cached) { out.push(cached); return; }
     const cand = world.actionSet?.ranked.find(c => c.id === e.actionId);
@@ -115943,7 +115949,7 @@ export function prepareBackgroundSimulations(world: GIWorld, evals: BackgroundMo
       benefits, risks, goalImpact: e.dimensions.strategicAlignment > 0 || e.dimensions.urgency > 0 ? 'advances the current plan' : e.dimensions.constraintCompliance < 0 ? 'works against a constraint' : 'neutral for the plan',
       confidence: outcome?.ok ? (outcome.certainty === 'deterministic' ? 'high' : 'moderate') : 'low', createdTurn: world.turn, cashAfter
     });
-  });
+  }));
   return out;
 }
 
@@ -128030,7 +128036,7 @@ export function buildV9RegionContext(code: string, lr: LivingRegionsWorldView | 
 const V9_TONE: Record<'good' | 'warn' | 'bad' | 'info', string> = { good: 'border-emerald-500/60', warn: 'border-amber-500/70', bad: 'border-red-500/70', info: 'border-slate-500/50' };
 const V9_CONTROL_TONE: Record<V9Cohesion['header']['controlTone'], string> = { you: 'bg-emerald-600 text-white', copilot: 'bg-sky-600 text-white', rescue: 'bg-red-600 text-white', waiting: 'bg-slate-600 text-white' };
 
-export const V9MatchHeader: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() => void) | null; endTurnExtra?: React.ReactNode; onStanding: () => void; coachNode?: React.ReactNode; cashDelta?: UiFeedbackEvent | null; apDelta?: UiFeedbackEvent | null; apZero?: boolean; endgame?: boolean }> = ({ c, theme, onEndTurn, endTurnExtra, onStanding, coachNode = null, cashDelta = null, apDelta = null, apZero = false, endgame = false }) => {
+const V9MatchHeaderView: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() => void) | null; endTurnExtra?: React.ReactNode; onStanding: () => void; coachNode?: React.ReactNode; cashDelta?: UiFeedbackEvent | null; apDelta?: UiFeedbackEvent | null; apZero?: boolean; endgame?: boolean }> = ({ c, theme, onEndTurn, endTurnExtra, onStanding, coachNode = null, cashDelta = null, apDelta = null, apZero = false, endgame = false }) => {
   const h = c.header;
   const w = c.endTurnWarnings;
   return (
@@ -128058,6 +128064,8 @@ export const V9MatchHeader: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (()
     </header>
   );
 };
+/** V9.6 (SECTION 20AM): memoised — skips renders whose props did not change (counted by the render counter). */
+export const V9MatchHeader = React.memo(withRenderCount('V9MatchHeader', V9MatchHeaderView));
 
 export interface V9PlayHandlers {
   onDo: (candidateId: string) => void; onWhyAction: (candidateId: string) => void; onWhatIf: (label: string) => void; onAsk: (q: string) => void;
@@ -128067,7 +128075,7 @@ export interface V9PlayHandlers {
 
 export interface V9AfterAction { rootId: string; did: string; changed: string[]; affected: string[] }
 
-export const V9CohesionPlay: React.FC<{ c: V9Cohesion; theme: any; h: V9PlayHandlers; simple: boolean; humanCanAct: boolean; afterAction?: V9AfterAction | null; onDismissAfter?: () => void; coach?: { target: LearningCoachTarget; node: React.ReactNode } | null }> = ({ c, theme, h, simple, humanCanAct, afterAction = null, onDismissAfter, coach = null }) => {
+const V9CohesionPlayView: React.FC<{ c: V9Cohesion; theme: any; h: V9PlayHandlers; simple: boolean; humanCanAct: boolean; afterAction?: V9AfterAction | null; onDismissAfter?: () => void; coach?: { target: LearningCoachTarget; node: React.ReactNode } | null }> = ({ c, theme, h, simple, humanCanAct, afterAction = null, onDismissAfter, coach = null }) => {
   // Guided Learning coach callout sits beside the element it explains (never modal; the section stays usable).
   const coachAtFocus = coach && coach.target === 'focus' && !c.decision && !c.waiting ? coach.node : null;
   const coachAtRec = coach && !coachAtFocus ? coach.node : null;
@@ -128215,6 +128223,8 @@ export const V9CohesionPlay: React.FC<{ c: V9Cohesion; theme: any; h: V9PlayHand
     </div>
   );
 };
+/** V9.6 (SECTION 20AM): memoised — skips renders whose props did not change (counted by the render counter). */
+export const V9CohesionPlay = React.memo(withRenderCount('V9CohesionPlay', V9CohesionPlayView));
 
 /** ONE coherent selected-region story (Living Regions + stakeholders + rival pressure + contracts + infrastructure). */
 export const V9RegionContextPanel: React.FC<{ ctx: V9RegionContext | null; theme: any; onAsk: (q: string) => void; onTravel?: () => void; onContracts?: () => void; onNegotiate?: () => void; onInvest?: () => void; more: React.ReactNode }> = ({ ctx, theme, onAsk, onTravel, onContracts, onNegotiate, onInvest, more }) => {
@@ -129931,7 +129941,7 @@ export const MechanicsDirectoryEntries: React.FC<{ theme: any; focusId: string |
 
 // ---- PLAY surfaces ---------------------------------------------------------------------------------------------
 
-export const GuidedWelcomeCard: React.FC<{ theme: any; onStart: () => void; onBasics: () => void; onSkip: () => void }> = ({ theme, onStart, onBasics, onSkip }) => (
+const GuidedWelcomeCardView: React.FC<{ theme: any; onStart: () => void; onBasics: () => void; onSkip: () => void }> = ({ theme, onStart, onBasics, onSkip }) => (
   <section aria-labelledby="gl-welcome-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow}`} data-testid="gl-welcome">
     <h2 id="gl-welcome-h" className="text-lg font-extrabold">Welcome to Australia Game</h2>
     <p className="text-sm opacity-90">Build your position across Australia, outplay your rivals, and complete the match objective. I'll explain mechanics when they become relevant.</p>
@@ -129942,6 +129952,8 @@ export const GuidedWelcomeCard: React.FC<{ theme: any; onStart: () => void; onBa
     </div>
   </section>
 );
+/** V9.6 (SECTION 20AM): memoised — skips renders whose props did not change (counted by the render counter). */
+export const GuidedWelcomeCard = React.memo(withRenderCount('GuidedWelcomeCard', GuidedWelcomeCardView));
 
 export const GUIDED_BASICS_STEPS: Array<{ target: LearningCoachTarget; headline: string; line: string }> = [
   { target: 'focus', headline: '1 / 4 · Current Focus', line: 'What matters most right now. Your plan, in one line.' },
@@ -133220,7 +133232,7 @@ export function currentDeltaFor(queue: UiFeedbackEvent[], subject: 'cash' | 'ap'
 // ---- Shared components -------------------------------------------------------------------------------
 
 /** Completion / consequence card: one grouped moment, then it collapses into ordinary history. */
-export const FeedbackStrip: React.FC<{ theme: any; major: UiFeedbackEvent | null; minor: UiFeedbackEvent[]; onDismiss: (id: string) => void; onWhy?: (e: UiFeedbackEvent) => void }> = ({ theme, major, minor, onDismiss, onWhy }) => {
+const FeedbackStripView: React.FC<{ theme: any; major: UiFeedbackEvent | null; minor: UiFeedbackEvent[]; onDismiss: (id: string) => void; onWhy?: (e: UiFeedbackEvent) => void }> = ({ theme, major, minor, onDismiss, onWhy }) => {
   if (!major && !minor.length) return null;
   const toneBorder: Record<UiTone, string> = { positive: 'border-emerald-500/60', completed: 'border-emerald-500/70', negative: 'border-rose-500/60', critical: 'border-red-500/80', warning: 'border-amber-500/70', selected: 'border-sky-500/60', neutral: 'border-slate-500/50', inactive: 'border-slate-600/40' };
   return (
@@ -133250,6 +133262,8 @@ export const FeedbackStrip: React.FC<{ theme: any; major: UiFeedbackEvent | null
     </div>
   );
 };
+/** V9.6 (SECTION 20AM): memoised — skips renders whose props did not change (counted by the render counter). */
+export const FeedbackStrip = React.memo(withRenderCount('FeedbackStrip', FeedbackStripView));
 
 /** A value in the Match Header that acknowledges its own change (tint once + signed delta), then settles. */
 export const FeelValue: React.FC<{ value: React.ReactNode; valueKey: string | number; delta?: UiFeedbackEvent | null; className?: string; testId?: string }> = ({ value, valueKey, delta, className = '', testId }) => (
@@ -135982,6 +135996,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v96mf', label: 'V9.6 Map, Motion & Sound', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96MapMotionSoundSelfTests() },
   { id: 'v96om', label: 'V9.6 A Visible Opponent Mind', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96OpponentMindSelfTests() },
   { id: 'v96mt', label: 'V9.6 Match Shape', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96MatchShapeSelfTests() },
+  { id: 'v96pf', label: 'V9.6 Performance Refactor', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV96PerformanceSelfTests()) },
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
@@ -185443,7 +185458,596 @@ export function runV96MatchShapeSelfTests(): V9SelfTestResult[] {
   return results;
 }
 
+// ============================================================================
+// SECTION 20AM: V9.6 PERFORMANCE — STATE SLICES, STABLE HANDLERS, SIMULATION CLONE CACHE, RENDER DIAGNOSTICS
+// ----------------------------------------------------------------------------
+// A refactor with no gameplay change: the same results, computed with less work and better structure.
+//   • State slices: 138 of the 168 useState hooks in AustraliaGame live in 15 useReducer slices (useStateSlice).
+//     Setters keep useState's contract — stable identity, an Object.is bail-out that schedules no render when
+//     nothing is queued, functional updates applied in call order, and a bail-out when a batch ends where it
+//     began. The core game-state run (aiPlayer, teams, the AI queue — its updaters read refs) and two fields
+//     whose existing types carry `any` stay on useState.
+//   • Stable handler kit (useStableKit): inline callbacks and objects handed to memoised HUD panels keep one
+//     identity and always run the latest closure, so ExperienceLayerNav, PlayerControlStatusBar, FeedbackStrip
+//     GuidedWelcomeCard, V9MatchHeader and V9CohesionPlay (now React.memo) skip renders whose inputs did not change.
+//   • KeyboardShortcutsHelpModal moved out of the component body (it was a new component type every render,
+//     so React unmounted and remounted it each time).
+//   • Background AI: candidate simulations in one evaluation share one serialisation of the unchanged live state
+//     (withCanonicalCloneBatch → canonicalStateJson); every candidate still parses its own fresh clone, so the
+//     JSON semantics are exactly V9.5's.
+//   • Render diagnostics (dev): with the existing diagnosticsSettings.enabled switch on, an overlay counts renders
+//     and render→commit time for the game and the memoised panels. Off: one boolean check per render.
+//   • Remaining `as any` on component state/settings access: 95 redundant `(gameState as any)` casts removed
+//     (gameState is already `any`) and 8 `(gameSettings as any).<declared field>` casts replaced by typed access;
+//     4 casts to undeclared settings fields stay.
+// Measured (tools/selftest/cpu-profile.mjs, element-census.mjs, jsx-census.mjs; Chromium, scripted AI match):
+//   • Production build, 3 full turns: 2,080 → 1,890 ms busy CPU (−9%); the Background AI's per-candidate state
+//     serialisation — the single largest hot spot — is halved. Rendering itself costs ~3–4 ms per commit.
+//   • Dev server (React's dev JSX runtime dominates there): a UI-only re-render creates 619 → 523 elements (−15%);
+//     the memoised panels render 1–2 times across 19 game renders.
+// Effect audit (AustraliaGame, 99 effects: 86 passive + 13 layout): every timer (7) and listener/subscription (7)
+//   is cleaned up; 6 run on mount only; 75 have 1–3 dependencies and 17 have 4+; one (the render timer) has none
+//   by design; 52 set state after commit — the main remaining render-count lever, left as is because changing
+//   when they run would change behaviour. PostMatchDebriefModal stays inside the component (it closes over 41
+//   values, 30 of them refs, and renders only at game over).
+// ============================================================================
+
+// ---- State slices ---------------------------------------------------------------------------------------------------------
+export type V96SliceSetters<S> = { readonly [K in keyof S]: React.Dispatch<React.SetStateAction<S[K]>> };
+export interface V96SliceAction<S> { readonly key: keyof S; readonly payload: unknown; readonly isFn: boolean; readonly base: S }
+export interface V96SliceLive<S> { rendered: S; pending: number }
+
+/** One field update in dispatch order. A result equal (field for field) to the state last rendered returns that very
+ *  object, so React bails out exactly as it does for a useState batch that ends where it began. */
+export function reduceStateSlice<S extends object>(state: S, action: V96SliceAction<S>): S {
+  const prev = state[action.key];
+  const next = (action.isFn ? (action.payload as (p: S[keyof S]) => S[keyof S])(prev) : action.payload) as S[keyof S];
+  if (Object.is(prev, next)) return state;
+  const out = { ...state, [action.key]: next } as S;
+  const base = action.base;
+  if (base !== state && (Object.keys(out) as Array<keyof S>).every(k => Object.is(out[k], base[k]))) return base;
+  return out;
+}
+
+/** Setter core (React's useState eager path, per field): with nothing queued the update is computed now and an
+ *  unchanged value schedules nothing; otherwise the update (value or updater) is queued for the next render. */
+export function makeSliceSetters<S extends object>(keys: ReadonlyArray<keyof S>, live: V96SliceLive<S>, dispatch: (a: V96SliceAction<S>) => void): V96SliceSetters<S> {
+  const out: Partial<Record<keyof S, unknown>> = {};
+  keys.forEach(key => {
+    out[key] = (update: unknown) => {
+      const isFn = typeof update === 'function';
+      if (live.pending === 0) {
+        const prev = live.rendered[key];
+        const next = isFn ? (update as (p: S[keyof S]) => S[keyof S])(prev) : update;
+        if (Object.is(prev, next)) return;
+        live.pending += 1;
+        dispatch({ key, payload: next, isFn: false, base: live.rendered });
+        return;
+      }
+      live.pending += 1;
+      dispatch({ key, payload: update, isFn, base: live.rendered });
+    };
+  });
+  return out as unknown as V96SliceSetters<S>;
+}
+
+/** A group of useState fields in one reducer. The fields are fixed by the initializer (called once, at mount). */
+export function useStateSlice<S extends object>(init: () => S): [S, V96SliceSetters<S>] {
+  const [state, dispatch] = React.useReducer(reduceStateSlice<S>, null, () => init());
+  const liveRef = React.useRef<V96SliceLive<S> | null>(null);
+  if (!liveRef.current) liveRef.current = { rendered: state, pending: 0 };
+  // Every update queued before this render is applied by it (the app uses no transitions or render-phase updates).
+  liveRef.current.rendered = state;
+  liveRef.current.pending = 0;
+  const settersRef = React.useRef<V96SliceSetters<S> | null>(null);
+  if (!settersRef.current) settersRef.current = makeSliceSetters(Object.keys(state) as Array<keyof S>, liveRef.current, dispatch);
+  return [state, settersRef.current];
+}
+
+// ---- Stable handler kit -----------------------------------------------------------------------------------------------------
+export interface V96StableKit {
+  /** The same function identity per key; each call runs the closure given on the latest render. */
+  fn<A extends unknown[], R>(key: string, impl: (...args: A) => R): (...args: A) => R;
+  /** The value made on the first render and re-made only when a dependency changes (Object.is). */
+  value<T>(key: string, deps: readonly unknown[], make: () => T): T;
+  /** A handler object with one identity per key whose methods run the latest object's methods (fixed key set). */
+  handlers<T extends object>(key: string, latest: T): T;
+}
+export function createStableKit(): V96StableKit {
+  const latest = new Map<string, (...args: unknown[]) => unknown>();
+  const wrappers = new Map<string, (...args: unknown[]) => unknown>();
+  const values = new Map<string, { deps: readonly unknown[]; value: unknown }>();
+  const latestObjs = new Map<string, object>();
+  const handlerObjs = new Map<string, object>();
+  return {
+    fn<A extends unknown[], R>(key: string, impl: (...args: A) => R): (...args: A) => R {
+      latest.set(key, impl as (...args: unknown[]) => unknown);
+      let w = wrappers.get(key);
+      if (!w) { w = (...args: unknown[]) => (latest.get(key) as (...a: unknown[]) => unknown)(...args); wrappers.set(key, w); }
+      return w as (...args: A) => R;
+    },
+    value<T>(key: string, deps: readonly unknown[], make: () => T): T {
+      const prev = values.get(key);
+      if (prev && prev.deps.length === deps.length && prev.deps.every((d, i) => Object.is(d, deps[i]))) return prev.value as T;
+      const value = make();
+      values.set(key, { deps: [...deps], value });
+      return value;
+    },
+    handlers<T extends object>(key: string, latest: T): T {
+      latestObjs.set(key, latest);
+      let w = handlerObjs.get(key);
+      if (!w) {
+        const out: Record<string, unknown> = {};
+        Object.keys(latest).forEach(name => {
+          out[name] = (...args: unknown[]) => {
+            const f = (latestObjs.get(key) as Record<string, unknown>)[name];
+            return typeof f === 'function' ? (f as (...a: unknown[]) => unknown)(...args) : undefined;
+          };
+        });
+        w = out;
+        handlerObjs.set(key, w);
+      }
+      return w as T;
+    }
+  };
+}
+export function useStableKit(): V96StableKit {
+  const ref = React.useRef<V96StableKit | null>(null);
+  if (!ref.current) ref.current = createStableKit();
+  return ref.current;
+}
+
+// ---- Background AI: one serialisation per live state inside a simulation batch -------------------------------------------------
+interface V96CloneBatchState { depth: number; cache: WeakMap<object, string>; hits: number; misses: number }
+/** Kept on the function object (hoisted), so reduceGameAction can use it however early it runs. */
+export function canonicalCloneBatchState(): V96CloneBatchState {
+  const holder = canonicalCloneBatchState as unknown as { state?: V96CloneBatchState };
+  if (!holder.state) holder.state = { depth: 0, cache: new WeakMap<object, string>(), hits: 0, misses: 0 };
+  return holder.state;
+}
+export function withCanonicalCloneBatch<T>(run: () => T): T {
+  const st = canonicalCloneBatchState();
+  st.depth += 1;
+  try { return run(); }
+  finally { st.depth -= 1; if (st.depth === 0) st.cache = new WeakMap<object, string>(); }
+}
+/** JSON.stringify(canonicalStateFromLiveRuntime(state)) — cached per state object while a batch is open. */
+export function canonicalStateJson(state: unknown): string {
+  const st = canonicalCloneBatchState();
+  if (st.depth > 0 && state !== null && typeof state === 'object') {
+    const hit = st.cache.get(state);
+    if (hit !== undefined) { st.hits += 1; return hit; }
+    st.misses += 1;
+    const json = JSON.stringify(canonicalStateFromLiveRuntime(state));
+    st.cache.set(state, json);
+    return json;
+  }
+  return JSON.stringify(canonicalStateFromLiveRuntime(state));
+}
+
+// ---- Render diagnostics (dev; behind diagnosticsSettings.enabled) -----------------------------------------------------------------
+export interface V96RenderStat { renders: number; lastMs: number; totalMs: number; timed: number }
+export const V96_RENDER_STATS: { enabled: boolean; byName: Record<string, V96RenderStat> } = { enabled: false, byName: {} };
+export function recordRender(name: string, ms?: number): void {
+  if (!V96_RENDER_STATS.enabled) return;
+  const s = (V96_RENDER_STATS.byName[name] ||= { renders: 0, lastMs: 0, totalMs: 0, timed: 0 });
+  if (typeof ms === 'number') { s.lastMs = Math.round(ms * 10) / 10; s.totalMs += ms; s.timed += 1; }
+  else s.renders += 1;
+}
+export function resetRenderStats(): void { V96_RENDER_STATS.byName = {}; }
+/** Counts a panel's renders (React.memo skips do not count — that is the point). */
+export function withRenderCount<P extends object>(name: string, Inner: React.ComponentType<P>): React.FC<P> {
+  const Counted: React.FC<P> = props => { recordRender(name); return <Inner {...props} />; };
+  Counted.displayName = name;
+  return Counted;
+}
+export const RenderDiagnosticsPanel = React.memo(function RenderDiagnosticsPanel({ tick, onReset }: { tick: number; onReset: () => void }) {
+  const rows = Object.entries(V96_RENDER_STATS.byName).sort((a, b) => b[1].renders - a[1].renders).slice(0, 10);
+  const batch = canonicalCloneBatchState();
+  return (
+    <div className="fixed bottom-2 left-2 z-[9999] max-w-xs rounded-lg bg-black/85 text-white text-[11px] p-2 font-mono shadow-lg" data-testid="render-diagnostics" data-tick={tick} role="status" aria-label="Render counter">
+      <div className="flex items-center justify-between gap-2 font-sans font-semibold mb-1"><span>⏱ Render counter</span><button type="button" className="underline opacity-80" onClick={onReset}>reset</button></div>
+      {rows.map(([name, s]) => (
+        <div key={name} className="flex justify-between gap-3"><span className="truncate">{name}</span><span>{s.renders}×{s.timed ? ` · ${s.lastMs}ms last · ${Math.round((s.totalMs / s.timed) * 10) / 10}ms avg` : ''}</span></div>
+      ))}
+      <div className="opacity-70 mt-1 font-sans">Background AI clone cache: {batch.hits} reused / {batch.misses} serialised</div>
+    </div>
+  );
+});
+
+// ---- The 50-action determinism script (runs against any build's exports; the V9.5 result is pinned below) --------------------------
+export interface V96ScriptApi {
+  createV95SaveFixture: () => unknown;
+  validateSaveDataCore: (raw: never) => unknown;
+  canonicalStateFromSave: (save: never) => unknown;
+  reduceGameAction: (state: never, action: never, ctx?: never) => unknown;
+  setRngMasterSeed: (seed: number, deterministic?: boolean) => void;
+  resetGlobalDeterministicCounters: () => void;
+}
+export interface V96ScriptResult { hash: string; executed: number; projection: string; initialHash: string }
+/** The scripted actions: a fixed mix of travel, work, trade, loans, deposits, cash transfers, challenges, crafting,
+ *  equipment and turn ends by both actors (50 in all). Only V9.5-era action types and fields are involved. */
+export const V96_FIFTY_ACTIONS: ReadonlyArray<{ type: string; actorId: string; parameters?: Record<string, unknown>; targetRegion?: string; item?: string; price?: number; investmentAmount?: number; targetActorId?: string }> = (() => {
+  const regions = ['NSW', 'VIC', 'TAS', 'SA', 'WA', 'NT', 'QLD', 'ACT'];
+  const out: Array<{ type: string; actorId: string; parameters?: Record<string, unknown>; targetRegion?: string; item?: string; price?: number; investmentAmount?: number; targetActorId?: string }> = [];
+  for (let i = 0; i < 50; i++) {
+    const actorId = i % 2 === 0 ? 'player' : 'ai';
+    const r = regions[i % regions.length];
+    switch (i % 10) {
+      case 0: out.push({ type: 'travel', actorId, targetRegion: r, price: 200, parameters: { region: r, cost: 200 } }); break;
+      case 1: out.push({ type: 'work', actorId, parameters: { region: r } }); break;
+      case 2: out.push({ type: 'emergency_loan', actorId, parameters: { principal: 500, amount: 500 } }); break;
+      case 3: out.push({ type: 'region_deposit', actorId, targetRegion: r, investmentAmount: 150, parameters: { region: r, amount: 150 } }); break;
+      case 4: out.push({ type: 'challenge', actorId, price: 100, parameters: { challengeName: 'Surf at Bondi Beach', wager: 100, difficulty: 1, isWin: i % 4 === 0 } }); break;
+      case 5: out.push({ type: 'give_cash', actorId, targetActorId: actorId === 'player' ? 'ai' : 'player', price: 50, parameters: { amount: 50, targetActorId: actorId === 'player' ? 'ai' : 'player' } }); break;
+      case 6: out.push({ type: 'buy_market', actorId, item: 'Wool', price: 80, parameters: { resource: 'Wool', price: 80, quantity: 1 } }); break;
+      case 7: out.push({ type: 'sell', actorId, item: 'Wool', price: 90, parameters: { resource: 'Wool', price: 90 } }); break;
+      case 8: out.push({ type: 'repay_emergency_loan', actorId, parameters: {} }); break;
+      default: out.push({ type: 'end_turn', actorId, parameters: {} });
+    }
+  }
+  return out;
+})();
+const v96StableStringify = (v: unknown): string => {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v === undefined ? null : v);
+  if (Array.isArray(v)) return `[${v.map(v96StableStringify).join(',')}]`;
+  const o = v as Record<string, unknown>;
+  return `{${Object.keys(o).filter(k => o[k] !== undefined).sort().map(k => `${JSON.stringify(k)}:${v96StableStringify(o[k])}`).join(',')}}`;
+};
+/** The V9.5-era projection: per actor, the economy and position fields; plus deposits, day, turn and ID counters. */
+export function v95EraProjection(state: unknown): string {
+  const s = (state && typeof state === 'object' ? state : {}) as Record<string, unknown>;
+  const actors = (s.actorsById && typeof s.actorsById === 'object' ? s.actorsById : {}) as Record<string, Record<string, unknown>>;
+  const pick = (a: Record<string, unknown>) => ({
+    money: a.money, currentRegion: a.currentRegion, visitedRegions: a.visitedRegions, inventory: a.inventory, debt: a.debt,
+    loans: Array.isArray(a.loans) ? a.loans.map(l => { const r = (l || {}) as Record<string, unknown>; return { amount: r.amount, accrued: r.accrued, principal: r.principal }; }) : null,
+    actionsUsedThisTurn: a.actionsUsedThisTurn, actionPoints: a.actionPoints, challengesCompleted: a.challengesCompleted, level: a.level, xp: a.xp, equipment: a.equipment
+  });
+  const gs = (s.gameState && typeof s.gameState === 'object' ? s.gameState : s) as Record<string, unknown>;
+  return v96StableStringify({
+    actors: Object.keys(actors).sort().map(id => [id, pick(actors[id] || {})]),
+    deposits: gs.regionDeposits || s.regionDeposits || null, day: gs.day ?? s.day ?? null, turnCounter: gs.turnCounter ?? s.turnCounter ?? null,
+    counters: s.counters || null
+  });
+}
+export function runFiftyActionScript(api: V96ScriptApi): V96ScriptResult {
+  api.setRngMasterSeed(4242, true);
+  api.resetGlobalDeterministicCounters();
+  const fixture = JSON.parse(JSON.stringify(api.createV95SaveFixture())) as never;
+  let state = api.canonicalStateFromSave(api.validateSaveDataCore(fixture) as never);
+  const initialHash = matchShapeHash(v95EraProjection(state)).toString(16);
+  let executed = 0;
+  V96_FIFTY_ACTIONS.forEach(action => {
+    const res = api.reduceGameAction(state as never, { ...action } as never, { active: true, operation: action.type, actorId: action.actorId } as never) as { nextState?: unknown; success?: boolean; executed?: boolean } | null;
+    if (res && res.nextState) { state = res.nextState; executed += 1; }
+  });
+  const projection = v95EraProjection(state);
+  return { hash: matchShapeHash(projection).toString(16), executed, projection, initialHash };
+}
+/** Generated by tools/selftest/wp7-baseline.mjs from the untouched V9.5 file (same script, V9.5 exports). */
+export const V95_FIFTY_ACTION_BASELINE = { hash: '61392998', executed: 50 } as const;
+
+
+// ---- Self-tests (pf01–pf34) ------------------------------------------------------------------------------------------------------
+export function runV96PerformanceSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  type T3 = { a: number; b: string; c: number[] };
+  const s0: T3 = { a: 1, b: 'x', c: [1] };
+  const act = (key: keyof T3, payload: unknown, isFn = false, base: T3 = s0): V96SliceAction<T3> => ({ key, payload, isFn, base });
+  const api: V96ScriptApi = { createV95SaveFixture, validateSaveDataCore, canonicalStateFromSave, reduceGameAction, setRngMasterSeed, resetGlobalDeterministicCounters };
+  const memoTag = Symbol.for('react.memo');
+  const isMemo = (c: unknown) => Boolean(c && typeof c === 'object' && (c as { $$typeof?: symbol }).$$typeof === memoTag);
+
+  check('pf01_slice_set', 'A slice field update returns a new state with only that field changed', () => {
+    const s1 = reduceStateSlice(s0, act('a', 2));
+    return (s1 !== s0 && s1.a === 2 && s1.b === 'x' && s1.c === s0.c) || JSON.stringify(s1);
+  });
+  check('pf02_slice_same', 'Setting the current value keeps the same state object (useState bail-out)', () => reduceStateSlice(s0, act('b', 'x')) === s0 || 'new object');
+  check('pf03_slice_fn', 'Functional updates read the state at their place in the queue', () => {
+    const s1 = reduceStateSlice(s0, act('a', (p: number) => p + 1, true)); const s2 = reduceStateSlice(s1, act('a', (p: number) => p * 10, true, s0));
+    return s2.a === 20 || String(s2.a);
+  });
+  check('pf04_slice_revert', 'A batch that ends where it began returns the rendered object itself', () => {
+    const s1 = reduceStateSlice(s0, act('a', 5)); const s2 = reduceStateSlice(s1, act('a', 1, false, s0));
+    return s2 === s0 || 'expected the base object';
+  });
+  check('pf05_slice_object_is', 'Equality follows Object.is (NaN is unchanged; 0 → −0 is a change)', () => {
+    const n: T3 = { ...s0, a: Number.NaN };
+    const sameNaN = reduceStateSlice(n, act('a', Number.NaN, false, n)) === n;
+    const z: T3 = { ...s0, a: 0 };
+    const negZero = reduceStateSlice(z, act('a', -0, false, z));
+    return (sameNaN && negZero !== z && Object.is(negZero.a, -0)) || 'Object.is semantics';
+  });
+  const harness = () => {
+    const live: V96SliceLive<T3> = { rendered: s0, pending: 0 };
+    const sent: V96SliceAction<T3>[] = [];
+    const setters = makeSliceSetters<T3>(['a', 'b', 'c'], live, a => sent.push(a));
+    return { live, sent, setters };
+  };
+  check('pf06_eager_bailout', 'With nothing queued, an unchanged value dispatches nothing (no render scheduled)', () => {
+    const h = harness(); h.setters.a(1); h.setters.b(p => p); return (h.sent.length === 0 && h.live.pending === 0) || `${h.sent.length} dispatched`;
+  });
+  check('pf07_eager_value', 'With nothing queued, a changed value is computed now and dispatched as a value', () => {
+    const h = harness(); h.setters.a(p => p + 41);
+    return (h.sent.length === 1 && h.sent[0].isFn === false && h.sent[0].payload === 42 && h.live.pending === 1) || JSON.stringify(h.sent);
+  });
+  check('pf08_queued_updater', 'While an update is queued, a functional update is queued unevaluated (as React does)', () => {
+    const h = harness(); h.setters.a(5); let calls = 0; h.setters.a(p => { calls++; return p + 1; });
+    return (h.sent.length === 2 && h.sent[1].isFn === true && calls === 0) || JSON.stringify(h.sent.map(x => x.isFn));
+  });
+  check('pf09_queue_order', 'Applying the dispatched queue in order gives the same result as sequential useState updates', () => {
+    const h = harness(); h.setters.a(p => p + 1); h.setters.a(p => p * 3); h.setters.b('y'); h.setters.a(p => p - 1);
+    const out = h.sent.reduce((st, a) => reduceStateSlice(st, a), s0);
+    return (out.a === 5 && out.b === 'y') || JSON.stringify(out);
+  });
+  check('pf10_setter_keys', 'Setters exist for every field and only those', () => {
+    const h = harness(); return (JSON.stringify(Object.keys(h.setters).sort()) === '["a","b","c"]' && Object.values(h.setters).every(f => typeof f === 'function')) || Object.keys(h.setters).join(',');
+  });
+  check('pf11_kit_fn', 'Stable kit: one function identity per key, always calling the latest closure', () => {
+    const kit = createStableKit(); let seen = 0;
+    const f1 = kit.fn('k', () => { seen = 1; }); const f2 = kit.fn('k', () => { seen = 2; }); f1();
+    return (f1 === f2 && seen === 2) || `${f1 === f2} ${seen}`;
+  });
+  check('pf12_kit_value', 'Stable kit: values are re-made only when a dependency changes', () => {
+    const kit = createStableKit(); let made = 0;
+    const v1 = kit.value('v', [1, 'a'], () => ({ n: ++made })); const v2 = kit.value('v', [1, 'a'], () => ({ n: ++made })); const v3 = kit.value('v', [2, 'a'], () => ({ n: ++made }));
+    return (v1 === v2 && v3 !== v1 && made === 2) || `${made}`;
+  });
+  check('pf13_kit_keys', 'Stable kit: different keys get different functions; handler objects keep identity and run the latest methods', () => {
+    const kit = createStableKit(); let hit = '';
+    const h1 = kit.handlers('h', { go: (x: string) => { hit = `a${x}`; } }); const h2 = kit.handlers('h', { go: (x: string) => { hit = `b${x}`; } }); h1.go('1');
+    return (kit.fn('a', () => 1) !== kit.fn('b', () => 1) && h1 === h2 && hit === 'b1') || `${h1 === h2} ${hit}`;
+  });
+  const fixtureCanon = () => canonicalStateFromSave(validateSaveDataCore(JSON.parse(JSON.stringify(createV95SaveFixture())) as SaveGameData));
+  check('pf14_json_outside', 'Outside a batch, canonicalStateJson is exactly JSON.stringify of the canonical projection', () => {
+    const st = fixtureCanon(); return canonicalStateJson(st) === JSON.stringify(canonicalStateFromLiveRuntime(st)) || 'differs';
+  });
+  check('pf15_json_cached', 'Inside a batch the same state object is serialised once', () => {
+    const st = fixtureCanon(); const before = canonicalCloneBatchState().hits;
+    const [a, b] = withCanonicalCloneBatch(() => [canonicalStateJson(st), canonicalStateJson(st)]);
+    return (a === b && canonicalCloneBatchState().hits === before + 1) || 'no reuse';
+  });
+  check('pf16_json_cleared', 'The cache is dropped when the batch closes', () => {
+    const st = fixtureCanon(); withCanonicalCloneBatch(() => canonicalStateJson(st)); const misses = canonicalCloneBatchState().misses;
+    withCanonicalCloneBatch(() => canonicalStateJson(st));
+    return canonicalCloneBatchState().misses === misses + 1 || 'stale cache survived';
+  });
+  check('pf17_json_nested', 'Nested batches share one cache until the outermost closes', () => {
+    const st = fixtureCanon(); const h0 = canonicalCloneBatchState().hits;
+    withCanonicalCloneBatch(() => { canonicalStateJson(st); withCanonicalCloneBatch(() => canonicalStateJson(st)); canonicalStateJson(st); });
+    return (canonicalCloneBatchState().hits === h0 + 2 && canonicalCloneBatchState().depth === 0) || `${canonicalCloneBatchState().hits - h0}`;
+  });
+  check('pf18_reducer_same_in_batch', 'reduceGameAction gives identical results with and without the clone cache', () => {
+    const st = fixtureCanon();
+    const action = { type: 'travel', actorId: 'player', targetRegion: 'VIC', price: 200, parameters: { region: 'VIC', cost: 200 } } as unknown as GameAction;
+    const plain = v95WithIsolatedGlobals(() => { setRngMasterSeed(7, true); resetGlobalDeterministicCounters(); return v95EraProjection(reduceGameAction(st, action).nextState); });
+    const batched = v95WithIsolatedGlobals(() => { setRngMasterSeed(7, true); resetGlobalDeterministicCounters(); return withCanonicalCloneBatch(() => { reduceGameAction(st, action); return v95EraProjection(reduceGameAction(st, action).nextState); }); });
+    return plain === batched || 'differs';
+  });
+  const run = () => v95WithIsolatedGlobals(() => runFiftyActionScript(api));
+  check('pf19_fifty_executed', 'The 50 scripted actions execute as many as in V9.5', () => { const r = run(); return r.executed === V95_FIFTY_ACTION_BASELINE.executed || `${r.executed} vs ${V95_FIFTY_ACTION_BASELINE.executed}`; });
+  check('pf20_fifty_hash', 'After 50 scripted actions the V9.5-era state hash equals the V9.5 baseline', () => { const r = run(); return r.hash === V95_FIFTY_ACTION_BASELINE.hash || `${r.hash} vs ${V95_FIFTY_ACTION_BASELINE.hash}`; });
+  check('pf21_fifty_repeatable', 'The scripted run is deterministic and actually changes the state', () => { const a = run(); const b = run(); return (a.hash === b.hash && a.hash !== a.initialHash) || `${a.hash} ${b.hash} ${a.initialHash}`; });
+  check('pf22_fifty_batched', 'The scripted run is unchanged inside a clone-cache batch', () => v95WithIsolatedGlobals(() => withCanonicalCloneBatch(() => runFiftyActionScript(api))).hash === run().hash || 'batch changed the result');
+  check('pf23_fifty_mix', 'The script has 50 actions from both actors across 10 action types', () =>
+    (V96_FIFTY_ACTIONS.length === 50 && new Set(V96_FIFTY_ACTIONS.map(a => a.actorId)).size === 2 && new Set(V96_FIFTY_ACTIONS.map(a => a.type)).size === 10) || 'mix');
+  check('pf24_projection_scope', 'The V9.5-era projection ignores V9.6-only state', () => {
+    const st = fixtureCanon() as unknown as Record<string, unknown>;
+    const plus = { ...st, matchShape: { version: 1 }, opponentDialogue: { history: [] }, contentState: { x: 1 } };
+    return v95EraProjection(st) === v95EraProjection(plus) || 'projection picked up new fields';
+  });
+  check('pf25_render_stats', 'The render counter records only while enabled', () => {
+    const was = V96_RENDER_STATS.enabled; const saved = V96_RENDER_STATS.byName;
+    try {
+      V96_RENDER_STATS.byName = {}; V96_RENDER_STATS.enabled = false; recordRender('T');
+      const off = V96_RENDER_STATS.byName.T === undefined;
+      V96_RENDER_STATS.enabled = true; recordRender('T'); recordRender('T'); recordRender('T', 4);
+      const s = V96_RENDER_STATS.byName.T;
+      return (off && s.renders === 2 && s.timed === 1 && s.lastMs === 4) || JSON.stringify(s);
+    } finally { V96_RENDER_STATS.enabled = was; V96_RENDER_STATS.byName = saved; }
+  });
+  check('pf26_render_reset', 'Resetting the render counter clears it', () => {
+    const saved = V96_RENDER_STATS.byName;
+    try { V96_RENDER_STATS.byName = { X: { renders: 3, lastMs: 0, totalMs: 0, timed: 0 } }; resetRenderStats(); return Object.keys(V96_RENDER_STATS.byName).length === 0 || 'not cleared'; }
+    finally { V96_RENDER_STATS.byName = saved; }
+  });
+  check('pf27_with_render_count', 'withRenderCount names the counted component', () => {
+    const C = withRenderCount('Probe', () => null); return (typeof C === 'function' && C.displayName === 'Probe') || String(C.displayName);
+  });
+  check('pf28_memo_panels', 'HUD panels and the shortcuts modal are memoised module-level components', () =>
+    ([ExperienceLayerNav, PlayerControlStatusBar, FeedbackStrip, GuidedWelcomeCard, KeyboardShortcutsHelpModal, V9MatchHeader, V9CohesionPlay] as unknown[]).every(isMemo) || 'not memoised');
+  check('pf29_diagnostics_default_off', 'The diagnostics switch (render counter) stays off by default', () => createDefaultDiagnosticsSettings().enabled === false || 'on by default');
+  check('pf30_travel_unchanged', 'Travel cost core is unchanged (V9.5 values)', () => {
+    const r = [computeTravelCostCore({ from: 'NSW', to: 'VIC' }), computeTravelCostCore({ from: 'NSW', to: 'WA' }), computeTravelCostCore({ from: 'NSW', to: 'TAS' })];
+    return JSON.stringify(r) === '[200,500,800]' || JSON.stringify(r);
+  });
+  check('pf31_slice_pure', 'The slice reducer never mutates its input', () => { const frozen = Object.freeze({ ...s0 }); reduceStateSlice(frozen, act('a', 9, false, frozen)); return frozen.a === 1 || 'mutated'; });
+  check('pf32_json_non_object', 'canonicalStateJson handles a missing state like V9.5 did', () => withCanonicalCloneBatch(() => canonicalStateJson(null)) === JSON.stringify(canonicalStateFromLiveRuntime(null)) || 'differs');
+  check('pf33_load_identical', 'Loading the same V9.5 save twice gives identical state (bar the two campaign clock stamps V9.5 also writes)', () => {
+    const load = () => {
+      const v = JSON.parse(JSON.stringify(validateSaveDataCore(JSON.parse(JSON.stringify(createV95SaveFixture())) as SaveGameData))) as Record<string, unknown>;
+      const cs = v.campaignState as Record<string, unknown> | null | undefined;
+      if (cs && typeof cs === 'object') { delete cs.startedAt; delete cs.lastSavedAt; }
+      return JSON.stringify(v);
+    };
+    return load() === load() || 'load differs';
+  });
+  check('pf34_save_no_new_keys', 'With every V9.6 flag off a loaded V9.5 save gains no V9.6 runtime state', () => {
+    const v = validateSaveDataCore(JSON.parse(JSON.stringify(createV95SaveFixture())) as SaveGameData).gameState as unknown as Record<string, unknown>;
+    return (['matchShape', 'opponentDialogue'].every(k => v[k] === undefined)) || 'new keys present';
+  });
+  return results;
+}
+
+// V9.6 (SECTION 20AM): moved out of AustraliaGame unchanged (it captured nothing from the component), then memoised.
+interface KeyboardShortcutsHelpModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  themeStyles: any;
+  surfaceState: any;
+  keyboardShortcuts: typeof KEYBOARD_SHORTCUTS;
+  gameSettings: any;
+}
+
+const KeyboardShortcutsHelpModalView: React.FC<KeyboardShortcutsHelpModalProps> = ({
+  isOpen,
+  onClose,
+  themeStyles,
+  surfaceState,
+  keyboardShortcuts,
+  gameSettings,
+}) => {
+  const modalRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+
+    const prevActiveElement = document.activeElement as HTMLElement | null;
+
+    if (modalRef.current) {
+      const focusables = modalRef.current.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length > 0) {
+        focusables[0].focus({ preventScroll: true });
+      } else {
+        modalRef.current.focus({ preventScroll: true });
+      }
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      } else if (e.key === 'Tab' && modalRef.current) {
+        const focusables = Array.from(
+          modalRef.current.querySelectorAll<HTMLElement>(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter(el => !el.hasAttribute('disabled'));
+
+        if (focusables.length === 0) return;
+
+        const firstElement = focusables[0];
+        const lastElement = focusables[focusables.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === firstElement || !modalRef.current.contains(document.activeElement)) {
+            e.preventDefault();
+            lastElement.focus();
+          }
+        } else {
+          if (document.activeElement === lastElement || !modalRef.current.contains(document.activeElement)) {
+            e.preventDefault();
+            firstElement.focus();
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      if (prevActiveElement && typeof prevActiveElement.focus === 'function') {
+        try {
+          prevActiveElement.focus({ preventScroll: true });
+        } catch (_) {
+          prevActiveElement.focus();
+        }
+      }
+    };
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      className={`fixed inset-0 ${
+        (!surfaceState.backdropOwner || surfaceState.backdropOwner === "ask_game_ai")
+          ? "bg-black bg-opacity-50"
+          : "bg-transparent"
+      } flex items-center justify-center p-4`}
+      style={{ zIndex: globalUISurfaceManager.getZIndex("ask_game_ai") }}
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="keyboard-shortcuts-title"
+    >
+      <div
+        ref={modalRef}
+        tabIndex={-1}
+        className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-2xl w-full max-h-[calc(100dvh-2rem)] h-[calc(100dvh-2rem)] flex flex-col min-h-0 overflow-hidden shadow-2xl focus:outline-none`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Sticky Header */}
+        <div className={`flex justify-between items-center px-4 sm:px-6 py-3 sm:py-4 border-b shrink-0 ${themeStyles.border}`}>
+          <div className="flex items-center gap-2">
+            <span className="text-xl sm:text-2xl" aria-hidden="true">⌨️</span>
+            <h3 id="keyboard-shortcuts-title" className="text-xl sm:text-2xl font-bold">
+              Keyboard Shortcuts
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className={`${themeStyles.buttonSecondary} px-3 py-1 rounded hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-sky-500`}
+            aria-label="Close modal"
+          >
+            ✕
+          </button>
+        </div>
+        
+        {/* Scrollable Body */}
+        <div className="flex-1 overflow-y-auto overscroll-contain min-h-0 p-4 sm:p-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {Object.entries(keyboardShortcuts)
+              .filter(([key]) => key !== 'ctrl+shift+c')
+              .map(([key, shortcut]) => (
+                <div key={key} className={`${themeStyles.border} border rounded p-3 flex items-center justify-between gap-3 min-w-0`}>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold truncate">{shortcut.label}</div>
+                    <div className="text-sm opacity-75 line-clamp-2">{shortcut.description}</div>
+                  </div>
+                  <kbd className="shrink-0 px-3 py-1 bg-gray-700 rounded text-sm font-mono font-bold">
+                    {key === ' ' ? 'Space' : key.toUpperCase()}
+                  </kbd>
+                </div>
+              ))}
+            {gameSettings.notificationClearShortcut !== 'disabled' && (
+              <div className={`${themeStyles.border} border rounded p-3 flex items-center justify-between gap-3 min-w-0`}>
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold truncate">Clear Notifications</div>
+                  <div className="text-sm opacity-75">Clear all notifications</div>
+                </div>
+                <kbd className="shrink-0 px-3 py-1 bg-gray-700 rounded text-sm font-mono font-bold">
+                  {gameSettings.notificationClearShortcut.toUpperCase()}
+                </kbd>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* Sticky Footer */}
+        <div className={`px-4 sm:px-6 py-3 border-t shrink-0 ${themeStyles.border} text-sm opacity-75 text-center`}>
+          Press any key while focused on the game to use shortcuts
+        </div>
+      </div>
+    </div>
+  );
+};
+const KeyboardShortcutsHelpModal = React.memo(withRenderCount('KeyboardShortcutsHelpModal', KeyboardShortcutsHelpModalView));
+
 function AustraliaGame() {
+  // V9.6 (SECTION 20AM): stable handler kit for memoised panels; dev render counter (diagnostics switch, one-render lag).
+  const wp7Kit = useStableKit();
+  const wp7RenderStart = V96_RENDER_STATS.enabled && typeof performance !== 'undefined' ? performance.now() : 0;
+  recordRender('AustraliaGame');
+  React.useLayoutEffect(() => { if (wp7RenderStart > 0) recordRender('AustraliaGame', performance.now() - wp7RenderStart); });
   // DIAG2: Mount detection for StrictMode double-invocation tracking
   useEffect(() => {
     diag2MountCounter++;
@@ -185515,18 +186119,33 @@ function AustraliaGame() {
   const [gameSettings, setGameSettings] = useState<GameSettingsState>(() => createDefaultGameSettings());
   const [tuningArchive, setTuningArchive] = useState<TuningArchive>(() => createEmptyTuningArchive());
   const tuningArchiveRef = useRef<TuningArchive>(tuningArchive);
-  const [showTuningLab, setShowTuningLab] = useState(false);
-  const [tuningLabUnsaved, setTuningLabUnsaved] = useState(false);
-  const [tuningLabProgress, setTuningLabProgress] = useState('');
-  const [tuningHydrationReport, setTuningHydrationReport] = useState<{ added: string[]; dropped: string[] } | null>(null);
-  const [tuningSelfTestReport, setTuningSelfTestReport] = useState<AiTuningLabSelfTestResult[] | null>(null);
-  const [tuningSelectedGoalId, setTuningSelectedGoalId] = useState('most_money');
-  const [tuningComparison, setTuningComparison] = useState<{ genomeA: AiGenome; genomeB: AiGenome; matches: MatchResult[]; meanA: number; meanB: number } | null>(null);
-  const [tuningSigma, setTuningSigma] = useState(AI_TUNING_LAB_INITIAL_SIGMA);
-  const [tuningNeitherStreak, setTuningNeitherStreak] = useState(0);
-  const [tuningBestScores, setTuningBestScores] = useState<number[]>([]);
-  const [tuningFeatureCeiling, setTuningFeatureCeiling] = useState(false);
-  const [tuningContenders, setTuningContenders] = useState<[AiGenome, AiGenome] | null>(null);
+  // V9.6 (SECTION 20AM): state slice 1 — AI tuning lab (12 fields in one reducer; setters keep useState semantics).
+  const [wp7Slice1, wp7Slice1Set] = useStateSlice<{ showTuningLab: boolean; tuningLabUnsaved: boolean; tuningLabProgress: string; tuningHydrationReport: { added: string[]; dropped: string[] } | null; tuningSelfTestReport: AiTuningLabSelfTestResult[] | null; tuningSelectedGoalId: string; tuningComparison: { genomeA: AiGenome; genomeB: AiGenome; matches: MatchResult[]; meanA: number; meanB: number } | null; tuningSigma: number; tuningNeitherStreak: number; tuningBestScores: number[]; tuningFeatureCeiling: boolean; tuningContenders: [AiGenome, AiGenome] | null }>(() => ({
+    showTuningLab: false,
+    tuningLabUnsaved: false,
+    tuningLabProgress: '',
+    tuningHydrationReport: null,
+    tuningSelfTestReport: null,
+    tuningSelectedGoalId: 'most_money',
+    tuningComparison: null,
+    tuningSigma: AI_TUNING_LAB_INITIAL_SIGMA,
+    tuningNeitherStreak: 0,
+    tuningBestScores: [],
+    tuningFeatureCeiling: false,
+    tuningContenders: null
+  }));
+  const showTuningLab = wp7Slice1.showTuningLab; const setShowTuningLab = wp7Slice1Set.showTuningLab;
+  const tuningLabUnsaved = wp7Slice1.tuningLabUnsaved; const setTuningLabUnsaved = wp7Slice1Set.tuningLabUnsaved;
+  const tuningLabProgress = wp7Slice1.tuningLabProgress; const setTuningLabProgress = wp7Slice1Set.tuningLabProgress;
+  const tuningHydrationReport = wp7Slice1.tuningHydrationReport; const setTuningHydrationReport = wp7Slice1Set.tuningHydrationReport;
+  const tuningSelfTestReport = wp7Slice1.tuningSelfTestReport; const setTuningSelfTestReport = wp7Slice1Set.tuningSelfTestReport;
+  const tuningSelectedGoalId = wp7Slice1.tuningSelectedGoalId; const setTuningSelectedGoalId = wp7Slice1Set.tuningSelectedGoalId;
+  const tuningComparison = wp7Slice1.tuningComparison; const setTuningComparison = wp7Slice1Set.tuningComparison;
+  const tuningSigma = wp7Slice1.tuningSigma; const setTuningSigma = wp7Slice1Set.tuningSigma;
+  const tuningNeitherStreak = wp7Slice1.tuningNeitherStreak; const setTuningNeitherStreak = wp7Slice1Set.tuningNeitherStreak;
+  const tuningBestScores = wp7Slice1.tuningBestScores; const setTuningBestScores = wp7Slice1Set.tuningBestScores;
+  const tuningFeatureCeiling = wp7Slice1.tuningFeatureCeiling; const setTuningFeatureCeiling = wp7Slice1Set.tuningFeatureCeiling;
+  const tuningContenders = wp7Slice1.tuningContenders; const setTuningContenders = wp7Slice1Set.tuningContenders;
   const tuningLabFileInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     tuningArchiveRef.current = tuningArchive;
@@ -185637,9 +186256,15 @@ function AustraliaGame() {
   }, [gameSettings.diag2OverlayEnabled, gameSettings.coPilotStartPhaseOverlayEnabled, gameSettings.coPilotSettings?.showWaitingForOtherPlayersShell]);
   const pendingCoPilotApplyRef = useRef<SmartSettingsPlan | null>(null);
   const playerIntentCacheRef = useRef<{ fingerprint: string; evaluation: any; recs: ContextualRecommendation[] }>({ fingerprint: '', evaluation: null, recs: [] });
-  const [coPilotArmedPendingStart, setCoPilotArmedPendingStart] = useState(false);
-  const [coPilotExplicitStartRequested, setCoPilotExplicitStartRequested] = useState(false);
-  const [coPilotPumpHold, setCoPilotPumpHold] = useState(false);
+  // V9.6 (SECTION 20AM): state slice 2 — Co-Pilot start flags (3 fields in one reducer; setters keep useState semantics).
+  const [wp7Slice2, wp7Slice2Set] = useStateSlice<{ coPilotArmedPendingStart: boolean; coPilotExplicitStartRequested: boolean; coPilotPumpHold: boolean }>(() => ({
+    coPilotArmedPendingStart: false,
+    coPilotExplicitStartRequested: false,
+    coPilotPumpHold: false
+  }));
+  const coPilotArmedPendingStart = wp7Slice2.coPilotArmedPendingStart; const setCoPilotArmedPendingStart = wp7Slice2Set.coPilotArmedPendingStart;
+  const coPilotExplicitStartRequested = wp7Slice2.coPilotExplicitStartRequested; const setCoPilotExplicitStartRequested = wp7Slice2Set.coPilotExplicitStartRequested;
+  const coPilotPumpHold = wp7Slice2.coPilotPumpHold; const setCoPilotPumpHold = wp7Slice2Set.coPilotPumpHold;
   const coPilotStartInFlightRef = useRef(false);
   // V9: set by Take Control so a Start that is still inside its afterNextPaint chain cannot create a
   // session (and execute) after the player has already taken control back.
@@ -185668,20 +186293,13 @@ function AustraliaGame() {
   const builderState = gameState.customScenarioBuilder;
 
   // Milestone 7: Co-Pilot Dev Self-Tests State
-  const [coPilotSelfTestResult, setCoPilotSelfTestResult] = useState<CoPilotDevSelfTestReport | null>(null);
-  const [isExecutingCoPilotSelfTests, setIsExecutingCoPilotSelfTests] = useState<boolean>(false);
-  const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
-
-
-
-
-
-
-  // Phase 12: Pre-Scenario Settings Snapshot
-  const [savedPreScenarioSettings, setSavedPreScenarioSettings] = useState<GameSettingsState | null>(null);
-
-  // UI state
-  const [uiState, setUiState] = useState<UIState>({
+  // V9.6 (SECTION 20AM): state slice 3 — Co-Pilot self-test, category nav, scenario restore and the UI state (5 fields in one reducer; setters keep useState semantics).
+  const [wp7Slice3, wp7Slice3Set] = useStateSlice<{ coPilotSelfTestResult: CoPilotDevSelfTestReport | null; isExecutingCoPilotSelfTests: boolean; expandedCategoryId: string | null; savedPreScenarioSettings: GameSettingsState | null; uiState: UIState }>(() => ({
+    coPilotSelfTestResult: null,
+    isExecutingCoPilotSelfTests: false,
+    expandedCategoryId: null,
+    savedPreScenarioSettings: null,
+    uiState: {
     experienceLayer: 'play' as ExperienceLayer,
     settingsActiveTab: 'home' as SettingsHubTabId,
     settingsViewMode: 'basic' as 'basic' | 'advanced',
@@ -185767,12 +186385,18 @@ function AustraliaGame() {
     showIntentGoalPlanner: false,
     intentTeaching: null,
     intentAdjustment: null
-  });
+  }
+  }));
+  const coPilotSelfTestResult = wp7Slice3.coPilotSelfTestResult; const setCoPilotSelfTestResult = wp7Slice3Set.coPilotSelfTestResult;
+  const isExecutingCoPilotSelfTests = wp7Slice3.isExecutingCoPilotSelfTests; const setIsExecutingCoPilotSelfTests = wp7Slice3Set.isExecutingCoPilotSelfTests;
+  const expandedCategoryId = wp7Slice3.expandedCategoryId; const setExpandedCategoryId = wp7Slice3Set.expandedCategoryId;
+  const savedPreScenarioSettings = wp7Slice3.savedPreScenarioSettings; const setSavedPreScenarioSettings = wp7Slice3Set.savedPreScenarioSettings;
+  const uiState = wp7Slice3.uiState; const setUiState = wp7Slice3Set.uiState;
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
     const handleGlobalDiagnosticsShortcut = (e: KeyboardEvent) => {
-      const configuredHotkey = (gameSettings as any)?.diagnosticsSettings?.exportDiagnosticsHotkey || 'ctrl+alt+d';
+      const configuredHotkey = gameSettings?.diagnosticsSettings?.exportDiagnosticsHotkey || 'ctrl+alt+d';
       if (isDiagnosticsHotkeyTriggered(e, configuredHotkey) || ((e.ctrlKey || e.metaKey) && e.altKey && (e.key === 'd' || e.key === 'D' || e.code === 'KeyD'))) {
         e.preventDefault();
         setUiState(prev => ({
@@ -185785,66 +186409,97 @@ function AustraliaGame() {
     return () => window.removeEventListener('keydown', handleGlobalDiagnosticsShortcut);
   }, []);
 
-  const [resourceMarketSelection, setResourceMarketSelection] = useState<string>(RESOURCE_MARKET_RESOURCES[0] || "Opals");
-  const [resourceMarketQuantity, setResourceMarketQuantity] = useState<number>(1);
-  const [proposalResourceSelection, setProposalResourceSelection] = useState<string>(RESOURCE_MARKET_RESOURCES[0] || "Wine");
-  const [proposalResourceQuantity, setProposalResourceQuantity] = useState<number>(1);
-  const [proposalChallengeSelection, setProposalChallengeSelection] = useState<string>(((Object.values(REGIONS)[0] as unknown as Record<string, any>)?.challenges?.[0]?.name) || "");
-  const [negotiationHistorySearch, setNegotiationHistorySearch] = useState<string>("");
-  const [negotiationLogSearch, setNegotiationLogSearch] = useState<string>("");
-  const [regionDepositInput, setRegionDepositInput] = useState<number>(1);
-  const [selectedDecisionActorId, setSelectedDecisionActorId] = useState<string>('ai');
-  const [decisionTransparencyGroupView, setDecisionTransparencyGroupView] = useState<DecisionTransparencyGroupView>(DEFAULT_GAME_SETTINGS.decisionTransparencyDefaultGroupView);
-  const [expandedHudDecisionActorId, setExpandedHudDecisionActorId] = useState<string | null>(null);
-  // AI Operations Auditor Phase AA14: which incident's "View" details are expanded in the compact
-  // status card — pure navigation state, never persisted, mirroring expandedHudDecisionActorId's
-  // own convention exactly.
-  const [expandedAuditorIncidentId, setExpandedAuditorIncidentId] = useState<string | null>(null);
-  // Team AI Overseer System Phase O9: pure navigation state for the Overseer Dashboard panel —
-  // never persisted (gameState/uiState/save data), mirroring selectedDecisionActorId's own convention.
-  const [overseerDashboardTab, setOverseerDashboardTab] = useState<OverseerDashboardTabId>('overview');
-  const [dashboardTeamId, setDashboardTeamId] = useState<string>(TEAM_PLAYER_ID);
-  // AI Operations Auditor Phase AA15: pure navigation state for the Auditor Dashboard panel —
-  // never persisted, mirrors overseerDashboardTab's own convention exactly. dashboardTeamId (above)
-  // is shared/reused, no second team-selector state is needed.
-  const [auditorDashboardTab, setAuditorDashboardTab] = useState<AuditorDashboardTabId>('overview');
-  const [dismissedDependencyCards, setDismissedDependencyCards] = useState<Record<string, boolean>>({});
-  const [teamOverviewDensitySessionOverride, setTeamOverviewDensitySessionOverride] = useState<'compact' | 'comfortable' | null>(null);
-
-  // GL5: pure navigation/filter state for the Game Activity Ledger Dashboard — never persisted,
-  // mirrors auditorDashboardTab's own "component-local, not gameState" convention. The Ledger is
-  // match-wide (gameState-level, not per-team), so there's no team-selector state to mirror.
-  const [activeLedgerTab, setActiveLedgerTab] = useState<LedgerTabId>('overview');
-  const [ledgerBookmarks, setLedgerBookmarks] = useState<string[]>([]);
-  const [ledgerTagFilter, setLedgerTagFilter] = useState<string>('');
-  const [ledgerDashboardCategoryFilter, setLedgerDashboardCategoryFilter] = useState<GameActivityLedgerEventCategory | 'all'>('all');
-  const [ledgerDashboardSearch, setLedgerDashboardSearch] = useState('');
-  const [ledgerDashboardCorrelationFilter, setLedgerDashboardCorrelationFilter] = useState<string | null>(null);
-  const [ledgerDashboardExpandedEventId, setLedgerDashboardExpandedEventId] = useState<string | null>(null);
-  // GL11: additional dashboard-local filter/view/clear state — same never-persisted convention.
-  const [ledgerDashboardActorFilter, setLedgerDashboardActorFilter] = useState<string | 'all'>('all');
-  const [ledgerDashboardTeamFilter, setLedgerDashboardTeamFilter] = useState<string | 'all'>('all');
-  const [ledgerDashboardSortOrder, setLedgerDashboardSortOrder] = useState<'newest' | 'oldest'>('newest');
-  const [ledgerDashboardViewMode, setLedgerDashboardViewMode] = useState<'compact' | 'detailed'>('detailed');
-  const [ledgerDashboardClearConfirming, setLedgerDashboardClearConfirming] = useState(false);
-  const [ledgerStoryFilterTurningPointsOnly, setLedgerStoryFilterTurningPointsOnly] = useState(false);
-  const [ledgerReplaySubTab, setLedgerReplaySubTab] = useState<'viewer' | 'comparison'>('viewer');
-  const [ledgerStorySubTab, setLedgerStorySubTab] = useState<'timeline' | 'scorecard'>('timeline');
-  const [phase19SubTab, setPhase19SubTab] = useState<Phase19SettingsSubTab>('health');
-  const [integrityFilter, setIntegrityFilter] = useState<'all' | 'warning' | 'error' | 'critical'>('all');
-  const [balanceSandboxConfig, setBalanceSandboxConfig] = useState<BalanceSandboxConfig>({
+  // V9.6 (SECTION 20AM): state slice 4 — market, negotiation, decision and ledger UI (36 fields in one reducer; setters keep useState semantics).
+  const [wp7Slice4, wp7Slice4Set] = useStateSlice<{ resourceMarketSelection: string; resourceMarketQuantity: number; proposalResourceSelection: string; proposalResourceQuantity: number; proposalChallengeSelection: string; negotiationHistorySearch: string; negotiationLogSearch: string; regionDepositInput: number; selectedDecisionActorId: string; decisionTransparencyGroupView: DecisionTransparencyGroupView; expandedHudDecisionActorId: string | null; expandedAuditorIncidentId: string | null; overseerDashboardTab: OverseerDashboardTabId; dashboardTeamId: string; auditorDashboardTab: AuditorDashboardTabId; dismissedDependencyCards: Record<string, boolean>; teamOverviewDensitySessionOverride: 'compact' | 'comfortable' | null; activeLedgerTab: LedgerTabId; ledgerBookmarks: string[]; ledgerTagFilter: string; ledgerDashboardCategoryFilter: GameActivityLedgerEventCategory | 'all'; ledgerDashboardSearch: string; ledgerDashboardCorrelationFilter: string | null; ledgerDashboardExpandedEventId: string | null; ledgerDashboardActorFilter: string | 'all'; ledgerDashboardTeamFilter: string | 'all'; ledgerDashboardSortOrder: 'newest' | 'oldest'; ledgerDashboardViewMode: 'compact' | 'detailed'; ledgerDashboardClearConfirming: boolean; ledgerStoryFilterTurningPointsOnly: boolean; ledgerReplaySubTab: 'viewer' | 'comparison'; ledgerStorySubTab: 'timeline' | 'scorecard'; phase19SubTab: Phase19SettingsSubTab; integrityFilter: 'all' | 'warning' | 'error' | 'critical'; balanceSandboxConfig: BalanceSandboxConfig; balanceSimResult: BalanceSimulationResult | null }>(() => ({
+    resourceMarketSelection: RESOURCE_MARKET_RESOURCES[0] || "Opals",
+    resourceMarketQuantity: 1,
+    proposalResourceSelection: RESOURCE_MARKET_RESOURCES[0] || "Wine",
+    proposalResourceQuantity: 1,
+    proposalChallengeSelection: ((Object.values(REGIONS)[0] as unknown as Record<string, any>)?.challenges?.[0]?.name) || "",
+    negotiationHistorySearch: "",
+    negotiationLogSearch: "",
+    regionDepositInput: 1,
+    selectedDecisionActorId: 'ai',
+    decisionTransparencyGroupView: DEFAULT_GAME_SETTINGS.decisionTransparencyDefaultGroupView,
+    expandedHudDecisionActorId: null,
+    expandedAuditorIncidentId: null,
+    overseerDashboardTab: 'overview',
+    dashboardTeamId: TEAM_PLAYER_ID,
+    auditorDashboardTab: 'overview',
+    dismissedDependencyCards: {},
+    teamOverviewDensitySessionOverride: null,
+    activeLedgerTab: 'overview',
+    ledgerBookmarks: [],
+    ledgerTagFilter: '',
+    ledgerDashboardCategoryFilter: 'all',
+    ledgerDashboardSearch: '',
+    ledgerDashboardCorrelationFilter: null,
+    ledgerDashboardExpandedEventId: null,
+    ledgerDashboardActorFilter: 'all',
+    ledgerDashboardTeamFilter: 'all',
+    ledgerDashboardSortOrder: 'newest',
+    ledgerDashboardViewMode: 'detailed',
+    ledgerDashboardClearConfirming: false,
+    ledgerStoryFilterTurningPointsOnly: false,
+    ledgerReplaySubTab: 'viewer',
+    ledgerStorySubTab: 'timeline',
+    phase19SubTab: 'health',
+    integrityFilter: 'all',
+    balanceSandboxConfig: {
     baselineId: 'default',
     rewardMultiplier: 1.0,
     penaltyMultiplier: 1.0,
     catchupBonusMultiplier: 1.0,
     loanInterestMultiplier: 1.0
-  });
-  const [balanceSimResult, setBalanceSimResult] = useState<BalanceSimulationResult | null>(null);
+  },
+    balanceSimResult: null
+  }));
+  const resourceMarketSelection = wp7Slice4.resourceMarketSelection; const setResourceMarketSelection = wp7Slice4Set.resourceMarketSelection;
+  const resourceMarketQuantity = wp7Slice4.resourceMarketQuantity; const setResourceMarketQuantity = wp7Slice4Set.resourceMarketQuantity;
+  const proposalResourceSelection = wp7Slice4.proposalResourceSelection; const setProposalResourceSelection = wp7Slice4Set.proposalResourceSelection;
+  const proposalResourceQuantity = wp7Slice4.proposalResourceQuantity; const setProposalResourceQuantity = wp7Slice4Set.proposalResourceQuantity;
+  const proposalChallengeSelection = wp7Slice4.proposalChallengeSelection; const setProposalChallengeSelection = wp7Slice4Set.proposalChallengeSelection;
+  const negotiationHistorySearch = wp7Slice4.negotiationHistorySearch; const setNegotiationHistorySearch = wp7Slice4Set.negotiationHistorySearch;
+  const negotiationLogSearch = wp7Slice4.negotiationLogSearch; const setNegotiationLogSearch = wp7Slice4Set.negotiationLogSearch;
+  const regionDepositInput = wp7Slice4.regionDepositInput; const setRegionDepositInput = wp7Slice4Set.regionDepositInput;
+  const selectedDecisionActorId = wp7Slice4.selectedDecisionActorId; const setSelectedDecisionActorId = wp7Slice4Set.selectedDecisionActorId;
+  const decisionTransparencyGroupView = wp7Slice4.decisionTransparencyGroupView; const setDecisionTransparencyGroupView = wp7Slice4Set.decisionTransparencyGroupView;
+  const expandedHudDecisionActorId = wp7Slice4.expandedHudDecisionActorId; const setExpandedHudDecisionActorId = wp7Slice4Set.expandedHudDecisionActorId;
+  const expandedAuditorIncidentId = wp7Slice4.expandedAuditorIncidentId; const setExpandedAuditorIncidentId = wp7Slice4Set.expandedAuditorIncidentId;
+  const overseerDashboardTab = wp7Slice4.overseerDashboardTab; const setOverseerDashboardTab = wp7Slice4Set.overseerDashboardTab;
+  const dashboardTeamId = wp7Slice4.dashboardTeamId; const setDashboardTeamId = wp7Slice4Set.dashboardTeamId;
+  const auditorDashboardTab = wp7Slice4.auditorDashboardTab; const setAuditorDashboardTab = wp7Slice4Set.auditorDashboardTab;
+  const dismissedDependencyCards = wp7Slice4.dismissedDependencyCards; const setDismissedDependencyCards = wp7Slice4Set.dismissedDependencyCards;
+  const teamOverviewDensitySessionOverride = wp7Slice4.teamOverviewDensitySessionOverride; const setTeamOverviewDensitySessionOverride = wp7Slice4Set.teamOverviewDensitySessionOverride;
+  const activeLedgerTab = wp7Slice4.activeLedgerTab; const setActiveLedgerTab = wp7Slice4Set.activeLedgerTab;
+  const ledgerBookmarks = wp7Slice4.ledgerBookmarks; const setLedgerBookmarks = wp7Slice4Set.ledgerBookmarks;
+  const ledgerTagFilter = wp7Slice4.ledgerTagFilter; const setLedgerTagFilter = wp7Slice4Set.ledgerTagFilter;
+  const ledgerDashboardCategoryFilter = wp7Slice4.ledgerDashboardCategoryFilter; const setLedgerDashboardCategoryFilter = wp7Slice4Set.ledgerDashboardCategoryFilter;
+  const ledgerDashboardSearch = wp7Slice4.ledgerDashboardSearch; const setLedgerDashboardSearch = wp7Slice4Set.ledgerDashboardSearch;
+  const ledgerDashboardCorrelationFilter = wp7Slice4.ledgerDashboardCorrelationFilter; const setLedgerDashboardCorrelationFilter = wp7Slice4Set.ledgerDashboardCorrelationFilter;
+  const ledgerDashboardExpandedEventId = wp7Slice4.ledgerDashboardExpandedEventId; const setLedgerDashboardExpandedEventId = wp7Slice4Set.ledgerDashboardExpandedEventId;
+  const ledgerDashboardActorFilter = wp7Slice4.ledgerDashboardActorFilter; const setLedgerDashboardActorFilter = wp7Slice4Set.ledgerDashboardActorFilter;
+  const ledgerDashboardTeamFilter = wp7Slice4.ledgerDashboardTeamFilter; const setLedgerDashboardTeamFilter = wp7Slice4Set.ledgerDashboardTeamFilter;
+  const ledgerDashboardSortOrder = wp7Slice4.ledgerDashboardSortOrder; const setLedgerDashboardSortOrder = wp7Slice4Set.ledgerDashboardSortOrder;
+  const ledgerDashboardViewMode = wp7Slice4.ledgerDashboardViewMode; const setLedgerDashboardViewMode = wp7Slice4Set.ledgerDashboardViewMode;
+  const ledgerDashboardClearConfirming = wp7Slice4.ledgerDashboardClearConfirming; const setLedgerDashboardClearConfirming = wp7Slice4Set.ledgerDashboardClearConfirming;
+  const ledgerStoryFilterTurningPointsOnly = wp7Slice4.ledgerStoryFilterTurningPointsOnly; const setLedgerStoryFilterTurningPointsOnly = wp7Slice4Set.ledgerStoryFilterTurningPointsOnly;
+  const ledgerReplaySubTab = wp7Slice4.ledgerReplaySubTab; const setLedgerReplaySubTab = wp7Slice4Set.ledgerReplaySubTab;
+  const ledgerStorySubTab = wp7Slice4.ledgerStorySubTab; const setLedgerStorySubTab = wp7Slice4Set.ledgerStorySubTab;
+  const phase19SubTab = wp7Slice4.phase19SubTab; const setPhase19SubTab = wp7Slice4Set.phase19SubTab;
+  const integrityFilter = wp7Slice4.integrityFilter; const setIntegrityFilter = wp7Slice4Set.integrityFilter;
+  const balanceSandboxConfig = wp7Slice4.balanceSandboxConfig; const setBalanceSandboxConfig = wp7Slice4Set.balanceSandboxConfig;
+  const balanceSimResult = wp7Slice4.balanceSimResult; const setBalanceSimResult = wp7Slice4Set.balanceSimResult;
 
   // Task 1.3: Local state, ref, and synchronization effect for Settings Search Input
   const [localSettingsSearchQuery, setLocalSettingsSearchQuery] = useState(uiState.settingsSearchQuery);
-  const [draftGameSettings, setDraftGameSettings] = useState<Partial<GameSettingsState> | null>(null);
-  const [showUnsavedPreviewModal, setShowUnsavedPreviewModal] = useState<boolean>(false);
+  // V9.6 (SECTION 20AM): state slice 5 — settings draft preview (2 fields in one reducer; setters keep useState semantics).
+  const [wp7Slice5, wp7Slice5Set] = useStateSlice<{ draftGameSettings: Partial<GameSettingsState> | null; showUnsavedPreviewModal: boolean }>(() => ({
+    draftGameSettings: null,
+    showUnsavedPreviewModal: false
+  }));
+  const draftGameSettings = wp7Slice5.draftGameSettings; const setDraftGameSettings = wp7Slice5Set.draftGameSettings;
+  const showUnsavedPreviewModal = wp7Slice5.showUnsavedPreviewModal; const setShowUnsavedPreviewModal = wp7Slice5Set.showUnsavedPreviewModal;
   const settingsSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Synchronize local search query when uiState.settingsSearchQuery changes externally
@@ -185893,63 +186548,101 @@ function AustraliaGame() {
   // PI2: pure navigation state for the AI Action Pipeline Inspector dashboard — never persisted,
   // mirrors auditorDashboardTab/selectedDecisionActorId's own "component-local, not gameState"
   // convention. showAiPipelineInspector mirrors showOverseerDashboard's own boolean-open pattern.
-  const [showAiPipelineInspector, setShowAiPipelineInspector] = useState(false);
-  const [pipelineInspectorSelectedDecisionId, setPipelineInspectorSelectedDecisionId] = useState<string | null>(null);
-  const [pipelineInspectorTeamFilter, setPipelineInspectorTeamFilter] = useState<string>('all');
-  // PI3: additional filters (actor/status) + copy-diagnostic-summary confirmation flash — all
-  // component-local, never persisted, matching the PI2 filter state's own convention.
-  const [pipelineInspectorActorFilter, setPipelineInspectorActorFilter] = useState<string>('all');
-  const [pipelineInspectorStatusFilter, setPipelineInspectorStatusFilter] = useState<'all' | 'blocked' | 'modified' | 'passed'>('all');
-  const [pipelineInspectorCopyConfirming, setPipelineInspectorCopyConfirming] = useState(false);
-  // RP3: Replay Viewer — component-local, never persisted, mirroring every prior dashboard's
-  // "UI navigation state is not gameState" convention. loadedReplayFile is the currently-inspected
-  // file (loaded from disk via migrateReplayFile, never the live in-progress recording).
-  const [showReplayViewer, setShowReplayViewer] = useState(false);
-  const [loadedReplayFile, setLoadedReplayFile] = useState<ReplayFile | null>(null);
-  const [replayViewerCategoryFilter, setReplayViewerCategoryFilter] = useState<'all' | 'ai_only'>('all');
-  const [divergenceCategoryFilter, setDivergenceCategoryFilter] = useState<string>('all');
-  const [replayViewerFromSequence, setReplayViewerFromSequence] = useState<number | null>(null);
+  // V9.6 (SECTION 20AM): state slice 6 — pipeline inspector and replay viewer (11 fields in one reducer; setters keep useState semantics).
+  const [wp7Slice6, wp7Slice6Set] = useStateSlice<{ showAiPipelineInspector: boolean; pipelineInspectorSelectedDecisionId: string | null; pipelineInspectorTeamFilter: string; pipelineInspectorActorFilter: string; pipelineInspectorStatusFilter: 'all' | 'blocked' | 'modified' | 'passed'; pipelineInspectorCopyConfirming: boolean; showReplayViewer: boolean; loadedReplayFile: ReplayFile | null; replayViewerCategoryFilter: 'all' | 'ai_only'; divergenceCategoryFilter: string; replayViewerFromSequence: number | null }>(() => ({
+    showAiPipelineInspector: false,
+    pipelineInspectorSelectedDecisionId: null,
+    pipelineInspectorTeamFilter: 'all',
+    pipelineInspectorActorFilter: 'all',
+    pipelineInspectorStatusFilter: 'all',
+    pipelineInspectorCopyConfirming: false,
+    showReplayViewer: false,
+    loadedReplayFile: null,
+    replayViewerCategoryFilter: 'all',
+    divergenceCategoryFilter: 'all',
+    replayViewerFromSequence: null
+  }));
+  const showAiPipelineInspector = wp7Slice6.showAiPipelineInspector; const setShowAiPipelineInspector = wp7Slice6Set.showAiPipelineInspector;
+  const pipelineInspectorSelectedDecisionId = wp7Slice6.pipelineInspectorSelectedDecisionId; const setPipelineInspectorSelectedDecisionId = wp7Slice6Set.pipelineInspectorSelectedDecisionId;
+  const pipelineInspectorTeamFilter = wp7Slice6.pipelineInspectorTeamFilter; const setPipelineInspectorTeamFilter = wp7Slice6Set.pipelineInspectorTeamFilter;
+  const pipelineInspectorActorFilter = wp7Slice6.pipelineInspectorActorFilter; const setPipelineInspectorActorFilter = wp7Slice6Set.pipelineInspectorActorFilter;
+  const pipelineInspectorStatusFilter = wp7Slice6.pipelineInspectorStatusFilter; const setPipelineInspectorStatusFilter = wp7Slice6Set.pipelineInspectorStatusFilter;
+  const pipelineInspectorCopyConfirming = wp7Slice6.pipelineInspectorCopyConfirming; const setPipelineInspectorCopyConfirming = wp7Slice6Set.pipelineInspectorCopyConfirming;
+  const showReplayViewer = wp7Slice6.showReplayViewer; const setShowReplayViewer = wp7Slice6Set.showReplayViewer;
+  const loadedReplayFile = wp7Slice6.loadedReplayFile; const setLoadedReplayFile = wp7Slice6Set.loadedReplayFile;
+  const replayViewerCategoryFilter = wp7Slice6.replayViewerCategoryFilter; const setReplayViewerCategoryFilter = wp7Slice6Set.replayViewerCategoryFilter;
+  const divergenceCategoryFilter = wp7Slice6.divergenceCategoryFilter; const setDivergenceCategoryFilter = wp7Slice6Set.divergenceCategoryFilter;
+  const replayViewerFromSequence = wp7Slice6.replayViewerFromSequence; const setReplayViewerFromSequence = wp7Slice6Set.replayViewerFromSequence;
   const replayFileInputRef = useRef<HTMLInputElement | null>(null);
   // RP4: Replay Dashboard tab state (renderReplayViewer upgraded to a tabbed dashboard), same
   // component-local/never-persisted convention as every other dashboard's own tab state.
-  const [replayDashboardTab, setReplayDashboardTab] = useState<ReplayDashboardTabId>('watch');
-  const [replayPlaybackIndex, setReplayPlaybackIndex] = useState(0);
-  const [replayPlaybackPlaying, setReplayPlaybackPlaying] = useState(false);
-  const [replayShowReasoning, setReplayShowReasoning] = useState(true);
-  const [replayPlaybackSpeed, setReplayPlaybackSpeed] = useState<ReplayPlaybackSpeed>(1);
-  const [replayReconstructionMode, setReplayReconstructionMode] = useState<ReplayReconstructionMode>('recorded_state');
-  const [replayPlaybackStatus, setReplayPlaybackStatus] = useState<ReplayPlaybackStatus>('idle');
-  const [isolatedReplayRuntime, setIsolatedReplayRuntime] = useState<IsolatedReplayRuntime | null>(null);
-  const [selectedReplayEventId, setSelectedReplayEventId] = useState<string | null>(null);
-  const [replayTimelineFilter, setReplayTimelineFilter] = useState<string>('all');
-  const [replaySearchQuery, setReplaySearchQuery] = useState('');
-  const [replayShowRawPayload, setReplayShowRawPayload] = useState(false);
-  const [replayShowAlternatives, setReplayShowAlternatives] = useState(true);
-  const [replayCompatibility, setReplayCompatibility] = useState<ReplayCompatibilityReport | null>(null);
-  const [replayStudioFocused, setReplayStudioFocused] = useState(false);
-  const [replayBookmarkTitle, setReplayBookmarkTitle] = useState('');
-  const [replayBookmarkNote, setReplayBookmarkNote] = useState('');
-  const [replayEditingBookmarkId, setReplayEditingBookmarkId] = useState<string | null>(null);
-  const [replayContinueConfirm, setReplayContinueConfirm] = useState<number | null>(null);
-  const [replaySelfTestReport, setReplaySelfTestReport] = useState<string>('');
-  const [replayJumpDay, setReplayJumpDay] = useState('');
-  const [replayPlaybackLastError, setReplayPlaybackLastError] = useState<string>('');
-  const [replayBranchExperiment, setReplayBranchExperiment] = useState<ReplayBranchExperimentPlan | null>(null);
-  const [replayShowTurningPoints, setReplayShowTurningPoints] = useState(false);
-  const [replayShowRecordingCapMenu, setReplayShowRecordingCapMenu] = useState(false);
-  // RP5: "Branch From Replay" confirm-step state — which source ('day1'/'live_state') the player
-  // is currently confirming, never persisted, mirroring every other dashboard's confirm-then-act
-  // pattern (e.g. F5's sequence-activation warn-and-confirm flow).
-  const [replayBranchConfirming, setReplayBranchConfirming] = useState<'day1' | 'live_state' | null>(null);
-  const [reexecPolicy, setReexecPolicy] = useState<ReplayPolicy>('strict');
-  const [reexecReport, setReexecReport] = useState<ReplayExecutionReport | null>(null);
-  // RP5: second, independent file-picker pair for "Compare to another replay" — deliberately not
-  // reusing replayFileInputRef/loadedReplayFile, since the primary loaded file must stay open while
-  // a second one is loaded purely for comparison.
-  const [compareReplayFile, setCompareReplayFile] = useState<ReplayFile | null>(null);
-  const [compareReplayFocusSequence, setCompareReplayFocusSequence] = useState<number | null>(null);
-  const [replayComparisonSeverityFilter, setReplayComparisonSeverityFilter] = useState<'all' | 'minor' | 'major' | 'critical'>('all');
-  const [replayComparisonSearchQuery, setReplayComparisonSearchQuery] = useState('');
+  // V9.6 (SECTION 20AM): state slice 7 — replay studio (32 fields in one reducer; setters keep useState semantics).
+  const [wp7Slice7, wp7Slice7Set] = useStateSlice<{ replayDashboardTab: ReplayDashboardTabId; replayPlaybackIndex: number; replayPlaybackPlaying: boolean; replayShowReasoning: boolean; replayPlaybackSpeed: ReplayPlaybackSpeed; replayReconstructionMode: ReplayReconstructionMode; replayPlaybackStatus: ReplayPlaybackStatus; isolatedReplayRuntime: IsolatedReplayRuntime | null; selectedReplayEventId: string | null; replayTimelineFilter: string; replaySearchQuery: string; replayShowRawPayload: boolean; replayShowAlternatives: boolean; replayCompatibility: ReplayCompatibilityReport | null; replayStudioFocused: boolean; replayBookmarkTitle: string; replayBookmarkNote: string; replayEditingBookmarkId: string | null; replayContinueConfirm: number | null; replaySelfTestReport: string; replayJumpDay: string; replayPlaybackLastError: string; replayBranchExperiment: ReplayBranchExperimentPlan | null; replayShowTurningPoints: boolean; replayShowRecordingCapMenu: boolean; replayBranchConfirming: 'day1' | 'live_state' | null; reexecPolicy: ReplayPolicy; reexecReport: ReplayExecutionReport | null; compareReplayFile: ReplayFile | null; compareReplayFocusSequence: number | null; replayComparisonSeverityFilter: 'all' | 'minor' | 'major' | 'critical'; replayComparisonSearchQuery: string }>(() => ({
+    replayDashboardTab: 'watch',
+    replayPlaybackIndex: 0,
+    replayPlaybackPlaying: false,
+    replayShowReasoning: true,
+    replayPlaybackSpeed: 1,
+    replayReconstructionMode: 'recorded_state',
+    replayPlaybackStatus: 'idle',
+    isolatedReplayRuntime: null,
+    selectedReplayEventId: null,
+    replayTimelineFilter: 'all',
+    replaySearchQuery: '',
+    replayShowRawPayload: false,
+    replayShowAlternatives: true,
+    replayCompatibility: null,
+    replayStudioFocused: false,
+    replayBookmarkTitle: '',
+    replayBookmarkNote: '',
+    replayEditingBookmarkId: null,
+    replayContinueConfirm: null,
+    replaySelfTestReport: '',
+    replayJumpDay: '',
+    replayPlaybackLastError: '',
+    replayBranchExperiment: null,
+    replayShowTurningPoints: false,
+    replayShowRecordingCapMenu: false,
+    replayBranchConfirming: null,
+    reexecPolicy: 'strict',
+    reexecReport: null,
+    compareReplayFile: null,
+    compareReplayFocusSequence: null,
+    replayComparisonSeverityFilter: 'all',
+    replayComparisonSearchQuery: ''
+  }));
+  const replayDashboardTab = wp7Slice7.replayDashboardTab; const setReplayDashboardTab = wp7Slice7Set.replayDashboardTab;
+  const replayPlaybackIndex = wp7Slice7.replayPlaybackIndex; const setReplayPlaybackIndex = wp7Slice7Set.replayPlaybackIndex;
+  const replayPlaybackPlaying = wp7Slice7.replayPlaybackPlaying; const setReplayPlaybackPlaying = wp7Slice7Set.replayPlaybackPlaying;
+  const replayShowReasoning = wp7Slice7.replayShowReasoning; const setReplayShowReasoning = wp7Slice7Set.replayShowReasoning;
+  const replayPlaybackSpeed = wp7Slice7.replayPlaybackSpeed; const setReplayPlaybackSpeed = wp7Slice7Set.replayPlaybackSpeed;
+  const replayReconstructionMode = wp7Slice7.replayReconstructionMode; const setReplayReconstructionMode = wp7Slice7Set.replayReconstructionMode;
+  const replayPlaybackStatus = wp7Slice7.replayPlaybackStatus; const setReplayPlaybackStatus = wp7Slice7Set.replayPlaybackStatus;
+  const isolatedReplayRuntime = wp7Slice7.isolatedReplayRuntime; const setIsolatedReplayRuntime = wp7Slice7Set.isolatedReplayRuntime;
+  const selectedReplayEventId = wp7Slice7.selectedReplayEventId; const setSelectedReplayEventId = wp7Slice7Set.selectedReplayEventId;
+  const replayTimelineFilter = wp7Slice7.replayTimelineFilter; const setReplayTimelineFilter = wp7Slice7Set.replayTimelineFilter;
+  const replaySearchQuery = wp7Slice7.replaySearchQuery; const setReplaySearchQuery = wp7Slice7Set.replaySearchQuery;
+  const replayShowRawPayload = wp7Slice7.replayShowRawPayload; const setReplayShowRawPayload = wp7Slice7Set.replayShowRawPayload;
+  const replayShowAlternatives = wp7Slice7.replayShowAlternatives; const setReplayShowAlternatives = wp7Slice7Set.replayShowAlternatives;
+  const replayCompatibility = wp7Slice7.replayCompatibility; const setReplayCompatibility = wp7Slice7Set.replayCompatibility;
+  const replayStudioFocused = wp7Slice7.replayStudioFocused; const setReplayStudioFocused = wp7Slice7Set.replayStudioFocused;
+  const replayBookmarkTitle = wp7Slice7.replayBookmarkTitle; const setReplayBookmarkTitle = wp7Slice7Set.replayBookmarkTitle;
+  const replayBookmarkNote = wp7Slice7.replayBookmarkNote; const setReplayBookmarkNote = wp7Slice7Set.replayBookmarkNote;
+  const replayEditingBookmarkId = wp7Slice7.replayEditingBookmarkId; const setReplayEditingBookmarkId = wp7Slice7Set.replayEditingBookmarkId;
+  const replayContinueConfirm = wp7Slice7.replayContinueConfirm; const setReplayContinueConfirm = wp7Slice7Set.replayContinueConfirm;
+  const replaySelfTestReport = wp7Slice7.replaySelfTestReport; const setReplaySelfTestReport = wp7Slice7Set.replaySelfTestReport;
+  const replayJumpDay = wp7Slice7.replayJumpDay; const setReplayJumpDay = wp7Slice7Set.replayJumpDay;
+  const replayPlaybackLastError = wp7Slice7.replayPlaybackLastError; const setReplayPlaybackLastError = wp7Slice7Set.replayPlaybackLastError;
+  const replayBranchExperiment = wp7Slice7.replayBranchExperiment; const setReplayBranchExperiment = wp7Slice7Set.replayBranchExperiment;
+  const replayShowTurningPoints = wp7Slice7.replayShowTurningPoints; const setReplayShowTurningPoints = wp7Slice7Set.replayShowTurningPoints;
+  const replayShowRecordingCapMenu = wp7Slice7.replayShowRecordingCapMenu; const setReplayShowRecordingCapMenu = wp7Slice7Set.replayShowRecordingCapMenu;
+  const replayBranchConfirming = wp7Slice7.replayBranchConfirming; const setReplayBranchConfirming = wp7Slice7Set.replayBranchConfirming;
+  const reexecPolicy = wp7Slice7.reexecPolicy; const setReexecPolicy = wp7Slice7Set.reexecPolicy;
+  const reexecReport = wp7Slice7.reexecReport; const setReexecReport = wp7Slice7Set.reexecReport;
+  const compareReplayFile = wp7Slice7.compareReplayFile; const setCompareReplayFile = wp7Slice7Set.compareReplayFile;
+  const compareReplayFocusSequence = wp7Slice7.compareReplayFocusSequence; const setCompareReplayFocusSequence = wp7Slice7Set.compareReplayFocusSequence;
+  const replayComparisonSeverityFilter = wp7Slice7.replayComparisonSeverityFilter; const setReplayComparisonSeverityFilter = wp7Slice7Set.replayComparisonSeverityFilter;
+  const replayComparisonSearchQuery = wp7Slice7.replayComparisonSearchQuery; const setReplayComparisonSearchQuery = wp7Slice7Set.replayComparisonSearchQuery;
   const compareReplayFileInputRef = useRef<HTMLInputElement | null>(null);
   const liveSimCtxRef = useRef<ReplaySimulationStateContext | null>(null);
 
@@ -186099,25 +186792,32 @@ function AustraliaGame() {
   }, [showReplayViewer, replayStudioFocused, loadedReplayFile, replayPlaybackIndex, seekIsolatedReplay]);
   // Algorithm Builder: which single config's per-stage editor panel is expanded, mirroring the
   // single-focus expand pattern already used by ledgerDashboardExpandedEventId above.
-  const [algorithmConfigExpandedStagesId, setAlgorithmConfigExpandedStagesId] = useState<string | null>(null);
-
-  // Special ability state tracking
-  const [activeSpecialAbility, setActiveSpecialAbility] = useState<string | null>(null);
+  // V9.6 (SECTION 20AM): state slice 8 — algorithm config view and the active special ability (2 fields in one reducer; setters keep useState semantics).
+  const [wp7Slice8, wp7Slice8Set] = useStateSlice<{ algorithmConfigExpandedStagesId: string | null; activeSpecialAbility: string | null }>(() => ({
+    algorithmConfigExpandedStagesId: null,
+    activeSpecialAbility: null
+  }));
+  const algorithmConfigExpandedStagesId = wp7Slice8.algorithmConfigExpandedStagesId; const setAlgorithmConfigExpandedStagesId = wp7Slice8Set.algorithmConfigExpandedStagesId;
+  const activeSpecialAbility = wp7Slice8.activeSpecialAbility; const setActiveSpecialAbility = wp7Slice8Set.activeSpecialAbility;
   const [failedChallengeData, setFailedChallengeData] = useState<{challenge: any, wager: number, approachPlan?: ChallengeApproachPlan | null} | null>(null);
-  const [usedFreeChallengeThisTurn, setUsedFreeChallengeThisTurn] = useState(false);
-
-  // Day transition state
-  const [dayTransitionData, setDayTransitionData] = useState({
+  // V9.6 (SECTION 20AM): state slice 9 — free-challenge flag, day transition, notifications and Co-Pilot panel (5 fields in one reducer; setters keep useState semantics).
+  const [wp7Slice9, wp7Slice9Set] = useStateSlice<{ usedFreeChallengeThisTurn: boolean; dayTransitionData: { prevDay: number; newDay: number; playerEarned: number; aiEarned: number; }; notifications: Notification[]; coPilotDeduplicationSet: Set<string>; coPilotPanelDismissedTurn: number | null }>(() => ({
+    usedFreeChallengeThisTurn: false,
+    dayTransitionData: {
     prevDay: 1,
     newDay: 2,
     playerEarned: 0,
     aiEarned: 0
-  });
-
-  // Enhanced notification system
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [coPilotDeduplicationSet, setCoPilotDeduplicationSet] = useState<Set<string>>(new Set());
-  const [coPilotPanelDismissedTurn, setCoPilotPanelDismissedTurn] = useState<number | null>(null);
+  },
+    notifications: [],
+    coPilotDeduplicationSet: new Set(),
+    coPilotPanelDismissedTurn: null
+  }));
+  const usedFreeChallengeThisTurn = wp7Slice9.usedFreeChallengeThisTurn; const setUsedFreeChallengeThisTurn = wp7Slice9Set.usedFreeChallengeThisTurn;
+  const dayTransitionData = wp7Slice9.dayTransitionData; const setDayTransitionData = wp7Slice9Set.dayTransitionData;
+  const notifications = wp7Slice9.notifications; const setNotifications = wp7Slice9Set.notifications;
+  const coPilotDeduplicationSet = wp7Slice9.coPilotDeduplicationSet; const setCoPilotDeduplicationSet = wp7Slice9Set.coPilotDeduplicationSet;
+  const coPilotPanelDismissedTurn = wp7Slice9.coPilotPanelDismissedTurn; const setCoPilotPanelDismissedTurn = wp7Slice9Set.coPilotPanelDismissedTurn;
   // CPFIX5 (Fix 3): Collapse dual source of truth — gameState.takeoverSession is the single authoritative owner
   const takeoverSession = gameState?.takeoverSession ?? null;
   const takeoverSessionLiveRef = useRef(false);
@@ -186196,10 +186896,10 @@ function AustraliaGame() {
     actionFn();
   }, [takeoverSession]);
 
-  const [personalRecords, setPersonalRecords] = useState<PersonalRecord>({ ...DEFAULT_PERSONAL_RECORDS });
-
-  // Confirmation dialog state
-  const [confirmationDialog, setConfirmationDialog] = useState<ConfirmationDialog>({
+  // V9.6 (SECTION 20AM): state slice 10 — records, dialogs, approvals, treasury form and automations (8 fields in one reducer; setters keep useState semantics).
+  const [wp7Slice10, wp7Slice10Set] = useStateSlice<{ personalRecords: PersonalRecord; confirmationDialog: ConfirmationDialog; pendingApprovalRequests: ApprovalRequest[]; editedWagerInput: number | null; editedCostInput: number | null; treasuryRequestForm: { requestType: TreasuryFundingRequestType; customAmount: string; reason: string }; dontAskAgain: DontAskAgainPrefs; humanAutomations: HumanAutomation[] }>(() => ({
+    personalRecords: { ...DEFAULT_PERSONAL_RECORDS },
+    confirmationDialog: {
     isOpen: false,
     type: null,
     title: '',
@@ -186207,30 +186907,22 @@ function AustraliaGame() {
     confirmText: '',
     onConfirm: () => {},
     data: null
-  });
-
-  // V6.9 Phase F3: the reviewable "queue" of pending AI Action Approval requests — a browsable
-  // mirror, never itself gating execution. The single live-blocking pause point per actor-turn
-  // continues to reuse the existing single-slot confirmationDialog above.
-  const [pendingApprovalRequests, setPendingApprovalRequests] = useState<ApprovalRequest[]>([]);
-  // V6.9.1 bugfix (Bug 6, GD8): real, functioning edited values for the "Edit & Approve"/"Approve
-  // Lower Wager" controls — previously hardcoded to {wager:0, cost:0}/{wager:0}, so every "edit"
-  // was indistinguishable from silently approving at $0. Reset via the effect below whenever the
-  // displayed request changes.
-  const [editedWagerInput, setEditedWagerInput] = useState<number | null>(null);
-  const [editedCostInput, setEditedCostInput] = useState<number | null>(null);
-
-  // Team Treasury Phase T2: local form state for the "Request Team Funds" control — reused across
-  // the 3 request forms (emergency_cash/fund_specific_action/custom). Lives in the Settings Hub's
-  // Team Treasury section, matching F5 GD5's own precedent ("the Settings modal is already
-  // reachable mid-game, so no new UI surface is needed for this to be manual and immediate").
-  const [treasuryRequestForm, setTreasuryRequestForm] = useState<{ requestType: TreasuryFundingRequestType; customAmount: string; reason: string }>({ requestType: 'emergency_cash', customAmount: '', reason: '' });
-
-  // Don't ask again preferences
-  const [dontAskAgain, setDontAskAgain] = useState<DontAskAgainPrefs>({ ...DEFAULT_DONT_ASK });
-  // Human Player Automation and Action Rules System, Phase HA1: pure scaffolding — no CRUD UI exists
-  // yet, so this stays [] for every player regardless of the master toggle's state until HA2 ships.
-  const [humanAutomations, setHumanAutomations] = useState<HumanAutomation[]>([]);
+  },
+    pendingApprovalRequests: [],
+    editedWagerInput: null,
+    editedCostInput: null,
+    treasuryRequestForm: { requestType: 'emergency_cash', customAmount: '', reason: '' },
+    dontAskAgain: { ...DEFAULT_DONT_ASK },
+    humanAutomations: []
+  }));
+  const personalRecords = wp7Slice10.personalRecords; const setPersonalRecords = wp7Slice10Set.personalRecords;
+  const confirmationDialog = wp7Slice10.confirmationDialog; const setConfirmationDialog = wp7Slice10Set.confirmationDialog;
+  const pendingApprovalRequests = wp7Slice10.pendingApprovalRequests; const setPendingApprovalRequests = wp7Slice10Set.pendingApprovalRequests;
+  const editedWagerInput = wp7Slice10.editedWagerInput; const setEditedWagerInput = wp7Slice10Set.editedWagerInput;
+  const editedCostInput = wp7Slice10.editedCostInput; const setEditedCostInput = wp7Slice10Set.editedCostInput;
+  const treasuryRequestForm = wp7Slice10.treasuryRequestForm; const setTreasuryRequestForm = wp7Slice10Set.treasuryRequestForm;
+  const dontAskAgain = wp7Slice10.dontAskAgain; const setDontAskAgain = wp7Slice10Set.dontAskAgain;
+  const humanAutomations = wp7Slice10.humanAutomations; const setHumanAutomations = wp7Slice10Set.humanAutomations;
   // HA2: lastAutomationTurnKeyRef guards against re-firing the automation loop more than once for
   // the same player turn (the evaluation useEffect below); lastAutomationDayRef is a separate,
   // longer-lived tracker purely for the 'day_start' trigger type (did the day change since the last
@@ -186285,12 +186977,18 @@ function AustraliaGame() {
     });
   }, [gameState.day, player.level, gameSettings]);
 
-  const [saveDescription, setSaveDescription] = useState("");
-  const [v95LastLoadHealth, setV95LastLoadHealth] = useState<SaveHealthReport | null>(null);
-  const [loadPreview, setLoadPreview] = useState<LoadPreviewState>({
+  // V9.6 (SECTION 20AM): state slice 11 — save/load dialogs (3 fields in one reducer; setters keep useState semantics).
+  const [wp7Slice11, wp7Slice11Set] = useStateSlice<{ saveDescription: string; v95LastLoadHealth: SaveHealthReport | null; loadPreview: LoadPreviewState }>(() => ({
+    saveDescription: "",
+    v95LastLoadHealth: null,
+    loadPreview: {
     isOpen: false,
     data: null
-  });
+  }
+  }));
+  const saveDescription = wp7Slice11.saveDescription; const setSaveDescription = wp7Slice11Set.saveDescription;
+  const v95LastLoadHealth = wp7Slice11.v95LastLoadHealth; const setV95LastLoadHealth = wp7Slice11Set.v95LastLoadHealth;
+  const loadPreview = wp7Slice11.loadPreview; const setLoadPreview = wp7Slice11Set.loadPreview;
 
   // Refs
   const notificationEndRef = useRef<HTMLDivElement>(null);
@@ -186474,19 +187172,19 @@ function AustraliaGame() {
   // action entry points consult these refs, so agreements are monitored on every committed action.
   // World Reaction (wired further below): the day/turn boundary consumers read its bounded signals from here.
   const swrStateRef = useRef<WorldReactionState | null>(null);
-  swrStateRef.current = ((gameState as any).worldReaction as WorldReactionState | undefined) || null;
+  swrStateRef.current = (gameState.worldReaction as WorldReactionState | undefined) || null;
   /** The most recent committed canonical action (provenance for the next detection pass). */
   const swrActionRef = useRef<SWRActionRef | null>(null);
   // Living Regions 2.0 (wired further below): regional condition read by AI scoring, Diplomacy, Team OS and crises.
   const lrStateRef = useRef<LivingRegionsState | null>(null);
-  lrStateRef.current = ((gameState as any).livingRegions as LivingRegionsState | null | undefined) || null;
+  lrStateRef.current = (gameState.livingRegions as LivingRegionsState | null | undefined) || null;
   /** Rival AI: bounded regional-value adjustment of scored candidates (set once the live inputs exist). */
   const lrDecisionAdjustRef = useRef<((actorId: string, decisions: any[]) => any[]) | null>(null);
   // Regional Factions 2.0 (wired further below): stakeholder state read by Team OS, Diplomacy and AI scoring.
   const rfStateRef = useRef<RegionalFactionsState | null>(null);
-  rfStateRef.current = ((gameState as any).regionalFactions as RegionalFactionsState | null | undefined) || null;
+  rfStateRef.current = (gameState.regionalFactions as RegionalFactionsState | null | undefined) || null;
   const dnStateRef = useRef<DiplomacyState | null>(null);
-  dnStateRef.current = ((gameState as any).diplomacyState as DiplomacyState | undefined) || null;
+  dnStateRef.current = (gameState.diplomacyState as DiplomacyState | undefined) || null;
   /** Region controllers (as diplomatic leads) from the last render — i.e. BEFORE the action being checked. */
   const dnControllersRef = useRef<Record<string, string | null>>({});
   const dnObserveRef = useRef<((action: CommittedMemoryAction) => void) | null>(null);
@@ -186500,11 +187198,19 @@ function AustraliaGame() {
   const skipPersistentAbandonPromptRef = useRef(false);
   const persistentCommitInFlightRef = useRef<string | null>(null);
   const commitCurrentMatchPersistentMemoryRef = useRef<null | (() => void)>(null);
-  const [memoryInspectorActorId, setMemoryInspectorActorId] = useState('ai');
-  const [persistentInspectorProfileId, setPersistentInspectorProfileId] = useState('');
-  const [persistentStoreRevision, setPersistentStoreRevision] = useState(0);
-  const [persistenceVerifying, setPersistenceVerifying] = useState(false);
-  const [persistenceUiPhase, setPersistenceUiPhase] = useState<'verifying' | 'disabling' | 'deleting' | 'consent_required' | null>(null);
+  // V9.6 (SECTION 20AM): state slice 12 — memory inspector and persistence UI (5 fields in one reducer; setters keep useState semantics).
+  const [wp7Slice12, wp7Slice12Set] = useStateSlice<{ memoryInspectorActorId: string; persistentInspectorProfileId: string; persistentStoreRevision: number; persistenceVerifying: boolean; persistenceUiPhase: 'verifying' | 'disabling' | 'deleting' | 'consent_required' | null }>(() => ({
+    memoryInspectorActorId: 'ai',
+    persistentInspectorProfileId: '',
+    persistentStoreRevision: 0,
+    persistenceVerifying: false,
+    persistenceUiPhase: null
+  }));
+  const memoryInspectorActorId = wp7Slice12.memoryInspectorActorId; const setMemoryInspectorActorId = wp7Slice12Set.memoryInspectorActorId;
+  const persistentInspectorProfileId = wp7Slice12.persistentInspectorProfileId; const setPersistentInspectorProfileId = wp7Slice12Set.persistentInspectorProfileId;
+  const persistentStoreRevision = wp7Slice12.persistentStoreRevision; const setPersistentStoreRevision = wp7Slice12Set.persistentStoreRevision;
+  const persistenceVerifying = wp7Slice12.persistenceVerifying; const setPersistenceVerifying = wp7Slice12Set.persistenceVerifying;
+  const persistenceUiPhase = wp7Slice12.persistenceUiPhase; const setPersistenceUiPhase = wp7Slice12Set.persistenceUiPhase;
   const persistentBackupInputRef = useRef<HTMLInputElement | null>(null);
   const persistencePolicyHydratedRef = useRef(false);
   useEffect(() => {
@@ -186699,14 +187405,14 @@ function AustraliaGame() {
   const isTeamMode = useMemo(() => isTeamModeSelection(gameState.selectedMode), [gameState.selectedMode]);
   // Latest stored Team Operating System state for callbacks that run outside render (Strategic Command).
   const teamOsStateRef = useRef<TeamOperatingSystemState | undefined>(undefined);
-  teamOsStateRef.current = (gameState as any).teamOperatingSystem;
+  teamOsStateRef.current = gameState.teamOperatingSystem;
   // Game Intelligence 3.0: latest (live-evaluated when a strategy is active) strategy state for
   // callbacks and the GI world. Refreshed again below once the live evaluation has run.
   const gi3StateRef = useRef<GI3StrategyState | null>(null);
-  gi3StateRef.current = ((gameState as any).gi3Strategy as GI3StrategyState | undefined) || null;
+  gi3StateRef.current = (gameState.gi3Strategy as GI3StrategyState | undefined) || null;
   // Background AI: latest (live-evaluated) prepared analysis for callbacks and the GI world.
   const bgStateRef = useRef<BackgroundAIState | null>(null);
-  bgStateRef.current = ((gameState as any).backgroundAI as BackgroundAIState | undefined) || null;
+  bgStateRef.current = (gameState.backgroundAI as BackgroundAIState | undefined) || null;
   // Settings Intelligence 2.0: read-only configuration view handed to Game Intelligence (set below).
   const siWorldViewRef = useRef<SettingsIntelligenceWorldView | null>(null);
   const dnViewRef = useRef<DiplomacyWorldView | null>(null);
@@ -187780,15 +188486,15 @@ function dispatchGameSettingsChange(
     }
     // GI3: an active strategy projects its current phase as the Current Objective — unless the player
     // tracked an objective manually (their explicit choice wins).
-    const gi3Stored = (gameState as any).gi3Strategy as GI3StrategyState | undefined;
+    const gi3Stored = gameState.gi3Strategy as GI3StrategyState | undefined;
     const gi3Objective = !gameState.playerTrackedObjective ? projectGI3CurrentObjective(gi3Stored) : null;
     const objective = gi3Objective || resolveCurrentObjective(gameState, gameSettings, actor, gameState.playerTrackedObjective);
     const gi3Ranking = gi3RankingContext(gi3Stored, actor?.money || 0);
-    const npRanking = isSystemVisible('nationalPriorities', gameSettings) ? nationalPriorityRankingContext((gameState as any).nationalPriorities, gameState.infrastructureProjects) : null;
-    const egRanking = isSystemVisible('economicGeography', gameSettings) ? ((gameState as any).economicGeographyState as EconomicGeographyState | undefined) || null : null;
-    const sc11Ranking = isSystemVisible('stateCapacity', gameSettings) ? ((gameState as any).stateCapacityState as NationalStateCapacityState | undefined) || null : null;
-    const pf12Ranking = isSystemVisible('publicFinance', gameSettings) ? ((gameState as any).publicFinanceState as NationalPublicFinanceState | undefined) || null : null;
-    const hh13Ranking = isSystemVisible('households', gameSettings) ? ((gameState as any).householdEconomyState as NationalHouseholdEconomyState | undefined) || null : null;
+    const npRanking = isSystemVisible('nationalPriorities', gameSettings) ? nationalPriorityRankingContext(gameState.nationalPriorities, gameState.infrastructureProjects) : null;
+    const egRanking = isSystemVisible('economicGeography', gameSettings) ? (gameState.economicGeographyState as EconomicGeographyState | undefined) || null : null;
+    const sc11Ranking = isSystemVisible('stateCapacity', gameSettings) ? (gameState.stateCapacityState as NationalStateCapacityState | undefined) || null : null;
+    const pf12Ranking = isSystemVisible('publicFinance', gameSettings) ? (gameState.publicFinanceState as NationalPublicFinanceState | undefined) || null : null;
+    const hh13Ranking = isSystemVisible('households', gameSettings) ? (gameState.householdEconomyState as NationalHouseholdEconomyState | undefined) || null : null;
     const apLeft = typeof getRemainingActionPoints === 'function' ? getRemainingActionPoints(actor, gameSettings) : 3;
     const recs = rankContextualRecommendations(intentRecCandidates, objective, {
       apRemaining: apLeft,
@@ -190754,6 +191460,8 @@ function dispatchGameSettingsChange(
   const wp2AiPlanRef = useRef<((challenge: LegacyChallengeShape, aiState: ApproachActorLike, wager: number, approachId: string) => ChallengeApproachPlan | null) | null>(null);
   const wp2AiOutcomeRef = useRef<((plan: ChallengeApproachPlan, aiState: ApproachActorLike & { name?: string }, success: boolean) => void) | null>(null);
   const wp2AdvisorRef = useRef<((query: string) => GameIntelligenceAnswer | null) | null>(null);
+  // V9.6 (SECTION 20AM): the render counter follows the existing diagnostics switch.
+  V96_RENDER_STATS.enabled = (gameSettings.diagnosticsSettings as { enabled?: boolean } | undefined)?.enabled === true;
   // V9.6 (SECTION 20AL): match shape — the sanitized state, and bridges the action handlers call (all inert while it is off).
   const wp6Source = (gameState as unknown as { matchShape?: unknown }).matchShape;
   const wp6State = useMemo(() => sanitizeMatchShapeState(wp6Source), [wp6Source]);
@@ -215510,11 +216218,19 @@ function dispatchGameSettingsChange(
     updateUiState({ experienceLayer: sanitizeExperienceLayer(layer) });
   }, [updateUiState]);
   const v9PendingStartRef = useRef(false);
-  const [v9StartNonce, setV9StartNonce] = useState(0);
-  const [v9IntelFeed, setV9IntelFeed] = useState<GameIntelligenceAnswer[]>([]);
-  const [v9IntelQuery, setV9IntelQuery] = useState('');
-  const [v9IntelBusy, setV9IntelBusy] = useState(false);
-  const [v9SelfTestResults, setV9SelfTestResults] = useState<V9SelfTestResult[] | null>(null);
+  // V9.6 (SECTION 20AM): state slice 13 — V9 intelligence feed (5 fields in one reducer; setters keep useState semantics).
+  const [wp7Slice13, wp7Slice13Set] = useStateSlice<{ v9StartNonce: number; v9IntelFeed: GameIntelligenceAnswer[]; v9IntelQuery: string; v9IntelBusy: boolean; v9SelfTestResults: V9SelfTestResult[] | null }>(() => ({
+    v9StartNonce: 0,
+    v9IntelFeed: [],
+    v9IntelQuery: '',
+    v9IntelBusy: false,
+    v9SelfTestResults: null
+  }));
+  const v9StartNonce = wp7Slice13.v9StartNonce; const setV9StartNonce = wp7Slice13Set.v9StartNonce;
+  const v9IntelFeed = wp7Slice13.v9IntelFeed; const setV9IntelFeed = wp7Slice13Set.v9IntelFeed;
+  const v9IntelQuery = wp7Slice13.v9IntelQuery; const setV9IntelQuery = wp7Slice13Set.v9IntelQuery;
+  const v9IntelBusy = wp7Slice13.v9IntelBusy; const setV9IntelBusy = wp7Slice13Set.v9IntelBusy;
+  const v9SelfTestResults = wp7Slice13.v9SelfTestResults; const setV9SelfTestResults = wp7Slice13Set.v9SelfTestResults;
 
   // Take Control: the exact canonical interrupt the HUD always used, plus cancellation of any
   // queued / in-flight Start so no delayed continuation can create a session afterwards.
@@ -215656,11 +216372,11 @@ function dispatchGameSettingsChange(
       const deposits = sanitizeRegionDeposits(gameState.regionDeposits);
       const pressured = Object.keys(REGIONS).filter(code => { const e = deposits[code] || {}; return getRegionControlSnapshot(e).controllerId === playerControlKey && Object.entries(e).some(([k, v]) => k !== playerControlKey && Number(v) > 0); });
       const names = Object.fromEntries((Object.values(actorsById || {}) as any[]).filter(Boolean).map(a => [String(a.id), getActorDisplayName(String(a.id))]));
-      const dn = diplomaticContextualSurface((gameState as any).diplomacyState, String(player?.id || 'player'), Number(gameState.turnCounter || 0), pressured, names);
+      const dn = diplomaticContextualSurface(gameState.diplomacyState, String(player?.id || 'player'), Number(gameState.turnCounter || 0), pressured, names);
       if (dn) list.push({ id: dn.id, label: dn.label, icon: '🤝', target: 'diplomacy', category: 'compete', legal: true, blockReason: null });
     }
     return list;
-  }, [isPlayerTurnForCoPilot, player?.currentRegion, player?.id, gameSettings.equipmentShopEnabled, gameSettings.investmentsEnabled, gameSettings.advancedLoansEnabled, gameSettings.advancedLoansAccessMode, gameSettings.sabotageEnabled, isCompetitiveMode, gameState.regionDeposits, (gameState as any).diplomacyState, gameState.turnCounter, playerControlKey, actorsById, getActorDisplayName]);
+  }, [isPlayerTurnForCoPilot, player?.currentRegion, player?.id, gameSettings.equipmentShopEnabled, gameSettings.investmentsEnabled, gameSettings.advancedLoansEnabled, gameSettings.advancedLoansAccessMode, gameSettings.sabotageEnabled, isCompetitiveMode, gameState.regionDeposits, gameState.diplomacyState, gameState.turnCounter, playerControlKey, actorsById, getActorDisplayName]);
 
   const v9ActionSet = useMemo(() => buildContextualActionSet({
     rankedRecommendations: intentLayerComputed.contextualRanked,
@@ -215721,7 +216437,7 @@ function dispatchGameSettingsChange(
         (Array.isArray(player?.advancedLoans) ? player.advancedLoans : []).map((l: any) => [l?.amount, l?.daysRemaining]),
         player?.debt ?? 0
       ],
-      world: [gameState.regionDeposits || {}, gameState.regionalDevLevels || {}, Number((gameState as any).livingRegions?.revision || 0), Number((gameState as any).regionalFactions?.revision || 0)],
+      world: [gameState.regionDeposits || {}, gameState.regionalDevLevels || {}, Number(gameState.livingRegions?.revision || 0), Number(gameState.regionalFactions?.revision || 0)],
       market: gameState.resourcePrices || {},
       projects: projectSlice,
       contracts: contractSlice,
@@ -215731,12 +216447,12 @@ function dispatchGameSettingsChange(
         cp?.spendingCaps?.minimumCashReserve ?? null, gameSettings.fogOfWarEnabled, gameSettings.negotiationMode, regionDepositInput
       ],
       actors: (Object.values(actorsById || {}) as any[]).filter(a => a && String(a.id) !== String(player?.id || 'player')).map(a => [a.id, a.money, a.currentRegion]),
-      history: [ledgerEvents.length, ledgerEvents[ledgerEvents.length - 1]?.id || null, (notifications || []).length, (() => { const w: any = (gameState as any).worldReaction; return w ? `${(w.events || []).length}:${w.events?.[w.events.length - 1]?.id || ''}:${(w.intents || []).length}:${(w.windows || []).filter((x: any) => x.status === 'open').length}` : null; })()],
+      history: [ledgerEvents.length, ledgerEvents[ledgerEvents.length - 1]?.id || null, (notifications || []).length, (() => { const w: any = gameState.worldReaction; return w ? `${(w.events || []).length}:${w.events?.[w.events.length - 1]?.id || ''}:${(w.intents || []).length}:${(w.windows || []).filter((x: any) => x.status === 'open').length}` : null; })()],
       // Team systems (compact, stable slices — never the whole team state).
       team_strategy: (() => {
         const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null;
         const plan: any = team?.activeTeamPlan;
-        const os: any = (gameState as any).teamOperatingSystem?.byTeam?.[player?.teamId || ''];
+        const os: any = gameState.teamOperatingSystem?.byTeam?.[player?.teamId || ''];
         return team ? [plan ? [plan.id, plan.status, plan.objective, (plan.assignedActorIds || []).join(',')] : null, team.overseer?.currentAdaptiveStrategyMode || null, Boolean(team.overseer?.safeModeActive),
           (team.overseer?.strategicDirectives || []).length, os ? [os.contract?.id, os.contract?.revision, os.contract?.status, (os.contract?.taskGraph || []).map((t: any) => `${t.id}:${t.status}`).join(','), (os.proposals || []).filter((p: any) => p.status === 'open').length] : null] : null;
       })(),
@@ -215748,10 +216464,10 @@ function dispatchGameSettingsChange(
       team_governance: (() => { const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null; return team ? [team.governanceMode || null, team.leaderId || null] : null; })(),
       approvals: (pendingApprovalRequests || []).map((r: any) => `${r?.id}:${r?.status || 'pending'}`),
       // GI3 strategy: identity, revision, lifecycle, phase and tracked status (answers about the plan go stale on change).
-      background: (() => { const b: any = (gameState as any).backgroundAI; return b ? [b.enabled, b.mode, b.lastMeaningfulHash] : null; })(),
-      strategy: (() => { const g3: any = (gameState as any).gi3Strategy; const c = g3?.active; return c ? [c.id, c.revision, c.status, c.phaseIndex, g3.progress?.onTrack || null, (g3.notices || []).filter((n: any) => !n.dismissed).length] : [(g3?.history || []).length]; })(),
-      memory: [gameSettings.aiMemoryFullInspectionEnabled === true, ((gameState as any).aiMemory?.version ?? (gameState as any).aiMemoryVersion ?? null)],
-      scenarios: (((gameState as any).scenarioObjectives || (gameState as any).activeScenarioConfig?.objectives || []) as any[]).map(o => `${o?.id}:${o?.currentValue ?? ''}`)
+      background: (() => { const b: any = gameState.backgroundAI; return b ? [b.enabled, b.mode, b.lastMeaningfulHash] : null; })(),
+      strategy: (() => { const g3: any = gameState.gi3Strategy; const c = g3?.active; return c ? [c.id, c.revision, c.status, c.phaseIndex, g3.progress?.onTrack || null, (g3.notices || []).filter((n: any) => !n.dismissed).length] : [(g3?.history || []).length]; })(),
+      memory: [gameSettings.aiMemoryFullInspectionEnabled === true, (gameState.aiMemory?.version ?? gameState.aiMemoryVersion ?? null)],
+      scenarios: ((gameState.scenarioObjectives || gameState.activeScenarioConfig?.objectives || []) as any[]).map(o => `${o?.id}:${o?.currentValue ?? ''}`)
     });
   }, [gameState, player, intentLayerComputed.objective, gameSettings, v9ActionSet.fingerprint, v9WinLines, takeoverSession, regionDepositInput, actorsById, notifications, teamsById, pendingApprovalRequests]);
   const v9GiFingerprint = useMemo(() => composeGIFingerprint(v9GiFingerprints), [v9GiFingerprints]);
@@ -216099,7 +216815,7 @@ function dispatchGameSettingsChange(
       }
     };
   };
-  const storedTeamOs: TeamOperatingSystemState | undefined = (gameState as any).teamOperatingSystem;
+  const storedTeamOs: TeamOperatingSystemState | undefined = gameState.teamOperatingSystem;
   const teamOsView = useMemo<TeamOSView | null>(() => {
     if (!teamOsEnabled) return null;
     try {
@@ -216154,7 +216870,7 @@ function dispatchGameSettingsChange(
       if (fired) recordTeamOsDiagnostics(teamOsDiagRef.current, teamId, { contingencyTrigger: fired.label });
       // Activity Ledger: meaningful Team OS events only (enemy events are kept for replay/debrief but
       // summarised without internal detail).
-      const isolated = Boolean((gameState as any).isolatedReplayRuntime);
+      const isolated = Boolean(gameState.isolatedReplayRuntime);
       if (!isolated) teamOsLedgerEvents(stored, state).forEach(ev => appendGameActivityLedgerEvent('plan', {
         actorId: friendly ? 'player' : teamId, teamId, eventType: `team_os_${ev.kind}`,
         summary: (friendly ? ev.summary : `Enemy team strategy event: ${ev.kind.replace(/_/g, ' ')}`).slice(0, 200)
@@ -216298,7 +217014,7 @@ function dispatchGameSettingsChange(
   // The player's persistent strategy (gameState.gi3Strategy — the ONE canonical GI3 state). Evaluated
   // only from canonical state, event-driven through the GI fingerprint, and committed loop-safely by
   // signature. It never executes actions: everything still goes through the normal action pipeline.
-  const gi3StoredRaw = (gameState as any).gi3Strategy as GI3StrategyState | undefined;
+  const gi3StoredRaw = gameState.gi3Strategy as GI3StrategyState | undefined;
   const gi3Stored = useMemo(() => sanitizeGI3StrategyState(gi3StoredRaw), [gi3StoredRaw]);
   const gi3Evaluation = useMemo<GI3Evaluation | null>(() => {
     if (!isLiveIntentMatch || gi3Stored.active?.status !== 'active') return null;
@@ -216317,7 +217033,7 @@ function dispatchGameSettingsChange(
 
   /** Loop-safe GI3 commit: identical signatures are skipped; at most 12 automatic commits per turn. */
   const persistGI3State = useCallback((next: GI3StrategyState, source: 'live evaluation' | 'player'): GI3StrategyState => {
-    const prev = sanitizeGI3StrategyState((gameState as any).gi3Strategy);
+    const prev = sanitizeGI3StrategyState(gameState.gi3Strategy);
     const sig = gi3StrategySignature(next);
     const tracker = gi3CommitRef.current;
     const turn = Number(gameState.turnCounter || 0);
@@ -216339,7 +217055,7 @@ function dispatchGameSettingsChange(
     gi3StateRef.current = committed;
     dispatchGameState({ type: 'LOAD_STATE', payload: { gi3Strategy: committed } as any });
     // Activity Ledger: meaningful strategy events only (never every evaluation).
-    if (!(gameState as any).isolatedReplayRuntime) {
+    if (!gameState.isolatedReplayRuntime) {
       const events = gi3LedgerEvents(prev, committed);
       events.forEach(ev => appendGameActivityLedgerEvent('plan', { actorId: 'player', eventType: `gi3_${ev.kind}`, summary: ev.summary.slice(0, 200) } as any));
       const notable = events.find(ev => /phase_changed|milestone_reached|contingency_triggered|region_lost|goal_failed|strategy_achieved|strategy_replan/.test(ev.kind));
@@ -216412,7 +217128,7 @@ function dispatchGameSettingsChange(
   // Intelligence, is skipped when nothing strategically relevant changed, and commits its prepared analysis
   // to gameState.backgroundAI loop-safely. The runtime is given NO executor, dispatcher for gameplay, or
   // settings setter — only this UI-state commit (BACKGROUND_AI_CAN_EXECUTE === false).
-  const bgStoredRaw = (gameState as any).backgroundAI as BackgroundAIState | undefined;
+  const bgStoredRaw = gameState.backgroundAI as BackgroundAIState | undefined;
   const bgStored = useMemo(() => sanitizeBackgroundAIState(bgStoredRaw), [bgStoredRaw]);
   const bgPerfRef = useRef<{ lastMs: number; maxMs: number; evaluations: number; skipped: number }>({ lastMs: 0, maxMs: 0, evaluations: 0, skipped: 0 });
   const bgEvaluation = useMemo<{ state: BackgroundAIState; report: BackgroundEvaluationReport } | null>(() => {
@@ -216438,7 +217154,7 @@ function dispatchGameSettingsChange(
 
   /** Commit Background AI's prepared analysis (UI/intelligence state only — never gameplay state). */
   const persistBackgroundAI = useCallback((next: BackgroundAIState, report: BackgroundEvaluationReport | null, source: 'evaluation' | 'player'): BackgroundAIState => {
-    const prev = sanitizeBackgroundAIState((gameState as any).backgroundAI);
+    const prev = sanitizeBackgroundAIState(gameState.backgroundAI);
     const sig = backgroundAISignature(next);
     const tracker = bgCommitRef.current;
     const turn = Number(gameState.turnCounter || 0);
@@ -216448,7 +217164,7 @@ function dispatchGameSettingsChange(
     tracker.commits += 1;
     bgStateRef.current = next;
     dispatchGameState({ type: 'LOAD_STATE', payload: { backgroundAI: next } as any });
-    if (!(gameState as any).isolatedReplayRuntime) {
+    if (!gameState.isolatedReplayRuntime) {
       backgroundLedgerEvents(prev, next, report).forEach(ev => appendGameActivityLedgerEvent('plan', { actorId: 'player', eventType: ev.kind, summary: ev.summary.slice(0, 200) } as any));
       const surfaced = report?.surfaced;
       if (surfaced && source === 'evaluation' && (surfaced.level === 'notice' || surfaced.level === 'warning' || surfaced.level === 'critical')) {
@@ -216498,14 +217214,14 @@ function dispatchGameSettingsChange(
     persistBackgroundAI(dismissBackgroundIntervention(sanitizeBackgroundAIState(bgStateRef.current), key), null, 'player');
   }, [persistBackgroundAI]);
   /** Contextual Actions shown to the player carry Background AI metadata; the canonical set is unchanged. */
-  const v9ActionSetView = useMemo(() => annotateContextualActionsWithFactions(annotateContextualActionsWithRegions(annotateContextualActionsWithWorld(annotateContextualActionsWithBackground(v9ActionSet, bgLive), (gameState as any).worldReaction, String(player?.id || 'player')), (gameState as any).livingRegions), rfStateRef.current, rfViewRef.current?.inputs || null), [v9ActionSet, bgLive, (gameState as any).livingRegions, (gameState as any).regionalFactions, (gameState as any).worldReaction, player?.id]);
+  const v9ActionSetView = useMemo(() => annotateContextualActionsWithFactions(annotateContextualActionsWithRegions(annotateContextualActionsWithWorld(annotateContextualActionsWithBackground(v9ActionSet, bgLive), gameState.worldReaction, String(player?.id || 'player')), gameState.livingRegions), rfStateRef.current, rfViewRef.current?.inputs || null), [v9ActionSet, bgLive, gameState.livingRegions, gameState.regionalFactions, gameState.worldReaction, player?.id]);
 
   // ---- Settings Intelligence 2.0: live wiring --------------------------------------------------------
   // Reads settings + read-only gameplay evidence; every change it proposes becomes a SmartSettingsPlan the
   // player approves, applied ONLY by applySmartSettingsPlan() and undone ONLY by undoSmartSettingsTransaction().
-  const siPhase: SIMatchPhase = (gameState as any).isolatedReplayRuntime ? 'replay' : gameState.selectedMode === 'team_ai_vs_ai' && isLiveIntentMatch ? 'ai_vs_ai' : isLiveIntentMatch ? 'live' : gameState.gameMode === 'game' ? 'pre_match' : 'menu';
+  const siPhase: SIMatchPhase = gameState.isolatedReplayRuntime ? 'replay' : gameState.selectedMode === 'team_ai_vs_ai' && isLiveIntentMatch ? 'ai_vs_ai' : isLiveIntentMatch ? 'live' : gameState.gameMode === 'game' ? 'pre_match' : 'menu';
   const siCtx = useMemo(() => buildSettingsIntelligenceContext(gameSettings, { mode: gameState.selectedMode, phase: siPhase }), [gameSettings, gameState.selectedMode, siPhase]);
-  const siStoredRaw = (gameState as any).settingsIntelligence as SettingsIntelligenceState | undefined;
+  const siStoredRaw = gameState.settingsIntelligence as SettingsIntelligenceState | undefined;
   const siState = useMemo(() => sanitizeSettingsIntelligenceState(siStoredRaw), [siStoredRaw]);
   const siLedger = (gameState.gameActivityLedger?.events || []) as any[];
   const siMateIds = useMemo(() => (teamOsView?.inputs.actors || []).filter(a => !a.isHuman).map(a => a.id), [teamOsView]);
@@ -216642,11 +217358,11 @@ function dispatchGameSettingsChange(
   // Deals are structured promises between diplomatic leads (the human for the player's team; the first AI
   // of each opposing team). Payments run through the validated money/Treasury paths; regional terms are
   // monitored on every committed action; AI evaluation is deterministic and reads only its own knowledge.
-  const dnStoredRaw = (gameState as any).diplomacyState as DiplomacyState | undefined;
+  const dnStoredRaw = gameState.diplomacyState as DiplomacyState | undefined;
   /** Diplomacy's clock is the ROUND (one per player turn) — the HUD turn counter advances once per actor. */
   const dnRound = Math.max(1, Number(gameState.roundNumber || 1));
   const dnState = useMemo(() => sanitizeDiplomacyState(dnStoredRaw), [dnStoredRaw]);
-  const dnEnabled = Boolean(isLiveIntentMatch && isCompetitiveMode && !(gameState as any).isolatedReplayRuntime);
+  const dnEnabled = Boolean(isLiveIntentMatch && isCompetitiveMode && !gameState.isolatedReplayRuntime);
   const dnPlayerTeamId = String(player?.teamId || (isTeamMode ? TEAM_PLAYER_ID : 'team_player'));
   const dnAllActors = useMemo(() => (Object.values(actorsById || {}) as any[]).filter(Boolean), [actorsById]);
   /** Diplomatic lead of each team: the human leads the player's team; the first AI (by id) leads each other team. */
@@ -216746,7 +217462,7 @@ function dispatchGameSettingsChange(
     const prices = (gameState.resourcePrices || {}) as Record<string, number>;
     return {
       turn, turnsLeft: Math.max(1, Number(gameSettings.totalDays || 30) - Number(gameState.day || 1) + 1), viewerId, actors, regions,
-      clock: { hudTurn: Number(gameState.turnCounter || 0) + 1, actorsPerRound: Math.max(1, Array.isArray((gameState as any).turnOrder) ? (gameState as any).turnOrder.length : dnAllActors.length) },
+      clock: { hudTurn: Number(gameState.turnCounter || 0) + 1, actorsPerRound: Math.max(1, Array.isArray(gameState.turnOrder) ? gameState.turnOrder.length : dnAllActors.length) },
       win: { metric: String(gameSettings.winCondition || 'money'), regionsTarget: String(gameSettings.winCondition) === 'regions' ? REGION_CONTROL_MAJORITY : null },
       strategy, relationship, hostileHistory: (owner, other) => countRememberedHostility(aiMemoriesRef.current, resolveAiMemoryActorId(owner), resolveAiMemoryActorId(other)),
       fogOfWar: fog, teamMode: isTeamMode, treasuryAvailable, authority, resources: Object.keys(prices).length ? Object.keys(prices) : ['Gold', 'Iron Ore', 'Opals', 'Wool'], prices,
@@ -216760,7 +217476,7 @@ function dispatchGameSettingsChange(
         return ctx;
       })()
     };
-  }, [dnRound, gameState.turnCounter, gameState.day, gameState.regionDeposits, gameState.resourcePrices, (gameState as any).livingRegions, (gameState as any).regionalFactions, gameSettings, dnAllActors, dnNames, dnControllers, dnLeadOfTeam, dnLeadOfActor, isTeamMode, teamOsEnemyView, gi3Live.active, teamsById, getTreasuryAvailableAmount]);
+  }, [dnRound, gameState.turnCounter, gameState.day, gameState.regionDeposits, gameState.resourcePrices, gameState.livingRegions, gameState.regionalFactions, gameSettings, dnAllActors, dnNames, dnControllers, dnLeadOfTeam, dnLeadOfActor, isTeamMode, teamOsEnemyView, gi3Live.active, teamsById, getTreasuryAvailableAmount]);
 
   const dnPlayerWorld = useMemo(() => buildDnWorld(String(player?.id || 'player')), [buildDnWorld, player?.id]);
   const dnReserveFloor = Number(gameSettings.coPilotSettings?.spendingCaps?.minimumCashReserve || 0) || null;
@@ -217119,9 +217835,9 @@ function dispatchGameSettingsChange(
   // ---- Strategic Consequence / World Reaction: live wiring ---------------------------------------------
   // Canonical state → compact snapshot (per-domain hashes) → meaningful events → subscribed systems.
   // Detection runs only when a domain hash changes; every consumer below is the receiving system's OWN path.
-  const swrStoredRaw = (gameState as any).worldReaction as WorldReactionState | undefined;
+  const swrStoredRaw = gameState.worldReaction as WorldReactionState | undefined;
   const swrState = useMemo(() => sanitizeWorldReactionState(swrStoredRaw), [swrStoredRaw]);
-  const swrEnabled = Boolean(isLiveIntentMatch && !(gameState as any).isolatedReplayRuntime);
+  const swrEnabled = Boolean(isLiveIntentMatch && !gameState.isolatedReplayRuntime);
   const swrInputs = useMemo<SWRInputs>(() => {
     const deposits = sanitizeRegionDeposits(gameState.regionDeposits);
     const ownerNames: Record<string, string> = {}; const ownerTeams: Record<string, string | null> = {};
@@ -217151,7 +217867,7 @@ function dispatchGameSettingsChange(
       visibility: d.visibility, violatedBy: d.violatedBy, summary: describeDealShort(d, dnNames)
     }));
     const stab = gameSettings.publicStabilityEnabled && gameState.publicStabilityState ? { national: Number(gameState.publicStabilityState.nationalStability) || 0, regional: { ...(gameState.publicStabilityState.regionalStability || {}) } } : null;
-    const crises = gameSettings.dynamicCrisisChainsEnabled ? ((gameState as any).crisisChainState?.activeCrisisChains || []).slice(0, 8).map((c: any) => ({ id: String(c.id), name: String(c.title || c.name || c.id), status: String(c.status || 'inactive'), stageIndex: Number(c.currentStageIndex || 0) })) : [];
+    const crises = gameSettings.dynamicCrisisChainsEnabled ? (gameState.crisisChainState?.activeCrisisChains || []).slice(0, 8).map((c: any) => ({ id: String(c.id), name: String(c.title || c.name || c.id), status: String(c.status || 'inactive'), stageIndex: Number(c.currentStageIndex || 0) })) : [];
     const byOwner: Record<string, number> = {};
     Object.keys(REGIONS).forEach(code => { const k = getRegionControlSnapshot(deposits[code] || {}).controllerId; if (k) byOwner[k] = (byOwner[k] || 0) + 1; });
     const prices = (gameState.resourcePrices || {}) as Record<string, number>;
@@ -217164,7 +217880,7 @@ function dispatchGameSettingsChange(
       ownerNames, ownerTeams, prices, basePrices, projects, contracts, teams, gi3: gi3In, deals, stability: stab, crises,
       win: String(gameSettings.winCondition) === 'regions' ? { metric: 'regions', target: REGION_CONTROL_MAJORITY, byOwner } : null
     };
-  }, [dnAllActors, dnNames, teamsById, gameState.regionDeposits, gameState.infrastructureProjects, (gameState as any).regionalContracts, gameState.resourcePrices, gameState.publicStabilityState, (gameState as any).crisisChainState, gameState.day, dnRound, gameSettings.fogOfWarEnabled, gameSettings.publicStabilityEnabled, gameSettings.dynamicCrisisChainsEnabled, gameSettings.winCondition, gameSettings.totalDays, gi3Live, dnState, isTeamMode, teamOsView?.state.contract?.revision, teamOsEnemyView?.state.contract?.revision, player?.id]);
+  }, [dnAllActors, dnNames, teamsById, gameState.regionDeposits, gameState.infrastructureProjects, gameState.regionalContracts, gameState.resourcePrices, gameState.publicStabilityState, gameState.crisisChainState, gameState.day, dnRound, gameSettings.fogOfWarEnabled, gameSettings.publicStabilityEnabled, gameSettings.dynamicCrisisChainsEnabled, gameSettings.winCondition, gameSettings.totalDays, gi3Live, dnState, isTeamMode, teamOsView?.state.contract?.revision, teamOsEnemyView?.state.contract?.revision, player?.id]);
   const swrSnapshot = useMemo(() => buildStrategicSnapshot(swrInputs), [swrInputs]);
   const swrPrevSnapRef = useRef<SWRSnapshot | null>(null);
   const swrOwnerToActor = useCallback((k: string) => (isTeamMode ? (dnLeadOfTeam(k) || k) : k), [isTeamMode, dnLeadOfTeam]);
@@ -217174,7 +217890,7 @@ function dispatchGameSettingsChange(
   // ---- Living Regions 2.0: live wiring ----------------------------------------------------------------
   // Regional condition is interpreted from canonical systems + World Reaction events. Updates happen only on
   // (a) World Reaction events (via the router's derive hook), (b) round boundaries, (c) regional hash changes.
-  const lrStoredRaw = (gameState as any).livingRegions as LivingRegionsState | null | undefined;
+  const lrStoredRaw = gameState.livingRegions as LivingRegionsState | null | undefined;
   const lrState = useMemo(() => sanitizeLivingRegionsState(lrStoredRaw), [lrStoredRaw]);
   const lrInputs = useMemo<LRInputs>(() => {
     const devs = (gameState.regionalDevLevels || {}) as Record<string, any>;
@@ -217186,7 +217902,7 @@ function dispatchGameSettingsChange(
     });
     let contracts: LRInputs['contracts'] = [];
     try { contracts = listRegionalContracts(gameState).slice(0, 24).map((c: any) => ({ id: String(c.id), title: String(c.title || c.id), regionId: c.issuingRegionId ? String(c.issuingRegionId) : c.regionId ? String(c.regionId) : null, contractType: String(c.contractType || ''), status: String(c.status || 'available'), assignedActorId: c.assignedActorId ? String(c.assignedActorId) : null, completedAtTurn: typeof c.completedAtTurn === 'number' ? c.completedAtTurn : null, rewardMoney: Number(c.rewards?.money || c.rewardMoney || 0) })); } catch { contracts = []; }
-    const crises = gameSettings.dynamicCrisisChainsEnabled ? ((gameState as any).crisisChainState?.activeCrisisChains || []).slice(0, 8).map((c: any) => ({ id: String(c.id), name: String(c.title || c.id), status: String(c.status || 'inactive'), stageIndex: Number(c.currentStageIndex || 0), category: String(c.category || ''), affectedRegions: Array.isArray(c.affectedRegions) ? c.affectedRegions.map(String) : [] })) : [];
+    const crises = gameSettings.dynamicCrisisChainsEnabled ? (gameState.crisisChainState?.activeCrisisChains || []).slice(0, 8).map((c: any) => ({ id: String(c.id), name: String(c.title || c.id), status: String(c.status || 'inactive'), stageIndex: Number(c.currentStageIndex || 0), category: String(c.category || ''), affectedRegions: Array.isArray(c.affectedRegions) ? c.affectedRegions.map(String) : [] })) : [];
     return {
       turn: dnRound, fogOfWar: Boolean(gameSettings.fogOfWarEnabled),
       regions: swrInputs.regions.map(r => {
@@ -217194,13 +217910,13 @@ function dispatchGameSettingsChange(
         return { code: r.code, name: r.name, controller: r.controller, deposits: r.deposits, devTier: Number(d.tier || 0), devProgress: d.expToNextTier ? Math.max(0, Math.min(1, Number(d.currentExp || 0) / Number(d.expToNextTier))) : 0, investedCapital: Number(d.totalInvestedCapital || 0), adjacent: ((ADJACENT_REGIONS as Record<string, string[]>)[r.code] || []), resources: REGIONAL_RESOURCES[r.code] || [], stability: stab && typeof stab[r.code] === 'number' ? stab[r.code] : null };
       }),
       projects, contracts,
-      standing: gameSettings.regionalStandingEnabled === false ? {} : JSON.parse(JSON.stringify((gameState as any).standingPerActor || {})),
+      standing: gameSettings.regionalStandingEnabled === false ? {} : JSON.parse(JSON.stringify(gameState.standingPerActor || {})),
       prices: swrInputs.prices, basePrices: swrInputs.basePrices, crises, nationalStability: swrInputs.stability?.national ?? null,
       ownerNames: swrInputs.ownerNames, ownerTeams: swrInputs.ownerTeams,
       windows: swrState.windows.map(w => ({ id: w.id, type: w.type, subject: w.subject, status: w.status, expiresTurn: w.expiresTurn, reason: w.reason })),
       winRegionsTarget: swrInputs.win?.target ?? null
     };
-  }, [swrInputs, swrState.windows, gameState.regionalDevLevels, gameState.publicStabilityState, gameState.infrastructureProjects, (gameState as any).regionalContracts, (gameState as any).crisisChainState, (gameState as any).standingPerActor, gameSettings.publicStabilityEnabled, gameSettings.dynamicCrisisChainsEnabled, gameSettings.regionalStandingEnabled, gameSettings.fogOfWarEnabled, dnRound]);
+  }, [swrInputs, swrState.windows, gameState.regionalDevLevels, gameState.publicStabilityState, gameState.infrastructureProjects, gameState.regionalContracts, gameState.crisisChainState, gameState.standingPerActor, gameSettings.publicStabilityEnabled, gameSettings.dynamicCrisisChainsEnabled, gameSettings.regionalStandingEnabled, gameSettings.fogOfWarEnabled, dnRound]);
   const lrViewerKeys = useMemo(() => [String(player?.id || 'player'), ...(isTeamMode && player?.teamId ? [String(player.teamId)] : [])], [player?.id, player?.teamId, isTeamMode]);
   lrViewRef.current = swrEnabled && lrState ? { state: lrState, inputs: lrInputs, viewerId: String(player?.id || 'player'), viewerKeys: lrViewerKeys, names: swrInputs.ownerNames } : null;
   const lrInputsRef = useRef(lrInputs); lrInputsRef.current = lrInputs;
@@ -217222,12 +217938,21 @@ function dispatchGameSettingsChange(
     after.milestones.filter(m => !(before?.milestones || []).some(x => x.id === m.id)).slice(0, 2).forEach(m => appendGameActivityLedgerEvent('decision', { actorId: 'system', eventType: 'living_regions_milestone', summary: `Regional milestone: ${m.label} (${after.regions[m.regionId]?.name || m.regionId}).` } as any));
   }, [appendGameActivityLedgerEvent]);
   const lrObservers = useMemo(() => swrInputs.actors.map(a => a.id), [swrInputs.actors]);
-  const [lrMapMode, setLrMapMode] = useState<LRMapMode>('control');
-  const [lrFocusRegion, setLrFocusRegion] = useState<string | null>(null);
-  const [nsMapNetwork, setNsMapNetwork] = useState<NationalMapNetwork>(null);
-  const [scMapLayer, setScMapLayer] = useState<IndustryMapLayer | null>(null);
-  const [inMapKind, setInMapKind] = useState<StrategicInfrastructureNetworkKind | null>(null);
-  const [mpMapId, setMpMapId] = useState<string | null>(null);
+  // V9.6 (SECTION 20AM): state slice 14 — map layer modes (6 fields in one reducer; setters keep useState semantics).
+  const [wp7Slice14, wp7Slice14Set] = useStateSlice<{ lrMapMode: LRMapMode; lrFocusRegion: string | null; nsMapNetwork: NationalMapNetwork; scMapLayer: IndustryMapLayer | null; inMapKind: StrategicInfrastructureNetworkKind | null; mpMapId: string | null }>(() => ({
+    lrMapMode: 'control',
+    lrFocusRegion: null,
+    nsMapNetwork: null,
+    scMapLayer: null,
+    inMapKind: null,
+    mpMapId: null
+  }));
+  const lrMapMode = wp7Slice14.lrMapMode; const setLrMapMode = wp7Slice14Set.lrMapMode;
+  const lrFocusRegion = wp7Slice14.lrFocusRegion; const setLrFocusRegion = wp7Slice14Set.lrFocusRegion;
+  const nsMapNetwork = wp7Slice14.nsMapNetwork; const setNsMapNetwork = wp7Slice14Set.nsMapNetwork;
+  const scMapLayer = wp7Slice14.scMapLayer; const setScMapLayer = wp7Slice14Set.scMapLayer;
+  const inMapKind = wp7Slice14.inMapKind; const setInMapKind = wp7Slice14Set.inMapKind;
+  const mpMapId = wp7Slice14.mpMapId; const setMpMapId = wp7Slice14Set.mpMapId;
   const inShowOnMap = useCallback((k: StrategicInfrastructureNetworkKind) => { setNsMapNetwork(null); setScMapLayer(null); setMpMapId(null); setInMapKind(k); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const scShowOnMap = useCallback((layer: IndustryMapLayer) => { setNsMapNetwork(null); setMpMapId(null); setScMapLayer(layer); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const nsShowOnMap = useCallback((n: NationalNetworkKind) => { setMpMapId(null); setNsMapNetwork(n); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -217235,7 +217960,7 @@ function dispatchGameSettingsChange(
   // ---- Regional Factions & Stakeholders 2.0: live wiring ------------------------------------------------
   // Factions read Living Regions + World Reaction events (via the router's derive hook), advance once per round,
   // and act on other systems only through requests, stances, relevance and bounded inputs.
-  const rfStoredRaw = (gameState as any).regionalFactions as RegionalFactionsState | null | undefined;
+  const rfStoredRaw = gameState.regionalFactions as RegionalFactionsState | null | undefined;
   const rfState = useMemo(() => sanitizeRegionalFactionsState(rfStoredRaw), [rfStoredRaw]);
   const rfInputs = useMemo<RFInputs>(() => {
     const raw = gameState.infrastructureProjects || {};
@@ -217244,7 +217969,7 @@ function dispatchGameSettingsChange(
     const issuers: Record<string, string | null> = {};
     try { listRegionalContracts(gameState).forEach((c: any) => { issuers[String(c.id)] = c.issuingFactionId || resolveFactionIdFromIssuer(c.issuingFaction); }); } catch { /* no contracts */ }
     return { turn: dnRound, fogOfWar: Boolean(gameSettings.fogOfWarEnabled), lr: lrInputs, regions: lrState || initializeLivingRegions(lrInputs), actors: swrInputs.actors.map(a => ({ id: a.id, name: a.name, teamId: a.teamId, isHuman: a.isHuman })), contributions, contractIssuers: issuers };
-  }, [lrInputs, lrState, gameState.infrastructureProjects, (gameState as any).regionalContracts, swrInputs.actors, dnRound, gameSettings.fogOfWarEnabled]);
+  }, [lrInputs, lrState, gameState.infrastructureProjects, gameState.regionalContracts, swrInputs.actors, dnRound, gameSettings.fogOfWarEnabled]);
   const rfInputsRef = useRef(rfInputs); rfInputsRef.current = rfInputs;
   rfViewRef.current = swrEnabled && rfState ? { state: rfState, inputs: rfInputs, viewerId: String(player?.id || 'player'), viewerKeys: lrViewerKeys, names: swrInputs.ownerNames } : null;
   const persistRegionalFactions = useCallback((next: RegionalFactionsState) => {
@@ -217461,7 +218186,7 @@ function dispatchGameSettingsChange(
   // scenario modifiers) — never per render. Meaningful band transitions become World Reaction ROOT events, so
   // root/depth/budget/dedupe rules apply; Living Regions and Factions interpret them in the same pass.
   const nsEnabled = Boolean(swrEnabled && isSystemVisible('nationalSystems', gameSettings));
-  const nsStoredRaw = (gameState as any).nationalSystems;
+  const nsStoredRaw = gameState.nationalSystems;
   const nsPersisted = useMemo(() => sanitizeNationalSystemsPersisted(nsStoredRaw), [nsStoredRaw]);
   const nsPersistedRef = useRef<NationalSystemsPersisted | null>(nsPersisted);
   nsPersistedRef.current = nsPersisted;
@@ -217472,7 +218197,7 @@ function dispatchGameSettingsChange(
   // V10.5: capability effects reach V10.0 / V10.1 ONLY through their existing modifier hooks, read from the PERSISTED
   // (previous stable) capability snapshot — never from this render's pass (no cascade, no runaway; small, capped values).
   const icEnabled = Boolean(nsEnabled && isSystemVisible('innovation', gameSettings));
-  const icStoredRaw = (gameState as any).innovation;
+  const icStoredRaw = gameState.innovation;
   const icPersisted = useMemo(() => sanitizeInnovationPersisted(icStoredRaw), [icStoredRaw]);
   const icPersistedRef = useRef<InnovationPersisted | null>(icPersisted); icPersistedRef.current = icPersisted;
   const icSectorKey = JSON.stringify(Object.keys(lrState?.regions || {}).sort().map(k => [k, Math.round(Number((lrState as any)?.regions?.[k]?.sectors?.renewables || 0))]));
@@ -217481,8 +218206,8 @@ function dispatchGameSettingsChange(
   const nsModifiersLive = useMemo(() => mergeCapabilityModifiers(nsScenarioModifiers, icModifiers.national), [nsScenarioModifiers, icModifiers]);
   const nsInputs = useMemo<NationalSystemsInputs>(() => buildNationalSystemsInputs({
     turn: lrInputs.turn, lr: lrState, projects: gameState.infrastructureProjects as any,
-    crises: ((gameState as any).crisisChainState?.activeCrisisChains || []) as any[], modifiers: nsModifiersLive
-  }), [lrInputs.turn, lrState, gameState.infrastructureProjects, (gameState as any).crisisChainState, nsModifiersLive]);
+    crises: (gameState.crisisChainState?.activeCrisisChains || []) as any[], modifiers: nsModifiersLive
+  }), [lrInputs.turn, lrState, gameState.infrastructureProjects, gameState.crisisChainState, nsModifiersLive]);
   const nsHash = useMemo(() => nationalSystemsInputHash(nsInputs), [nsInputs]);
   const nsState = useMemo<NationalSystemsState | null>(() => (nsEnabled ? computeNationalSystems(nsInputs, nsPersistedRef.current, { emit: false }).state : null),
     [nsEnabled, nsHash, nsPersisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -217528,7 +218253,7 @@ function dispatchGameSettingsChange(
   // Recomputed only when its compact input hash changes (never per render). Meaningful band transitions become World
   // Reaction ROOT events; Living Regions, Factions, markets (pressure hook), contracts and AI interpret them.
   const scEnabled = Boolean(nsEnabled && isSystemVisible('industries', gameSettings));
-  const scStoredRaw = (gameState as any).industries;
+  const scStoredRaw = gameState.industries;
   const scPersisted = useMemo(() => sanitizeIndustriesPersisted(scStoredRaw), [scStoredRaw]);
   const scPersistedRef = useRef<IndustriesPersisted | null>(scPersisted);
   scPersistedRef.current = scPersisted;
@@ -217580,7 +218305,7 @@ function dispatchGameSettingsChange(
   // Recomputed only when the compact hash changes (project status/type, V10.0 / V10.1 revisions) — never per
   // render. Structural transitions become World Reaction ROOT events; receiving systems decide consequences.
   const inEnabled = Boolean(nsEnabled && isSystemVisible('infraNetworks', gameSettings));
-  const inStoredRaw = (gameState as any).infrastructureNetworks;
+  const inStoredRaw = gameState.infrastructureNetworks;
   const inPersisted = useMemo(() => sanitizeInfraNetworksPersisted(inStoredRaw), [inStoredRaw]);
   const inPersistedRef = useRef<InfraNetworksPersisted | null>(inPersisted);
   inPersistedRef.current = inPersisted;
@@ -217632,12 +218357,12 @@ function dispatchGameSettingsChange(
   // when the program world hash changes (contribution, component project, V10 network / industry revision, faction change,
   // crisis damage, turn boundary, choice). Every command goes through the canonical 'megaproject_command' reducer action.
   const mpEnabled = Boolean(nsEnabled && isSystemVisible('megaprojects', gameSettings));
-  const mpStoredRaw = (gameState as any).megaprojects;
+  const mpStoredRaw = gameState.megaprojects;
   const mpPersisted = useMemo(() => sanitizeMegaprojectsPersisted(mpStoredRaw), [mpStoredRaw]);
   const mpPersistedRef = useRef<MegaprojectsPersisted | null>(mpPersisted); mpPersistedRef.current = mpPersisted;
-  const mpWorld = useMemo<MegaprojectWorld>(() => buildMegaprojectWorld({ turn: lrInputs.turn, totalDays: Number((gameSettings as any).totalDays) || 30, enabled: mpEnabled, infrastructureEnabled: Boolean(gameSettings.stateInfrastructureEnabled),
-    gameOver: gameState.gameMode !== 'game', projects: gameState.infrastructureProjects as any, regionalDevLevels: (gameState as any).regionalDevLevels, national: nsState, industries: scState, networks: inState, factions: rfState, flags: (gameState as any).contentState?.flags || {} }),
-    [lrInputs.turn, (gameSettings as any).totalDays, mpEnabled, gameSettings.stateInfrastructureEnabled, gameState.gameMode, gameState.infrastructureProjects, (gameState as any).regionalDevLevels, nsState, scState, inState, rfState, (gameState as any).contentState]);
+  const mpWorld = useMemo<MegaprojectWorld>(() => buildMegaprojectWorld({ turn: lrInputs.turn, totalDays: Number(gameSettings.totalDays) || 30, enabled: mpEnabled, infrastructureEnabled: Boolean(gameSettings.stateInfrastructureEnabled),
+    gameOver: gameState.gameMode !== 'game', projects: gameState.infrastructureProjects as any, regionalDevLevels: gameState.regionalDevLevels, national: nsState, industries: scState, networks: inState, factions: rfState, flags: gameState.contentState?.flags || {} }),
+    [lrInputs.turn, gameSettings.totalDays, mpEnabled, gameSettings.stateInfrastructureEnabled, gameState.gameMode, gameState.infrastructureProjects, gameState.regionalDevLevels, nsState, scState, inState, rfState, gameState.contentState]);
   const mpWorldRef = useRef(mpWorld); mpWorldRef.current = mpWorld;
   const mpHash = useMemo(() => megaprojectWorldHash(mpWorld, mpPersisted), [mpWorld, mpPersisted]);
   const mpDiagRef = useRef({ evaluations: 0, lastReason: 'not yet evaluated', lastMs: 0, eventsEmitted: 0, commands: 0, rejected: 0 });
@@ -217742,15 +218467,15 @@ function dispatchGameSettingsChange(
   // turn boundary, banded viewer cash) — never per frame. Emits only major structural transitions to World Reaction;
   // no system derives state from those events (cycle-safe). No bonuses, no actions, no win-condition effect.
   const ndEnabled = Boolean(nsEnabled && isSystemVisible('nationalDevelopment', gameSettings));
-  const ndStoredRaw = (gameState as any).nationalDevelopment;
+  const ndStoredRaw = gameState.nationalDevelopment;
   const ndPersisted = useMemo(() => sanitizeNationalDevelopmentPersisted(ndStoredRaw), [ndStoredRaw]);
   const ndPersistedRef = useRef<NationalDevelopmentPersisted | null>(ndPersisted); ndPersistedRef.current = ndPersisted;
   const ndViewerId = String(player?.id || 'player');
   const ndCommitted = useMemo(() => Object.values(mpPersisted?.programs || {}).filter(p => !p.abandoned && p.status !== 'completed').reduce((a, p) => a + Number(p.contributorTotals?.[ndViewerId]?.capital || 0), 0), [mpPersisted, ndViewerId]);
-  const ndInputs = useMemo<NationalDevelopmentInputs | null>(() => (ndEnabled && nsState ? buildNationalDevelopmentInputs({ turn: lrInputs.turn, totalDays: Number((gameSettings as any).totalDays) || 30, lr: lrState, national: nsState, industries: scState, networks: inState,
+  const ndInputs = useMemo<NationalDevelopmentInputs | null>(() => (ndEnabled && nsState ? buildNationalDevelopmentInputs({ turn: lrInputs.turn, totalDays: Number(gameSettings.totalDays) || 30, lr: lrState, national: nsState, industries: scState, networks: inState,
     megaprojects: mpEnabled ? mpPersisted : null, projects: gameState.infrastructureProjects as any, contracts: lrInputs.contracts, owners: nsRegionOwners, viewer: { cash: Number(player?.money || 0), committedProgramCapital: ndCommitted },
     capabilities: icEnabled ? innovationDirectionEvidenceFromPersisted(icPersisted) : null }) : null),
-    [ndEnabled, nsState, lrInputs.turn, lrInputs.contracts, (gameSettings as any).totalDays, lrState, scState, inState, mpEnabled, mpPersisted, gameState.infrastructureProjects, nsRegionOwners, player?.money, ndCommitted]);
+    [ndEnabled, nsState, lrInputs.turn, lrInputs.contracts, gameSettings.totalDays, lrState, scState, inState, mpEnabled, mpPersisted, gameState.infrastructureProjects, nsRegionOwners, player?.money, ndCommitted]);
   const ndHash = useMemo(() => (ndInputs ? nationalDevelopmentInputHash(ndInputs) : ''), [ndInputs]);
   const ndProfile = useMemo<NationalDevelopmentProfile | null>(() => (ndInputs ? computeNationalDevelopment(ndInputs, ndPersistedRef.current, { emit: false }).profile : null),
     [ndHash, ndPersisted?.revision, ndPersisted?.current.lastTurn]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -217780,12 +218505,12 @@ function dispatchGameSettingsChange(
   const ndView = useMemo<NationalDevelopmentWorldView | null>(() => {
     if (!ndProfile || !ndInputs) return null;
     const c = gi3Live?.active;
-    const goalId = (gameSettings as any).autoModeSettings?.primaryGoal as AutoModePrimaryGoalId | undefined;
+    const goalId = gameSettings.autoModeSettings?.primaryGoal as AutoModePrimaryGoalId | undefined;
     return { profile: ndProfile, persisted: ndPersisted, inputs: ndInputs,
       strategy: c ? { label: c.mission?.label || 'Your strategy', goals: (c.goals || []).map((g: any) => ({ type: String(g.type || ''), label: String(g.label || g.title || ''), regionId: g.regionId || undefined, projectId: g.projectId || undefined })) } : null,
       autoModeGoal: goalId && AUTO_MODE_PRIMARY_GOALS[goalId] ? AUTO_MODE_PRIMARY_GOALS[goalId].label : null, rivalName: swrInputs.ownerNames[ndRivalId] || aiPlayer?.name || 'Rival',
       you: actorDevelopmentContribution(ndInputs, ndViewerId).directionId, rival: actorDevelopmentContribution(ndInputs, ndRivalId).directionId, ctx: { nsInputs, scInputs } };
-  }, [ndProfile, ndInputs, ndPersisted, gi3Live, (gameSettings as any).autoModeSettings, swrInputs.ownerNames, ndRivalId, aiPlayer?.name, ndViewerId, nsInputs, scInputs]);
+  }, [ndProfile, ndInputs, ndPersisted, gi3Live, gameSettings.autoModeSettings, swrInputs.ownerNames, ndRivalId, aiPlayer?.name, ndViewerId, nsInputs, scInputs]);
   const ndViewRef = useRef(ndView); ndViewRef.current = ndView;
   if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, development: ndEnabled ? ndView : null };
 
@@ -217853,13 +218578,13 @@ function dispatchGameSettingsChange(
   // It never creates crises, sets stability or prices, damages infrastructure, or moves money. Persisted: bounded chain
   // memory (baselines for recovery) + history. Events go to World Reaction; LR + Factions decide what they mean.
   const srEnabled = Boolean(nsEnabled && isSystemVisible('systemicRisk', gameSettings));
-  const srStoredRaw = (gameState as any).systemicRisk;
+  const srStoredRaw = gameState.systemicRisk;
   const srPersisted = useMemo(() => sanitizeSystemicRiskPersisted(srStoredRaw), [srStoredRaw]);
   const srPersistedRef = useRef<SystemicRiskPersisted | null>(srPersisted); srPersistedRef.current = srPersisted;
   const srInputs = useMemo<SystemicRiskInputs | null>(() => (srEnabled && nsState ? buildSystemicRiskInputs({ turn: lrInputs.turn, national: nsState, industries: scState, networks: inState, megaprojects: mpEnabled ? mpPersisted : null,
     innovation: icEnabled ? icState : null, direction: ndProfile ? { primary: ndProfile.primaryDirection, secondary: ndProfile.secondaryDirection } : null, projects: gameState.infrastructureProjects as any,
-    crises: ((gameState as any).crisisChainState?.activeCrisisChains || []) as any[], stability: (gameState as any).publicStabilityState || null, viewer: player || null }) : null),
-    [srEnabled, nsState, lrInputs.turn, scState, inState, mpEnabled, mpPersisted, icEnabled, icState, ndProfile?.primaryDirection, ndProfile?.secondaryDirection, gameState.infrastructureProjects, (gameState as any).crisisChainState, (gameState as any).publicStabilityState, player?.money, player?.loans]); // eslint-disable-line react-hooks/exhaustive-deps
+    crises: (gameState.crisisChainState?.activeCrisisChains || []) as any[], stability: gameState.publicStabilityState || null, viewer: player || null }) : null),
+    [srEnabled, nsState, lrInputs.turn, scState, inState, mpEnabled, mpPersisted, icEnabled, icState, ndProfile?.primaryDirection, ndProfile?.secondaryDirection, gameState.infrastructureProjects, gameState.crisisChainState, gameState.publicStabilityState, player?.money, player?.loans]); // eslint-disable-line react-hooks/exhaustive-deps
   const srHash = useMemo(() => (srInputs ? systemicRiskInputHash(srInputs) : ''), [srInputs]);
   const srState = useMemo<NationalSystemicRiskState | null>(() => (srInputs ? computeSystemicRisk(srInputs, srPersistedRef.current, { emit: false }).state : null),
     [srHash, srInputs, srPersisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -217915,7 +218640,7 @@ function dispatchGameSettingsChange(
   // Temporary NATIONAL ATTENTION derived from V10.0–V10.6 + Public Stability + crises. Never a mission, never an order:
   // it never edits GI3, never replaces the Current Objective, never moves money and never decides a winner.
   const npEnabled = Boolean(nsEnabled && isSystemVisible('nationalPriorities', gameSettings));
-  const npStoredRaw = (gameState as any).nationalPriorities;
+  const npStoredRaw = gameState.nationalPriorities;
   const npPersisted = useMemo(() => sanitizeNationalPrioritiesPersisted(npStoredRaw), [npStoredRaw]);
   const npPersistedRef = useRef<NationalPrioritiesPersisted | null>(npPersisted); npPersistedRef.current = npPersisted;
   const npViewerId = String(player?.id || 'player');
@@ -217924,8 +218649,8 @@ function dispatchGameSettingsChange(
   const npStrategyKey = JSON.stringify(gi3Live?.active ? [gi3Live.active.mission?.label, (gi3Live.active.goals || []).map((g: any) => [g.label, g.regionId])] : null);
   const npSr = useMemo<SystemicRiskInputs | null>(() => (npEnabled && nsState ? (srInputs || buildSystemicRiskInputs({ turn: lrInputs.turn, national: nsState, industries: scState, networks: inState, megaprojects: mpEnabled ? mpPersisted : null,
     innovation: icEnabled ? icState : null, direction: ndProfile ? { primary: ndProfile.primaryDirection, secondary: ndProfile.secondaryDirection } : null, projects: gameState.infrastructureProjects as any,
-    crises: ((gameState as any).crisisChainState?.activeCrisisChains || []) as any[], stability: (gameState as any).publicStabilityState || null, viewer: player || null })) : null),
-    [npEnabled, nsState, srInputs, lrInputs.turn, scState, inState, mpEnabled, mpPersisted, icEnabled, icState, ndProfile?.primaryDirection, ndProfile?.secondaryDirection, gameState.infrastructureProjects, (gameState as any).crisisChainState, (gameState as any).publicStabilityState]); // eslint-disable-line react-hooks/exhaustive-deps
+    crises: (gameState.crisisChainState?.activeCrisisChains || []) as any[], stability: gameState.publicStabilityState || null, viewer: player || null })) : null),
+    [npEnabled, nsState, srInputs, lrInputs.turn, scState, inState, mpEnabled, mpPersisted, icEnabled, icState, ndProfile?.primaryDirection, ndProfile?.secondaryDirection, gameState.infrastructureProjects, gameState.crisisChainState, gameState.publicStabilityState]); // eslint-disable-line react-hooks/exhaustive-deps
   const npInputs = useMemo<NationalPriorityInputs | null>(() => {
     if (!npSr) return null; const c = gi3Live?.active;
     const strategy = c && c.status === 'active' ? { label: String(c.mission?.label || 'Your strategy'), text: [c.mission?.label || '', ...((c.goals || []) as any[]).map(g => String(g.label || ''))].join(' '), regionIds: Array.from(new Set(((c.goals || []) as any[]).map(g => g.regionId).filter((r: any) => typeof r === 'string' && REGIONS[r]))) as string[] } : null;
@@ -217981,7 +218706,7 @@ function dispatchGameSettingsChange(
 
   // ---- V10.8 Regional Competition & Economic Geography: live wiring -----------------------------------------------
   const egEnabled = Boolean(nsEnabled && isSystemVisible('economicGeography', gameSettings));
-  const egStoredRaw = (gameState as any).economicGeography;
+  const egStoredRaw = gameState.economicGeography;
   const egPersisted = useMemo(() => sanitizeEconomicGeographyPersisted(egStoredRaw), [egStoredRaw]);
   const egPersistedRef = useRef<EconomicGeographyPersisted | null>(egPersisted); egPersistedRef.current = egPersisted;
   const egInputs = useMemo<EconomicGeographyInputs | null>(() => {
@@ -218061,7 +218786,7 @@ function dispatchGameSettingsChange(
 
   // ---- V10.10 Workforce & V10.11 Adaptive Governance, Institutions & State Capacity: live wiring ----------
   const wfEnabled = Boolean(nsEnabled && isSystemVisible('workforce', gameSettings));
-  const wfStoredRaw = (gameState as any).workforceHumanCapital;
+  const wfStoredRaw = gameState.workforceHumanCapital;
   const wfPersisted = useMemo(() => (wfStoredRaw ? sanitizeWorkforcePersisted(wfStoredRaw) : null), [wfStoredRaw]);
   const wfState = useMemo<NationalWorkforceState | null>(() => {
     if (!wfEnabled || !nsState) return null;
@@ -218077,7 +218802,7 @@ function dispatchGameSettingsChange(
   }, [wfEnabled, nsState, lrInputs.turn, player, gameState.infrastructureProjects, gameState.regionalContracts, egEnabled, egState, srEnabled, srState, npEnabled, npState, wfPersisted]);
 
   const sc11Enabled = Boolean(nsEnabled && isSystemVisible('stateCapacity', gameSettings));
-  const sc11StoredRaw = (gameState as any).stateCapacity;
+  const sc11StoredRaw = gameState.stateCapacity;
   const sc11Persisted = useMemo(() => sanitizeStateCapacityPersisted(sc11StoredRaw), [sc11StoredRaw]);
   const sc11PersistedRef = useRef<StateCapacityPersisted | null>(sc11Persisted); sc11PersistedRef.current = sc11Persisted;
   const sc11Inputs = useMemo<StateCapacitySystemInputs | null>(() => {
@@ -218149,7 +218874,7 @@ function dispatchGameSettingsChange(
   if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, stateCapacity: sc11Enabled ? sc11View : null };
 
   const pf12Enabled = Boolean(nsEnabled && isSystemVisible('publicFinance', gameSettings));
-  const pf12StoredRaw = (gameState as any).publicFinance;
+  const pf12StoredRaw = gameState.publicFinance;
   const pf12Persisted = useMemo(() => sanitizePublicFinancePersisted(pf12StoredRaw) || createInitialPublicFinancePersisted(lrInputs.turn), [pf12StoredRaw, lrInputs.turn]);
   const pf12PersistedRef = useRef<PublicFinancePersisted>(pf12Persisted); pf12PersistedRef.current = pf12Persisted;
   const pf12Inputs = useMemo<PublicFinanceSystemInputs | null>(() => {
@@ -218226,7 +218951,7 @@ function dispatchGameSettingsChange(
   if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, publicFinance: pf12Enabled ? pf12View : null };
 
   const hh13Enabled = Boolean(nsEnabled && isSystemVisible('households', gameSettings));
-  const hh13StoredRaw = (gameState as any).householdEconomy;
+  const hh13StoredRaw = gameState.householdEconomy;
   const hh13Persisted = useMemo(() => sanitizeHouseholdEconomyPersisted(hh13StoredRaw, lrInputs.turn), [hh13StoredRaw, lrInputs.turn]);
   const hh13PersistedRef = useRef<HouseholdEconomyPersisted>(hh13Persisted); hh13PersistedRef.current = hh13Persisted;
   const hh13Inputs = useMemo<HouseholdEconomyInputs | null>(() => {
@@ -218380,7 +219105,7 @@ function dispatchGameSettingsChange(
   // Event-driven only: match start, the day boundary, crisis stage changes and infrastructure changes.
   // Never evaluated per render; everything it produces is a canonical object the existing engines execute.
   const contentEnabled = gameSettings.v93ContentEnabled !== false;
-  const contentStateRaw = (gameState as any).contentState;
+  const contentStateRaw = gameState.contentState;
   const contentState: MatchContentState | null = useMemo(() => sanitizeMatchContentState(contentStateRaw), [contentStateRaw]);
   const contentPlayerKey = isTeamMode ? TEAM_PLAYER_ID : 'player';
   const contentSeed = Number(gameSettings.worldRngSeed ?? gameSettings.aiDeterministicSeed ?? 12345) || 12345;
@@ -218488,10 +219213,10 @@ function dispatchGameSettingsChange(
 
   // Crisis stage changes (timer or a player response) keep the stage's canonical modifiers in step.
   useEffect(() => {
-    const chains = ((gameState as any).crisisChainState?.activeCrisisChains || []) as CrisisChain[];
+    const chains = (gameState.crisisChainState?.activeCrisisChains || []) as CrisisChain[];
     const next = syncContentCrisisEvents(gameState.activeEvents || [], chains);
     if (next !== gameState.activeEvents) dispatchGameState({ type: 'APPLY_CONTENT_STEP', payload: (state: any) => ({ activeEvents: syncContentCrisisEvents(state.activeEvents || [], state.crisisChainState?.activeCrisisChains || []) }) });
-  }, [(gameState as any).crisisChainState]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [gameState.crisisChainState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Competing infrastructure: funding one project closes its rival on the same site.
   useEffect(() => {
@@ -218563,9 +219288,15 @@ function dispatchGameSettingsChange(
   // ---- V9.4 Game feel: presentation-only feedback derived from canonical deltas (never persisted) ----
   const v94MotionMode = resolveUiMotionMode(gameSettings);
   const v94FocusStrong = Boolean(gameSettings.accessibilitySettings?.highContrastFocusRings);
-  const [v94DebugSlow, setV94DebugSlow] = useState(false); // LAB-only; slows presentation, never gameplay
-  const [v94Queue, setV94Queue] = useState<UiFeedbackEvent[]>([]);
-  const [v94Now, setV94Now] = useState(() => Date.now());
+  // V9.6 (SECTION 20AM): state slice 15 — V9.4 feedback queue (3 fields in one reducer; setters keep useState semantics).
+  const [wp7Slice15, wp7Slice15Set] = useStateSlice<{ v94DebugSlow: boolean; v94Queue: UiFeedbackEvent[]; v94Now: number }>(() => ({
+    v94DebugSlow: false,
+    v94Queue: [],
+    v94Now: (() => Date.now())()
+  }));
+  const v94DebugSlow = wp7Slice15.v94DebugSlow; const setV94DebugSlow = wp7Slice15Set.v94DebugSlow;
+  const v94Queue = wp7Slice15.v94Queue; const setV94Queue = wp7Slice15Set.v94Queue;
+  const v94Now = wp7Slice15.v94Now; const setV94Now = wp7Slice15Set.v94Now;
   const v94DiagRef = useRef<{ derivations: number; events: number; dropped: Array<{ id: string; reason: string }>; lastMs: number; maxMs: number; lastDeltas: string[] }>({ derivations: 0, events: 0, dropped: [], lastMs: 0, maxMs: 0, lastDeltas: [] });
   const v94Objective: any = (intentLayerComputed as any)?.objective || null;
   const feelSnapshot = useMemo<FeelSnapshot | null>(() => {
@@ -218581,7 +219312,7 @@ function dispatchGameSettingsChange(
     const projects: FeelSnapshot['projects'] = {};
     Object.values(gameState.infrastructureProjects || {}).forEach((p: any) => { if (p?.id) projects[p.id] = { status: String(p.status), title: String(p.title || p.id), region: String(p.regionId || '') }; });
     const crises: FeelSnapshot['crises'] = {};
-    (((gameState as any).crisisChainState?.activeCrisisChains || []) as CrisisChain[]).forEach(c => { if (c && c.status !== 'inactive') crises[c.id] = { status: c.status, title: c.title, stage: c.stages[c.currentStageIndex]?.title || '', regions: c.affectedRegions || [] }; });
+    ((gameState.crisisChainState?.activeCrisisChains || []) as CrisisChain[]).forEach(c => { if (c && c.status !== 'inactive') crises[c.id] = { status: c.status, title: c.title, stage: c.stages[c.currentStageIndex]?.title || '', regions: c.affectedRegions || [] }; });
     const momentum: Record<string, string> = {};
     Object.entries(lrState?.regions || {}).forEach(([code, r]: [string, any]) => { momentum[code] = String(r?.momentum?.band || ''); });
     const factionBands: Record<string, string> = {};
@@ -218590,7 +219321,7 @@ function dispatchGameSettingsChange(
     ((dnState?.deals || []) as any[]).forEach(d => { if (d && (d.participants || []).map(String).includes(pid)) deals[d.id] = { status: String(d.status), title: String(d.title || String(d.type || 'Agreement').replace(/_/g, ' ')) }; });
     const prog = v94Objective?.progress || { completed: 0, total: 0 };
     return {
-      matchKey: `${gameState.selectedMode}|${gameSettings.selectedScenarioId || ''}|${(gameState as any).contentState?.seed ?? ''}`,
+      matchKey: `${gameState.selectedMode}|${gameSettings.selectedScenarioId || ''}|${gameState.contentState?.seed ?? ''}`,
       day: Number(gameState.day || 1), turnKey: `${gameState.day}|${gameState.turnCounter}|${gameState.currentActorId}`,
       humanTurn: Boolean(isPlayerTurnForCoPilot), controlOwner: playerControlState.copilotHoldsControl ? 'copilot' : isPlayerTurnForCoPilot ? 'you' : 'rival',
       cash: Math.round(Number(player?.money || 0)), ap: v9ApFinite ? Number(v9ApRemaining) : null,
@@ -218609,7 +219340,7 @@ function dispatchGameSettingsChange(
         return [p.id, JSON.stringify({ d: done.length, t: st.length, title: def.title, stage: done[done.length - 1]?.title || '', regions: done.length === st.length ? def.regionIds : done[done.length - 1]?.requiredRegionIds || [], c: Object.keys(p.contributorTotals).map(a => swrInputs.ownerNames[a] || a) })]; })),
       industries: Object.fromEntries(Object.values(scState?.regions || {}).flatMap(r => (Object.values(r.industries) as IndustryState[]).filter(x => x.strength >= 25).map(x => [`${r.regionId}:${x.industry}`, x.condition])))
     };
-  }, [scState, inState, mpPersisted, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, npEnabled, npState, npView, isLiveIntentMatch, isTeamMode, player?.id, player?.money, player?.currentRegion, player?.level, gameState.regionDeposits, gameState.regionalContracts, gameState.infrastructureProjects, (gameState as any).crisisChainState, gameState.standingPerActor, gameState.day, gameState.turnCounter, gameState.currentActorId, gameState.selectedMode, gameSettings.selectedScenarioId, (gameState as any).contentState?.seed, lrState, rfState, dnState, v94Objective, isPlayerTurnForCoPilot, playerControlState.copilotHoldsControl, v9ApFinite, v9ApRemaining, v9Cohesion.focus, aiPlayer?.currentRegion, aiPlayer?.name]);
+  }, [scState, inState, mpPersisted, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, npEnabled, npState, npView, isLiveIntentMatch, isTeamMode, player?.id, player?.money, player?.currentRegion, player?.level, gameState.regionDeposits, gameState.regionalContracts, gameState.infrastructureProjects, gameState.crisisChainState, gameState.standingPerActor, gameState.day, gameState.turnCounter, gameState.currentActorId, gameState.selectedMode, gameSettings.selectedScenarioId, gameState.contentState?.seed, lrState, rfState, dnState, v94Objective, isPlayerTurnForCoPilot, playerControlState.copilotHoldsControl, v9ApFinite, v9ApRemaining, v9Cohesion.focus, aiPlayer?.currentRegion, aiPlayer?.name]);
   const v94PrevRef = useRef<FeelSnapshot | null>(null);
   useEffect(() => {
     const prev = v94PrevRef.current; v94PrevRef.current = feelSnapshot;
@@ -222322,6 +223053,22 @@ function dispatchGameSettingsChange(
                 fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'interface.accessibility')!.fieldKeys}
               >
                 <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-3" data-testid="diagnostics-render-counter-setting">
+                    <div>
+                      <div className="font-semibold">Developer diagnostics (render counter)</div>
+                      <div className="text-sm opacity-75">The existing diagnostics switch. While on, an overlay counts renders and render→commit time for the game and its memoised panels, plus Background AI clone-cache reuse.</div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const current = gameSettings.diagnosticsSettings || createDefaultDiagnosticsSettings();
+                        updateGameSetting('diagnosticsSettings', { ...current, enabled: !current.enabled }, { settingLabel: 'Developer Diagnostics', section: 'Interface → Accessibility', source: 'direct_player_change' });
+                      }}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.diagnosticsSettings?.enabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                      data-testid="diagnostics-render-counter-toggle"
+                    >
+                      {gameSettings.diagnosticsSettings?.enabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <div className="font-semibold">Focus Trapping for Modal Windows</div>
@@ -234709,7 +235456,7 @@ function dispatchGameSettingsChange(
             active={experienceLayer}
             onChange={setExperienceLayer}
             theme={themeStyles}
-            badges={{ intelligence: isLiveIntentMatch && attention.state === 'critical' ? '!' : null }}
+            badges={wp7Kit.value('layerBadges', [isLiveIntentMatch && attention.state === 'critical'], () => ({ intelligence: isLiveIntentMatch && attention.state === 'critical' ? '!' : null }))}
           />
         </div>
         <div className="flex-1 min-w-0">
@@ -234719,8 +235466,8 @@ function dispatchGameSettingsChange(
             onTakeControl={handleTakeControl}
             onStart={handleV9ControlStart}
             onResume={handleResumeCoPilot}
-            onOpenControl={() => setExperienceLayer('intelligence')}
-            onReviewApproval={() => updateUiState({ showCoPilotProposalModal: true })}
+            onOpenControl={wp7Kit.fn('pcsOpenControl', () => setExperienceLayer('intelligence'))}
+            onReviewApproval={wp7Kit.fn('pcsReviewApproval', () => updateUiState({ showCoPilotProposalModal: true }))}
             lastDeltas={takeoverSession?.lastExecutionResult?.verifiedDeltas || null}
           />
         </div>
@@ -234730,7 +235477,8 @@ function dispatchGameSettingsChange(
     const v9HumanCanAct = playerControlState.isHumanTurn && !playerControlState.copilotHoldsControl && playerControlState.owner !== 'ai_only';
     const v9Simple = getIntentPresentationLevel(gameSettings) === 'simple' || getIntentPresentationLevel(gameSettings) === 'guided';
     const v9EndTurn = () => { v94Once('end_turn', () => handleV9Button({ id: 'v9_header_end_turn', label: 'End Turn', kind: 'end_turn' })); };
-    const v9PlayHandlers: V9PlayHandlers = {
+    // V9.6 (SECTION 20AM): one handler-object identity (methods run this render's closures) so V9CohesionPlay can memoise.
+    const v9PlayHandlers: V9PlayHandlers = wp7Kit.handlers('v9PlayHandlers', {
       onDo: id => v94Once(`do_${id}`, () => {
         const cand = (v9ActionSetView?.ranked || []).find(x => x.id === id);
         if (!cand) return;
@@ -234752,8 +235500,8 @@ function dispatchGameSettingsChange(
         else updateUiState({ showCoPilotProposalModal: true });
       },
       onDismissBrief: () => setV9BriefSeenTurn(dnRound),
-      onRegion: code => { setLrFocusRegion(code); updateUiState({ showMap: true }); }
-    };
+      onRegion: (code: string) => { setLrFocusRegion(code); updateUiState({ showMap: true }); }
+    } satisfies V9PlayHandlers);
 
     /** Selected region → ONE coherent story (UiGameplayContext: selection only, never saved). */
     const v9RegionContextFor = (code: string | null | undefined): V9RegionContext | null => {
@@ -234828,9 +235576,9 @@ function dispatchGameSettingsChange(
           <V9MatchHeader
             c={v9Cohesion}
             theme={themeStyles}
-            onEndTurn={v9HumanCanAct ? v9EndTurn : null}
-            endTurnExtra={<GuardianInlineWarning actionType="end_turn" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'end_turn', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} compact />}
-            onStanding={() => void submitIntelligenceQuery('Who is winning and why?')}
+            onEndTurn={v9HumanCanAct ? wp7Kit.fn('v9EndTurn', v9EndTurn) : null}
+            endTurnExtra={wp7Kit.value('v9EndTurnGuardian', [gameSettings.guardianAiSettings, gameState, player.id, (player as { actionPoints?: unknown }).actionPoints, player.money], () => <GuardianInlineWarning actionType="end_turn" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'end_turn', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as { actionPoints?: number }).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} compact />)}
+            onStanding={wp7Kit.fn('v9Standing', () => void submitIntelligenceQuery('Who is winning and why?'))}
             coachNode={glInHeader ? glCoachNode : null}
             cashDelta={v94CashDelta}
             apDelta={v94ApDelta}
@@ -234839,14 +235587,14 @@ function dispatchGameSettingsChange(
           />
           {wp6HudView && <OptionalSurfaceBoundary surface="Match shape"><MatchShapeHud view={wp6HudView} theme={themeStyles} /></OptionalSurfaceBoundary>}
 
-          <FeedbackStrip theme={themeStyles} major={v94Visible.major} minor={v94Visible.minor} onDismiss={dismissV94} onWhy={e => void submitIntelligenceQuery(e.kind === 'region_control_changed' ? `Why did control of ${REGIONS[e.subject]?.name || e.subject} change?` : e.kind === 'crisis_resolved' ? 'What changed after the crisis?' : 'What should I focus on next?')} />
+          <FeedbackStrip theme={themeStyles} major={v94Visible.major} minor={v94Visible.minor} onDismiss={dismissV94} onWhy={wp7Kit.fn('feedbackWhy', (e: UiFeedbackEvent) => void submitIntelligenceQuery(e.kind === 'region_control_changed' ? `Why did control of ${REGIONS[e.subject]?.name || e.subject} change?` : e.kind === 'crisis_resolved' ? 'What changed after the crisis?' : 'What should I focus on next?'))} />
 
           {glShowWelcome && (
             <GuidedWelcomeCard
               theme={themeStyles}
-              onStart={() => glDispatch([{ kind: 'welcome', welcome: 'started', turn: glTurn }])}
-              onBasics={() => glDispatch([{ kind: 'welcome', welcome: 'basics', turn: glTurn }])}
-              onSkip={() => glDispatch([{ kind: 'welcome', welcome: 'skipped', turn: glTurn }])}
+              onStart={wp7Kit.fn('glWelcomeStart', () => glDispatch([{ kind: 'welcome', welcome: 'started', turn: glTurn }]))}
+              onBasics={wp7Kit.fn('glWelcomeBasics', () => glDispatch([{ kind: 'welcome', welcome: 'basics', turn: glTurn }]))}
+              onSkip={wp7Kit.fn('glWelcomeSkip', () => glDispatch([{ kind: 'welcome', welcome: 'skipped', turn: glTurn }]))}
             />
           )}
           {glBlocked && (
@@ -234888,8 +235636,8 @@ function dispatchGameSettingsChange(
             simple={v9Simple}
             humanCanAct={v9HumanCanAct}
             afterAction={v9AfterAction}
-            onDismissAfter={() => v9AfterAction && setV9AfterDismissed(x => [...x, v9AfterAction.rootId].slice(-20))}
-            coach={glInPlay && glCoachTarget ? { target: glCoachTarget, node: glCoachNode } : null}
+            onDismissAfter={wp7Kit.fn('cohesionDismissAfter', () => v9AfterAction && setV9AfterDismissed(x => [...x, v9AfterAction.rootId].slice(-20)))}
+            coach={glInPlay && glCoachTarget ? wp7Kit.value('cohesionCoach', [glCoachTarget, glCoachNode], () => ({ target: glCoachTarget, node: glCoachNode })) : null}
           />
 
           {nationalPlacement === 'below' && nationalPlayNodes}
@@ -235022,7 +235770,7 @@ function dispatchGameSettingsChange(
               )}
             />
 
-            {contentEnabled && <ContentSituationsPanel theme={themeStyles} st={contentState} activeEvents={gameState.activeEvents || []} contracts={(gameState.regionalContracts || {}) as any} crises={((gameState as any).crisisChainState?.activeCrisisChains || []) as CrisisChain[]} h={contentHandlers} money={Number(player.money || 0)} canAct={v9HumanCanAct} />}
+            {contentEnabled && <ContentSituationsPanel theme={themeStyles} st={contentState} activeEvents={gameState.activeEvents || []} contracts={(gameState.regionalContracts || {}) as any} crises={(gameState.crisisChainState?.activeCrisisChains || []) as CrisisChain[]} h={contentHandlers} money={Number(player.money || 0)} canAct={v9HumanCanAct} />}
 
             <div id="v9-intel-strategy" />
             <GI3StrategicCommandCenter
@@ -235240,7 +235988,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV96ExperienceModesSelfTests(), ...v95WithIsolatedGlobals(() => runV96ChallengeDecisionSelfTests()), ...v95WithIsolatedGlobals(() => runV96ChallengeContentSelfTests()), ...runV96MapMotionSoundSelfTests(), ...runV96OpponentMindSelfTests(), ...runV96MatchShapeSelfTests(), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV96ExperienceModesSelfTests(), ...v95WithIsolatedGlobals(() => runV96ChallengeDecisionSelfTests()), ...v95WithIsolatedGlobals(() => runV96ChallengeContentSelfTests()), ...runV96MapMotionSoundSelfTests(), ...runV96OpponentMindSelfTests(), ...runV96MatchShapeSelfTests(), ...v95WithIsolatedGlobals(() => runV96PerformanceSelfTests()), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
@@ -235280,7 +236028,7 @@ function dispatchGameSettingsChange(
         <OptionalSurfaceBoundary surface="V9CohesionInspector"><V9CohesionInspector c={v9Cohesion} inputs={v9CohesionInputs} theme={themeStyles} /></OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="GuidedLearningInspector"><GuidedLearningInspector theme={themeStyles} learning={glLearning} selection={glSelection} ctx={glCtx} /></OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="Content & Replayability Inspector"><ContentReplayabilityInspector theme={themeStyles} st={contentState} ctx={contentLiveCtx} /></OptionalSurfaceBoundary>
-        <OptionalSurfaceBoundary surface="Game Feel Inspector"><GameFeelInspector theme={themeStyles} mode={v94MotionMode} focusStrong={v94FocusStrong} queue={v94Queue} visible={v94Visible} diag={v94DiagRef.current} slow={v94DebugSlow} onSlow={setV94DebugSlow} notificationLane={String((gameSettings as any).notificationSettings?.position || 'top-right')} /></OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="Game Feel Inspector"><GameFeelInspector theme={themeStyles} mode={v94MotionMode} focusStrong={v94FocusStrong} queue={v94Queue} visible={v94Visible} diag={v94DiagRef.current} slow={v94DebugSlow} onSlow={setV94DebugSlow} notificationLane={String(gameSettings.notificationSettings?.position || 'top-right')} /></OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="Human VS AI Turn Flow Inspector">
           <HumanVsAiTurnFlowInspector
             theme={themeStyles}
@@ -235418,6 +236166,7 @@ function dispatchGameSettingsChange(
           soundVolume={sanitizeSoundVolume(gameSettings.soundVolume)}
           live={gameState.gameMode === 'game'}
         />
+        {V96_RENDER_STATS.enabled && <RenderDiagnosticsPanel tick={V96_RENDER_STATS.byName.AustraliaGame?.renders || 0} onReset={wp7Kit.fn('renderReset', resetRenderStats)} />}
         
         {/* Turn Indicator / Transit banner — in PLAY the unified Match Header carries both (no duplicate floating pill). */}
         {(experienceLayer !== 'play' || (gameState.gameMode === 'game' && gameState.selectedMode === 'ai')) && renderTurnIndicator()}
@@ -239135,162 +239884,9 @@ function dispatchGameSettingsChange(
 
   // [Additional helper render functions like renderHelpModal, renderConfirmationDialog, renderNotificationHistory - keeping existing implementations]
   
-interface KeyboardShortcutsHelpModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  themeStyles: any;
-  surfaceState: any;
-  keyboardShortcuts: typeof KEYBOARD_SHORTCUTS;
-  gameSettings: any;
-}
+// V9.6 (SECTION 20AM): KeyboardShortcutsHelpModal now lives at module level (it was redefined — and remounted — every render).
 
-const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
-  isOpen,
-  onClose,
-  themeStyles,
-  surfaceState,
-  keyboardShortcuts,
-  gameSettings,
-}) => {
-  const modalRef = React.useRef<HTMLDivElement>(null);
 
-  React.useEffect(() => {
-    if (!isOpen) return;
-
-    const prevActiveElement = document.activeElement as HTMLElement | null;
-
-    if (modalRef.current) {
-      const focusables = modalRef.current.querySelectorAll<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-      );
-      if (focusables.length > 0) {
-        focusables[0].focus({ preventScroll: true });
-      } else {
-        modalRef.current.focus({ preventScroll: true });
-      }
-    }
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-      } else if (e.key === 'Tab' && modalRef.current) {
-        const focusables = Array.from(
-          modalRef.current.querySelectorAll<HTMLElement>(
-            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-          )
-        ).filter(el => !el.hasAttribute('disabled'));
-
-        if (focusables.length === 0) return;
-
-        const firstElement = focusables[0];
-        const lastElement = focusables[focusables.length - 1];
-
-        if (e.shiftKey) {
-          if (document.activeElement === firstElement || !modalRef.current.contains(document.activeElement)) {
-            e.preventDefault();
-            lastElement.focus();
-          }
-        } else {
-          if (document.activeElement === lastElement || !modalRef.current.contains(document.activeElement)) {
-            e.preventDefault();
-            firstElement.focus();
-          }
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      if (prevActiveElement && typeof prevActiveElement.focus === 'function') {
-        try {
-          prevActiveElement.focus({ preventScroll: true });
-        } catch (_) {
-          prevActiveElement.focus();
-        }
-      }
-    };
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
-
-  return (
-    <div
-      className={`fixed inset-0 ${
-        (!surfaceState.backdropOwner || surfaceState.backdropOwner === "ask_game_ai")
-          ? "bg-black bg-opacity-50"
-          : "bg-transparent"
-      } flex items-center justify-center p-4`}
-      style={{ zIndex: globalUISurfaceManager.getZIndex("ask_game_ai") }}
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="keyboard-shortcuts-title"
-    >
-      <div
-        ref={modalRef}
-        tabIndex={-1}
-        className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-2xl w-full max-h-[calc(100dvh-2rem)] h-[calc(100dvh-2rem)] flex flex-col min-h-0 overflow-hidden shadow-2xl focus:outline-none`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Sticky Header */}
-        <div className={`flex justify-between items-center px-4 sm:px-6 py-3 sm:py-4 border-b shrink-0 ${themeStyles.border}`}>
-          <div className="flex items-center gap-2">
-            <span className="text-xl sm:text-2xl" aria-hidden="true">⌨️</span>
-            <h3 id="keyboard-shortcuts-title" className="text-xl sm:text-2xl font-bold">
-              Keyboard Shortcuts
-            </h3>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className={`${themeStyles.buttonSecondary} px-3 py-1 rounded hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-sky-500`}
-            aria-label="Close modal"
-          >
-            ✕
-          </button>
-        </div>
-        
-        {/* Scrollable Body */}
-        <div className="flex-1 overflow-y-auto overscroll-contain min-h-0 p-4 sm:p-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {Object.entries(keyboardShortcuts)
-              .filter(([key]) => key !== 'ctrl+shift+c')
-              .map(([key, shortcut]) => (
-                <div key={key} className={`${themeStyles.border} border rounded p-3 flex items-center justify-between gap-3 min-w-0`}>
-                  <div className="min-w-0 flex-1">
-                    <div className="font-bold truncate">{shortcut.label}</div>
-                    <div className="text-sm opacity-75 line-clamp-2">{shortcut.description}</div>
-                  </div>
-                  <kbd className="shrink-0 px-3 py-1 bg-gray-700 rounded text-sm font-mono font-bold">
-                    {key === ' ' ? 'Space' : key.toUpperCase()}
-                  </kbd>
-                </div>
-              ))}
-            {gameSettings.notificationClearShortcut !== 'disabled' && (
-              <div className={`${themeStyles.border} border rounded p-3 flex items-center justify-between gap-3 min-w-0`}>
-                <div className="min-w-0 flex-1">
-                  <div className="font-bold truncate">Clear Notifications</div>
-                  <div className="text-sm opacity-75">Clear all notifications</div>
-                </div>
-                <kbd className="shrink-0 px-3 py-1 bg-gray-700 rounded text-sm font-mono font-bold">
-                  {gameSettings.notificationClearShortcut.toUpperCase()}
-                </kbd>
-              </div>
-            )}
-          </div>
-        </div>
-        
-        {/* Sticky Footer */}
-        <div className={`px-4 sm:px-6 py-3 border-t shrink-0 ${themeStyles.border} text-sm opacity-75 text-center`}>
-          Press any key while focused on the game to use shortcuts
-        </div>
-      </div>
-    </div>
-  );
-};
 
   const renderHelpModal = () => {
     return (
@@ -239308,7 +239904,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
         )}
         <KeyboardShortcutsHelpModal
           isOpen={uiState.showHelp}
-          onClose={() => updateUiState({ showHelp: false })}
+          onClose={wp7Kit.fn('helpClose', () => updateUiState({ showHelp: false }))}
           themeStyles={themeStyles}
           surfaceState={surfaceState}
           keyboardShortcuts={KEYBOARD_SHORTCUTS}
@@ -244838,7 +245434,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
     if (!uiState.showAiRivalryModal) return null;
     const legacyEvents: string[] = [
       ...Object.values((gameState.aiRelationshipState?.relationshipMap || {})['player'] || {}).flatMap((r: any) => (Array.isArray(r?.historicEvents) ? r.historicEvents : [])),
-      ...((gameState as any).diplomacy?.relationships || []).flatMap((r: any) => (Array.isArray(r?.historicEvents) ? r.historicEvents : []))
+      ...(gameState.diplomacy?.relationships || []).flatMap((r: any) => (Array.isArray(r?.historicEvents) ? r.historicEvents : []))
     ].slice(0, 12);
     const close = () => { updateUiState({ showAiRivalryModal: false }); giContextRef.current = { ...giContextRef.current, pendingDeal: null }; };
     return (
