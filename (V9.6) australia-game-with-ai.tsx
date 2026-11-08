@@ -11190,14 +11190,15 @@ export function simpleLoanRepaymentAmount(loan: any): number {
 }
 
 /** Simple (emergency) loan daily tick: 25% of the outstanding amount is charged; unpaid interest capitalises. */
-export function applySimpleLoanTick(state: { money: number; loans?: any[] }): { money: number; loans: any[] } {
+export function applySimpleLoanTick(state: { money: number; loans?: any[] }, rateMultiplier?: number): { money: number; loans: any[] } {
   if (!state.loans || state.loans.length === 0) return { money: state.money, loans: [] };
   let money = state.money;
   const loans = state.loans.map((loan: any) => {
     // V9.1 balance (T1): interest is charged on the PRINCIPAL. Unpaid interest still becomes debt, but it no
     // longer compounds — one unpayable $500 loan used to exceed $4,600 within 10 days (1.25^n death spiral).
     const principal = typeof loan.principal === 'number' && loan.principal > 0 ? loan.principal : Math.min(loan.amount, LOAN_AMOUNT);
-    const interest = Math.floor(principal * LOAN_INTEREST_RATE);
+    // V9.6 (SECTION 20AL): the underdog boost lightens interest (rateMultiplier < 1); anything else is exactly V9.5.
+    const interest = Math.floor(principal * (typeof rateMultiplier === 'number' && rateMultiplier >= 0 && rateMultiplier < 1 ? LOAN_INTEREST_RATE * rateMultiplier : LOAN_INTEREST_RATE));
     const payment = Math.min(interest, money);
     money -= payment;
     return { ...loan, principal, amount: loan.amount + interest - payment, accrued: (loan.accrued || 0) + interest };
@@ -14162,6 +14163,12 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   reducedMotion: 'system' as ReducedMotionPreference,
   /** V9.6 A Visible Opponent Mind (SECTION 20AK) — off by default. */
   opponentPersonalityEnabled: false,
+  /** V9.6 Match Shape (SECTION 20AL) — off by default; the tunables below only matter when it is on. */
+  matchShapeEnabled: false,
+  matchObjectiveWeight: 1,
+  comebackStrength: 1,
+  comebackFullGap: 0.5,
+  finalStretchPct: 20,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -15269,6 +15276,12 @@ export function sanitizeGameSettings(input: unknown): GameSettingsState {
     soundEnabled: typeof src.soundEnabled === 'boolean' ? src.soundEnabled : defaults.soundEnabled,
     soundVolume: src.soundVolume === undefined ? defaults.soundVolume : sanitizeSoundVolume(src.soundVolume),
     reducedMotion: isReducedMotionPreference(src.reducedMotion) ? src.reducedMotion : defaults.reducedMotion,
+    // V9.6 (SECTION 20AL): match-shape tunables are clamped to their ranges (defaults when malformed or absent).
+    matchShapeEnabled: typeof src.matchShapeEnabled === 'boolean' ? src.matchShapeEnabled : defaults.matchShapeEnabled,
+    matchObjectiveWeight: sanitizeMatchShapeSetting(src.matchObjectiveWeight, defaults.matchObjectiveWeight, 0, 3),
+    comebackStrength: sanitizeMatchShapeSetting(src.comebackStrength, defaults.comebackStrength, 0, 2),
+    comebackFullGap: sanitizeMatchShapeSetting(src.comebackFullGap, defaults.comebackFullGap, 0.1, 0.95),
+    finalStretchPct: sanitizeMatchShapeSetting(src.finalStretchPct, defaults.finalStretchPct, 5, 50),
     rememberCategoryNavigationState: typeof src.rememberCategoryNavigationState === 'boolean' ? src.rememberCategoryNavigationState : defaults.rememberCategoryNavigationState,
     rememberCategoryNavigationMode: typeof src.rememberCategoryNavigationMode === 'boolean' ? src.rememberCategoryNavigationMode : defaults.rememberCategoryNavigationMode,
     autoCollapseCategoriesOnNarrow: typeof src.autoCollapseCategoriesOnNarrow === 'boolean' ? src.autoCollapseCategoriesOnNarrow : defaults.autoCollapseCategoriesOnNarrow,
@@ -18342,6 +18355,69 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     validate: (v: any) => typeof v === 'boolean',
     isLiveSafe: true,
     affectsFairness: false,
+  },
+  {
+    key: 'matchShapeEnabled',
+    category: 'fairness',
+    label: 'Match Shape',
+    description: 'Secret objectives (2 per actor, worth points at the end), a scaled underdog boost for the trailing side, and a Final Stretch with high-stakes challenges and a national event.',
+    valueType: 'boolean',
+    defaultValue: false,
+    validate: (v: unknown) => typeof v === 'boolean',
+    isLiveSafe: false,
+    affectsFairness: true,
+  },
+  {
+    key: 'matchObjectiveWeight',
+    category: 'fairness',
+    label: 'Objective Weight',
+    description: 'How many objective units each completed secret objective adds to the final win-metric score (0–3).',
+    valueType: 'number',
+    minValue: 0,
+    maxValue: 3,
+    defaultValue: 1,
+    validate: (v: unknown) => typeof v === 'number' && v >= 0 && v <= 3,
+    isLiveSafe: false,
+    affectsFairness: true,
+  },
+  {
+    key: 'comebackStrength',
+    category: 'fairness',
+    label: 'Comeback Strength',
+    description: 'Multiplier on the underdog boost (cheaper travel, a free challenge reroll per turn, lighter loan interest). 0 turns it off.',
+    valueType: 'number',
+    minValue: 0,
+    maxValue: 2,
+    defaultValue: 1,
+    validate: (v: unknown) => typeof v === 'number' && v >= 0 && v <= 2,
+    isLiveSafe: false,
+    affectsFairness: true,
+  },
+  {
+    key: 'comebackFullGap',
+    category: 'fairness',
+    label: 'Comeback Full-Strength Gap',
+    description: 'Relative gap on the win metric at which the underdog boost reaches full strength; smaller gaps get a proportional boost.',
+    valueType: 'number',
+    minValue: 0.1,
+    maxValue: 0.95,
+    defaultValue: 0.5,
+    validate: (v: unknown) => typeof v === 'number' && v >= 0.1 && v <= 0.95,
+    isLiveSafe: false,
+    affectsFairness: true,
+  },
+  {
+    key: 'finalStretchPct',
+    category: 'fairness',
+    label: 'Final Stretch Length',
+    description: 'The Final Stretch covers this percentage of the match at the end (5–50%).',
+    valueType: 'number',
+    minValue: 5,
+    maxValue: 50,
+    defaultValue: 20,
+    validate: (v: unknown) => typeof v === 'number' && v >= 5 && v <= 50,
+    isLiveSafe: false,
+    affectsFairness: true,
   },
   {
     key: 'opponentPersonalityEnabled',
@@ -26658,6 +26734,16 @@ export type GameSettingsState = {
   reducedMotion?: ReducedMotionPreference;
   /** V9.6 A Visible Opponent Mind (SECTION 20AK): memory-driven rival dialogue + Opponent panel. Off = AI_MOOD_STATES lines. */
   opponentPersonalityEnabled?: boolean;
+  /** V9.6 Match Shape (SECTION 20AL): secret objectives, comeback boost and the Final Stretch. */
+  matchShapeEnabled?: boolean;
+  /** Objective units added to the final score per completed objective (0–3; 1 = default). */
+  matchObjectiveWeight?: number;
+  /** Underdog boost strength multiplier (0 = off, 1 = default, 2 = double). */
+  comebackStrength?: number;
+  /** Relative gap on the win metric at which the underdog boost is at full strength (0.1–0.95). */
+  comebackFullGap?: number;
+  /** Final Stretch length as a percentage of the match (5–50). */
+  finalStretchPct?: number;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -27923,6 +28009,9 @@ export function gameStateReducer(state: any, action: any) {
         regionDeposits: action.payload?.regionDeposits || state.regionDeposits,
         regionControlStats: action.payload?.regionControlStats || state.regionControlStats
       };
+    case 'V96_MATCH_SHAPE_PATCH':
+      // V9.6 (SECTION 20AL): objectives, comeback and Final Stretch state — a pure, serialisable patch.
+      return { ...state, matchShape: applyMatchShapePatch(sanitizeMatchShapeState((state as { matchShape?: unknown }).matchShape), action.payload) ?? undefined };
     case 'ADD_CHALLENGE_COMPLETION':
       return {
         ...state,
@@ -64537,6 +64626,7 @@ export const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'interface.uxAssist', tab: 'interfaceAcc', title: 'UX Assist Features', tags: ['UX'], fieldKeys: ['uxAssistPackEnabled', 'simplifiedActionBarEnabled', 'disabledActionFeedbackEnabled', 'interactiveMapEnabled', 'winConditionCoachEnabled', 'settingsPresetsEnabled', 'groupedInventoryCardsEnabled', 'teamModeAiSystemsEnabled', 'teamModeAiSystemProfile'] },
   { id: 'gameplay.core', tab: 'gameplay', title: 'Core Gameplay', tags: [], fieldKeys: ['totalDays', 'playerActionsPerDay', 'aiActionsPerDay', 'showDayTransition'] },
   { id: 'economy.winCondition', tab: 'economy', title: 'Win Condition & Cash-Out', tags: ['Economy'], fieldKeys: ['winCondition', 'winConditionTieBreakers', 'allowCashOut', 'negotiationMode'] },
+  { id: 'economy.matchShape', tab: 'economy', title: '🎯 Match Shape', tags: ['Economy'], chips: ['Off by default'], fieldKeys: ['matchShapeEnabled', 'matchObjectiveWeight', 'comebackStrength', 'comebackFullGap', 'finalStretchPct'], keywords: 'match shape secret objectives hidden goals comeback underdog boost catch up rubber band final stretch finale national event scoring summary' },
   { id: 'gameplay.actionLimits', tab: 'gameplay', title: 'Action Limits', tags: [], fieldKeys: ['actionLimitsEnabled', 'maxActionsPerTurn', 'aiMaxActionsPerTurn', 'actionPointConsumptionSettings'] },
   { id: 'gameplay.actionOverride', tab: 'gameplay', title: 'Action Override', tags: [], fieldKeys: ['allowActionOverride', 'overrideCost'] },
   { id: 'gameplay.challengeRules', tab: 'gameplay', title: 'Challenge Rules', tags: [], fieldKeys: ['dynamicWagerEnabled', 'doubleOrNothingEnabled', 'challengeApproachesEnabled', 'expandedChallengeContentEnabled', 'proceduralChallengesEnabled'], keywords: 'challenge approaches reputation chains odds side effects expanded content board rotation scout procedural generator templates' },
@@ -133460,7 +133550,8 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'experienceMode', 'challengeApproachesEnabled', 'expandedChallengeContentEnabled', 'proceduralChallengesEnabled', 'opponentPersonalityEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'experienceMode', 'challengeApproachesEnabled', 'expandedChallengeContentEnabled', 'proceduralChallengesEnabled', 'opponentPersonalityEnabled',
+  'matchShapeEnabled', 'matchObjectiveWeight', 'comebackStrength', 'comebackFullGap', 'finalStretchPct'
 ] as const;
 
 /**
@@ -133811,6 +133902,8 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         aiMemoriesByActor: migrateAiMemoriesFromSave(stateData.aiMemoriesByActor || raw.aiMemoriesByActor),
         // V9.6 (SECTION 20AK): the rival's recent lines (optional; absent in V9.5 saves).
         ...(stateData.opponentDialogue !== undefined ? { opponentDialogue: sanitizeOpponentDialogueState(stateData.opponentDialogue) } : {}),
+        // V9.6 (SECTION 20AL): match-shape state (optional; absent in V9.5 saves).
+        ...(stateData.matchShape !== undefined ? { matchShape: sanitizeMatchShapeState(stateData.matchShape) ?? undefined } : {}),
         persistentMemorySnapshot: sanitizePersistentSnapshot(stateData.persistentMemorySnapshot || raw.persistentMemorySnapshot || raw.gameState?.persistentMemorySnapshot),
         aiCommunication: migrateCommunicationState(stateData.aiCommunication || raw.aiCommunication || raw.gameState?.aiCommunication),
         teamStrategicPlansByTeam: sanitizeTeamStrategicPlansByTeam(stateData.teamStrategicPlansByTeam || raw.teamStrategicPlansByTeam || raw.gameState?.teamStrategicPlansByTeam),
@@ -135888,6 +135981,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v96ex', label: 'V9.6 Challenge Content Expansion', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96ChallengeContentSelfTests() },
   { id: 'v96mf', label: 'V9.6 Map, Motion & Sound', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96MapMotionSoundSelfTests() },
   { id: 'v96om', label: 'V9.6 A Visible Opponent Mind', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96OpponentMindSelfTests() },
+  { id: 'v96mt', label: 'V9.6 Match Shape', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96MatchShapeSelfTests() },
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
@@ -184390,6 +184484,965 @@ export function runV96OpponentMindSelfTests(): V9SelfTestResult[] {
   return results;
 }
 
+// ============================================================================
+// SECTION 20AL: V9.6 MATCH SHAPE — SECRET OBJECTIVES, COMEBACK AND THE FINAL STRETCH
+// ----------------------------------------------------------------------------
+// With `matchShapeEnabled` on (competitive matches: solo vs AI and the team modes):
+//   • Secret objectives: every actor draws 2 from a pool of 34 at match start (a private
+//     GameplayRngRegistry seeded from worldRngSeed, so a seed always deals the same hands). Each
+//     completed objective adds one objective unit (`matchObjectiveWeight` × a per-metric base,
+//     scaled by match length) to its side's final win-metric score. Rival objectives stay hidden:
+//     each side only sees an inferred read — the AI's comes from its belief model (AI memory).
+//   • Comeback: the side trailing on the active win metric gets an underdog boost scaled by the
+//     gap — cheaper travel, one free reroll of a failed challenge per turn and lighter loan
+//     interest — that fades as the gap closes. Re-assessed every day; shown on the HUD.
+//   • Final Stretch: the last `finalStretchPct`% of days — an announcement, one high-stakes
+//     finale challenge per region and a national event that swings the final score.
+//   • Game end: a scoring summary shows how each objective and the finale event moved the result.
+// Flag off: none of this runs — travel, loans, challenges and scoring are exactly V9.5.
+// ============================================================================
+
+export type MatchShapeSide = 'player' | 'opponent';
+export type MatchObjectiveCategory = 'territory' | 'economy' | 'progression' | 'challenge' | 'exploration' | 'finale';
+export type MatchObjectiveStyle = 'expansion' | 'economic' | 'aggressive' | 'cooperative';
+
+export interface MatchShapeTally {
+  wins: number;
+  byType: Record<string, number>;
+  byRegion: Record<string, number>;
+  hardWins: number;
+  stretchWins: number;
+  stretchByRegion: Record<string, number>;
+  finaleWins: number;
+  finaleAttempted: string[];
+  rerollsUsed: number;
+  rerollsWon: number;
+}
+export interface MatchShapeObjectiveSlot { actorId: string; side: MatchShapeSide; objectiveId: string }
+export interface MatchShapeComeback { side: MatchShapeSide | null; intensity: number; gap: number; day: number }
+export interface MatchShapePair { player: number; opponent: number }
+export interface MatchShapeFinale { startDay: number; started: boolean; eventId: string | null; startedOnDay: number | null; standingsAtStart: MatchShapePair | null }
+export interface MatchShapeGuess { objectiveId: string; probability: number }
+export interface MatchShapeBeliefs { rivalOnPlayer: MatchShapeGuess[]; playerOnRival: MatchShapeGuess[] }
+export interface MatchShapeScoreLine { side: MatchShapeSide; actorId: string | null; source: 'objective' | 'finale_event'; refId: string; title: string; achieved: boolean; delta: number; detail: string }
+export interface MatchShapeRead { guessedId: string | null; correct: boolean }
+export interface MatchShapeFinalReport {
+  metric: string;
+  unit: number;
+  base: MatchShapePair;
+  lines: MatchShapeScoreLine[];
+  final: MatchShapePair;
+  baseLeader: MatchShapeSide | 'tie';
+  finalLeader: MatchShapeSide | 'tie';
+  flipped: boolean;
+  rivalRead: MatchShapeRead;
+  playerRead: MatchShapeRead;
+  day: number;
+}
+export interface MatchShapeState {
+  version: 1;
+  seed: number;
+  totalDays: number;
+  sideKeys: { player: string; opponent: string };
+  actorSides: Record<string, MatchShapeSide>;
+  objectives: MatchShapeObjectiveSlot[];
+  tally: Record<string, MatchShapeTally>;
+  comeback: MatchShapeComeback;
+  rerollTurn: Record<string, number>;
+  finale: MatchShapeFinale;
+  beliefs: MatchShapeBeliefs;
+  announced: MatchShapePair;
+  report: MatchShapeFinalReport | null;
+}
+export type MatchShapePatch =
+  | { kind: 'init'; state: MatchShapeState }
+  | { kind: 'attempt'; actorId: string; region: string; challengeType: string; difficulty: number; finale: boolean; success: boolean }
+  | { kind: 'reroll'; actorId: string; turn: number; won: boolean }
+  | { kind: 'day'; comeback: MatchShapeComeback; finale: MatchShapeFinale; beliefs: MatchShapeBeliefs; announced: MatchShapePair }
+  | { kind: 'report'; report: MatchShapeFinalReport }
+  | { kind: 'clear' };
+
+export interface MatchShapeSettingsView {
+  matchShapeEnabled?: boolean; matchObjectiveWeight?: number; comebackStrength?: number; comebackFullGap?: number; finalStretchPct?: number;
+  expeditionsRelicsEnabled?: boolean; expeditionModeEnabled?: boolean; equipmentShopEnabled?: boolean; expandedChallengeContentEnabled?: boolean;
+}
+export interface MatchShapeTuning { enabled: boolean; weight: number; strength: number; fullGap: number; stretchPct: number }
+export interface MatchShapeFeatureFlags { relics: boolean; equipment: boolean; cultural: boolean }
+
+export interface MatchObjectiveActorView {
+  id: string; side: MatchShapeSide;
+  money: number; debt: number; netWorth: number; level: number;
+  visitedRegions: string[]; inventory: string[]; equipmentCount: number; masteryCount: number;
+  consecutiveWins: number; relics: number;
+}
+export interface MatchObjectiveContext {
+  actor: MatchObjectiveActorView;
+  sideKey: string;
+  controllerByRegion: Record<string, string | null>;
+  investedBySide: number;
+  tally: MatchShapeTally;
+  lengthFactor: number;
+  ledAtStretchStart: boolean;
+}
+export interface MatchObjectiveProgress { current: number; target: number; done: boolean }
+export interface MatchObjectiveDefinition {
+  readonly id: string;
+  readonly title: string;
+  readonly icon: string;
+  readonly category: MatchObjectiveCategory;
+  readonly style: MatchObjectiveStyle;
+  readonly regions?: readonly string[];
+  readonly requires?: (f: MatchShapeFeatureFlags) => boolean;
+  readonly evaluate: (c: MatchObjectiveContext) => MatchObjectiveProgress;
+}
+
+export const MATCH_SHAPE_MAINLAND: readonly string[] = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'];
+const MATCH_SHAPE_BASE_UNIT: Readonly<Record<string, number>> = { money: 1500, netWorth: 2000, regions: 1, challenges: 5 };
+export const MATCH_SHAPE_DEAD_ZONE = 0.05;
+export const MATCH_SHAPE_REROLL_MIN_INTENSITY = 0.25;
+export const MATCH_SHAPE_TRAVEL_MAX_DISCOUNT = 0.3;
+export const MATCH_SHAPE_LOAN_MAX_DISCOUNT = 0.4;
+export const MATCH_SHAPE_DEFAULTS = { weight: 1, strength: 1, fullGap: 0.5, stretchPct: 20 } as const;
+
+const msNum = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+const msClamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, n));
+const msRound = (n: number, places = 2): number => { const k = 10 ** places; return Math.round(n * k) / k; };
+const msRecord = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {});
+const msStrings = (v: unknown, max = 64): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').slice(0, max) : []);
+const msSide = (v: unknown): MatchShapeSide | null => (v === 'player' || v === 'opponent' ? v : null);
+const msCountRecord = (v: unknown, max = 32): Record<string, number> => {
+  const out: Record<string, number> = {};
+  Object.entries(msRecord(v)).slice(0, max).forEach(([k, n]) => { if (/^[A-Za-z0-9_]{1,24}$/.test(k)) out[k] = Math.max(0, Math.floor(msNum(n))); });
+  return out;
+};
+export function matchShapeHash(text: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h >>> 0;
+}
+
+/** Clamp a numeric match-shape setting (hoisted: sanitizeGameSettings may run during module start-up). */
+export function sanitizeMatchShapeSetting(v: unknown, d: number | undefined, lo: number, hi: number): number {
+  const fallback = typeof d === 'number' && Number.isFinite(d) ? d : lo;
+  return typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : fallback;
+}
+export function resolveMatchShapeTuning(s: MatchShapeSettingsView | null | undefined): MatchShapeTuning {
+  const src = s || {};
+  return {
+    enabled: src.matchShapeEnabled === true,
+    weight: msClamp(msNum(src.matchObjectiveWeight, MATCH_SHAPE_DEFAULTS.weight), 0, 3),
+    strength: msClamp(msNum(src.comebackStrength, MATCH_SHAPE_DEFAULTS.strength), 0, 2),
+    fullGap: msClamp(msNum(src.comebackFullGap, MATCH_SHAPE_DEFAULTS.fullGap), 0.1, 0.95),
+    stretchPct: msClamp(Math.round(msNum(src.finalStretchPct, MATCH_SHAPE_DEFAULTS.stretchPct)), 5, 50)
+  };
+}
+export function resolveMatchShapeFeatures(s: MatchShapeSettingsView | null | undefined): MatchShapeFeatureFlags {
+  const src = s || {};
+  return { relics: src.expeditionsRelicsEnabled === true || src.expeditionModeEnabled === true, equipment: src.equipmentShopEnabled === true, cultural: src.expandedChallengeContentEnabled === true };
+}
+/** Match shape needs a rival: solo vs AI and the team modes. */
+export function isMatchShapeMode(mode: unknown): boolean {
+  return mode === 'ai' || mode === 'team_human_ai_vs_ai_ai' || mode === 'team_ai_vs_ai';
+}
+export function matchShapeLengthFactor(totalDays: number): number {
+  return msClamp(msNum(totalDays, 30) / 30, 0.5, 2.5);
+}
+/** One objective's worth on the final score, in the win metric's own units. */
+export function matchObjectiveUnit(metric: string, totalDays: number, weight: number): number {
+  const w = msClamp(msNum(weight, 1), 0, 3);
+  if (metric === 'regions') return Math.round(w);
+  const base = MATCH_SHAPE_BASE_UNIT[metric] ?? MATCH_SHAPE_BASE_UNIT.money;
+  const raw = base * w * matchShapeLengthFactor(totalDays);
+  return metric === 'challenges' ? Math.round(raw) : Math.round(raw / 50) * 50;
+}
+/** The first day of the Final Stretch: the last `pct`% of the match (at least one day). */
+export function finalStretchStartDay(totalDays: number, pct: number): number {
+  const days = Math.max(1, Math.floor(msNum(totalDays, 30)));
+  const len = Math.max(1, Math.ceil(days * msClamp(msNum(pct, 20), 5, 50) / 100));
+  return Math.max(2, days - len + 1);
+}
+const roundForMetric = (metric: string, v: number): number => (metric === 'regions' || metric === 'challenges' ? Math.round(v) : Math.round(v / 10) * 10);
+export function formatMatchShapeValue(metric: string, value: number): string {
+  const profile = (WIN_METRIC_PROFILES as Record<string, { formatValue: (v: number) => string } | undefined>)[metric];
+  return profile ? profile.formatValue(value) : `$${Math.round(value).toLocaleString()}`;
+}
+export function formatMatchShapeDelta(metric: string, value: number): string {
+  return `${value < 0 ? '−' : '+'}${formatMatchShapeValue(metric, Math.abs(value))}`;
+}
+
+// ---- Objectives ------------------------------------------------------------------------------------------------------
+export function createEmptyMatchShapeTally(): MatchShapeTally {
+  return { wins: 0, byType: {}, byRegion: {}, hardWins: 0, stretchWins: 0, stretchByRegion: {}, finaleWins: 0, finaleAttempted: [], rerollsUsed: 0, rerollsWon: 0 };
+}
+const progress = (current: number, target: number): MatchObjectiveProgress => ({ current: Math.max(0, Math.min(target, Math.floor(current))), target, done: current >= target });
+const heldCount = (c: MatchObjectiveContext, regions: readonly string[]) => regions.filter(r => c.controllerByRegion[r] === c.sideKey).length;
+const scaled = (base: number, c: MatchObjectiveContext, step = 500) => Math.max(step, Math.round(base * c.lengthFactor / step) * step);
+const winsIn = (c: MatchObjectiveContext, regions: readonly string[]) => regions.reduce((s, r) => s + (c.tally.byRegion[r] || 0), 0);
+const holdBoth = (id: string, a: string, b: string, style: MatchObjectiveStyle = 'expansion'): MatchObjectiveDefinition => ({
+  id, title: `Hold ${a} and ${b} on the final day`, icon: '🚩', category: 'territory', style, regions: [a, b],
+  evaluate: c => progress(heldCount(c, [a, b]), 2)
+});
+const typeWins = (id: string, type: string, n: number, icon: string, requires?: (f: MatchShapeFeatureFlags) => boolean): MatchObjectiveDefinition => ({
+  id, title: `Complete ${n} ${type} challenges`, icon, category: 'challenge', style: 'aggressive', ...(requires ? { requires } : {}),
+  evaluate: c => progress(c.tally.byType[type] || 0, n)
+});
+
+export const MATCH_SHAPE_OBJECTIVES: readonly MatchObjectiveDefinition[] = [
+  holdBoth('hold_tas_nt', 'TAS', 'NT'),
+  holdBoth('hold_wa_sa', 'WA', 'SA'),
+  holdBoth('hold_qld_nsw', 'QLD', 'NSW'),
+  holdBoth('hold_vic_act', 'VIC', 'ACT'),
+  holdBoth('hold_nt_qld', 'NT', 'QLD'),
+  { id: 'hold_east_two', title: 'Hold two of NSW, VIC and QLD on the final day', icon: '🏙️', category: 'territory', style: 'expansion', regions: ['NSW', 'VIC', 'QLD'], evaluate: c => progress(heldCount(c, ['NSW', 'VIC', 'QLD']), 2) },
+  { id: 'hold_four', title: 'Control 4 regions on the final day', icon: '🗺️', category: 'territory', style: 'expansion', evaluate: c => progress(heldCount(c, MATCH_SHAPE_MAINLAND), 4) },
+  { id: 'invest_big', title: 'Put $3,000 into region deposits', icon: '🏦', category: 'territory', style: 'expansion', evaluate: c => progress(c.investedBySide, scaled(3000, c)) },
+  { id: 'zero_debt_relics', title: 'End with zero debt and 3 relics', icon: '🏺', category: 'economy', style: 'economic', requires: f => f.relics, evaluate: c => ({ ...progress(Math.min(3, c.actor.relics), 3), done: c.actor.debt <= 0 && c.actor.relics >= 3 }) },
+  { id: 'relic_hunter', title: 'Finish with 4 relics', icon: '🗿', category: 'economy', style: 'economic', requires: f => f.relics, evaluate: c => progress(c.actor.relics, 4) },
+  { id: 'debt_free_cash', title: 'End debt-free with $5,000 in cash', icon: '🧾', category: 'economy', style: 'economic', evaluate: c => { const t = scaled(5000, c); return { ...progress(c.actor.debt > 0 ? 0 : c.actor.money, t), done: c.actor.debt <= 0 && c.actor.money >= t }; } },
+  { id: 'cash_big', title: 'Finish with $10,000 in cash', icon: '💰', category: 'economy', style: 'economic', evaluate: c => progress(c.actor.money - c.actor.debt, scaled(10000, c)) },
+  { id: 'worth_big', title: 'Finish with a $15,000 net worth', icon: '📈', category: 'economy', style: 'economic', evaluate: c => progress(c.actor.netWorth, scaled(15000, c)) },
+  { id: 'stockpile', title: 'Finish holding 10 or more items', icon: '📦', category: 'economy', style: 'economic', evaluate: c => progress(c.actor.inventory.length, 10) },
+  { id: 'diverse_goods', title: 'Finish holding 5 different resources', icon: '🧺', category: 'economy', style: 'economic', evaluate: c => progress(new Set(c.actor.inventory).size, 5) },
+  { id: 'equipped', title: 'Own 3 pieces of equipment', icon: '🎒', category: 'progression', style: 'economic', requires: f => f.equipment, evaluate: c => progress(c.actor.equipmentCount, 3) },
+  { id: 'level_up', title: 'Reach level 8', icon: '⭐', category: 'progression', style: 'aggressive', evaluate: c => progress(c.actor.level, 8) },
+  { id: 'mastery', title: 'Unlock 3 mastery perks', icon: '🎓', category: 'progression', style: 'aggressive', evaluate: c => progress(c.actor.masteryCount, 3) },
+  { id: 'hot_streak', title: 'Finish on a 3-challenge winning streak', icon: '🔥', category: 'progression', style: 'aggressive', evaluate: c => progress(c.actor.consecutiveWins, 3) },
+  typeWins('wildlife_5', 'wildlife', 5, '🦘'),
+  typeWins('physical_5', 'physical', 5, '🏄'),
+  typeWins('educational_5', 'educational', 5, '📚'),
+  typeWins('social_4', 'social', 4, '🤝'),
+  typeWins('cultural_3', 'cultural', 3, '🪃', f => f.cultural),
+  { id: 'wins_12', title: 'Win 12 challenges', icon: '🏆', category: 'challenge', style: 'aggressive', evaluate: c => progress(c.tally.wins, 12) },
+  { id: 'hard_3', title: 'Win 3 challenges of difficulty 3 or more', icon: '🧗', category: 'challenge', style: 'aggressive', evaluate: c => progress(c.tally.hardWins, 3) },
+  { id: 'five_states', title: 'Win a challenge in 5 different regions', icon: '🧭', category: 'exploration', style: 'expansion', evaluate: c => progress(Object.keys(c.tally.byRegion).filter(r => (c.tally.byRegion[r] || 0) > 0).length, 5) },
+  { id: 'visit_all', title: 'Visit all 8 states and territories', icon: '✈️', category: 'exploration', style: 'expansion', evaluate: c => progress(MATCH_SHAPE_MAINLAND.filter(r => c.actor.visitedRegions.includes(r)).length, 8) },
+  { id: 'tasmania_2', title: 'Win 2 challenges in Tasmania', icon: '🌲', category: 'exploration', style: 'expansion', regions: ['TAS'], evaluate: c => progress(winsIn(c, ['TAS']), 2) },
+  { id: 'outback_3', title: 'Win 3 challenges in NT, WA or SA', icon: '🏜️', category: 'exploration', style: 'expansion', regions: ['NT', 'WA', 'SA'], evaluate: c => progress(winsIn(c, ['NT', 'WA', 'SA']), 3) },
+  { id: 'coastal_4', title: 'Win 4 challenges across QLD, NSW and VIC', icon: '🌊', category: 'exploration', style: 'expansion', regions: ['QLD', 'NSW', 'VIC'], evaluate: c => progress(winsIn(c, ['QLD', 'NSW', 'VIC']), 4) },
+  { id: 'stretch_3', title: 'Win 3 challenges during the Final Stretch', icon: '⏱️', category: 'finale', style: 'aggressive', evaluate: c => progress(c.tally.stretchWins, 3) },
+  { id: 'finale_win', title: 'Win a high-stakes Final Stretch challenge', icon: '🏁', category: 'finale', style: 'aggressive', evaluate: c => progress(c.tally.finaleWins, 1) },
+  { id: 'stretch_leader', title: 'Lead on the win metric when the Final Stretch begins', icon: '🥇', category: 'finale', style: 'economic', evaluate: c => progress(c.ledAtStretchStart ? 1 : 0, 1) }
+];
+export const MATCH_SHAPE_OBJECTIVE_BY_ID: Readonly<Record<string, MatchObjectiveDefinition>> = Object.fromEntries(MATCH_SHAPE_OBJECTIVES.map(o => [o.id, o]));
+
+export function evaluateMatchObjective(id: string, ctx: MatchObjectiveContext | null | undefined): MatchObjectiveProgress {
+  const def = MATCH_SHAPE_OBJECTIVE_BY_ID[id];
+  if (!def || !ctx) return { current: 0, target: 1, done: false };
+  try { return def.evaluate(ctx); } catch { return { current: 0, target: 1, done: false }; }
+}
+
+/** Deals 2 objectives to each actor: different categories per hand, never shared within a side. */
+export function drawMatchObjectives(seed: number, actors: ReadonlyArray<{ id: string; side: MatchShapeSide }>, flags: MatchShapeFeatureFlags): MatchShapeObjectiveSlot[] {
+  const registry = new GameplayRngRegistry((matchShapeHash(`matchshape:objectives:${seed >>> 0}`) >>> 0) || 1);
+  const pool = MATCH_SHAPE_OBJECTIVES.filter(o => !o.requires || o.requires(flags));
+  const takenBySide: Record<MatchShapeSide, Set<string>> = { player: new Set(), opponent: new Set() };
+  const out: MatchShapeObjectiveSlot[] = [];
+  actors.forEach(actor => {
+    const deck = pool.slice();
+    for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(registry.draw('Challenges') * (i + 1)); const t = deck[i]; deck[i] = deck[j]; deck[j] = t; }
+    const hand: MatchObjectiveDefinition[] = [];
+    for (const def of deck) {
+      if (hand.length >= 2) break;
+      if (takenBySide[actor.side].has(def.id) || hand.some(h => h.category === def.category)) continue;
+      hand.push(def);
+    }
+    hand.forEach(def => { takenBySide[actor.side].add(def.id); out.push({ actorId: actor.id, side: actor.side, objectiveId: def.id }); });
+  });
+  return out;
+}
+
+// ---- State --------------------------------------------------------------------------------------------------------------
+export function createMatchShapeState(input: {
+  mode: unknown; seed: number; totalDays: number; settings: MatchShapeSettingsView | null | undefined;
+  actors: ReadonlyArray<{ id: string; side: MatchShapeSide }>; sideKeys: { player: string; opponent: string };
+}): MatchShapeState | null {
+  const tuning = resolveMatchShapeTuning(input.settings);
+  if (!tuning.enabled || !isMatchShapeMode(input.mode) || input.actors.length < 2) return null;
+  const seed = (Math.floor(msNum(input.seed, 1)) >>> 0) || 1;
+  const totalDays = Math.max(1, Math.floor(msNum(input.totalDays, 30)));
+  const actorSides: Record<string, MatchShapeSide> = {};
+  const tally: Record<string, MatchShapeTally> = {};
+  input.actors.forEach(a => { actorSides[a.id] = a.side; tally[a.id] = createEmptyMatchShapeTally(); });
+  return {
+    version: 1, seed, totalDays, sideKeys: { ...input.sideKeys }, actorSides,
+    objectives: drawMatchObjectives(seed, input.actors, resolveMatchShapeFeatures(input.settings)),
+    tally, comeback: { side: null, intensity: 0, gap: 0, day: 1 }, rerollTurn: {},
+    finale: { startDay: finalStretchStartDay(totalDays, tuning.stretchPct), started: false, eventId: null, startedOnDay: null, standingsAtStart: null },
+    beliefs: { rivalOnPlayer: [], playerOnRival: [] }, announced: { player: 0, opponent: 0 }, report: null
+  };
+}
+
+const sanitizeTally = (v: unknown): MatchShapeTally => {
+  const r = msRecord(v);
+  return {
+    wins: Math.max(0, Math.floor(msNum(r.wins))), byType: msCountRecord(r.byType), byRegion: msCountRecord(r.byRegion), hardWins: Math.max(0, Math.floor(msNum(r.hardWins))),
+    stretchWins: Math.max(0, Math.floor(msNum(r.stretchWins))), stretchByRegion: msCountRecord(r.stretchByRegion), finaleWins: Math.max(0, Math.floor(msNum(r.finaleWins))),
+    finaleAttempted: msStrings(r.finaleAttempted, 16).filter(s => /^[A-Z]{2,4}$/.test(s)), rerollsUsed: Math.max(0, Math.floor(msNum(r.rerollsUsed))), rerollsWon: Math.max(0, Math.floor(msNum(r.rerollsWon)))
+  };
+};
+const sanitizePair = (v: unknown): MatchShapePair | null => {
+  const r = msRecord(v);
+  return typeof r.player === 'number' && typeof r.opponent === 'number' && Number.isFinite(r.player) && Number.isFinite(r.opponent) ? { player: r.player, opponent: r.opponent } : null;
+};
+const sanitizeGuesses = (v: unknown): MatchShapeGuess[] => (Array.isArray(v) ? v : []).slice(0, 5).map(g => msRecord(g))
+  .filter(g => typeof g.objectiveId === 'string' && Boolean(MATCH_SHAPE_OBJECTIVE_BY_ID[g.objectiveId]))
+  .map(g => ({ objectiveId: String(g.objectiveId), probability: msRound(msClamp(msNum(g.probability), 0, 1), 3) }));
+const sanitizeLeader = (v: unknown): MatchShapeSide | 'tie' => (v === 'player' || v === 'opponent' ? v : 'tie');
+const sanitizeRead = (v: unknown): MatchShapeRead => { const r = msRecord(v); return { guessedId: typeof r.guessedId === 'string' && MATCH_SHAPE_OBJECTIVE_BY_ID[r.guessedId] ? r.guessedId : null, correct: r.correct === true }; };
+function sanitizeMatchShapeReport(v: unknown): MatchShapeFinalReport | null {
+  const r = msRecord(v);
+  const base = sanitizePair(r.base); const fin = sanitizePair(r.final);
+  if (typeof r.metric !== 'string' || !base || !fin) return null;
+  const lines: MatchShapeScoreLine[] = (Array.isArray(r.lines) ? r.lines : []).slice(0, 40).map(l => msRecord(l)).filter(l => msSide(l.side) !== null && (l.source === 'objective' || l.source === 'finale_event'))
+    .map(l => ({ side: msSide(l.side) as MatchShapeSide, actorId: typeof l.actorId === 'string' ? l.actorId : null, source: l.source === 'finale_event' ? 'finale_event' as const : 'objective' as const, refId: String(l.refId || '').slice(0, 40), title: String(l.title || '').slice(0, 120), achieved: l.achieved === true, delta: msNum(l.delta), detail: String(l.detail || '').slice(0, 200) }));
+  return { metric: r.metric.slice(0, 24), unit: msNum(r.unit), base, lines, final: fin, baseLeader: sanitizeLeader(r.baseLeader), finalLeader: sanitizeLeader(r.finalLeader), flipped: r.flipped === true, rivalRead: sanitizeRead(r.rivalRead), playerRead: sanitizeRead(r.playerRead), day: Math.max(0, Math.floor(msNum(r.day))) };
+}
+/** Accepts anything (a save, a patch result); returns a valid state or null. V9.5 saves have no state → null. */
+export function sanitizeMatchShapeState(raw: unknown): MatchShapeState | null {
+  const r = msRecord(raw);
+  if (r.version !== 1 || !Array.isArray(r.objectives)) return null;
+  const actorSides: Record<string, MatchShapeSide> = {};
+  Object.entries(msRecord(r.actorSides)).slice(0, 8).forEach(([id, s]) => { const side = msSide(s); if (side) actorSides[id.slice(0, 40)] = side; });
+  const objectives = r.objectives.slice(0, 16).map(o => msRecord(o))
+    .filter(o => typeof o.actorId === 'string' && msSide(o.side) !== null && typeof o.objectiveId === 'string' && Boolean(MATCH_SHAPE_OBJECTIVE_BY_ID[o.objectiveId]))
+    .map(o => ({ actorId: String(o.actorId).slice(0, 40), side: msSide(o.side) as MatchShapeSide, objectiveId: String(o.objectiveId) }));
+  const tally: Record<string, MatchShapeTally> = {};
+  Object.entries(msRecord(r.tally)).slice(0, 8).forEach(([id, t]) => { tally[id.slice(0, 40)] = sanitizeTally(t); });
+  const rerollTurn: Record<string, number> = {};
+  Object.entries(msRecord(r.rerollTurn)).slice(0, 8).forEach(([id, t]) => { if (typeof t === 'number' && Number.isFinite(t) && t >= 0) rerollTurn[id.slice(0, 40)] = Math.floor(t); });
+  const cb = msRecord(r.comeback); const fz = msRecord(r.finale); const sk = msRecord(r.sideKeys); const bl = msRecord(r.beliefs); const an = msRecord(r.announced);
+  const totalDays = Math.max(1, Math.min(365, Math.floor(msNum(r.totalDays, 30))));
+  const intensity = msRound(msClamp(msNum(cb.intensity), 0, 1));
+  return {
+    version: 1, seed: (Math.floor(msNum(r.seed, 1)) >>> 0) || 1, totalDays,
+    sideKeys: { player: typeof sk.player === 'string' ? sk.player : 'player', opponent: typeof sk.opponent === 'string' ? sk.opponent : 'ai' },
+    actorSides, objectives, tally,
+    comeback: { side: intensity > 0 ? msSide(cb.side) : null, intensity: msSide(cb.side) ? intensity : 0, gap: msRound(msClamp(msNum(cb.gap), 0, 1), 3), day: Math.max(0, Math.floor(msNum(cb.day))) },
+    rerollTurn,
+    finale: {
+      startDay: Math.max(1, Math.floor(msNum(fz.startDay, finalStretchStartDay(totalDays, MATCH_SHAPE_DEFAULTS.stretchPct)))), started: fz.started === true,
+      eventId: typeof fz.eventId === 'string' && FINALE_EVENT_BY_ID[fz.eventId] ? fz.eventId : null,
+      startedOnDay: typeof fz.startedOnDay === 'number' && Number.isFinite(fz.startedOnDay) ? Math.floor(fz.startedOnDay) : null, standingsAtStart: sanitizePair(fz.standingsAtStart)
+    },
+    beliefs: { rivalOnPlayer: sanitizeGuesses(bl.rivalOnPlayer), playerOnRival: sanitizeGuesses(bl.playerOnRival) },
+    announced: { player: msClamp(Math.floor(msNum(an.player)), 0, 4), opponent: msClamp(Math.floor(msNum(an.opponent)), 0, 4) },
+    report: r.report === null || r.report === undefined ? null : sanitizeMatchShapeReport(r.report)
+  };
+}
+
+/** The gameStateReducer's V96_MATCH_SHAPE_PATCH: pure, serialisable, idempotent where it can be. */
+export function applyMatchShapePatch(state: MatchShapeState | null, patchRaw: unknown): MatchShapeState | null {
+  const p = msRecord(patchRaw);
+  if (p.kind === 'clear') return null;
+  if (p.kind === 'init') return sanitizeMatchShapeState(p.state);
+  if (!state) return null;
+  if (p.kind === 'attempt' && typeof p.actorId === 'string') {
+    const region = typeof p.region === 'string' && /^[A-Z]{2,4}$/.test(p.region) ? p.region : '';
+    const type = typeof p.challengeType === 'string' && /^[a-z_]{1,24}$/.test(p.challengeType) ? p.challengeType : 'other';
+    const t = sanitizeTally(state.tally[p.actorId]);
+    if (p.finale === true && region && !t.finaleAttempted.includes(region)) t.finaleAttempted = [...t.finaleAttempted, region].slice(-16);
+    if (p.success === true) {
+      t.wins += 1;
+      t.byType = { ...t.byType, [type]: (t.byType[type] || 0) + 1 };
+      if (region) t.byRegion = { ...t.byRegion, [region]: (t.byRegion[region] || 0) + 1 };
+      if (msNum(p.difficulty) >= 3) t.hardWins += 1;
+      if (state.finale.started) { t.stretchWins += 1; if (region) t.stretchByRegion = { ...t.stretchByRegion, [region]: (t.stretchByRegion[region] || 0) + 1 }; }
+      if (p.finale === true) t.finaleWins += 1;
+    }
+    return { ...state, tally: { ...state.tally, [p.actorId]: t } };
+  }
+  if (p.kind === 'reroll' && typeof p.actorId === 'string') {
+    const t = sanitizeTally(state.tally[p.actorId]);
+    t.rerollsUsed += 1; if (p.won === true) t.rerollsWon += 1;
+    return { ...state, tally: { ...state.tally, [p.actorId]: t }, rerollTurn: { ...state.rerollTurn, [p.actorId]: Math.max(0, Math.floor(msNum(p.turn))) } };
+  }
+  if (p.kind === 'day') {
+    const merged = sanitizeMatchShapeState({ ...state, comeback: p.comeback, finale: p.finale, beliefs: p.beliefs, announced: p.announced });
+    return merged || state;
+  }
+  if (p.kind === 'report') {
+    const report = sanitizeMatchShapeReport(p.report);
+    return report ? { ...state, report } : state;
+  }
+  return state;
+}
+
+// ---- Comeback -------------------------------------------------------------------------------------------------------------
+/** Who trails on the win metric and how hard the boost pushes (0..1): nothing inside a 5% band, full at `fullGap`. */
+export function computeComebackStatus(values: MatchShapePair, tuning: MatchShapeTuning, day: number): MatchShapeComeback {
+  const p = Math.max(0, msNum(values.player)); const o = Math.max(0, msNum(values.opponent));
+  const leader = Math.max(p, o);
+  if (p === o || leader <= 0 || tuning.strength <= 0) return { side: null, intensity: 0, gap: 0, day };
+  const gap = (leader - Math.min(p, o)) / leader;
+  const intensity = msRound(msClamp((gap - MATCH_SHAPE_DEAD_ZONE) / Math.max(0.01, tuning.fullGap - MATCH_SHAPE_DEAD_ZONE), 0, 1));
+  return intensity > 0 ? { side: p < o ? 'player' : 'opponent', intensity, gap: msRound(gap, 3), day } : { side: null, intensity: 0, gap: msRound(gap, 3), day };
+}
+export interface MatchShapeComebackEffects { active: boolean; intensity: number; travelMult: number; loanMult: number; rerollEligible: boolean }
+export function comebackEffectsFor(state: MatchShapeState | null, side: MatchShapeSide | null, tuning: MatchShapeTuning): MatchShapeComebackEffects {
+  const cb = state?.comeback;
+  if (!cb || !side || cb.side !== side || cb.intensity <= 0 || tuning.strength <= 0) return { active: false, intensity: 0, travelMult: 1, loanMult: 1, rerollEligible: false };
+  const k = cb.intensity * tuning.strength;
+  return {
+    active: true, intensity: cb.intensity,
+    travelMult: msRound(1 - Math.min(0.6, MATCH_SHAPE_TRAVEL_MAX_DISCOUNT * k)),
+    loanMult: msRound(1 - Math.min(0.8, MATCH_SHAPE_LOAN_MAX_DISCOUNT * k)),
+    rerollEligible: cb.intensity >= MATCH_SHAPE_REROLL_MIN_INTENSITY
+  };
+}
+/** One free reroll of a failed challenge per turn while the boost is strong enough. */
+export function canUseComebackReroll(state: MatchShapeState | null, actorId: string, turn: number, tuning: MatchShapeTuning): boolean {
+  if (!state) return false;
+  const side = state.actorSides[actorId] || null;
+  return comebackEffectsFor(state, side, tuning).rerollEligible && state.rerollTurn[actorId] !== Math.floor(turn);
+}
+
+// ---- Final Stretch: national events and high-stakes challenges -------------------------------------------------------------
+export interface FinaleSideFacts { regions: number; stretchWins: number; outbackStretchWins: number; finaleWins: number; debt: number; items: number; netWorth: number }
+export interface FinaleEventContext { metric: string; unit: number; lengthFactor: number; player: FinaleSideFacts; opponent: FinaleSideFacts }
+export interface FinaleEventDefinition { readonly id: string; readonly title: string; readonly icon: string; readonly blurb: string; readonly resolve: (c: FinaleEventContext) => MatchShapePair }
+const mostOf = (c: FinaleEventContext, pick: (f: FinaleSideFacts) => number, units: number, fewest = false): MatchShapePair => {
+  const a = pick(c.player); const b = pick(c.opponent);
+  if (a === b) return { player: 0, opponent: 0 };
+  const playerWins = fewest ? a < b : a > b;
+  return playerWins ? { player: c.unit * units, opponent: 0 } : { player: 0, opponent: c.unit * units };
+};
+const eachSide = (c: FinaleEventContext, per: (f: FinaleSideFacts) => number, capUnits: number, sign = 1): MatchShapePair => ({
+  player: sign * Math.min(capUnits * c.unit, per(c.player) * c.unit), opponent: sign * Math.min(capUnits * c.unit, per(c.opponent) * c.unit)
+});
+export const FINALE_EVENTS: readonly FinaleEventDefinition[] = [
+  { id: 'federal_grants', title: 'Federal Infrastructure Grants', icon: '🏛️', blurb: 'The side controlling more regions on the final day gains 2 objective units.', resolve: c => mostOf(c, f => f.regions, 2) },
+  { id: 'tourism_week', title: 'National Tourism Week', icon: '🎟️', blurb: 'Each side gains ½ a unit per challenge won during the Final Stretch (up to 3 units).', resolve: c => eachSide(c, f => f.stretchWins * 0.5, 3) },
+  { id: 'credit_squeeze', title: 'Reserve Bank Credit Squeeze', icon: '📉', blurb: 'Each side loses ½ a unit per $500 of debt still owed on the final day (up to 2 units).', resolve: c => eachSide(c, f => Math.floor(f.debt / 500) * 0.5, 2, -1) },
+  { id: 'export_surge', title: 'Commodity Export Surge', icon: '🚢', blurb: 'The side holding more items on the final day gains 1½ units.', resolve: c => mostOf(c, f => f.items, 1.5) },
+  { id: 'outback_rally', title: 'Outback Rally', icon: '🏎️', blurb: 'The side with more Final Stretch wins in NT, WA and SA gains 1½ units.', resolve: c => mostOf(c, f => f.outbackStretchWins, 1.5) },
+  { id: 'honours_list', title: 'Australia Day Honours', icon: '🎖️', blurb: 'The side with more high-stakes finale wins gains 2 units.', resolve: c => mostOf(c, f => f.finaleWins, 2) },
+  { id: 'drought_relief', title: 'Drought Relief Package', icon: '🌾', blurb: 'The side controlling fewer regions on the final day gains 1½ units.', resolve: c => mostOf(c, f => f.regions, 1.5, true) },
+  { id: 'markets_rally', title: 'ASX Rally', icon: '📊', blurb: 'Each side gains 1 unit per $10,000 of net worth (up to 2 units).', resolve: c => eachSide(c, f => Math.floor(f.netWorth / Math.max(1, 10000 * c.lengthFactor)), 2) }
+];
+export const FINALE_EVENT_BY_ID: Readonly<Record<string, FinaleEventDefinition>> = Object.fromEntries(FINALE_EVENTS.map(e => [e.id, e]));
+export function drawFinaleEvent(seed: number): string {
+  const registry = new GameplayRngRegistry((matchShapeHash(`matchshape:finale:${seed >>> 0}`) >>> 0) || 1);
+  return FINALE_EVENTS[Math.floor(registry.draw('World') * FINALE_EVENTS.length) % FINALE_EVENTS.length].id;
+}
+export function resolveFinaleEvent(eventId: string | null, ctx: FinaleEventContext): MatchShapePair {
+  const def = eventId ? FINALE_EVENT_BY_ID[eventId] : null;
+  if (!def) return { player: 0, opponent: 0 };
+  const r = def.resolve(ctx);
+  return { player: roundForMetric(ctx.metric, r.player), opponent: roundForMetric(ctx.metric, r.opponent) };
+}
+
+/** One high-stakes challenge per region, offered once per actor while the Final Stretch runs. */
+export const FINALE_CHALLENGES: Readonly<Record<string, LegacyChallengeShape>> = {
+  NSW: { name: 'Final Stretch: Harbour Bridge Dawn Climb', difficulty: 4, reward: 3.5, type: 'finale' },
+  VIC: { name: 'Final Stretch: Great Ocean Road Night Run', difficulty: 4, reward: 3.5, type: 'finale' },
+  QLD: { name: 'Final Stretch: Outer Reef Free Dive', difficulty: 4, reward: 3.5, type: 'finale' },
+  WA: { name: 'Final Stretch: Bibbulmun Track Sprint', difficulty: 4, reward: 3.5, type: 'finale' },
+  SA: { name: 'Final Stretch: Flinders Ranges Summit Race', difficulty: 4, reward: 3.5, type: 'finale' },
+  TAS: { name: 'Final Stretch: Overland Track in a Day', difficulty: 4, reward: 3.5, type: 'finale' },
+  NT: { name: 'Final Stretch: Kakadu Wet-Season Crossing', difficulty: 4, reward: 3.5, type: 'finale' },
+  ACT: { name: 'Final Stretch: Parliament House Grand Debate', difficulty: 4, reward: 3.5, type: 'finale' }
+};
+const FINALE_CHALLENGE_NAMES: ReadonlySet<string> = new Set(Object.values(FINALE_CHALLENGES).map(c => c.name));
+export function isFinaleChallengeName(name: unknown): boolean { return typeof name === 'string' && FINALE_CHALLENGE_NAMES.has(name); }
+// The challenges win metric scores a challenge by its difficulty; register the finale names (unique — no V9.5 name changes).
+Object.values(FINALE_CHALLENGES).forEach(c => { ALL_CHALLENGE_DIFFICULTIES[c.name] = c.difficulty; });
+export function finaleChallengeFor(state: MatchShapeState | null, region: string, actorId: string): LegacyChallengeShape | null {
+  if (!state || !state.finale.started) return null;
+  const c = FINALE_CHALLENGES[region];
+  if (!c) return null;
+  return (state.tally[actorId]?.finaleAttempted || []).includes(region) ? null : { ...c };
+}
+
+// ---- Observation, inference and scoring ----------------------------------------------------------------------------------
+export function buildMatchObjectiveActorView(raw: unknown, side: MatchShapeSide, extras: { netWorth: number; debt: number; relics: number }): MatchObjectiveActorView {
+  const a = msRecord(raw);
+  return {
+    id: String(a.id || ''), side, money: msNum(a.money), debt: Math.max(0, msNum(extras.debt)), netWorth: msNum(extras.netWorth), level: Math.max(1, Math.floor(msNum(a.level, 1))),
+    visitedRegions: msStrings(a.visitedRegions, 32), inventory: msStrings(a.inventory, 200), equipmentCount: msStrings(a.equipment, 32).length,
+    masteryCount: msStrings(a.masteryUnlocks, 32).length, consecutiveWins: Math.max(0, Math.floor(msNum(a.consecutiveWins))), relics: Math.max(0, Math.floor(msNum(extras.relics)))
+  };
+}
+export function buildMatchObjectiveContext(state: MatchShapeState, actor: MatchObjectiveActorView, world: { controllerByRegion: Record<string, string | null>; investedBySideKey: Record<string, number> }): MatchObjectiveContext {
+  const sideKey = state.sideKeys[actor.side];
+  const s = state.finale.standingsAtStart;
+  return {
+    actor, sideKey, controllerByRegion: world.controllerByRegion, investedBySide: Math.max(0, msNum(world.investedBySideKey[sideKey])),
+    tally: state.tally[actor.id] || createEmptyMatchShapeTally(), lengthFactor: matchShapeLengthFactor(state.totalDays),
+    ledAtStretchStart: Boolean(s && (actor.side === 'player' ? s.player > s.opponent : s.opponent > s.player))
+  };
+}
+/** Ranks pool objectives by how well the observed side's play fits them (0..1 probabilities, top 3). */
+export function inferMatchObjectives(input: { contexts: readonly MatchObjectiveContext[]; beliefs?: Partial<Record<MatchObjectiveStyle, number>> | null; regionalInterest?: Record<string, number> | null; flags: MatchShapeFeatureFlags }): MatchShapeGuess[] {
+  if (!input.contexts.length) return [];
+  const interest = input.regionalInterest || {};
+  const totalInterest = Object.values(interest).reduce((s, n) => s + Math.max(0, msNum(n)), 0);
+  const scored = MATCH_SHAPE_OBJECTIVES.filter(o => !o.requires || o.requires(input.flags)).map(def => {
+    const ratio = Math.max(...input.contexts.map(c => { const pr = evaluateMatchObjective(def.id, c); return pr.target > 0 ? Math.min(1, pr.current / pr.target) : 0; }));
+    const style = msClamp(msNum(input.beliefs?.[def.style], 0.25), 0, 1);
+    const regionFit = def.regions && totalInterest > 0 ? def.regions.reduce((s, r) => s + Math.max(0, msNum(interest[r])), 0) / totalInterest : 0;
+    return { id: def.id, score: 0.05 + 0.6 * ratio + 0.25 * style + 0.15 * regionFit };
+  });
+  const sum = scored.reduce((s, x) => s + x.score, 0) || 1;
+  return scored.map(x => ({ objectiveId: x.id, probability: msRound(x.score / sum, 3) }))
+    .sort((a, b) => b.probability - a.probability || a.objectiveId.localeCompare(b.objectiveId)).slice(0, 3);
+}
+export function buildMatchShapeReport(input: {
+  state: MatchShapeState; metric: string; unit: number; base: MatchShapePair; day: number;
+  progressByActor: Record<string, Record<string, MatchObjectiveProgress>>; eventDelta: MatchShapePair | null; actorNames: Record<string, string>;
+}): MatchShapeFinalReport {
+  const lines: MatchShapeScoreLine[] = input.state.objectives.map(slot => {
+    const def = MATCH_SHAPE_OBJECTIVE_BY_ID[slot.objectiveId];
+    const pr = input.progressByActor[slot.actorId]?.[slot.objectiveId] || { current: 0, target: 1, done: false };
+    return { side: slot.side, actorId: slot.actorId, source: 'objective' as const, refId: slot.objectiveId, title: def ? def.title : slot.objectiveId, achieved: pr.done, delta: pr.done ? input.unit : 0, detail: `${input.actorNames[slot.actorId] || slot.actorId}: ${pr.current}/${pr.target}` };
+  });
+  const ev = input.state.finale.eventId ? FINALE_EVENT_BY_ID[input.state.finale.eventId] : null;
+  if (ev && input.eventDelta) {
+    (['player', 'opponent'] as const).forEach(side => {
+      const d = input.eventDelta ? input.eventDelta[side] : 0;
+      lines.push({ side, actorId: null, source: 'finale_event', refId: ev.id, title: `${ev.icon} ${ev.title}`, achieved: d !== 0, delta: d, detail: d === 0 ? 'No effect on this side' : ev.blurb });
+    });
+  }
+  const sum = (side: MatchShapeSide) => lines.filter(l => l.side === side).reduce((s, l) => s + l.delta, 0);
+  const final = { player: input.base.player + sum('player'), opponent: input.base.opponent + sum('opponent') };
+  const leaderOf = (p: MatchShapePair): MatchShapeSide | 'tie' => (p.player === p.opponent ? 'tie' : p.player > p.opponent ? 'player' : 'opponent');
+  const ownIds = (side: MatchShapeSide) => input.state.objectives.filter(o => o.side === side).map(o => o.objectiveId);
+  const rivalTop = input.state.beliefs.rivalOnPlayer[0]?.objectiveId || null;
+  const playerTop = input.state.beliefs.playerOnRival[0]?.objectiveId || null;
+  const baseLeader = leaderOf(input.base); const finalLeader = leaderOf(final);
+  return {
+    metric: input.metric, unit: input.unit, base: { ...input.base }, lines, final, baseLeader, finalLeader, flipped: baseLeader !== finalLeader,
+    rivalRead: { guessedId: rivalTop, correct: Boolean(rivalTop && ownIds('player').includes(rivalTop)) },
+    playerRead: { guessedId: playerTop, correct: Boolean(playerTop && ownIds('opponent').includes(playerTop)) },
+    day: input.day
+  };
+}
+/** The win-metric table with the report's moves applied to the primary metric only (tie-breakers untouched). */
+export function applyMatchShapeToMetricValues<T extends Record<string, { player: number; ai: number }>>(values: T, metric: string, report: MatchShapeFinalReport | null): T {
+  const cur = values[metric];
+  if (!report || !cur) return values;
+  const dp = report.final.player - report.base.player; const dop = report.final.opponent - report.base.opponent;
+  return { ...values, [metric]: { player: cur.player + dp, ai: cur.ai + dop } };
+}
+
+// ---- AI pursuit and denial -----------------------------------------------------------------------------------------------------
+const MATCH_SHAPE_REGION_WIN_SETS: Readonly<Record<string, readonly string[]>> = { tasmania_2: ['TAS'], outback_3: ['NT', 'WA', 'SA'], coastal_4: ['QLD', 'NSW', 'VIC'] };
+const MATCH_SHAPE_TYPE_OBJECTIVES: Readonly<Record<string, string>> = { wildlife_5: 'wildlife', physical_5: 'physical', educational_5: 'educational', social_4: 'social', cultural_3: 'cultural' };
+/** Extra travel score for the AI: its own objective regions, and (in the Final Stretch) regions it believes the rival must hold. */
+export function matchShapeTravelBias(input: { region: string; own: readonly MatchShapeObjectiveSlot[]; ownSideKey: string; controllerByRegion: Record<string, string | null>; rivalGuesses: readonly MatchShapeGuess[]; rivalSideKey: string; inFinale: boolean; regionChallengeTypes: readonly string[]; ownTally: MatchShapeTally | null }): number {
+  let bias = 0;
+  input.own.forEach(slot => {
+    const def = MATCH_SHAPE_OBJECTIVE_BY_ID[slot.objectiveId];
+    if (!def) return;
+    if (def.category === 'territory' && def.regions?.includes(input.region) && input.controllerByRegion[input.region] !== input.ownSideKey) bias += input.inFinale ? 100 : 60;
+    const type = MATCH_SHAPE_TYPE_OBJECTIVES[def.id];
+    if (type && input.regionChallengeTypes.includes(type)) bias += 25;
+    const set = MATCH_SHAPE_REGION_WIN_SETS[def.id];
+    if (set?.includes(input.region)) bias += 30;
+    if (def.id === 'five_states' && !(input.ownTally?.byRegion[input.region])) bias += 30;
+  });
+  if (input.inFinale) {
+    input.rivalGuesses.slice(0, 2).forEach(g => {
+      const def = MATCH_SHAPE_OBJECTIVE_BY_ID[g.objectiveId];
+      if (def?.category === 'territory' && def.regions?.includes(input.region) && input.controllerByRegion[input.region] === input.rivalSideKey && g.probability >= 0.05) bias += Math.round(Math.min(90, 400 * g.probability));
+    });
+  }
+  return bias;
+}
+/** Extra challenge score for the AI: objective types, hard wins and the high-stakes finale challenges. */
+export function matchShapeChallengeBias(input: { challenge: { type?: unknown; difficulty?: unknown; name?: unknown }; own: readonly MatchShapeObjectiveSlot[]; ownTally: MatchShapeTally | null; inFinale: boolean; trailing: boolean }): number {
+  const type = String(input.challenge.type || '');
+  const difficulty = msNum(input.challenge.difficulty, 1);
+  const finale = isFinaleChallengeName(input.challenge.name);
+  let bias = 0;
+  input.own.forEach(slot => {
+    const def = MATCH_SHAPE_OBJECTIVE_BY_ID[slot.objectiveId];
+    if (!def) return;
+    const tallyType = MATCH_SHAPE_TYPE_OBJECTIVES[def.id];
+    if (tallyType && tallyType === type && !evaluateObjectiveSimple(def.id, input.ownTally)) bias += 40;
+    if (def.id === 'hard_3' && difficulty >= 3) bias += 25;
+    if (def.id === 'finale_win' && finale) bias += 40;
+    if (def.id === 'stretch_3' && input.inFinale) bias += 20;
+  });
+  if (finale) bias += 30 + (input.trailing ? 30 : 0);
+  return bias;
+}
+const evaluateObjectiveSimple = (id: string, tally: MatchShapeTally | null): boolean => {
+  const def = MATCH_SHAPE_OBJECTIVE_BY_ID[id];
+  if (!def || !tally) return false;
+  const actor = buildMatchObjectiveActorView({}, 'player', { netWorth: 0, debt: 0, relics: 0 });
+  return def.evaluate({ actor, sideKey: '', controllerByRegion: {}, investedBySide: 0, tally, lengthFactor: 1, ledAtStretchStart: false }).done;
+};
+
+// ---- HUD and game-over views ---------------------------------------------------------------------------------------------------
+export interface MatchShapeHudObjective { id: string; title: string; icon: string; current: number; target: number; done: boolean; owner: string }
+export interface MatchShapeHudView {
+  objectives: MatchShapeHudObjective[];
+  unitText: string;
+  comeback: { mine: boolean; percent: number; travelPct: number; loanPct: number; rerollReady: boolean } | null;
+  finale: { active: boolean; startDay: number; daysLeft: number; event: { title: string; icon: string; blurb: string } | null };
+  myRead: Array<{ title: string; percent: number }>;
+  rivalSuspects: { title: string; percent: number } | null;
+  hiddenRivalCount: number;
+}
+export function buildMatchShapeHudView(input: {
+  state: MatchShapeState; viewerSide: MatchShapeSide; metric: string; tuning: MatchShapeTuning; day: number; turn: number; viewerActorId: string;
+  contextsByActor: Record<string, MatchObjectiveContext>; actorNames: Record<string, string>;
+}): MatchShapeHudView {
+  const st = input.state;
+  const unit = matchObjectiveUnit(input.metric, st.totalDays, input.tuning.weight);
+  const objectives = st.objectives.filter(o => o.side === input.viewerSide).map(slot => {
+    const def = MATCH_SHAPE_OBJECTIVE_BY_ID[slot.objectiveId];
+    const pr = evaluateMatchObjective(slot.objectiveId, input.contextsByActor[slot.actorId]);
+    return { id: slot.objectiveId, title: def ? def.title : slot.objectiveId, icon: def ? def.icon : '🎯', current: pr.current, target: pr.target, done: pr.done, owner: input.actorNames[slot.actorId] || slot.actorId };
+  });
+  const cbSide = st.comeback.side;
+  const eff = cbSide ? comebackEffectsFor(st, cbSide, input.tuning) : null;
+  const ev = st.finale.eventId ? FINALE_EVENT_BY_ID[st.finale.eventId] : null;
+  const myGuesses = input.viewerSide === 'player' ? st.beliefs.playerOnRival : st.beliefs.rivalOnPlayer;
+  const theirGuesses = input.viewerSide === 'player' ? st.beliefs.rivalOnPlayer : st.beliefs.playerOnRival;
+  const title = (id: string) => MATCH_SHAPE_OBJECTIVE_BY_ID[id]?.title || id;
+  return {
+    objectives,
+    unitText: `Each completed objective adds ${formatMatchShapeDelta(input.metric, unit)}${input.metric === 'regions' ? (unit === 1 ? ' region' : ' regions') : ''} to your final score`,
+    comeback: eff && eff.active ? { mine: cbSide === input.viewerSide, percent: Math.round(eff.intensity * 100), travelPct: Math.round((1 - eff.travelMult) * 100), loanPct: Math.round((1 - eff.loanMult) * 100), rerollReady: eff.rerollEligible && st.rerollTurn[input.viewerActorId] !== Math.floor(input.turn) } : null,
+    finale: { active: st.finale.started, startDay: st.finale.startDay, daysLeft: Math.max(0, st.totalDays - input.day), event: ev ? { title: ev.title, icon: ev.icon, blurb: ev.blurb } : null },
+    myRead: myGuesses.slice(0, 2).map(g => ({ title: title(g.objectiveId), percent: Math.round(g.probability * 100) })),
+    rivalSuspects: theirGuesses[0] ? { title: title(theirGuesses[0].objectiveId), percent: Math.round(theirGuesses[0].probability * 100) } : null,
+    hiddenRivalCount: st.objectives.filter(o => o.side !== input.viewerSide).length
+  };
+}
+
+export const MatchShapeHud = React.memo(function MatchShapeHud({ view, theme }: { view: MatchShapeHudView; theme: { card: string; border: string; shadow: string } }) {
+  return (
+    <section aria-labelledby="match-shape-h" className={`${theme.card} ${theme.border} border rounded-xl px-3 py-2 ${theme.shadow} text-xs space-y-1.5`} data-testid="match-shape-hud">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 id="match-shape-h" className="font-bold text-sm">🎯 Secret objectives</h2>
+        <span className="opacity-70">{view.unitText}</span>
+        {view.comeback && (
+          <span className={`px-2 py-0.5 rounded-full ${view.comeback.mine ? 'bg-emerald-600/30 text-emerald-200' : 'bg-rose-600/25 text-rose-200'}`} data-testid="match-shape-underdog" title="Underdog boost: scales with the gap on the win metric and fades as it closes.">
+            🐾 {view.comeback.mine ? 'Underdog boost' : 'Rival underdog boost'} {view.comeback.percent}% · travel −{view.comeback.travelPct}% · loan interest −{view.comeback.loanPct}%{view.comeback.mine ? ` · reroll ${view.comeback.rerollReady ? 'ready' : 'used / locked'}` : ''}
+          </span>
+        )}
+        {view.finale.active
+          ? <span className="px-2 py-0.5 rounded-full bg-amber-500/30 text-amber-100 font-semibold" data-testid="match-shape-finale">🏁 Final Stretch · {view.finale.daysLeft} day{view.finale.daysLeft === 1 ? '' : 's'} left</span>
+          : <span className="opacity-70" data-testid="match-shape-finale-upcoming">🏁 Final Stretch from day {view.finale.startDay}</span>}
+      </div>
+      <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1" data-testid="match-shape-objectives">
+        {view.objectives.map(o => (
+          <li key={`${o.owner}-${o.id}`} className={`flex items-center gap-2 rounded px-2 py-1 ${o.done ? 'bg-emerald-600/20' : 'bg-black/20'}`}>
+            <span aria-hidden="true">{o.icon}</span>
+            <span className="flex-1">{o.title}{view.objectives.some(x => x.owner !== o.owner) ? <span className="opacity-60"> · {o.owner}</span> : null}</span>
+            <span className="font-mono" aria-label={`${o.current} of ${o.target}${o.done ? ', complete' : ''}`}>{o.done ? '✓' : `${o.current}/${o.target}`}</span>
+          </li>
+        ))}
+      </ul>
+      {view.finale.event && <div data-testid="match-shape-event"><span className="font-semibold">{view.finale.event.icon} {view.finale.event.title}:</span> {view.finale.event.blurb}</div>}
+      <div className="flex flex-wrap gap-x-4 gap-y-0.5 opacity-85">
+        <span data-testid="match-shape-read">🔎 Your read on the rival's {view.hiddenRivalCount} hidden objective{view.hiddenRivalCount === 1 ? '' : 's'}: {view.myRead.length ? view.myRead.map(r => `${r.title} (${r.percent}%)`).join(' · ') : 'not enough to go on yet'}</span>
+        {view.rivalSuspects && <span data-testid="match-shape-suspects">🕵️ The rival suspects you're after: {view.rivalSuspects.title} ({view.rivalSuspects.percent}%)</span>}
+      </div>
+    </section>
+  );
+});
+
+export const MatchShapeSummaryCard = React.memo(function MatchShapeSummaryCard({ report, playerName, rivalName, theme }: { report: MatchShapeFinalReport; playerName: string; rivalName: string; theme: { border: string } }) {
+  const name = (side: MatchShapeSide) => (side === 'player' ? playerName : rivalName);
+  const fmt = (v: number) => formatMatchShapeValue(report.metric, v);
+  const leader = (l: MatchShapeSide | 'tie') => (l === 'tie' ? 'level' : `${name(l)} ahead`);
+  const read = (r: MatchShapeRead, who: string) => (r.guessedId ? `${who} guessed “${MATCH_SHAPE_OBJECTIVE_BY_ID[r.guessedId]?.title || r.guessedId}” — ${r.correct ? 'correct' : 'wrong'}` : `${who} never got a read`);
+  return (
+    <div className={`${theme.border} border rounded-lg p-3 text-left text-xs space-y-2`} data-testid="match-shape-summary">
+      <div className="font-semibold text-sm">🎯 How the match shape moved the result</div>
+      <div className="flex justify-between"><span>Before objectives and the finale</span><span className="font-mono">{fmt(report.base.player)} vs {fmt(report.base.opponent)} ({leader(report.baseLeader)})</span></div>
+      <ul className="space-y-1">
+        {report.lines.map((l, i) => (
+          <li key={`${l.refId}-${l.side}-${i}`} className="flex justify-between gap-2">
+            <span>{l.source === 'objective' ? (l.achieved ? '✅' : '❌') : '📣'} <span className="opacity-70">{name(l.side)}:</span> {l.title} <span className="opacity-60">({l.detail})</span></span>
+            <span className={`font-mono ${l.delta > 0 ? 'text-emerald-400' : l.delta < 0 ? 'text-rose-400' : 'opacity-60'}`}>{l.delta === 0 ? '±0' : formatMatchShapeDelta(report.metric, l.delta)}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="flex justify-between font-semibold"><span>Final score</span><span className="font-mono">{fmt(report.final.player)} vs {fmt(report.final.opponent)} ({leader(report.finalLeader)})</span></div>
+      {report.flipped && <div className="font-semibold text-amber-300" data-testid="match-shape-flipped">The objectives and the Final Stretch changed the outcome.</div>}
+      <div className="opacity-80">{read(report.rivalRead, rivalName)} · {read(report.playerRead, 'Your read')}</div>
+    </div>
+  );
+});
+
+/** Game over before the final day (bankruptcy, mercy rule): reveal both hands, scored or not. */
+export const MatchShapeRevealCard = React.memo(function MatchShapeRevealCard({ state, playerName, rivalName, theme }: { state: MatchShapeState; playerName: string; rivalName: string; theme: { border: string } }) {
+  const sides: MatchShapeSide[] = ['player', 'opponent'];
+  return (
+    <div className={`${theme.border} border rounded-lg p-3 text-left text-xs space-y-1`} data-testid="match-shape-reveal">
+      <div className="font-semibold text-sm">🎯 Secret objectives (not scored)</div>
+      <div className="opacity-75">The match ended before the final day, so objectives and the Final Stretch did not change the result.</div>
+      {sides.map(side => (
+        <div key={side}><span className="font-semibold">{side === 'player' ? playerName : rivalName}:</span> {state.objectives.filter(o => o.side === side).map(o => MATCH_SHAPE_OBJECTIVE_BY_ID[o.objectiveId]?.title || o.objectiveId).join(' · ') || '—'}</div>
+      ))}
+    </div>
+  );
+});
+
+// ---- Self-tests (mt01–mt42) ------------------------------------------------------------------------------------------------------
+export function runV96MatchShapeSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const ON: MatchShapeSettingsView = { matchShapeEnabled: true };
+  const soloActors = [{ id: 'player', side: 'player' as const }, { id: 'ai', side: 'opponent' as const }];
+  const teamActors = [{ id: 'player', side: 'player' as const }, { id: 'ai', side: 'opponent' as const }, { id: 'ally_ai', side: 'player' as const }, { id: 'enemy_support_ai', side: 'opponent' as const }];
+  const mk = (seed = 7, extra: MatchShapeSettingsView = {}) => createMatchShapeState({ mode: 'ai', seed, totalDays: 30, settings: { ...ON, ...extra }, actors: soloActors, sideKeys: { player: 'player', opponent: 'ai' } }) as MatchShapeState;
+  const view = (o: Partial<MatchObjectiveActorView> = {}): MatchObjectiveActorView => ({ ...buildMatchObjectiveActorView({ id: 'player' }, 'player', { netWorth: 0, debt: 0, relics: 0 }), ...o });
+  const ctx = (o: Partial<MatchObjectiveContext> = {}): MatchObjectiveContext => ({ actor: view(), sideKey: 'player', controllerByRegion: {}, investedBySide: 0, tally: createEmptyMatchShapeTally(), lengthFactor: 1, ledAtStretchStart: false, ...o });
+  const tuning = resolveMatchShapeTuning(ON);
+  const allFlags: MatchShapeFeatureFlags = { relics: true, equipment: true, cultural: true };
+  const noFlags: MatchShapeFeatureFlags = { relics: false, equipment: false, cultural: false };
+  const facts = (o: Partial<FinaleSideFacts> = {}): FinaleSideFacts => ({ regions: 0, stretchWins: 0, outbackStretchWins: 0, finaleWins: 0, debt: 0, items: 0, netWorth: 0, ...o });
+
+  check('mt01_pool', 'The objective pool has 30+ unique objectives (30+ with every optional system off)', () => {
+    const ids = MATCH_SHAPE_OBJECTIVES.map(o => o.id);
+    const basic = MATCH_SHAPE_OBJECTIVES.filter(o => !o.requires || o.requires(noFlags)).length;
+    return (ids.length >= 30 && new Set(ids).size === ids.length && basic >= 30) || `${ids.length} / ${basic}`;
+  });
+  check('mt02_evaluate_safe', 'Every objective evaluates on an empty context with a positive target and not done', () => {
+    const bad = MATCH_SHAPE_OBJECTIVES.filter(o => { const p = evaluateMatchObjective(o.id, ctx()); return !(p.target > 0) || p.done || p.current < 0; });
+    return bad.length === 0 || bad.map(b => b.id).join(',');
+  });
+  check('mt03_hand_shape', 'Each actor is dealt exactly 2 objectives from different categories', () => {
+    for (let seed = 1; seed <= 40; seed++) {
+      const slots = drawMatchObjectives(seed, teamActors, allFlags);
+      for (const a of teamActors) {
+        const hand = slots.filter(s => s.actorId === a.id);
+        if (hand.length !== 2) return `seed ${seed} ${a.id} got ${hand.length}`;
+        const cats = hand.map(h => MATCH_SHAPE_OBJECTIVE_BY_ID[h.objectiveId].category);
+        if (cats[0] === cats[1]) return `seed ${seed} ${a.id} same category`;
+      }
+    }
+    return true;
+  });
+  check('mt04_deterministic', 'The same seed deals the same hands; different seeds deal different ones', () => {
+    const a = JSON.stringify(drawMatchObjectives(99, soloActors, noFlags)); const b = JSON.stringify(drawMatchObjectives(99, soloActors, noFlags));
+    const distinct = new Set(Array.from({ length: 12 }, (_, i) => JSON.stringify(drawMatchObjectives(i + 1, soloActors, noFlags)))).size;
+    return (a === b && distinct >= 8) || `${a === b} ${distinct}`;
+  });
+  check('mt05_feasible', 'Relic, equipment and cultural objectives are never dealt when those systems are off', () => {
+    const gated = new Set(MATCH_SHAPE_OBJECTIVES.filter(o => o.requires).map(o => o.id));
+    for (let seed = 1; seed <= 80; seed++) { const s = drawMatchObjectives(seed, teamActors, noFlags).find(x => gated.has(x.objectiveId)); if (s) return `seed ${seed}: ${s.objectiveId}`; }
+    return true;
+  });
+  check('mt06_side_unique', 'Teammates never share an objective', () => {
+    for (let seed = 1; seed <= 80; seed++) {
+      const slots = drawMatchObjectives(seed, teamActors, allFlags);
+      for (const side of ['player', 'opponent'] as const) { const ids = slots.filter(s => s.side === side).map(s => s.objectiveId); if (new Set(ids).size !== ids.length) return `seed ${seed} ${side}`; }
+    }
+    return true;
+  });
+  check('mt07_spec_examples', 'The brief\'s examples are in the pool', () =>
+    (['hold_tas_nt', 'wildlife_5', 'zero_debt_relics'].every(id => Boolean(MATCH_SHAPE_OBJECTIVE_BY_ID[id])) && MATCH_SHAPE_OBJECTIVE_BY_ID.hold_tas_nt.title === 'Hold TAS and NT on the final day' && MATCH_SHAPE_OBJECTIVE_BY_ID.zero_debt_relics.title === 'End with zero debt and 3 relics') || 'missing');
+  check('mt08_hold', 'Hold TAS and NT: both held → done; one held → 1/2; the rival holding them → 0/2', () => {
+    const both = evaluateMatchObjective('hold_tas_nt', ctx({ controllerByRegion: { TAS: 'player', NT: 'player' } }));
+    const one = evaluateMatchObjective('hold_tas_nt', ctx({ controllerByRegion: { TAS: 'player', NT: 'ai' } }));
+    const none = evaluateMatchObjective('hold_tas_nt', ctx({ controllerByRegion: { TAS: 'ai', NT: 'ai' } }));
+    return (both.done && !one.done && one.current === 1 && none.current === 0) || JSON.stringify([both, one, none]);
+  });
+  check('mt09_debt_relics', 'Zero debt and 3 relics: needs both conditions', () => {
+    const ok = evaluateMatchObjective('zero_debt_relics', ctx({ actor: view({ debt: 0, relics: 3 }) })).done;
+    const debt = evaluateMatchObjective('zero_debt_relics', ctx({ actor: view({ debt: 100, relics: 5 }) })).done;
+    const few = evaluateMatchObjective('zero_debt_relics', ctx({ actor: view({ debt: 0, relics: 2 }) })).done;
+    return (ok && !debt && !few) || JSON.stringify([ok, debt, few]);
+  });
+  check('mt10_type_tally', 'Wildlife challenges count from the tally by type', () => {
+    const t = { ...createEmptyMatchShapeTally(), byType: { wildlife: 5, physical: 2 } };
+    const p = evaluateMatchObjective('wildlife_5', ctx({ tally: t })); const q = evaluateMatchObjective('physical_5', ctx({ tally: t }));
+    return (p.done && !q.done && q.current === 2) || JSON.stringify([p, q]);
+  });
+  check('mt11_comeback_dead_zone', 'No boost when level or inside the 5% band', () => {
+    const level = computeComebackStatus({ player: 1000, opponent: 1000 }, tuning, 3); const close = computeComebackStatus({ player: 980, opponent: 1000 }, tuning, 3);
+    return (level.side === null && level.intensity === 0 && close.side === null && close.intensity === 0) || JSON.stringify([level, close]);
+  });
+  check('mt12_comeback_scale', 'The trailing side gets the boost; it grows with the gap and is full at the configured gap', () => {
+    const mid = computeComebackStatus({ player: 700, opponent: 1000 }, tuning, 3); const full = computeComebackStatus({ player: 400, opponent: 1000 }, tuning, 3); const rival = computeComebackStatus({ player: 1000, opponent: 600 }, tuning, 3);
+    return (mid.side === 'player' && mid.intensity > 0 && mid.intensity < 1 && full.intensity === 1 && rival.side === 'opponent') || JSON.stringify([mid, full, rival]);
+  });
+  check('mt13_comeback_fades', 'The boost fades monotonically as the gap closes', () => {
+    const seq = [400, 550, 700, 850, 960, 1000].map(p => computeComebackStatus({ player: p, opponent: 1000 }, tuning, 1).intensity);
+    return (seq.every((v, i) => i === 0 || v <= seq[i - 1]) && seq[0] === 1 && seq[seq.length - 1] === 0) || JSON.stringify(seq);
+  });
+  check('mt14_effects', 'Travel and loan relief scale with intensity × strength; strength 0 switches the boost off', () => {
+    const st = { ...mk(), comeback: { side: 'player' as const, intensity: 1, gap: 0.6, day: 2 } };
+    const full = comebackEffectsFor(st, 'player', tuning); const half = comebackEffectsFor({ ...st, comeback: { ...st.comeback, intensity: 0.5 } }, 'player', tuning);
+    const off = comebackEffectsFor(st, 'player', resolveMatchShapeTuning({ ...ON, comebackStrength: 0 })); const other = comebackEffectsFor(st, 'opponent', tuning);
+    return (full.travelMult === 0.7 && full.loanMult === 0.6 && half.travelMult === 0.85 && half.loanMult === 0.8 && !off.active && off.travelMult === 1 && !other.active) || JSON.stringify([full, half, off, other]);
+  });
+  check('mt15_reroll', 'One reroll per turn, only for the trailing side, only above the minimum intensity', () => {
+    const st = { ...mk(), comeback: { side: 'player' as const, intensity: 0.6, gap: 0.4, day: 2 } };
+    const first = canUseComebackReroll(st, 'player', 4, tuning);
+    const used = canUseComebackReroll(applyMatchShapePatch(st, { kind: 'reroll', actorId: 'player', turn: 4, won: false }), 'player', 4, tuning);
+    const nextTurn = canUseComebackReroll(applyMatchShapePatch(st, { kind: 'reroll', actorId: 'player', turn: 4, won: false }), 'player', 5, tuning);
+    const rival = canUseComebackReroll(st, 'ai', 4, tuning); const weak = canUseComebackReroll({ ...st, comeback: { ...st.comeback, intensity: 0.2 } }, 'player', 4, tuning);
+    return (first && !used && nextTurn && !rival && !weak) || JSON.stringify([first, used, nextTurn, rival, weak]);
+  });
+  check('mt16_stretch_day', 'The Final Stretch covers the last 20% of days by default', () => {
+    const r = [finalStretchStartDay(30, 20), finalStretchStartDay(7, 20), finalStretchStartDay(10, 10), finalStretchStartDay(60, 20)];
+    return JSON.stringify(r) === '[25,6,10,49]' || JSON.stringify(r);
+  });
+  check('mt17_event_draw', 'The national finale event is deterministic and drawn from 8 events', () => {
+    const ids = Array.from({ length: 30 }, (_, i) => drawFinaleEvent(i + 1));
+    return (FINALE_EVENTS.length === 8 && drawFinaleEvent(5) === drawFinaleEvent(5) && ids.every(id => Boolean(FINALE_EVENT_BY_ID[id])) && new Set(ids).size >= 5) || JSON.stringify(ids);
+  });
+  check('mt18_event_grants', 'Federal grants: more regions wins 2 units; a tie moves nothing', () => {
+    const c = (p: number, o: number): FinaleEventContext => ({ metric: 'money', unit: 1500, lengthFactor: 1, player: facts({ regions: p }), opponent: facts({ regions: o }) });
+    const a = resolveFinaleEvent('federal_grants', c(4, 2)); const t = resolveFinaleEvent('federal_grants', c(3, 3));
+    return (a.player === 3000 && a.opponent === 0 && t.player === 0 && t.opponent === 0) || JSON.stringify([a, t]);
+  });
+  check('mt19_event_cap', 'Tourism week pays ½ unit per stretch win, capped at 3 units', () => {
+    const r = resolveFinaleEvent('tourism_week', { metric: 'money', unit: 1000, lengthFactor: 1, player: facts({ stretchWins: 10 }), opponent: facts({ stretchWins: 2 }) });
+    return (r.player === 3000 && r.opponent === 1000) || JSON.stringify(r);
+  });
+  check('mt20_event_penalty', 'Credit squeeze costs indebted sides, capped at 2 units', () => {
+    const r = resolveFinaleEvent('credit_squeeze', { metric: 'money', unit: 1000, lengthFactor: 1, player: facts({ debt: 1100 }), opponent: facts({ debt: 9000 }) });
+    return (r.player === -1000 && r.opponent === -2000) || JSON.stringify(r);
+  });
+  const report = (base: MatchShapePair, doneIds: string[], event: MatchShapePair | null) => {
+    const st = { ...mk(3), finale: { ...mk(3).finale, started: true, eventId: 'federal_grants' } };
+    const progressByActor: Record<string, Record<string, MatchObjectiveProgress>> = {};
+    st.objectives.forEach(s => { progressByActor[s.actorId] = { ...(progressByActor[s.actorId] || {}), [s.objectiveId]: { current: doneIds.includes(s.objectiveId) ? 1 : 0, target: 1, done: doneIds.includes(s.objectiveId) } }; });
+    return { st, r: buildMatchShapeReport({ state: st, metric: 'money', unit: 1500, base, day: 30, progressByActor, eventDelta: event, actorNames: { player: 'You', ai: 'Rival' } }) };
+  };
+  check('mt21_report_sum', 'Final score = base + achieved objectives + finale event, line by line', () => {
+    const done = [mk(3).objectives[0].objectiveId];
+    const { st, r } = report({ player: 5000, opponent: 6000 }, done, { player: 3000, opponent: 0 });
+    const won = (side: MatchShapeSide) => st.objectives.filter(o => o.side === side && done.includes(o.objectiveId)).length * 1500;
+    const lineSum = (side: MatchShapeSide) => r.lines.filter(l => l.side === side).reduce((s, l) => s + l.delta, 0);
+    return (r.lines.length === st.objectives.length + 2 && r.final.player === 5000 + won('player') + 3000 && r.final.opponent === 6000 + won('opponent') && r.final.player === 5000 + lineSum('player')) || JSON.stringify(r.final);
+  });
+  check('mt22_report_flip', 'The report flags a result the match shape flipped', () => {
+    const { r } = report({ player: 5000, opponent: 6000 }, [], { player: 3000, opponent: 0 });
+    const { r: same } = report({ player: 9000, opponent: 6000 }, [], { player: 0, opponent: 0 });
+    return (r.flipped && r.baseLeader === 'opponent' && r.finalLeader === 'player' && !same.flipped) || JSON.stringify([r.baseLeader, r.finalLeader, same.flipped]);
+  });
+  check('mt23_metric_only', 'Applying the report moves only the primary metric', () => {
+    const { r } = report({ player: 5000, opponent: 6000 }, [], { player: 3000, opponent: 0 });
+    const v = { money: { player: 5000, ai: 6000 }, netWorth: { player: 9000, ai: 8000 }, regions: { player: 2, ai: 3 }, challenges: { player: 10, ai: 11 } };
+    const out = applyMatchShapeToMetricValues(v, 'money', r);
+    return (out.money.player === 8000 && out.money.ai === 6000 && out.netWorth === v.netWorth && out.regions === v.regions && applyMatchShapeToMetricValues(v, 'money', null) === v) || JSON.stringify(out);
+  });
+  check('mt24_units', 'Objective units per metric, match length and weight', () => {
+    const u = [matchObjectiveUnit('money', 30, 1), matchObjectiveUnit('netWorth', 30, 1), matchObjectiveUnit('regions', 30, 1), matchObjectiveUnit('challenges', 30, 1), matchObjectiveUnit('money', 60, 1), matchObjectiveUnit('money', 30, 0), matchObjectiveUnit('regions', 30, 2)];
+    return JSON.stringify(u) === '[1500,2000,1,5,3000,0,2]' || JSON.stringify(u);
+  });
+  check('mt25_sanitize_roundtrip', 'A valid state survives JSON + sanitize unchanged; junk becomes null', () => {
+    const st = mk(11); const back = sanitizeMatchShapeState(JSON.parse(JSON.stringify(st)));
+    return (JSON.stringify(back) === JSON.stringify(st) && sanitizeMatchShapeState(null) === null && sanitizeMatchShapeState({ version: 2 }) === null && sanitizeMatchShapeState('x') === null) || 'round trip differs';
+  });
+  check('mt26_sanitize_clamps', 'Sanitize clamps intensity, drops unknown objectives and negative counts', () => {
+    const raw = JSON.parse(JSON.stringify(mk(11))) as Record<string, unknown>;
+    raw.comeback = { side: 'player', intensity: 7, gap: 3, day: 2 };
+    raw.objectives = [...(raw.objectives as unknown[]), { actorId: 'player', side: 'player', objectiveId: 'nope' }];
+    raw.tally = { player: { wins: -4, byType: { wildlife: -2, 'bad key!': 3 } } };
+    const s = sanitizeMatchShapeState(raw) as MatchShapeState;
+    return (s.comeback.intensity === 1 && s.comeback.gap === 1 && s.objectives.every(o => o.objectiveId !== 'nope') && s.tally.player.wins === 0 && s.tally.player.byType.wildlife === 0 && !('bad key!' in s.tally.player.byType)) || JSON.stringify(s.tally);
+  });
+  check('mt27_attempt_patch', 'Attempt patches tally wins, types, regions, hard and finale wins; a failed finale only marks the attempt', () => {
+    let st: MatchShapeState | null = mk();
+    st = applyMatchShapePatch(st, { kind: 'attempt', actorId: 'player', region: 'TAS', challengeType: 'wildlife', difficulty: 3, finale: false, success: true });
+    st = applyMatchShapePatch(st, { kind: 'attempt', actorId: 'player', region: 'NSW', challengeType: 'finale', difficulty: 4, finale: true, success: false });
+    st = applyMatchShapePatch(st ? { ...st, finale: { ...st.finale, started: true } } : null, { kind: 'attempt', actorId: 'player', region: 'VIC', challengeType: 'finale', difficulty: 4, finale: true, success: true });
+    const t = (st as MatchShapeState).tally.player;
+    return (t.wins === 2 && t.byType.wildlife === 1 && t.byRegion.TAS === 1 && t.hardWins === 2 && t.finaleWins === 1 && t.stretchWins === 1 && JSON.stringify(t.finaleAttempted) === '["NSW","VIC"]') || JSON.stringify(t);
+  });
+  check('mt28_null_safe', 'Patches on a missing state stay null (only init creates one)', () =>
+    (applyMatchShapePatch(null, { kind: 'attempt', actorId: 'player', region: 'TAS', challengeType: 'wildlife', difficulty: 1, finale: false, success: true }) === null && applyMatchShapePatch(null, { kind: 'init', state: mk() }) !== null && applyMatchShapePatch(mk(), { kind: 'clear' }) === null) || 'null handling');
+  check('mt29_inference_evidence', 'Inference: holding TAS and NT with interest there makes that objective the top read', () => {
+    const c = ctx({ controllerByRegion: { TAS: 'player', NT: 'player' } });
+    const g = inferMatchObjectives({ contexts: [c], regionalInterest: { TAS: 5, NT: 4, NSW: 1 }, flags: noFlags });
+    return (g[0]?.objectiveId === 'hold_tas_nt' && g.length === 3 && g[0].probability > g[2].probability) || JSON.stringify(g);
+  });
+  check('mt30_inference_beliefs', 'Inference uses the belief model: an economic read lifts economy objectives', () => {
+    const neutral = inferMatchObjectives({ contexts: [ctx()], beliefs: null, flags: noFlags });
+    const econ = inferMatchObjectives({ contexts: [ctx()], beliefs: { economic: 0.95, expansion: 0.05, aggressive: 0.05, cooperative: 0.05 }, flags: noFlags });
+    const isEcon = (id?: string) => Boolean(id && MATCH_SHAPE_OBJECTIVE_BY_ID[id].style === 'economic');
+    return (econ.every(g => isEcon(g.objectiveId)) && !neutral.every(g => isEcon(g.objectiveId))) || JSON.stringify([neutral, econ]);
+  });
+  check('mt31_travel_bias', 'AI travel bias: own territory regions attract; denial only in the Final Stretch', () => {
+    const own = [{ actorId: 'ai', side: 'opponent' as const, objectiveId: 'hold_tas_nt' }];
+    const base = { own, ownSideKey: 'ai', controllerByRegion: { WA: 'player' } as Record<string, string | null>, rivalGuesses: [{ objectiveId: 'hold_wa_sa', probability: 0.3 }], rivalSideKey: 'player', regionChallengeTypes: [], ownTally: null };
+    const tas = matchShapeTravelBias({ ...base, region: 'TAS', inFinale: false }); const qld = matchShapeTravelBias({ ...base, region: 'QLD', inFinale: false });
+    const denyEarly = matchShapeTravelBias({ ...base, region: 'WA', inFinale: false }); const denyLate = matchShapeTravelBias({ ...base, region: 'WA', inFinale: true });
+    return (tas === 60 && qld === 0 && denyEarly === 0 && denyLate > 0) || JSON.stringify([tas, qld, denyEarly, denyLate]);
+  });
+  check('mt32_challenge_bias', 'AI challenge bias: matching type and finale challenges score higher', () => {
+    const own = [{ actorId: 'ai', side: 'opponent' as const, objectiveId: 'wildlife_5' }];
+    const wild = matchShapeChallengeBias({ challenge: { type: 'wildlife', difficulty: 1, name: 'Feed kangaroos' }, own, ownTally: createEmptyMatchShapeTally(), inFinale: false, trailing: false });
+    const phys = matchShapeChallengeBias({ challenge: { type: 'physical', difficulty: 1, name: 'Surf' }, own, ownTally: createEmptyMatchShapeTally(), inFinale: false, trailing: false });
+    const fin = matchShapeChallengeBias({ challenge: FINALE_CHALLENGES.NSW, own, ownTally: createEmptyMatchShapeTally(), inFinale: true, trailing: true });
+    return (wild === 40 && phys === 0 && fin === 60) || JSON.stringify([wild, phys, fin]);
+  });
+  check('mt33_finale_challenges', 'One high-stakes challenge per mainland region, unique, scored by difficulty, offered once', () => {
+    const list = MATCH_SHAPE_MAINLAND.map(r => FINALE_CHALLENGES[r]);
+    const st = { ...mk(), finale: { ...mk().finale, started: true } };
+    const before = finaleChallengeFor(st, 'TAS', 'player'); const after = finaleChallengeFor(applyMatchShapePatch(st, { kind: 'attempt', actorId: 'player', region: 'TAS', challengeType: 'finale', difficulty: 4, finale: true, success: false }), 'TAS', 'player');
+    return (list.every(c => c && c.difficulty === 4 && c.reward >= 3 && ALL_CHALLENGE_DIFFICULTIES[c.name] === 4) && new Set(list.map(c => c.name)).size === 8 && before !== null && after === null && finaleChallengeFor(mk(), 'TAS', 'player') === null) || 'finale challenges';
+  });
+  check('mt34_settings', 'Settings: OFF by default, tunable defaults, registered, match-scoped and indexed', () => {
+    const keys = ['matchShapeEnabled', 'matchObjectiveWeight', 'comebackStrength', 'comebackFullGap', 'finalStretchPct'];
+    const d = DEFAULT_GAME_SETTINGS as unknown as Record<string, unknown>;
+    return (d.matchShapeEnabled === false && d.matchObjectiveWeight === 1 && d.comebackStrength === 1 && d.comebackFullGap === 0.5 && d.finalStretchPct === 20 && DEFAULT_GAME_SETTINGS.winCondition === 'money'
+      && keys.every(k => SMART_CONTROLLABLE_SETTINGS_REGISTRY.some(s => s.key === k) && (V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes(k) && SETTINGS_HUB_SECTION_INDEX.some(s => (s.fieldKeys as readonly string[]).includes(k)))) || 'settings wiring';
+  });
+  check('mt35_save_roundtrip', 'Match-shape state survives validateSaveDataCore; V9.5 saves load without it', () => {
+    const f = JSON.parse(JSON.stringify(createV95SaveFixture())) as SaveGameData;
+    (f.gameState as unknown as Record<string, unknown>).matchShape = JSON.parse(JSON.stringify(mk(21)));
+    const v = validateSaveDataCore(f).gameState as unknown as Record<string, unknown>;
+    const legacy = validateSaveDataCore(JSON.parse(JSON.stringify(createV95SaveFixture())) as SaveGameData).gameState as unknown as Record<string, unknown>;
+    return (JSON.stringify(v.matchShape) === JSON.stringify(mk(21)) && legacy.matchShape === undefined) || 'save path';
+  });
+  check('mt36_loan_tick', 'Loan tick: no multiplier is exactly V9.5; a 0.5 multiplier halves the interest', () => {
+    const st = { money: 1000, loans: [{ amount: 500, accrued: 0 }] };
+    const v95 = applySimpleLoanTick(st); const one = applySimpleLoanTick(st, 1); const half = applySimpleLoanTick(st, 0.5);
+    return (JSON.stringify(v95) === JSON.stringify(one) && v95.money === 875 && half.money === 938) || JSON.stringify([v95, half]);
+  });
+  check('mt37_hud_hidden', 'The HUD lists only the viewer side\'s objectives; the rival\'s stay hidden', () => {
+    const st = mk(5);
+    const contexts: Record<string, MatchObjectiveContext> = { player: buildMatchObjectiveContext(st, view(), { controllerByRegion: {}, investedBySideKey: {} }) };
+    const hv = buildMatchShapeHudView({ state: st, viewerSide: 'player', metric: 'money', tuning, day: 3, turn: 4, viewerActorId: 'player', contextsByActor: contexts, actorNames: { player: 'You' } });
+    const rivalIds = st.objectives.filter(o => o.side === 'opponent').map(o => o.objectiveId).filter(id => !st.objectives.some(o => o.side === 'player' && o.objectiveId === id));
+    const text = JSON.stringify(hv.objectives);
+    return (hv.objectives.length === 2 && hv.hiddenRivalCount === 2 && rivalIds.every(id => !text.includes(id))) || text;
+  });
+  check('mt38_reducer', 'gameStateReducer applies V96_MATCH_SHAPE_PATCH and leaves the rest of the state alone', () => {
+    const s0 = { day: 4, money: 7, matchShape: undefined };
+    const s1 = gameStateReducer(s0, { type: 'V96_MATCH_SHAPE_PATCH', payload: { kind: 'init', state: mk() } });
+    const s2 = gameStateReducer(s1, { type: 'V96_MATCH_SHAPE_PATCH', payload: { kind: 'attempt', actorId: 'ai', region: 'NT', challengeType: 'wildlife', difficulty: 2, finale: false, success: true } });
+    const ms = sanitizeMatchShapeState((s2 as { matchShape?: unknown }).matchShape);
+    return (ms !== null && ms.tally.ai.wins === 1 && (s2 as { day: number }).day === 4 && (s2 as { money: number }).money === 7) || 'reducer';
+  });
+  check('mt39_modes', 'No match shape for solo, Grand Tour or scenario matches, or with the flag off', () =>
+    (['single', 'grand_tour', 'scenario'].every(mode => createMatchShapeState({ mode, seed: 1, totalDays: 30, settings: ON, actors: soloActors, sideKeys: { player: 'player', opponent: 'ai' } }) === null)
+      && createMatchShapeState({ mode: 'ai', seed: 1, totalDays: 30, settings: {}, actors: soloActors, sideKeys: { player: 'player', opponent: 'ai' } }) === null
+      && createMatchShapeState({ mode: 'team_human_ai_vs_ai_ai', seed: 1, totalDays: 30, settings: ON, actors: teamActors, sideKeys: { player: 'team_player', opponent: 'team_opponent' } }) !== null) || 'mode gate');
+  check('mt40_led_at_start', 'Stretch leader objective reads the standings recorded when the stretch began', () => {
+    const st = { ...mk(), finale: { ...mk().finale, started: true, standingsAtStart: { player: 9000, opponent: 4000 } } };
+    const p = evaluateMatchObjective('stretch_leader', buildMatchObjectiveContext(st, view(), { controllerByRegion: {}, investedBySideKey: {} }));
+    const o = evaluateMatchObjective('stretch_leader', buildMatchObjectiveContext(st, { ...view(), id: 'ai', side: 'opponent' }, { controllerByRegion: {}, investedBySideKey: {} }));
+    return (p.done && !o.done) || JSON.stringify([p, o]);
+  });
+  check('mt41_hud_finale', 'The HUD shows the Final Stretch, its national event and the days left once it starts', () => {
+    const st = { ...mk(5), finale: { ...mk(5).finale, started: true, eventId: 'honours_list', startedOnDay: 25 } };
+    const hv = buildMatchShapeHudView({ state: st, viewerSide: 'player', metric: 'money', tuning, day: 27, turn: 1, viewerActorId: 'player', contextsByActor: {}, actorNames: {} });
+    const before = buildMatchShapeHudView({ state: mk(5), viewerSide: 'player', metric: 'money', tuning, day: 3, turn: 1, viewerActorId: 'player', contextsByActor: {}, actorNames: {} });
+    return (hv.finale.active && hv.finale.daysLeft === 3 && hv.finale.event?.title === 'Australia Day Honours' && !before.finale.active && before.finale.startDay === 25 && before.finale.event === null) || JSON.stringify([hv.finale, before.finale]);
+  });
+  check('mt42_setting_clamp', 'Numeric match-shape settings clamp to range and fall back to defaults', () => {
+    const r = [sanitizeMatchShapeSetting(9, 1, 0, 3), sanitizeMatchShapeSetting(-1, 1, 0, 2), sanitizeMatchShapeSetting('x', 0.5, 0.1, 0.95), sanitizeMatchShapeSetting(undefined, 20, 5, 50), sanitizeMatchShapeSetting(Number.NaN, undefined, 5, 50)];
+    const s = sanitizeGameSettings({ matchObjectiveWeight: 99, finalStretchPct: 'bad' } as unknown as Partial<GameSettingsState>);
+    return (JSON.stringify(r) === '[3,0,0.5,20,5]' && s.matchObjectiveWeight === 3 && s.finalStretchPct === 20 && s.matchShapeEnabled === false) || JSON.stringify([r, s.matchObjectiveWeight, s.finalStretchPct]);
+  });
+  return results;
+}
+
 function AustraliaGame() {
   // DIAG2: Mount detection for StrictMode double-invocation tracking
   useEffect(() => {
@@ -189701,6 +190754,21 @@ function dispatchGameSettingsChange(
   const wp2AiPlanRef = useRef<((challenge: LegacyChallengeShape, aiState: ApproachActorLike, wager: number, approachId: string) => ChallengeApproachPlan | null) | null>(null);
   const wp2AiOutcomeRef = useRef<((plan: ChallengeApproachPlan, aiState: ApproachActorLike & { name?: string }, success: boolean) => void) | null>(null);
   const wp2AdvisorRef = useRef<((query: string) => GameIntelligenceAnswer | null) | null>(null);
+  // V9.6 (SECTION 20AL): match shape — the sanitized state, and bridges the action handlers call (all inert while it is off).
+  const wp6Source = (gameState as unknown as { matchShape?: unknown }).matchShape;
+  const wp6State = useMemo(() => sanitizeMatchShapeState(wp6Source), [wp6Source]);
+  const wp6RerollUsedRef = useRef<Record<string, string>>({});
+  const wp6TravelMultRef = useRef<((actorId: string) => number) | null>(null);
+  const wp6LoanMultRef = useRef<((actorId: string) => number) | null>(null);
+  const wp6RerollRef = useRef<((actorId: string) => boolean) | null>(null);
+  const wp6RerollDoneRef = useRef<((actorId: string, won: boolean) => void) | null>(null);
+  const wp6AttemptRef = useRef<((actorId: string, challenge: { name?: unknown; type?: unknown; difficulty?: unknown }, region: string, success: boolean) => void) | null>(null);
+  const wp6FinaleChallengeRef = useRef<((region: string, actorId: string) => LegacyChallengeShape | null) | null>(null);
+  const wp6AiTravelBiasRef = useRef<((region: string, actorId: string) => number) | null>(null);
+  const wp6AiChallengeBiasRef = useRef<((challenge: { name?: unknown; type?: unknown; difficulty?: unknown }, actorId: string) => number) | null>(null);
+  const wp6DayRef = useRef<((newDay: number, values: Record<WinMetric, { player: number; ai: number }>, actors: readonly unknown[]) => void) | null>(null);
+  const wp6FinalizeRef = useRef<((newDay: number, values: Record<WinMetric, { player: number; ai: number }>, actors: readonly unknown[]) => Record<WinMetric, { player: number; ai: number }>) | null>(null);
+  const wp6OutcomeAdjustRef = useRef<((metric: string) => MatchShapePair | null) | null>(null);
   // V9.6 (SECTION 20AK): the rival's dialogue history (mirrors gameState.opponentDialogue; updated synchronously when it speaks).
   const wp5DialogueSource = (gameState as unknown as { opponentDialogue?: unknown }).opponentDialogue;
   const wp5Dialogue = useMemo(() => sanitizeOpponentDialogueState(wp5DialogueSource), [wp5DialogueSource]);
@@ -190593,7 +191661,8 @@ function dispatchGameSettingsChange(
       if (equipmentDiscount > 0) {
         baseCost = baseCost * (1 - equipmentDiscount);
       }
-      return Math.floor(baseCost);
+      // V9.6 (SECTION 20AL): underdog travel discount (× 1 while inactive).
+      return Math.floor(baseCost * (wp6TravelMultRef.current ? wp6TravelMultRef.current(String(aiState?.id || 'ai')) : 1));
     }
     
     let baseCost = toRegion === "TAS" ? 800 : 500;
@@ -190623,7 +191692,8 @@ function dispatchGameSettingsChange(
     if (leader === 'ai' && getWealthState().ratio < 0.5) {
       baseCost *= 1.05;
     }
-    return Math.floor(baseCost);
+    // V9.6 (SECTION 20AL): underdog travel discount (× 1 while inactive).
+    return Math.floor(baseCost * (wp6TravelMultRef.current ? wp6TravelMultRef.current(String(aiState?.id || 'ai')) : 1));
   }, [gameSettings.aiUsesMarketModifiers, gameSettings.aiSpecialAbilitiesEnabled, gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.weather, gameState.season, gameState.activeEvents, getUnderdogBonus, getWealthState]);
 
   const getAiRiskModifier = useCallback((mood: string): number => {
@@ -190673,7 +191743,7 @@ function dispatchGameSettingsChange(
 
     return {
       challenge,
-      score: riskAdjusted + strategyBonus,
+      score: riskAdjusted + strategyBonus + (wp6AiChallengeBiasRef.current?.(challenge, String(aiState?.id || 'ai')) || 0),
       successChance,
       wager: actualWager,
       expectedValue
@@ -190719,6 +191789,8 @@ function dispatchGameSettingsChange(
     
     // Penalize by cost
     score -= cost * 0.5;
+    // V9.6 (SECTION 20AL): its secret objectives pull it toward regions; in the Final Stretch it moves to deny yours.
+    score += wp6AiTravelBiasRef.current?.(region, String(aiState?.id || 'ai')) || 0;
     
     // Strategy bonuses
     if (aiState.character.aiStrategy === "exploration-focused") {
@@ -191451,6 +192523,9 @@ function dispatchGameSettingsChange(
       ) {
         availableChallenges.push(GRAND_TOUR_FINAL_CHALLENGE);
       }
+      // V9.6 (SECTION 20AL): during the Final Stretch the region's high-stakes finale challenge joins the AI's options.
+      const wp6AiFinale = wp6FinaleChallengeRef.current?.(String(aiState.currentRegion || ''), String(aiState.id || 'ai')) || null;
+      if (wp6AiFinale) availableChallenges.push(wp6AiFinale);
 
       availableChallenges.forEach((challenge: any) => {
         try {
@@ -192264,7 +193339,12 @@ function dispatchGameSettingsChange(
         // V9.6 (SECTION 20AH): an approach decision re-plans against the AI's state at execution time.
         const wp2Plan = gameSettings.challengeApproachesEnabled === true && typeof actionData.approachId === 'string' ? (wp2AiPlanRef.current?.(challenge, currentAi, wager, actionData.approachId) || null) : null;
         const successChance = wp2Plan ? wp2Plan.successChance : calculateAiSuccessChance(challenge, currentAi);
-        const success = aiRandom() < successChance;
+        // V9.6 (SECTION 20AL): a trailing side may reroll one failed challenge per turn (the extra draw happens only then).
+        const wp6FirstRoll = aiRandom() < successChance;
+        const wp6Rerolled = !wp6FirstRoll && wp6RerollRef.current?.(String(currentAi.id || 'ai')) === true;
+        const success = wp6FirstRoll || (wp6Rerolled && aiRandom() < successChance);
+        if (wp6Rerolled) wp6RerollDoneRef.current?.(String(currentAi.id || 'ai'), success);
+        wp6AttemptRef.current?.(String(currentAi.id || 'ai'), challenge || {}, String(currentAi.currentRegion || ''), success);
         emitGameFeel({ kind: 'challenge', actor: 'ai', success, odds: Math.min(1, successChance), label: String(challenge?.name || 'Challenge') });
 
         if (success) {
@@ -193683,6 +194763,9 @@ function dispatchGameSettingsChange(
 
     const selectedCharacter = CHARACTERS[uiState.selectedCharacter] || CHARACTERS[0];
     const aiCharacters = pickRandomCharacters(3, [uiState.selectedCharacter]);
+    // V9.6 (SECTION 20AL): the match-shape deal seed comes from the same continuing stream as the AI characters —
+    // drawn before this match re-seeds the RNG, so in-match randomness is untouched (no draw while the flag is off).
+    const wp6DealSeed = gameSettings.matchShapeEnabled === true ? Math.floor(drawGameplayRandom('TeamDraft') * 2147483646) + 1 : 0;
     const playerName = (uiState.playerName || "Player").trim() || "Player";
     const isSimulationMode = mode === 'team_ai_vs_ai';
     const playerActor = createActorSnapshot({
@@ -193854,7 +194937,14 @@ function dispatchGameSettingsChange(
         aiMemoriesByActor: nextAiMemories,
         persistentMemorySnapshot: nextPersistentSnapshot,
         aiCommunication: createEmptyCommunicationState(),
-        teamStrategicPlansByTeam: {}
+        teamStrategicPlansByTeam: {},
+        // V9.6 (SECTIONS 20AK / 20AL): the rival's line history and the match shape start fresh every match.
+        opponentDialogue: undefined,
+        matchShape: createMatchShapeState({
+          mode, seed: wp6DealSeed, totalDays: Number(gameSettings.totalDays) || 30, settings: gameSettings,
+          actors: nextTurnOrder.map(id => ({ id, side: ((id === 'player' ? playerActor : id === 'ai' ? enemyLeader : nextAdditionalActors[id])?.teamId === TEAM_OPPONENT_ID ? 'opponent' : 'player') as MatchShapeSide })),
+          sideKeys: isTeamModeSelection(mode) ? { player: TEAM_PLAYER_ID, opponent: TEAM_OPPONENT_ID } : { player: 'player', opponent: 'ai' }
+        }) ?? undefined
       }
     });
     setAiActionQueue([]);
@@ -194570,11 +195660,14 @@ function dispatchGameSettingsChange(
       ? getRegionalStandingMultipliers(getActorRegionalStanding(gameState, 'player', toRegion)).travelCost
       : null;
     const { isUnderdog, leader } = getUnderdogBonus('player');
-    return computeTravelCostCore({
+    const wp6TravelCost = computeTravelCostCore({
       from: fromRegion, to: toRegion, characterName: player.character?.name, mastery: player.masteryUnlocks || [],
       weatherMod: weatherModifier, seasonMod: seasonModifier, eventMod: eventModifier, standingMult,
       equipmentDiscount: equipmentEffects?.travelDiscount || 0, underdog: isUnderdog, leaderTax: leader === 'player' && getWealthState().ratio > 2
     });
+    // V9.6 (SECTION 20AL): the underdog boost makes travel cheaper (multiplier 1 — exactly V9.5 — when inactive).
+    const wp6TravelMult = wp6TravelMultRef.current ? wp6TravelMultRef.current(String(player.id || 'player')) : 1;
+    return wp6TravelMult < 1 ? Math.floor(wp6TravelCost * wp6TravelMult) : wp6TravelCost;
   }, [player.character, player.masteryUnlocks, player.equipment, player.debuffs, player.regionalReputation, gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameSettings.challengeApproachesEnabled, gameState.weather, gameState.season, gameState.activeEvents, getUnderdogBonus, getWealthState]);
 
   const calculateSuccessChance = useCallback((challenge: any, mode?: 'situational') => {
@@ -196869,9 +197962,16 @@ function dispatchGameSettingsChange(
       return evaluateGrandTourOutcome(player, aiPlayer, gameState.grandTourState);
     }
     const primaryMetric = gameSettings.winCondition;
-    const playerValue = getCompetitiveMetricValue(primaryMetric, { side: 'player', teamMode: isTeamMode });
-    const aiValue = getCompetitiveMetricValue(primaryMetric, { side: 'opponent', teamMode: isTeamMode });
-    const comparison = compareCompetitiveSides(primaryMetric, { teamMode: isTeamMode });
+    // V9.6 (SECTION 20AL): once the match-shape report exists, its objective and finale moves count on the primary metric.
+    const wp6Adjust = wp6OutcomeAdjustRef.current?.(primaryMetric) || null;
+    const playerValue = getCompetitiveMetricValue(primaryMetric, { side: 'player', teamMode: isTeamMode }) + (wp6Adjust ? wp6Adjust.player : 0);
+    const aiValue = getCompetitiveMetricValue(primaryMetric, { side: 'opponent', teamMode: isTeamMode }) + (wp6Adjust ? wp6Adjust.opponent : 0);
+    const comparison = wp6Adjust
+      ? compareCompetitiveMetricValues(primaryMetric, WIN_METRIC_OPTIONS.reduce<Record<WinMetric, { player: number; ai: number }>>((acc, metric) => {
+        acc[metric] = metric === primaryMetric ? { player: playerValue, ai: aiValue } : { player: getCompetitiveMetricValue(metric, { side: 'player', teamMode: isTeamMode }), ai: getCompetitiveMetricValue(metric, { side: 'opponent', teamMode: isTeamMode }) };
+        return acc;
+      }, {} as Record<WinMetric, { player: number; ai: number }>))
+      : compareCompetitiveSides(primaryMetric, { teamMode: isTeamMode });
     const playerSideName = isTeamMode ? (teamsById[TEAM_PLAYER_ID]?.name || 'Blue Team') : 'You';
     const opponentSideName = isTeamMode ? (teamsById[TEAM_OPPONENT_ID]?.name || 'Rose Team') : (aiPlayer?.name || "AI Opponent");
     const metricOrder = getOrderedWinMetrics(primaryMetric);
@@ -196884,12 +197984,14 @@ function dispatchGameSettingsChange(
         : `Primary condition tied; ${comparison.playerWon ? playerSideName : opponentSideName} won on ${decidingMetricLabel.toLowerCase()} (${formatWinMetricValue(decidingMetric, comparison.playerWon ? comparison.playerValue : comparison.aiValue)} vs ${formatWinMetricValue(decidingMetric, comparison.playerWon ? comparison.aiValue : comparison.playerValue)}).`;
     return {
       playerWon: comparison.playerWon,
-      reason,
+      reason: wp6Adjust && (wp6Adjust.player !== 0 || wp6Adjust.opponent !== 0)
+        ? `${reason} Secret objectives and the Final Stretch moved the score ${formatMatchShapeDelta(primaryMetric, wp6Adjust.player)} for ${playerSideName} and ${formatMatchShapeDelta(primaryMetric, wp6Adjust.opponent)} for ${opponentSideName}.`
+        : reason,
       playerValue,
       aiValue,
       decidingMetric
     };
-  }, [aiPlayer, aiPlayer?.name, compareCompetitiveSides, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings.winCondition, gameState.grandTourState, gameState.selectedMode, getCompetitiveMetricValue, getOrderedWinMetrics, isTeamMode, player, teamsById]);
+  }, [aiPlayer, aiPlayer?.name, compareCompetitiveMetricValues, compareCompetitiveSides, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings.winCondition, gameState.grandTourState, gameState.selectedMode, getCompetitiveMetricValue, getOrderedWinMetrics, isTeamMode, player, teamsById]);
 
   const commitCurrentMatchPersistentMemory = useCallback((forcedOutcome?: 'win' | 'loss' | 'draw') => {
     if (isolatedReplayRuntime) return;
@@ -200728,7 +201830,7 @@ function dispatchGameSettingsChange(
     addNotification(outcome, executed.executed ? 'success' : 'info', false, 'system');
   }, [addNotification, gameSettings.aiCommunicationAutonomyLevel, gameSettings.coPilotSettings, gameState.aiCommunication, gameState.teamStrategicPlansByTeam, gameState.turnCounter, issueTeamDirective, player?.teamId, updateUiState]);
 
-  const applyLoanTick = useCallback((state: any) => applySimpleLoanTick(state), []);
+  const applyLoanTick = useCallback((state: any, rateMultiplier?: number) => applySimpleLoanTick(state, rateMultiplier), []);
 
   // Advanced Loan System handlers
   const takeAdvancedLoanForActor = useCallback((actorId: string, tierId: string, isEvent: boolean = false, eventId?: string, options?: { silent?: boolean; closeModal?: boolean; suppressLedgerEvent?: boolean }) => {
@@ -200760,7 +201862,8 @@ function dispatchGameSettingsChange(
 
     const creditScore = gameSettings.creditScoreEnabled ? (actor.creditScore || 50) : 50;
     const creditRange = getCreditScoreRange(creditScore);
-    const actualInterestRate = tier.baseInterestRate * creditRange.multiplier * gameSettings.loanTierUnlockSpeedMultiplier;
+    // V9.6 (SECTION 20AL): an underdog locks in a lighter rate (× 1 while inactive).
+    const actualInterestRate = tier.baseInterestRate * creditRange.multiplier * gameSettings.loanTierUnlockSpeedMultiplier * (wp6LoanMultRef.current ? wp6LoanMultRef.current(actorId) : 1);
     const newLoan: AdvancedLoan = {
       id: nextCorrelationId(globalDeterministicCounters, 'loan'),
       tierId: tier.id,
@@ -201177,6 +202280,144 @@ function dispatchGameSettingsChange(
     );
   }, [gameState.doubleOrNothingAvailable, gameState.lastChallengeReward, addNotification, updatePersonalRecords, player, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent]);
 
+    // V9.6 (SECTION 20AL): match-shape bridges (re-assigned every render; inert while the flag is off or outside rival modes).
+    const wp6Tuning = resolveMatchShapeTuning(gameSettings);
+    const wp6Live = wp6Tuning.enabled && wp6State !== null && isMatchShapeMode(gameState.selectedMode);
+    const wp6Turn = Number(gameState.turnCounter) || 0;
+    const wp6HumanId = String(player.id || 'player');
+    const wp6SideOf = (actorId: string): MatchShapeSide | null => (wp6State ? wp6State.actorSides[actorId] || null : null);
+    let wp6WorldCache: { controllerByRegion: Record<string, string | null>; investedBySideKey: Record<string, number> } | null = null;
+    const wp6World = () => {
+      if (wp6WorldCache) return wp6WorldCache;
+      const deposits = sanitizeRegionDeposits(gameState.regionDeposits);
+      const controllerByRegion: Record<string, string | null> = {};
+      MATCH_SHAPE_MAINLAND.forEach(code => { controllerByRegion[code] = getRegionControlSnapshot(deposits[code] || {}).controllerId || null; });
+      wp6WorldCache = { controllerByRegion, investedBySideKey: computeRegionControlStats(deposits, gameState.regionControlStats?.controlHistory || []).totalInvested };
+      return wp6WorldCache;
+    };
+    const wp6Contexts = (st: MatchShapeState, actors: readonly unknown[]): Record<string, MatchObjectiveContext> => {
+      const world = wp6World();
+      const relics = (gameState.relicInventoryByActor || {}) as Record<string, unknown>;
+      const out: Record<string, MatchObjectiveContext> = {};
+      actors.forEach(raw => {
+        const id = String((raw as { id?: unknown } | null)?.id || '');
+        const side = st.actorSides[id];
+        if (!id || !side) return;
+        const owned = relics[id];
+        out[id] = buildMatchObjectiveContext(st, buildMatchObjectiveActorView(raw, side, { netWorth: Number(computeNetWorth(raw)) || 0, debt: calculateActorOutstandingDebt(raw), relics: Array.isArray(owned) ? owned.length : 0 }), world);
+      });
+      return out;
+    };
+    const wp6SideKeys = isTeamMode ? { player: TEAM_PLAYER_ID, opponent: TEAM_OPPONENT_ID } : { player: 'player', opponent: 'ai' };
+    const wp6Name = (actorId: string) => (actorId === wp6HumanId ? 'You' : String((actorsById[actorId] as { name?: string } | undefined)?.name || actorId));
+    wp6TravelMultRef.current = actorId => (wp6Live ? comebackEffectsFor(wp6State, wp6SideOf(actorId), wp6Tuning).travelMult : 1);
+    wp6LoanMultRef.current = actorId => (wp6Live ? comebackEffectsFor(wp6State, wp6SideOf(actorId), wp6Tuning).loanMult : 1);
+    wp6RerollRef.current = actorId => {
+      if (!wp6Live) return false;
+      const key = `${v95MatchEpochRef.current}:${wp6Turn}`;
+      if (wp6RerollUsedRef.current[actorId] === key || !canUseComebackReroll(wp6State, actorId, wp6Turn, wp6Tuning)) return false;
+      wp6RerollUsedRef.current = { ...wp6RerollUsedRef.current, [actorId]: key };
+      return true;
+    };
+    wp6RerollDoneRef.current = (actorId, won) => {
+      dispatchGameState({ type: 'V96_MATCH_SHAPE_PATCH', payload: { kind: 'reroll', actorId, turn: wp6Turn, won } });
+      const human = actorId === wp6HumanId;
+      addNotification(`🐾 ${human ? 'Underdog reroll' : `${wp6Name(actorId)} used an underdog reroll`}: ${won ? 'success on the second roll!' : 'no luck on the second roll.'}`, human ? (won ? 'success' : 'info') : 'ai', false);
+    };
+    wp6AttemptRef.current = (actorId, challenge, region, success) => {
+      if (!wp6Live) return;
+      dispatchGameState({ type: 'V96_MATCH_SHAPE_PATCH', payload: { kind: 'attempt', actorId, region: String(region || ''), challengeType: String(challenge.type || 'other'), difficulty: Number(challenge.difficulty) || 1, finale: isFinaleChallengeName(challenge.name), success } });
+    };
+    wp6FinaleChallengeRef.current = (region, actorId) => (wp6Live ? finaleChallengeFor(wp6State, region, actorId) : null);
+    wp6AiTravelBiasRef.current = (region, actorId) => {
+      const side = wp6SideOf(actorId);
+      if (!wp6Live || !wp6State || !side) return 0;
+      const rival: MatchShapeSide = side === 'player' ? 'opponent' : 'player';
+      const types = (((REGIONS[region]?.challenges || []) as Array<{ type?: unknown }>)).map(c => String(c.type || ''));
+      return matchShapeTravelBias({ region, own: wp6State.objectives.filter(o => o.actorId === actorId), ownSideKey: wp6State.sideKeys[side], controllerByRegion: wp6World().controllerByRegion, rivalGuesses: side === 'opponent' ? wp6State.beliefs.rivalOnPlayer : wp6State.beliefs.playerOnRival, rivalSideKey: wp6State.sideKeys[rival], inFinale: wp6State.finale.started, regionChallengeTypes: types, ownTally: wp6State.tally[actorId] || null });
+    };
+    wp6AiChallengeBiasRef.current = (challenge, actorId) => {
+      const side = wp6SideOf(actorId);
+      if (!wp6Live || !wp6State || !side) return 0;
+      return matchShapeChallengeBias({ challenge, own: wp6State.objectives.filter(o => o.actorId === actorId), ownTally: wp6State.tally[actorId] || null, inFinale: wp6State.finale.started, trailing: wp6State.comeback.side === side });
+    };
+    wp6DayRef.current = (newDay, values, actors) => {
+      if (!wp6Tuning.enabled || !isMatchShapeMode(gameState.selectedMode)) return;
+      const totalDays = Number(gameSettings.totalDays) || 30;
+      let st = wp6State;
+      if (!st) {
+        // Switched on mid-match: deal the hands now (deterministic from the world seed, mode and day).
+        st = createMatchShapeState({ mode: gameState.selectedMode, seed: matchShapeHash(`${Number(gameSettings.worldRngSeed) || 1}:${gameState.selectedMode}:${newDay}`), totalDays, settings: gameSettings, actors: actors.map(a => String((a as { id?: unknown } | null)?.id || '')).filter(id => id && actorsById[id]).map(id => ({ id, side: (actorsById[id] as { teamId?: string }).teamId === TEAM_OPPONENT_ID || (!isTeamMode && id === 'ai') ? 'opponent' as const : 'player' as const })), sideKeys: wp6SideKeys });
+        if (!st) return;
+        dispatchGameState({ type: 'V96_MATCH_SHAPE_PATCH', payload: { kind: 'init', state: st } });
+        const mine = st.objectives.filter(o => o.side === 'player').map(o => MATCH_SHAPE_OBJECTIVE_BY_ID[o.objectiveId]?.title || o.objectiveId);
+        addNotification(`🎯 Match shape is on. Your secret objectives: ${mine.join(' · ')}.`, 'info', true, 'system');
+      }
+      const metric = gameSettings.winCondition;
+      const pair = { player: Number(values[metric]?.player) || 0, opponent: Number(values[metric]?.ai) || 0 };
+      const comeback = computeComebackStatus(pair, wp6Tuning, newDay);
+      let finale = st.finale.started ? st.finale : { ...st.finale, startDay: finalStretchStartDay(totalDays, wp6Tuning.stretchPct) };
+      if (!finale.started && newDay >= finale.startDay && newDay <= totalDays) {
+        const eventId = drawFinaleEvent(st.seed);
+        finale = { ...finale, started: true, eventId, startedOnDay: newDay, standingsAtStart: pair };
+        const ev = FINALE_EVENT_BY_ID[eventId];
+        addNotification(`🏁 The Final Stretch begins! High-stakes finale challenges are open in every region until day ${totalDays}.`, 'event', true, 'system');
+        if (ev) addNotification(`${ev.icon} National event — ${ev.title}: ${ev.blurb}`, 'event', true, 'system');
+      }
+      const contexts = Object.values(wp6Contexts(st, actors));
+      const flags = resolveMatchShapeFeatures(gameSettings);
+      const mems = (aiMemoriesRef.current || {}) as AiMemoriesByActor;
+      const styleOf = (m: AiOpponentModel | null | undefined): Partial<Record<MatchObjectiveStyle, number>> | null => (m ? Object.fromEntries(Object.entries(m.beliefs).map(([k, b]) => [k, b.value])) : null);
+      const rivalModel = mems[resolveAiMemoryActorId('ai')]?.opponentModels?.[resolveAiMemoryActorId(wp6HumanId)];
+      const allyModel = isTeamMode ? mems[resolveAiMemoryActorId(ALLY_AI_ID)]?.opponentModels?.[resolveAiMemoryActorId('ai')] : undefined;
+      const rivalCtx = contexts.filter(c => c.actor.side === 'opponent');
+      const rivalInterest = rivalCtx.reduce<Record<string, number>>((acc, c) => { Object.entries(c.tally.byRegion).forEach(([r, n]) => { acc[r] = (acc[r] || 0) + n; }); return acc; }, {});
+      const beliefs = {
+        rivalOnPlayer: inferMatchObjectives({ contexts: contexts.filter(c => c.actor.side === 'player'), beliefs: styleOf(rivalModel), regionalInterest: rivalModel?.regionalInterest || null, flags }),
+        playerOnRival: inferMatchObjectives({ contexts: rivalCtx, beliefs: styleOf(allyModel), regionalInterest: allyModel?.regionalInterest || rivalInterest, flags })
+      };
+      const band = (side: MatchShapeSide) => (comeback.side === side ? Math.max(1, Math.ceil(comeback.intensity * 4)) : 0);
+      const announced = { player: band('player'), opponent: band('opponent') };
+      const eff = comebackEffectsFor({ ...st, comeback }, 'player', wp6Tuning);
+      if (announced.player > 0 && st.announced.player === 0) addNotification(`🐾 You're trailing on ${(WIN_METRIC_LABELS as Record<string, string>)[metric].toLowerCase()}: underdog boost ${Math.round(comeback.intensity * 100)}% — travel −${Math.round((1 - eff.travelMult) * 100)}%, loan interest −${Math.round((1 - eff.loanMult) * 100)}%${eff.rerollEligible ? ', one free reroll of a failed challenge per turn' : ''}.`, 'info', true, 'system');
+      else if (announced.player === 0 && st.announced.player > 0) addNotification('🐾 The gap has closed — your underdog boost has faded.', 'info', false, 'system');
+      else if (announced.player !== st.announced.player) addNotification(`🐾 Underdog boost now ${Math.round(comeback.intensity * 100)}%.`, 'info', false, 'system');
+      if (announced.opponent > 0 && st.announced.opponent === 0) addNotification(`🤖 ${isTeamMode ? (teamsById[TEAM_OPPONENT_ID]?.name || 'The rival team') : String(aiPlayer?.name || 'The rival')} is trailing and gets an underdog boost (${Math.round(comeback.intensity * 100)}%).`, 'ai', false, 'system');
+      dispatchGameState({ type: 'V96_MATCH_SHAPE_PATCH', payload: { kind: 'day', comeback, finale, beliefs, announced } });
+    };
+    wp6FinalizeRef.current = (newDay, values, actors) => {
+      if (!wp6Live || !wp6State) return values;
+      const st = wp6State;
+      const metric = gameSettings.winCondition;
+      const totalDays = Number(gameSettings.totalDays) || st.totalDays;
+      const unit = matchObjectiveUnit(metric, totalDays, wp6Tuning.weight);
+      const contextsById = wp6Contexts(st, actors);
+      const progressByActor: Record<string, Record<string, MatchObjectiveProgress>> = {};
+      st.objectives.forEach(slot => { progressByActor[slot.actorId] = { ...(progressByActor[slot.actorId] || {}), [slot.objectiveId]: evaluateMatchObjective(slot.objectiveId, contextsById[slot.actorId]) }; });
+      const world = wp6World();
+      const facts = (side: MatchShapeSide): FinaleSideFacts => {
+        const cs = Object.values(contextsById).filter(c => c.actor.side === side);
+        const sum = (f: (c: MatchObjectiveContext) => number) => cs.reduce((s, c) => s + f(c), 0);
+        return {
+          regions: MATCH_SHAPE_MAINLAND.filter(r => world.controllerByRegion[r] === st.sideKeys[side]).length,
+          stretchWins: sum(c => c.tally.stretchWins), outbackStretchWins: sum(c => ['NT', 'WA', 'SA'].reduce((t, r) => t + (c.tally.stretchByRegion[r] || 0), 0)),
+          finaleWins: sum(c => c.tally.finaleWins), debt: sum(c => c.actor.debt), items: sum(c => c.actor.inventory.length), netWorth: sum(c => c.actor.netWorth)
+        };
+      };
+      const eventDelta = st.finale.started && st.finale.eventId ? resolveFinaleEvent(st.finale.eventId, { metric, unit, lengthFactor: matchShapeLengthFactor(totalDays), player: facts('player'), opponent: facts('opponent') }) : null;
+      const actorNames: Record<string, string> = {};
+      Object.keys(st.actorSides).forEach(id => { actorNames[id] = wp6Name(id); });
+      const report = buildMatchShapeReport({ state: st, metric, unit, base: { player: Number(values[metric]?.player) || 0, opponent: Number(values[metric]?.ai) || 0 }, day: newDay, progressByActor, eventDelta, actorNames });
+      dispatchGameState({ type: 'V96_MATCH_SHAPE_PATCH', payload: { kind: 'report', report } });
+      const mine = report.lines.filter(l => l.side === 'player' && l.source === 'objective');
+      const theirs = report.lines.filter(l => l.side === 'opponent' && l.source === 'objective');
+      addNotification(`🎯 Secret objectives — you completed ${mine.filter(l => l.achieved).length}/${mine.length}, the rival ${theirs.filter(l => l.achieved).length}/${theirs.length}.${report.flipped ? ' The objectives and the Final Stretch changed the result!' : ''}`, 'info', true, 'system');
+      return applyMatchShapeToMetricValues(values, metric, report);
+    };
+    wp6OutcomeAdjustRef.current = metric => {
+      const r = wp6Live && wp6State ? wp6State.report : null;
+      return r && r.metric === metric ? { player: r.final.player - r.base.player, opponent: r.final.opponent - r.base.opponent } : null;
+    };
     // V9.6 (SECTION 20AK): the rival speaks through the memory-driven dialogue engine (null while the flag is off).
     wp5SpeakRef.current = (purpose, speakerId, extras) => {
       if (gameSettings.opponentPersonalityEnabled !== true) return null;
@@ -201321,7 +202562,12 @@ function dispatchGameSettingsChange(
             return;
           }
 
-          const success = drawGameplayRandom('Combat') < successChance;
+          // V9.6 (SECTION 20AL): a trailing side may reroll one failed challenge per turn (the extra draw happens only then).
+          const wp6FirstRoll = drawGameplayRandom('Combat') < successChance;
+          const wp6Rerolled = !wp6FirstRoll && wp6RerollRef.current?.(String(player.id || 'player')) === true;
+          const success = wp6FirstRoll || (wp6Rerolled && drawGameplayRandom('Combat') < successChance);
+          if (wp6Rerolled) wp6RerollDoneRef.current?.(String(player.id || 'player'), success);
+          wp6AttemptRef.current?.(String(player.id || 'player'), challenge, String(player.currentRegion || ''), success);
           // V9.6 (SECTION 20AJ): presentation-only roll card + sound.
           emitGameFeel({ kind: 'challenge', actor: 'human', success, odds: Math.min(1, successChance), label: approachPlan ? `${challenge.name} — ${approachPlan.label}` : String(challenge.name) });
 
@@ -202572,7 +203818,7 @@ function dispatchGameSettingsChange(
           projected.challengesCompleted = [];
         }
 
-        const loanTick = applyLoanTick(projected);
+        const loanTick = applyLoanTick(projected, wp6LoanMultRef.current ? wp6LoanMultRef.current(String(actor.id)) : 1);
         projected.money = loanTick.money;
         projected.loans = loanTick.loans;
 
@@ -202860,6 +204106,8 @@ function dispatchGameSettingsChange(
       };
       projectedPrimaryPlayerValue = projectedTeamMetricValues[gameSettings.winCondition].player;
       projectedPrimaryOpponentValue = projectedTeamMetricValues[gameSettings.winCondition].ai;
+      // V9.6 (SECTION 20AL): re-assess the underdog boost, open the Final Stretch, refresh both sides' reads.
+      wp6DayRef.current?.(newDay, projectedTeamMetricValues, projectedActorList);
 
       const playerStreak = projectedPlayerTeamCash < BANKRUPTCY_THRESHOLD ? gameState.bankruptcyTracker.player + 1 : 0;
       const aiStreak = projectedOpponentTeamCash < BANKRUPTCY_THRESHOLD ? gameState.bankruptcyTracker.ai + 1 : 0;
@@ -203754,7 +205002,8 @@ function dispatchGameSettingsChange(
 
       if (newDay >= gameSettings.totalDays) {
         dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
-        const outcome = compareCompetitiveMetricValues(gameSettings.winCondition, projectedTeamMetricValues);
+        // V9.6 (SECTION 20AL): secret objectives and the finale event move the primary score (identity while off).
+        const outcome = compareCompetitiveMetricValues(gameSettings.winCondition, wp6FinalizeRef.current?.(newDay, projectedTeamMetricValues, projectedActorList) || projectedTeamMetricValues);
         const winnerName = outcome.playerWon
           ? (nextTeams[TEAM_PLAYER_ID]?.name || 'Your team')
           : (nextTeams[TEAM_OPPONENT_ID]?.name || 'The AI squad');
@@ -203869,11 +205118,11 @@ function dispatchGameSettingsChange(
     dispatchGameState({ type: 'UPDATE_ACTIVE_EVENTS', payload: updatedEvents });
 
     // Apply loan interest ticks (simple loans)
-    const playerLoanTick = applyLoanTick(projectedPlayer);
+    const playerLoanTick = applyLoanTick(projectedPlayer, wp6LoanMultRef.current ? wp6LoanMultRef.current(String(projectedPlayer.id || 'player')) : 1);
     projectedPlayer.money = playerLoanTick.money;
     projectedPlayer.loans = playerLoanTick.loans;
 
-    const aiLoanTick = applyLoanTick(projectedAi);
+    const aiLoanTick = applyLoanTick(projectedAi, wp6LoanMultRef.current ? wp6LoanMultRef.current(String(projectedAi.id || 'ai')) : 1);
     projectedAi.money = aiLoanTick.money;
     projectedAi.loans = aiLoanTick.loans;
 
@@ -204063,6 +205312,8 @@ function dispatchGameSettingsChange(
     };
     const soloPrimaryPlayerValue = soloMetricValues[gameSettings.winCondition].player;
     const soloPrimaryAiValue = soloMetricValues[gameSettings.winCondition].ai;
+    // V9.6 (SECTION 20AL): re-assess the underdog boost, open the Final Stretch, refresh both sides' reads.
+    wp6DayRef.current?.(newDay, soloMetricValues, [projectedPlayer, projectedAi]);
     const playerDominance = WIN_METRIC_PROFILES[gameSettings.winCondition]?.goalKind === 'regions'
       ? (playerSoloRegions >= Math.max(REGION_CONTROL_MAJORITY, aiSoloRegions + 4) ? gameState.dominanceTracker.player + 1 : 0)
       : (soloPrimaryAiValue > 0 && soloPrimaryPlayerValue / soloPrimaryAiValue >= 5 ? gameState.dominanceTracker.player + 1 : 0);
@@ -204215,7 +205466,8 @@ function dispatchGameSettingsChange(
             'system'
           );
 	      } else if (gameState.selectedMode === 'ai') {
-          const outcome = compareCompetitiveMetricValues(gameSettings.winCondition, soloMetricValues);
+          // V9.6 (SECTION 20AL): secret objectives and the finale event move the primary score (identity while off).
+          const outcome = compareCompetitiveMetricValues(gameSettings.winCondition, wp6FinalizeRef.current?.(newDay, soloMetricValues, [projectedPlayer, projectedAi]) || soloMetricValues);
           const winnerName = outcome.playerWon ? 'You' : 'AI';
           const loserName = outcome.playerWon ? 'AI' : 'You';
           const winnerValue = formatWinMetricValue(outcome.decidingMetric, outcome.playerWon ? outcome.playerValue : outcome.aiValue);
@@ -204429,7 +205681,8 @@ function dispatchGameSettingsChange(
     if (equipmentDiscount > 0) {
       baseCost *= (1 - equipmentDiscount);
     }
-    return Math.max(0, Math.floor(baseCost));
+    // V9.6 (SECTION 20AL): underdog travel discount (× 1 while inactive).
+    return Math.max(0, Math.floor(baseCost * (wp6TravelMultRef.current ? wp6TravelMultRef.current(String(actorState?.id || '')) : 1)));
   }, [gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.activeEvents, gameState.season, gameState.weather]);
 
   const sellActorResource = useCallback((actorId: string, resource: string) => {
@@ -204656,7 +205909,12 @@ function dispatchGameSettingsChange(
     // alongside (never replacing) the caller's own bonusSuccessChance (e.g. Team Initiative's
     // challenge-assist spend). No-op (0) when Sync 2.0 or its expertise sub-toggle is off.
     const successChance = calculateActorChallengeSuccessChance(challenge, actor, bonusSuccessChance + getChallengeCategoryExpertiseBonus(actor, challenge.type, gameSettings));
-    const success = aiRandom() < successChance;
+    // V9.6 (SECTION 20AL): a trailing side may reroll one failed challenge per turn (the extra draw happens only then).
+    const wp6FirstRoll = aiRandom() < successChance;
+    const wp6Rerolled = !wp6FirstRoll && wp6RerollRef.current?.(actorId) === true;
+    const success = wp6FirstRoll || (wp6Rerolled && aiRandom() < successChance);
+    if (wp6Rerolled) wp6RerollDoneRef.current?.(actorId, success);
+    wp6AttemptRef.current?.(actorId, challenge || {}, String(actor.currentRegion || ''), success);
     if (success) {
       let reward = Math.floor(wager * challenge.reward);
       if (actor.character.name === "Tourist") reward = Math.floor(reward * 1.2);
@@ -221526,6 +222784,29 @@ function dispatchGameSettingsChange(
                     )}
 	                </div>
               </SettingsSection>
+              <SettingsSection id="economy.matchShape" tab="economy" title="🎯 Match Shape" chips={['Off by default']} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'economy.matchShape')!.fieldKeys}>
+                <div className="space-y-3 text-sm" data-testid="match-shape-settings">
+                  <label className="flex items-center justify-between gap-3">
+                    <span><span className="font-semibold">Match shape (V9.6)</span><span className="block text-xs opacity-75">Rival matches only. Each actor draws 2 secret objectives worth points at the end; the side trailing on the win metric gets an underdog boost that fades as the gap closes; the last days are a Final Stretch with high-stakes challenges and a national event. Takes effect from the next day (objectives are dealt then if a match is running).</span></span>
+                    <input type="checkbox" checked={gameSettings.matchShapeEnabled === true} onChange={e => trackedSetGameSettings('direct_player_change', '🎯 Match Shape', prev => ({ ...prev, matchShapeEnabled: e.target.checked }))} data-testid="match-shape-toggle" />
+                  </label>
+                  {([
+                    { key: 'matchObjectiveWeight', label: 'Objective weight', min: 0, max: 3, step: 0.25, fmt: (v: number) => `${v}× (${formatMatchShapeDelta(gameSettings.winCondition, matchObjectiveUnit(gameSettings.winCondition, Number(gameSettings.totalDays) || 30, v))} each)` },
+                    { key: 'comebackStrength', label: 'Comeback strength', min: 0, max: 2, step: 0.1, fmt: (v: number) => (v === 0 ? 'off' : `${v}×`) },
+                    { key: 'comebackFullGap', label: 'Full boost at a gap of', min: 0.1, max: 0.95, step: 0.05, fmt: (v: number) => `${Math.round(v * 100)}%` },
+                    { key: 'finalStretchPct', label: 'Final Stretch length', min: 5, max: 50, step: 5, fmt: (v: number) => `last ${v}% (from day ${finalStretchStartDay(Number(gameSettings.totalDays) || 30, v)})` }
+                  ] as const).map(row => {
+                    const value = sanitizeMatchShapeSetting(gameSettings[row.key], DEFAULT_GAME_SETTINGS[row.key], row.min, row.max);
+                    return (
+                      <label key={row.key} className={`flex items-center gap-3 ${gameSettings.matchShapeEnabled === true ? '' : 'opacity-60'}`}>
+                        <span className="w-44">{row.label}</span>
+                        <input type="range" min={row.min} max={row.max} step={row.step} value={value} onChange={e => { const v = sanitizeMatchShapeSetting(Number(e.target.value), DEFAULT_GAME_SETTINGS[row.key], row.min, row.max); trackedSetGameSettings('direct_player_change', '🎯 Match Shape', prev => ({ ...prev, [row.key]: v })); }} className="flex-1" aria-label={row.label} data-testid={`match-shape-${row.key}`} />
+                        <span className="w-48 text-right text-xs">{row.fmt(value)}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </SettingsSection>
               <SettingsSection id="gameplay.actionLimits" tab="gameplay" title="⏱️ Action Limits" onReset={settingsResetHandlers.gameplay.fn} resetLabel={settingsResetHandlers.gameplay.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.actionLimits')!.fieldKeys}>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
@@ -232636,6 +233917,13 @@ function dispatchGameSettingsChange(
       : gameSettings.challengeApproachesEnabled === true
         ? [...grandTourChallenges, ...visibleFollowUpsForRegion(wp3Region, player.challengesCompleted || [], sanitizeUnlockedChallengeIds(player.unlockedChallengeIds)).map(toLegacyChallenge)]
         : grandTourChallenges;
+    // V9.6 (SECTION 20AL): the region's high-stakes finale challenge is offered once during the Final Stretch.
+    const wp6FinaleHere = wp6FinaleChallengeRef.current?.(wp3Region, String(player.id || 'player')) || null;
+    const wp6ChallengeList: LegacyChallengeShape[] = wp6FinaleHere ? [...wp23ChallengeList, wp6FinaleHere] : wp23ChallengeList;
+    // V9.6 (SECTION 20AL): the match-shape HUD for the human side (null while off).
+    const wp6HudView: MatchShapeHudView | null = gameSettings.matchShapeEnabled === true && wp6State && isMatchShapeMode(gameState.selectedMode)
+      ? buildMatchShapeHudView({ state: wp6State, viewerSide: 'player', metric: gameSettings.winCondition, tuning: resolveMatchShapeTuning(gameSettings), day: Number(gameState.day) || 1, turn: Number(gameState.turnCounter) || 0, viewerActorId: String(player.id || 'player'), contextsByActor: wp6Contexts(wp6State, Object.values(actorsById)), actorNames: Object.fromEntries(Object.keys(wp6State.actorSides).map(id => [id, wp6Name(id)])) })
+      : null;
     const wp3ScoutReason = !isPlayerTurn ? 'Wait for your turn' : (gameSettings.actionLimitsEnabled !== false && getRemainingActionPoints(player, gameSettings) < 1) ? 'No action points left' : null;
     const wp3ScoutBoard = () => {
       if (wp3ScoutReason) { addNotification(`Cannot scout: ${wp3ScoutReason}.`, 'warning'); return; }
@@ -233549,6 +234837,7 @@ function dispatchGameSettingsChange(
             apZero={Boolean(v9HumanCanAct && feelSnapshot?.ap === 0)}
             endgame={Number(gameSettings.totalDays || 30) - Number(gameState.day || 1) <= 3}
           />
+          {wp6HudView && <OptionalSurfaceBoundary surface="Match shape"><MatchShapeHud view={wp6HudView} theme={themeStyles} /></OptionalSurfaceBoundary>}
 
           <FeedbackStrip theme={themeStyles} major={v94Visible.major} minor={v94Visible.minor} onDismiss={dismissV94} onWhy={e => void submitIntelligenceQuery(e.kind === 'region_control_changed' ? `Why did control of ${REGIONS[e.subject]?.name || e.subject} change?` : e.kind === 'crisis_resolved' ? 'What changed after the crisis?' : 'What should I focus on next?')} />
 
@@ -233951,7 +235240,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV96ExperienceModesSelfTests(), ...v95WithIsolatedGlobals(() => runV96ChallengeDecisionSelfTests()), ...v95WithIsolatedGlobals(() => runV96ChallengeContentSelfTests()), ...runV96MapMotionSoundSelfTests(), ...runV96OpponentMindSelfTests(), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV96ExperienceModesSelfTests(), ...v95WithIsolatedGlobals(() => runV96ChallengeDecisionSelfTests()), ...v95WithIsolatedGlobals(() => runV96ChallengeContentSelfTests()), ...runV96MapMotionSoundSelfTests(), ...runV96OpponentMindSelfTests(), ...runV96MatchShapeSelfTests(), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
@@ -236686,7 +237975,7 @@ function dispatchGameSettingsChange(
                 <ChallengeBoardPanel board={wp3Board} day={wp3Day} scoutedPreview={wp3Preview} canScout={!wp3ScoutReason} scoutReason={wp3ScoutReason} theme={themeStyles} onScout={wp3ScoutBoard} />
               )}
               <div className={`space-y-3 flex-1 min-h-0 overflow-y-auto ${themeStyles.scrollbar}`}>
-                {wp23ChallengeList.map((challenge: any, index: number) => {
+                {wp6ChallengeList.map((challenge: any, index: number) => {
                   const isGrandTourFinale = gameState.selectedMode === 'grand_tour' && challenge.name === GRAND_TOUR_FINAL_CHALLENGE.name;
                   const isCompleted = isGrandTourFinale
                     ? playerGrandTourProgress.finalCompleted
@@ -244404,7 +245693,8 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	    gameSettings,
 	    themeStyles,
 	    onReturnToMenu,
-	    renderLegacyStats
+	    renderLegacyStats,
+	    extraTop
 	  }: {
 	    debrief: DebriefAnalyticsReport;
 	    outcome: any;
@@ -244412,6 +245702,8 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	    themeStyles: any;
 	    onReturnToMenu: () => void;
 	    renderLegacyStats: () => React.ReactNode;
+	    /** V9.6 (SECTION 20AL): optional content under the outcome hero (the match-shape scoring summary). */
+	    extraTop?: React.ReactNode;
 	  }) => {
 	    const [activeTab, setActiveTab] = useState<'grid' | 'fullStats'>('grid');
 
@@ -244438,6 +245730,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	            turningPoints={[...(debrief.swingPoints || []).slice(0, 2).map(sp => `Turn ${sp.turn}: ${sp.description}`), ...((swrStateRef.current?.events.length || 0) > 0 ? buildWorldReactionDebrief(sanitizeWorldReactionState(swrStateRef.current), swrViewerId).slice(0, 1) : [])]}
 	            lesson={debrief.playerWon ? null : ((debrief.blunders?.blunderEvents || [])[0]?.recommendation || 'Protect your cash reserve before the final days and pick one win lever to push early.')}
 	          />
+	          {extraTop}
 	          
 	          {/* Header Banner */}
 	          <div className="flex flex-col md:flex-row items-center justify-between gap-6 border-b border-gray-700/50 pb-6">
@@ -244943,6 +246236,11 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
       const playerContributors = isTeamMode ? getTeamActors(TEAM_PLAYER_ID) : [];
       const playerContributionSummary = isTeamMode ? getTeamContributionSummary(TEAM_PLAYER_ID) : null;
       const outcomeMetricLabel = (WIN_METRIC_LABELS as Record<string, string>)[outcome.decidingMetric];
+      // V9.6 (SECTION 20AL): how the secret objectives and the Final Stretch moved the result.
+      const wp6Report = gameSettings.matchShapeEnabled === true && wp6State?.report ? wp6State.report : null;
+      const wp6SummaryNode = wp6Report
+        ? <MatchShapeSummaryCard report={wp6Report} playerName={playerSideLabel} rivalName={opponentSideLabel} theme={themeStyles} />
+        : (gameSettings.matchShapeEnabled === true && wp6State ? <MatchShapeRevealCard state={wp6State} playerName={playerSideLabel} rivalName={opponentSideLabel} theme={themeStyles} /> : null);
 	    
       const handleReturnToMenu = () => {
         handleRestartGame();
@@ -245026,6 +246324,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
             themeStyles={themeStyles}
             onReturnToMenu={handleReturnToMenu}
             renderLegacyStats={renderLegacyStatsContent}
+            extraTop={wp6SummaryNode}
           />
         );
       }
@@ -245088,6 +246387,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
             )}
           </div>
           
+          {wp6SummaryNode && <div className="mb-6">{wp6SummaryNode}</div>}
           <div className="space-y-3">
 	            <button
               onClick={() => openReplayStudio(replayRecordingRef.current || loadedReplayFile, 'watch')}
