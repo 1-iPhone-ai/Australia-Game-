@@ -182521,9 +182521,9 @@ export function runV96ChallengeDecisionSelfTests(): V9SelfTestResult[] {
 }
 
 // ============================================================================
-// SECTION 20AI: V9.6 CHALLENGE CONTENT EXPANSION — 128 NEW CHALLENGES, A TEMPLATE GENERATOR, A ROTATING BOARD
+// SECTION 20AI: V9.6 CHALLENGE CONTENT EXPANSION — 132 NEW CHALLENGES, A TEMPLATE GENERATOR, A ROTATING BOARD
 // ----------------------------------------------------------------------------
-//   • `expandedChallengeContentEnabled` adds 128 hand-written challenges (16 per region) in the
+//   • `expandedChallengeContentEnabled` adds 132 hand-written challenges (16–17 per region) in the
 //     SECTION 20AH ChallengeDefinition shape: real places, 2–3 approaches, side effects.
 //   • `proceduralChallengesEnabled` adds a TEMPLATE GENERATOR (28 parameterised templates with
 //     region fill tables) that fills a region's board once its hand-written pool is exhausted.
