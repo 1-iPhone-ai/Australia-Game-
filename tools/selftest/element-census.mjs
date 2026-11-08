@@ -20,6 +20,8 @@ const HOOK = () => {
   const b = await chromium.launch();
   const page = await b.newPage({ viewport: { width: 1400, height: 1000 } });
   await page.addInitScript(HOOK);
+  // A returning player: skip the WP8 guided first run (fresh browser profiles start in it).
+  await page.addInitScript(() => { try { localStorage.setItem('aussie-adventure.v96.first-run', JSON.stringify({ version: 1, status: 'returning', at: 0 })); } catch { /* storage blocked */ } });
   await page.goto(URL, { waitUntil: 'load' });
   await page.waitForSelector('button:has-text("AI Opponent Mode")', { timeout: 120000 });
   await page.click('button:has-text("AI Opponent Mode")'); await page.click('button:has-text("Medium")');

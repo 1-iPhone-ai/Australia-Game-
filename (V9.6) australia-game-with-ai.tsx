@@ -14170,6 +14170,8 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   comebackStrength: 1,
   comebackFullGap: 0.5,
   finalStretchPct: 20,
+  /** V9.6 Guided First Run (SECTION 20AN) — ON by default; switched off after the tutorial is finished or skipped. */
+  guidedFirstRunEnabled: true,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -15283,6 +15285,8 @@ export function sanitizeGameSettings(input: unknown): GameSettingsState {
     comebackStrength: sanitizeMatchShapeSetting(src.comebackStrength, defaults.comebackStrength, 0, 2),
     comebackFullGap: sanitizeMatchShapeSetting(src.comebackFullGap, defaults.comebackFullGap, 0.1, 0.95),
     finalStretchPct: sanitizeMatchShapeSetting(src.finalStretchPct, defaults.finalStretchPct, 5, 50),
+    // V9.6 (SECTION 20AN): a settings blob without the key keeps the default (ON).
+    guidedFirstRunEnabled: typeof src.guidedFirstRunEnabled === 'boolean' ? src.guidedFirstRunEnabled : defaults.guidedFirstRunEnabled,
     rememberCategoryNavigationState: typeof src.rememberCategoryNavigationState === 'boolean' ? src.rememberCategoryNavigationState : defaults.rememberCategoryNavigationState,
     rememberCategoryNavigationMode: typeof src.rememberCategoryNavigationMode === 'boolean' ? src.rememberCategoryNavigationMode : defaults.rememberCategoryNavigationMode,
     autoCollapseCategoriesOnNarrow: typeof src.autoCollapseCategoriesOnNarrow === 'boolean' ? src.autoCollapseCategoriesOnNarrow : defaults.autoCollapseCategoriesOnNarrow,
@@ -18358,6 +18362,17 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     affectsFairness: false,
   },
   {
+    key: 'guidedFirstRunEnabled',
+    category: 'human_controls',
+    label: 'Guided First Match',
+    description: 'On first launch, start a guided match (one goal, three actions, new tools unlocked one at a time). Switched off after finishing or skipping; switching it off yourself is permanent for this browser.',
+    valueType: 'boolean',
+    defaultValue: true,
+    validate: (v: unknown) => typeof v === 'boolean',
+    isLiveSafe: true,
+    affectsFairness: false,
+  },
+  {
     key: 'matchShapeEnabled',
     category: 'fairness',
     label: 'Match Shape',
@@ -21328,6 +21343,8 @@ export interface SettingsExperienceShellProps {
   /** Built only when the Advanced tab is shown — evaluating the hub tree on Game Experience crashes Proceed. */
   renderAdvanced?: () => React.ReactNode;
   settingsIntelligence?: SettingsIntelligenceBinding | null;
+  /** V9.6 (SECTION 20AN): change handler for the Simple view (routes confirmations and the first-run record). */
+  onSimpleSettingChange?: (key: string, value: boolean | string | number) => void;
 }
 
 export function scheduleAutoModeEvaluationBoundary(
@@ -26745,6 +26762,8 @@ export type GameSettingsState = {
   comebackFullGap?: number;
   /** Final Stretch length as a percentage of the match (5–50). */
   finalStretchPct?: number;
+  /** V9.6 Guided First Run (SECTION 20AN): start new players in the guided tutorial. ON by default (the brief's exception). */
+  guidedFirstRunEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -28010,6 +28029,9 @@ export function gameStateReducer(state: any, action: any) {
         regionDeposits: action.payload?.regionDeposits || state.regionDeposits,
         regionControlStats: action.payload?.regionControlStats || state.regionControlStats
       };
+    case 'V96_FIRST_RUN_PATCH':
+      // V9.6 (SECTION 20AN): the guided first run's match state — a pure, serialisable patch.
+      return { ...state, firstRun: applyFirstRunPatch(sanitizeFirstRunState((state as { firstRun?: unknown }).firstRun), action.payload) ?? undefined };
     case 'V96_MATCH_SHAPE_PATCH':
       // V9.6 (SECTION 20AL): objectives, comeback and Final Stretch state — a pure, serialisable patch.
       return { ...state, matchShape: applyMatchShapePatch(sanitizeMatchShapeState((state as { matchShape?: unknown }).matchShape), action.payload) ?? undefined };
@@ -64620,6 +64642,7 @@ export const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'interface.accessibility', tab: 'interfaceAcc', title: '♿ Accessibility, Focus Trapping & Motion', tags: ['UX', 'Accessibility'], fieldKeys: ['accessibilitySettings', 'diagnosticsSettings'], keywords: 'accessibility focus trap aria keyboard high contrast reduced motion focus rings text scale' },
   { id: 'mechanicsDirectory.directory', tab: 'mechanicsDir', title: 'Game Mechanics Directory & Glossary', tags: ['Mechanics'], fieldKeys: [], keywords: 'mechanics directory glossary rules victory majority refund deposits' },
   { id: 'interface.appearance', tab: 'interfaceAcc', title: 'Appearance', tags: ['UX'], fieldKeys: ['teamOverviewDensity'], keywords: 'theme dark mode light mode system theme appearance interface color display mode' },
+  { id: 'interface.firstRun', tab: 'interfaceAcc', title: '🎓 Guided First Match', tags: ['UX'], chips: ['On for new players'], fieldKeys: ['guidedFirstRunEnabled'], keywords: 'tutorial guided first run onboarding new player skip tutorial first match learn basics' },
   { id: 'interface.mapSound', tab: 'interfaceAcc', title: '🗺️ Map, Motion & Sound', tags: ['UX'], fieldKeys: ['visualMode', 'soundEnabled', 'soundVolume', 'reducedMotion'], keywords: 'map svg classic look enhanced visuals animation motion reduced motion sound effects volume mute audio' },
   { id: 'quickSetup.presets', tab: 'quickSetup', title: 'Settings Presets', tags: ['UX'], fieldKeys: [] },
   { id: 'quickSetup.core', tab: 'quickSetup', title: 'Quick Setup', tags: ['UX'], fieldKeys: ['totalDays', 'winCondition', 'actionLimitsEnabled', 'uxAssistPackEnabled', 'teamModeAiSystemProfile', 'teamBrainModeV63'] },
@@ -99087,12 +99110,14 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
   initialTab = 'experience',
   children,
   renderAdvanced,
-  settingsIntelligence = null
+  settingsIntelligence = null,
+  onSimpleSettingChange
 }) => {
-  const [viewMode, setViewMode] = React.useState<'experience' | 'advanced'>(
+  // V9.6 (SECTION 20AN): Settings opens on the Simple view; Game Experience and Advanced are one click away.
+  const [viewMode, setViewMode] = React.useState<'simple' | 'experience' | 'advanced'>(
     initialTab === 'advanced' || (uiState?.settingsActiveTab && uiState.settingsActiveTab !== 'home' && uiState.settingsActiveTab !== 'experience')
       ? 'advanced'
-      : initialTab
+      : (initialTab === 'experience' ? 'simple' : initialTab)
   );
 
   React.useEffect(() => {
@@ -99258,6 +99283,18 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
                 <div className={`flex p-1 rounded-lg border ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
                   <button
                     type="button"
+                    onClick={() => setViewMode('simple')}
+                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${
+                      viewMode === 'simple'
+                        ? 'bg-sky-600 text-white shadow'
+                        : isDark ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                    }`}
+                    data-testid="settings-view-simple"
+                  >
+                    ✨ Simple
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setViewMode('experience')}
                     className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${
                       viewMode === 'experience'
@@ -99290,7 +99327,14 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
             </div>
 
         {/* Content Body */}
-        {viewMode === 'experience' ? (
+        {viewMode === 'simple' && gameSettings ? (
+          <SimpleSettingsPanel
+            settings={gameSettings}
+            onChange={(key, value) => { if (onSimpleSettingChange) onSimpleSettingChange(key, value); else if (onUpdateSettings) onUpdateSettings(prev => ({ ...prev, ...({ [key]: value } as unknown as Partial<GameSettingsState>) })); }}
+            onShowAll={() => setViewMode('advanced')}
+            isDark={isDark}
+          />
+        ) : viewMode === 'experience' ? (
           <InlineRenderErrorBoundary fallbackTitle="Game Experience crashed after applying settings">
           <GameExperienceScreen
             profile={currentProfile}
@@ -133620,6 +133664,7 @@ export const V95_PROFILE_SCOPED_SETTING_KEYS: readonly string[] = [
   'soundEnabled',
   'soundVolume',
   'reducedMotion',
+  'guidedFirstRunEnabled',
 ];
 
 /** Type-compatible coercion against a default (finite numbers only; plain objects merged over the default). */
@@ -133918,6 +133963,8 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         ...(stateData.opponentDialogue !== undefined ? { opponentDialogue: sanitizeOpponentDialogueState(stateData.opponentDialogue) } : {}),
         // V9.6 (SECTION 20AL): match-shape state (optional; absent in V9.5 saves).
         ...(stateData.matchShape !== undefined ? { matchShape: sanitizeMatchShapeState(stateData.matchShape) ?? undefined } : {}),
+        // V9.6 (SECTION 20AN): guided first-run state (optional; absent in V9.5 saves).
+        ...(stateData.firstRun !== undefined ? { firstRun: sanitizeFirstRunState(stateData.firstRun) ?? undefined } : {}),
         persistentMemorySnapshot: sanitizePersistentSnapshot(stateData.persistentMemorySnapshot || raw.persistentMemorySnapshot || raw.gameState?.persistentMemorySnapshot),
         aiCommunication: migrateCommunicationState(stateData.aiCommunication || raw.aiCommunication || raw.gameState?.aiCommunication),
         teamStrategicPlansByTeam: sanitizeTeamStrategicPlansByTeam(stateData.teamStrategicPlansByTeam || raw.teamStrategicPlansByTeam || raw.gameState?.teamStrategicPlansByTeam),
@@ -135996,6 +136043,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v96mf', label: 'V9.6 Map, Motion & Sound', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96MapMotionSoundSelfTests() },
   { id: 'v96om', label: 'V9.6 A Visible Opponent Mind', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96OpponentMindSelfTests() },
   { id: 'v96mt', label: 'V9.6 Match Shape', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96MatchShapeSelfTests() },
+  { id: 'v96fr', label: 'V9.6 Guided First Run', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV96GuidedFirstRunSelfTests() },
   { id: 'v96pf', label: 'V9.6 Performance Refactor', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV96PerformanceSelfTests()) },
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
@@ -186042,6 +186090,506 @@ const KeyboardShortcutsHelpModalView: React.FC<KeyboardShortcutsHelpModalProps> 
 };
 const KeyboardShortcutsHelpModal = React.memo(withRenderCount('KeyboardShortcutsHelpModal', KeyboardShortcutsHelpModalView));
 
+// ============================================================================
+// SECTION 20AN: V9.6 GUIDED FIRST RUN — THE FIRST TEN MINUTES
+// ----------------------------------------------------------------------------
+// First launch (no first-run record in this browser, guidedFirstRunEnabled on) skips the menu and starts a guided
+// match: the Tourist, starting in NSW, against an Easy rival, with V9.2 Guided Learning's basics flow running and
+// one goal — "Earn $2,000 and complete 3 challenges by day 7". Only travel, challenges and selling are on screen;
+// trade → crafting → shop → loans → sabotage → AI diplomacy → teams unlock as they become relevant (each by a set
+// day at the latest), never more than one new concept per turn, each with a one-line explanation. A big
+// "Skip tutorial" button opens the full game at once. Finishing (goal met, or day 7 passed) or skipping writes the
+// first-run record and switches guidedFirstRunEnabled off; switching it off in Settings disables it permanently.
+// Saves are downloaded files here, so "no save" reads as "no save ever loaded in this browser" — loading one
+// writes a 'returning' record.
+// Settings: a Simple view of 22 everyday settings is the first page of Settings; "Show all settings" opens the
+// full hub (Game Experience and Advanced views are unchanged).
+// ============================================================================
+
+export type FirstRunConcept = 'travel' | 'challenge' | 'sell' | 'trade' | 'crafting' | 'shop' | 'loans' | 'sabotage' | 'diplomacy' | 'teams';
+export type FirstRunOutcome = 'goal_met' | 'deadline' | 'skipped';
+export interface FirstRunState {
+  version: 1;
+  active: boolean;
+  unlocked: FirstRunConcept[];
+  unlockLog: Array<{ concept: FirstRunConcept; day: number }>;
+  lastUnlockDay: number | null;
+  startChallenges: number;
+  outcome: FirstRunOutcome | null;
+  finishedDay: number | null;
+}
+export type FirstRunPatch =
+  | { kind: 'init'; state: FirstRunState }
+  | { kind: 'unlock'; concept: FirstRunConcept; day: number }
+  | { kind: 'finish'; outcome: FirstRunOutcome; day: number }
+  | { kind: 'clear' };
+export interface FirstRunSignals { day: number; money: number; inventoryCount: number; challengesWon: number; rivalAhead: boolean; diplomacyOffer: boolean; inShopRegion: boolean }
+
+export const FIRST_RUN_START_CONCEPTS: readonly FirstRunConcept[] = ['travel', 'challenge', 'sell'];
+export const FIRST_RUN_UNLOCK_ORDER: readonly FirstRunConcept[] = ['trade', 'crafting', 'shop', 'loans', 'sabotage', 'diplomacy', 'teams'];
+export const FIRST_RUN_ALL_CONCEPTS: readonly FirstRunConcept[] = [...FIRST_RUN_START_CONCEPTS, ...FIRST_RUN_UNLOCK_ORDER];
+export const FIRST_RUN_GOAL = { money: 2000, challenges: 3, byDay: 7, text: 'Earn $2,000 and complete 3 challenges by day 7' } as const;
+export const FIRST_RUN_CHARACTER_NAME = 'Tourist';
+export const FIRST_RUN_START_REGION = 'NSW';
+export const FIRST_RUN_DIFFICULTY = 'easy';
+export const FIRST_RUN_LABELS: Readonly<Record<FirstRunConcept, string>> = {
+  travel: 'Travel', challenge: 'Challenges', sell: 'Sell', trade: 'Trade', crafting: 'Crafting', shop: 'Shop', loans: 'Loans', sabotage: 'Sabotage', diplomacy: 'AI diplomacy', teams: 'Teams'
+};
+export const FIRST_RUN_EXPLANATIONS: Readonly<Record<FirstRunConcept, string>> = {
+  travel: 'Travel moves you to another state or territory; neighbours are cheapest.',
+  challenge: 'Challenges are wagers: win and you earn a multiple of your bet, lose and you lose it.',
+  sell: 'Sell turns the resources you collect into cash at today’s prices.',
+  trade: 'Trade: buy resources where they are cheap and sell where they are dear — the Resource Market shows today’s prices.',
+  crafting: 'Crafting: the Workshop combines raw resources into goods worth more than their parts.',
+  shop: 'Shop: equipment gives lasting bonuses to travel, challenges and experience (NSW and VIC have shops).',
+  loans: 'Loans: borrow cash now and pay interest every day — repay early to keep it cheap.',
+  sabotage: 'Sabotage slows your rival down, but it can backfire, and the rival remembers.',
+  diplomacy: 'AI diplomacy: your rival may offer deals — read every term before you answer.',
+  teams: 'Teams: in Team mode you play beside an AI ally against a rival squad (New Game → Team mode).'
+};
+/** When each locked concept becomes relevant — and the day it unlocks regardless, so the tour always finishes. */
+const FIRST_RUN_RELEVANCE: Readonly<Record<FirstRunConcept, { when: (s: FirstRunSignals) => boolean; byDay: number }>> = {
+  travel: { when: () => true, byDay: 1 }, challenge: { when: () => true, byDay: 1 }, sell: { when: () => true, byDay: 1 },
+  trade: { when: s => s.inventoryCount >= 1, byDay: 2 },
+  crafting: { when: s => s.inventoryCount >= 2, byDay: 3 },
+  shop: { when: s => s.money >= 1200 || s.inShopRegion, byDay: 4 },
+  loans: { when: s => s.money < 300, byDay: 5 },
+  sabotage: { when: s => s.rivalAhead, byDay: 6 },
+  diplomacy: { when: s => s.diplomacyOffer, byDay: 7 },
+  teams: { when: s => s.day > FIRST_RUN_GOAL.byDay, byDay: 8 }
+};
+
+const frIsConcept = (v: unknown): v is FirstRunConcept => typeof v === 'string' && (FIRST_RUN_ALL_CONCEPTS as readonly string[]).includes(v);
+const frIsOutcome = (v: unknown): v is FirstRunOutcome => v === 'goal_met' || v === 'deadline' || v === 'skipped';
+const frInt = (v: unknown, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) : d);
+
+export function createFirstRunState(startChallenges = 0): FirstRunState {
+  return { version: 1, active: true, unlocked: [...FIRST_RUN_START_CONCEPTS], unlockLog: [], lastUnlockDay: null, startChallenges: Math.max(0, Math.floor(startChallenges)), outcome: null, finishedDay: null };
+}
+/** Saves: absent in V9.5 saves (→ null); malformed parts are dropped. */
+export function sanitizeFirstRunState(raw: unknown): FirstRunState | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  if (r.version !== 1) return null;
+  const unlocked = Array.isArray(r.unlocked) ? r.unlocked.filter(frIsConcept) : [];
+  FIRST_RUN_START_CONCEPTS.forEach(c => { if (!unlocked.includes(c)) unlocked.unshift(c); });
+  const log = (Array.isArray(r.unlockLog) ? r.unlockLog : []).slice(0, 16).map(e => (e && typeof e === 'object' ? e as Record<string, unknown> : {}))
+    .filter(e => frIsConcept(e.concept)).map(e => ({ concept: e.concept as FirstRunConcept, day: Math.max(0, frInt(e.day, 0)) }));
+  return {
+    version: 1, active: r.active === true, unlocked: FIRST_RUN_ALL_CONCEPTS.filter(c => unlocked.includes(c)), unlockLog: log,
+    lastUnlockDay: typeof r.lastUnlockDay === 'number' && Number.isFinite(r.lastUnlockDay) ? Math.floor(r.lastUnlockDay) : null,
+    startChallenges: Math.max(0, frInt(r.startChallenges, 0)), outcome: frIsOutcome(r.outcome) ? r.outcome : null,
+    finishedDay: typeof r.finishedDay === 'number' && Number.isFinite(r.finishedDay) ? Math.floor(r.finishedDay) : null
+  };
+}
+/** The next concept to unlock this turn, if any: strictly in order, at most one per day, only when relevant (or due). */
+export function nextFirstRunUnlock(state: FirstRunState | null, s: FirstRunSignals): FirstRunConcept | null {
+  if (!state || !state.active) return null;
+  if (state.lastUnlockDay !== null && state.lastUnlockDay >= s.day) return null;
+  const next = FIRST_RUN_UNLOCK_ORDER.find(c => !state.unlocked.includes(c));
+  if (!next) return null;
+  const rule = FIRST_RUN_RELEVANCE[next];
+  return rule.when(s) || s.day >= rule.byDay ? next : null;
+}
+export function evaluateFirstRunGoal(state: FirstRunState | null, s: FirstRunSignals): FirstRunOutcome | null {
+  if (!state || !state.active) return null;
+  if (s.money >= FIRST_RUN_GOAL.money && s.challengesWon - state.startChallenges >= FIRST_RUN_GOAL.challenges) return 'goal_met';
+  if (s.day > FIRST_RUN_GOAL.byDay) return 'deadline';
+  return null;
+}
+export function applyFirstRunPatch(state: FirstRunState | null, patchRaw: unknown): FirstRunState | null {
+  const p = patchRaw && typeof patchRaw === 'object' ? patchRaw as Record<string, unknown> : {};
+  if (p.kind === 'clear') return null;
+  if (p.kind === 'init') return sanitizeFirstRunState(p.state);
+  if (!state) return null;
+  const day = Math.max(0, frInt(p.day, 0));
+  if (p.kind === 'unlock' && frIsConcept(p.concept) && state.active) {
+    if (state.unlocked.includes(p.concept) || (state.lastUnlockDay !== null && state.lastUnlockDay >= day)) return state;
+    const expected = FIRST_RUN_UNLOCK_ORDER.find(c => !state.unlocked.includes(c));
+    if (expected !== p.concept) return state;   // order is enforced here as well
+    return { ...state, unlocked: FIRST_RUN_ALL_CONCEPTS.filter(c => c === p.concept || state.unlocked.includes(c)), unlockLog: [...state.unlockLog, { concept: p.concept, day }].slice(-16), lastUnlockDay: day };
+  }
+  if (p.kind === 'finish' && frIsOutcome(p.outcome) && state.active) {
+    return { ...state, active: false, outcome: p.outcome, finishedDay: day, unlocked: [...FIRST_RUN_ALL_CONCEPTS] };
+  }
+  return state;
+}
+
+// ---- What the first run shows -----------------------------------------------------------------------------------------------
+export type FirstRunVisibility = FirstRunConcept | 'core' | 'advanced';
+/** Classifies an action-bar id, quick-action id or contextual action type. 'core' is always shown; 'advanced' waits
+ *  for the tutorial to end (contracts, investments, deposits, governance, automation, expeditions…). */
+export function classifyFirstRunAction(idRaw: string): FirstRunVisibility {
+  const id = String(idRaw || '').toLowerCase();
+  // Checked in order: specific systems before the generic market/buy words.
+  if (/end_?turn|endturn|^rest$|^progress$|^settings$|^help$|^history$|save|load|^diagnostics$/.test(id)) return 'core';
+  if (/travel|^move/.test(id)) return 'travel';
+  if (/challenge/.test(id)) return 'challenge';
+  if (/craft|workshop/.test(id)) return 'crafting';   // before "shop" — "workshop" contains it
+  if (/shop|equipment/.test(id)) return 'shop';
+  if (/loan|credit|repay/.test(id)) return 'loans';
+  if (/sabotag/.test(id)) return 'sabotage';
+  if (/negotiat|diplomac|proposal|deal/.test(id)) return 'diplomacy';
+  if (/team|ally|directive/.test(id)) return 'teams';
+  if (/invest|contract|deposit|region|governance|infrastructure|expedition|relic|treasury|automation|replay|guardian|endgame|megaproject|policy/.test(id)) return 'advanced';
+  if (/sell/.test(id) || id === 'market') return 'sell';
+  if (/resource_?market|resourcemarket|buy|trade|market/.test(id)) return 'trade';
+  return 'advanced';
+}
+export function isFirstRunVisible(state: FirstRunState | null, v: FirstRunVisibility): boolean {
+  if (!state || !state.active) return true;
+  if (v === 'core') return true;
+  if (v === 'advanced') return false;
+  return state.unlocked.includes(v);
+}
+export function isFirstRunActionVisible(state: FirstRunState | null, id: string): boolean {
+  return isFirstRunVisible(state, classifyFirstRunAction(id));
+}
+/** The contextual action set restricted to what the first run shows (identity when no first run is active). */
+export function filterActionSetForFirstRun<T extends ContextualActionSet | null>(set: T, state: FirstRunState | null): T {
+  const src: ContextualActionSet | null = set;
+  if (!src || !state || !state.active) return set;
+  const keep = (c: ContextualActionCandidate) => isFirstRunActionVisible(state, c.actionType || c.category || c.id);
+  const ranked = src.ranked.filter(keep);
+  const out: ContextualActionSet = {
+    recommended: src.recommended && keep(src.recommended) ? src.recommended : (ranked.find(c => c.legal) || ranked[0] || null),
+    useful: src.useful.filter(keep), available: src.available.filter(keep), blocked: src.blocked.filter(keep), ranked,
+    fingerprint: `${src.fingerprint}|fr:${state.unlocked.join(',')}`
+  };
+  return out as T;
+}
+
+// ---- Persistence: one small record per browser profile -----------------------------------------------------------------------
+export const FIRST_RUN_STORAGE_KEY = 'aussie-adventure.v96.first-run';
+export type FirstRunRecordStatus = 'completed' | 'skipped' | 'disabled' | 'returning';
+export interface FirstRunRecord { version: 1; status: FirstRunRecordStatus; at: number }
+export interface FirstRunStorage { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem(key: string): void }
+export function firstRunStorage(): FirstRunStorage | null {
+  try { return typeof window !== 'undefined' && window.localStorage ? window.localStorage : null; } catch { return null; }
+}
+export function readFirstRunRecord(storage: FirstRunStorage | null): FirstRunRecord | null {
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(FIRST_RUN_STORAGE_KEY);
+    if (!raw) return null;
+    const r = JSON.parse(raw) as Record<string, unknown>;
+    const status = r && (r.status === 'completed' || r.status === 'skipped' || r.status === 'disabled' || r.status === 'returning') ? r.status : null;
+    return status ? { version: 1, status, at: frInt(r.at, 0) } : null;
+  } catch { return null; }
+}
+export function writeFirstRunRecord(storage: FirstRunStorage | null, status: FirstRunRecordStatus, at: number): boolean {
+  if (!storage) return false;
+  try { storage.setItem(FIRST_RUN_STORAGE_KEY, JSON.stringify({ version: 1, status, at })); return true; } catch { return false; }
+}
+export function clearFirstRunRecord(storage: FirstRunStorage | null): boolean {
+  if (!storage) return false;
+  try { storage.removeItem(FIRST_RUN_STORAGE_KEY); return true; } catch { return false; }
+}
+/** First launch: the setting is on and this browser has no record of a finished, skipped or disabled tour, or a load. */
+export function shouldStartFirstRun(settings: { guidedFirstRunEnabled?: boolean } | null | undefined, record: FirstRunRecord | null): boolean {
+  return (settings?.guidedFirstRunEnabled ?? true) !== false && record === null;
+}
+export function firstRunCharacterIndex(characters: ReadonlyArray<{ name: string }>): number {
+  const i = characters.findIndex(c => c.name === FIRST_RUN_CHARACTER_NAME);
+  return i >= 0 ? i : 0;
+}
+
+// ---- The tutorial panel -------------------------------------------------------------------------------------------------------
+export interface FirstRunView {
+  goalText: string; money: number; moneyTarget: number; challenges: number; challengesTarget: number; day: number; byDay: number;
+  unlocked: Array<{ concept: FirstRunConcept; label: string; isNew: boolean }>;
+  latest: { label: string; text: string } | null;
+  nextLabel: string | null;
+}
+export function buildFirstRunView(state: FirstRunState, s: FirstRunSignals): FirstRunView {
+  const last = state.unlockLog[state.unlockLog.length - 1] || null;
+  const next = FIRST_RUN_UNLOCK_ORDER.find(c => !state.unlocked.includes(c)) || null;
+  return {
+    goalText: FIRST_RUN_GOAL.text, money: Math.max(0, Math.round(s.money)), moneyTarget: FIRST_RUN_GOAL.money,
+    challenges: Math.max(0, s.challengesWon - state.startChallenges), challengesTarget: FIRST_RUN_GOAL.challenges, day: s.day, byDay: FIRST_RUN_GOAL.byDay,
+    unlocked: state.unlocked.map(c => ({ concept: c, label: FIRST_RUN_LABELS[c], isNew: Boolean(last && last.concept === c && last.day === s.day) })),
+    latest: last ? { label: FIRST_RUN_LABELS[last.concept], text: FIRST_RUN_EXPLANATIONS[last.concept] } : { label: 'The basics', text: `${FIRST_RUN_EXPLANATIONS.travel} ${FIRST_RUN_EXPLANATIONS.challenge}` },
+    nextLabel: next ? FIRST_RUN_LABELS[next] : null
+  };
+}
+const frBar = (value: number, target: number) => Math.max(0, Math.min(100, Math.round((value / Math.max(1, target)) * 100)));
+export const FirstRunPanel = React.memo(function FirstRunPanel({ view, onSkip, theme }: { view: FirstRunView; onSkip: () => void; theme: { card: string; border: string; shadow: string } }) {
+  return (
+    <section aria-labelledby="first-run-h" className={`${theme.card} ${theme.border} border-2 border-sky-500/60 rounded-xl px-4 py-3 ${theme.shadow} space-y-2`} data-testid="first-run-panel">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 id="first-run-h" className="font-bold text-base">🎓 Your first match — {view.goalText}</h2>
+          <div className="text-xs opacity-80">Day {view.day} of {view.byDay} · new tools unlock as they become useful, one at a time.</div>
+        </div>
+        <button type="button" onClick={onSkip} className="px-5 py-3 rounded-lg font-bold text-base bg-sky-600 hover:bg-sky-500 text-white shadow" data-testid="first-run-skip">Skip tutorial — open the full game</button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs" data-testid="first-run-goal">
+        <div><div className="flex justify-between"><span>💰 Cash</span><span className="font-mono">${view.money.toLocaleString()} / ${view.moneyTarget.toLocaleString()}</span></div><div className="h-2 rounded bg-black/30 overflow-hidden" role="meter" aria-label="Cash towards the goal" aria-valuemin={0} aria-valuemax={view.moneyTarget} aria-valuenow={Math.min(view.money, view.moneyTarget)}><div className="h-2 bg-emerald-500" style={{ width: `${frBar(view.money, view.moneyTarget)}%` }} /></div></div>
+        <div><div className="flex justify-between"><span>🎯 Challenges won</span><span className="font-mono">{view.challenges} / {view.challengesTarget}</span></div><div className="h-2 rounded bg-black/30 overflow-hidden" role="meter" aria-label="Challenges towards the goal" aria-valuemin={0} aria-valuemax={view.challengesTarget} aria-valuenow={Math.min(view.challenges, view.challengesTarget)}><div className="h-2 bg-sky-500" style={{ width: `${frBar(view.challenges, view.challengesTarget)}%` }} /></div></div>
+      </div>
+      <div className="flex flex-wrap items-center gap-1 text-xs" data-testid="first-run-unlocked">
+        <span className="opacity-70 mr-1">On screen:</span>
+        {view.unlocked.map(u => <span key={u.concept} className={`px-2 py-0.5 rounded-full ${u.isNew ? 'bg-amber-500/40 font-semibold' : 'bg-black/25'}`}>{u.isNew ? '🆕 ' : ''}{u.label}</span>)}
+        {view.nextLabel && <span className="opacity-60 ml-1">· next: {view.nextLabel}</span>}
+      </div>
+      {view.latest && <div className="text-xs" data-testid="first-run-latest"><span className="font-semibold">{view.latest.label}:</span> {view.latest.text}</div>}
+    </section>
+  );
+});
+
+// ---- Settings: the Simple view -------------------------------------------------------------------------------------------------
+export interface SimpleSettingDescriptor {
+  key: keyof GameSettingsState & string; group: 'Match' | 'Gameplay' | 'Rival' | 'Look & sound' | 'Help';
+  label: string; help: string; kind: 'toggle' | 'select' | 'range';
+  options?: ReadonlyArray<{ value: string; label: string }>; min?: number; max?: number; step?: number; unit?: 'days' | 'actions' | 'percent';
+}
+export const SIMPLE_SETTINGS: readonly SimpleSettingDescriptor[] = [
+  { key: 'experienceMode', group: 'Match', label: 'Experience', help: 'Explorer: travel and challenges. Nation: the national economy. Full: everything.', kind: 'select', options: [{ value: 'explorer', label: 'Explorer' }, { value: 'nation', label: 'Nation' }, { value: 'full', label: 'Full' }] },
+  { key: 'totalDays', group: 'Match', label: 'Game length', help: 'Days in a match.', kind: 'range', min: 10, max: 100, step: 5, unit: 'days' },
+  { key: 'winCondition', group: 'Match', label: 'How to win', help: 'What decides the winner at the end.', kind: 'select', options: [{ value: 'money', label: 'Most money' }, { value: 'netWorth', label: 'Highest net worth' }, { value: 'regions', label: 'Most regions' }, { value: 'challenges', label: 'Most challenge points' }] },
+  { key: 'actionLimitsEnabled', group: 'Match', label: 'Daily action limit', help: 'Each day you get a set number of actions.', kind: 'toggle' },
+  { key: 'playerActionsPerDay', group: 'Match', label: 'Actions per day', help: 'How many actions a day allows.', kind: 'range', min: 1, max: 10, step: 1, unit: 'actions' },
+  { key: 'challengeApproachesEnabled', group: 'Gameplay', label: 'Challenge approaches', help: 'Pick how to tackle each challenge — bold, steady, clever or social.', kind: 'toggle' },
+  { key: 'expandedChallengeContentEnabled', group: 'Gameplay', label: 'More challenges', help: '132 extra challenges across every region.', kind: 'toggle' },
+  { key: 'dynamicWagerEnabled', group: 'Gameplay', label: 'Bigger wagers', help: 'Wager limits scale with the challenge.', kind: 'toggle' },
+  { key: 'doubleOrNothingEnabled', group: 'Gameplay', label: 'Double or nothing', help: 'Risk a challenge win for twice the reward.', kind: 'toggle' },
+  { key: 'equipmentShopEnabled', group: 'Gameplay', label: 'Equipment shop', help: 'Buy gear with lasting bonuses.', kind: 'toggle' },
+  { key: 'sabotageEnabled', group: 'Gameplay', label: 'Sabotage', help: 'Slow the rival down (and expect the same).', kind: 'toggle' },
+  { key: 'advancedLoansEnabled', group: 'Gameplay', label: 'Bank loans', help: 'Loan tiers with terms and credit scores.', kind: 'toggle' },
+  { key: 'matchShapeEnabled', group: 'Gameplay', label: 'Secret objectives & Final Stretch', help: 'Hidden goals, an underdog boost and a high-stakes finale.', kind: 'toggle' },
+  { key: 'opponentPersonalityEnabled', group: 'Rival', label: 'Rival personality', help: 'Your rival talks from what it remembers.', kind: 'toggle' },
+  { key: 'adaptiveAiTauntsEnabled', group: 'Rival', label: 'Rival taunts', help: 'Occasional lines from the rival as the match swings.', kind: 'toggle' },
+  { key: 'aiSpecialAbilitiesEnabled', group: 'Rival', label: 'Rival special abilities', help: 'The rival can use its character’s ability.', kind: 'toggle' },
+  { key: 'visualMode', group: 'Look & sound', label: 'Look', help: 'Enhanced map and motion, or the classic look.', kind: 'select', options: [{ value: 'enhanced', label: 'Enhanced' }, { value: 'classic', label: 'Classic' }] },
+  { key: 'reducedMotion', group: 'Look & sound', label: 'Reduce motion', help: 'Follow your system, or force motion on or off.', kind: 'select', options: [{ value: 'system', label: 'Follow system' }, { value: 'on', label: 'Reduce' }, { value: 'off', label: 'Full motion' }] },
+  { key: 'soundEnabled', group: 'Look & sound', label: 'Sound', help: 'Short synthesised sound effects.', kind: 'toggle' },
+  { key: 'soundVolume', group: 'Look & sound', label: 'Volume', help: 'Sound effect volume.', kind: 'range', min: 0, max: 1, step: 0.05, unit: 'percent' },
+  { key: 'showDayTransition', group: 'Look & sound', label: 'Day summary screen', help: 'A summary between days.', kind: 'toggle' },
+  { key: 'guidedFirstRunEnabled', group: 'Help', label: 'Guided first match', help: 'Start new players in the guided tutorial. Turning it off is permanent for this browser.', kind: 'toggle' }
+];
+export const SIMPLE_SETTINGS_KEYS: readonly string[] = SIMPLE_SETTINGS.map(d => d.key);
+const simpleValueText = (d: SimpleSettingDescriptor, v: number) => (d.unit === 'percent' ? `${Math.round(v * 100)}%` : d.unit === 'days' ? `${v} days` : d.unit === 'actions' ? `${v}` : String(v));
+export const SimpleSettingsPanel = React.memo(function SimpleSettingsPanel({ settings, onChange, onShowAll, isDark }: { settings: GameSettingsState; onChange: (key: string, value: boolean | string | number) => void; onShowAll: () => void; isDark: boolean }) {
+  const groups = Array.from(new Set(SIMPLE_SETTINGS.map(d => d.group)));
+  const values = settings as unknown as Record<string, unknown>;
+  const box = isDark ? 'border-slate-700 bg-slate-950/60' : 'border-slate-200 bg-slate-50';
+  return (
+    <div className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-6 py-4 space-y-4" data-testid="simple-settings">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div><h3 className="font-bold text-lg">Settings</h3><div className="text-xs opacity-75">The settings most players change. Every other setting is one click away.</div></div>
+        <button type="button" onClick={onShowAll} className="px-4 py-2 rounded-lg font-semibold bg-sky-600 hover:bg-sky-500 text-white text-sm" data-testid="simple-settings-show-all">Show all settings</button>
+      </div>
+      {groups.map(g => (
+        <section key={g} className={`border rounded-xl p-3 space-y-2 ${box}`} aria-label={g}>
+          <h4 className="font-semibold text-sm">{g}</h4>
+          {SIMPLE_SETTINGS.filter(d => d.group === g).map(d => {
+            const v = values[d.key];
+            const id = `simple-setting-${d.key}`;
+            return (
+              <div key={d.key} className="flex flex-wrap items-center justify-between gap-2 text-sm" data-testid={id}>
+                <label htmlFor={id + '-input'} className="flex-1 min-w-[12rem]"><span className="font-medium">{d.label}</span><span className="block text-xs opacity-70">{d.help}</span></label>
+                {d.kind === 'toggle' && <input id={id + '-input'} type="checkbox" checked={v === true} onChange={e => onChange(d.key, e.target.checked)} />}
+                {d.kind === 'select' && (
+                  <select id={id + '-input'} value={typeof v === 'string' ? v : String(d.options?.[0]?.value || '')} onChange={e => onChange(d.key, e.target.value)} className={`rounded px-2 py-1 text-sm ${isDark ? 'bg-slate-800' : 'bg-white border'}`}>
+                    {(d.options || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                )}
+                {d.kind === 'range' && (
+                  <span className="flex items-center gap-2">
+                    <input id={id + '-input'} type="range" min={d.min} max={d.max} step={d.step} value={typeof v === 'number' ? v : Number(d.min || 0)} onChange={e => onChange(d.key, Number(e.target.value))} aria-valuetext={simpleValueText(d, typeof v === 'number' ? v : Number(d.min || 0))} />
+                    <span className="w-16 text-right text-xs">{simpleValueText(d, typeof v === 'number' ? v : Number(d.min || 0))}</span>
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </section>
+      ))}
+    </div>
+  );
+});
+
+// ---- Self-tests (fr01–fr36) ------------------------------------------------------------------------------------------------------
+export function runV96GuidedFirstRunSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const sig = (o: Partial<FirstRunSignals> = {}): FirstRunSignals => ({ day: 1, money: 1000, inventoryCount: 0, challengesWon: 0, rivalAhead: false, diplomacyOffer: false, inShopRegion: false, ...o });
+  const memStore = (): FirstRunStorage & { data: Record<string, string> } => {
+    const data: Record<string, string> = {};
+    return { data, getItem: k => (k in data ? data[k] : null), setItem: (k, v) => { data[k] = v; }, removeItem: k => { delete data[k]; } };
+  };
+  const walk = (signals: (day: number) => Partial<FirstRunSignals>, days = 9) => {
+    let st: FirstRunState | null = createFirstRunState(0);
+    const seq: string[] = [];
+    for (let d = 1; d <= days; d++) {
+      const s = sig({ day: d, ...signals(d) });
+      const next = nextFirstRunUnlock(st, s);
+      if (next) { st = applyFirstRunPatch(st, { kind: 'unlock', concept: next, day: d }); seq.push(`${d}:${next}`); }
+    }
+    return { st, seq };
+  };
+
+  check('fr01_order', 'Unlock order is trade → crafting → shop → loans → sabotage → AI diplomacy → teams', () =>
+    JSON.stringify(FIRST_RUN_UNLOCK_ORDER) === '["trade","crafting","shop","loans","sabotage","diplomacy","teams"]' || JSON.stringify(FIRST_RUN_UNLOCK_ORDER));
+  check('fr02_start_visible', 'A first run starts with only travel, challenges and selling', () => {
+    const st = createFirstRunState(); return (JSON.stringify(st.unlocked) === '["travel","challenge","sell"]' && st.active) || JSON.stringify(st.unlocked);
+  });
+  check('fr03_in_order', 'A later concept that is already relevant still waits for the earlier ones', () => {
+    const st = createFirstRunState();
+    const n = nextFirstRunUnlock(st, sig({ day: 1, rivalAhead: true, money: 100 }));   // sabotage and loans relevant, trade not yet
+    return n === null || `unlocked ${n}`;
+  });
+  check('fr04_one_per_turn', 'Never more than one new concept per turn', () => {
+    let st = applyFirstRunPatch(createFirstRunState(), { kind: 'unlock', concept: 'trade', day: 2 });
+    const again = nextFirstRunUnlock(st, sig({ day: 2, inventoryCount: 9 }));
+    st = applyFirstRunPatch(st, { kind: 'unlock', concept: 'crafting', day: 2 });
+    return (again === null && st !== null && !st.unlocked.includes('crafting')) || `${again} ${st?.unlocked.join(',')}`;
+  });
+  check('fr05_relevance', 'Trade unlocks as soon as you hold something to trade', () => nextFirstRunUnlock(createFirstRunState(), sig({ day: 1, inventoryCount: 1 })) === 'trade' || 'not unlocked');
+  check('fr06_walk_due_days', 'With nothing relevant, every concept still unlocks in order, one per day, by day 8', () => {
+    const { st, seq } = walk(() => ({}));
+    return (JSON.stringify(seq) === '["2:trade","3:crafting","4:shop","5:loans","6:sabotage","7:diplomacy","8:teams"]' && st?.unlocked.length === 10) || JSON.stringify(seq);
+  });
+  check('fr07_walk_relevant', 'When things become relevant early they unlock early — still one per day and in order', () => {
+    const { seq } = walk(d => ({ inventoryCount: 3, money: d === 3 ? 1500 : 100, rivalAhead: true, diplomacyOffer: true }));
+    return JSON.stringify(seq) === '["1:trade","2:crafting","3:shop","4:loans","5:sabotage","6:diplomacy","8:teams"]' || JSON.stringify(seq);
+  });
+  check('fr08_patch_order', 'An out-of-order unlock patch is ignored', () => {
+    const st = createFirstRunState(); return applyFirstRunPatch(st, { kind: 'unlock', concept: 'shop', day: 1 }) === st || 'accepted';
+  });
+  check('fr09_patch_same_day', 'A second unlock on the same day is ignored by the reducer too', () => {
+    const a = applyFirstRunPatch(createFirstRunState(), { kind: 'unlock', concept: 'trade', day: 3 });
+    const b = applyFirstRunPatch(a, { kind: 'unlock', concept: 'crafting', day: 3 });
+    return (a === b) || 'accepted';
+  });
+  check('fr10_goal_met', 'Earn $2,000 and complete 3 challenges → the goal is met', () => evaluateFirstRunGoal(createFirstRunState(), sig({ day: 5, money: 2000, challengesWon: 3 })) === 'goal_met' || 'not met');
+  check('fr11_deadline', 'Past day 7 without the goal → the tutorial ends on the deadline', () => {
+    const st = createFirstRunState();
+    return (evaluateFirstRunGoal(st, sig({ day: 7, money: 1900, challengesWon: 2 })) === null && evaluateFirstRunGoal(st, sig({ day: 8, money: 1900, challengesWon: 2 })) === 'deadline') || 'wrong';
+  });
+  check('fr12_counts_from_start', 'Challenges count from the start of the tutorial', () => evaluateFirstRunGoal(createFirstRunState(2), sig({ day: 3, money: 2500, challengesWon: 4 })) === null || 'counted earlier wins');
+  check('fr13_finish', 'Finishing opens everything and records the outcome', () => {
+    const st = applyFirstRunPatch(createFirstRunState(), { kind: 'finish', outcome: 'goal_met', day: 5 });
+    return (st !== null && !st.active && st.outcome === 'goal_met' && st.finishedDay === 5 && st.unlocked.length === 10) || JSON.stringify(st);
+  });
+  check('fr14_skip_path', 'Skip: the tutorial ends at once and every action is visible', () => {
+    const st = applyFirstRunPatch(createFirstRunState(), { kind: 'finish', outcome: 'skipped', day: 1 });
+    return (st !== null && st.outcome === 'skipped' && ['contracts', 'investments', 'sabotage', 'teamAiSettings', 'resourceMarket'].every(id => isFirstRunActionVisible(st, id))) || 'still hidden';
+  });
+  check('fr15_visibility', 'While active: core shown, locked and advanced hidden; inactive: all shown', () => {
+    const st = createFirstRunState();
+    return (isFirstRunVisible(st, 'core') && isFirstRunVisible(st, 'travel') && !isFirstRunVisible(st, 'trade') && !isFirstRunVisible(st, 'advanced') && isFirstRunVisible(null, 'advanced')) || 'visibility';
+  });
+  check('fr16_action_bar_ids', 'Action-bar ids map onto the tutorial concepts', () => {
+    const want: Record<string, FirstRunVisibility> = { challenges: 'challenge', travel: 'travel', market: 'sell', endTurn: 'core', workshop: 'crafting', resourceMarket: 'trade', contracts: 'advanced', investments: 'advanced', shop: 'shop', progress: 'core', loans: 'loans', sabotage: 'sabotage', negotiations: 'diplomacy', governance: 'advanced', teamAiSettings: 'teams', automation: 'advanced', replay: 'advanced', diagnostics: 'core', settings: 'core', help: 'core', history: 'core', saveLoad: 'core' };
+    const bad = Object.entries(want).filter(([id, v]) => classifyFirstRunAction(id) !== v);
+    return bad.length === 0 || bad.map(([id]) => `${id}→${classifyFirstRunAction(id)}`).join(', ');
+  });
+  check('fr17_quick_ids', 'Quick-action ids map onto the tutorial concepts', () => {
+    const want: Record<string, FirstRunVisibility> = { challenges: 'challenge', travel: 'travel', sell_resources: 'sell', end_turn: 'core', resource_market: 'trade', shop: 'shop', emergency_loan: 'loans', repay_emergency_loan: 'loans', sabotage: 'sabotage', investments: 'advanced', guardian_safety: 'advanced', endgame_modes: 'advanced' };
+    const bad = Object.entries(want).filter(([id, v]) => classifyFirstRunAction(id) !== v);
+    return bad.length === 0 || bad.map(([id]) => `${id}→${classifyFirstRunAction(id)}`).join(', ');
+  });
+  check('fr18_action_types', 'Contextual action types map sensibly (buying gear is the shop, not trade)', () => {
+    const want: Record<string, FirstRunVisibility> = { sell: 'sell', buy_market: 'trade', market_trade: 'trade', craft: 'crafting', buy_equipment: 'shop', take_loan: 'loans', buy_investment: 'advanced', region_deposit: 'advanced', accept_regional_contract: 'advanced', give_cash: 'advanced', end_turn: 'core', challenge: 'challenge' };
+    const bad = Object.entries(want).filter(([id, v]) => classifyFirstRunAction(id) !== v);
+    return bad.length === 0 || bad.map(([id]) => `${id}→${classifyFirstRunAction(id)}`).join(', ');
+  });
+  check('fr19_filter_set', 'The recommendation list keeps only what the tutorial shows (and is untouched otherwise)', () => {
+    const mk = (id: string, actionType: string, legal = true) => ({ id, actionType, category: actionType, legal } as unknown as ContextualActionCandidate);
+    const set: ContextualActionSet = { recommended: mk('a', 'buy_market'), useful: [mk('b', 'travel')], available: [mk('c', 'sabotage')], blocked: [], ranked: [mk('a', 'buy_market'), mk('b', 'travel'), mk('c', 'sabotage')], fingerprint: 'f' };
+    const out = filterActionSetForFirstRun(set, createFirstRunState());
+    return (out !== null && out.recommended?.id === 'b' && out.ranked.length === 1 && out.available.length === 0 && filterActionSetForFirstRun(set, null) === set) || JSON.stringify(out?.ranked.map(c => c.id));
+  });
+  check('fr20_record_roundtrip', 'The first-run record round-trips through storage', () => {
+    const s = memStore(); writeFirstRunRecord(s, 'completed', 123);
+    const r = readFirstRunRecord(s); return (r !== null && r.status === 'completed' && r.at === 123) || JSON.stringify(r);
+  });
+  check('fr21_completion_persists', 'After completion the next launch does not start the tutorial', () => {
+    const s = memStore(); const first = shouldStartFirstRun({ guidedFirstRunEnabled: true }, readFirstRunRecord(s));
+    writeFirstRunRecord(s, 'completed', 1);
+    return (first && !shouldStartFirstRun({ guidedFirstRunEnabled: true }, readFirstRunRecord(s))) || 'still starts';
+  });
+  check('fr22_skip_persists', 'After a skip the next launch does not start the tutorial', () => {
+    const s = memStore(); writeFirstRunRecord(s, 'skipped', 1); return !shouldStartFirstRun({ guidedFirstRunEnabled: true }, readFirstRunRecord(s)) || 'still starts';
+  });
+  check('fr23_disable_and_reenable', 'Disabling is permanent until switched back on, which clears the record', () => {
+    const s = memStore(); writeFirstRunRecord(s, 'disabled', 1);
+    const off = shouldStartFirstRun({ guidedFirstRunEnabled: true }, readFirstRunRecord(s));
+    clearFirstRunRecord(s);
+    return (!off && shouldStartFirstRun({ guidedFirstRunEnabled: true }, readFirstRunRecord(s))) || 'wrong';
+  });
+  check('fr24_setting_off', 'With the setting off the tutorial never starts', () => !shouldStartFirstRun({ guidedFirstRunEnabled: false }, null) || 'started');
+  check('fr25_storage_errors', 'Storage that throws (private mode) is tolerated', () => {
+    const bad: FirstRunStorage = { getItem: () => { throw new Error('no'); }, setItem: () => { throw new Error('no'); }, removeItem: () => { throw new Error('no'); } };
+    return (readFirstRunRecord(bad) === null && writeFirstRunRecord(bad, 'completed', 1) === false && clearFirstRunRecord(bad) === false && readFirstRunRecord(null) === null) || 'threw';
+  });
+  check('fr26_bad_record', 'A malformed record is ignored', () => {
+    const s = memStore(); s.setItem(FIRST_RUN_STORAGE_KEY, '{"status":"weird"}'); const a = readFirstRunRecord(s);
+    s.setItem(FIRST_RUN_STORAGE_KEY, 'not json'); const b = readFirstRunRecord(s);
+    return (a === null && b === null) || 'accepted';
+  });
+  check('fr27_sanitize', 'First-run state sanitizes (junk → null; unknown concepts dropped; start concepts kept)', () => {
+    const st = createFirstRunState(1);
+    const back = sanitizeFirstRunState(JSON.parse(JSON.stringify(st)));
+    const fixed = sanitizeFirstRunState({ version: 1, active: true, unlocked: ['zzz', 'trade'], unlockLog: [{ concept: 'nope', day: 1 }] });
+    return (JSON.stringify(back) === JSON.stringify(st) && sanitizeFirstRunState(null) === null && sanitizeFirstRunState({ version: 9 }) === null && fixed !== null && JSON.stringify(fixed.unlocked) === '["travel","challenge","sell","trade"]' && fixed.unlockLog.length === 0) || JSON.stringify(fixed);
+  });
+  check('fr28_save_path', 'First-run state survives validateSaveDataCore; V9.5 saves load without it', () => {
+    const f = JSON.parse(JSON.stringify(createV95SaveFixture())) as SaveGameData;
+    (f.gameState as unknown as Record<string, unknown>).firstRun = createFirstRunState(0);
+    const v = validateSaveDataCore(f).gameState as unknown as Record<string, unknown>;
+    const legacy = validateSaveDataCore(JSON.parse(JSON.stringify(createV95SaveFixture())) as SaveGameData).gameState as unknown as Record<string, unknown>;
+    return (JSON.stringify(v.firstRun) === JSON.stringify(createFirstRunState(0)) && legacy.firstRun === undefined) || 'save path';
+  });
+  check('fr29_settings', 'guidedFirstRunEnabled defaults ON, is registered, profile-scoped (not restored from saves) and indexed', () =>
+    (DEFAULT_GAME_SETTINGS.guidedFirstRunEnabled === true && SMART_CONTROLLABLE_SETTINGS_REGISTRY.some(s => s.key === 'guidedFirstRunEnabled')
+      && (V95_PROFILE_SCOPED_SETTING_KEYS as readonly string[]).includes('guidedFirstRunEnabled') && !(V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes('guidedFirstRunEnabled')
+      && SETTINGS_HUB_SECTION_INDEX.some(s => (s.fieldKeys as readonly string[]).includes('guidedFirstRunEnabled'))) || 'settings wiring');
+  check('fr30_simple_size', 'The Simple view shows about 20 settings, all real and unique', () => {
+    const d = DEFAULT_GAME_SETTINGS as unknown as Record<string, unknown>;
+    return (SIMPLE_SETTINGS_KEYS.length >= 18 && SIMPLE_SETTINGS_KEYS.length <= 24 && new Set(SIMPLE_SETTINGS_KEYS).size === SIMPLE_SETTINGS_KEYS.length && SIMPLE_SETTINGS_KEYS.every(k => k in d)) || `${SIMPLE_SETTINGS_KEYS.length}`;
+  });
+  check('fr31_simple_keys', 'The Simple view key list (pinned)', () => JSON.stringify(SIMPLE_SETTINGS_KEYS) === JSON.stringify([
+    'experienceMode', 'totalDays', 'winCondition', 'actionLimitsEnabled', 'playerActionsPerDay', 'challengeApproachesEnabled', 'expandedChallengeContentEnabled', 'dynamicWagerEnabled',
+    'doubleOrNothingEnabled', 'equipmentShopEnabled', 'sabotageEnabled', 'advancedLoansEnabled', 'matchShapeEnabled', 'opponentPersonalityEnabled', 'adaptiveAiTauntsEnabled',
+    'aiSpecialAbilitiesEnabled', 'visualMode', 'reducedMotion', 'soundEnabled', 'soundVolume', 'showDayTransition', 'guidedFirstRunEnabled'
+  ]) || JSON.stringify(SIMPLE_SETTINGS_KEYS));
+  check('fr32_simple_controls', 'Every Simple control fits its default (toggles boolean, selects list the default, ranges contain it)', () => {
+    const d = DEFAULT_GAME_SETTINGS as unknown as Record<string, unknown>;
+    const bad = SIMPLE_SETTINGS.filter(x => {
+      const v = d[x.key];
+      if (x.kind === 'toggle') return typeof v !== 'boolean';
+      if (x.kind === 'select') return !(x.options || []).some(o => o.value === v);
+      return !(typeof v === 'number' && v >= Number(x.min) && v <= Number(x.max));
+    });
+    return bad.length === 0 || bad.map(b => b.key).join(',');
+  });
+  check('fr33_character_region', 'The first run uses the Tourist and starts in NSW', () => {
+    const i = firstRunCharacterIndex(CHARACTERS);
+    return (CHARACTERS[i].name === 'Tourist' && FIRST_RUN_START_REGION === 'NSW' && Boolean(REGIONS[FIRST_RUN_START_REGION]) && Boolean(AI_DIFFICULTY_PROFILES[FIRST_RUN_DIFFICULTY])) || 'setup';
+  });
+  check('fr34_view', 'The panel shows goal progress, the new concept of the day and what comes next', () => {
+    const st = applyFirstRunPatch(createFirstRunState(1), { kind: 'unlock', concept: 'trade', day: 2 }) as FirstRunState;
+    const v = buildFirstRunView(st, sig({ day: 2, money: 1300, challengesWon: 2 }));
+    return (v.goalText === FIRST_RUN_GOAL.text && v.challenges === 1 && v.money === 1300 && v.unlocked.find(u => u.concept === 'trade')?.isNew === true && v.nextLabel === 'Crafting' && v.latest?.label === 'Trade') || JSON.stringify(v);
+  });
+  check('fr35_reducer', 'gameStateReducer applies V96_FIRST_RUN_PATCH and leaves the rest alone', () => {
+    const s1 = gameStateReducer({ day: 2, money: 5 }, { type: 'V96_FIRST_RUN_PATCH', payload: { kind: 'init', state: createFirstRunState() } });
+    const s2 = gameStateReducer(s1, { type: 'V96_FIRST_RUN_PATCH', payload: { kind: 'unlock', concept: 'trade', day: 2 } });
+    const fr = sanitizeFirstRunState((s2 as { firstRun?: unknown }).firstRun);
+    return (fr !== null && fr.unlocked.includes('trade') && (s2 as { day: number }).day === 2) || 'reducer';
+  });
+  check('fr36_explanations', 'Every concept has a one-line explanation', () => {
+    const bad = FIRST_RUN_ALL_CONCEPTS.filter(c => { const t = FIRST_RUN_EXPLANATIONS[c]; return !t || /\n/.test(t) || t.length > 140; });
+    return bad.length === 0 || bad.join(',');
+  });
+  return results;
+}
+
 function AustraliaGame() {
   // V9.6 (SECTION 20AM): stable handler kit for memoised panels; dev render counter (diagnostics switch, one-render lag).
   const wp7Kit = useStableKit();
@@ -191460,6 +192008,9 @@ function dispatchGameSettingsChange(
   const wp2AiPlanRef = useRef<((challenge: LegacyChallengeShape, aiState: ApproachActorLike, wager: number, approachId: string) => ChallengeApproachPlan | null) | null>(null);
   const wp2AiOutcomeRef = useRef<((plan: ChallengeApproachPlan, aiState: ApproachActorLike & { name?: string }, success: boolean) => void) | null>(null);
   const wp2AdvisorRef = useRef<((query: string) => GameIntelligenceAnswer | null) | null>(null);
+  // V9.6 (SECTION 20AN): the guided first run's match state (null when none is running).
+  const wp8Source = (gameState as unknown as { firstRun?: unknown }).firstRun;
+  const wp8State = useMemo(() => sanitizeFirstRunState(wp8Source), [wp8Source]);
   // V9.6 (SECTION 20AM): the render counter follows the existing diagnostics switch.
   V96_RENDER_STATS.enabled = (gameSettings.diagnosticsSettings as { enabled?: boolean } | undefined)?.enabled === true;
   // V9.6 (SECTION 20AL): match shape — the sanitized state, and bridges the action handlers call (all inert while it is off).
@@ -195422,7 +195973,7 @@ function dispatchGameSettingsChange(
     return selected;
   }, []);
 
-  const initializeGameMode = useCallback((mode: GameModeSelection, difficulty: keyof typeof AI_DIFFICULTY_PROFILES = 'medium') => {
+  const initializeGameMode = useCallback((mode: GameModeSelection, difficulty: keyof typeof AI_DIFFICULTY_PROFILES = 'medium', wp8Start?: { characterIndex: number; startRegion: string; firstRun: boolean }) => {
       if (!skipPersistentAbandonPromptRef.current && shouldAskPersistentAbandon({
         settings: gameSettings,
         selectedMode: gameState.selectedMode,
@@ -195469,8 +196020,10 @@ function dispatchGameSettingsChange(
       teamAiTurnTimeoutRef.current = null;
     }
 
-    const selectedCharacter = CHARACTERS[uiState.selectedCharacter] || CHARACTERS[0];
-    const aiCharacters = pickRandomCharacters(3, [uiState.selectedCharacter]);
+    // V9.6 (SECTION 20AN): the guided first run brings its own character and start region.
+    const wp8CharacterIndex = wp8Start ? wp8Start.characterIndex : uiState.selectedCharacter;
+    const selectedCharacter = CHARACTERS[wp8CharacterIndex] || CHARACTERS[0];
+    const aiCharacters = pickRandomCharacters(3, [wp8CharacterIndex]);
     // V9.6 (SECTION 20AL): the match-shape deal seed comes from the same continuing stream as the AI characters —
     // drawn before this match re-seeds the RNG, so in-match randomness is untouched (no draw while the flag is off).
     const wp6DealSeed = gameSettings.matchShapeEnabled === true ? Math.floor(drawGameplayRandom('TeamDraft') * 2147483646) + 1 : 0;
@@ -195482,7 +196035,8 @@ function dispatchGameSettingsChange(
       teamId: TEAM_PLAYER_ID,
       kind: isSimulationMode ? 'ai' : 'human',
       role: 'leader',
-      character: selectedCharacter
+      character: selectedCharacter,
+      ...(wp8Start ? { currentRegion: wp8Start.startRegion } : {})
     });
     const enemyLeader = createActorSnapshot({
       id: 'ai',
@@ -195652,7 +196206,9 @@ function dispatchGameSettingsChange(
           mode, seed: wp6DealSeed, totalDays: Number(gameSettings.totalDays) || 30, settings: gameSettings,
           actors: nextTurnOrder.map(id => ({ id, side: ((id === 'player' ? playerActor : id === 'ai' ? enemyLeader : nextAdditionalActors[id])?.teamId === TEAM_OPPONENT_ID ? 'opponent' : 'player') as MatchShapeSide })),
           sideKeys: isTeamModeSelection(mode) ? { player: TEAM_PLAYER_ID, opponent: TEAM_OPPONENT_ID } : { player: 'player', opponent: 'ai' }
-        }) ?? undefined
+        }) ?? undefined,
+        // V9.6 (SECTION 20AN): only the guided first run carries tutorial state; every other match starts without it.
+        firstRun: wp8Start?.firstRun ? createFirstRunState(0) : undefined
       }
     });
     setAiActionQueue([]);
@@ -196347,6 +196903,8 @@ function dispatchGameSettingsChange(
       return;
     }
     applyLoadedState(loadPreview.data);
+    // V9.6 (SECTION 20AN): saves are downloaded files, so a loaded save is how a returning player is recognised.
+    if (!readFirstRunRecord(firstRunStorage())) writeFirstRunRecord(firstRunStorage(), 'returning', Date.now());
   }, [applyLoadedState, closeLoadPreview, loadPreview]);
 
   const calculateTravelCost = useCallback((fromRegion: any,toRegion: any) => {
@@ -217214,7 +217772,7 @@ function dispatchGameSettingsChange(
     persistBackgroundAI(dismissBackgroundIntervention(sanitizeBackgroundAIState(bgStateRef.current), key), null, 'player');
   }, [persistBackgroundAI]);
   /** Contextual Actions shown to the player carry Background AI metadata; the canonical set is unchanged. */
-  const v9ActionSetView = useMemo(() => annotateContextualActionsWithFactions(annotateContextualActionsWithRegions(annotateContextualActionsWithWorld(annotateContextualActionsWithBackground(v9ActionSet, bgLive), gameState.worldReaction, String(player?.id || 'player')), gameState.livingRegions), rfStateRef.current, rfViewRef.current?.inputs || null), [v9ActionSet, bgLive, gameState.livingRegions, gameState.regionalFactions, gameState.worldReaction, player?.id]);
+  const v9ActionSetView = useMemo(() => filterActionSetForFirstRun(annotateContextualActionsWithFactions(annotateContextualActionsWithRegions(annotateContextualActionsWithWorld(annotateContextualActionsWithBackground(v9ActionSet, bgLive), gameState.worldReaction, String(player?.id || 'player')), gameState.livingRegions), rfStateRef.current, rfViewRef.current?.inputs || null), wp8State), [v9ActionSet, bgLive, gameState.livingRegions, gameState.regionalFactions, gameState.worldReaction, player?.id, wp8State]);
 
   // ---- Settings Intelligence 2.0: live wiring --------------------------------------------------------
   // Reads settings + read-only gameplay evidence; every change it proposes becomes a SmartSettingsPlan the
@@ -219381,6 +219939,65 @@ function dispatchGameSettingsChange(
     setGameSettings(prev => ({ ...prev, guidedLearning: evs.reduce((st, ev) => applyLearningEvent(st, ev), sanitizeLearningState(prev.guidedLearning)) }));
   }, [setGameSettings]);
   const glPlayerKey = isTeamMode ? TEAM_PLAYER_ID : 'player';
+
+  // ---- V9.6 (SECTION 20AN): guided first run — starts on first launch; concepts unlock one per turn; finish or skip ----
+  const wp8Signals = useMemo<FirstRunSignals>(() => ({
+    day: Number(gameState.day) || 1,
+    money: Number(player?.money) || 0,
+    inventoryCount: Array.isArray(player?.inventory) ? player.inventory.length : 0,
+    challengesWon: (Array.isArray(gameState.challengeCompletions) ? gameState.challengeCompletions : []).filter((c: { playerId?: unknown } | null) => Boolean(c) && (c as { playerId?: unknown }).playerId === 'player').length,
+    rivalAhead: Number(aiPlayer?.money || 0) > Number(player?.money || 0),
+    diplomacyOffer: Number(gameState.negotiationCenter?.pendingProposalsCount || 0) > 0 || (Array.isArray(gameState.diplomacyState?.inbox) && gameState.diplomacyState.inbox.length > 0),
+    inShopRegion: EQUIPMENT_SHOP_REGIONS.includes(String(player?.currentRegion || ''))
+  }), [gameState.day, gameState.challengeCompletions, gameState.negotiationCenter, gameState.diplomacyState, player?.money, player?.inventory, player?.currentRegion, aiPlayer?.money]);
+  const wp8Finish = useCallback((outcome: FirstRunOutcome) => {
+    dispatchGameState({ type: 'V96_FIRST_RUN_PATCH', payload: { kind: 'finish', outcome, day: Number(gameState.day) || 1 } });
+    writeFirstRunRecord(firstRunStorage(), outcome === 'skipped' ? 'skipped' : 'completed', Date.now());
+    setGameSettings(prev => ({ ...prev, guidedFirstRunEnabled: false }));
+    // Concepts not yet introduced open together at the end; Teams (the last one) still gets its one line.
+    const teamsLine = outcome !== 'skipped' && wp8State && !wp8State.unlocked.includes('teams') ? ` ${FIRST_RUN_EXPLANATIONS.teams}` : '';
+    addNotification(outcome === 'goal_met'
+      ? `🎓 Goal met — tutorial complete! Every tool is on screen now and the match carries on.${teamsLine}`
+      : outcome === 'deadline'
+        ? `🎓 Day 7 is done — tutorial complete. Every tool is on screen now and the match carries on.${teamsLine}`
+        : '🎓 Tutorial skipped — the full game is open. Settings → Guided first match brings it back on the next launch.', 'success', true, 'system');
+  }, [addNotification, gameState.day, setGameSettings, wp8State]);
+  const wp8StartFirstRun = useCallback(() => {
+    const characterIndex = firstRunCharacterIndex(CHARACTERS);
+    updateUiState({ selectedCharacter: characterIndex });
+    initializeGameMode('ai', FIRST_RUN_DIFFICULTY, { characterIndex, startRegion: FIRST_RUN_START_REGION, firstRun: true });
+    glDispatch([{ kind: 'welcome', welcome: 'basics', turn: 0 }]);
+    addNotification(`🎓 Welcome! Your first match: ${FIRST_RUN_GOAL.text}. Travel, challenges and selling are all you need — more tools unlock as they become useful.`, 'info', true, 'system');
+  }, [addNotification, glDispatch, initializeGameMode, updateUiState]);
+  const wp8LaunchCheckedRef = useRef(false);
+  useEffect(() => {
+    // First launch only: skip the menu and start the guided match. A record means this browser has seen the tour.
+    if (wp8LaunchCheckedRef.current) return;
+    wp8LaunchCheckedRef.current = true;
+    const record = readFirstRunRecord(firstRunStorage());
+    if (record) { setGameSettings(prev => (prev.guidedFirstRunEnabled === false ? prev : { ...prev, guidedFirstRunEnabled: false })); return; }
+    if (shouldStartFirstRun(gameSettings, record) && gameState.gameMode === 'menu') wp8StartFirstRun();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!wp8State || !wp8State.active || gameState.gameMode !== 'game') return;
+    const outcome = evaluateFirstRunGoal(wp8State, wp8Signals);
+    if (outcome) { wp8Finish(outcome); return; }
+    const next = nextFirstRunUnlock(wp8State, wp8Signals);
+    if (!next) return;
+    dispatchGameState({ type: 'V96_FIRST_RUN_PATCH', payload: { kind: 'unlock', concept: next, day: wp8Signals.day } });
+    addNotification(`🆕 ${FIRST_RUN_LABELS[next]} unlocked — ${FIRST_RUN_EXPLANATIONS[next]}`, 'info', true, 'system');
+  }, [wp8State, wp8Signals, gameState.gameMode, wp8Finish, addNotification]);
+  const wp8SetGuidedFirstRun = useCallback((enabled: boolean) => {
+    trackedSetGameSettings('direct_player_change', '🎓 Guided first match', prev => ({ ...prev, guidedFirstRunEnabled: enabled }));
+    if (!enabled && wp8State?.active) wp8Finish('skipped');
+    if (enabled) clearFirstRunRecord(firstRunStorage()); else writeFirstRunRecord(firstRunStorage(), 'disabled', Date.now());
+  }, [trackedSetGameSettings, wp8State, wp8Finish]);
+  const wp8SimpleSettingChange = useCallback((key: string, value: boolean | string | number) => {
+    if (key === 'experienceMode') { if (value === 'explorer' || value === 'nation' || value === 'full') requestExperienceModeChange(value); return; }
+    if (key === 'guidedFirstRunEnabled') { wp8SetGuidedFirstRun(value === true); return; }
+    if (!SIMPLE_SETTINGS_KEYS.includes(key)) return;
+    trackedSetGameSettings('direct_player_change', '⚙️ Simple settings', prev => ({ ...prev, ...({ [key]: value } as unknown as Partial<GameSettingsState>) }));
+  }, [requestExperienceModeChange, trackedSetGameSettings, wp8SetGuidedFirstRun]);
   const glCtx = useMemo<LearningContext>(() => {
     const pid = String(player?.id || 'player');
     const region = String(player?.currentRegion || 'NSW');
@@ -220846,6 +221463,7 @@ function dispatchGameSettingsChange(
         onUpdateSettings={(updater) => {
           trackedSetGameSettings("direct_player_change", "Smart Settings", prev => updater(prev));
         }}
+        onSimpleSettingChange={wp8SimpleSettingChange}
         uiState={uiState}
         updateUiState={updateUiState}
         isLiveMatch={Boolean(gameState.gameStarted && !gameState.gameOver)}
@@ -223053,6 +223671,19 @@ function dispatchGameSettingsChange(
                 fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'interface.accessibility')!.fieldKeys}
               >
                 <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-3" data-testid="guided-first-run-setting">
+                    <div>
+                      <div className="font-semibold">🎓 Guided first match</div>
+                      <div className="text-sm opacity-75">New players start in a guided match: one goal, three actions, new tools unlocked one at a time. Switched off after the tutorial; switching it off here is permanent for this browser, and switching it on again brings it back on the next launch.</div>
+                    </div>
+                    <button
+                      onClick={() => wp8SetGuidedFirstRun(gameSettings.guidedFirstRunEnabled === false)}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.guidedFirstRunEnabled !== false ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                      data-testid="guided-first-run-toggle"
+                    >
+                      {gameSettings.guidedFirstRunEnabled !== false ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
                   <div className="flex items-center justify-between gap-3" data-testid="diagnostics-render-counter-setting">
                     <div>
                       <div className="font-semibold">Developer diagnostics (render counter)</div>
@@ -234574,7 +235205,8 @@ function dispatchGameSettingsChange(
       });
     }
 
-    const filteredQuickActions = [...pinnedList, ...unpinnedList];
+    // V9.6 (SECTION 20AN): during the guided first run only the unlocked actions are offered.
+    const filteredQuickActions = [...pinnedList, ...unpinnedList].filter(a => isFirstRunActionVisible(wp8State, String(a.id)));
 	    const craftedItemCount = player.inventory.filter((item: any) => CRAFTING_RECIPES.some(recipe => recipe.output === item)).length;
 	    const currentRegionControlInfo = getRegionControlInfo(player.currentRegion);
 	    const currentRegionControllerName = getControllerDisplayName(currentRegionControlInfo.controllerId);
@@ -234920,7 +235552,7 @@ function dispatchGameSettingsChange(
       }
     };
     const renderActionDescriptor = (descriptor: ActionDescriptor) => {
-      if (descriptor.visible === false) return null;
+      if (descriptor.visible === false || !isFirstRunActionVisible(wp8State, descriptor.id)) return null;   // V9.6 (SECTION 20AN)
       const disabled = Boolean(descriptor.disabled);
       const reason = getDisabledReasonForAction(descriptor.id, disabled);
       return (
@@ -235585,6 +236217,7 @@ function dispatchGameSettingsChange(
             apZero={Boolean(v9HumanCanAct && feelSnapshot?.ap === 0)}
             endgame={Number(gameSettings.totalDays || 30) - Number(gameState.day || 1) <= 3}
           />
+          {wp8State?.active && <OptionalSurfaceBoundary surface="Guided first run"><FirstRunPanel view={buildFirstRunView(wp8State, wp8Signals)} onSkip={wp7Kit.fn('firstRunSkip', () => wp8Finish('skipped'))} theme={themeStyles} /></OptionalSurfaceBoundary>}
           {wp6HudView && <OptionalSurfaceBoundary surface="Match shape"><MatchShapeHud view={wp6HudView} theme={themeStyles} /></OptionalSurfaceBoundary>}
 
           <FeedbackStrip theme={themeStyles} major={v94Visible.major} minor={v94Visible.minor} onDismiss={dismissV94} onWhy={wp7Kit.fn('feedbackWhy', (e: UiFeedbackEvent) => void submitIntelligenceQuery(e.kind === 'region_control_changed' ? `Why did control of ${REGIONS[e.subject]?.name || e.subject} change?` : e.kind === 'crisis_resolved' ? 'What changed after the crisis?' : 'What should I focus on next?'))} />
@@ -235988,7 +236621,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV96ExperienceModesSelfTests(), ...v95WithIsolatedGlobals(() => runV96ChallengeDecisionSelfTests()), ...v95WithIsolatedGlobals(() => runV96ChallengeContentSelfTests()), ...runV96MapMotionSoundSelfTests(), ...runV96OpponentMindSelfTests(), ...runV96MatchShapeSelfTests(), ...v95WithIsolatedGlobals(() => runV96PerformanceSelfTests()), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV96ExperienceModesSelfTests(), ...v95WithIsolatedGlobals(() => runV96ChallengeDecisionSelfTests()), ...v95WithIsolatedGlobals(() => runV96ChallengeContentSelfTests()), ...runV96MapMotionSoundSelfTests(), ...runV96OpponentMindSelfTests(), ...runV96MatchShapeSelfTests(), ...v95WithIsolatedGlobals(() => runV96PerformanceSelfTests()), ...runV96GuidedFirstRunSelfTests(), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
@@ -237356,7 +237989,8 @@ function dispatchGameSettingsChange(
 	                    Deposit at least ${currentRegionControlInfo.minimumPlayerDeposit} to take control.
 	                  </div>
 	                )}
-	                <div className="flex items-center gap-2 pt-1">
+	                {/* V9.6 (SECTION 20AN): region deposits wait until the guided first run is over. */}
+	                {isFirstRunVisible(wp8State, 'advanced') && (<div className="flex items-center gap-2 pt-1">
 	                  <input
 	                    type="number"
 	                    min="1"
@@ -237381,7 +238015,7 @@ function dispatchGameSettingsChange(
 	                      Cash Out (50%)
 	                    </button>
 	                  )}
-	                </div>
+	                </div>)}
 	                {gameSettings.allowCashOut && !gameSettings.negotiationMode && playerControlledRegionCodes.length > 0 && (
 	                  <div className="pt-2 border-t border-gray-600 border-opacity-40">
 	                    <div className="text-xs opacity-75 mb-1">Your Controlled Regions</div>
@@ -237656,9 +238290,9 @@ function dispatchGameSettingsChange(
                       theme={themeStyles}
                       onAsk={q => void submitIntelligenceQuery(q)}
                       onTravel={focus !== player.currentRegion ? () => updateUiState({ showTravelModal: true }) : undefined}
-                      onInvest={() => updateUiState({ showInfrastructureProjectsModal: true })}
-                      onContracts={() => updateUiState({ showRegionalContractsModal: true })}
-                      onNegotiate={() => updateUiState({ showAiRivalryModal: true })}
+                      onInvest={isFirstRunVisible(wp8State, 'advanced') ? () => updateUiState({ showInfrastructureProjectsModal: true }) : undefined}
+                      onContracts={isFirstRunVisible(wp8State, 'advanced') ? () => updateUiState({ showRegionalContractsModal: true }) : undefined}
+                      onNegotiate={isFirstRunVisible(wp8State, 'diplomacy') ? () => updateUiState({ showAiRivalryModal: true }) : undefined}
                       more={<><LivingRegionCard view={lrViewRef.current} regionId={focus} onAsk={q => void submitIntelligenceQuery(q)} /><RegionStakeholdersPanel view={rfViewRef.current} regionId={focus} turn={dnRound} onCommit={rfCommit} onChoose={rfChoose} onFund={rfFund} onAsk={q => void submitIntelligenceQuery(q)} /></>}
                     />
                     {nsState && (
@@ -237719,7 +238353,7 @@ function dispatchGameSettingsChange(
                           <div>{selectedPreviewActiveEvent ? `Event: ${selectedPreviewActiveEvent.name}` : 'No active event'}</div>
                         </div>
                       </div>
-                      <div className="mt-3 space-y-2"><V9RegionContextPanel ctx={v9RegionContextFor(selectedPreviewRegionCode)} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onContracts={() => updateUiState({ showRegionalContractsModal: true })} onNegotiate={() => updateUiState({ showAiRivalryModal: true })} more={<><LivingRegionCard view={lrViewRef.current} regionId={selectedPreviewRegionCode} onAsk={q => void submitIntelligenceQuery(q)} /><RegionStakeholdersPanel view={rfViewRef.current} regionId={selectedPreviewRegionCode} turn={dnRound} onCommit={rfCommit} onChoose={rfChoose} onFund={rfFund} onAsk={q => void submitIntelligenceQuery(q)} /></>} /></div>
+                      <div className="mt-3 space-y-2"><V9RegionContextPanel ctx={v9RegionContextFor(selectedPreviewRegionCode)} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onContracts={isFirstRunVisible(wp8State, 'advanced') ? () => updateUiState({ showRegionalContractsModal: true }) : undefined} onNegotiate={isFirstRunVisible(wp8State, 'diplomacy') ? () => updateUiState({ showAiRivalryModal: true }) : undefined} more={<><LivingRegionCard view={lrViewRef.current} regionId={selectedPreviewRegionCode} onAsk={q => void submitIntelligenceQuery(q)} /><RegionStakeholdersPanel view={rfViewRef.current} regionId={selectedPreviewRegionCode} turn={dnRound} onCommit={rfCommit} onChoose={rfChoose} onFund={rfFund} onAsk={q => void submitIntelligenceQuery(q)} /></>} /></div>
                     </div>
                     <div className="flex flex-col gap-2">
                       <button

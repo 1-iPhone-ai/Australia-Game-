@@ -49,6 +49,8 @@ const HOOK = () => {
   await page.addInitScript(HOOK);
   const errs = [];
   page.on('pageerror', e => errs.push(String(e).slice(0, 200)));
+  // A returning player: skip the WP8 guided first run (fresh browser profiles start in it).
+  await page.addInitScript(() => { try { localStorage.setItem('aussie-adventure.v96.first-run', JSON.stringify({ version: 1, status: 'returning', at: 0 })); } catch { /* storage blocked */ } });
   await page.goto(URL, { waitUntil: 'load' });
   await page.waitForSelector('[data-testid="experience-mode-chooser"], button:has-text("AI Opponent Mode")', { timeout: 120000 });
   const phase = p => page.evaluate(x => window.__wp7SetPhase(x), p);
