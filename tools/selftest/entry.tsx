@@ -1,5 +1,5 @@
 // Dev-only harness entry for the current game file. See tools/selftest/run.mjs.
-import * as G from '../../(V9.7) australia-game-with-ai.tsx';
+import * as G from '../../(V9.8) australia-game-with-ai.tsx';
 import { runHarness } from './harness';
 
 const M = G as unknown as Parameters<typeof runHarness>[0];
