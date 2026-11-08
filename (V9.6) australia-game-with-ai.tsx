@@ -20813,6 +20813,8 @@ export function applyLoadedState(saveData: unknown): {
   const gameSettings: GameSettingsState = {
     ...DEFAULT_GAME_SETTINGS,
     ...rawSettings,
+    // V9.6 (SECTION 20AG): settings without the key are pre-V9.6 → 'full' (not the explorer default).
+    experienceMode: coerceExperienceMode(rawSettings.experienceMode, LEGACY_EXPERIENCE_MODE),
     smartSettingsProfile: sanitizedProfile
   };
 
@@ -180370,9 +180372,62 @@ export function isSystemVisible(systemId: ExperienceSystemId, settings: Experien
   return true;
 }
 
+/**
+ * Mode-only gate for surfaces that V9.5 showed regardless of per-system flags or of the live-match state
+ * (LAB inspectors render a disabled body, the map lists persisted programs, the post-match debrief reads refs).
+ * Explorer hides them; Nation and Full keep the exact V9.5 behaviour.
+ */
+export function nationalLayerShown(settings: ExperienceSettingsLike): boolean {
+  return resolveExperienceMode(settings) !== 'explorer';
+}
+
 /** Whether the per-system national checkboxes make sense to show in the settings hub. */
 export function nationalSystemsConfigurable(settings: ExperienceSettingsLike): boolean {
-  return resolveExperienceMode(settings) !== 'explorer';
+  return nationalLayerShown(settings);
+}
+
+/** World Reaction sourceSystem values emitted by the national systems (V10.0–V10.13). */
+export const NATIONAL_SOURCE_SYSTEMS: ReadonlySet<string> = new Set<string>([
+  'national_systems', 'industries', 'infrastructure_networks', 'megaprojects', 'national_development', 'innovation', 'systemic_risk',
+  'national_priorities', 'economic_geography', 'strategic_capital', 'regional_workforce', 'human_capital_depth', 'capability_staffing',
+  'workforce_engine', 'workforce_delivery', 'workforce_concentration', 'state_capacity', 'public_administration', 'public_finance', 'households'
+]);
+
+export function isNationalSystemSource(sourceSystem: unknown): boolean {
+  return typeof sourceSystem === 'string' && NATIONAL_SOURCE_SYSTEMS.has(sourceSystem);
+}
+
+/**
+ * Explorer drops World Reaction events produced by the national systems before they reach the decision-card feed
+ * (they describe systems that are off; persisted ones from an older save would otherwise linger). Nation and Full
+ * keep every event — emphasis is applied by nationalEventFlag, not by removal.
+ */
+export function applyExperienceModeToWorldEvents<T extends { sourceSystem: string }>(events: readonly T[], settings: ExperienceSettingsLike): T[] {
+  if (experienceEmphasis(settings) === 'explorer') return events.filter(e => !isNationalSystemSource(e.sourceSystem));
+  return [...events];
+}
+
+/**
+ * The V9 cohesion feed's `national` flag (SECTION 20L adds +15 to MAJOR events carrying it). V9.5 set it for
+ * nation/market subjects only; Nation mode also sets it for national-system events so they outrank personal ones.
+ */
+export function nationalEventFlag(subjectType: unknown, sourceSystem: unknown, settings: ExperienceSettingsLike): boolean {
+  if (subjectType === 'nation' || subjectType === 'market') return true;
+  return experienceEmphasis(settings) === 'nation' && isNationalSystemSource(sourceSystem);
+}
+
+/** Start screen / menu: apply at once. Live match: ask first. Same mode: nothing to do. */
+export function shouldConfirmExperienceModeChange(current: ExperienceMode, next: ExperienceMode, gameMode: unknown): 'noop' | 'apply' | 'confirm' {
+  if (current === next) return 'noop';
+  return gameMode === 'game' ? 'confirm' : 'apply';
+}
+
+/**
+ * Loaded settings that bypass the save sanitizer (replay branches, checkpoint snapshots, the pure smart-settings
+ * loader) still need the legacy rule: no key → 'full'. Never fall back to the live session's mode.
+ */
+export function normalizeLoadedExperienceMode<T extends { experienceMode?: unknown }>(settings: T): T & { experienceMode: ExperienceMode } {
+  return { ...settings, experienceMode: coerceExperienceMode(settings ? settings.experienceMode : undefined, LEGACY_EXPERIENCE_MODE) };
 }
 
 /** Which half of the game the HUD, objectives and event feed should put first. */
@@ -180448,19 +180503,6 @@ export function experienceModeChangeConfirmation(from: ExperienceMode, to: Exper
 }
 
 /**
- * Apply the mode to the V9 cohesion event feed (SECTION 20L).
- *   explorer → national events are dropped (they would describe systems that are off).
- *   nation   → national events are moved ahead of the rest (stable, no re-scoring).
- *   balanced → untouched.
- */
-export function applyExperienceModeToCohesionEvents<T extends { national?: boolean }>(events: readonly T[], settings: ExperienceSettingsLike): T[] {
-  const emphasis = experienceEmphasis(settings);
-  if (emphasis === 'explorer') return events.filter(e => !e.national);
-  if (emphasis === 'nation') return [...events.filter(e => e.national), ...events.filter(e => !e.national)];
-  return [...events];
-}
-
-/**
  * Pick the HUD objective. In 'nation' mode a national focus (megaproject stage,
  * emerging capability, systemic-risk watch) outranks the generic objective when
  * one exists; otherwise the generic objective comes first and national focus is
@@ -180491,7 +180533,7 @@ export function experienceVisibilityMatrix(base: ExperienceSettingsLike = DEFAUL
   return out;
 }
 
-// ---- Deterministic self-tests (em01–em39) ----------------------------------------------------------
+// ---- Deterministic self-tests (em01–em39, plus b/c variants) ----------------------------------------------------------
 
 export function runV96ExperienceModesSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
@@ -180507,8 +180549,11 @@ export function runV96ExperienceModesSelfTests(): V9SelfTestResult[] {
     (DEFAULT_GAME_SETTINGS.experienceMode === 'explorer' && isExperienceMode(DEFAULT_GAME_SETTINGS.experienceMode) && DEFAULT_EXPERIENCE_MODE === 'explorer') || `got ${String(DEFAULT_GAME_SETTINGS.experienceMode)}`);
   check('em02_fresh_settings', 'createDefaultGameSettings() carries the explorer default', () =>
     createDefaultGameSettings().experienceMode === 'explorer' || 'missing');
-  check('em03_three_modes', 'Exactly three modes, each with a one-paragraph description and includes list', () =>
-    (EXPERIENCE_MODES.length === 3 && EXPERIENCE_MODE_OPTIONS.length === 3 && EXPERIENCE_MODE_OPTIONS.every(o => o.description.length >= 160 && o.includes.length >= 3 && o.tagline.length > 10)) || 'option copy incomplete');
+  check('em03_three_modes', 'Exactly three modes with unique id/label/icon, a description paragraph and an includes list', () => {
+    const uniq = (xs: string[]) => new Set(xs).size === xs.length;
+    return (EXPERIENCE_MODES.length === 3 && EXPERIENCE_MODE_OPTIONS.length === 3 && uniq(EXPERIENCE_MODE_OPTIONS.map(o => o.id)) && uniq(EXPERIENCE_MODE_OPTIONS.map(o => o.label)) && uniq(EXPERIENCE_MODE_OPTIONS.map(o => o.icon))
+      && EXPERIENCE_MODE_OPTIONS.every(o => o.description.trim().length > 0 && o.tagline.trim().length > 0 && o.includes.length > 0 && EXPERIENCE_MODES.includes(o.id))) || 'option copy incomplete';
+  });
   check('em04_registry_entry', 'SMART_CONTROLLABLE_SETTINGS_REGISTRY describes experienceMode with the three allowed values', () => {
     const reg = SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(s => s.key === 'experienceMode');
     if (!reg) return 'no registry entry';
@@ -180594,9 +180639,14 @@ export function runV96ExperienceModesSelfTests(): V9SelfTestResult[] {
     const legacy = buildHouseholdEconomyInputs({ ...base }).enabled;
     return (ex === false && na === true && fu === true && legacy === true) || `ex=${ex} na=${na} fu=${fu} legacy=${legacy}`;
   });
-  check('em21_megaproject_world_explorer_disabled', 'buildMegaprojectWorld world.enabled follows the gate used by the reducer', () => {
-    const mk = (mode: ExperienceMode) => buildMegaprojectWorld({ turn: 3, totalDays: 30, enabled: isSystemVisible('megaprojects', withMode(mode)), infrastructureEnabled: true, gameOver: false, projects: [], regionalDevLevels: {}, national: null, industries: null, networks: null, factions: null, flags: {} }).enabled;
-    return (mk('explorer') === false && mk('nation') === true && mk('full') === true) || 'world.enabled wrong';
+  check('em21_megaproject_command_explorer_refused', 'applyMegaprojectCommand refuses with the "off in Settings" reason in explorer and not in nation/full (the reducer builds its world through the same gate)', () => {
+    const world = (mode: ExperienceMode) => buildMegaprojectWorld({ turn: 3, totalDays: 30, enabled: isSystemVisible('megaprojects', withMode(mode)), infrastructureEnabled: true, gameOver: false, projects: [], regionalDevLevels: {}, national: null, industries: null, networks: null, factions: null, flags: {} });
+    const actor: MegaprojectActorContext = { id: 'player', kind: 'human', teamId: null, money: 50000, currentRegion: 'NSW', apRemaining: 3, apCost: 1, turnOwner: true };
+    const cmd: MegaprojectCommand = { op: 'propose', kind: 'national_high_speed_rail' };
+    const ex = applyMegaprojectCommand(null, cmd, actor, world('explorer'));
+    const offReason = /off in Settings/i;
+    const others = (['nation', 'full'] as ExperienceMode[]).map(m => applyMegaprojectCommand(null, cmd, actor, world(m)));
+    return (!ex.ok && offReason.test(String(ex.reason || '')) && others.every(r => !offReason.test(String(r.reason || '')))) || `ex=${ex.ok}/${String(ex.reason)} others=${others.map(r => `${r.ok}/${String(r.reason)}`).join('|')}`;
   });
   check('em22_guardian_explorer_silent', 'National Guardian evaluators return nothing in explorer mode', () => {
     const ctx = (mode: ExperienceMode): GuardianEvaluationContext => ({
@@ -180605,20 +180655,40 @@ export function runV96ExperienceModesSelfTests(): V9SelfTestResult[] {
       day: 5, turn: 9, currentActionTokens: 3, currentCash: 50000, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false
     });
     const evaluators = [evaluateSystemicRiskGuardian, evaluateNationalPriorityGuardian, evaluateEconomicGeographyGuardian, evaluateStateCapacityGuardian, evaluatePublicFinanceGuardianContext, evaluateHouseholdsGuardianContext];
-    const explorerRisks = evaluators.reduce((n, ev) => n + ev(ctx('explorer')).length, 0);
-    return explorerRisks === 0 || `explorer produced ${explorerRisks} risks`;
+    const counts = (mode: ExperienceMode) => evaluators.map(ev => ev(ctx(mode)).length);
+    const ex = counts('explorer'); const fu = counts('full'); const na = counts('nation');
+    // Positive control: the systemic-liquidity evaluator must warn in full/nation for this thin-buffer spend, so a deleted gate is caught.
+    const thin = (mode: ExperienceMode) => evaluateSystemicRiskGuardian({ ...ctx(mode), currentCash: 10000, actionPayload: { cost: 9800 } }).length;
+    return (ex.every(n => n === 0) && thin('full') >= 1 && thin('nation') === thin('full') && thin('explorer') === 0 && JSON.stringify(fu) === JSON.stringify(na)) || `explorer=${ex.join(',')} full=${fu.join(',')} nation=${na.join(',')} thin=${thin('full')}/${thin('explorer')}`;
   });
-  check('em23_hud_placement', 'National HUD strips: hidden in explorer, above the decision card in nation, below in full', () =>
-    (nationalHudPlacement(withMode('explorer')) === 'hidden' && nationalHudPlacement(withMode('nation')) === 'above' && nationalHudPlacement(withMode('full')) === 'below') || 'placement wrong');
+  check('em23_hud_placement', 'National HUD strips: hidden in explorer, above the decision card in nation, below in full and for legacy bags', () =>
+    (nationalHudPlacement(withMode('explorer')) === 'hidden' && nationalHudPlacement(withMode('nation')) === 'above' && nationalHudPlacement(withMode('full')) === 'below' && nationalHudPlacement({}) === 'below' && pickExperienceObjective('g', 'n', {}) === 'g') || 'placement wrong');
+  check('em23b_layer_shown', 'nationalLayerShown (inspectors, map programs, debrief): false only in explorer', () =>
+    (!nationalLayerShown(withMode('explorer')) && nationalLayerShown(withMode('nation')) && nationalLayerShown(withMode('full')) && nationalLayerShown({}) && nationalLayerShown(null)) || 'layer gate wrong');
+  check('em23c_registry_consistency', 'Settings registry, DEFAULT, type default and match-scoped list agree on experienceMode', () => {
+    const reg = SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(s => s.key === 'experienceMode');
+    return (Boolean(reg) && reg?.defaultValue === DEFAULT_GAME_SETTINGS.experienceMode && (reg?.allowedValues || []).length === EXPERIENCE_MODES.length && EXPERIENCE_MODES.every(m => (reg?.allowedValues || []).includes(m)) && (V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes('experienceMode')) || 'inconsistent';
+  });
   check('em24_objective_pick', 'Objective: nation prefers national focus, others prefer the generic objective, both fall back', () =>
     (pickExperienceObjective('g', 'n', withMode('nation')) === 'n' && pickExperienceObjective('g', null, withMode('nation')) === 'g' && pickExperienceObjective('g', 'n', withMode('full')) === 'g' && pickExperienceObjective(null, 'n', withMode('explorer')) === 'n' && pickExperienceObjective<string>(null, null, withMode('full')) === null) || 'pick wrong');
-  check('em25_cohesion_events', 'Event feed: explorer drops national events, nation moves them first, full keeps order', () => {
-    const ev = [{ id: 'a', national: false }, { id: 'b', national: true }, { id: 'c', national: false }, { id: 'd', national: true }];
-    const ex = applyExperienceModeToCohesionEvents(ev, withMode('explorer')).map(e => e.id).join('');
-    const na = applyExperienceModeToCohesionEvents(ev, withMode('nation')).map(e => e.id).join('');
-    const fu = applyExperienceModeToCohesionEvents(ev, withMode('full')).map(e => e.id).join('');
-    return (ex === 'ac' && na === 'bdac' && fu === 'abcd') || `ex=${ex} na=${na} fu=${fu}`;
+  check('em25_world_events_by_source', 'Event feed: explorer drops national-SYSTEM events (by sourceSystem) but keeps market/stability events; nation and full keep all', () => {
+    const ev = [
+      { id: 'market', sourceSystem: 'world_reaction', subjectType: 'market' },
+      { id: 'region', sourceSystem: 'living_regions', subjectType: 'region' },
+      { id: 'freight', sourceSystem: 'national_systems', subjectType: 'region' },
+      { id: 'fiscal', sourceSystem: 'public_finance', subjectType: 'nation' },
+      { id: 'faction', sourceSystem: 'factions', subjectType: 'faction' }
+    ];
+    const ids = (mode: ExperienceMode) => applyExperienceModeToWorldEvents(ev, withMode(mode)).map(e => e.id).join(',');
+    return (ids('explorer') === 'market,region,faction' && ids('nation') === 'market,region,freight,fiscal,faction' && ids('full') === ids('nation') && applyExperienceModeToWorldEvents(ev, {}).length === 5) || `ex=${ids('explorer')} na=${ids('nation')}`;
   });
+  check('em25b_national_event_flag', 'national flag: nation/market subjects always; national-system sources only in Nation mode', () => {
+    const f = (s: unknown, src: unknown, mode: ExperienceMode) => nationalEventFlag(s, src, withMode(mode));
+    return (f('market', 'world_reaction', 'explorer') && f('nation', 'world_reaction', 'full') && f('region', 'industries', 'nation') && !f('region', 'industries', 'full') && !f('region', 'industries', 'explorer') && !f('region', 'living_regions', 'nation') && !nationalEventFlag('region', 'industries', {})) || 'flag wrong';
+  });
+  check('em25c_source_set', 'NATIONAL_SOURCE_SYSTEMS names every national producer and no explorer-layer source', () =>
+    (['national_systems', 'industries', 'infrastructure_networks', 'megaprojects', 'national_development', 'innovation', 'systemic_risk', 'national_priorities', 'economic_geography', 'state_capacity', 'public_finance', 'households', 'regional_workforce'].every(s => isNationalSystemSource(s))
+      && ['living_regions', 'factions', 'world_reaction', 'diplomacy', '', 42, null].every(s => !isNationalSystemSource(s))) || 'set wrong');
   check('em26_emphasis', 'experienceEmphasis maps explorer→explorer, nation→nation, full→balanced, legacy→balanced', () =>
     (experienceEmphasis(withMode('explorer')) === 'explorer' && experienceEmphasis(withMode('nation')) === 'nation' && experienceEmphasis(withMode('full')) === 'balanced' && experienceEmphasis({}) === 'balanced') || 'emphasis wrong');
   check('em27_configurable', 'National checkboxes are configurable outside explorer only', () =>
@@ -180670,11 +180740,20 @@ export function runV96ExperienceModesSelfTests(): V9SelfTestResult[] {
     (GAME_VERSION === '9.6.0' && createV95SaveFixture().metadata.gameVersion === '9.6.0') || `GAME_VERSION=${GAME_VERSION}`);
   check('em35_sanitize_game_settings', 'sanitizeGameSettings: valid kept, missing → full, invalid → full, DEFAULT → explorer', () =>
     (sanitizeGameSettings({ experienceMode: 'nation' }).experienceMode === 'nation' && sanitizeGameSettings({}).experienceMode === 'full' && sanitizeGameSettings({ experienceMode: 'x' }).experienceMode === 'full' && sanitizeGameSettings(DEFAULT_GAME_SETTINGS).experienceMode === 'explorer') || 'sanitize wrong');
-  check('em36_mode_switch_is_pure_settings', 'Switching mode changes only the experienceMode key of the settings object', () => {
-    const a = withMode('explorer');
-    const b: GameSettingsState = { ...a, experienceMode: 'nation' };
-    const diff = (Object.keys(a) as Array<keyof GameSettingsState>).filter(k => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
-    return (diff.length === 1 && diff[0] === 'experienceMode') || `diff=${diff.join(',')}`;
+  check('em36_confirmation_rule', 'Mode switch: same mode → noop; start screen / game over → apply at once; live match → confirm', () =>
+    (shouldConfirmExperienceModeChange('explorer', 'explorer', 'game') === 'noop' && shouldConfirmExperienceModeChange('explorer', 'nation', 'menu') === 'apply' && shouldConfirmExperienceModeChange('nation', 'full', 'end') === 'apply' && shouldConfirmExperienceModeChange('full', 'explorer', 'game') === 'confirm') || 'rule wrong');
+  check('em36b_loaded_settings_normalized', 'normalizeLoadedExperienceMode: missing → full, invalid → full, valid kept, other keys untouched', () => {
+    const legacy = normalizeLoadedExperienceMode({ totalDays: 30 } as { totalDays: number; experienceMode?: unknown });
+    const bad = normalizeLoadedExperienceMode({ experienceMode: 'turbo' });
+    const ok = normalizeLoadedExperienceMode({ experienceMode: 'nation' });
+    return (legacy.experienceMode === 'full' && legacy.totalDays === 30 && bad.experienceMode === 'full' && ok.experienceMode === 'nation') || 'normalize wrong';
+  });
+  check('em36c_pure_loader_legacy_full', 'applyLoadedState (smart-settings loader): a save without the key hydrates to full, with the key keeps it', () => {
+    const base = { gameSettings: { ...createDefaultGameSettings() } as { [key: string]: unknown } };
+    delete base.gameSettings.experienceMode;
+    const legacy = applyLoadedState(base).gameSettings.experienceMode;
+    const kept = applyLoadedState({ gameSettings: withMode('nation') }).gameSettings.experienceMode;
+    return (legacy === 'full' && kept === 'nation') || `legacy=${String(legacy)} kept=${String(kept)}`;
   });
   check('em37_matrix_deterministic', 'The visibility matrix is identical across repeated calls and JSON clones', () => {
     const a = JSON.stringify(experienceVisibilityMatrix());
@@ -183754,13 +183833,13 @@ function dispatchGameSettingsChange(
   // V9.6 (SECTION 20AG): switch experience mode — immediate on the start screen, confirmed during a live match.
   const requestExperienceModeChange = useCallback((next: ExperienceMode) => {
     const current = resolveExperienceMode(gameSettings);
-    if (next === current) return;
-    const inMatch = gameState.gameMode === 'game';
+    const decision = shouldConfirmExperienceModeChange(current, next, gameState.gameMode);
+    if (decision === 'noop') return;
     const apply = () => {
       trackedSetGameSettings('direct_player_change', '🎮 Experience mode', prev => ({ ...prev, experienceMode: next }));
-      if (inMatch) addNotification(`${experienceModeLabel(next)} mode active.`, 'info', false, 'system');
+      if (decision === 'confirm') addNotification(`${experienceModeLabel(next)} mode active.`, 'info', false, 'system');
     };
-    if (!inMatch) { apply(); return; }
+    if (decision === 'apply') { apply(); return; }
     const copy = experienceModeChangeConfirmation(current, next);
     showConfirmation('experienceModeChange', copy.title, copy.message, copy.confirmText, apply);
   }, [gameSettings, gameState.gameMode, trackedSetGameSettings, addNotification, showConfirmation]);
@@ -190459,6 +190538,9 @@ function dispatchGameSettingsChange(
     try {
       const m = v95MigrateSaveForLoad(data);
       data = m.data; v95SourceVersion = m.sourceVersion; v95Migrated = m.migrated;
+      // V9.6 (SECTION 20AG): replay branches and checkpoint snapshots reach here without the save sanitizer — a pre-V9.6 settings
+      // block has no experienceMode and must load as 'full', never inherit the live session's mode.
+      data = { ...data, gameSettings: normalizeLoadedExperienceMode(data.gameSettings) };
     } catch (err) {
       addNotification(`Load cancelled — this save could not be upgraded (${err instanceof Error ? err.message : 'unknown error'}). Your current match was not changed.`, 'error', true, 'system');
       return false;
@@ -213201,7 +213283,8 @@ function dispatchGameSettingsChange(
       regions[r.code] = { name: r.name, momentum: reg ? LR_MOMENTUM_LABEL[reg.momentum.band] : 'Stable', identity: reg?.identity.label || '', risk: reg?.risks.find(x => x.kind !== 'high_rivalry')?.label || (() => { const b = nsState?.bottlenecks.find(x => x.regionId === r.code); return b ? `${NATIONAL_NETWORK_LABEL[b.network]} bottleneck` : null; })() || (() => { const b = scState?.bottlenecks.find(x => x.regionId === r.code && (x.severity === 'major' || x.severity === 'critical')); return b ? `${INDUSTRY_LABEL[b.industry]} constrained${b.input ? ` (${SUPPLY_LABEL[b.input].toLowerCase()})` : ''}` : null; })() || (() => { const cp = inState?.criticalPoints.find(c => c.type === 'region' && c.subjectId === r.code && c.severity === 'critical'); return cp ? `Critical bridge in ${inState!.networks.find(n => n.id === cp.networkId)?.name || 'a network'}` : null; })() || (() => { const mf = mpEnabled ? megaprojectFocus(mpPersisted, mpWorld, pid) : null; return mf?.risk && mf.regionIds.includes(r.code) ? mf.risk : null; })() || null, need: reg?.needs.find(n => n.status === 'open')?.reason || null, heldByYou: Boolean(r.controller && keys.includes(String(r.controller))), rivalPressure: Boolean(reg?.risks.some(x => x.kind === 'high_rivalry' && x.severity === 'high')) };
     });
     const events: V9CohesionEvent[] = [];
-    if (swrEnabled && swrState) summarizeWorldChanges(swrState, pid, dnRound - 1, 6).forEach(e => events.push({ id: e.id, turn: e.turn, source: e.sourceSystem === 'living_regions' ? 'regions' : e.sourceSystem === 'factions' ? 'factions' : 'world', significance: e.significance as V9CohesionEvent['significance'], text: personalizeWorldText(e.strategicMeaning, names[pid], player?.teamId ? names[String(player.teamId)] : null), subjectId: e.subjectType === 'region' ? e.subjectId : null, actorId: e.actorId, claim: e.claimKind === 'inference' ? 'inference' : 'fact', why: true, national: e.subjectType === 'nation' || e.subjectType === 'market' }));
+    // V9.6 (SECTION 20AG): Explorer drops national-system events; Nation flags them as national so 20L scoring foregrounds them.
+    if (swrEnabled && swrState) applyExperienceModeToWorldEvents(summarizeWorldChanges(swrState, pid, dnRound - 1, 6), gameSettings).forEach(e => events.push({ id: e.id, turn: e.turn, source: e.sourceSystem === 'living_regions' ? 'regions' : e.sourceSystem === 'factions' ? 'factions' : 'world', significance: e.significance as V9CohesionEvent['significance'], text: personalizeWorldText(e.strategicMeaning, names[pid], player?.teamId ? names[String(player.teamId)] : null), subjectId: e.subjectType === 'region' ? e.subjectId : null, actorId: e.actorId, claim: e.claimKind === 'inference' ? 'inference' : 'fact', why: true, national: nationalEventFlag(e.subjectType, e.sourceSystem, gameSettings) }));
     if (swrEnabled && lrs) pickRegionalShifts(lrs, dnRound, []).forEach(d => events.push({ id: d.id, turn: d.turn, source: 'regions', significance: d.significance, text: personalizeWorldText(d.text, names[pid]), subjectId: d.regionId, actorId: null, claim: 'fact', why: false }));
     const rf = swrEnabled ? rfState : null;
     const recentlyDecided = (d: RFDilemma) => (rf?.decisions || []).some(x => x.regionId === d.regionId && x.label.startsWith(d.title) && dnRound - x.turn < 4);
@@ -213243,7 +213326,7 @@ function dispatchGameSettingsChange(
       strategy: g3 ? { phases: g3Goals.map(g => g.label), phaseIndex: gi3Live.progress?.phaseIndex ?? g3.phaseIndex, locked: Boolean(g3.locks.mission || g3.locks.primaryGoal || g3.locks.ordering || g3Goals.some(g => g.locked)), onTrack: gi3Live.progress?.onTrack || null, nextMove: gi3Live.progress?.nextMove || null, cashTarget: gi3Live.progress?.resourceStatus.reserve ?? null, regions: g3Goals.map(g => g.regionId).filter(Boolean) as string[], notices: gi3Live.notices.filter(n => !n.dismissed).map(n => ({ id: n.id, text: n.text })) } : null,
       actions: { recommendedId: v9ActionSetView?.recommended?.id || null, ranked: (v9ActionSetView?.ranked || []).slice(0, 12) },
       background: bgLive?.enabled ? { nextMove: bgNext ? { label: bgNext.label, reason: bgNext.reason, actionId: bgNext.actionId || null } : null, intervention: iv ? { level: iv.level, message: iv.message, subjectKind: iv.subjectKind, query: iv.actionContext?.query || null, key: iv.cooldownKey, actionId: iv.actionContext?.actionId || null } : null } : null,
-      events: applyExperienceModeToCohesionEvents(events, gameSettings),
+      events,
       diplomacy: dnObservations.map(o => ({ id: o.id, kind: o.kind, text: o.text, dealId: o.dealId, turnsLeft: o.kind === 'expiring' || o.kind === 'payment_due' ? 1 : null })),
       factions: rf ? {
         requests: rf.requests.filter(r => r.status === 'open').map(r => ({ id: r.id, faction: RF_DEF_BY_ID[r.factionId]?.name || r.factionId, title: r.title, deadline: r.deadlineTurn, regionId: r.regionId, urgent: r.urgency === 'urgent', committed: rf.commitments.some(c => c.requestId === r.id && c.actorId === pid) })).slice(0, 8),
@@ -229590,7 +229673,7 @@ function dispatchGameSettingsChange(
       const glAtTop = glCoachNode && !glInHeader && !glInPlay;
       // V9.6 (SECTION 20AG): national strips sit above the decision card in Nation mode, below it in Full, nowhere in Explorer.
       const nationalPlacement = nationalHudPlacement(gameSettings);
-      const nationalPlayNodes = nationalPlacement === 'hidden' ? null : (
+      const nationalPlayNodes = nationalPlacement === 'hidden' || !nsEnabled ? null : (
         <div className="space-y-3" data-testid="national-play-lines" data-placement={nationalPlacement}>
           {nationalPlacement === 'above' && <div className="text-[11px] uppercase tracking-wide opacity-70" data-testid="nation-focus-chip">🇦🇺 Nation focus</div>}
             {pf12Enabled && pf12View && <PublicFinancePlayChip view={pf12View} onClick={() => updateUiState({ experienceLayer: 'intelligence' } as any)} />}
@@ -230066,62 +230149,62 @@ function dispatchGameSettingsChange(
             currentActionLabel={currentAiAction?.description || null}
           />
         </OptionalSurfaceBoundary>
-        {isSystemVisible('nationalSystems', gameSettings) && (
+        {nationalLayerShown(gameSettings) && (
           <OptionalSurfaceBoundary surface="V10 National Systems Inspector">
             <NationalSystemsInspector state={nsState} persisted={nsPersisted} inputs={nsInputs} theme={themeStyles} diag={nsDiagRef.current} enabled={nsEnabled} />
           </OptionalSurfaceBoundary>
         )}
-        {isSystemVisible('industries', gameSettings) && (
+        {nationalLayerShown(gameSettings) && (
           <OptionalSurfaceBoundary surface="V10.1 Industries & Supply Chains Inspector">
             <IndustriesInspector state={scState} persisted={scPersisted} theme={themeStyles} diag={scDiagRef.current} enabled={scEnabled} />
           </OptionalSurfaceBoundary>
         )}
-        {isSystemVisible('economicGeography', gameSettings) && (
+        {nationalLayerShown(gameSettings) && (
           <OptionalSurfaceBoundary surface="V10.8 Economic Geography Inspector">
             <EconomicGeographyInspector state={egState} persisted={egPersisted} theme={themeStyles} enabled={egEnabled} diag={egDiagRef.current} />
           </OptionalSurfaceBoundary>
         )}
-        {isSystemVisible('stateCapacity', gameSettings) && (
+        {nationalLayerShown(gameSettings) && (
           <OptionalSurfaceBoundary surface="V10.11 Adaptive Governance & State Capacity Inspector">
             <StateCapacityInspector state={sc11State} persisted={sc11Persisted} theme={themeStyles} enabled={sc11Enabled} diag={sc11DiagRef.current} />
           </OptionalSurfaceBoundary>
         )}
-        {isSystemVisible('publicFinance', gameSettings) && (
+        {nationalLayerShown(gameSettings) && (
           <OptionalSurfaceBoundary surface="V10.12 Public Finance & Fiscal Capacity Inspector">
             <PublicFinanceInspector view={pf12View} />
           </OptionalSurfaceBoundary>
         )}
-        {isSystemVisible('households', gameSettings) && (
+        {nationalLayerShown(gameSettings) && (
           <OptionalSurfaceBoundary surface="V10.13 Households & Living Standards Inspector">
             <HouseholdsInspector state={hh13State} persisted={hh13Persisted} inputs={hh13Inputs} />
           </OptionalSurfaceBoundary>
         )}
-        {isSystemVisible('nationalPriorities', gameSettings) && (
+        {nationalLayerShown(gameSettings) && (
           <OptionalSurfaceBoundary surface="V10.7 National Priorities Inspector">
             <NationalPrioritiesInspector state={npState} persisted={npPersisted} theme={themeStyles} enabled={npEnabled} diag={npDiagRef.current} />
           </OptionalSurfaceBoundary>
         )}
-        {isSystemVisible('systemicRisk', gameSettings) && (
+        {nationalLayerShown(gameSettings) && (
           <OptionalSurfaceBoundary surface="V10.6 Resilience & Systemic Risk Inspector">
             <SystemicRiskInspector state={srState} persisted={srPersisted} view={srView} theme={themeStyles} enabled={srEnabled} diag={srDiagRef.current} />
           </OptionalSurfaceBoundary>
         )}
-        {isSystemVisible('innovation', gameSettings) && (
+        {nationalLayerShown(gameSettings) && (
           <OptionalSurfaceBoundary surface="V10.5 Innovation & Capabilities Inspector">
             <InnovationInspector state={icState} persisted={icPersisted} theme={themeStyles} enabled={icEnabled} modifiers={icModifiers} diag={icDiagRef.current} />
           </OptionalSurfaceBoundary>
         )}
-        {isSystemVisible('nationalDevelopment', gameSettings) && (
+        {nationalLayerShown(gameSettings) && (
           <OptionalSurfaceBoundary surface="V10.4 National Development Inspector">
             <NationalDevelopmentInspector profile={ndProfile} persisted={ndPersisted} theme={themeStyles} enabled={ndEnabled} diag={ndDiagRef.current} />
           </OptionalSurfaceBoundary>
         )}
-        {isSystemVisible('megaprojects', gameSettings) && (
+        {nationalLayerShown(gameSettings) && (
           <OptionalSurfaceBoundary surface="V10.3 Megaproject Inspector">
             <MegaprojectInspector persisted={mpPersisted} world={mpWorld} theme={themeStyles} diag={mpDiagRef.current} enabled={mpEnabled} />
           </OptionalSurfaceBoundary>
         )}
-        {isSystemVisible('infraNetworks', gameSettings) && (
+        {nationalLayerShown(gameSettings) && (
           <OptionalSurfaceBoundary surface="V10.2 Strategic Infrastructure Inspector">
             <InfraNetworksInspector state={inState} persisted={inPersisted} inputs={inInputs} theme={themeStyles} diag={inDiagRef.current} enabled={inEnabled} />
           </OptionalSurfaceBoundary>
@@ -231447,7 +231530,7 @@ function dispatchGameSettingsChange(
                       {LR_MAP_MODES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                       {nsState && <optgroup label="National networks">{NATIONAL_NETWORKS.map(n => <option key={n} value={`net:${n}`}>{NATIONAL_NETWORK_ICON[n]} {NATIONAL_NETWORK_LABEL[n]}</option>)}</optgroup>}
                       {inState && <optgroup label="Infrastructure networks">{INFRA_NETWORK_KINDS.map(k => <option key={k} value={`infra:${k}`}>🕸 {INFRA_NETWORK_ICON[k]} {INFRA_NETWORK_LABEL[k]} network</option>)}</optgroup>}
-                      {mpEnabled && mpPersisted && Object.keys(mpPersisted.programs).length > 0 && <optgroup label="National programs">{Object.values(mpPersisted.programs).map(p => <option key={p.id} value={`mp:${p.id}`}>🏗 {MEGAPROJECT_DEF_BY_KIND[p.kind].icon} {MEGAPROJECT_DEF_BY_KIND[p.kind].title}</option>)}</optgroup>}
+                      {nationalLayerShown(gameSettings) && mpPersisted && Object.keys(mpPersisted.programs).length > 0 && <optgroup label="National programs">{Object.values(mpPersisted.programs).map(p => <option key={p.id} value={`mp:${p.id}`}>🏗 {MEGAPROJECT_DEF_BY_KIND[p.kind].icon} {MEGAPROJECT_DEF_BY_KIND[p.kind].title}</option>)}</optgroup>}
                       {scState && <optgroup label="Industries & supply chains"><option value="ind">🏭 Industry</option>{INDUSTRY_MAP_SUPPLIES.map(x => <option key={x} value={`sc:${x}`}>⛓ Supply chain: {SUPPLY_LABEL[x]}</option>)}</optgroup>}
                     </select>
                   </label>
@@ -231463,7 +231546,7 @@ function dispatchGameSettingsChange(
 	              <div className="relative w-full h-96 bg-gray-800 rounded-lg overflow-hidden" data-ns-network={nsMapNetwork && nsState ? nsMapNetwork : undefined}>
 	                {nsMapNetwork && nsState && <NationalNetworkMapLinks state={nsState} network={nsMapNetwork} />}
 	                {inMapKind && inState && nsState && <InfraNetworkMapOverlay state={inState} national={nsState} kind={inMapKind} />}
-	                {mpEnabled && mpMapId && mpPersisted?.programs[mpMapId] && <MegaprojectMapOverlay persisted={mpPersisted} programId={mpMapId} />}
+	                {nationalLayerShown(gameSettings) && mpMapId && mpPersisted?.programs[mpMapId] && <MegaprojectMapOverlay persisted={mpPersisted} programId={mpMapId} />}
 	                {scMapLayer && scMapLayer !== 'ind' && scState && <IndustrySupplyMapLinks state={scState} supply={scMapLayer.slice(3) as StrategicSupplyKind} />}
 	                {Object.entries(REGIONS).map(([code, region]: [string, any]) => {
 	                  const isPlayerHere = player.currentRegion === code;
@@ -231537,7 +231620,7 @@ function dispatchGameSettingsChange(
 	                            ${regionControlInfo.highestDeposit}
 	                          </div>
 	                        )}
-                          {mpEnabled && mpMapId && mpPersisted?.programs[mpMapId] ? (() => { const mb = megaprojectMapBadge(mpPersisted, code, mpMapId); return mb ? <div data-testid="mp-map-badge" data-tone={mb.tone} title={mb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${mb.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : mb.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : mb.tone === 'ok' ? 'bg-emerald-950 border-emerald-400 text-emerald-100' : 'bg-slate-900 border-slate-400 text-slate-100'}`}>{mb.text}</div> : null; })() : inMapKind && inState ? (() => { const xb = infraMapBadge(inState, code, inMapKind); return xb ? <div data-testid="in-map-badge" data-tone={xb.tone} title={xb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${xb.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : xb.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-sky-950 border-sky-400 text-sky-100'}`}>{xb.text}</div> : null; })() : scMapLayer && scState ? (() => { const ib = industryMapBadge(scState, code, scMapLayer); return ib ? <div data-testid="sc-map-badge" data-tone={ib.tone} title={ib.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${ib.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : ib.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-violet-950 border-violet-400 text-violet-100'}`}>{ib.text}</div> : null; })() : nsMapNetwork && nsState ? (() => { const nb = nationalMapBadge(nsState, code, nsMapNetwork); return nb ? <div data-testid="ns-map-badge" data-condition={nb.condition} title={nb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${nb.condition === 'critical' ? 'bg-red-950 border-red-400 text-red-100' : nb.condition === 'bottlenecked' ? 'bg-orange-950 border-orange-400 text-orange-100' : nb.condition === 'strained' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-teal-950 border-teal-500 text-teal-100'}`}>{nb.text}</div> : null; })() : (() => { const badge = lrMapBadge(lrState?.regions[code], lrMapMode); return badge ? <div data-testid="lr-map-badge" title={badge.title} className="absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap bg-teal-900/90 text-teal-100 px-1 rounded">{badge.text}</div> : null; })()}
+                          {nationalLayerShown(gameSettings) && mpMapId && mpPersisted?.programs[mpMapId] ? (() => { const mb = megaprojectMapBadge(mpPersisted, code, mpMapId); return mb ? <div data-testid="mp-map-badge" data-tone={mb.tone} title={mb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${mb.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : mb.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : mb.tone === 'ok' ? 'bg-emerald-950 border-emerald-400 text-emerald-100' : 'bg-slate-900 border-slate-400 text-slate-100'}`}>{mb.text}</div> : null; })() : inMapKind && inState ? (() => { const xb = infraMapBadge(inState, code, inMapKind); return xb ? <div data-testid="in-map-badge" data-tone={xb.tone} title={xb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${xb.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : xb.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-sky-950 border-sky-400 text-sky-100'}`}>{xb.text}</div> : null; })() : scMapLayer && scState ? (() => { const ib = industryMapBadge(scState, code, scMapLayer); return ib ? <div data-testid="sc-map-badge" data-tone={ib.tone} title={ib.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${ib.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : ib.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-violet-950 border-violet-400 text-violet-100'}`}>{ib.text}</div> : null; })() : nsMapNetwork && nsState ? (() => { const nb = nationalMapBadge(nsState, code, nsMapNetwork); return nb ? <div data-testid="ns-map-badge" data-condition={nb.condition} title={nb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${nb.condition === 'critical' ? 'bg-red-950 border-red-400 text-red-100' : nb.condition === 'bottlenecked' ? 'bg-orange-950 border-orange-400 text-orange-100' : nb.condition === 'strained' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-teal-950 border-teal-500 text-teal-100'}`}>{nb.text}</div> : null; })() : (() => { const badge = lrMapBadge(lrState?.regions[code], lrMapMode); return badge ? <div data-testid="lr-map-badge" title={badge.title} className="absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap bg-teal-900/90 text-teal-100 px-1 rounded">{badge.text}</div> : null; })()}
                           {interactiveMapActive && completedChallengeCount >= (region.challenges || []).length && (region.challenges || []).length > 0 && (
                             <div className="absolute -top-2 -left-2 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center text-[10px]">
                               ✓
@@ -240504,7 +240587,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	              {buildNationalDevelopmentDebrief(ndProfileRef.current, ndPersistedRef.current, mpPersistedRef.current, ndViewRef.current ? { you: ndViewRef.current.you, rival: ndViewRef.current.rival, rivalName: ndViewRef.current.rivalName } : null).map(l => <div key={l}>{l}</div>)}
 	            </div>
 	          )}
-	          {mpEnabled && buildMegaprojectDebrief(mpPersistedRef.current).length > 0 && (
+	          {nationalLayerShown(gameSettings) && buildMegaprojectDebrief(mpPersistedRef.current).length > 0 && (
 	            <div className="p-3 rounded-xl bg-black/20 border border-amber-700/40 text-xs leading-relaxed" data-testid="mp-debrief">
 	              <span className="font-bold text-amber-300">National programs: </span>
 	              {buildMegaprojectDebrief(mpPersistedRef.current).join(' · ')}
