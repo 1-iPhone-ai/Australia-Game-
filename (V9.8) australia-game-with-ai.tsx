@@ -4067,7 +4067,7 @@ export const V99_CHANGELOG = [
   "Your display, sound and accessibility choices stay saved on this device (match rules start fresh); Settings is on the main menu; Leave match asks first",
   "Play screen: the turn pill and Quick Actions sit in one row under the header, and routine notifications leave by themselves",
   "Rules that match the screen: crafted goods have a real price, crafting, buying and staking use an action, and the price shown is the price paid",
-  "Retro reads on every screen and Light is far easier to read (end screen, decisions, standings); money is written one way in every browser language",
+  "Retro and Light are far easier to read (end screen, decisions, standings); money is written one way in every browser language",
   "Saves: loading replaces the match cleanly, a save asked for in the rival's turn waits for it, V9.8 saves keep loading, and a display error offers a way back",
   "New and off by default (Settings, New in V9.9): Autosave & Resume, Match Journal & Daily Seed (with Rematch), Turn Digest, a warning before closing the tab",
   "Prefer the old look? Classic sticky toasts and Classic play-screen layout bring back V9.8's"
@@ -66320,9 +66320,10 @@ function buildRegionControlObjective(state: any, actor: any, regionId?: string):
   if (!dest) return null;
   const deposits = state?.regionDeposits?.[dest] || state?.regionControl?.[dest] || {};
   const actorId = actor?.id || 'player';
-  const yours = Number(deposits[actorId] || deposits.player || 0);
+  const ownerKey = v99RegionOwnerKey(state, actor); // V9.9 (SECTION 20AR): in a team mode stakes are booked under the team, and the team's stake is yours
+  const yours = Number(deposits[ownerKey] || deposits[actorId] || deposits.player || 0);
   const bestRival = Object.entries(deposits).reduce((max, [id, amt]) => {
-    if (id === actorId || id === 'player') return max;
+    if (id === ownerKey || id === actorId || id === 'player') return max;
     return Math.max(max, Number(amt) || 0);
   }, 0);
   const lead = yours - bestRival;
@@ -186314,7 +186315,7 @@ const KeyboardShortcutsHelpModalView: React.FC<KeyboardShortcutsHelpModalProps> 
       <div
         ref={modalRef}
         tabIndex={-1}
-        className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-2xl w-full max-h-[calc(100dvh-2rem)] h-[calc(100dvh-2rem)] flex flex-col min-h-0 overflow-hidden shadow-2xl focus:outline-none`}
+        className={`${themeStyles.card} ${themeStyles.text} ${themeStyles.border} border rounded-xl max-w-2xl w-full max-h-[calc(100dvh-2rem)] h-[calc(100dvh-2rem)] flex flex-col min-h-0 overflow-hidden shadow-2xl focus:outline-none`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Sticky Header */}
@@ -190439,6 +190440,15 @@ export function v99IsTouristRetry(candidate: { parameters?: unknown } | null | u
   return Boolean(candidate) && v99IsRecord(candidate?.parameters) && candidate?.parameters.touristRetry === true;
 }
 
+/**
+ * True for the two kinds of advice that only the play screen's own handlers may carry out: a region stake (the engine's
+ * deposit does not book control) and the Tourist's free retry (the button's own handler). They are done by hand even
+ * when the press interrupted a Co-Pilot takeover, and never fall through to the canonical executor.
+ */
+export function v99DoItIsHandOnly(route: V99DoItRoute, candidate: { parameters?: unknown } | null | undefined): boolean {
+  return route === 'region_deposit' || v99IsTouristRetry(candidate);
+}
+
 export const V99_END_TURN_ONLY_MOVE_REASON = 'no Action Points left — ending your turn is the only move';
 export const V99_END_TURN_FREE_MOVES_REASON = 'no Action Points left — only free moves remain';
 
@@ -192593,6 +192603,13 @@ export function runV99TrustworthyAdviceSelfTests(): V9SelfTestResult[] {
     const got = [v99TeachingOutcome(card, notes, 1), v99TeachingOutcome(card, notes, 2), v99TeachingOutcome({ whatHappened: 'Take Wine tasting tour — wager $300' }, notes, 2), v99TeachingOutcome({ whatHappened: 'Relocate to NSW' }, notes, 2), v99TeachingOutcome(card, null, 1), v99TeachingOutcome(null, notes, 1)];
     const names = [v99TeachingChallengeName('Take the finale: National Champion — wager $400'), v99TeachingChallengeName('Retry Explore Daintree Rainforest (+20%, no action) — wager $500'), v99TeachingChallengeName('Sell Opals ($152)')];
     return (JSON.stringify(got) === JSON.stringify(['Tour the Blue Mountains failed. Lost $500', null, 'Wine tasting tour completed! Won $1,020', null, null, null]) && JSON.stringify(names) === JSON.stringify(['National Champion', 'Explore Daintree Rainforest', null])) || JSON.stringify({ got, names });
+  });
+  check('v99ad_z05_hand_only_do_it_and_team_stakes', "A region stake and the Tourist's free retry are only ever carried out by the play screen's own handlers; in a team mode the region note counts the team's stake as yours", () => {
+    const kinds = [v99DoItIsHandOnly('region_deposit', {}), v99DoItIsHandOnly('challenge', { parameters: { touristRetry: true } }), v99DoItIsHandOnly('challenge', { parameters: {} }), v99DoItIsHandOnly('travel', {}), v99DoItIsHandOnly('canonical', null)];
+    const team = buildRegionControlObjective({ selectedMode: 'team_human_ai_vs_ai_ai', regionDeposits: { QLD: { team_player: 300, team_ai: 100 } } }, { id: 'player', teamId: 'team_player', currentRegion: 'QLD' });
+    const solo = buildRegionControlObjective({ selectedMode: 'ai', regionDeposits: { QLD: { player: 300, ai: 500 } } }, { id: 'player', currentRegion: 'QLD' });
+    const teamLabel = team?.requirements.find(r => r.id === 'lead')?.label || '', soloLabel = solo?.requirements.find(r => r.id === 'lead')?.label || '';
+    return (kinds.join() === 'true,true,false,false,false' && teamLabel.includes('you $300 vs rival $100') && soloLabel.includes('you $300 vs rival $500')) || JSON.stringify({ kinds, teamLabel, soloLabel });
   });
   return results;
 }
@@ -200000,6 +200017,13 @@ export function v99ToastLaneTopPx(aboveBottomInPage: number, rowGap: number, row
   const n = (v: number) => (Number.isFinite(v) ? Math.max(0, v) : 0);
   return Math.ceil(n(aboveBottomInPage) + n(rowGap) + n(rowHeight) + V99_TOAST_LANE_GAP_PX);
 }
+/** The blocks that sit directly under the turn row and keep the toast lane below themselves (the guided match's panel, the Turn Digest card). */
+export const V99_TOAST_LANE_BLOCK_SELECTOR = '[data-testid="v99-toast-lane-below"], [data-testid="v99-turn-digest"]';
+/** The lane's top: below the lowest block under the row (page offsets of their bottom edges), or the row's own value when there is none. */
+export function v99ToastLaneTopWithBlocks(rowTopPx: number, blockBottomsInPage: readonly number[]): number {
+  const lowest = blockBottomsInPage.reduce((max, bottom) => (Number.isFinite(bottom) && bottom > max ? bottom : max), 0);
+  return lowest > 0 ? Math.ceil(lowest + V99_TOAST_LANE_GAP_PX) : rowTopPx;
+}
 /** Measures the row and publishes the lane's top; `null` (no row drawn) clears it, so the lane falls back to 14rem. */
 export function v99SyncToastLaneTop(row: HTMLElement | null): void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
@@ -200009,7 +200033,13 @@ export function v99SyncToastLaneTop(row: HTMLElement | null): void {
     if (row) {
       const above = row.previousElementSibling;
       const aboveBottom = above ? above.getBoundingClientRect().bottom : (row.parentElement ? row.parentElement.getBoundingClientRect().top : 0);
-      next = `${v99ToastLaneTopPx(aboveBottom + window.scrollY, parseFloat(window.getComputedStyle(row).marginTop) || 0, row.offsetHeight)}px`;
+      const rowTop = v99ToastLaneTopPx(aboveBottom + window.scrollY, parseFloat(window.getComputedStyle(row).marginTop) || 0, row.offsetHeight);
+      // A block under the row pushes the lane below itself. It is measured by its own place in the page: the row above
+      // it sticks to the top of the window on wide screens, so a measurement taken from the row would grow with the
+      // scroll and push the toasts out of the window.
+      const blockBottoms: number[] = [];
+      document.querySelectorAll(V99_TOAST_LANE_BLOCK_SELECTOR).forEach(el => { const box = el.getBoundingClientRect(); if (box.height > 0) blockBottoms.push(box.bottom + window.scrollY); });
+      next = `${v99ToastLaneTopWithBlocks(rowTop, blockBottoms)}px`;
     }
     if (style.getPropertyValue(V99_TOAST_LANE_TOP_VAR) === next) return;
     if (next) style.setProperty(V99_TOAST_LANE_TOP_VAR, next); else style.removeProperty(V99_TOAST_LANE_TOP_VAR);
@@ -202412,6 +202442,10 @@ export function runV99PlayScreenRulesSelfTests(): V9SelfTestResult[] {
     return (v99DebriefCardClass(true) === 'bg-slate-900/60' && v99DebriefCardClass(false) === 'bg-slate-900 text-gray-100' && v99DebriefStripClass(true) === 'bg-black/20' && v99DebriefStripClass(false) === 'bg-slate-900 text-gray-100' && light.pro === 'text-emerald-700' && light.con === 'text-rose-700' && dark.pro === 'text-emerald-300' && dark.con === 'text-rose-300'
       && v99ProConClasses(null).pro === 'text-emerald-300' && v99RivalFigureClass({ moneyPositive: 'text-green-700' }) === 'text-pink-700' && v99RivalFigureClass({ moneyPositive: 'text-green-400' }) === 'text-pink-400' && v99RivalFigureClass(null) === 'text-pink-400' && v99YourTurnPillTone('bg-green-500', true, false) === 'bg-green-700' && v99YourTurnPillTone('bg-green-500', false, false) === 'bg-green-500' && v99YourTurnPillTone('bg-green-600', true, true) === 'bg-green-600'
       && pill >= 4.5 && old < 3 && card >= 7 && pro >= 4.5 && con >= 4.5) || J({ pill, old, card, pro, con });
+  });
+  check('v99ps_z07_toast_lane_below_blocks', 'The toast lane starts below the lowest block under the turn row, measured by the block\'s own place in the page (so it does not move when the row sticks and the page scrolls); with no block the row\'s own value stands', () => {
+    const got = [v99ToastLaneTopWithBlocks(205, []), v99ToastLaneTopWithBlocks(205, [365]), v99ToastLaneTopWithBlocks(930, [365]), v99ToastLaneTopWithBlocks(205, [365, 451.2]), v99ToastLaneTopWithBlocks(205, [0, Number.NaN])];
+    return (JSON.stringify(got) === JSON.stringify([205, 377, 377, 464, 205]) && V99_TOAST_LANE_BLOCK_SELECTOR.includes('v99-toast-lane-below') && V99_TOAST_LANE_BLOCK_SELECTOR.includes('v99-turn-digest')) || JSON.stringify(got);
   });
   return results;
 }
@@ -209730,12 +209764,17 @@ function dispatchGameSettingsChange(
     const v99Route = v99HumanDoItRoute(actionType);
     const v99Hands = v99DoItHandlersRef.current;
     // W3F1: a loan is taken or repaid with the play screen's own buttons (the loan's terms and its confirmation included).
-    if (v99Hands && !v99SessionActive && (v99RunLoanDoIt(actionType, v99Hands) || (v99Route !== 'canonical' && v99RunHumanDoIt(v99Route, v99Hands, candidate)))) { // A2: challenges too — the roll, payout and records are the Challenges dialog's
+    const v99HandOnly = v99DoItIsHandOnly(v99Route, candidate); // a stake / the Tourist's retry: by hand even when this press interrupted a takeover
+    if (v99Hands && (!v99SessionActive || v99HandOnly) && (v99RunLoanDoIt(actionType, v99Hands) || (v99Route !== 'canonical' && v99RunHumanDoIt(v99Route, v99Hands, candidate)))) { // A2: challenges too — the roll, payout and records are the Challenges dialog's
       dispatchAuthoritativeGameActivityLedgerEvent('decision', {
         actionType: 'copilot_recommendation_accepted',
         actorId: 'player',
         payload: { recommendationId: recommendation.id, title: candidate.title, executedAction: actionType, route: 'by_hand' }
       });
+      return;
+    }
+    if (v99HandOnly) { // never the canonical executor for these two kinds
+      addNotification(`${candidate.title} is not available right now. Nothing was spent.`, 'warning');
       return;
     }
 
@@ -255068,7 +255107,7 @@ function dispatchGameSettingsChange(
           return (
             <div
               key={notification.id}
-              className={`${themeStyles.card} ${['critical_warning', 'decision_required'].includes(v9NotificationClass(notification as any)) ? 'border-l-8 font-semibold' : 'border-l-4'} rounded-lg p-2.5 ${borderClass} ${shadowClass} pointer-events-none select-none ${v99PhoneLane ? v99ToastPhoneClass(v99ToastIndex, classicSticky) : ''}`}
+              className={`${themeStyles.card} ${themeStyles.text} ${['critical_warning', 'decision_required'].includes(v9NotificationClass(notification as any)) ? 'border-l-8 font-semibold' : 'border-l-4'} rounded-lg p-2.5 ${borderClass} ${shadowClass} pointer-events-none select-none ${v99PhoneLane ? v99ToastPhoneClass(v99ToastIndex, classicSticky) : ''}`}
               data-testid="notification-toast"
               data-v9-class={v9NotificationClass(notification as any)}
               aria-label={`${v9NotificationClass(notification as any).replace(/_/g, ' ')}: ${String((notification as any).message || '')}`}
@@ -255151,7 +255190,7 @@ function dispatchGameSettingsChange(
         onClick={closeLoadPreview}
       >
         <div
-          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl w-full max-w-2xl h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] flex flex-col`}
+          className={`${themeStyles.card} ${themeStyles.text} ${themeStyles.border} border rounded-xl w-full max-w-2xl h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] flex flex-col`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Fixed Header */}
@@ -255719,9 +255758,9 @@ function dispatchGameSettingsChange(
               </div>
               <div className="text-sm space-y-1">
                 <div>{playerGoalLabel}</div>
-                <div>Cash: ${player.money.toLocaleString('en-AU')}</div>
-                <div>Net Worth: ${getNetWorth.toLocaleString('en-AU')}</div>
-                <div>Inventory: ${getInventoryValue.toLocaleString('en-AU')}</div>
+                <div>Cash: {fmtMoney(player.money)}</div>
+                <div>Net Worth: {fmtMoney(getNetWorth)}</div>
+                <div>Inventory: {fmtMoney(getInventoryValue)}</div>
               </div>
             </div>
 
@@ -258866,12 +258905,12 @@ function dispatchGameSettingsChange(
 	                <div className={`${themeStyles.border} border rounded px-3 py-2`}>
 	                  <div className="opacity-75">{playerPrimaryMetricLabel}</div>
 	                  <div className={`font-bold ${v99ThemeAccent(themeStyles, 'infoText', 'text-blue-400')}`}>{formatWinMetricValue(gameSettings.winCondition, playerPrimaryMetricValue)}</div>
-	                  <div className="text-xs opacity-75">Cash ${((playerTeamScore?.money) || 0).toLocaleString('en-AU')} • Net Worth ${((playerTeamScore?.netWorth) || 0).toLocaleString('en-AU')} • {playerControlledRegions} regions</div>
+	                  <div className="text-xs opacity-75">Cash {fmtMoney((playerTeamScore?.money) || 0)} • Net Worth {fmtMoney((playerTeamScore?.netWorth) || 0)} • {playerControlledRegions} regions</div>
 	                </div>
 	                <div className={`${themeStyles.border} border rounded px-3 py-2`}>
 	                  <div className="opacity-75">{opponentPrimaryMetricLabel}</div>
 	                  <div className={`font-bold ${v99RivalFigureClass(themeStyles)}`}>{formatWinMetricValue(gameSettings.winCondition, opponentPrimaryMetricValue)}</div>
-	                  <div className="text-xs opacity-75">Cash ${((opponentTeamScore?.money) || 0).toLocaleString('en-AU')} • Net Worth ${((opponentTeamScore?.netWorth) || 0).toLocaleString('en-AU')} • {aiControlledRegions} regions</div>
+	                  <div className="text-xs opacity-75">Cash {fmtMoney((opponentTeamScore?.money) || 0)} • Net Worth {fmtMoney((opponentTeamScore?.netWorth) || 0)} • {aiControlledRegions} regions</div>
 	                </div>
 	                <div className={`${themeStyles.border} border rounded px-3 py-2`}>
 	                  <div className="opacity-75">Current Actor</div>
