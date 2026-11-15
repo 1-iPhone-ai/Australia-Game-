@@ -4059,7 +4059,18 @@ const V613_CHANGELOG = [
 // V9.9 (SECTION 20AQ): the current release's entry; it leads the "What's New" list in Settings → Interface.
 export const V99_CHANGELOG = [
   `${GAME_VERSION_LABEL} - A more solid, more replayable game`,
-  "Trustworthy advice, different matches every time, honest endings, settings that stay saved, and optional autosave, match journal and turn digest."
+  "Every match is a different match: new weather, markets, dice and rival play each time (World RNG: Deterministic still replays one seed)",
+  "The Recommended Action's Do It does exactly what its card says, and the advice now recommends challenges with the real odds, wager and payout",
+  "Honest endings: a FINAL DAY chip, a mercy rule that is announced, a debrief built from what happened, and a Rematch button",
+  "A rival worth playing: it no longer bankrupts itself, it contests regions and the Grand Tour, and it can never leave the match stuck on its turn",
+  "Rival speed: Normal, Fast or Instant - the rival makes the same moves at every speed",
+  "Your settings stay saved on this device, the main menu has a Settings button, Leave match asks first, and a display error offers a way back",
+  "Play screen: the turn pill and Quick Actions sit in one row under the header, and routine notifications leave by themselves",
+  "Rules that match the screen: crafted goods have a real price, crafting, buying and staking use an action, and the price shown is the price paid",
+  "Readable Retro and Light themes, and one money format in every browser language",
+  "Saves: loading replaces the match cleanly, a save asked for during the rival's turn waits for the turn, and V9.8 saves keep loading",
+  "New and off by default (Settings, New in V9.9): Autosave & Resume, Match Journal & Daily Seed, Turn Digest",
+  "Prefer the old look? Classic sticky toasts and Classic play-screen layout bring back V9.8's"
 ];
 
 const ACTION_GROUPS = {
@@ -66813,6 +66824,7 @@ export function rankContextualRecommendations(
     else if (pf && pf.reason && pf.scoreDelta < 0) whyPoints.push(`fiscal caution: ${pf.reason}`);
     if (hh && hh.reason && hh.relevanceDelta > 0) whyPoints.push(`household impact: ${hh.reason}`);
     else if (hh && hh.reason && hh.relevanceDelta < 0) whyPoints.push(`concentration strain: ${hh.reason}`);
+    v99DropIncomeWordingForDebt(c.actionType, whyPoints); // V9.9 (SECTION 20AR, W3F1): borrowed or repaid money is neither "no cash required" nor "expected +$500"
     if (!whyPoints.length) whyPoints.push(c.expectedOutcome || c.description || 'legal this turn');
     const costBits = [
       (c.costEstimate || 0) > 0 ? `$${Number(c.costEstimate).toLocaleString('en-AU')}` : null,
@@ -71401,6 +71413,8 @@ export interface CoPilotActionCandidate {
   parameters?: Record<string, any>;
   /** V9.9 (SECTION 20AR): the candidate's own reason, in the card's words ("82% to win $540 on a $250 wager"); shown before the generic ones. */
   adviceReason?: string;
+  /** V9.9 (SECTION 20AR, W3F1): a loan move's place in the ranking, decided when it is built and kept through later re-scoring (v99KeepLoanOrder). */
+  v99LoanRank?: V99LoanRank;
 }
 
 export interface CoPilotCandidateEvaluationResult {
@@ -71763,6 +71777,12 @@ export function generateCoPilotPlayerActionCandidates(
   });
 
   // Category 3: Financial / Banking
+  // V9.9 (SECTION 20AR, W3F1): emergency loans live in the `loans` list, which `actorDebt` never saw, so repaying one was
+  // never proposed. "Repay Loan" is built from the list (the engine repays it only while no legacy `debt` is owed).
+  const v99LoanInput: V99LoanAdviceInput = { actor: actorObj, world: gs, settings: gameSettings, cash, reserve: minReserveFloor, actionsLeft: ap, apSettings, makeId };
+  const v99Repay = actorDebt > 0 && !context?.humanRules?.current ? null : v99BuildRepayLoanCandidate(v99LoanInput);
+  if (v99Repay) candidates.push(v99Repay);
+  let v99LateLoan: CoPilotActionCandidate | null = null;
   if (actorDebt > 0) {
     const repayAmount = Math.min(500, actorDebt);
     candidates.push({
@@ -71805,26 +71825,12 @@ export function generateCoPilotPlayerActionCandidates(
       parameters: { principal: 1000, amount: 1000 }
     });
   } else {
-    candidates.push({
-      id: makeId(3, 'emergency_loan'),
-      category: 'loans_and_credit',
-      categoryIndex: 3,
-      categoryName: 'Financial / Banking',
-      title: 'Emergency Commercial Micro-Loan',
-      description: `Take a $${LOAN_AMOUNT} emergency loan (25%/day interest until repaid) to restore a cash floor.`,
-      actionType: 'emergency_loan',
-      apCost: 0,
-      costEstimate: 0,
-      expectedOutcome: `+$${LOAN_AMOUNT} now; $${Math.floor(LOAN_AMOUNT * LOAN_INTEREST_RATE)}/day interest until repaid`,
-      utilityScore: 90,
-      riskFactor: 30,
-      rewardScore: 85,
-      longTermScore: 60,
-      expectedStateDelta: { cashDelta: LOAN_AMOUNT, apDelta: 0 },
-      isValid: (Array.isArray(actorObj.loans) ? actorObj.loans.length : 0) < MAX_ACTIVE_LOANS,
-      invalidationReason: (Array.isArray(actorObj.loans) ? actorObj.loans.length : 0) < MAX_ACTIVE_LOANS ? undefined : 'Emergency loan limit reached',
-      parameters: { principal: LOAN_AMOUNT, amount: LOAN_AMOUNT }
-    });
+    // V9.9 (SECTION 20AR, W3F1): the emergency loan under the game's own name with its real terms; offered only under
+    // the bankruptcy line and first only in real danger (it was "Emergency Commercial Micro-Loan", a "free action",
+    // and the top recommendation at $120 with a challenge and wages on offer). Outside real danger it is listed
+    // after "Work for Wages", so equal scores resolve to the wage.
+    const v99Loan = v99BuildEmergencyLoanCandidate(v99LoanInput);
+    if (v99Loan.isValid && v99Loan.utilityScore < 90) v99LateLoan = v99Loan; else candidates.push(v99Loan);
   }
 
   // Category 4: Resource Management / Trade
@@ -71857,6 +71863,7 @@ export function generateCoPilotPlayerActionCandidates(
     adviceReason: 'a sure $50 for one action', // V9.9 (SECTION 20AR): what it is, instead of the generic "costs only 1 AP"
     parameters: { wage: 50, amount: 50 }
   });
+  if (v99LateLoan) candidates.push(v99LateLoan); // V9.9 (SECTION 20AR, W3F1): the loan outside real danger ranks after the wage
 
   // Category 5: Challenge / Quest Execution
   const regContracts = gs.regionalContracts || (gs as ExtendedGameState).gameState?.regionalContracts || {};
@@ -72211,6 +72218,7 @@ export function generateCoPilotPlayerActionCandidates(
   if (handoffSession && !['terminated', 'disabled', 'interrupted', 'paused'].includes(String(handoffSession.status))) {
     applyBackgroundHandoffToCoPilotCandidates(candidatePool, (gs as any)?.backgroundAI?.coPilotHandoffPackage);
   }
+  v99KeepLoanOrder(candidatePool); // V9.9 (SECTION 20AR, W3F1): a due repayment stays first and a loan outside real danger stays under the wage, whatever the handoff added
 
   const utilitySorted = [...candidatePool].sort((a, b) => b.utilityScore - a.utilityScore);
   const topRecommendation = utilitySorted.length > 0 ? utilitySorted[0] : null;
@@ -101289,6 +101297,7 @@ export function buildContextualActionSet(input: ContextualActionInput): Contextu
       householdAlignment: hhA
     });
   }
+  v99TruthfulDebtCards(actionable); // V9.9 (SECTION 20AR, W3F1): a loan's card shows its terms, a repayment what it pays — never "Expected +$500"
 
   if (attentionActive && attention?.navigation) {
     const nav = attention.navigation;
@@ -127932,6 +127941,10 @@ export interface V9CohesionInputs {
   transit: { destination: string; day: number; total: number } | null;
   presentation: V9Presentation;
   critical: { label: string; detail: string } | null;
+  /** V9.9 (SECTION 20AR, W3F1): a quiet standing notice for the header (the player's own mercy-rule streak). */
+  notice?: { label: string; detail: string } | null;
+  /** V9.9 (SECTION 20AR, W3F1): the human only watches this match (all-AI teams): the header never says YOUR TURN. */
+  spectator?: boolean;
   objective: { id: string; title: string; completed: number; total: number; next: string | null; blocked: boolean; /** V9.9 (SECTION 20AR): shown instead of "N / M requirements complete" (the score line of the match goal). */ progressText?: string | null } | null;
   strategy: { phases: string[]; phaseIndex: number; locked: boolean; onTrack: string | null; nextMove: { label: string; reason: string } | null; cashTarget: number | null; regions: string[]; notices: Array<{ id: string; text: string }> } | null;
   actions: { recommendedId: string | null; ranked: ContextualActionCandidate[] };
@@ -127951,7 +127964,7 @@ export interface V9CohesionInputs {
 export interface V9CohesionRecommendation { candidateId: string; label: string; icon: string; why: string; cost: string; helps: string | null; risk: string | null; strength: 'Strong recommendation' | 'Worth considering' | 'Uncertain'; provenance: string[]; alternativeNote: string | null; /** V9.9 (SECTION 20AR): what the main button says — "Do It" only when it carries out an action. */ doLabel?: string }
 export interface V9Cohesion {
   hash: string;
-  header: { dayLabel: string; turnLabel: string; whoseTurn: 'you' | 'other'; controlLabel: string; controlTone: 'you' | 'copilot' | 'rescue' | 'waiting'; apLabel: string; cashLabel: string; winLabel: string; transitLabel: string | null; critical: string | null; /** V9.9 (SECTION 20AS): the last day that is played. */ finalDay?: boolean };
+  header: { dayLabel: string; turnLabel: string; whoseTurn: 'you' | 'other'; controlLabel: string; controlTone: 'you' | 'copilot' | 'rescue' | 'waiting'; apLabel: string; cashLabel: string; winLabel: string; transitLabel: string | null; critical: string | null; /** V9.9 (SECTION 20AS): the last day that is played. */ finalDay?: boolean; /** V9.9 (SECTION 20AR, W3F1): a quiet standing notice (the player's own mercy streak). */ notice?: { label: string; detail: string } | null };
   focus: { title: string; detail: string | null; progress: string | null; next: string | null; source: 'decision' | 'critical' | 'crisis' | 'strategy' | 'objective' | 'win'; temporary: boolean; returnTo: string | null; breadcrumb: Array<{ label: string; current: boolean }> };
   decision: { kind: 'diplomatic_response' | 'faction_dilemma' | 'governance'; title: string; detail: string; options: Array<{ id: string; label: string; summary: string }>; refId: string } | null;
   change: { text: string; why: string | null; eventId: string | null; extra: string[]; source: string } | null;
@@ -127985,7 +127998,7 @@ const v9Simple = (p: V9Presentation) => p === 'simple' || p === 'guided';
 
 /** Compact signature: only rebuild presentation when one of these changes (never the whole game state). */
 export function v9CohesionSignature(i: V9CohesionInputs): string {
-  return v9Hash([i.turn, i.day, i.isHumanTurn, i.currentActorName, i.control.owner, i.control.copilotHoldsControl, i.ap.remaining, Math.round(i.cash), i.win.value, i.transit, i.presentation, i.critical?.label, i.objective && [i.objective.id, i.objective.completed, i.objective.next, i.objective.blocked, i.objective.progressText || null /* V9.9 (SECTION 20AR) */], i.strategy && [i.strategy.phaseIndex, i.strategy.onTrack, i.strategy.nextMove?.label, i.strategy.notices.length], i.actions.recommendedId, i.actions.ranked.map(v99CardSignatureOf) /* V9.9 (SECTION 20AR): what each card shows, not only its id — ids repeat ("Sell Coral" and "Sell Opals" share one), so the text stayed on the previous action while "Do It" ran the new one */, i.background?.nextMove?.label, i.background?.intervention?.key, i.events.map(e => e.id), i.diplomacy.map(d => d.id), i.factions.requests.map(r => [r.id, r.committed]), i.factions.commitments.map(c => c.id), i.factions.dilemma?.id, i.contracts.map(c => [c.id, c.turnsLeft]), i.crises.map(c => [c.id, c.stage]), i.team?.issue, i.focusRegion, i.pendingApprovals, i.lastBriefTurn]);
+  return v9Hash([i.turn, i.day, i.isHumanTurn, i.currentActorName, i.control.owner, i.control.copilotHoldsControl, i.ap.remaining, Math.round(i.cash), i.win.value, i.transit, i.presentation, i.critical?.label, i.objective && [i.objective.id, i.objective.completed, i.objective.next, i.objective.blocked, i.objective.progressText || null /* V9.9 (SECTION 20AR) */], i.strategy && [i.strategy.phaseIndex, i.strategy.onTrack, i.strategy.nextMove?.label, i.strategy.notices.length], i.actions.recommendedId, i.actions.ranked.map(v99CardSignatureOf) /* V9.9 (SECTION 20AR): what each card shows, not only its id — ids repeat ("Sell Coral" and "Sell Opals" share one), so the text stayed on the previous action while "Do It" ran the new one */, i.background?.nextMove?.label, i.background?.intervention?.key, i.events.map(e => e.id), i.diplomacy.map(d => d.id), i.factions.requests.map(r => [r.id, r.committed]), i.factions.commitments.map(c => c.id), i.factions.dilemma?.id, i.contracts.map(c => [c.id, c.turnsLeft]), i.crises.map(c => [c.id, c.stage]), i.team?.issue, i.focusRegion, i.pendingApprovals, i.lastBriefTurn, i.notice?.label || null, i.spectator === true /* V9.9 (SECTION 20AR, W3F1) */]);
 }
 
 /** Relevance of a world event to THIS player's plan (world importance and personal importance both count). */
@@ -128010,7 +128023,7 @@ export function v9MergeEvents(events: V9CohesionEvent[]): Array<V9CohesionEvent 
   return out;
 }
 
-const v9CostOf = (c: ContextualActionCandidate) => v99ActionCostLabel(c.execution?.kind === 'navigate' ? null : c.apCost, c.costEstimate ? `${v9Money(c.costEstimate)}${c.actionType === 'challenge' || c.actionType === 'challenge_approach' ? ' at stake' : ''}` : null); // V9.9 (SECTION 20AR): a free action reads "free action", not "0 actions"; a card that only opens a screen is "Free"
+const v9CostOf = (c: ContextualActionCandidate) => v99LoanCostLabel(c.actionType) /* V9.9 (SECTION 20AR, W3F1): a loan costs its interest, not "free action" */ || v99ActionCostLabel(c.execution?.kind === 'navigate' ? null : c.apCost, c.costEstimate ? `${v9Money(c.costEstimate)}${c.actionType === 'challenge' || c.actionType === 'challenge_approach' ? ' at stake' : ''}` : null); // V9.9 (SECTION 20AR): a free action reads "free action", not "0 actions"; a card that only opens a screen is "Free"
 const v9Matches = (a: string | null | undefined, b: string | null | undefined) => Boolean(a && b && (v9Norm(a) === v9Norm(b) || v9Similar(a, b)));
 
 /** ONE recommendation from the ranked canonical candidates, agreement-weighted; the player's strategy wins ties. */
@@ -128020,7 +128033,7 @@ export function v9ResolveRecommendation(i: V9CohesionInputs): { recommended: V9C
     // V9.9 (SECTION 20AR): with nothing left to do the card offers End Turn. It used to show the goal's next step
     // ("Protect your cash lead…") as the recommended action even with no actions left.
     const end = i.isHumanTurn ? i.actions.ranked.find(c => c.legal && c.execution?.kind === 'end_turn') : undefined;
-    return { recommended: end ? { candidateId: end.id, label: end.label, icon: end.icon, why: end.reasons[0] || end.description, cost: 'Free', helps: null, risk: null, strength: 'Strong recommendation', provenance: ['Turn structure'], alternativeNote: null, doLabel: v99PrimaryButtonLabel(end) } : null, useful: [] };
+    return { recommended: end ? finalDayEndTurnCard<V9CohesionRecommendation>({ candidateId: end.id, label: end.label, icon: end.icon, why: end.reasons[0] || end.description, cost: 'Free', helps: null, risk: null, strength: 'Strong recommendation', provenance: ['Turn structure'], alternativeNote: null, doLabel: v99PrimaryButtonLabel(end) }, i.day, i.totalDays) /* V9.9 (SECTION 20AS, W3F1): on the final day the card says that End Turn finishes the match */ : null, useful: [] };
   }
   const stratLabel = i.strategy?.nextMove?.label || null;
   const bgLabel = i.background?.nextMove?.label || null; const bgId = i.background?.nextMove?.actionId || null;
@@ -128065,6 +128078,7 @@ export function resolveV9GameplayCohesion(i: V9CohesionInputs): V9Cohesion {
     winLabel: i.win.target ? `${i.win.value} / ${i.win.target}` : `${i.win.label}: ${i.win.value}`, transitLabel: i.transit ? `🚢 En route to ${i.transit.destination} · Day ${i.transit.day}/${i.transit.total}` : null, critical: i.critical ? i.critical.label : null,
     finalDay: isFinalPlayableDay(i.day, i.totalDays) // V9.9 (SECTION 20AS)
   };
+  v99ApplyHeaderExtras(header, i); // V9.9 (SECTION 20AR, W3F1): the quiet notice chip; a watched all-AI match names the acting AI instead of "YOUR TURN — YOU'RE PLAYING"
   // ---- Decisions (mandatory) override ordinary recommendation surfaces ----
   let decision: V9Cohesion['decision'] = null;
   const proposal = i.diplomacy.find(d => d.kind === 'proposal');
@@ -128202,7 +128216,14 @@ export function buildV9RegionContext(code: string, lr: LivingRegionsWorldView | 
 const V9_TONE: Record<'good' | 'warn' | 'bad' | 'info', string> = { good: 'border-emerald-500/60', warn: 'border-amber-500/70', bad: 'border-red-500/70', info: 'border-slate-500/50' };
 const V9_CONTROL_TONE: Record<V9Cohesion['header']['controlTone'], string> = { you: 'bg-emerald-600 text-white', copilot: 'bg-sky-600 text-white', rescue: 'bg-red-600 text-white', waiting: 'bg-slate-600 text-white' };
 
-const V9MatchHeaderView: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() => void) | null; endTurnExtra?: React.ReactNode; onStanding: () => void; coachNode?: React.ReactNode; cashDelta?: UiFeedbackEvent | null; apDelta?: UiFeedbackEvent | null; apZero?: boolean; endgame?: boolean }> = ({ c, theme, onEndTurn, endTurnExtra, onStanding, coachNode = null, cashDelta = null, apDelta = null, apZero = false, endgame = false }) => {
+// V9.9 (SECTION 20AR, W3F1): `quietTurnLabel` / `quietControl` — in the default layout a statement another surface
+// right beside the header already makes stays in the page (for scripts that read it by test id) but is not drawn a
+// second time (v99HeaderDeclutter): the turn label is hidden from view and from assistive technology (the docked pill
+// announces the turn), the control chip is hidden from view through the label's `[&+span]:sr-only`. `endTurnHint`
+// shows the key beside the header's End Turn while the turn row (whose End Turn carries the key) is closed. The turn
+// row keeps its own End Turn: from 1024 px up the row stays at the top of the window after the header has scrolled
+// away, so the two buttons serve different scroll positions. All three default to V9.8.
+const V9MatchHeaderView: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() => void) | null; endTurnExtra?: React.ReactNode; onStanding: () => void; coachNode?: React.ReactNode; cashDelta?: UiFeedbackEvent | null; apDelta?: UiFeedbackEvent | null; apZero?: boolean; endgame?: boolean; quietTurnLabel?: boolean; quietControl?: boolean; endTurnHint?: string | null }> = ({ c, theme, onEndTurn, endTurnExtra, onStanding, coachNode = null, cashDelta = null, apDelta = null, apZero = false, endgame = false, quietTurnLabel = false, quietControl = false, endTurnHint = null }) => {
   const h = c.header;
   const w = c.endTurnWarnings;
   return (
@@ -128211,13 +128232,15 @@ const V9MatchHeaderView: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() =>
         <span key={h.dayLabel} className="font-semibold v94-fade" data-testid="v94-day">{h.dayLabel}</span>
         {/* V9.9 (SECTION 20AS): "Day 29 / 30" is the last day played — the chip and the End Turn label say so. */}
         <V99FinalDayChip show={h.finalDay === true} />
-        <span key={h.turnLabel} className="font-extrabold v94-enter" data-testid="v9-turn-owner">{h.turnLabel}</span>
+        <span key={h.turnLabel} className={`${quietTurnLabel ? 'sr-only' : 'font-extrabold v94-enter'}${quietControl ? ' [&+span]:sr-only' : ''}`} aria-hidden={quietTurnLabel ? true : undefined} data-testid="v9-turn-owner">{h.turnLabel}</span>
         <span key={h.controlLabel} className={`v94-pop px-2 py-0.5 rounded-full text-xs font-extrabold ${V9_CONTROL_TONE[h.controlTone]}`} data-testid="v9-control-owner" role="status">{h.controlLabel}</span>
         {h.apLabel && <FeelValue value={apZero ? <span className={`font-bold ${theme.warningText || 'text-amber-300'}`}>⚡ 0 actions left</span> : h.apLabel} valueKey={h.apLabel} delta={apDelta} testId="v94-ap" />}
         <FeelValue value={<span className="font-bold">{h.cashLabel}</span>} valueKey={h.cashLabel} delta={cashDelta} testId="v94-cash" />
         <button type="button" className={`underline decoration-dotted ${endgame ? 'font-bold rounded px-1 border border-amber-500/60' : ''}`} onClick={onStanding} title="Match standing" data-testid="v94-win">{endgame ? '⏳ ' : ''}{h.winLabel}</button>
         {h.transitLabel && <span className="text-cyan-300" data-testid="v9-transit">{h.transitLabel}</span>}
         {h.critical && <span className="px-2 py-0.5 rounded bg-red-700 text-white text-xs font-bold" role="alert">⚠ {h.critical}</span>}
+        {/* V9.9 (SECTION 20AR, W3F1): the player's own mercy-rule streak — quiet, but always on screen while it runs. */}
+        {h.notice && <span className="px-2 py-0.5 rounded border border-emerald-500/60 text-xs font-semibold" role="status" title={h.notice.detail} data-testid="v99-header-notice">🏳 {h.notice.label}</span>}
         {onEndTurn && (
           <span className="ml-auto flex flex-wrap items-center gap-2">
             {endTurnExtra}
@@ -128225,6 +128248,7 @@ const V9MatchHeaderView: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() =>
             {w.length > 0 && <span className={`text-xs ${theme.warningText || 'text-amber-300'}`} role="note" title={w.join('\n')} data-testid="v9-end-turn-context">Before ending: {w[0]}{w.length > 1 ? ` (+${w.length - 1})` : ''}</span>}
             <button type="button" className={`${apZero ? `${theme.button} v94-ring px-4 py-1.5 text-sm` : `${theme.buttonSecondary} px-3 py-1 text-xs`} rounded-lg font-bold`} data-testid="v9-header-end-turn" data-emphasis={apZero ? 'primary' : 'secondary'} aria-describedby={w.length ? 'v9-end-turn-context-sr' : undefined} onClick={onEndTurn}>⏭ End Turn{h.finalDay === true ? ' — finish match' : apZero ? ' — no actions left' : ''}</button>
             {w.length > 0 && <span id="v9-end-turn-context-sr" className="sr-only">{w.join('. ')}</span>}
+            {endTurnHint && <kbd className="px-1.5 py-0.5 text-[10px] bg-black bg-opacity-30 rounded hidden sm:inline" title="Keyboard shortcut for End Turn" data-testid="v99-header-end-turn-key">{endTurnHint}</kbd>}
           </span>
         )}
       </div>
@@ -132610,13 +132634,13 @@ export function selectContentMoment(st: MatchContentState | null, activeEvents: 
 
 const CONTENT_OPP_ICON: Record<ContentOpportunity['type'], string> = { regional_entry: '🧭', cheap_investment: '💹', market_window: '📈', diplomatic_window: '🤝', contract_window: '📜', faction_window: '🏛', recovery_window: '🏗', rival_vulnerability: '🎯' };
 
-export const ContentMomentCard: React.FC<{ theme: any; moment: ContentMoment; money: number; h: ContentMomentHandlers; canAct: boolean }> = ({ theme, moment, money, h, canAct }) => {
+export const ContentMomentCard: React.FC<{ theme: any; moment: ContentMoment; money: number; h: ContentMomentHandlers; canAct: boolean; /** V9.9 (SECTION 20AS, W3F1): the last day that is played — a deadline is never shown past it ("Decide by day 10" of a match whose last day is 9). */ lastDay?: number }> = ({ theme, moment, money, h, canAct, lastDay }) => {
   const card = `${theme.card} ${theme.border} border rounded-xl p-3 text-sm`;
   if (moment.kind === 'dilemma') {
     const d = moment.dilemma;
     return (
       <section className={`${card} border-2 border-violet-500/60`} aria-labelledby="v93-dilemma-h" data-testid="v93-dilemma">
-        <div className="flex items-center justify-between gap-2"><div className="text-[11px] font-bold uppercase tracking-wider opacity-70">Strategic decision · {REGIONS[d.regionId]?.name || 'National'}</div><span className="text-[11px] opacity-70">Decide by day {d.expiresDay}</span></div>
+        <div className="flex items-center justify-between gap-2"><div className="text-[11px] font-bold uppercase tracking-wider opacity-70">Strategic decision · {REGIONS[d.regionId]?.name || 'National'}</div><span className="text-[11px] opacity-70">{decisionDeadlineText(d.expiresDay, lastDay)}</span></div>
         <h3 id="v93-dilemma-h" className="font-extrabold">⚖️ {d.title}</h3>
         <p className="text-xs opacity-90">{d.prompt}</p>
         {d.evidence.length > 0 && <p className="text-[11px] opacity-75" data-testid="v93-dilemma-why"><span className="font-semibold">Why now: </span>{d.evidence.join(' · ')}</p>}
@@ -133477,18 +133501,20 @@ export function contractStateChip(c: any): { label: string; icon: string; cls: s
 /** Victory / defeat hero: clear winner, win condition, key final metric, and (on a loss) a lesson — no shaming. */
 // V9.9 (SECTION 20AS): `endLine` states how the match ended ("Ended early on day 12: you went bankrupt"); `solo` (Single
 // Player) shows the player's score alone instead of a rival that never played.
-export const V94OutcomeHero: React.FC<{ won: boolean; winLabel: string; metricLabel: string; you: string; rival: string; rivalName: string; reason: string; turningPoints: string[]; lesson: string | null; solo?: boolean; endLine?: string | null; endedEarly?: boolean }> = ({ won, winLabel, metricLabel, you, rival, rivalName, reason, turningPoints, lesson, solo = false, endLine = null, endedEarly = false }) => (
-  <section className={`v94-stagger rounded-2xl border-2 ${won ? 'border-emerald-400/70' : 'border-slate-400/60'} p-5 text-center space-y-2`} data-testid="v94-outcome-hero" aria-label={won ? 'Victory' : 'Match result'}>
-    <div className="text-5xl" aria-hidden="true">{won ? '🏆' : '🏁'}</div>
-    <h2 className={`text-3xl sm:text-4xl font-black tracking-tight ${won ? 'text-emerald-400' : ''}`}>{won ? 'VICTORY' : 'MATCH OVER'}</h2>
+// V9.9 (SECTION 20AS, W3F1): `youName` names the player's side (a team's totals were credited to "You"); `headline`
+// replaces VICTORY / MATCH OVER for a match the human only watched ("AZURE TEAM WON" — nobody is congratulated).
+export const V94OutcomeHero: React.FC<{ won: boolean; winLabel: string; metricLabel: string; you: string; rival: string; rivalName: string; reason: string; turningPoints: string[]; lesson: string | null; solo?: boolean; endLine?: string | null; endedEarly?: boolean; youName?: string; headline?: string | null }> = ({ won, winLabel, metricLabel, you, rival, rivalName, reason, turningPoints, lesson, solo = false, endLine = null, endedEarly = false, youName = 'You', headline = null }) => (
+  <section className={`v94-stagger rounded-2xl border-2 ${won && !headline ? 'border-emerald-400/70' : 'border-slate-400/60'} p-5 text-center space-y-2`} data-testid="v94-outcome-hero" aria-label={won && !headline ? 'Victory' : 'Match result'}>
+    <div className="text-5xl" aria-hidden="true">{won && !headline ? '🏆' : '🏁'}</div>
+    <h2 className={`text-3xl sm:text-4xl font-black tracking-tight ${won && !headline ? 'text-emerald-400' : ''}`} data-testid="v99-outcome-headline">{headline || (won ? 'VICTORY' : 'MATCH OVER')}</h2>
     {endLine && <div className="text-sm font-semibold" data-testid="v99-end-line">{endLine}</div>}
     <div className="text-sm opacity-85">{solo ? `Solo run · scored on ${metricLabel}` : endedEarly ? `${winLabel} · scores when the match ended` : `${winLabel} · decided by ${metricLabel}`}</div>
     {solo
-      ? <div className="flex justify-center gap-6 text-lg font-bold" data-testid="v99-solo-score"><span>▲ You {you}</span></div>
-      : <div className="flex justify-center gap-6 text-lg font-bold"><span>▲ You {you}</span><span className="opacity-60">vs</span><span>◆ {rivalName} {rival}</span></div>}
+      ? <div className="flex justify-center gap-6 text-lg font-bold" data-testid="v99-solo-score"><span>▲ {youName} {you}</span></div>
+      : <div className="flex justify-center gap-6 text-lg font-bold" data-testid="v99-outcome-score"><span>▲ {youName} {you}</span><span className="opacity-60">vs</span><span>◆ {rivalName} {rival}</span></div>}
     {reason && reason !== endLine && <div className="text-xs opacity-80">{reason}</div>}
     {turningPoints.length > 0 && <div className="text-xs"><span className="font-semibold">Turning points: </span>{turningPoints.slice(0, 3).join(' · ')}</div>}
-    {!won && lesson && <div className="text-xs rounded-lg border border-sky-500/40 px-3 py-2 inline-block"><span className="font-semibold">Next time: </span>{lesson}</div>}
+    {!won && !headline && lesson && <div className="text-xs rounded-lg border border-sky-500/40 px-3 py-2 inline-block"><span className="font-semibold">Next time: </span>{lesson}</div>}
   </section>
 );
 
@@ -188727,8 +188753,11 @@ export function runV99FoundationsSelfTests(): V9SelfTestResult[] {
     (VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1' && VERSION_CONSTANTS.SCHEMA_VERSION === '7.1' && VERSION_CONSTANTS.SETTINGS_SCHEMA_VERSION === '7.1' && VERSION_CONSTANTS.REPLAY_SCHEMA_VERSION === '4.0'
       && VERSION_CONSTANTS.RNG_SCHEMA_VERSION === '1.0' && VERSION_CONSTANTS.CHECKPOINT_SCHEMA_VERSION === '1.0') || json(VERSION_CONSTANTS));
   check('v99fx_03_whats_new', "What's New leads with the V9.9 entry", () =>
-    (V99_CHANGELOG.length === 2 && V99_CHANGELOG[0].startsWith(`${GAME_VERSION_LABEL} - `)
-      && V99_CHANGELOG[1] === 'Trustworthy advice, different matches every time, honest endings, settings that stay saved, and optional autosave, match journal and turn digest.') || json(V99_CHANGELOG));
+    (V99_CHANGELOG.length >= 8 && V99_CHANGELOG.length <= 14 && V99_CHANGELOG[0].startsWith(`${GAME_VERSION_LABEL} - `)
+      && new Set(V99_CHANGELOG).size === V99_CHANGELOG.length && V99_CHANGELOG.every(line => typeof line === 'string' && line.length >= 20 && line.length <= 170)
+      // the three new features are named and said to be off by default; both "classic" settings are named
+      && V99_CHANGELOG.some(line => line.includes('off by default') && line.includes('Autosave & Resume') && line.includes('Match Journal') && line.includes('Turn Digest'))
+      && V99_CHANGELOG.some(line => line.includes('Classic sticky toasts') && line.includes('Classic play-screen layout'))) || json(V99_CHANGELOG));
 
   // ---- Migration ladder -------------------------------------------------------------------------------------------------
   check('v99fx_04_old_save_loads_silently', 'A 9.6.0-stamped save loads through the transaction; only the stamp changes, so no upgrade message is due', () => {
@@ -189405,6 +189434,10 @@ export interface V99HumanDoItHandlers {
   challengeChance?: (challenge: V99ChallengeOffer) => number;
   /** A2: the approach picker's own plans for a challenge at a wager (null when the challenge is unknown). */
   approachPlans?: (def: ChallengeDefinition, wager: number) => ChallengeApproachPlan[] | null;
+  /** W3F1: presses the Emergency Loan quick action (it states the terms and asks before anything is borrowed). */
+  emergencyLoan?: () => void;
+  /** W3F1: presses the Repay Loan quick action. */
+  repayLoan?: () => void;
 }
 
 /** Identifies "this action on this target" for one turn (which candidate was pressed; which one failed). */
@@ -190010,7 +190043,7 @@ export function v99PlayableDaysAfterToday(world: unknown, settings: unknown): nu
   const total = v99Finite(v99IsRecord(settings) ? settings.totalDays : undefined, NaN);
   const day = v99Finite(v99IsRecord(world) ? world.day : undefined, NaN);
   if (!Number.isFinite(total) || !Number.isFinite(day) || total <= 0) return null;
-  return Math.max(0, Math.floor(total) - 1 - Math.floor(day));
+  return playableDaysAfterToday(day, total); // V9.9 (W3F1): the match flow's own count (SECTION 20AS), so the two can never disagree
 }
 
 /** How many further days a purchase needs before it can give anything back. */
@@ -191555,7 +191588,890 @@ export function runV99TrustworthyAdviceSelfTests(): V9SelfTestResult[] {
     const off = a1Find(a1Candidates(geared, a2World(standing), a1Settings()), 'start_expedition');
     return (off !== undefined && off.invalidationReason === 'Expeditions are switched off in this match') || `switched off: ${off ? String(off.invalidationReason) : 'missing'}`;
   });
+
+  // ---- Package W3F1: advice you can trust near zero cash; endings and countdowns that agree ---------------------------
+  const wLoan = (accrued: number, amount: number = LOAN_AMOUNT): A1Obj => ({ id: 'loan_1', amount, accrued });
+  const wSpent = (over?: A1Obj): A1Obj => a1Player({ actionsUsedThisTurn: 3, ...(over || {}) }); // no action left this turn
+  const wText = (node: unknown): string => {
+    if (node === null || node === undefined || typeof node === 'boolean') return '';
+    if (typeof node === 'string' || typeof node === 'number') return String(node);
+    if (Array.isArray(node)) return node.map(wText).join('');
+    const props = (node as { props?: { children?: unknown } }).props;
+    return props ? wText(props.children) : '';
+  };
+  const wPerDay = Math.floor(LOAN_AMOUNT * LOAN_INTEREST_RATE);
+  const wNames = (over?: Partial<MatchEndNames>): MatchEndNames => ({ rivalSide: 'Businessman AI', metricLabel: 'Most Money', regionsGoal: false, teamMode: false, ...(over || {}) });
+
+  check('v99ad_w01_loan_named_and_priced', 'The loan candidate carries the game\'s own name and its real terms; "Emergency Commercial Micro-Loan" and "restore a cash floor" are gone', () => {
+    const s = a1Settings();
+    const list = a1Candidates(wSpent({ money: 30 }), a1World(), s);
+    const loan = a1Find(list, 'emergency_loan');
+    if (!loan) return 'no loan candidate under the bankruptcy line';
+    if (getRemainingActionPoints(wSpent(), s) !== 0) return 'fixture: actions were left';
+    if (loan.title !== `Emergency Loan (${fmtMoney(LOAN_AMOUNT)})`) return `title: ${loan.title}`;
+    if (loan.description !== buildEmergencyLoanConfirmMessage(LOAN_AMOUNT, LOAN_INTEREST_RATE)) return `description: ${loan.description}`;
+    if (!String(loan.adviceReason).includes(`${fmtMoney(wPerDay)} a day`) || !loan.expectedOutcome.includes(`${fmtMoney(wPerDay)} a day interest`)) return `terms missing: ${String(loan.adviceReason)} / ${loan.expectedOutcome}`;
+    const stale = list.filter(c => /Micro-Loan|cash floor/i.test(`${c.title} ${c.description} ${String(c.adviceReason || '')}`)).map(c => c.title);
+    return stale.length === 0 || `old wording: ${stale.join(', ')}`;
+  });
+
+  check('v99ad_w02_loan_not_offered_above_the_line', 'At $120 and at $220 (the reported cases) the loan is not offered: wages are, and the top recommendation is not a loan', () => {
+    const s = a1Settings();
+    for (const money of [120, 220, BANKRUPTCY_THRESHOLD]) {
+      const evaluation = generateCoPilotPlayerActionCandidates(a1Context(a1Player({ money }), a1World(), s));
+      const loan = a1Find(evaluation.candidates, 'emergency_loan');
+      if (!loan || loan.isValid || !/^Not needed/.test(String(loan.invalidationReason))) return `$${money}: ${loan ? `${String(loan.isValid)} ${String(loan.invalidationReason)}` : 'missing'}`;
+      const work = a1Find(evaluation.candidates, 'work');
+      if (!work || !work.isValid) return `$${money}: wages not offered`;
+      if (!evaluation.topRecommendation || evaluation.topRecommendation.actionType === 'emergency_loan') return `$${money}: top is ${evaluation.topRecommendation ? evaluation.topRecommendation.title : 'nothing'}`;
+      // with no action left nothing free is pushed either: the card falls back to End Turn
+      const spent = listLegalCoPilotCandidates(generateCoPilotPlayerActionCandidates(a1Context(wSpent({ money }), a1World(), s)), 0).filter(c => c.actionType === 'emergency_loan');
+      if (spent.length) return `$${money}, no actions: the loan is still legal`;
+    }
+    return true;
+  });
+
+  check('v99ad_w03_loan_first_only_in_real_danger', 'Under the line with an action left the loan ranks below wages; with no action left and nothing to sell it is first', () => {
+    const s = a1Settings();
+    const early = generateCoPilotPlayerActionCandidates(a1Context(a1Player({ money: 30 }), a1World(), s));
+    const loanEarly = a1Find(early.candidates, 'emergency_loan');
+    if (!loanEarly || !loanEarly.isValid || loanEarly.utilityScore !== 70) return `with actions: ${loanEarly ? `${String(loanEarly.isValid)} ${loanEarly.utilityScore}` : 'missing'}`;
+    const legalEarly = listLegalCoPilotCandidates(early, 3).map(c => c.actionType);
+    if (legalEarly.indexOf('work') < 0 || legalEarly.indexOf('work') > legalEarly.indexOf('emergency_loan')) return `order with actions: ${legalEarly.join(',')}`;
+    if (early.topRecommendation && early.topRecommendation.actionType === 'emergency_loan') return 'the loan is the top recommendation while a wage can be earned';
+    const ranked = rankContextualRecommendations(early.candidates, null, { apRemaining: 3, cash: 30, limit: 12, settings: s });
+    const iWork = ranked.findIndex(r => r.actionType === 'work'), iLoan = ranked.findIndex(r => r.actionType === 'emergency_loan');
+    if (iWork < 0 || (iLoan >= 0 && iLoan < iWork)) return `card order: work ${iWork}, loan ${iLoan}`;
+    const danger = generateCoPilotPlayerActionCandidates(a1Context(wSpent({ money: 30 }), a1World(), s));
+    const loanDanger = a1Find(danger.candidates, 'emergency_loan');
+    if (!loanDanger || !loanDanger.isValid || loanDanger.utilityScore !== 90 || !/bankruptcy line/.test(String(loanDanger.adviceReason))) return `danger: ${loanDanger ? `${String(loanDanger.isValid)} ${loanDanger.utilityScore} ${String(loanDanger.adviceReason)}` : 'missing'}`;
+    const first = listLegalCoPilotCandidates(danger, 0)[0];
+    return (first !== undefined && first.actionType === 'emergency_loan') || `first legal in danger: ${first ? first.title : 'none'}`;
+  });
+
+  check('v99ad_w04_danger_rule', 'Real danger = under the line, nothing to sell, no action to earn with, and a day-end that counts', () => {
+    const base = { cash: 30, sellableGoods: false, canStillEarn: false, lineMatters: true };
+    const got = [v99InBankruptcyDanger(base), v99InBankruptcyDanger({ ...base, cash: BANKRUPTCY_THRESHOLD }), v99InBankruptcyDanger({ ...base, sellableGoods: true }), v99InBankruptcyDanger({ ...base, canStillEarn: true }), v99InBankruptcyDanger({ ...base, lineMatters: false })];
+    if (got.join() !== 'true,false,false,false,false') return got.join();
+    const s = a1Settings();
+    const goods = a1Find(a1Candidates(wSpent({ money: 30, inventory: ['Coral'], currentRegion: 'NSW' }), a1World(), s), 'emergency_loan');
+    if (!goods || goods.utilityScore !== 70) return `with goods to sell: ${goods ? goods.utilityScore : 'missing'}`;
+    const full = a1Find(a1Candidates(wSpent({ money: 30, loans: [wLoan(125), wLoan(125), wLoan(125)] }), a1World(), s), 'emergency_loan');
+    return (full !== undefined && !full.isValid && full.invalidationReason === 'Emergency loan limit reached') || `at the loan limit: ${full ? String(full.invalidationReason) : 'missing'}`;
+  });
+
+  check('v99ad_w05_no_loan_on_the_final_day', 'On the final day a loan only costs its interest: not offered, unless tonight would complete the bankruptcy count', () => {
+    const s = a1Settings({ totalDays: 10 });
+    const last = a1Find(a1Candidates(wSpent({ money: 30 }), a1World({ day: 9 }), s), 'emergency_loan');
+    if (!last || last.isValid || !/match ends today/.test(String(last.invalidationReason))) return `final day: ${last ? `${String(last.isValid)} ${String(last.invalidationReason)}` : 'missing'}`;
+    const streak = a1Find(a1Candidates(wSpent({ money: 30 }), a1World({ day: 9, bankruptcyTracker: { player: BANKRUPTCY_STREAK_DAYS - 1, ai: 0 } }), s), 'emergency_loan');
+    if (!streak || !streak.isValid || streak.utilityScore !== 90) return `final day, count about to complete: ${streak ? `${String(streak.isValid)} ${streak.utilityScore}` : 'missing'}`;
+    const before = a1Find(a1Candidates(wSpent({ money: 30 }), a1World({ day: 8 }), s), 'emergency_loan');
+    return (before !== undefined && before.isValid && before.utilityScore === 90) || 'the day before the final day changed';
+  });
+
+  check('v99ad_w06_repay_is_built_from_the_loans_list', 'A charged emergency loan with cash to spare: "Repay Loan" exists, is the top recommendation, and its reason says the score is money minus loans', () => {
+    const s = a1Settings();
+    const evaluation = generateCoPilotPlayerActionCandidates(a1Context(a1Player({ money: 1983, loans: [wLoan(125)] }), a1World({ day: 8 }), s));
+    const repay = a1Find(evaluation.candidates, 'repay_emergency_loan');
+    if (!repay) return 'no repay candidate (the loans list was not read)';
+    if (!repay.isValid || repay.title !== `Repay Loan (${fmtMoney(LOAN_AMOUNT)})` || repay.utilityScore !== 97 || repay.apCost !== 0) return `${repay.title} valid ${String(repay.isValid)} utility ${repay.utilityScore} ap ${repay.apCost} (${String(repay.invalidationReason)})`;
+    if (!/money minus what you owe/.test(String(repay.adviceReason)) || !String(repay.adviceReason).includes(`${fmtMoney(wPerDay)}-a-day interest`)) return `reason: ${String(repay.adviceReason)}`;
+    if (!evaluation.topRecommendation || evaluation.topRecommendation.actionType !== 'repay_emergency_loan') return `top: ${evaluation.topRecommendation ? evaluation.topRecommendation.title : 'none'}`;
+    const views = v99RepayableLoans({ loans: [wLoan(125, 700), wLoan(0), 'junk', { amount: 0 }] });
+    if (views.length !== 2 || views[0].amount !== 500 || views[0].owed !== LOAN_AMOUNT + wPerDay || views[0].charged || views[1].owed !== 700 || !views[1].charged || views[1].dailyInterest !== wPerDay) return `loan views: ${JSON.stringify(views)}`;
+    const netWorth = a1Find(a1Candidates(a1Player({ money: 1983, loans: [wLoan(125)] }), a1World({ day: 8 }), a1Settings({ winCondition: 'netWorth' })), 'repay_emergency_loan');
+    const regions = a1Find(a1Candidates(a1Player({ money: 1983, loans: [wLoan(125)] }), a1World({ day: 8 }), a1Settings({ winCondition: 'regions' })), 'repay_emergency_loan');
+    return (netWorth !== undefined && /net worth already counts/.test(String(netWorth.adviceReason)) && regions !== undefined && !/score|net worth/.test(String(regions.adviceReason))) || `other goals: ${String(netWorth && netWorth.adviceReason)} | ${String(regions && regions.adviceReason)}`;
+  });
+
+  check('v99ad_w07_repay_first_on_the_final_day', 'Final day, a charged loan, cash that just covers it: repaying is first (it saves tonight\'s interest) — unless it would complete a bankruptcy count', () => {
+    const s = a1Settings({ totalDays: 10 });
+    const evaluation = generateCoPilotPlayerActionCandidates(a1Context(a1Player({ money: 620, loans: [wLoan(375)] }), a1World({ day: 9 }), s));
+    const repay = a1Find(evaluation.candidates, 'repay_emergency_loan');
+    if (!repay || !repay.isValid || repay.utilityScore !== 97 || !/^the match ends today/.test(String(repay.adviceReason)) || !/saves the \$125 interest charged tonight/.test(String(repay.adviceReason))) return `final day: ${repay ? `${String(repay.isValid)} ${repay.utilityScore} ${String(repay.adviceReason)} ${String(repay.invalidationReason)}` : 'missing'}`;
+    if (!evaluation.topRecommendation || evaluation.topRecommendation.actionType !== 'repay_emergency_loan') return `top on the final day: ${evaluation.topRecommendation ? evaluation.topRecommendation.title : 'none'}`;
+    const poor = a1Find(a1Candidates(a1Player({ money: 520, loans: [wLoan(375)] }), a1World({ day: 9 }), s), 'repay_emergency_loan');
+    if (!poor || !poor.isValid) return 'final day: repaying down to $20 was refused although no count can complete';
+    const count = a1Find(a1Candidates(a1Player({ money: 520, loans: [wLoan(375)] }), a1World({ day: 9, bankruptcyTracker: { player: BANKRUPTCY_STREAK_DAYS - 1, ai: 0 } }), s), 'repay_emergency_loan');
+    return (count !== undefined && !count.isValid && /bankruptcy line/.test(String(count.invalidationReason))) || `count about to complete: ${count ? String(count.isValid) : 'missing'}`;
+  });
+
+  check('v99ad_w08_repay_only_when_it_saves_something', 'A loan taken today is not pushed back at once (same cost tomorrow); too little cash says what is needed; tight cash keeps repayment below the best moves', () => {
+    const s = a1Settings();
+    const fresh = a1Find(a1Candidates(a1Player({ money: 3000, loans: [wLoan(0)] }), a1World(), s), 'repay_emergency_loan');
+    if (!fresh || fresh.isValid || !/^Taken today/.test(String(fresh.invalidationReason))) return `fresh loan: ${fresh ? `${String(fresh.isValid)} ${String(fresh.invalidationReason)}` : 'missing'}`;
+    const short = a1Find(a1Candidates(a1Player({ money: 300, loans: [wLoan(125)] }), a1World(), s), 'repay_emergency_loan');
+    if (!short || short.isValid || short.invalidationReason !== `Need ${fmtMoney(LOAN_AMOUNT)} to repay this loan`) return `short of cash: ${short ? String(short.invalidationReason) : 'missing'}`;
+    const underLine = a1Find(a1Candidates(a1Player({ money: 520, loans: [wLoan(125)] }), a1World(), s), 'repay_emergency_loan');
+    if (!underLine || underLine.isValid || !/bankruptcy line/.test(String(underLine.invalidationReason))) return `would end under the line: ${underLine ? String(underLine.isValid) : 'missing'}`;
+    const tight = a1Find(a1Candidates(a1Player({ money: 700, loans: [wLoan(125)] }), a1World(), s), 'repay_emergency_loan');
+    if (!tight || !tight.isValid || tight.utilityScore !== 71 || !/you keep \$200 after repaying/.test(String(tight.adviceReason))) return `tight cash: ${tight ? `${String(tight.isValid)} ${tight.utilityScore} ${String(tight.adviceReason)}` : 'missing'}`;
+    const comfy = a1Find(a1Candidates(a1Player({ money: LOAN_AMOUNT + v99RepayComfortMargin(250), loans: [wLoan(125)] }), a1World(), s), 'repay_emergency_loan');
+    const none = a1Find(a1Candidates(a1Player({ money: 3000 }), a1World(), s), 'repay_emergency_loan');
+    return (comfy !== undefined && comfy.utilityScore === 97 && none === undefined && v99RepayComfortMargin(250) === LOAN_AMOUNT && v99RepayComfortMargin(900) === 900) || `comfortable ${comfy ? comfy.utilityScore : 'missing'}, without a loan ${none ? 'offered' : 'absent'}`;
+  });
+
+  check('v99ad_w09_loan_moves_execute_in_the_engine', 'For the Co-Pilot in control: the repay candidate clears the loan and pays what the button would; the danger loan lends $500 into the loans list', () => {
+    const s = a1Settings();
+    const debtor = a1Player({ money: 1983, loans: [wLoan(125)] });
+    const repay = a1Find(a1Candidates(debtor, a1World({ day: 8 }), s), 'repay_emergency_loan');
+    if (!repay) return 'no repay candidate';
+    const paid = a1Run(debtor, a1World({ day: 8 }), s, repay);
+    const afterRepay = a1Obj(paid.updatedPlayer);
+    if (!paid.executionResult.success) return `repay failed: ${String(paid.executionResult.error)}`;
+    if (afterRepay.money !== 1983 - LOAN_AMOUNT || a1List(afterRepay.loans).length !== 0 || afterRepay.actionsUsedThisTurn !== 0) return `after repay: money ${String(afterRepay.money)}, loans ${a1List(afterRepay.loans).length}, actions used ${String(afterRepay.actionsUsedThisTurn)}`;
+    const broke = wSpent({ money: 30 });
+    const loan = a1Find(a1Candidates(broke, a1World(), s), 'emergency_loan');
+    if (!loan || !loan.isValid) return 'no loan candidate in danger';
+    const lent = a1Run(broke, a1World(), s, loan);
+    const afterLoan = a1Obj(lent.updatedPlayer);
+    if (!lent.executionResult.success) return `loan failed: ${String(lent.executionResult.error)}`;
+    return (afterLoan.money === 30 + LOAN_AMOUNT && a1List(afterLoan.loans).length === 1) || `after loan: money ${String(afterLoan.money)}, loans ${a1List(afterLoan.loans).length}`;
+  });
+
+  check('v99ad_w10_do_it_presses_the_loan_buttons', 'The player\'s "Do It" on a loan or a repayment presses the play screen\'s own button; everything else is left to the other routes', () => {
+    const calls: string[] = [];
+    const hands: V99HumanDoItHandlers = { travel: () => undefined, sell: () => undefined, buy: () => false, buyEquipment: () => undefined, travelCost: () => 0, emergencyLoan: () => { calls.push('loan'); }, repayLoan: () => { calls.push('repay'); } };
+    const bare: V99HumanDoItHandlers = { travel: () => undefined, sell: () => undefined, buy: () => false, buyEquipment: () => undefined, travelCost: () => 0 };
+    const ran = [v99RunLoanDoIt('emergency_loan', hands), v99RunLoanDoIt('repay_emergency_loan', hands), v99RunLoanDoIt('take_loan', hands), v99RunLoanDoIt('work', hands), v99RunLoanDoIt('emergency_loan', bare), v99RunLoanDoIt('emergency_loan', null), v99RunLoanDoIt(null, hands)];
+    if (ran.join() !== 'true,true,false,false,false,false,false' || calls.join() !== 'loan,repay') return `ran ${ran.join()} calls ${calls.join()}`;
+    if (v99LoanDoItRoute('emergency_loan') !== 'emergency_loan' || v99LoanDoItRoute('repay_emergency_loan') !== 'repay_emergency_loan' || v99LoanDoItRoute('repay_loan') !== null) return 'route table';
+    let pressed = 0;
+    const actions = [{ id: 'emergency_loan', disabled: false, action: () => { pressed += 1; } }, { id: 'repay_emergency_loan', disabled: true, action: () => { pressed += 10; } }, { id: 'broken' }];
+    const got = [v99PressQuickAction(actions, 'emergency_loan'), v99PressQuickAction(actions, 'repay_emergency_loan'), v99PressQuickAction(actions, 'sell_resources'), v99PressQuickAction(actions, 'broken'), v99PressQuickAction(null, 'emergency_loan')];
+    return (got.join() === 'pressed,disabled,missing,missing,missing' && pressed === 1) || `${got.join()} pressed ${pressed}`;
+  });
+
+  check('v99ad_w11_loan_cards_say_what_they_cost', 'A loan\'s card never reads "free action", "no extra cash required" or "expected +$500"; a repayment shows what it pays', () => {
+    const s = a1Settings();
+    const danger = generateCoPilotPlayerActionCandidates(a1Context(wSpent({ money: 30 }), a1World(), s));
+    const loanRow = rankContextualRecommendations(danger.candidates, null, { apRemaining: 0, cash: 30, limit: 12, settings: s }).find(r => r.actionType === 'emergency_loan');
+    if (!loanRow) return 'the loan is not on the card in real danger';
+    const banned = loanRow.whyPoints.filter(w => w === 'no extra cash required' || w === 'strong expected return' || /^expected \+\$/.test(w));
+    if (banned.length || !/bankruptcy line/.test(loanRow.reason)) return `loan card: ${loanRow.whyPoints.join(' | ')}`;
+    const cost = String(v99LoanCostLabel('emergency_loan'));
+    if (!cost.includes(`${fmtMoney(wPerDay)} a day interest`) || /free action/.test(cost) || v99LoanCostLabel('repay_emergency_loan') !== null || v99LoanCostLabel('sell') !== null) return `cost label: ${cost}`;
+    const debtor = a1Player({ money: 1983, loans: [wLoan(125)] });
+    const repayRow = rankContextualRecommendations(a1Candidates(debtor, a1World({ day: 8 }), s), null, { apRemaining: 3, cash: 1983, limit: 12, settings: s })[0];
+    if (!repayRow || repayRow.actionType !== 'repay_emergency_loan' || repayRow.whyPoints.includes('no extra cash required')) return `repay card: ${repayRow ? `${repayRow.title} | ${repayRow.whyPoints.join(' | ')}` : 'missing'}`;
+    const cards = [
+      createV9Candidate('loan', 'Emergency Loan', { actionType: 'emergency_loan', benefit: 'Expected +$500', costEstimate: 0, execution: { kind: 'copilot_candidate', candidate: a1Find(danger.candidates, 'emergency_loan') } }),
+      createV9Candidate('repay', 'Repay Loan', { actionType: 'repay_emergency_loan', benefit: null, costEstimate: 0, execution: { kind: 'copilot_candidate', candidate: repayRow.candidate } }),
+      createV9Candidate('sell', 'Sell Coral', { actionType: 'sell', benefit: 'Expected +$165', costEstimate: 0, execution: { kind: 'copilot_candidate', candidate: { expectedOutcome: 'x' } } })
+    ];
+    v99TruthfulDebtCards(cards);
+    if (!String(cards[0].benefit).includes('a day interest until repaid') || cards[0].costEstimate !== 0) return `loan card benefit: ${String(cards[0].benefit)}`;
+    if (cards[1].costEstimate !== LOAN_AMOUNT || !String(cards[1].benefit).startsWith('Loan cleared')) return `repay card: ${String(cards[1].costEstimate)} ${String(cards[1].benefit)}`;
+    const why = ['x', 'no extra cash required', 'expected +$500', 'on average +$40', 'strong expected return'];
+    const keep = [...why]; v99DropIncomeWordingForDebt('sell', keep); v99DropIncomeWordingForDebt('emergency_loan', why);
+    return (cards[2].benefit === 'Expected +$165' && keep.length === 5 && why.join() === 'x' && v99IsDebtAction('take_loan') && !v99IsDebtAction('work')) || `other cards touched: ${String(cards[2].benefit)} / ${why.join()}`;
+  });
+
+  check('v99ad_w12_days_left_one_arithmetic', 'The advice\'s "days after today" is the match flow\'s count: 0 exactly on the final day, and the last day played is matchLengthInDays', () => {
+    for (const total of [2, 3, 7, 10, 30, 60]) {
+      const last = matchLengthInDays(total);
+      for (let day = 1; day <= total; day++) {
+        const advice = v99PlayableDaysAfterToday({ day }, { totalDays: total });
+        const flow = playableDaysAfterToday(day, total);
+        if (advice !== flow || flow !== Math.max(0, last - day)) return `day ${day} of ${total}: advice ${String(advice)}, flow ${flow}`;
+        if ((flow === 0) !== isFinalPlayableDay(day, total)) return `day ${day} of ${total}: ${flow} days after today but final-day is ${String(isFinalPlayableDay(day, total))}`;
+        if (day < total && playableDaysLeft(day, total) !== flow + 1) return `day ${day} of ${total}: ${playableDaysLeft(day, total)} to play, ${flow} after today`;
+      }
+    }
+    return (v99PlayableDaysAfterToday({ day: 3 }, {}) === null && v99PlayableDaysAfterToday({}, { totalDays: 10 }) === null && v99PlayableDaysAfterToday({ day: 1 }, { totalDays: 1 }) === 0 && playableDaysAfterToday(9, 10) === 0 && playableDaysAfterToday(8, 10) === 1 && playableDaysAfterToday(NaN, 10) === 0) || 'edge cases';
+  });
+
+  check('v99ad_w13_mercy_knows_the_day_limit', 'A mercy streak is announced only while it can still end the match early: nothing on day 9 of 10, nothing for a 1-day lead on day 7 of 10', () => {
+    const t = (day: number, totalDays: number = 10): MercyTiming => ({ day, totalDays });
+    const can = [mercyStreakCanComplete(1, t(9)), mercyStreakCanComplete(1, t(7)), mercyStreakCanComplete(1, t(5)), mercyStreakCanComplete(4, t(8)), mercyStreakCanComplete(4, t(9)), mercyStreakCanComplete(2, t(6)), mercyStreakCanComplete(2, t(7)), mercyStreakCanComplete(1), mercyStreakCanComplete(1, null), mercyStreakCanComplete(3, t(29, 30)), mercyStreakCanComplete(3, t(27, 30))];
+    if (can.join() !== 'false,false,true,true,false,true,false,true,true,false,true') return `can complete: ${can.join()}`;
+    const rival = { player: 0, ai: 1 }, mine = { player: 1, ai: 0 };
+    if (mercyCountdownNotice(rival, wNames(), t(9)) !== null || mercyCountdownNotice(mine, wNames(), t(7)) !== null) return 'a countdown that cannot complete was announced';
+    if (mercyHeaderWarning(rival, 'game', false, t(9)) !== null) return 'the red chip stayed on the final day';
+    const early = mercyCountdownNotice(rival, wNames(), t(5)), plain = mercyCountdownNotice(rival, wNames());
+    if (!early || !plain || early.message !== plain.message || !early.message.endsWith('Close the gap or the match ends in 4 more days.')) return `feasible wording changed: ${early ? early.message : 'null'}`;
+    const chip = mercyHeaderWarning(rival, 'game', false, t(5)), chipPlain = mercyHeaderWarning(rival, 'game');
+    return (chip !== null && chipPlain !== null && chip.label === chipPlain.label && chip.detail === chipPlain.detail) || 'the red chip changed where the streak can complete';
+  });
+
+  check('v99ad_w14_mercy_ending_matches_the_countdown', 'The mercy rule ends a match only before the day limit — exactly the days its countdown was announced for', () => {
+    if (mercyEndingApplies('player', 10, 10) !== null || mercyEndingApplies('rival', 10, 10) !== null || mercyEndingApplies('player', 9, 10) !== 'player' || mercyEndingApplies('rival', 5, 30) !== 'rival' || mercyEndingApplies(null, 5, 30) !== null) return 'boundary';
+    for (const total of [6, 10, 30]) {
+      for (let day = 1; day < total; day++) {
+        for (let count = 1; count < MERCY_STREAK_DAYS; count++) {
+          const endsOnNewDay = day + (MERCY_STREAK_DAYS - count); // the day that begins when the count reaches five
+          const announced = mercyStreakCanComplete(count, { day, totalDays: total });
+          const ends = mercyEndingApplies('player', endsOnNewDay, total) === 'player';
+          if (announced !== ends) return `day ${day} of ${total}, count ${count}: announced ${String(announced)}, ends early ${String(ends)}`;
+        }
+      }
+    }
+    return true;
+  });
+
+  check('v99ad_w15_mercy_lead_chip', 'A leading player\'s own streak has a header chip every day it runs (the daily toast can be pushed out of the lane); a count never shown is not reported as reset', () => {
+    const chip = mercyLeadChip({ player: 3, ai: 0 }, 'game', { timing: { day: 12, totalDays: 30 } });
+    if (!chip || chip.label !== 'Mercy rule: 3 of 5 days your way — win in 2 more' || chip.detail !== 'You have led 5-to-1 for 3 days. If it holds, the match ends as a win in 2 more days.') return `chip: ${JSON.stringify(chip)}`;
+    const team = mercyLeadChip({ player: 4, ai: 0 }, 'game', { teamMode: true, regionsGoal: true });
+    if (!team || team.detail !== 'Your team has held a decisive majority of regions for 4 days. If it holds, the match ends as a win in 1 more day.') return `team chip: ${JSON.stringify(team)}`;
+    const none = [mercyLeadChip({ player: 0, ai: 2 }, 'game'), mercyLeadChip({ player: 3, ai: 0 }, 'menu'), mercyLeadChip({ player: 5, ai: 0 }, 'game'), mercyLeadChip({ player: 1, ai: 0 }, 'game', { timing: { day: 7, totalDays: 10 } }), mercyLeadChip(null, 'game')];
+    if (none.some(c => c !== null)) return `chip shown where none belongs: ${JSON.stringify(none)}`;
+    const header = resolveV9GameplayCohesion(createV9CohesionFixture({ notice: chip })).header;
+    if (!header.notice || header.notice.label !== chip.label || v9CohesionSignature(createV9CohesionFixture({ notice: chip })) === v9CohesionSignature(createV9CohesionFixture())) return 'the chip does not reach the header (or the view is not rebuilt for it)';
+    const stopped: MercyRuleResult = { suspended: null, tracker: { player: 0, ai: 0 }, ended: null };
+    const shown = mercyResetNotice({ player: 1, ai: 0 }, stopped, wNames(), { day: 6, totalDays: 10 });   // was announced on day 5
+    const hidden = mercyResetNotice({ player: 1, ai: 0 }, stopped, wNames(), { day: 8, totalDays: 10 });  // day 7: never announced
+    const legacy = mercyResetNotice({ player: 1, ai: 0 }, stopped, wNames());
+    return (shown !== null && hidden === null && legacy !== null && shown.message === legacy.message) || `reset notices: ${String(shown && shown.message)} / ${String(hidden && hidden.message)}`;
+  });
+
+  check('v99ad_w16_game_over_notice_is_the_end_line', 'The Game Over notification starts with the very sentence the end screen prints, names the rival, and says who finished ahead', () => {
+    const names = wNames();
+    const causes: Array<[MatchEndCause, MatchEndWinner | null]> = [['day_limit', null], ['player_bankrupt', 'opponent'], ['rival_bankrupt', 'player'], ['mercy_player', 'player'], ['mercy_rival', 'opponent'], ['grand_tour_finale', 'player']];
+    for (const [cause, winner] of causes) {
+      const record = buildMatchEndRecord(cause, winner, 9);
+      const endLine = resolveMatchEndOutcome(record, { playerWon: true, reason: '', playerValue: 1, aiValue: 0, decidingMetric: 'money' }, { ...names, solo: false }).endLine;
+      const notice = matchOverNotice({ record, names });
+      if (!endLine || !notice.message.startsWith(`Match over. ${endLine}`)) return `${cause}: ${notice.message}`;
+      if (/[.!] AI wins|against You|Game Over|dominated/.test(notice.message)) return `${cause}: old wording — ${notice.message}`;
+    }
+    const mercy = matchOverNotice({ record: buildMatchEndRecord('mercy_rival', 'opponent', 12), names });
+    if (mercy.type !== 'ai' || mercy.message !== 'Match over. Ended early on day 12 by the mercy rule: Businessman AI led you 5-to-1 on most money for 5 days in a row. Businessman AI wins.') return mercy.message;
+    const won = matchOverNotice({ record: buildMatchEndRecord('day_limit', null, 9), names, standing: { playerWon: true, metricLabel: 'Most Money', tieBreak: false, playerValue: '$9,006', rivalValue: '$7,176' } });
+    if (won.type !== 'success' || won.message !== "Match over. The match ran its full length: 9 days played. You finished ahead on most money: $9,006 against Businessman AI's $7,176.") return won.message;
+    const lost = matchOverNotice({ record: buildMatchEndRecord('day_limit', null, 9), names, standing: { playerWon: false, metricLabel: 'Net Worth', tieBreak: true, playerValue: '$1,000', rivalValue: '$5,439' } });
+    if (lost.type !== 'ai' || lost.message !== 'Match over. The match ran its full length: 9 days played. Businessman AI won the tie-break on net worth: $5,439 against your $1,000.') return lost.message;
+    const broke = matchOverNotice({ record: buildMatchEndRecord('player_bankrupt', 'opponent', 4), names });
+    const solo = matchOverNotice({ record: buildMatchEndRecord('day_limit', null, 29), names, solo: true });
+    const soloBroke = matchOverNotice({ record: buildMatchEndRecord('player_bankrupt', 'opponent', 4), names, solo: true });
+    const tour = matchOverNotice({ record: buildMatchEndRecord('day_limit', null, 29), names, standing: { playerWon: false, metricLabel: GRAND_TOUR_METRIC_LABEL, tieBreak: true, playerValue: '', rivalValue: '' }, detail: 'Businessman AI wins the Grand Tour tie-break. More stamps.' });
+    return (broke.type === 'error' && broke.message.endsWith('Businessman AI wins.') && solo.type === 'success' && solo.message === 'Match over. The match ran its full length: 29 days played.'
+      && soloBroke.type === 'error' && soloBroke.message.endsWith('The run is over.') && !/wins/.test(soloBroke.message) && tour.type === 'ai' && tour.message.endsWith('Businessman AI wins the Grand Tour tie-break. More stamps.')) || `${broke.message} | ${solo.message} | ${soloBroke.message} | ${tour.message}`;
+  });
+
+  check('v99ad_w17_one_challenge_count', 'The stats row counts the wins the debrief counts ("23 (16 different)"), not the number of different challenges', () => {
+    const names = ['A', 'B', 'C', 'A', 'B', 'A'];
+    const player = { id: 'player', challengesCompleted: names, challengeMastery: { A: 3, B: 2, C: 1 } };
+    const log = [...names.map(n => ({ playerId: 'player', challengeName: n })), { playerId: 'ai', challengeName: 'A' }, { playerId: 'ai', challengeName: 'D' }];
+    const figures = challengeStatFigures({ challengeCompletions: log }, player, ['player']);
+    if (figures.won !== 6 || figures.different !== 3) return `figures: ${JSON.stringify(figures)}`;
+    const report = buildMatchDebriefReport({ gameState: { selectedMode: 'ai', day: 10, netWorthHistory: [], challengeCompletions: log, matchEnd: { cause: 'day_limit', winner: null, day: 9 } }, gameSettings: a1Settings({ totalDays: 10 }), player, aiPlayer: { id: 'ai', name: 'Businessman AI' }, teamsById: {}, eventLogs: [], regionalStandingData: {}, outcome: { playerWon: true, reason: '', playerValue: 5, aiValue: 1, decidingMetric: 'money' } } as unknown as DebriefAssemblyParams);
+    if (!report.facts || report.facts.playerChallengeWins !== figures.won || !report.facts.lines.includes('Challenges won: you 6, Businessman AI 2.')) return `debrief: ${JSON.stringify(report.facts && report.facts.lines)}`;
+    const solo = matchSideLabels('ai', null, null, 'Businessman AI');
+    const row = challengeStatRow(figures, solo, 'Tester');
+    if (row.label !== 'Challenges Won:' || row.value !== '6 (3 different)') return `row: ${JSON.stringify(row)}`;
+    const noLog = challengeStatFigures({}, player, ['player']);                         // a save from before the log
+    const noRepeats = challengeStatRow(challengeStatFigures({}, { challengesCompleted: ['A', 'B'] }, ['player']), solo, 'Tester');
+    const team = challengeStatRow(figures, matchSideLabels('team_human_ai_vs_ai_ai', "Tester's Team", 'Rose Team', 'Scientist AI'), 'Tester');
+    const watched = challengeStatRow(figures, matchSideLabels('team_ai_vs_ai', 'Azure Team', 'Rose Team', 'Scientist AI'), 'Tourist AI');
+    return (noLog.won === 6 && noLog.different === 3 && noRepeats.value === '2' && team.label === 'Your own challenges won:' && watched.label === "Tourist AI's challenges won:") || `${JSON.stringify(noLog)} ${noRepeats.value} ${team.label} ${watched.label}`;
+  });
+
+  check('v99ad_w18_end_turn_on_the_final_day', 'On the final day every End Turn says that it finishes the match, and the question counts the unused actions', () => {
+    const input: V99EndTurnPromptInput = { apLeft: 3, unsoldCount: 0, cash: 1000, inTransit: false, skipConfirm: false, bankruptcyThreshold: BANKRUPTCY_THRESHOLD, forcedSale: null };
+    const last = resolveEndTurnPrompt({ ...input, finalDay: true });
+    if (last.kind !== 'unused_actions' || last.type !== 'endDay' || last.title !== 'Finish the match?' || last.confirmText !== 'Finish match' || last.message !== 'This is the final day — ending your turn finishes the match. You still have 3 actions left (cash $1,000). Finish the match anyway?') return `final day: ${JSON.stringify(last)}`;
+    const usual = resolveEndTurnPrompt(input), flagOff = resolveEndTurnPrompt({ ...input, finalDay: false });
+    if (usual.title !== 'End Turn?' || usual.confirmText !== 'End Turn' || usual.message !== 'You still have 3 actions left this turn (cash $1,000). End your turn anyway?' || JSON.stringify(usual) !== JSON.stringify(flagOff)) return `any other day changed: ${JSON.stringify(usual)}`;
+    const one = resolveEndTurnPrompt({ ...input, apLeft: 1, unsoldCount: 2, finalDay: true });
+    if (!one.message.includes('1 action left (cash $1,000, 2 unsold resources)')) return `one action: ${one.message}`;
+    const sale = resolveEndTurnPrompt({ ...input, apLeft: 0, cash: 40, unsoldCount: 1, forcedSale: { soldCount: 1, cash: 90 }, finalDay: true });
+    if (sale.kind !== 'forced_sale' || sale.confirmText !== 'Finish match' || !sale.message.includes('This is the final day — ending your turn finishes the match.')) return `forced sale: ${JSON.stringify(sale)}`;
+    if (resolveEndTurnPrompt({ ...input, apLeft: 0, finalDay: true }).kind !== 'none' || resolveEndTurnPrompt({ ...input, skipConfirm: true, finalDay: true }).kind !== 'none') return 'asks with nothing unused, or asks automation';
+    if (endTurnFinishesMatchNote(9, 10) === null || endTurnFinishesMatchNote(8, 10) !== null || endTurnButtonLabel(9, 10) !== 'End Turn — finish match') return 'labels';
+    const end = createV9Candidate('end_turn', 'End Turn', { actionType: 'end_turn', execution: { kind: 'end_turn' }, reasons: ['no Action Points left — ending your turn is the only move'] });
+    const card = (day: number) => resolveV9GameplayCohesion(createV9CohesionFixture({ day, totalDays: 10, ap: { finite: true, remaining: 0 }, actions: { recommendedId: null, ranked: [end] } })).recommended;
+    const lastCard = card(9), usualCard = card(8);
+    return (lastCard !== null && lastCard.label === 'End Turn — finish match' && lastCard.doLabel === 'Finish match' && /finishes the match/.test(lastCard.why) && usualCard !== null && usualCard.label === 'End Turn' && usualCard.doLabel === 'End Turn' && !/finishes/.test(usualCard.why))
+      || `advice card: ${JSON.stringify(lastCard)} / ${JSON.stringify(usualCard)}`;
+  });
+
+  check('v99ad_w19_match_goal_is_never_complete_early', 'Moving the focus off the match goal reads "New focus: …" — never "✓ Goal: Finish with the most money — Complete"', () => {
+    const win = v99FocusProgressForFeedback('win_condition', { completed: 0, total: 1 }, 'active');
+    const winAhead = v99FocusProgressForFeedback('win_condition', { completed: 1, total: 1 }, 'completed');
+    if (win.focusTotal !== 0 || win.focusCompleted || winAhead.focusTotal !== 0 || winAhead.focusCompleted || winAhead.focusDone !== 0) return `match goal progress: ${JSON.stringify([win, winAhead])}`;
+    const other = v99FocusProgressForFeedback('contract', { completed: 2, total: 3 }, 'completed');
+    if (other.focusDone !== 2 || other.focusTotal !== 3 || !other.focusCompleted) return `other goals changed: ${JSON.stringify(other)}`;
+    const before = createFeelSnapshotFixture({ focusId: 'win', focusTitle: 'Goal: Finish with the most money', ...win });
+    const after = createFeelSnapshotFixture({ focusId: 'control_QLD', focusTitle: 'Control Queensland', focusDone: 2, focusTotal: 2, focusCompleted: false });
+    const events = deriveFeedbackEvents(before, after, 1000).filter(e => e.subject === 'focus');
+    if (events.length !== 1 || events[0].kind !== 'focus_changed' || events[0].title !== 'New focus: Control Queensland') return `banner: ${events.map(e => `${e.kind} ${e.title} ${e.lines.join('/')}`).join(' | ')}`;
+    // V9.8's snapshot of the same goal (0 of 1) is what produced the false "Complete"; a real goal still completes.
+    const v98 = deriveFeedbackEvents(createFeelSnapshotFixture({ focusId: 'win', focusTitle: 'Goal: Finish with the most money', focusDone: 0, focusTotal: 1, focusCompleted: false }), after, 1000).find(e => e.subject === 'focus');
+    const real = deriveFeedbackEvents(createFeelSnapshotFixture({ focusDone: 2, focusTotal: 3 }), createFeelSnapshotFixture({ focusId: 'obj_b', focusTitle: 'Reach $15K', focusDone: 0, focusTotal: 1 }), 1000).find(e => e.kind === 'objective_completed');
+    const takingTheLead = deriveFeedbackEvents(createFeelSnapshotFixture({ focusId: 'win', focusTitle: 'Goal', ...win }), createFeelSnapshotFixture({ focusId: 'win', focusTitle: 'Goal', ...winAhead }), 1000).filter(e => e.subject === 'focus');
+    return (v98 !== undefined && v98.kind === 'objective_completed' && real !== undefined && real.title === '✓ Protect NSW' && takingTheLead.length === 0) || 'the old snapshot, a real goal, or taking the lead';
+  });
+
+  check('v99ad_w20_sides_by_name', 'Team results name the two teams; a match that was only watched has no "you", no VICTORY and no advice', () => {
+    const solo = matchSideLabels('ai', 'Blue', 'Rose', 'Businessman AI');
+    const team = matchSideLabels('team_human_ai_vs_ai_ai', "Tester's Team", 'Rose Team', 'Scientist AI');
+    const watched = matchSideLabels('team_ai_vs_ai', 'Azure Team', 'Rose Team', 'Scientist AI');
+    if (solo.you !== 'You' || solo.rival !== 'Businessman AI' || solo.spectator || team.you !== "Tester's Team" || team.rival !== 'Rose Team' || team.youInText !== 'your team' || team.spectator || watched.you !== 'Azure Team' || watched.youInText !== 'Azure Team' || !watched.spectator) return JSON.stringify([solo, team, watched]);
+    if (spectatorHeadline(watched, true) !== 'AZURE TEAM WON' || spectatorHeadline(watched, false) !== 'ROSE TEAM WON' || spectatorHeadline(team, true) !== null || spectatorHeadline(null, true) !== null) return 'headline';
+    if (spectatorSideName('team_ai_vs_ai', '') !== 'The first team' || spectatorSideName('ai', 'x') !== null || !isSpectatorMatch('team_ai_vs_ai') || isSpectatorMatch('team_human_ai_vs_ai_ai')) return 'spectator rule';
+    const names = wNames({ rivalSide: 'Rose Team', teamMode: true, playerSide: 'Azure Team' });
+    const line = describeMatchEnd(buildMatchEndRecord('mercy_player', 'player', 5), names);
+    if (line !== 'Ended early on day 5 by the mercy rule: Azure Team led Rose Team 5-to-1 on most money for 5 days in a row.') return line;
+    const notice = matchOverNotice({ record: buildMatchEndRecord('day_limit', null, 9), names, standing: { playerWon: true, metricLabel: 'Most Money', tieBreak: false, playerValue: '$1,133', rivalValue: '$64' } });
+    if (notice.type !== 'info' || /\b[Yy]ou\b|Your team/.test(notice.message) || !notice.message.endsWith("Azure Team finished ahead on most money: $1,133 against Rose Team's $64.")) return notice.message;
+    const count = mercyCountdownNotice({ player: 2, ai: 0 }, names);
+    if (!count || /\byou\b|your team|as a win/.test(count.message) || !count.message.startsWith('Mercy rule: Azure Team has led Rose Team')) return `mercy for a spectator: ${count ? count.message : 'null'}`;
+    const teamHero = wText(V94OutcomeHero({ won: true, winLabel: 'Most Money', metricLabel: 'Most Money', you: '$10,196', rival: '$76', rivalName: team.rival, youName: team.you, reason: '', turningPoints: [], lesson: null }));
+    const watchedHero = wText(V94OutcomeHero({ won: true, winLabel: 'Most Money', metricLabel: 'Most Money', you: '$1,133', rival: '$64', rivalName: watched.rival, youName: watched.you, headline: spectatorHeadline(watched, true), reason: '', turningPoints: [], lesson: 'x' }));
+    const plainHero = wText(V94OutcomeHero({ won: true, winLabel: 'Most Money', metricLabel: 'Most Money', you: '$20', rival: '$4', rivalName: 'Scientist AI', reason: '', turningPoints: [], lesson: null }));
+    return (teamHero.includes("▲ Tester's Team $10,196") && teamHero.includes('◆ Rose Team $76') && teamHero.includes('VICTORY') && watchedHero.includes('AZURE TEAM WON') && !watchedHero.includes('VICTORY') && !/▲ You/.test(watchedHero)
+      && plainHero.includes('▲ You $20') && plainHero.includes('VICTORY')) || `${teamHero} | ${watchedHero} | ${plainHero}`;
+  });
+
+  check('v99ad_w21_debrief_for_teams_and_spectators', 'The debrief names the rival TEAM in a team match, and speaks about two teams (never "you") when the human only watched', () => {
+    const history = [{ day: 1, playerWorth: 2000, aiWorth: 2000 }, { day: 2, playerWorth: 2600, aiWorth: 2100 }, { day: 3, playerWorth: 3000, aiWorth: 1900 }];
+    const wins = (id: string, n: number) => Array.from({ length: n }, (_, k) => ({ playerId: id, turn: k + 1 }));
+    const report = (mode: string) => buildMatchDebriefReport({
+      gameState: { selectedMode: mode, day: 4, netWorthHistory: history, challengeCompletions: [...wins('player', 2), ...wins('ally', 3), ...wins('ai', 1), ...wins('enemy', 4)], matchEnd: { cause: 'day_limit', winner: null, day: 3 } },
+      gameSettings: a1Settings({ totalDays: 4 }), player: { id: 'player', name: 'Tourist AI' }, aiPlayer: { id: 'ai', name: 'Scientist AI' },
+      teamsById: { [TEAM_PLAYER_ID]: { name: 'Azure Team', actorIds: ['player', 'ally'] }, [TEAM_OPPONENT_ID]: { name: 'Rose Team', actorIds: ['ai', 'enemy'] } }, eventLogs: [], regionalStandingData: {},
+      outcome: { playerWon: false, reason: '', playerValue: 3000, aiValue: 1900, decidingMetric: 'money' }
+    } as unknown as DebriefAssemblyParams);
+    const team = report('team_human_ai_vs_ai_ai'), watched = report('team_ai_vs_ai');
+    if (team.opponentRead.opponentName !== 'Rose Team' || !team.opponentRead.keyAdaptations[0].includes('(your team: 5)') || !team.facts || !team.facts.sides || team.facts.sides.you !== 'Azure Team' || team.facts.sides.spectator) return `team: ${team.opponentRead.opponentName} / ${team.opponentRead.keyAdaptations[0]}`;
+    if (!team.facts.lines.includes('Challenges won: your team 5, Rose Team 5.')) return `team lines: ${team.facts.lines.join(' | ')}`;
+    const text = [...(watched.facts ? watched.facts.lines : []), ...watched.swingPoints.map(sp => sp.description), ...watched.opponentRead.keyAdaptations].join(' ');
+    if (/\b[Yy]ou\b|[Yy]ours?\b|[Yy]our team/.test(text)) return `watched match still says "you": ${text}`;
+    if (!watched.facts || !watched.facts.sides || !watched.facts.sides.spectator || watched.facts.nextTime !== null) return 'watched: sides or advice';
+    return (watched.facts.lines.includes('Challenges won: Azure Team 5, Rose Team 5.') && watched.facts.lines.some(l => l.startsWith("Rose Team won: $1,900 against Azure Team's $3,000")) && watched.facts.lines.some(l => l.startsWith('Azure Team was ahead on net worth'))) || watched.facts.lines.join(' | ');
+  });
+
+  check('v99ad_w22_header_for_a_watched_match', 'All-AI teams: the header names the acting AI and says WATCHING — never "YOUR TURN — YOU\'RE PLAYING — 3 actions"; a played match is untouched', () => {
+    const watched = resolveV9GameplayCohesion(createV9CohesionFixture({ spectator: true, isHumanTurn: true, currentActorName: 'Tourist AI', teamMode: true })).header;
+    if (watched.turnLabel !== "TOURIST AI'S TURN" || watched.controlLabel !== 'WATCHING' || watched.controlTone !== 'waiting' || watched.apLabel !== '' || watched.whoseTurn !== 'other') return JSON.stringify(watched);
+    const other = resolveV9GameplayCohesion(createV9CohesionFixture({ spectator: true, isHumanTurn: false, currentActorName: 'Scientist AI', teamMode: true })).header;
+    if (other.turnLabel !== "SCIENTIST AI'S TURN" || other.controlLabel !== 'WATCHING') return JSON.stringify(other);
+    const played = resolveV9GameplayCohesion(createV9CohesionFixture()).header;
+    if (played.turnLabel !== 'YOUR TURN' || played.controlLabel !== "YOU'RE PLAYING" || played.apLabel !== '2 actions' || played.notice !== null) return JSON.stringify(played);
+    return v9CohesionSignature(createV9CohesionFixture({ spectator: true })) !== v9CohesionSignature(createV9CohesionFixture()) || 'the view is not rebuilt when the match is a watched one';
+  });
+
+  check('v99ad_w23_human_contributions', 'A human\'s challenge win, sale and craft are added to their contribution record (team end screen: "$0 earned • 0 challenges" after eight wins)', () => {
+    const one = v99HumanContributionAfter(undefined, 'challenge', 540);
+    if (one.moneyEarned !== 540 || one.challengesCompleted !== 1 || one.craftedValue !== 0 || one.regionsInvested !== 0) return JSON.stringify(one);
+    const two = v99HumanContributionAfter(one, 'sale', 165.4);
+    const three = v99HumanContributionAfter(two, 'craft', v99CraftContributionValue(750, 0.2));
+    const four = v99HumanContributionAfter({ ...three, regionsInvested: 780, supportGiven: 2 }, 'challenge', -5);
+    if (two.moneyEarned !== 705 || two.challengesCompleted !== 1 || three.craftedValue !== 900 || three.moneyEarned !== 705) return JSON.stringify([two, three]);
+    return (four.challengesCompleted === 2 && four.moneyEarned === 705 && four.regionsInvested === 780 && four.supportGiven === 2 && v99CraftContributionValue(undefined, undefined) === 0 && one !== two) || JSON.stringify(four);
+  });
+
+  check('v99ad_w24_preview_counts_and_net_label', 'Region Preview: "N available • M done this season" from the Challenges window\'s list; the Most Money label says "net of loans" when a loan is owed', () => {
+    const s = a1Settings();
+    const all = v99RegionChallengeTally(a2Player(), 'TAS', a2World(), s);
+    const names = v99OpenChallengesFor(a2Player(), 'TAS', a2World(), s).map(c => c.name);
+    if (all.done !== 0 || all.open !== names.length || names.length < 2) return `fresh: ${JSON.stringify(all)} of ${names.length}`;
+    const some = v99RegionChallengeTally(a2Player({ completedThisSeason: [names[0]], challengesCompleted: [names[0]] }), 'TAS', a2World(), s);
+    const done = v99RegionChallengeTally(a2Player({ completedThisSeason: names, challengesCompleted: names }), 'TAS', a2World(), s);
+    const newSeason = v99RegionChallengeTally(a2Player({ completedThisSeason: [], challengesCompleted: names }), 'TAS', a2World(), s);
+    if (some.open !== names.length - 1 || some.done !== 1 || done.open !== 0 || done.done !== names.length || newSeason.open !== names.length || newSeason.done !== 0) return JSON.stringify([some, done, newSeason]);
+    if (v99OpenChallengesFor(a2Player({ completedThisSeason: names, challengesCompleted: names }), 'TAS', a2World(), s).length !== done.open) return 'the preview and the advice disagree';
+    if (v99RegionChallengeTallyText(done) !== `0 available • ${names.length} done this season` || v99RegionChallengeTally(a2Player(), 'Sydney', a2World(), s).open !== 0) return v99RegionChallengeTallyText(done);
+    return (v99WinLabelWithDebtNote('Most Money', 'money', [0, 500]) === 'Most Money (net of loans)' && v99WinLabelWithDebtNote('Most Money', 'money', [0, 0]) === 'Most Money' && v99WinLabelWithDebtNote('Net Worth', 'netWorth', [500]) === 'Net Worth' && v99WinLabelWithDebtNote('Most Money', 'money', []) === 'Most Money') || 'net label';
+  });
+
+  check('v99ad_w25_low_cash_fixtures_still_execute', 'Every candidate the advice calls legal near zero cash, and with a loan, still passes its own checks in the executor', () => {
+    const s = a1Settings();
+    const failures = [
+      ...a1ExecuteAllValid(() => a1Player({ money: 30 }), () => a1World(), s),
+      ...a1ExecuteAllValid(() => wSpent({ money: 30 }), () => a1World(), s),
+      ...a1ExecuteAllValid(() => a1Player({ money: 220 }), () => a1World(), s),
+      ...a1ExecuteAllValid(() => a1Player({ money: 1983, loans: [wLoan(125)] }), () => a1World({ day: 8 }), s)
+    ];
+    return failures.length === 0 || failures.join(' | ');
+  });
+
+  check('v99ad_w26_due_repayment_is_first_on_the_card', 'On the play screen a due repayment outranks a challenge that "advances the goal"; a repayment that would leave cash tight does not', () => {
+    const s = a1Settings({ totalDays: 10 });
+    const objective = { id: 'win', sourceType: 'win_condition', sourceId: 'win', title: 'Goal: Finish with the most money', description: 'Win challenges to earn money.', priority: 10, progress: { completed: 0, total: 1 }, requirements: [], blockers: [], recommendedNextStep: { id: 'next', label: 'Take a challenge', actionType: 'challenge', navigation: null }, completionState: 'active' } as unknown as CurrentObjective;
+    const setFor = (money: number, day: number) => {
+      const candidates = a1Candidates(a2Player({ money, loans: [wLoan(125)] }), a2World({ day }), s);
+      const ranked = rankContextualRecommendations(candidates, objective, { apRemaining: 3, cash: money, limit: 12, settings: s });
+      return buildContextualActionSet({ rankedRecommendations: ranked, invalidCandidates: [], objective, attention: null, apRemaining: 3, isHumanTurn: true });
+    };
+    const due = setFor(1983, 7);
+    const challenge = due.ranked.find(c => c.actionType === 'challenge');
+    if (!challenge) return 'fixture: no challenge on the card';
+    if (!due.recommended || due.recommended.actionType !== 'repay_emergency_loan') return `recommended: ${due.recommended ? due.recommended.label : 'none'} (${due.ranked.map(c => `${c.label} ${c.relevance}`).join(' | ')})`;
+    if (due.recommended.relevance < challenge.relevance + V99_REPAY_FIRST_MARGIN || !due.recommended.scoreBreakdown.some(f => /stops the daily loan interest/.test(f.factor))) return `lift: repay ${due.recommended.relevance}, challenge ${challenge.relevance}`;
+    const view = resolveV9GameplayCohesion(createV9CohesionFixture({ day: 7, totalDays: 10, cash: 1983, objective: { id: 'win', title: objective.title, completed: 0, total: 1, next: 'Take a challenge', blocked: false }, actions: { recommendedId: due.recommended.id, ranked: due.ranked } })).recommended;
+    if (!view || view.label !== `Repay Loan (${fmtMoney(LOAN_AMOUNT)})` || view.cost !== `free action · ${fmtMoney(LOAN_AMOUNT)}` || view.doLabel !== 'Do It' || !/money minus what you owe/.test(view.why)) return `card: ${JSON.stringify(view)}`;
+    const lastDay = setFor(620, 9);
+    if (!lastDay.recommended || lastDay.recommended.actionType !== 'repay_emergency_loan') return `final day: ${lastDay.recommended ? lastDay.recommended.label : 'none'}`;
+    const tight = setFor(700, 7);
+    const tightRepay = tight.ranked.find(c => c.actionType === 'repay_emergency_loan');
+    if (!tight.recommended || tight.recommended.actionType === 'repay_emergency_loan' || !tightRepay || tightRepay.scoreBreakdown.some(f => /stops the daily loan interest/.test(f.factor))) return `tight cash: ${tight.recommended ? tight.recommended.label : 'none'}`;
+    const before = [createV9Candidate('a', 'A', { relevance: 120 }), createV9Candidate('b', 'B', { relevance: 80 })];
+    v99RankDueRepaymentFirst(before);
+    return (before[0].relevance === 120 && before[1].relevance === 80) || 'cards without a due repayment were re-ranked';
+  });
+
+  check('v99ad_w27_each_thing_said_once', 'Default layout: YOUR TURN and YOU\'RE PLAYING are each drawn once; the classic layout is untouched', () => {
+    const mine = resolveV9GameplayCohesion(createV9CohesionFixture()).header;
+    const rival = resolveV9GameplayCohesion(createV9CohesionFixture({ isHumanTurn: false, currentActorName: 'Scientist AI' })).header;
+    const copilot = resolveV9GameplayCohesion(createV9CohesionFixture({ control: { owner: 'copilot', headline: 'Co-Pilot', copilotHoldsControl: true, rescue: false, actionProgress: null, currentActionLabel: null } })).header;
+    const watched = resolveV9GameplayCohesion(createV9CohesionFixture({ spectator: true, currentActorName: 'Tourist AI' })).header;
+    const d = (header: typeof mine, pillDocked: boolean, classicLayout: boolean = false) => { const r = v99HeaderDeclutter({ classicLayout, pillDocked, header }); return `${r.turnLabel ? 'T' : '-'}${r.controlChip ? 'C' : '-'}`; };
+    const got = [d(mine, true), d(mine, false), d(rival, true), d(copilot, true), d(watched, true), d(mine, true, true), d(rival, true, true)];
+    // my turn: both left to the pill and the control strip; no pill that says YOUR TURN (Single Player, Scenario Mode, teams): the label stays;
+    // rival's turn: the label names the rival, the "WAITING FOR" chip only repeats it; Co-Pilot / WATCHING chips stay.
+    return got.join() === 'TC,-C,-C,T-,--,--,--' || got.join();
+  });
+
+  check('v99ad_w30_copilot_in_control_keeps_the_loan_order', 'With the Co-Pilot in control and a Background AI handoff: a due repayment is still the first move, and a loan outside real danger stays under the wage', () => {
+    const s = a1Settings();
+    const rival = a1Rival();
+    const move = (actionType: string): BackgroundMoveRef => ({ actionId: `m_${actionType}`, label: actionType, actionType, reason: 'prepared' });
+    const handoff = (types: string[], avoidDebt: boolean = false): Pick<BackgroundCoPilotHandoffPackage, 'status' | 'recommendedSequence' | 'focusRegion' | 'avoidDebt' | 'reserve'> => ({ status: 'ready', recommendedSequence: types.map(move), focusRegion: null, avoidDebt, reserve: 250 });
+    const run = (player: A1Obj, world: A1Obj, session: CoPilotTakeoverSession | null): CoPilotCandidateEvaluationResult => generateCoPilotPlayerActionCandidates(createCoPilotRuntimeContext(player, world, s, session, { player, ai: rival }, rival));
+    const active = v9TestSession({ status: 'active' });
+    const util = (list: CoPilotActionCandidate[], type: string): number => { const c = a1Find(list, type); return c && c.isValid ? c.utilityScore : NaN; };
+    // 1. a charged loan, cash to spare, and a handoff that prepared other moves (they collect +12 / +6)
+    for (const avoidDebt of [false, true]) {
+      const debtor = a1Player({ money: 1983, loans: [wLoan(125)] });
+      const taken = run(debtor, a1World({ day: 8, backgroundAI: { coPilotHandoffPackage: handoff(['work', 'challenge', 'travel', 'buy_market'], avoidDebt) } }), active);
+      const repay = a1Find(taken.candidates, 'repay_emergency_loan');
+      if (!repay || !repay.isValid || repay.v99LoanRank !== 'first') return `avoidDebt ${String(avoidDebt)}: repay ${repay ? `${String(repay.isValid)} ${String(repay.v99LoanRank)}` : 'missing'}`;
+      if (!(util(taken.candidates, 'work') > 70)) return `the handoff did not re-score the pool (work ${util(taken.candidates, 'work')})`;
+      const others = taken.candidates.filter(c => c.isValid && c !== repay).reduce((max, c) => Math.max(max, c.utilityScore), 0);
+      if (!taken.topRecommendation || taken.topRecommendation.actionType !== 'repay_emergency_loan' || repay.utilityScore <= others || repay.utilityScore < V99_REPAY_FIRST_UTILITY) return `avoidDebt ${String(avoidDebt)}: top ${taken.topRecommendation ? taken.topRecommendation.title : 'none'}, repay ${repay.utilityScore} against ${others}`;
+    }
+    // 2. under the line with actions left, and a handoff that lists the loan before the wage
+    const poor = a1Player({ money: 30 });
+    const lifted = run(poor, a1World({ backgroundAI: { coPilotHandoffPackage: handoff(['emergency_loan', 'work']) } }), active);
+    const loan = a1Find(lifted.candidates, 'emergency_loan');
+    if (!loan || !loan.isValid || loan.v99LoanRank !== 'after_wage') return `loan with a session: ${loan ? `${String(loan.isValid)} ${String(loan.v99LoanRank)}` : 'missing'}`;
+    if (!(util(lifted.candidates, 'work') > loan.utilityScore) || !lifted.topRecommendation || lifted.topRecommendation.actionType === 'emergency_loan') return `with a session: wage ${util(lifted.candidates, 'work')}, loan ${loan.utilityScore}, top ${lifted.topRecommendation ? lifted.topRecommendation.title : 'none'}`;
+    // 3. the helper alone: only flagged loan moves move, only when something was re-scored past them
+    const cand = (actionType: string, utilityScore: number, over?: Partial<CoPilotActionCandidate>): CoPilotActionCandidate => ({ id: actionType, category: 'x', categoryIndex: 3, categoryName: 'x', title: actionType, description: '', actionType, apCost: 0, costEstimate: 0, expectedOutcome: '', utilityScore, riskFactor: 0, rewardScore: 0, longTermScore: 0, expectedStateDelta: { cashDelta: 0, apDelta: 0 }, isValid: true, ...(over || {}) });
+    const after = (pool: CoPilotActionCandidate[]): string => { v99KeepLoanOrder(pool); return pool.map(c => c.utilityScore).join(); };
+    const got = [
+      after([cand('challenge', 101), cand('repay_emergency_loan', 97, { v99LoanRank: 'first' }), cand('work', 82)]),           // lifted past the challenge
+      after([cand('challenge', 101), cand('repay_emergency_loan', 82, { v99LoanRank: 'first' })]),                             // a handoff penalty is undone too
+      after([cand('challenge', 95), cand('repay_emergency_loan', 97, { v99LoanRank: 'first' })]),                              // already first: unchanged
+      after([cand('challenge', 101), cand('repay_emergency_loan', 71)]),                                                       // tight cash: stays where it is
+      after([cand('challenge', 101), cand('repay_emergency_loan', 97, { v99LoanRank: 'first', isValid: false })]),             // not valid: untouched
+      after([cand('work', 76), cand('emergency_loan', 82, { v99LoanRank: 'after_wage' })]),                                    // held under the wage
+      after([cand('work', 70), cand('emergency_loan', 70, { v99LoanRank: 'after_wage' })]),                                    // equal: the list order decides, as before
+      after([cand('work', 76), cand('emergency_loan', 102)]),                                                                  // real danger: untouched
+      after([cand('work', 76, { isValid: false }), cand('emergency_loan', 82, { v99LoanRank: 'after_wage' })]),                // no wage on offer: untouched
+      after([])
+    ];
+    const want = ['101,102,82', '101,102', '95,97', '101,71', '101,97', '76,75', '70,70', '76,102', '76,82', ''];
+    if (JSON.stringify(got) !== JSON.stringify(want)) return JSON.stringify(got);
+    // 4. without a session the numbers of w03 / w06 hold: the helper changes nothing where nothing was re-scored
+    const plainRepay = a1Find(run(a1Player({ money: 1983, loans: [wLoan(125)] }), a1World({ day: 8, backgroundAI: { coPilotHandoffPackage: handoff(['challenge']) } }), null).candidates, 'repay_emergency_loan');
+    const plainLoan = a1Find(run(a1Player({ money: 30 }), a1World({ backgroundAI: { coPilotHandoffPackage: handoff(['emergency_loan']) } }), null).candidates, 'emergency_loan');
+    const dangerLoan = a1Find(run(wSpent({ money: 30 }), a1World(), null).candidates, 'emergency_loan');
+    return (plainRepay !== undefined && plainRepay.utilityScore === V99_REPAY_FIRST_UTILITY && plainLoan !== undefined && plainLoan.utilityScore === 70 && dangerLoan !== undefined && dangerLoan.utilityScore === 90 && dangerLoan.v99LoanRank === undefined)
+      || `no session: repay ${plainRepay ? plainRepay.utilityScore : 'missing'}, loan ${plainLoan ? plainLoan.utilityScore : 'missing'}, danger ${dangerLoan ? `${dangerLoan.utilityScore} ${String(dangerLoan.v99LoanRank)}` : 'missing'}`;
+  });
+
+  check('v99ad_w29_turn_label_stays_without_a_pill', 'Single Player and Scenario Mode draw no turn pill and the team pill names the actor, so the header keeps "YOUR TURN" there; the sticky turn row keeps its End Turn', () => {
+    const mine = resolveV9GameplayCohesion(createV9CohesionFixture()).header;
+    const docked = resolveTurnPillPresentation({ inPlayLayer: true, soloAiMatch: false, classicLayout: false });
+    const says = [v99PillSaysYourTurn(docked, true, false), v99PillSaysYourTurn(docked, false, false), v99PillSaysYourTurn(docked, true, true), v99PillSaysYourTurn('floating', true, false), v99PillSaysYourTurn('none', true, false)];
+    if (docked !== 'docked' || says.join() !== 'true,false,false,false,false') return `${docked}: ${says.join()}`;
+    const hidden = (competitive: boolean, team: boolean, classicLayout: boolean = false): boolean => v99HeaderDeclutter({ classicLayout, pillDocked: v99PillSaysYourTurn(resolveTurnPillPresentation({ inPlayLayer: true, soloAiMatch: competitive && !team, classicLayout }), competitive, team), header: mine }).turnLabel;
+    // rival match: the pill says YOUR TURN; no rival to take turns with, or a team pill: the header says it; classic: as V9.8
+    const got = [hidden(true, false), hidden(false, false), hidden(true, true), hidden(true, false, true), hidden(false, false, true)];
+    if (got.join() !== 'true,false,false,false,false') return `label hidden: ${got.join()}`;
+    // The turn row is sticky from 1024 px up, so its End Turn serves the scroll positions where the header's is gone.
+    const row = v99SplitQuickActions([{ id: 'challenges' }, { id: 'end_turn' }, { id: 'emergency_loan' }]);
+    return (/\blg:sticky\b/.test(V99_TURN_ROW_CLASS) && row.endTurn !== null) || `row class "${V99_TURN_ROW_CLASS}", End Turn slot ${row.endTurn ? 'kept' : 'missing'}`;
+  });
+
+  check('v99ad_w28_decision_deadline_within_the_match', 'A decision\'s deadline is never a day the match does not have ("Decide by day 10" of a 10-day setting whose last day is 9)', () => {
+    const got = [decisionDeadlineText(10, matchLengthInDays(10)), decisionDeadlineText(9, 9), decisionDeadlineText(8, 9), decisionDeadlineText(14, 29), decisionDeadlineText(12), decisionDeadlineText(12, null), decisionDeadlineText(12, 0)];
+    const want = ['Decide by day 9 — the final day', 'Decide by day 9 — the final day', 'Decide by day 8', 'Decide by day 14', 'Decide by day 12', 'Decide by day 12', 'Decide by day 12'];
+    return JSON.stringify(got) === JSON.stringify(want) || JSON.stringify(got);
+  });
   return results;
+}
+
+// ---- Package W3F1: advice you can trust near zero cash --------------------------------------------------------------
+// Below the Co-Pilot's $250 reserve the advice used to offer the 25%-a-day emergency loan as a "free action" under a
+// name found nowhere else in the game, "Do It" borrowed $500 with no question, and repaying was never suggested: the
+// repay candidate was built from a `debt` number while emergency loans live in the `loans` list. The helpers below
+// name and price the loan truthfully, offer it only under the bankruptcy line (first only when nothing else can lift
+// the player over it), build "Repay Loan" from the loans list, and send both through the play screen's own buttons.
+
+/** One emergency loan as the advice reads it: what repaying costs now, what a day of it costs, whether it was ever charged. */
+export interface V99LoanView { amount: number; owed: number; dailyInterest: number; charged: boolean }
+
+/** The actor's repayable emergency loans, smallest first — the order the Repay Loan button and the engine repay them in. */
+export function v99RepayableLoans(actor: unknown): V99LoanView[] {
+  const loans: unknown[] = v99IsRecord(actor) && Array.isArray(actor.loans) ? actor.loans : [];
+  return loans
+    .filter((l): l is Record<string, unknown> => v99IsRecord(l) && Number(l.amount) > 0)
+    .sort((a, b) => Number(a.amount) - Number(b.amount))
+    .map(l => {
+      const amount = Number(l.amount);
+      const principal = typeof l.principal === 'number' && l.principal > 0 ? l.principal : Math.min(amount, LOAN_AMOUNT);
+      return { amount, owed: simpleLoanRepaymentAmount(l), dailyInterest: Math.floor(principal * LOAN_INTEREST_RATE), charged: Number(l.accrued || 0) > 0 };
+    });
+}
+
+/** Borrowing or repaying: money that moves without being income or spending (the card must not call it "expected +$500" or "no cash required"). */
+export function v99IsDebtAction(actionType: unknown): boolean {
+  const type = String(actionType || '');
+  return type === 'emergency_loan' || type === 'repay_emergency_loan' || type === 'take_loan' || type === 'take_advanced_loan' || type === 'draw_credit_line' || type === 'repay_loan' || type === 'repay_advanced_loan';
+}
+
+/** The cost line of a loan's card (null for every other action): what it really costs, since it uses no action. */
+export function v99LoanCostLabel(actionType: unknown): string | null {
+  return actionType === 'emergency_loan' ? `${fmtMoney(Math.floor(LOAN_AMOUNT * LOAN_INTEREST_RATE))} a day interest until repaid (uses no action)` : null;
+}
+
+/** What a card shows as its cash cost when the candidate carries none (a repayment is not "spending": it is exempt from the spending caps). */
+export function v99CardCashCost(candidate: { actionType?: unknown; parameters?: unknown } | null | undefined): number {
+  if (!candidate || candidate.actionType !== 'repay_emergency_loan' || !v99IsRecord(candidate.parameters)) return 0;
+  return Math.max(0, v99Finite(candidate.parameters.repaymentAmount, 0));
+}
+
+/** Removes the generic income wording from a debt action's reasons, in place (a loan is not "expected +$500", a repayment not "no extra cash required"). */
+export function v99DropIncomeWordingForDebt(actionType: unknown, whyPoints: string[]): void {
+  if (!v99IsDebtAction(actionType)) return;
+  for (let k = whyPoints.length - 1; k >= 0; k--) {
+    if (whyPoints[k] === 'no extra cash required' || whyPoints[k] === 'strong expected return' || /^(expected|on average) \+\$/.test(whyPoints[k])) whyPoints.splice(k, 1);
+  }
+}
+
+/** The cards of debt actions, corrected in place: the benefit is the candidate's own outcome line, and a repayment shows the cash it pays. */
+export function v99TruthfulDebtCards(cards: ContextualActionCandidate[]): void {
+  for (const card of cards) {
+    if (!card || !v99IsDebtAction(card.actionType) || !card.execution || card.execution.kind !== 'copilot_candidate') continue;
+    const candidate: unknown = card.execution.candidate;
+    if (!v99IsRecord(candidate)) continue;
+    card.benefit = typeof candidate.expectedOutcome === 'string' && candidate.expectedOutcome ? candidate.expectedOutcome : null;
+    if (!card.costEstimate) card.costEstimate = v99CardCashCost(candidate);
+  }
+  v99RankDueRepaymentFirst(cards);
+}
+
+/** The utility of a repayment that is the first thing to do (the final day, or cash that comfortably covers it). */
+export const V99_REPAY_FIRST_UTILITY = 97;
+/** More than every bonus the play screen's recommendation can add to another card (strategy 25, objective 6, analysis 5, critical 20). */
+export const V99_REPAY_FIRST_MARGIN = 60;
+
+/**
+ * A repayment that is due goes first on the play screen. It is a free action, so nothing else is given up for it —
+ * but a challenge that "advances the current goal" collects more ranking points than any utility can, and "Repay
+ * Loan" sat third under two wagers while the loan charged $125 a day. Only the order changes; the lift is listed
+ * in the card's score breakdown.
+ */
+export function v99RankDueRepaymentFirst(cards: ContextualActionCandidate[]): void {
+  const due = cards.find(card => {
+    if (!card || card.actionType !== 'repay_emergency_loan' || !card.legal || !card.execution || card.execution.kind !== 'copilot_candidate') return false;
+    const candidate: unknown = card.execution.candidate;
+    return v99IsRecord(candidate) && v99Finite(candidate.utilityScore, 0) >= V99_REPAY_FIRST_UTILITY;
+  });
+  if (!due) return;
+  const best = cards.reduce((max, card) => (card !== due && card && Number.isFinite(card.relevance) ? Math.max(max, card.relevance) : max), 0);
+  const lift = Math.ceil(best + V99_REPAY_FIRST_MARGIN - due.relevance);
+  if (lift > 0) {
+    due.relevance += lift;
+    due.scoreBreakdown = [...due.scoreBreakdown, { factor: 'A free action that stops the daily loan interest', points: lift }];
+  }
+  due.urgency = 'high';
+}
+
+export interface V99LoanAdviceInput {
+  actor: unknown;
+  world: unknown;
+  settings: unknown;
+  cash: number;
+  /** The Co-Pilot's cash reserve (default $250). */
+  reserve: number;
+  /** Actions left this turn. */
+  actionsLeft: number;
+  /** The settings the action costs are read from (the generator's apSettings). */
+  apSettings: unknown;
+  makeId: (catIdx: number, slug: string) => string;
+}
+
+function v99LoanSituation(i: V99LoanAdviceInput): { finalDay: boolean; streak: number; scoreIsMoney: boolean; lineMatters: boolean } {
+  const finalDay = v99PlayableDaysAfterToday(i.world, i.settings) === 0;
+  const tracker: unknown = v99IsRecord(i.world) ? i.world.bankruptcyTracker : null;
+  const streak = Math.max(0, Math.floor(v99Finite(v99IsRecord(tracker) ? tracker.player : undefined, 0)));
+  const metric = v99IsRecord(i.settings) ? i.settings.winCondition : undefined;
+  // On the last day the bankruptcy line only matters if tonight's day-end would be the one that completes the streak.
+  return { finalDay, streak, scoreIsMoney: metric === undefined || metric === 'money' || metric === 'netWorth', lineMatters: !finalDay || streak >= BANKRUPTCY_STREAK_DAYS - 1 };
+}
+
+/**
+ * True when the actor is in real bankruptcy danger: under the bankruptcy line, nothing to sell, and no action left to
+ * earn a wage with — only then is a 25%-a-day loan the first thing to do. (At $120 with a challenge and wages on offer
+ * the old candidate was still the top recommendation.)
+ */
+export function v99InBankruptcyDanger(i: { cash: number; sellableGoods: boolean; canStillEarn: boolean; lineMatters: boolean }): boolean {
+  return i.cash < BANKRUPTCY_THRESHOLD && !i.sellableGoods && !i.canStillEarn && i.lineMatters;
+}
+
+/**
+ * The emergency loan as a candidate: the game's own name ("Emergency Loan ($500)"), its real terms in the reason and
+ * the description, available only under the bankruptcy line and first only in real danger. Above the line it is
+ * listed as not needed — the button stays in Quick Actions for a player who wants one anyway.
+ */
+export function v99BuildEmergencyLoanCandidate(i: V99LoanAdviceInput): CoPilotActionCandidate {
+  const perDay = Math.floor(LOAN_AMOUNT * LOAN_INTEREST_RATE);
+  const held = v99IsRecord(i.actor) && Array.isArray(i.actor.loans) ? i.actor.loans.length : 0;
+  const s = v99LoanSituation(i);
+  const underLine = i.cash < BANKRUPTCY_THRESHOLD;
+  const danger = v99InBankruptcyDanger({ cash: i.cash, sellableGoods: v99HasSellableGoods(i.actor), canStillEarn: v99ActionLimitsOff(i.apSettings) || i.actionsLeft >= Math.max(1, v99CandidateRuleApCost('work', v99IsRecord(i.actor) ? i.actor : null, i.apSettings)), lineMatters: s.lineMatters });
+  const blocker = held >= MAX_ACTIVE_LOANS ? 'Emergency loan limit reached'
+    : !underLine ? `Not needed — you are above the ${fmtMoney(BANKRUPTCY_THRESHOLD)} bankruptcy line, and the loan costs ${fmtMoney(perDay)} a day`
+      : !s.lineMatters ? 'The match ends today — a loan would only cost its interest'
+        : null;
+  return {
+    id: i.makeId(3, 'emergency_loan'),
+    category: 'loans_and_credit',
+    categoryIndex: 3,
+    categoryName: 'Financial / Banking',
+    title: `Emergency Loan (${fmtMoney(LOAN_AMOUNT)})`,
+    description: buildEmergencyLoanConfirmMessage(LOAN_AMOUNT, LOAN_INTEREST_RATE),
+    actionType: 'emergency_loan',
+    apCost: 0,
+    costEstimate: 0,
+    expectedOutcome: `+${fmtMoney(LOAN_AMOUNT)} now; ${fmtMoney(perDay)} a day interest until repaid`,
+    utilityScore: danger ? 90 : 70,
+    riskFactor: 30,
+    rewardScore: 60,
+    longTermScore: 40,
+    expectedStateDelta: { cashDelta: LOAN_AMOUNT, apDelta: 0 },
+    isValid: !blocker,
+    invalidationReason: blocker || undefined,
+    adviceReason: danger
+      ? `you have ${fmtMoney(i.cash)}, under the ${fmtMoney(BANKRUPTCY_THRESHOLD)} bankruptcy line, with nothing to sell and no action left — borrows ${fmtMoney(LOAN_AMOUNT)} at ${fmtMoney(perDay)} a day until repaid`
+      : `borrows ${fmtMoney(LOAN_AMOUNT)} now at ${fmtMoney(perDay)} a day interest (${Math.round(LOAN_INTEREST_RATE * 100)}%) until repaid — earn or sell first if you can`,
+    parameters: { principal: LOAN_AMOUNT, amount: LOAN_AMOUNT },
+    ...(danger ? {} : { v99LoanRank: 'after_wage' as const })
+  };
+}
+
+/** The comfort a repayment must leave behind before it is the first thing to do: the reserve, or what the loan lent. */
+export function v99RepayComfortMargin(reserve: number): number {
+  return Math.max(v99Finite(reserve, 0), LOAN_AMOUNT);
+}
+
+/**
+ * "Repay Loan" from the loans list (null with no emergency loan). It is first on the final day and whenever cash
+ * comfortably covers it — for a loan that has been charged interest, so repaying really saves the next charge; a loan
+ * taken today costs the same to repay tomorrow, so it is not offered yet. It never leaves the player under the
+ * bankruptcy line. The reason says what the score counts: money NET of loans.
+ */
+export function v99BuildRepayLoanCandidate(i: V99LoanAdviceInput): CoPilotActionCandidate | null {
+  const loan = v99RepayableLoans(i.actor)[0];
+  if (!loan) return null;
+  const s = v99LoanSituation(i);
+  const after = i.cash - loan.owed;
+  const metric = v99IsRecord(i.settings) ? i.settings.winCondition : undefined;
+  const blocker = i.cash < loan.owed ? `Need ${fmtMoney(loan.owed)} to repay this loan`
+    : !loan.charged ? `Taken today — repaying costs the same tomorrow (${fmtMoney(loan.owed)} in all)`
+      : after < BANKRUPTCY_THRESHOLD && s.lineMatters ? `Repaying now would leave you under the ${fmtMoney(BANKRUPTCY_THRESHOLD)} bankruptcy line`
+        : null;
+  const first = s.finalDay || after >= v99RepayComfortMargin(i.reserve);
+  const interest = `${fmtMoney(loan.dailyInterest)}`;
+  const scoreClause = !s.scoreIsMoney ? '' : metric === 'netWorth' ? ' — your net worth already counts the loan against you' : ' — your score is your money minus what you owe';
+  const reason = s.finalDay
+    ? `the match ends today${scoreClause}; repaying now saves the ${interest} interest charged tonight`
+    : first
+      ? `stops the ${interest}-a-day interest${scoreClause}, so paying back ${fmtMoney(loan.owed)} costs your result nothing`
+      : `stops the ${interest}-a-day interest; you keep ${fmtMoney(Math.max(0, after))} after repaying`;
+  return {
+    id: i.makeId(3, 'repay_emergency_loan'),
+    category: 'loans_and_credit',
+    categoryIndex: 3,
+    categoryName: 'Financial / Banking',
+    title: `Repay Loan (${fmtMoney(loan.owed)})`,
+    description: `Repay the emergency loan (${fmtMoney(loan.owed)}) and stop its ${interest}-a-day interest.`,
+    actionType: 'repay_emergency_loan',
+    apCost: 0,
+    // Not spending: a repayment lowers cash and debt together, so it is exempt from the reserve floor and the caps.
+    costEstimate: 0,
+    expectedOutcome: `Loan cleared: no more ${interest}-a-day interest`,
+    utilityScore: first ? V99_REPAY_FIRST_UTILITY : 71,
+    riskFactor: 0,
+    rewardScore: 65,
+    longTermScore: 90,
+    expectedStateDelta: { cashDelta: -loan.owed, apDelta: 0 },
+    isValid: !blocker,
+    invalidationReason: blocker || undefined,
+    adviceReason: reason,
+    parameters: { repaymentAmount: loan.owed, amount: loan.owed },
+    ...(first ? { v99LoanRank: 'first' as const } : {})
+  };
+}
+
+/** Where a loan move belongs in the ranking: a repayment that is due goes first; a loan outside real danger goes after the wage. */
+export type V99LoanRank = 'first' | 'after_wage';
+
+/**
+ * Keeps the loan moves where they were built to be, in place, after everything else has been scored. With the
+ * Co-Pilot in control the Background AI's handoff re-scores the pool (up to +15 for the moves it prepared): challenges
+ * rose above a due repayment, so the Co-Pilot spent its three actions and never repaid while the loan charged $125 a
+ * day; and a loan the handoff listed rose above "Work for Wages", so it borrowed first with actions unused. A due
+ * repayment (v99LoanRank 'first') is lifted above every other valid move — it is a free action, so nothing is given
+ * up — and a loan outside real danger ('after_wage') is held just under the best valid wage. Nothing else moves, and
+ * without a re-scoring nothing changes at all.
+ */
+export function v99KeepLoanOrder(pool: CoPilotActionCandidate[]): void {
+  const valid = pool.filter(c => Boolean(c) && c.isValid);
+  const best = (keep: (c: CoPilotActionCandidate) => boolean): number | null => valid.reduce<number | null>((max, c) => (keep(c) && Number.isFinite(c.utilityScore) && (max === null || c.utilityScore > max) ? c.utilityScore : max), null);
+  for (const c of valid) {
+    if (c.actionType !== 'emergency_loan' || c.v99LoanRank !== 'after_wage') continue;
+    const wage = best(o => o.actionType === 'work');
+    if (wage !== null && c.utilityScore > wage) c.utilityScore = wage - 1;
+  }
+  for (const c of valid) {
+    if (c.actionType !== 'repay_emergency_loan' || c.v99LoanRank !== 'first') continue;
+    const others = best(o => o !== c);
+    c.utilityScore = Math.max(v99Finite(c.utilityScore, 0), V99_REPAY_FIRST_UTILITY, others === null ? 0 : others + 1);
+  }
+}
+
+/** The two loan moves the player's "Do It" carries out with the play screen's own buttons (null for everything else). */
+export type V99LoanDoItRoute = 'emergency_loan' | 'repay_emergency_loan';
+export function v99LoanDoItRoute(actionType: unknown): V99LoanDoItRoute | null {
+  return actionType === 'emergency_loan' || actionType === 'repay_emergency_loan' ? actionType : null;
+}
+
+/**
+ * Presses the play screen's own loan button for a recommendation: the Emergency Loan button (which states the terms and
+ * asks) or the Repay Loan button. Returns false when it is not a loan move or the handlers are not there (then the
+ * caller's other routes apply). v99HumanDoItRoute keeps answering 'canonical' for these types; this is asked first.
+ */
+export function v99RunLoanDoIt(actionType: unknown, hands: V99HumanDoItHandlers | null | undefined): boolean {
+  const route = v99LoanDoItRoute(actionType);
+  if (!route || !hands) return false;
+  const press = route === 'emergency_loan' ? hands.emergencyLoan : hands.repayLoan;
+  if (!press) return false;
+  press();
+  return true;
+}
+
+// ---- W3F1: a header and a goal banner that are true ----------------------------------------------------------------
+
+/**
+ * The header's extras. `notice` is copied through. In a match the human only watches (all-AI teams) the header named
+ * the first AI's turn "YOUR TURN — YOU'RE PLAYING — 3 actions"; it now names the acting AI and says WATCHING.
+ */
+export function v99ApplyHeaderExtras(header: V9Cohesion['header'], i: Pick<V9CohesionInputs, 'notice' | 'spectator' | 'currentActorName'>): void {
+  header.notice = i.notice || null;
+  if (i.spectator !== true) return;
+  header.turnLabel = `${String(i.currentActorName || 'AI').toUpperCase()}'S TURN`;
+  header.whoseTurn = 'other';
+  header.controlLabel = 'WATCHING';
+  header.controlTone = 'waiting';
+  header.apLabel = '';
+}
+
+/**
+ * The focus progress the feedback banner compares. The match's win-condition goal reports no steps: it is decided when
+ * the match ends, so it is never announced as "✓ Goal: Finish with the most money — Complete" when the focus moves on
+ * (taking a region on day 1 did that, while behind 5 to 1) — the move is worded as a new focus. Other goals are unchanged.
+ */
+export function v99FocusProgressForFeedback(sourceType: unknown, progress: { completed?: unknown; total?: unknown } | null | undefined, completionState: unknown): { focusDone: number; focusTotal: number; focusCompleted: boolean } {
+  if (sourceType === 'win_condition') return { focusDone: 0, focusTotal: 0, focusCompleted: false };
+  return { focusDone: Number(progress?.completed || 0), focusTotal: Number(progress?.total || 0), focusCompleted: completionState === 'completed' };
+}
+
+// ---- W3F1: each thing said once (default layout) --------------------------------------------------------------------
+
+/**
+ * Which header statements the DEFAULT play layout does not draw a second time. Above the fold the screen said YOUR
+ * TURN twice (header, docked pill) and YOU'RE PLAYING twice (control strip, header chip). The header's turn label is
+ * left to the docked pill directly below it on the player's own turn (the pill is also the live region that announces
+ * the turn); the header chip is left out where it only repeats — "YOU'RE PLAYING" (the control strip above says it)
+ * and "WAITING FOR X" (the turn label beside it says "X'S TURN"). Co-Pilot, rescue and WATCHING chips stay. The classic
+ * layout (classicPlayScreenLayout) draws everything exactly as V9.8. Hidden statements stay in the page (sr-only,
+ * aria-hidden) so nothing that reads them by test id breaks.
+ */
+export function v99HeaderDeclutter(i: { classicLayout: boolean; pillDocked: boolean; header: Pick<V9Cohesion['header'], 'whoseTurn' | 'controlTone' | 'controlLabel'> }): { turnLabel: boolean; controlChip: boolean } {
+  if (i.classicLayout) return { turnLabel: false, controlChip: false };
+  return {
+    turnLabel: i.pillDocked && i.header.whoseTurn === 'you',
+    controlChip: i.header.controlTone === 'you' || (i.header.controlTone === 'waiting' && /^WAITING FOR /.test(i.header.controlLabel))
+  };
+}
+
+/**
+ * True when the docked turn pill is on screen AND reads "YOUR TURN" on the player's turn — only then does the header's
+ * label repeat it. The pill exists only in the competitive modes (renderTurnIndicator draws nothing otherwise), so in
+ * Single Player and Scenario Mode the presentation is 'docked' but nothing is drawn; and in the team modes the pill
+ * names the actor and the team ("Tester • Tester's Team") instead. In all of those the header keeps "YOUR TURN".
+ */
+export function v99PillSaysYourTurn(presentation: V99TurnPillPresentation, competitiveMode: boolean, teamMode: boolean): boolean {
+  return presentation === 'docked' && competitiveMode && !teamMode;
+}
+
+// ---- W3F1: counts and labels that say what they count --------------------------------------------------------------
+
+/**
+ * The Region Preview's two challenge counts, from the list the Challenges window shows and by its rule (a challenge
+ * won this season is done until the season turns). The preview said "4 available • 0 completed" for a region whose
+ * four challenges were all done this season: "available" was the size of the region's list and "completed" looked at
+ * another list than the window does.
+ */
+export function v99RegionChallengeTally(actor: V99ChallengeActorView | null | undefined, region: string, world: V99ChallengeWorldView | null | undefined, settings: V99ChallengeSettingsView | null | undefined, seed?: number): { open: number; done: number } {
+  if (!actor || !isChallengeRegionCode(region)) return { open: 0, done: 0 };
+  const season = v99Strings(actor.completedThisSeason);
+  const defs = listRegionChallengeDefinitions(region, {
+    settings: settings || null, completedNames: v99Strings(actor.challengesCompleted), unlockedIds: sanitizeUnlockedChallengeIds(actor.unlockedChallengeIds),
+    day: v99Finite(world ? world.day : undefined, 1) || 1, seed: v99Finite(seed, v99Finite(settings ? settings.worldRngSeed : undefined, 1)) || 1, seasonNames: season
+  });
+  const open = defs.filter(def => !season.includes(def.name)).length;
+  return { open, done: defs.length - open };
+}
+
+/** "2 available • 2 done this season" — the preview's line. */
+export function v99RegionChallengeTallyText(tally: { open: number; done: number }): string {
+  return `${tally.open} available • ${tally.done} done this season`;
+}
+
+/**
+ * The "Most Money" figure is cash NET of loans (a rival holding $500 of borrowed cash scores $0). Where that figure
+ * stands beside raw cash the label says so, whenever a loan makes the two differ.
+ */
+export function v99WinLabelWithDebtNote(label: string, metric: unknown, debts: ReadonlyArray<number | null | undefined>): string {
+  return metric === 'money' && debts.some(d => typeof d === 'number' && d > 0) ? `${label} (net of loans)` : label;
+}
+
+// ---- W3F1: the human's own contributions in a team match ------------------------------------------------------------
+export type V99HumanContributionKind = 'challenge' | 'sale' | 'craft';
+
+/**
+ * The contribution record after one of the human's own actions: a challenge won (its reward and one challenge), a sale
+ * (its price) or a craft (the item's value). "Individual Contributions" on the team end screen showed the human with
+ * $0 earned and 0 challenges after winning eight: only the AI actors' paths recorded theirs.
+ */
+export function v99HumanContributionAfter(stats: unknown, kind: V99HumanContributionKind, amount: number): ActorContributionStats {
+  const base: ActorContributionStats = { ...createDefaultContributionStats(), ...(v99IsRecord(stats) ? (stats as Partial<ActorContributionStats>) : {}) };
+  const add = Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
+  if (kind === 'challenge') return { ...base, moneyEarned: (Number(base.moneyEarned) || 0) + add, challengesCompleted: (Number(base.challengesCompleted) || 0) + 1 };
+  if (kind === 'sale') return { ...base, moneyEarned: (Number(base.moneyEarned) || 0) + add };
+  return { ...base, craftedValue: (Number(base.craftedValue) || 0) + add };
+}
+
+/** What a craft is worth in the contribution record: the recipe's value with the character's quality bonus (the AI path's figure). */
+export function v99CraftContributionValue(baseValue: unknown, qualityBonus: unknown): number {
+  return Math.round(v99Finite(baseValue, 0) * (1 + v99Finite(qualityBonus, 0)));
+}
+
+/** Presses a Quick Action by id, exactly as a click on its button would. 'missing': not on offer now; 'disabled': shown but unavailable. */
+export function v99PressQuickAction(actions: ReadonlyArray<{ id?: string; disabled?: boolean; action?: () => void }> | null | undefined, id: string): 'pressed' | 'disabled' | 'missing' {
+  const found = (actions || []).find(a => a && a.id === id);
+  if (!found || typeof found.action !== 'function') return 'missing';
+  if (found.disabled) return 'disabled';
+  found.action();
+  return 'pressed';
 }
 
 
@@ -191774,6 +192690,16 @@ export function matchLengthInDays(totalDays: number): number {
   return Number.isFinite(t) ? Math.max(1, Math.floor(t) - 1) : 1;
 }
 
+/**
+ * V9.9 (W3F1): day-ends still to come before the one that ends the match (0 on the final day). One arithmetic for the
+ * advice (v99PlayableDaysAfterToday calls this) and for the match flow (matchLengthInDays is the last day played).
+ */
+export function playableDaysAfterToday(day: number, totalDays: number): number {
+  const d = Number(day), t = Number(totalDays);
+  if (!Number.isFinite(d) || !Number.isFinite(t) || Math.floor(t) < 2) return 0;
+  return Math.max(0, matchLengthInDays(t) - Math.floor(d));
+}
+
 /** "N days to play, today included" — or the final-day sentence. For panels that state the time left. */
 export function describeDaysToPlay(day: number, totalDays: number): string {
   if (isFinalPlayableDay(day, totalDays)) return 'Final day — the match ends when this day ends';
@@ -191802,6 +192728,28 @@ export function finalStretchChipText(daysLeft: number): string {
 /** The End Turn label: on the final day the button says what it will do. */
 export function endTurnButtonLabel(day: number, totalDays: number, base: string = 'End Turn'): string {
   return isFinalPlayableDay(day, totalDays) ? `${base} — finish match` : base;
+}
+
+/** V9.9 (W3F1): what an End Turn control adds on the final day (tooltips, the advice card); null on every other day. */
+export function endTurnFinishesMatchNote(day: number, totalDays: number): string | null {
+  return isFinalPlayableDay(day, totalDays) ? 'this is the final day — ending your turn finishes the match' : null;
+}
+
+/**
+ * V9.9 (W3F1): the advice card's End Turn on the final day says what the click does, like the header button. Any other
+ * day, or a card that is not End Turn, comes back unchanged.
+ */
+export function finalDayEndTurnCard<T extends { label: string; why: string; doLabel?: string }>(card: T, day: number, totalDays: number): T {
+  const note = endTurnFinishesMatchNote(day, totalDays);
+  if (!note) return card;
+  return { ...card, label: endTurnButtonLabel(day, totalDays, card.label), why: `${card.why ? `${card.why}; ` : ''}${note}`, doLabel: 'Finish match' };
+}
+
+/** V9.9 (W3F1): "Decide by day N", never past the last day that is played (then: "Decide by day 9 — the final day"). */
+export function decisionDeadlineText(expiresDay: number, lastDay?: number | null): string {
+  const d = Number(expiresDay), last = Number(lastDay);
+  if (!Number.isFinite(last) || last < 1 || !Number.isFinite(d) || d < last) return `Decide by day ${expiresDay}`;
+  return `Decide by day ${Math.floor(last)} — the final day`;
 }
 
 /** The day-start notice that the end is near: three days out and on the final day. Null on every other day. */
@@ -191858,11 +192806,25 @@ export function readMatchEnd(gameState: unknown): MatchEndRecord | null {
 }
 
 /** Names the end sentence needs. `playerSide` / `rivalSide` are as the end screen shows them ("You", a team name, the rival's name). */
-export interface MatchEndNames { rivalSide: string; metricLabel: string; regionsGoal: boolean; teamMode: boolean }
+export interface MatchEndNames {
+  rivalSide: string; metricLabel: string; regionsGoal: boolean; teamMode: boolean;
+  /** V9.9 (W3F1): set only where the human watches (the all-AI team match): the first team's name, used instead of "you" / "your team". */
+  playerSide?: string | null;
+}
+
+/** V9.9 (W3F1): the all-AI team match — the human only watches, so no side is "you". */
+export function isSpectatorMatch(selectedMode: unknown): boolean {
+  return selectedMode === 'team_ai_vs_ai';
+}
+
+/** V9.9 (W3F1): the name that stands in for "you" where the human watches (null in every mode the player plays in). */
+export function spectatorSideName(selectedMode: unknown, playerTeamName: unknown): string | null {
+  return isSpectatorMatch(selectedMode) ? (String(playerTeamName || '').trim() || 'The first team') : null;
+}
 
 /** One plain sentence: when the match ended and why. */
 export function describeMatchEnd(record: MatchEndRecord, names: MatchEndNames): string {
-  const you = names.teamMode ? 'your team' : 'you';
+  const you = names.playerSide || (names.teamMode ? 'your team' : 'you'); // V9.9 (W3F1): the watched team's name for a spectator
   const rival = names.rivalSide || 'the rival';
   const metric = (names.metricLabel || 'the win condition').toLowerCase();
   const broke = `cash under $${BANKRUPTCY_THRESHOLD} at ${BANKRUPTCY_STREAK_DAYS} day-ends in a row`;
@@ -191902,6 +192864,51 @@ export function resolveMatchEndOutcome(record: MatchEndRecord | null, metric: Me
   const endLine = describeMatchEnd(record, names);
   if (record.cause === 'day_limit' || record.winner === null) return { ...base, endCause: record.cause, endedEarly: false, endLine, solo: names.solo };
   return { ...base, playerWon: record.winner === 'player', reason: endLine, endCause: record.cause, endedEarly: true, endLine, solo: names.solo };
+}
+
+/** V9.9 (W3F1): the standings a day-limit ending is decided on, with the values already formatted as the end screen shows them. */
+export interface MatchOverStanding { playerWon: boolean; metricLabel: string; tieBreak: boolean; playerValue: string; rivalValue: string }
+
+/**
+ * V9.9 (W3F1): the Game Over notification. It used to be V9.8's text ("Game Over! AI finished ahead on most money
+ * ($5,439 vs $1,000 against You)", "Mercy rule: AI dominated … for 5 days straight"), which the end screen now shows
+ * beside the new end line — with another day and without the rival's name. It is built from the end record and the
+ * same names as that line: the end sentence first, then who finished ahead (a day-limit ending) or who won.
+ * `detail` replaces the standings sentence (the Grand Tour tie-break). The caller stamps it with `record.day`.
+ */
+export function matchOverNotice(input: { record: MatchEndRecord; names: MatchEndNames; solo?: boolean; standing?: MatchOverStanding | null; detail?: string | null }): { message: string; type: 'success' | 'ai' | 'error' | 'info' } {
+  const { record, names } = input;
+  const spectator = Boolean(names.playerSide);
+  const you = names.playerSide || (names.teamMode ? 'Your team' : 'You');
+  const rival = names.rivalSide || 'The rival';
+  const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+  const endLine = describeMatchEnd(record, names);
+  const decided = record.cause !== 'day_limit' && record.winner !== null;
+  let result = '';
+  let playerWon: boolean | null = null;
+  if (input.solo) {
+    result = record.cause === 'player_bankrupt' ? 'The run is over.' : '';
+    playerWon = record.cause === 'player_bankrupt' ? false : null;
+  } else if (decided) {
+    playerWon = record.winner === 'player';
+    result = record.cause === 'scenario' ? '' : playerWon ? (spectator ? `${you} wins.` : names.teamMode ? 'Your team wins!' : 'You win!') : `${cap(rival)} wins.`;
+  } else if (typeof input.detail === 'string' && input.detail) {
+    result = input.detail;
+    playerWon = input.standing ? input.standing.playerWon : null;
+  } else if (input.standing) {
+    const st = input.standing;
+    playerWon = st.playerWon;
+    const verb = st.tieBreak ? 'won the tie-break' : 'finished ahead';
+    const metric = (st.metricLabel || 'the win condition').toLowerCase();
+    const mine = spectator ? `${you}'s` : names.teamMode ? "your team's" : 'your';
+    result = st.playerWon
+      ? `${you} ${verb} on ${metric}: ${st.playerValue} against ${rival}'s ${st.rivalValue}.`
+      : `${cap(rival)} ${verb} on ${metric}: ${st.rivalValue} against ${mine} ${st.playerValue}.`;
+  }
+  const type: 'success' | 'ai' | 'error' | 'info' = record.cause === 'player_bankrupt' && !spectator ? 'error'
+    : playerWon === null || spectator ? (input.solo && playerWon === null ? 'success' : 'info')
+      : playerWon ? 'success' : 'ai';
+  return { message: `Match over. ${endLine}${result ? ` ${result}` : ''}`, type };
 }
 
 /** What Grand Tour is scored on (its outcome carries the stamp counts under the 'regions' key). */
@@ -191979,20 +192986,50 @@ export function evaluateMercyRule(input: MercyRuleInput): MercyRuleResult {
   return { suspended: null, tracker, ended };
 }
 
-/** The daily announcement while a mercy streak is running (days 1–4 of 5). Null when there is nothing to announce. */
-export function mercyCountdownNotice(tracker: Partial<MercyTracker> | null | undefined, names: MatchEndNames): { message: string; type: 'warning' | 'info' } | null {
+/** V9.9 (W3F1): where in the match the mercy rule is being looked at. Without it nothing is known about the day limit (V9.8 wording). */
+export interface MercyTiming { day: number; totalDays: number }
+
+/**
+ * V9.9 (W3F1): true while a streak that stands at `count` days can still reach MERCY_STREAK_DAYS before the day limit
+ * ends the match anyway. The count grows by one per day-end and the last day-end of a match is the day limit itself,
+ * so (5 − count) more day-ends must fit into playableDaysAfterToday. A countdown that cannot complete is not announced:
+ * on day 9 of 10 the screen used to say "close the gap or the match ends in 4 more days".
+ */
+export function mercyStreakCanComplete(count: number, timing?: MercyTiming | null): boolean {
+  if (!timing) return true;
+  const day = Number(timing.day), total = Number(timing.totalDays);
+  if (!Number.isFinite(day) || !Number.isFinite(total) || Math.floor(total) < 2) return true;
+  return MERCY_STREAK_DAYS - Math.floor(Number(count) || 0) <= playableDaysAfterToday(day, total);
+}
+
+/**
+ * V9.9 (W3F1): at the day-end that also reaches the day limit, the limit ends the match (its full length was played and
+ * the standings decide — the side that leads 5-to-1 wins either way); the mercy rule only ever ends a match EARLY.
+ * This is the same boundary as mercyStreakCanComplete, so a countdown is announced exactly when it can end the match.
+ */
+export function mercyEndingApplies(ended: MercyRuleResult['ended'], newDay: number, totalDays: number): MercyRuleResult['ended'] {
+  const d = Number(newDay), t = Number(totalDays);
+  return ended !== null && Number.isFinite(d) && Number.isFinite(t) && Math.floor(t) >= 2 && d >= t ? null : ended;
+}
+
+/**
+ * The daily announcement while a mercy streak is running (days 1–4 of 5). Null when there is nothing to announce.
+ * V9.9 (W3F1): `timing` — a streak that cannot complete before the day limit is not announced.
+ */
+export function mercyCountdownNotice(tracker: Partial<MercyTracker> | null | undefined, names: MatchEndNames, timing?: MercyTiming | null): { message: string; type: 'warning' | 'info' } | null {
   const ai = Math.floor(Number(tracker?.ai) || 0), player = Math.floor(Number(tracker?.player) || 0);
-  const you = names.teamMode ? 'your team' : 'you';
+  const you = names.playerSide || (names.teamMode ? 'your team' : 'you');
   const rival = names.rivalSide || 'the rival';
   const metric = (names.metricLabel || 'the win condition').toLowerCase();
   const left = (n: number) => { const d = MERCY_STREAK_DAYS - n; return `${d} more day${d === 1 ? '' : 's'}`; };
-  if (ai >= 1 && ai < MERCY_STREAK_DAYS) {
+  if (ai >= 1 && ai < MERCY_STREAK_DAYS && mercyStreakCanComplete(ai, timing)) {
     const lead = names.regionsGoal ? `${rival} has held a decisive majority of regions` : `${rival} has led ${you} ${MERCY_RATIO}-to-1 on ${metric}`;
-    return { message: `⚠️ Mercy rule: ${lead} for ${ai} of ${MERCY_STREAK_DAYS} days. Close the gap or the match ends in ${left(ai)}.`, type: 'warning' };
+    return { message: `⚠️ Mercy rule: ${lead} for ${ai} of ${MERCY_STREAK_DAYS} days. ${names.playerSide ? `If it holds, the match ends in ${left(ai)}.` : `Close the gap or the match ends in ${left(ai)}.`}`, type: names.playerSide ? 'info' : 'warning' };
   }
-  if (player >= 1 && player < MERCY_STREAK_DAYS) {
-    const lead = names.regionsGoal ? `${you} have held a decisive majority of regions` : `${you} have led ${rival} ${MERCY_RATIO}-to-1 on ${metric}`;
-    return { message: `Mercy rule: ${lead} for ${player} of ${MERCY_STREAK_DAYS} days. If it holds, the match ends as a win in ${left(player)}.`, type: 'info' };
+  if (player >= 1 && player < MERCY_STREAK_DAYS && mercyStreakCanComplete(player, timing)) {
+    const have = names.playerSide ? 'has' : 'have';
+    const lead = names.regionsGoal ? `${you} ${have} held a decisive majority of regions` : `${you} ${have} led ${rival} ${MERCY_RATIO}-to-1 on ${metric}`;
+    return { message: `Mercy rule: ${lead} for ${player} of ${MERCY_STREAK_DAYS} days. If it holds, the match ends ${names.playerSide ? '' : 'as a win '}in ${left(player)}.`, type: 'info' };
   }
   return null;
 }
@@ -192001,30 +193038,55 @@ export function mercyCountdownNotice(tracker: Partial<MercyTracker> | null | und
  * Said once when a running mercy count stops without ending the match (the gap closed), so an announced countdown never
  * just disappears. `previous` is the tracker before the day, `result` what evaluateMercyRule returned for it.
  */
-export function mercyResetNotice(previous: Partial<MercyTracker> | null | undefined, result: MercyRuleResult, names: MatchEndNames): { message: string; type: 'info' } | null {
+export function mercyResetNotice(previous: Partial<MercyTracker> | null | undefined, result: MercyRuleResult, names: MatchEndNames, /** V9.9 (W3F1): the day that is BEGINNING — a count that was never announced (it could not complete) is not reported as reset either. */ timing?: MercyTiming | null): { message: string; type: 'info' } | null {
   if (result.suspended !== null || result.ended !== null) return null;
-  const was = (v: unknown): boolean => { const n = Math.floor(Number(v) || 0); return n >= 1 && n < MERCY_STREAK_DAYS; };
-  const you = names.teamMode ? 'your team' : 'you';
+  const yesterday: MercyTiming | null = timing ? { day: Number(timing.day) - 1, totalDays: timing.totalDays } : null;
+  const was = (v: unknown): boolean => { const n = Math.floor(Number(v) || 0); return n >= 1 && n < MERCY_STREAK_DAYS && mercyStreakCanComplete(n, yesterday); };
+  const you = names.playerSide || (names.teamMode ? 'your team' : 'you');
   const rival = names.rivalSide || 'the rival';
   const metric = (names.metricLabel || 'the win condition').toLowerCase();
+  const single = names.teamMode || Boolean(names.playerSide); // "your team leads" / "Azure Team leads" — "you lead"
   if (was(previous?.ai) && result.tracker.ai === 0) {
     const lead = names.regionsGoal ? 'holds a decisive majority of regions' : `leads ${you} ${MERCY_RATIO}-to-1 on ${metric}`;
     return { message: `Mercy rule: the count against ${you} is back to 0 — ${rival} no longer ${lead}.`, type: 'info' };
   }
   if (was(previous?.player) && result.tracker.player === 0) {
-    const lead = names.regionsGoal ? `${names.teamMode ? 'holds' : 'hold'} a decisive majority of regions` : `${names.teamMode ? 'leads' : 'lead'} ${rival} ${MERCY_RATIO}-to-1 on ${metric}`;
-    return { message: `Mercy rule: your count is back to 0 — ${you} no longer ${lead}. The match plays on.`, type: 'info' };
+    const lead = names.regionsGoal ? `${single ? 'holds' : 'hold'} a decisive majority of regions` : `${single ? 'leads' : 'lead'} ${rival} ${MERCY_RATIO}-to-1 on ${metric}`;
+    return { message: `Mercy rule: ${names.playerSide ? `${names.playerSide}'s` : 'your'} count is back to 0 — ${you} no longer ${lead}. The match plays on.`, type: 'info' };
   }
   return null;
 }
 
-/** The header's red chip while the rival's mercy streak is running. Null otherwise. `regionsGoal`: the win condition counts regions. */
-export function mercyHeaderWarning(tracker: Partial<MercyTracker> | null | undefined, gameMode: unknown, regionsGoal: boolean = false): { label: string; detail: string } | null {
+/**
+ * The header's red chip while the rival's mercy streak is running. Null otherwise. `regionsGoal`: the win condition counts regions.
+ * V9.9 (W3F1): `timing` — null as well once the streak can no longer complete before the day limit (the Current Focus
+ * keeps the match goal on the final days instead of "…or the match ends in 4 more days").
+ */
+export function mercyHeaderWarning(tracker: Partial<MercyTracker> | null | undefined, gameMode: unknown, regionsGoal: boolean = false, timing?: MercyTiming | null): { label: string; detail: string } | null {
   const ai = Math.floor(Number(tracker?.ai) || 0);
-  if (gameMode !== 'game' || ai < 1 || ai >= MERCY_STREAK_DAYS) return null;
+  if (gameMode !== 'game' || ai < 1 || ai >= MERCY_STREAK_DAYS || !mercyStreakCanComplete(ai, timing)) return null;
   const d = MERCY_STREAK_DAYS - ai;
   const lead = regionsGoal ? 'The rival has held a decisive majority of regions' : `The rival has led ${MERCY_RATIO}-to-1`;
   return { label: `Mercy rule: ${ai} of ${MERCY_STREAK_DAYS} days`, detail: `${lead} for ${ai} day${ai === 1 ? '' : 's'}. Close the gap or the match ends in ${d} more day${d === 1 ? '' : 's'}.` };
+}
+
+/**
+ * V9.9 (W3F1): the header's quiet chip while the PLAYER's own mercy streak is running. The daily notice is an 'info'
+ * toast, and on a day with three other day-start toasts the lane never showed it — a leading player first heard of
+ * the count when it reset. Null when no streak runs, when the rival's streak holds the red chip's place, or when the
+ * streak can no longer complete before the day limit. `playerSide`: the watched team in the all-AI match.
+ */
+export function mercyLeadChip(tracker: Partial<MercyTracker> | null | undefined, gameMode: unknown, opts?: { regionsGoal?: boolean; teamMode?: boolean; playerSide?: string | null; timing?: MercyTiming | null }): { label: string; detail: string } | null {
+  const player = Math.floor(Number(tracker?.player) || 0);
+  if (gameMode !== 'game' || player < 1 || player >= MERCY_STREAK_DAYS || !mercyStreakCanComplete(player, opts?.timing)) return null;
+  const d = MERCY_STREAK_DAYS - player;
+  const days = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
+  const who = opts?.playerSide ? `${opts.playerSide} has` : opts?.teamMode ? 'Your team has' : 'You have';
+  const lead = opts?.regionsGoal ? `${who} held a decisive majority of regions` : `${who} led ${MERCY_RATIO}-to-1`;
+  return {
+    label: opts?.playerSide ? `Mercy rule: ${opts.playerSide} ${player} of ${MERCY_STREAK_DAYS} days` : `Mercy rule: ${player} of ${MERCY_STREAK_DAYS} days your way — win in ${d} more`,
+    detail: `${lead} for ${days(player)}. If it holds, the match ends ${opts?.playerSide ? '' : 'as a win '}in ${d} more day${d === 1 ? '' : 's'}.`
+  };
 }
 
 /** Share of the mercy count the rival has reached (0..1) — what the "rival near victory" warning reports. Null where no rival can win by it. */
@@ -192259,6 +193321,71 @@ export interface DebriefFacts {
   daysLed: number; daysRecorded: number;
   /** Why a card has no data ("No rival in Single Player", …), keyed like `data`. */
   notes: Partial<Record<keyof DebriefDataAvailability, string>>;
+  /** V9.9 (W3F1): how the end screen names the two sides (team names in team modes) and whether the human only watched. */
+  sides?: MatchSideLabels;
+  /** V9.9 (W3F1): challenges won by the player's side — the one count every end-screen surface shows. */
+  playerChallengeWins?: number;
+}
+
+/**
+ * V9.9 (W3F1): the two sides of a result as the end screen names them. Team totals used to be credited to "You" and to
+ * one rival actor ("▲ You $10,196 vs ◆ Scientist AI $76" for Tester's Team against Rose Team), and the all-AI match
+ * ended with VICTORY / "You" for a spectator.
+ */
+export interface MatchSideLabels {
+  /** "You", or the player's team name in a team mode. */
+  you: string;
+  /** The rival's name, or the rival team's name in a team mode. */
+  rival: string;
+  /** "you" / "your team" / the watched team's name — for use inside a sentence. */
+  youInText: string;
+  teamMode: boolean;
+  /** The human only watched (the all-AI team match): no side is "you", nobody is congratulated. */
+  spectator: boolean;
+}
+
+export function matchSideLabels(selectedMode: unknown, playerTeamName: unknown, rivalTeamName: unknown, rivalName: unknown): MatchSideLabels {
+  const teamMode = isTeamModeSelection(typeof selectedMode === 'string' ? selectedMode : null);
+  const spectatorName = spectatorSideName(selectedMode, playerTeamName);
+  const team = String(playerTeamName || '').trim() || 'Your Team';
+  return {
+    you: spectatorName || (teamMode ? team : 'You'),
+    rival: teamMode ? (String(rivalTeamName || '').trim() || 'AI Team') : (String(rivalName || '').trim() || 'Rival'),
+    youInText: spectatorName || (teamMode ? 'your team' : 'you'),
+    teamMode, spectator: spectatorName !== null
+  };
+}
+
+/**
+ * V9.9 (W3F1): the "Challenges Won" row of the stats block. In a team mode the debrief counts the TEAM's wins, so the
+ * row says whose figure it is; the different challenges those wins cover follow in brackets when they differ.
+ */
+export function challengeStatRow(figures: { won: number; different: number }, sides: MatchSideLabels | null | undefined, actorName: string): { label: string; value: string } {
+  const label = sides && sides.spectator ? `${actorName}'s challenges won:` : sides && sides.teamMode ? 'Your own challenges won:' : 'Challenges Won:';
+  return { label, value: figures.different > 0 && figures.different < figures.won ? `${figures.won} (${figures.different} different)` : String(figures.won) };
+}
+
+/** V9.9 (W3F1): the headline of a result the human only watched ("AZURE TEAM WON"); null when the player played. */
+export function spectatorHeadline(sides: MatchSideLabels | null | undefined, playerSideWon: boolean): string | null {
+  return sides && sides.spectator ? `${(playerSideWon ? sides.you : sides.rival).toUpperCase()} WON` : null;
+}
+
+/**
+ * V9.9 (W3F1): the two challenge figures of the stats rows. The debrief said "Challenges won: you 23" while Full Stats
+ * said "Challenges Won: 16" one click away: the row counted the different challenges ever mastered and called them wins.
+ * `won` is the debrief's own count (the match's challenge log, the same ids); without a log (a save from before the
+ * log existed) it is the actor's own completed list. `different` is how many distinct challenges those wins cover.
+ */
+export function challengeStatFigures(gameState: unknown, actor: unknown, actorIds: readonly string[]): { won: number; different: number } {
+  const gs = (gameState && typeof gameState === 'object' ? gameState : {}) as { challengeCompletions?: unknown };
+  const a = (actor && typeof actor === 'object' ? actor : {}) as { challengesCompleted?: unknown; challengeMastery?: unknown };
+  const completed: unknown[] = Array.isArray(a.challengesCompleted) ? a.challengesCompleted : [];
+  const mastery = a.challengeMastery && typeof a.challengeMastery === 'object' ? Object.keys(a.challengeMastery as Record<string, unknown>).length : 0;
+  const log: unknown[] | null = Array.isArray(gs.challengeCompletions) ? gs.challengeCompletions : null;
+  const logged = log ? log.filter(c => Boolean(c) && actorIds.includes(String((c as { playerId?: unknown }).playerId))).length : 0;
+  const won = logged > 0 ? logged : completed.length;
+  const distinct = new Set(completed.map(c => String(c))).size;
+  return { won, different: Math.min(won, mastery > 0 ? mastery : distinct) };
 }
 
 /** Turns actually played, for "Match completed in N turns". */
@@ -192307,6 +193434,9 @@ export function buildMatchDebriefReport(params: DebriefAssemblyParams): DebriefA
   const metricLabel = grandTour ? GRAND_TOUR_METRIC_LABEL : ((WIN_METRIC_LABELS as Record<string, string>)[metricKey] || 'Score');
   const oppName = String(params.aiPlayer?.name || params.teamsById?.[TEAM_OPPONENT_ID]?.name || 'Rival AI');
   const rivalSide = teamMode ? String(params.teamsById?.[TEAM_OPPONENT_ID]?.name || oppName) : oppName;
+  // V9.9 (W3F1): the sides as the end screen names them; in the all-AI match the human watched, so no side is "you".
+  const sides = matchSideLabels(selectedMode, params.teamsById?.[TEAM_PLAYER_ID]?.name, rivalSide, oppName);
+  const watched = sides.spectator ? sides.you : null;
   const day = Number(gs.day) || 1, totalDays = Number(settings?.totalDays) || 0;
   const totalTurns = matchTurnsPlayed(record, day, totalDays);
   const fmtValue = (v: number) => metricKey === 'money' || metricKey === 'netWorth' ? fmtMoney(v) : String(Math.round(v));
@@ -192332,7 +193462,7 @@ export function buildMatchDebriefReport(params: DebriefAssemblyParams): DebriefA
     return {
       turn: c.day,
       description: hasRival
-        ? `${amount >= 0 ? 'You gained' : 'You lost'} ${fmtMoney(Math.abs(amount))} of net worth on ${rivalSide} (yours ${signed(c.playerDelta)}, theirs ${signed(c.rivalDelta)}).`
+        ? `${watched || (teamMode ? 'Your team' : 'You')} ${amount >= 0 ? 'gained' : 'lost'} ${fmtMoney(Math.abs(amount))} of net worth on ${rivalSide} (${watched ? `${watched} ` : teamMode ? "your team's " : 'yours '}${signed(c.playerDelta)}, ${watched ? `${rivalSide} ` : 'theirs '}${signed(c.rivalDelta)}).` // V9.9 (W3F1): a team's net worth is the team's
         : `Your net worth ${amount >= 0 ? 'rose' : 'fell'} by ${fmtMoney(Math.abs(amount))}.`,
       netWorthDelta: amount, impact: impactOf(amount, c.playerBefore), pivotalAction: amount >= 0 ? 'Gained ground' : 'Lost ground'
     };
@@ -192363,13 +193493,13 @@ export function buildMatchDebriefReport(params: DebriefAssemblyParams): DebriefA
   const threatLevel: OpponentReadAnalytics['perceivedThreatLevel'] = !hasRival ? 'low' : rv >= pv * 2 && rv > 0 ? 'extreme' : rv > pv ? 'high' : rv * 2 >= pv && rv > 0 ? 'moderate' : 'low';
   const rivalFacts: string[] = [];
   if (hasRival) {
-    rivalFacts.push(`Won ${recap.rivalChallengeWins} challenge${recap.rivalChallengeWins === 1 ? '' : 's'} (you: ${recap.playerChallengeWins}).`);
+    rivalFacts.push(`Won ${recap.rivalChallengeWins} challenge${recap.rivalChallengeWins === 1 ? '' : 's'} (${sides.youInText}: ${recap.playerChallengeWins}).`); // V9.9 (W3F1): a team's count is named as the team's
     if (recap.rivalFirst !== null && recap.rivalLast !== null && recap.daysRecorded >= 2) rivalFacts.push(`Net worth went from ${fmtMoney(recap.rivalFirst)} to ${fmtMoney(recap.rivalLast)} over ${recap.daysRecorded} recorded days.`);
     const rivalBest = recap.changes.reduce<MatchDayChange | null>((acc, c) => (c.rivalDelta > 0 && (!acc || c.rivalDelta > acc.rivalDelta) ? c : acc), null);
     if (rivalBest) rivalFacts.push(`Best day: day ${rivalBest.day} (${signed(rivalBest.rivalDelta)}).`);
   }
   const opponentRead: OpponentReadAnalytics = {
-    opponentName: hasRival ? oppName : 'No rival',
+    opponentName: hasRival ? (teamMode ? rivalSide : oppName) : 'No rival', // V9.9 (W3F1): the dossier's figures are the rival TEAM's in a team mode
     predictedStrategy: hasRival ? predictedStrategy : 'Solo run',
     readAccuracy: hasRival && recap.daysRecorded > 0 ? Math.round((recap.daysLed / recap.daysRecorded) * 100) : 0,
     perceivedThreatLevel: threatLevel,
@@ -192406,12 +193536,12 @@ export function buildMatchDebriefReport(params: DebriefAssemblyParams): DebriefA
   };
 
   // What happened, in plain statements.
-  const names: MatchEndNames = { rivalSide, metricLabel, regionsGoal: metricKey === 'regions' && !grandTour, teamMode };
+  const names: MatchEndNames = { rivalSide, metricLabel, regionsGoal: metricKey === 'regions' && !grandTour, teamMode, playerSide: watched };
   const endLine = record ? describeMatchEnd(record, names) : null;
   const lines: string[] = [];
   if (endLine) lines.push(endLine);
   const decidedByCause = record !== null && record.cause !== 'day_limit' && record.winner !== null;
-  const who = teamMode ? 'your team' : 'you', Who = teamMode ? 'Your team' : 'You', whose = teamMode ? "your team's" : 'your', Whose = teamMode ? "Your team's" : 'Your';
+  const who = watched || (teamMode ? 'your team' : 'you'), Who = watched || (teamMode ? 'Your team' : 'You'), whose = watched ? `${watched}'s` : teamMode ? "your team's" : 'your', Whose = watched ? `${watched}'s` : teamMode ? "Your team's" : 'Your';
   if (outcome) {
     lines.push(!hasRival ? `You finished the run on ${fmtValue(pv)} (${metricLabel.toLowerCase()}).`
       : decidedByCause ? `Scores when it ended (${metricLabel.toLowerCase()}): ${who} ${fmtValue(pv)}, ${rivalSide} ${fmtValue(rv)}.`
@@ -192440,8 +193570,9 @@ export function buildMatchDebriefReport(params: DebriefAssemblyParams): DebriefA
   const cause = record ? record.cause : null;
   const facts: DebriefFacts = {
     data, endLine, lines,
-    nextTime: pickNextTimeLine({ won: playerWon, hasRival, cause, recap, rivalName: rivalSide, metricLabel }),
-    growthDays: recap.growthDays, changeDays, daysLed: recap.daysLed, daysRecorded: recap.daysRecorded, notes
+    nextTime: watched ? null : pickNextTimeLine({ won: playerWon, hasRival, cause, recap, rivalName: rivalSide, metricLabel }), // V9.9 (W3F1): no advice "to you" about a match that was only watched
+    growthDays: recap.growthDays, changeDays, daysLed: recap.daysLed, daysRecorded: recap.daysRecorded, notes,
+    sides, playerChallengeWins: recap.playerChallengeWins
   };
 
   return {
@@ -197231,6 +198362,8 @@ export interface V99EndTurnPromptInput {
   bankruptcyThreshold: number;
   /** What the end-of-day safety net would sell at today's prices (null when it would not run). */
   forcedSale: { soldCount: number; cash: number } | null;
+  /** V9.9 (W3F1): this is the last day that is played — ending the turn finishes the match, and the question says so. Missing = false. */
+  finalDay?: boolean;
   /**
    * Cash left once tonight's emergency-loan interest has been taken (v99CashAfterLoanInterest); missing = `cash`.
    * The safety net runs after the interest, so this is the amount it compares with the line.
@@ -197268,6 +198401,7 @@ export function resolveEndTurnPrompt(input: V99EndTurnPromptInput): V99EndTurnPr
   if (input.skipConfirm) return V99_NO_END_TURN_PROMPT;
   const finiteAp = Number.isFinite(input.apLeft) ? Math.max(0, Math.floor(input.apLeft)) : 0;
   const canStillAct = finiteAp > 0 && !input.inTransit;
+  const finalDay = input.finalDay === true;
   const actionsText = `${finiteAp} action${finiteAp === 1 ? '' : 's'}`;
   // The safety net tests the cash that is left after tonight's loan interest, not the cash on screen now.
   const dayEndCash = typeof input.cashAtDayEnd === 'number' && Number.isFinite(input.cashAtDayEnd) ? Math.min(input.cashAtDayEnd, input.cash) : input.cash;
@@ -197281,13 +198415,23 @@ export function resolveEndTurnPrompt(input: V99EndTurnPromptInput): V99EndTurnPr
       kind: 'forced_sale',
       type: 'endTurnLiquidation',
       title: 'End turn with a forced sale?',
-      message: `${lead} If the day ends like this, the game force-sells ${n === input.unsoldCount ? (n === 1 ? 'your last item' : `all ${n} of your items`) : `${n} of your ${input.unsoldCount} items`} at 75% of market value (about ${fmtMoney(input.forcedSale.cash)}). Selling at the market yourself pays the full price.${canStillAct ? ` You still have ${actionsText} left.` : ''} End your turn anyway?`,
-      confirmText: 'End Turn',
+      message: `${lead} If the day ends like this, the game force-sells ${n === input.unsoldCount ? (n === 1 ? 'your last item' : `all ${n} of your items`) : `${n} of your ${input.unsoldCount} items`} at 75% of market value (about ${fmtMoney(input.forcedSale.cash)}). Selling at the market yourself pays the full price.${canStillAct ? ` You still have ${actionsText} left.` : ''}${finalDay ? ' This is the final day — ending your turn finishes the match.' : ''} End your turn anyway?`,
+      confirmText: finalDay ? 'Finish match' : 'End Turn',
     };
   }
   if (canStillAct) {
     const extras: string[] = [`cash ${fmtMoney(input.cash)}`];
     if (input.unsoldCount > 0) extras.push(`${input.unsoldCount} unsold resource${input.unsoldCount === 1 ? '' : 's'}`);
+    // V9.9 (W3F1): on the final day the question names what the click really does, and how many actions it throws away.
+    if (finalDay) {
+      return {
+        kind: 'unused_actions',
+        type: 'endDay',
+        title: 'Finish the match?',
+        message: `This is the final day — ending your turn finishes the match. You still have ${actionsText} left (${extras.join(', ')}). Finish the match anyway?`,
+        confirmText: 'Finish match',
+      };
+    }
     return {
       kind: 'unused_actions',
       type: 'endDay',
@@ -206806,7 +207950,8 @@ function dispatchGameSettingsChange(
     // is in control of the turn, keeps using the canonical executor below.
     const v99Route = v99HumanDoItRoute(actionType);
     const v99Hands = v99DoItHandlersRef.current;
-    if (v99Route !== 'canonical' && v99Hands && !v99SessionActive && v99RunHumanDoIt(v99Route, v99Hands, candidate)) { // A2: challenges too — the roll, payout and records are the Challenges dialog's
+    // W3F1: a loan is taken or repaid with the play screen's own buttons (the loan's terms and its confirmation included).
+    if (v99Hands && !v99SessionActive && (v99RunLoanDoIt(actionType, v99Hands) || (v99Route !== 'canonical' && v99RunHumanDoIt(v99Route, v99Hands, candidate)))) { // A2: challenges too — the roll, payout and records are the Challenges dialog's
       dispatchAuthoritativeGameActivityLedgerEvent('decision', {
         actionType: 'copilot_recommendation_accepted',
         actorId: 'player',
@@ -208747,6 +209892,19 @@ function dispatchGameSettingsChange(
       }
     }));
   }, [getActorState, updateActorState, updateTeamState]);
+
+  // V9.9 (SECTION 20AR, W3F1): the human's own challenge wins, sales and crafts count in "Individual Contributions"
+  // (team modes only). Not through updateActorContribution: for the human it merges a whole copy of the player taken
+  // BEFORE the action's own dispatches, which would undo the reward just paid — only the one field is merged here.
+  const v99CreditHumanRef = useRef<((kind: V99HumanContributionKind, amount: number) => void) | null>(null);
+  v99CreditHumanRef.current = (kind, amount) => {
+    if (!isTeamModeSelection(gameState.selectedMode)) return;
+    const current = playerRef.current as ActorState;
+    const next = v99HumanContributionAfter(current?.contributionStats, kind, amount);
+    playerRef.current = { ...current, contributionStats: next };
+    dispatchPlayer({ type: 'MERGE_STATE', payload: { contributionStats: next } });
+    if (current?.teamId) updateTeamState(current.teamId, (prev: { contributionByActor?: Record<string, ActorContributionStats> }) => ({ ...prev, contributionByActor: { ...(prev.contributionByActor || {}), [String(current.id || 'player')]: next } }));
+  };
 
   const appendTeammatePerformanceSample = useCallback((teamId: string, actorId: string, sample: TeammatePerformanceSample) => {
     if (!isTeamModeSelection(gameState.selectedMode)) return;
@@ -217606,6 +218764,7 @@ function dispatchGameSettingsChange(
     metricLabel: WIN_METRIC_LABELS[gameSettings.winCondition] || 'Score',
     regionsGoal: WIN_METRIC_PROFILES[gameSettings.winCondition]?.goalKind === 'regions',
     teamMode: isTeamMode,
+    playerSide: spectatorSideName(gameState.selectedMode, teamsById[TEAM_PLAYER_ID]?.name), // V9.9 (SECTION 20AS, W3F1)
     solo: gameState.selectedMode === 'single'
   }), [aiPlayer?.name, gameSettings.winCondition, gameState.selectedMode, isTeamMode, teamsById, wpMfMatchEnd, wpMfMetricOutcome]);
 
@@ -222376,6 +223535,7 @@ function dispatchGameSettingsChange(
             }
 
             dispatchPlayer({ type: 'UPDATE_MONEY', payload: reward });
+            v99CreditHumanRef.current?.('challenge', reward); // V9.9 (SECTION 20AR, W3F1): counts in the team's Individual Contributions
             if (approachPlan) wp2HumanOutcomeRef.current?.(approachPlan, true);
             dispatchPlayer({ type: 'COMPLETE_CHALLENGE', payload: { name: challenge.name, apCost: 0 } });
             dispatchGameState({
@@ -222610,6 +223770,7 @@ function dispatchGameSettingsChange(
             updatePersonalRecords('resource', { resource, price: v99Sale.first });
             updatePersonalRecords('earned', finalPrice);
             updatePersonalRecords('money', player.money + finalPrice);
+            v99CreditHumanRef.current?.('sale', finalPrice); // V9.9 (SECTION 20AR, W3F1): counts in the team's Individual Contributions
           }
         }
       );
@@ -222943,7 +224104,10 @@ function dispatchGameSettingsChange(
       const plan = def ? (v99DoItHandlersRef.current?.approachPlans?.(def, wager) || []).find(x => x.approachId === approachId) : null;
       if (def && plan) takeChallenge(toLegacyChallenge(def), wager, plan);
       else addNotification('That challenge is not available right now. Nothing was spent.', 'warning');
-    }
+    },
+    // W3F1: the loan buttons of Quick Actions themselves (defined further down; read when "Do It" is pressed).
+    emergencyLoan: () => { if (v99PressQuickAction(getQuickActions, 'emergency_loan') !== 'pressed') addNotification('An emergency loan is not available right now. Nothing was borrowed.', 'warning'); },
+    repayLoan: () => { if (v99PressQuickAction(getQuickActions, 'repay_emergency_loan') !== 'pressed') addNotification('That loan cannot be repaid right now. Nothing was spent.', 'warning'); }
   };
 
   // Crafting System Functions
@@ -223018,6 +224182,7 @@ function dispatchGameSettingsChange(
     if (success) {
       // Add crafted item to inventory
       newInventory.push(recipe.output);
+      v99CreditHumanRef.current?.('craft', v99CraftContributionValue(recipe.baseValue, craftingBonus?.effect?.qualityBonus)); // V9.9 (SECTION 20AR, W3F1): counts in the team's Individual Contributions
 
       // Explorer bonus: chance to get materials back
       const qualityText = craftingBonus?.effect?.qualityBonus ? ` (+${Math.round(craftingBonus.effect.qualityBonus * 100)}% Quality Bonus)` : '';
@@ -223190,7 +224355,8 @@ function dispatchGameSettingsChange(
       inTransit: isActorInTransit(player),
       skipConfirm: v99EndTurnSkipsConfirm(options),
       bankruptcyThreshold: BANKRUPTCY_THRESHOLD,
-      forcedSale
+      forcedSale,
+      finalDay: isFinalPlayableDay(gameState.day, gameSettings.totalDays) // V9.9 (SECTION 20AS, W3F1): the question says that this ends the match
     });
     if (prompt.type) {
       showConfirmation(prompt.type, prompt.title, prompt.message, prompt.confirmText, confirmEndTurn);
@@ -223398,8 +224564,18 @@ function dispatchGameSettingsChange(
       rivalSide: wpMfTeamMatch ? String(teamsById[TEAM_OPPONENT_ID]?.name || 'the AI squad') : String(aiPlayerRef.current?.name || 'the AI'),
       metricLabel: WIN_METRIC_LABELS[gameSettings.winCondition] || 'Score',
       regionsGoal: WIN_METRIC_PROFILES[gameSettings.winCondition]?.goalKind === 'regions',
-      teamMode: wpMfTeamMatch
+      teamMode: wpMfTeamMatch,
+      playerSide: spectatorSideName(gameState.selectedMode, teamsById[TEAM_PLAYER_ID]?.name) // V9.9 (SECTION 20AS, W3F1): the all-AI match has no "you"
     };
+    // V9.9 (SECTION 20AS, W3F1): the Game Over toast says what the end screen says — the same end sentence and names —
+    // and is stamped with the last day played (the "Day N begins" carry would stamp it with a day that never began).
+    const wpMfAnnounceEnd = (cause: MatchEndCause, winner: MatchEndWinner | null, standing?: MatchOverStanding | null, detail?: string | null) => {
+      const notice = matchOverNotice({ record: buildMatchEndRecord(cause, winner, prevDay), names: wpMfEndNames, solo: gameState.selectedMode === 'single', standing, detail });
+      v99NotificationDayCarryRef.current = null;
+      addNotification(notice.message, notice.type, true, 'system');
+    };
+    // V9.9 (SECTION 20AS, W3F1): the mercy countdown knows the day limit (no "ends in 4 more days" on the final days).
+    const wpMfMercyTiming: MercyTiming = { day: newDay, totalDays: gameSettings.totalDays };
     const wpMfEndMatch = (cause: MatchEndCause, winner: MatchEndWinner | null) => {
       const record = buildMatchEndRecord(cause, winner, prevDay);
       dispatchGameState({ type: 'UPDATE_GAME_STATE', payload: { matchEnd: record } });
@@ -223956,7 +225132,7 @@ function dispatchGameSettingsChange(
         addNotification('⚠️ One day until team bankruptcy! Improve cash above $50.', 'warning', true);
       } else if (playerStreak >= BANKRUPTCY_STREAK_DAYS) {
         wpMfEndMatch('player_bankrupt', 'opponent'); // V9.9 (SECTION 20AS)
-        addNotification('Bankruptcy! Your team fell below $50 for 3 days. The AI squad wins.', 'error', true);
+        wpMfAnnounceEnd('player_bankrupt', 'opponent'); // V9.9 (SECTION 20AS, W3F1): the end line, with the teams by name
         return;
       }
 
@@ -223966,7 +225142,7 @@ function dispatchGameSettingsChange(
         addNotification('🤖 The opposing team has one day to avoid bankruptcy!', 'ai', true);
       } else if (aiStreak >= BANKRUPTCY_STREAK_DAYS) {
         wpMfEndMatch('rival_bankrupt', 'player'); // V9.9 (SECTION 20AS)
-        addNotification('The opposing team went bankrupt for 3 days. Victory!', 'success', true);
+        wpMfAnnounceEnd('rival_bankrupt', 'player'); // V9.9 (SECTION 20AS, W3F1): the end line, with the teams by name
         return;
       }
 
@@ -223982,19 +225158,21 @@ function dispatchGameSettingsChange(
       const aiDominance = wpMfMercy.tracker.ai;
       dispatchGameState({ type: 'SET_DOMINANCE_TRACKER', payload: { player: playerDominance, ai: aiDominance } });
 
-      if (wpMfMercy.ended === 'player') {
+      // V9.9 (SECTION 20AS, W3F1): at the day-end that reaches the day limit the limit ends the match (full length played).
+      const wpMfMercyEnded = mercyEndingApplies(wpMfMercy.ended, newDay, gameSettings.totalDays);
+      if (wpMfMercyEnded === 'player') {
         wpMfEndMatch('mercy_player', 'player');
-        addNotification(`Mercy rule: your team dominated on ${WIN_METRIC_LABELS[gameSettings.winCondition].toLowerCase()} for 5 days. Victory!`, 'success', true);
+        wpMfAnnounceEnd('mercy_player', 'player');
         return;
       }
-      if (wpMfMercy.ended === 'rival') {
+      if (wpMfMercyEnded === 'rival') {
         wpMfEndMatch('mercy_rival', 'opponent');
-        addNotification(`Mercy rule: the AI squad dominated on ${WIN_METRIC_LABELS[gameSettings.winCondition].toLowerCase()} for 5 days straight.`, 'ai', true);
+        wpMfAnnounceEnd('mercy_rival', 'opponent');
         return;
       }
-      const wpMfMercyNotice = mercyCountdownNotice(wpMfMercy.tracker, wpMfEndNames);
+      const wpMfMercyNotice = mercyCountdownNotice(wpMfMercy.tracker, wpMfEndNames, wpMfMercyTiming);
       if (wpMfMercyNotice) addNotification(wpMfMercyNotice.message, wpMfMercyNotice.type, true);
-      const wpMfMercyReset = mercyResetNotice(gameState.dominanceTracker, wpMfMercy, wpMfEndNames);
+      const wpMfMercyReset = mercyResetNotice(gameState.dominanceTracker, wpMfMercy, wpMfEndNames, wpMfMercyTiming);
       if (wpMfMercyReset) addNotification(wpMfMercyReset.message, wpMfMercyReset.type, true);
 
       if (gameState.selectedMode === 'scenario' || gameSettings.scenarioModeEnabled) {
@@ -224862,12 +226040,8 @@ function dispatchGameSettingsChange(
         const winnerValue = formatWinMetricValue(outcome.decidingMetric, outcome.playerWon ? outcome.playerValue : outcome.aiValue);
         const loserValue = formatWinMetricValue(outcome.decidingMetric, outcome.playerWon ? outcome.aiValue : outcome.playerValue);
         const metricLabel = (WIN_METRIC_LABELS as Record<string, string>)[outcome.decidingMetric].toLowerCase();
-        addNotification(
-          `Game Over! ${winnerName} ${outcome.decidingMetric === gameSettings.winCondition ? 'finished ahead' : 'won the tie-break'} on ${metricLabel} (${winnerValue} vs ${loserValue} against ${loserName}).`,
-          outcome.playerWon ? 'success' : 'ai',
-          true,
-          'system'
-        );
+        void winnerName; void loserName;
+        wpMfAnnounceEnd('day_limit', null, { playerWon: outcome.playerWon, metricLabel, tieBreak: outcome.decidingMetric !== gameSettings.winCondition, playerValue: formatWinMetricValue(outcome.decidingMetric, outcome.playerValue), rivalValue: formatWinMetricValue(outcome.decidingMetric, outcome.aiValue) }); // V9.9 (SECTION 20AS, W3F1)
         finalizeReplayRecording({
           winnerTeamId: outcome.playerWon ? TEAM_PLAYER_ID : TEAM_OPPONENT_ID,
           winnerActorId: null,
@@ -225139,7 +226313,7 @@ function dispatchGameSettingsChange(
     } else if (playerStreak >= BANKRUPTCY_STREAK_DAYS) {
       wpMfEndMatch('player_bankrupt', 'opponent'); // V9.9 (SECTION 20AS)
       // V9.9 (SECTION 20AS): Single Player has no AI to win.
-      addNotification(gameState.selectedMode === 'single' ? 'Bankruptcy! You stayed under $50 for 3 days. The run is over.' : 'Bankruptcy! You fell below $50 for 3 days. AI wins.', 'error', true);
+      wpMfAnnounceEnd('player_bankrupt', 'opponent'); // V9.9 (SECTION 20AS, W3F1): the end line, with the rival's name (was "…AI wins.")
       return;
     }
 
@@ -225150,7 +226324,7 @@ function dispatchGameSettingsChange(
         addNotification('🤖 AI has one day to avoid bankruptcy!', 'ai', true);
       } else if (aiStreak >= BANKRUPTCY_STREAK_DAYS) {
         wpMfEndMatch('rival_bankrupt', 'player'); // V9.9 (SECTION 20AS)
-        addNotification('AI bankrupt for 3 days. You win!', 'success', true);
+        wpMfAnnounceEnd('rival_bankrupt', 'player'); // V9.9 (SECTION 20AS, W3F1): the end line, with the rival by name
         return;
       }
     }
@@ -225190,19 +226364,21 @@ function dispatchGameSettingsChange(
     const aiDominance = wpMfMercy.tracker.ai;
     dispatchGameState({ type: 'SET_DOMINANCE_TRACKER', payload: { player: playerDominance, ai: aiDominance } });
 
-    if (wpMfMercy.ended === 'player') {
+    // V9.9 (SECTION 20AS, W3F1): at the day-end that reaches the day limit the limit ends the match (full length played).
+    const wpMfMercyEnded = mercyEndingApplies(wpMfMercy.ended, newDay, gameSettings.totalDays);
+    if (wpMfMercyEnded === 'player') {
       wpMfEndMatch('mercy_player', 'player');
-      addNotification(`Mercy rule: you dominated on ${WIN_METRIC_LABELS[gameSettings.winCondition].toLowerCase()} for 5 days. Victory!`, 'success', true);
+      wpMfAnnounceEnd('mercy_player', 'player');
       return;
     }
-    if (wpMfMercy.ended === 'rival') {
+    if (wpMfMercyEnded === 'rival') {
       wpMfEndMatch('mercy_rival', 'opponent');
-      addNotification(`Mercy rule: AI dominated on ${WIN_METRIC_LABELS[gameSettings.winCondition].toLowerCase()} for 5 days straight.`, 'ai', true);
+      wpMfAnnounceEnd('mercy_rival', 'opponent');
       return;
     }
-    const wpMfMercyNotice = mercyCountdownNotice(wpMfMercy.tracker, wpMfEndNames);
+    const wpMfMercyNotice = mercyCountdownNotice(wpMfMercy.tracker, wpMfEndNames, wpMfMercyTiming);
     if (wpMfMercyNotice) addNotification(wpMfMercyNotice.message, wpMfMercyNotice.type, true);
-    const wpMfMercyReset = mercyResetNotice(gameState.dominanceTracker, wpMfMercy, wpMfEndNames);
+    const wpMfMercyReset = mercyResetNotice(gameState.dominanceTracker, wpMfMercy, wpMfEndNames, wpMfMercyTiming);
     if (wpMfMercyReset) addNotification(wpMfMercyReset.message, wpMfMercyReset.type, true);
 
     // Detect Adaptive AI phase if enabled
@@ -225338,12 +226514,8 @@ function dispatchGameSettingsChange(
 	      wpMfEndMatch('day_limit', null); // V9.9 (SECTION 20AS)
 	      if (gameState.selectedMode === 'grand_tour') {
           const outcome = evaluateGrandTourOutcome(projectedPlayer as ActorState, projectedAi as ActorState, gameState.grandTourState);
-          addNotification(
-            `Game Over! ${outcome.playerWon ? 'You win' : 'AI wins'} the Grand Tour tie-break. ${outcome.reason}`,
-            outcome.playerWon ? 'success' : 'ai',
-            true,
-            'system'
-          );
+          // V9.9 (SECTION 20AS, W3F1): the rival by name; stamped with the last day played.
+          wpMfAnnounceEnd('day_limit', null, { playerWon: outcome.playerWon, metricLabel: GRAND_TOUR_METRIC_LABEL, tieBreak: true, playerValue: '', rivalValue: '' }, `${outcome.playerWon ? 'You win' : `${String(projectedAi?.name || 'The rival')} wins`} the Grand Tour tie-break. ${outcome.reason}`);
 	      } else if (gameState.selectedMode === 'ai') {
           // V9.6 (SECTION 20AL): secret objectives and the finale event move the primary score (identity while off).
           const outcome = compareCompetitiveMetricValues(gameSettings.winCondition, wp6FinalizeRef.current?.(newDay, soloMetricValues, [projectedPlayer, projectedAi]) || soloMetricValues);
@@ -225351,12 +226523,8 @@ function dispatchGameSettingsChange(
           const loserName = outcome.playerWon ? 'AI' : 'You';
           const winnerValue = formatWinMetricValue(outcome.decidingMetric, outcome.playerWon ? outcome.playerValue : outcome.aiValue);
           const loserValue = formatWinMetricValue(outcome.decidingMetric, outcome.playerWon ? outcome.aiValue : outcome.playerValue);
-          addNotification(
-            `Game Over! ${winnerName} ${outcome.decidingMetric === gameSettings.winCondition ? 'finished ahead' : 'won the tie-break'} on ${(WIN_METRIC_LABELS as Record<string, string>)[outcome.decidingMetric].toLowerCase()} (${winnerValue} vs ${loserValue} against ${loserName}).`,
-            outcome.playerWon ? 'success' : 'ai',
-            true,
-            'system'
-          );
+          void winnerName; void loserName;
+          wpMfAnnounceEnd('day_limit', null, { playerWon: outcome.playerWon, metricLabel: (WIN_METRIC_LABELS as Record<string, string>)[outcome.decidingMetric], tieBreak: outcome.decidingMetric !== gameSettings.winCondition, playerValue: formatWinMetricValue(outcome.decidingMetric, outcome.playerValue), rivalValue: formatWinMetricValue(outcome.decidingMetric, outcome.aiValue) }); // V9.9 (SECTION 20AS, W3F1)
           finalizeReplayRecording({
             winnerTeamId: null,
             winnerActorId: outcome.playerWon ? 'player' : 'ai',
@@ -225365,7 +226533,7 @@ function dispatchGameSettingsChange(
             turn: gameState.turnCounter
           });
 	      } else {
-	        addNotification(`Game Over! The match ran its full ${matchLengthInDays(gameSettings.totalDays)} days.`, 'success', true, 'system'); // V9.9 (SECTION 20AS): day totalDays is never played
+	        wpMfAnnounceEnd('day_limit', null); // V9.9 (SECTION 20AS, W3F1): "Match over. The match ran its full length: N days played." — stamped with day N
 	      }
 	    }
 	  }, [addNotification, aiRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, buildOverseerAdaptivePolicyApprovalRequest, buildOverseerDirectiveApprovalRequest, compareCompetitiveMetricValues, computeNetWorth, evaluateAdaptiveOverseerOverlay, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase, runAuditorDetectionPass, finalizeReplayRecording, appendReplayEvent, appendReplayCheckpoint, getCompetitiveMetricValue, runPhase5ProactiveIntelligence]);
@@ -233774,13 +234942,13 @@ function dispatchGameSettingsChange(
       actions.push({
         id: 'end_turn',
         group: 'core' as const,
-        label: 'End Turn',
+        label: endTurnButtonLabel(gameState.day, gameSettings.totalDays), // V9.9 (SECTION 20AS, W3F1): "— finish match" on the final day, like the header button
         icon: '⏭️',
         action: handleEndTurn,
         hotkey: 'Space',
         disabled: false,
         disabledReason: null,
-        tooltip: 'Conclude turn and advance game day'
+        tooltip: isFinalPlayableDay(gameState.day, gameSettings.totalDays) ? 'Final day: ending your turn finishes the match' : 'Conclude turn and advance game day'
       });
     }
     
@@ -238248,7 +239416,7 @@ function dispatchGameSettingsChange(
     const metric = gameSettings.winCondition as WinMetric;
     let winValue = '';
     let v99WinProgress: string | null = null; // V9.9 (SECTION 20AR): the match goal's score line, from the same two numbers as the header
-    try { const me = getCompetitiveMetricValue(metric, { side: 'player', teamMode: isTeamMode }); const opp = gameState.selectedMode === 'single' ? null : getCompetitiveMetricValue(metric, { side: 'opponent', teamMode: isTeamMode }); winValue = opp === null ? formatWinMetricValue(metric, me) : `${formatWinMetricValue(metric, me)} vs ${formatWinMetricValue(metric, opp)}`; v99WinProgress = v99WinProgressText({ mine: formatWinMetricValue(metric, me), rival: opp === null ? null : formatWinMetricValue(metric, opp), rivalName: isTeamMode ? 'Rival team' : String(aiPlayer?.name || 'Rival'), daysLeft: v99PlayableDaysAfterToday(gameState, gameSettings), mineName: isTeamMode ? 'Your team' : null }); } catch { winValue = '—'; }
+    try { const me = getCompetitiveMetricValue(metric, { side: 'player', teamMode: isTeamMode }); const opp = gameState.selectedMode === 'single' ? null : getCompetitiveMetricValue(metric, { side: 'opponent', teamMode: isTeamMode }); winValue = opp === null ? formatWinMetricValue(metric, me) : `${formatWinMetricValue(metric, me)} vs ${formatWinMetricValue(metric, opp)}`; v99WinProgress = v99WinProgressText({ mine: formatWinMetricValue(metric, me), rival: opp === null ? null : formatWinMetricValue(metric, opp), rivalName: isSpectatorMatch(gameState.selectedMode) ? String(teamsById[TEAM_OPPONENT_ID]?.name || 'Rival team') : isTeamMode ? 'Rival team' : String(aiPlayer?.name || 'Rival'), daysLeft: v99PlayableDaysAfterToday(gameState, gameSettings), mineName: spectatorSideName(gameState.selectedMode, teamsById[TEAM_PLAYER_ID]?.name) /* V9.9 (SECTION 20AR, W3F1): a watched match has no "your team" */ || (isTeamMode ? 'Your team' : null) }); } catch { winValue = '—'; }
     // V9.9 (SECTION 20AR): Grand Tour is decided by stamps and the finale — the header and the focus card show the stamps, not the cash.
     const v99Tour = v99GrandTourView(gameState, 'player'); const v99TourRival = v99GrandTourView(gameState, String(aiPlayer?.id || 'ai'));
     if (v99Tour && v99TourRival) {
@@ -238268,11 +239436,14 @@ function dispatchGameSettingsChange(
         : gameState.isAiThinking ? 'Thinking about their move…' : String((currentActor as any)?.aiPlan?.summary || 'Planning next move'),
       control: { owner: control.owner, headline: control.headline, copilotHoldsControl: control.copilotHoldsControl, rescue: control.phase === 'rescue_active', actionProgress: control.actionProgress, currentActionLabel: control.currentActionLabel },
       ap: { finite: v9ApFinite, remaining: v9ApFinite ? v9ApRemaining : null }, cash: Number(player?.money || 0),
-      win: { label: v99Tour ? 'Passport stamps' : (WIN_METRIC_PROFILES[metric]?.label || 'Win condition'), value: winValue, target: null, opponent: null },
+      win: { label: v99Tour ? 'Passport stamps' : v99WinLabelWithDebtNote(WIN_METRIC_PROFILES[metric]?.label || 'Win condition', metric, isTeamMode ? [] : [calculateActorOutstandingDebt(player), gameState.selectedMode === 'single' ? 0 : calculateActorOutstandingDebt(aiPlayer)]) /* V9.9 (SECTION 20AR, W3F1): says "net of loans" when a loan makes the score differ from the cash beside it */, value: winValue, target: null, opponent: null },
       transit: journey ? { destination: destName, day: Math.min(tTotal, Math.max(1, tTotal - journey.daysRemaining + 1)), total: tTotal } : null,
       presentation: getIntentPresentationLevel(gameSettings) as V9Presentation,
       // V9.9 (SECTION 20AS): the mercy-rule countdown takes the chip when no critical attention state holds it.
-      critical: att && att.state === 'critical' ? { label: att.label, detail: att.detail } : mercyHeaderWarning(gameState.dominanceTracker, gameState.gameMode, WIN_METRIC_PROFILES[gameSettings.winCondition]?.goalKind === 'regions'),
+      critical: att && att.state === 'critical' ? { label: att.label, detail: att.detail } : isSpectatorMatch(gameState.selectedMode) ? null : mercyHeaderWarning(gameState.dominanceTracker, gameState.gameMode, WIN_METRIC_PROFILES[gameSettings.winCondition]?.goalKind === 'regions', { day: Number(gameState.day || 1), totalDays: Number(gameSettings.totalDays || 0) } /* V9.9 (SECTION 20AS, W3F1): not once the day limit comes first */),
+      // V9.9 (SECTION 20AS, W3F1): the player's own mercy streak gets a quiet header chip (its daily toast can be pushed out of the lane).
+      notice: mercyLeadChip(gameState.dominanceTracker, gameState.gameMode, { regionsGoal: WIN_METRIC_PROFILES[gameSettings.winCondition]?.goalKind === 'regions', teamMode: isTeamMode, playerSide: spectatorSideName(gameState.selectedMode, teamsById[TEAM_PLAYER_ID]?.name), timing: { day: Number(gameState.day || 1), totalDays: Number(gameSettings.totalDays || 0) } }),
+      spectator: isSpectatorMatch(gameState.selectedMode),
       // V9.6 (SECTION 20AG): Nation mode puts a national focus first; Explorer/Full keep the V9.5 order (generic objective, national fallback).
       objective: pickExperienceObjective<V9CohesionInputs['objective']>(
         // V9.9 (SECTION 20AR): "blocked" means the goal's own blocked state (an unmet requirement is progress, not a block); the match goal shows the score line.
@@ -238565,7 +239736,7 @@ function dispatchGameSettingsChange(
       humanTurn: Boolean(isPlayerTurnForCoPilot), controlOwner: playerControlState.copilotHoldsControl ? 'copilot' : isPlayerTurnForCoPilot ? 'you' : 'rival',
       cash: Math.round(Number(player?.money || 0)), ap: v9ApFinite ? Number(v9ApRemaining) : null,
       region: String(player?.currentRegion || ''), standingHere: getActorRegionalStanding(gameState, pid, String(player?.currentRegion || '')), level: Number(player?.level || 1),
-      focusId: String(v94Objective?.id || ''), focusTitle: String(v94Objective?.title || ''), focusDone: Number(prog.completed || 0), focusTotal: Number(prog.total || 0), focusCompleted: v94Objective?.completionState === 'completed',
+      focusId: String(v94Objective?.id || ''), focusTitle: String(v94Objective?.title || ''), ...v99FocusProgressForFeedback(v94Objective?.sourceType, prog, v94Objective?.completionState), // V9.9 (SECTION 20AR, W3F1): the match goal is never "✓ Complete" before the match ends
       strategyPhase: v9Cohesion.focus.source === 'strategy' ? (v9Cohesion.focus.breadcrumb.find((b: any) => b.current)?.label || null) : null,
       controllers, rivalRegion: aiPlayer?.currentRegion ? String(aiPlayer.currentRegion) : null, rivalName: String(aiPlayer?.name || 'Rival'),
       contracts, projects, crises, momentum, factionBands, deals,
@@ -254532,7 +255703,8 @@ function dispatchGameSettingsChange(
     const selectedPreviewControlInfo = getRegionControlInfo(selectedPreviewRegionCode);
     const selectedPreviewTravelCost = selectedPreviewRegionCode === player.currentRegion ? 0 : calculateTravelCost(player.currentRegion, selectedPreviewRegionCode);
     const selectedPreviewActiveEvent = gameState.activeEvents.find((event: any) => event.region === selectedPreviewRegionCode) || null;
-    const selectedPreviewCompletedChallenges = (selectedPreviewRegion?.challenges || []).filter((challenge: any) => player.challengesCompleted.includes(challenge.name)).length;
+    // V9.9 (SECTION 20AR, W3F1): the two counts come from the Challenges window's own list and rule ("done this season").
+    const v99PreviewChallengeText = v99RegionChallengeTallyText(v99RegionChallengeTally(player, selectedPreviewRegionCode, gameState, gameSettings, resolveEffectiveMatchSeed(gameState, Number(gameSettings.worldRngSeed) || 1)));
     const selectedPreviewTravelBlockedReason = selectedPreviewRegionCode === player.currentRegion
       ? 'You are here.'
       : gameSettings.sabotageEnabled && isTravelBlocked(player.debuffs)
@@ -255096,6 +256268,10 @@ function dispatchGameSettingsChange(
             apDelta={v94ApDelta}
             apZero={Boolean(v9HumanCanAct && feelSnapshot?.ap === 0)}
             endgame={Number(gameSettings.totalDays || 30) - Number(gameState.day || 1) <= 3}
+            /* V9.9 (SECTION 20AR, W3F1): default layout — "YOUR TURN" is on the docked pill below, "YOU'RE PLAYING" on the control strip above; each is drawn once. */
+            quietTurnLabel={v99HeaderDeclutter({ classicLayout: v99ClassicLayout, pillDocked: v99PillSaysYourTurn(v99TurnPill, isCompetitiveMode, isTeamMode), header: v9Cohesion.header }).turnLabel}
+            quietControl={v99HeaderDeclutter({ classicLayout: v99ClassicLayout, pillDocked: v99PillSaysYourTurn(v99TurnPill, isCompetitiveMode, isTeamMode), header: v9Cohesion.header }).controlChip}
+            endTurnHint={v99ClassicLayout || v99DockedBar ? null : 'Space'}
           />
           {/* V9.9 (SECTION 20AU): the turn row — the turn pill and the Quick Actions, docked (nothing floats over the header or the advice). */}
           {!v99ClassicLayout && (
@@ -255179,7 +256355,7 @@ function dispatchGameSettingsChange(
 
           {nationalPlacement === 'below' && nationalPlayNodes}
 
-          {contentMoment && <ContentMomentCard theme={themeStyles} moment={contentMoment} money={Number(player.money || 0)} h={contentHandlers} canAct={v9HumanCanAct} />}
+          {contentMoment && <ContentMomentCard theme={themeStyles} moment={contentMoment} money={Number(player.money || 0)} h={contentHandlers} canAct={v9HumanCanAct} lastDay={matchLengthInDays(Number(gameSettings.totalDays || 0))} />}
 
           <div className="text-xs">
             <button type="button" className="underline opacity-80" aria-expanded={v9PlayDetailsOpen} data-testid="v9-play-details-toggle" onClick={() => setV9PlayDetailsOpen(o => !o)}>
@@ -257263,7 +258439,7 @@ function dispatchGameSettingsChange(
                         </div>
                         <div>
                           <div className="font-semibold mb-1">Challenges</div>
-                          <div>{(selectedPreviewRegion.challenges || []).length} available • {selectedPreviewCompletedChallenges} completed</div>
+                          <div data-testid="v99-preview-challenges">{v99PreviewChallengeText}</div>
                         </div>
                         <div>
                           <div className="font-semibold mb-1">Control / Event</div>
@@ -265901,7 +267077,9 @@ function dispatchGameSettingsChange(
 	            metricLabel={matchMetricWording(gameState.selectedMode, outcome?.decidingMetric, gameSettings.winCondition).metricLabel}
 	            you={formatWinMetricValue((outcome?.decidingMetric || gameSettings.winCondition) as WinMetric, Number(outcome?.playerValue || 0))}
 	            rival={formatWinMetricValue((outcome?.decidingMetric || gameSettings.winCondition) as WinMetric, Number(outcome?.aiValue || 0))}
-	            rivalName={String(aiPlayer?.name || 'Rival')}
+	            rivalName={facts?.sides ? facts.sides.rival : String(aiPlayer?.name || 'Rival') /* V9.9 (SECTION 20AS, W3F1): the two SIDES — team names in a team mode */}
+	            youName={facts?.sides ? facts.sides.you : 'You'}
+	            headline={spectatorHeadline(facts?.sides, Boolean(debrief.playerWon))}
 	            reason={String(outcome?.reason || debrief.summary || '')}
 	            turningPoints={[...(debrief.swingPoints || []).slice(0, 2).map(sp => `Day ${sp.turn}: ${sp.description}`), ...((swrStateRef.current?.events.length || 0) > 0 ? buildWorldReactionDebrief(sanitizeWorldReactionState(swrStateRef.current), swrViewerId).slice(0, 1) : [])]}
 	            lesson={debrief.playerWon ? null : (facts ? (facts.nextTime || 'Protect your cash reserve before the final days and pick one win lever to push early.') : ((debrief.blunders?.blunderEvents || [])[0]?.recommendation || 'Protect your cash reserve before the final days and pick one win lever to push early.'))}
@@ -265911,10 +267089,10 @@ function dispatchGameSettingsChange(
 	          {/* Header Banner */}
 	          <div className="flex flex-col md:flex-row items-center justify-between gap-6 border-b border-gray-700/50 pb-6">
 	            <div className="flex items-center gap-4">
-	              <div className="text-5xl">{debrief.playerWon ? '🏆' : '😔'}</div>
+	              <div className="text-5xl">{facts?.sides?.spectator ? '🏁' : debrief.playerWon ? '🏆' : '😔'}</div>
 	              <div>
 	                <h2 className="text-3xl font-extrabold tracking-tight">
-	                  {solo ? (debrief.playerWon ? 'Solo Run Complete — Post-Match Debrief' : 'Solo Run Over — Post-Match Debrief') : debrief.playerWon ? 'Match Victory — Post-Match Debrief' : 'Match Defeat — Post-Match Debrief'}
+	                  {facts?.sides?.spectator ? 'Match Over — Post-Match Debrief' /* V9.9 (SECTION 20AS, W3F1): a watched match is neither your victory nor your defeat */ : solo ? (debrief.playerWon ? 'Solo Run Complete — Post-Match Debrief' : 'Solo Run Over — Post-Match Debrief') : debrief.playerWon ? 'Match Victory — Post-Match Debrief' : 'Match Defeat — Post-Match Debrief'}
 	                </h2>
 	                <p className="text-sm opacity-75 mt-1">
 	                  <span data-testid="v99-debrief-days">{debrief.totalTurns} day{debrief.totalTurns === 1 ? '' : 's'} played</span> • Win Condition: {matchMetricWording(gameState.selectedMode, outcome?.decidingMetric, gameSettings.winCondition).winLabel /* V9.9 (SECTION 20AS) */}
@@ -266103,7 +267281,7 @@ function dispatchGameSettingsChange(
 	                  {/* Efficiency Score Progress Bar */}
 	                  <div className="space-y-1 mb-3">
 	                    <div className="flex justify-between text-xs font-semibold">
-	                      <span>Days your net worth grew</span>
+	                      <span>{facts?.sides?.spectator ? `Days ${facts.sides.you}'s net worth grew` : facts?.sides?.teamMode ? "Days your team's net worth grew" : 'Days your net worth grew'}</span>
 	                      <span className="text-emerald-400" data-testid="v99-debrief-growth">{facts ? `${facts.growthDays} of ${facts.changeDays} (${debrief.blunders.tacticalEfficiencyScore}%)` : `${debrief.blunders.tacticalEfficiencyScore}%`}</span>
 	                    </div>
 	                    <div className="w-full bg-gray-800 rounded-full h-2.5 overflow-hidden">
@@ -266161,7 +267339,7 @@ function dispatchGameSettingsChange(
 	                    <span className="font-bold text-purple-300 flex items-center gap-2 text-base">🕵️ Opponent Dossier</span>
 	                    {hasData('opponent') && hasData('history') && (
 	                    <span className="text-xs font-semibold px-2 py-0.5 rounded bg-purple-900/60 text-purple-200 border border-purple-700/50" data-testid="v99-debrief-days-led">
-	                      {facts ? `You led ${facts.daysLed} of ${facts.daysRecorded} days` : `${debrief.opponentRead.readAccuracy}%`}
+	                      {facts ? `${facts.sides && facts.sides.teamMode ? facts.sides.you : 'You'} led ${facts.daysLed} of ${facts.daysRecorded} days` : `${debrief.opponentRead.readAccuracy}%`}
 	                    </span>
 	                    )}
 	                  </div>
@@ -266169,7 +267347,7 @@ function dispatchGameSettingsChange(
 	                  {!hasData('opponent') ? noDataNote('opponent', 'No rival in this match.') : (
 	                  <div className="space-y-2 text-xs">
 	                    <div className="flex justify-between p-2 rounded bg-black/30 border border-gray-800">
-	                      <span className="opacity-75">Rival:</span>
+	                      <span className="opacity-75">{facts?.sides?.teamMode ? 'Rival team:' : 'Rival:'}</span>
 	                      <span className="font-bold text-purple-300">{debrief.opponentRead.opponentName}</span>
 	                    </div>
 	                    <div className="flex justify-between p-2 rounded bg-black/30 border border-gray-800">
@@ -266177,7 +267355,7 @@ function dispatchGameSettingsChange(
 	                      <span className="font-semibold text-gray-200">{debrief.opponentRead.predictedStrategy}</span>
 	                    </div>
 	                    <div className="flex justify-between p-2 rounded bg-black/30 border border-gray-800">
-	                      <span className="opacity-75">Strength (final score vs yours):</span>
+	                      <span className="opacity-75">{facts?.sides?.spectator ? `Strength (final score vs ${facts.sides.you}'s):` : facts?.sides?.teamMode ? "Strength (final score vs your team's):" : 'Strength (final score vs yours):'}</span>
 	                      <span className={`font-bold uppercase ${
 	                        debrief.opponentRead.perceivedThreatLevel === 'extreme' ? 'text-red-400' :
 	                        debrief.opponentRead.perceivedThreatLevel === 'high' ? 'text-orange-400' : 'text-emerald-400'
@@ -266436,6 +267614,10 @@ function dispatchGameSettingsChange(
       const opponentSideLabel = isTeamMode ? (teamsById[TEAM_OPPONENT_ID]?.name || 'AI Team') : (aiPlayer?.name || "AI Opponent");
       const playerContributors = isTeamMode ? getTeamActors(TEAM_PLAYER_ID) : [];
       const playerContributionSummary = isTeamMode ? getTeamContributionSummary(TEAM_PLAYER_ID) : null;
+      // V9.9 (SECTION 20AS, W3F1): the two sides by name (a team's totals are the team's; a watched match has no "you"),
+      // and ONE challenge count: the debrief's own, with the number of different challenges beside it.
+      const wpMfSides = matchSideLabels(gameState.selectedMode, teamsById[TEAM_PLAYER_ID]?.name, teamsById[TEAM_OPPONENT_ID]?.name, aiPlayer?.name);
+      const wpMfChallengeRow = challengeStatRow(challengeStatFigures(gameState, player, [String(player?.id || 'player')]), wpMfSides, String(player?.name || 'This actor'));
       const wpMfWording = matchMetricWording(gameState.selectedMode, outcome.decidingMetric, gameSettings.winCondition); // V9.9 (SECTION 20AS): Grand Tour is scored on passport stamps
       const outcomeMetricLabel = wpMfWording.metricLabel;
       const wpMfGrandTour = gameState.selectedMode === 'grand_tour'; // its rows below are passport stamps, never the money condition
@@ -266510,8 +267692,8 @@ function dispatchGameSettingsChange(
               <span className="font-bold">{player.visitedRegions.length}/8</span>
             </div>
             <div className="flex justify-between">
-              <span>Challenges Won:</span>
-              <span className="font-bold">{Object.keys(player.challengeMastery || {}).length || player.challengesCompleted.length}</span>
+              <span>{wpMfChallengeRow.label}</span>
+              <span className="font-bold" data-testid="v99-challenges-won">{wpMfChallengeRow.value}</span>
             </div>
             {isTeamMode && (
               <div className={`${themeStyles.border} border rounded-lg p-3 text-left text-xs mt-3`}>
@@ -266564,7 +267746,7 @@ function dispatchGameSettingsChange(
 	    return (
 	      <div className={`min-h-screen ${themeStyles.background} ${themeStyles.text} flex items-center justify-center p-6`}>
 	        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-8 max-w-md w-full text-center ${themeStyles.shadow} v94-stagger`}>
-	          <V94OutcomeHero won={won} winLabel={wpMfWording.winLabel} metricLabel={outcomeMetricLabel || String(outcome.decidingMetric)} you={formatWinMetricValue(outcome.decidingMetric as WinMetric, outcome.playerValue)} rival={formatWinMetricValue(outcome.decidingMetric as WinMetric, outcome.aiValue)} rivalName={opponentSideLabel} reason={outcome.reason} turningPoints={[]} lesson={won ? null : 'Protect your cash reserve before the final days and pick one win lever to push early.'} solo={wpMfIsSolo} endLine={outcome.endLine} endedEarly={outcome.endedEarly} />
+	          <V94OutcomeHero won={won} winLabel={wpMfWording.winLabel} metricLabel={outcomeMetricLabel || String(outcome.decidingMetric)} you={formatWinMetricValue(outcome.decidingMetric as WinMetric, outcome.playerValue)} rival={formatWinMetricValue(outcome.decidingMetric as WinMetric, outcome.aiValue)} rivalName={opponentSideLabel} reason={outcome.reason} turningPoints={[]} lesson={won ? null : 'Protect your cash reserve before the final days and pick one win lever to push early.'} solo={wpMfIsSolo} endLine={outcome.endLine} endedEarly={outcome.endedEarly} youName={wpMfSides.you} headline={spectatorHeadline(wpMfSides, won)} />
 	          
 	          <div className="space-y-2 mb-6">
 	            <div className="text-sm opacity-75 mb-2">
@@ -266600,8 +267782,8 @@ function dispatchGameSettingsChange(
 	              <span className="font-bold">{player.visitedRegions.length}/8</span>
             </div>
             <div className="flex justify-between">
-              <span>Challenges Won:</span>
-              <span className="font-bold">{Object.keys(player.challengeMastery || {}).length || player.challengesCompleted.length}</span>
+              <span>{wpMfChallengeRow.label}</span>
+              <span className="font-bold" data-testid="v99-challenges-won">{wpMfChallengeRow.value}</span>
             </div>
             {isTeamMode && (
               <div className={`${themeStyles.border} border rounded-lg p-3 text-left text-xs mt-3`}>
