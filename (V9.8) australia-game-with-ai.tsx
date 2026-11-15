@@ -48364,7 +48364,7 @@ export function chooseAction(
   actorId: string,
   weights: Record<string, number>,
   rng: SeededRng,
-  options?: { difficultyKey?: string; specialAbilityActive?: boolean; settings?: GameSettingsState }
+  options?: { difficultyKey?: string; specialAbilityActive?: boolean; settings?: GameSettingsState; live?: ClassicAiLiveHooks }
 ): (AIAction & { score: number }) | null {
   const baseSettings = options?.settings || state.gameSettings || state.settings || createDefaultGameSettings();
   const settings = weightsToGameSettings(baseSettings, weights);
@@ -48376,7 +48376,8 @@ export function chooseAction(
     specialAbilityActive: Boolean(options?.specialAbilityActive)
   };
   const profile = AI_DIFFICULTY_PROFILES[ctx.difficultyKey] || AI_DIFFICULTY_PROFILES.expert;
-  if (rng.next() < (Number(profile.mistakeChance) || 0)) {
+  // V9.9 (SECTION 20AS): the roll is always drawn; only the live rival's paid-for action (live.suppressMistake) ignores it.
+  if (rng.next() < (Number(profile.mistakeChance) || 0) && options?.live?.suppressMistake !== true) {
     return {
       type: 'think',
       description: 'Contemplating strategy...',
@@ -48385,7 +48386,8 @@ export function chooseAction(
       plan: AI_TUNING_LAB_DEFAULT_PLAN
     } as AIAction & { score: number };
   }
-  const enumerated = enumerateLegalActions(state, actorId, ctx);
+  // V9.9 (SECTION 20AS): the live rival's hooks reshape the list (R2, matches started on V9.9) and drop what already failed this turn before anything is ranked (no hook = unchanged; no draw is added).
+  const enumerated = classicAiProposable(enumerateLegalActions(state, actorId, ctx), options?.live);
   if (!enumerated.length) return null;
   const scored = enumerated.map(candidate => scoreCandidate(state, candidate, weights, ctx).candidate);
         const overlayed = applyV63AiOverlays(scored, {
@@ -186561,7 +186563,7 @@ export const SIMPLE_SETTINGS: readonly SimpleSettingDescriptor[] = [
   { key: 'totalDays', group: 'Match', label: 'Game length', help: 'Days in a match.', kind: 'range', min: 10, max: 100, step: 5, unit: 'days' },
   { key: 'winCondition', group: 'Match', label: 'How to win', help: 'What decides the winner at the end.', kind: 'select', options: [{ value: 'money', label: 'Most money' }, { value: 'netWorth', label: 'Highest net worth' }, { value: 'regions', label: 'Most regions' }, { value: 'challenges', label: 'Most challenge points' }] },
   { key: 'actionLimitsEnabled', group: 'Match', label: 'Daily action limit', help: 'Each day you get a set number of actions.', kind: 'toggle' },
-  { key: 'playerActionsPerDay', group: 'Match', label: 'Actions per day', help: 'How many actions a day allows.', kind: 'range', min: 1, max: 10, step: 1, unit: 'actions' },
+  { key: 'playerActionsPerDay', group: 'Match', label: 'Your actions per day', help: 'How many actions you get each day. The rival has its own number, on the line below.', kind: 'range', min: 1, max: 10, step: 1, unit: 'actions' }, // V9.9 (SECTION 20AS): this row only ever set the player's number
   { key: 'challengeApproachesEnabled', group: 'Gameplay', label: 'Challenge approaches', help: 'Pick how to tackle each challenge — bold, steady, clever or social.', kind: 'toggle' },
   { key: 'expandedChallengeContentEnabled', group: 'Gameplay', label: 'More challenges', help: '132 extra challenges across every region.', kind: 'toggle' },
   { key: 'dynamicWagerEnabled', group: 'Gameplay', label: 'Bigger wagers', help: 'Wager limits scale with the challenge.', kind: 'toggle' },
@@ -186615,6 +186617,7 @@ export const SimpleSettingsPanel = React.memo(function SimpleSettingsPanel({ set
                     <span className="w-16 text-right text-xs">{simpleValueText(d, typeof v === 'number' ? v : Number(d.min || 0))}</span>
                   </span>
                 )}
+                {d.key === 'playerActionsPerDay' && <V99RivalActionsRow settings={settings} onChange={onChange} isDark={isDark} /> /* V9.9 (SECTION 20AS): the rival's own number, visible */}
               </div>
             );
           })}
@@ -193200,7 +193203,1601 @@ export function runV99MatchFlowSelfTests(): V9SelfTestResult[] {
     const legacy = matchTurnsPlayed(readMatchEnd({}), 30, 30);
     return (early === 3 && full === 29 && summary(early) === 3 && summary(full) === 29 && legacy >= 29 && legacy <= 30 && matchLengthInDays(10) === 9 && matchLengthInDays(30) === 29) || json({ early, full, legacy });
   });
+  runV99RivalTurnChecks(check);   // Track R (the rival's turn): ids v99mf_r…
+  runV99RivalDisciplineChecks(check);   // Track R, package R2 (a rival that does not defeat itself): ids v99mf_r30…
   return results;
+}
+
+// ---- R1: the rival's turn — never stuck, never slow unless you want it (Track R) -------------------------------------
+// Three repairs to the solo rival's turn (performAiTurn, finalizeSoloAiTurn, the scheduler effect and its watchdogs).
+//
+// PACE (gameSettings.rivalTurnPace, profile-scoped, default 'normal'). V9.8 slept 7–12 s in every rival turn: 1 s
+// before it starts, a drawn "thinking" time before every decision, 0.8 s after every action and 0.7 s before the turn
+// is handed back. 'normal' keeps those timers to the millisecond; 'fast' sleeps 35 % of each; 'instant' does not
+// sleep. The rival does the SAME THING at every pace:
+//   • the thinking-time draw is made at every pace (rivalThinkTimeMs), so the AIReasoning stream never shifts;
+//   • V9.8 relied on the length of its sleeps for the match to settle between two rival decisions (after an action
+//     the World Reaction / Living Regions / Background AI pass commits through a chain of renders and effects, and
+//     the callbacks the turn uses are refreshed by effects). 'fast' and 'instant' do not guess a shorter time: they
+//     WAIT FOR THAT SETTLING (awaitRivalTurnSettle — no render and no pending effect over consecutive checks), so a
+//     decision is never taken on a state 'normal' would not have seen.
+// The player changes the pace from the turn pill (V99RivalPaceControl) or from Settings › ✨ New in V9.9; both write
+// through trackedSetGameSettings. A change made while the rival plays applies at once (createRivalTurnSleeper.wake).
+//
+// RECOVERY. One exception anywhere in the rival's end-of-turn processing used to leave the match on "AI's turn" for
+// good (the retry relied on a flag that was already false, and the watchdog only looked at that flag):
+//   • finalizeSoloAiTurn runs every fallible step on its own (runGuardedSteps) and ALWAYS hands the turn back;
+//   • a failed turn is recovered by what it had reached (decideSoloFatalRecovery): hand back when finalisation had
+//     begun, finalise when actions were already committed (never play the turn twice), otherwise retry on a timer
+//     that is armed directly, and end the turn safely after V96_SOLO_AI_LIMITS.MAX_FATAL_RECOVERIES_PER_TURN;
+//   • a second watchdog (decideRivalStallRecovery) looks at the turn itself, not at the thinking flag: if the rival
+//     owns the turn and nothing has moved for V99_RIVAL_STALL_MS, the turn is started again once, then handed back.
+// The day advances at most once per rival turn in every one of these paths.
+//
+// NO RETRY OF A FAILED MOVE. The turn loop's "this already failed" filter is now given to the chooser
+// (ClassicAiLiveHooks.isRejected — only the live rival passes hooks; the AI Tuning Lab and every other caller of
+// chooseAction pass none and are unchanged), and a move that has just failed is not proposed again until something
+// changed (createRivalRetryGuard). Sabotage that is already active on the player is not proposed at all.
+// Nothing here is saved, and nothing here draws randomness.
+
+export type RivalTurnWaitKind = 'schedule' | 'think' | 'settle' | 'finalize';
+/** What one wait of the rival's turn does: sleep `sleepMs`, then (when `settle`) wait until the match has settled. */
+export interface RivalTurnWaitPlan { sleepMs: number; settle: boolean }
+/** V9.8's fixed waits: before the turn starts, after each committed action, before the turn is handed back. */
+export const RIVAL_TURN_BASE_WAIT_MS: Readonly<Record<Exclude<RivalTurnWaitKind, 'think'>, number>> = { schedule: 1000, settle: 800, finalize: 700 };
+/** 'fast' sleeps this share of every V9.8 wait. */
+export const RIVAL_TURN_FAST_FACTOR = 0.35;
+
+/**
+ * The wait for one step of the rival's turn at a pace. 'normal' = exactly the V9.8 timer and nothing else. The other
+ * paces sleep less (or not at all) and then wait for the match to settle, which is what the long timer was for.
+ */
+export function rivalTurnWaitPlan(kind: RivalTurnWaitKind, baseMs: number, pace: RivalTurnPace): RivalTurnWaitPlan {
+  const base = Number.isFinite(baseMs) && baseMs > 0 ? baseMs : 0;
+  if (pace === 'fast') return { sleepMs: Math.round(base * RIVAL_TURN_FAST_FACTOR), settle: kind !== 'schedule' };
+  if (pace === 'instant') return { sleepMs: 0, settle: kind !== 'schedule' };
+  return { sleepMs: base, settle: false };
+}
+
+/**
+ * The "thinking" time before a rival decision — V9.8's expression, with its ONE draw. It is called at every pace, so
+ * the rival's random sequence (and with it every later decision and roll) is the same whatever the pace.
+ */
+export function rivalThinkTimeMs(profile: { thinkingTimeMin: number; thinkingTimeMax: number }, draw: () => number): number {
+  return profile.thinkingTimeMin + draw() * (profile.thinkingTimeMax - profile.thinkingTimeMin);
+}
+
+/** What the settle check reads from the play component: renders so far, and the render whose effects have run. */
+export interface RivalSettleProbe { renders: number; flushed: number }
+export interface RivalSettleState { firstRenders: number; lastRenders: number; quiet: number }
+export const RIVAL_SETTLE_LIMITS = {
+  /** Pause between two checks. */
+  GAP_MS: 16,
+  /** Checks in a row that must find nothing moving. */
+  QUIET_CHECKS: 2,
+  /** A screen that re-renders without end must not hold the rival's turn: stop after this many renders… */
+  MAX_RENDERS: 12,
+  /** …or after this long (a settling chain is two or three renders, however slow the device). */
+  CAP_MS: 6000,
+  /** In a background tab this many checks go without a timer (see rivalSettleTick); later ones use it again. */
+  HIDDEN_FAST_CHECKS: 24
+} as const;
+export function createRivalSettleState(probe: RivalSettleProbe): RivalSettleState { return { firstRenders: probe.renders, lastRenders: probe.renders, quiet: 0 }; }
+/**
+ * One settle check. The match has settled when, `QUIET_CHECKS` times in a row, the play component did not render
+ * since the previous check AND the effects of its last render have run (the chain "action → render → effect →
+ * dispatch → render …" always has one of the two pending while it is running).
+ */
+export function rivalSettleStep(state: RivalSettleState, probe: RivalSettleProbe, elapsedMs: number): { state: RivalSettleState; done: 'quiet' | 'cap' | null } {
+  const still = probe.renders === state.lastRenders && probe.flushed === probe.renders;
+  const next: RivalSettleState = { firstRenders: state.firstRenders, lastRenders: probe.renders, quiet: still ? state.quiet + 1 : 0 };
+  if (next.quiet >= RIVAL_SETTLE_LIMITS.QUIET_CHECKS) return { state: next, done: 'quiet' };
+  if (!(elapsedMs < RIVAL_SETTLE_LIMITS.CAP_MS) || probe.renders - state.firstRenders >= RIVAL_SETTLE_LIMITS.MAX_RENDERS) return { state: next, done: 'cap' };
+  return { state: next, done: null };
+}
+/** Resolves once the match has settled (or the cap is reached). `tick` is the pause between checks. */
+export async function awaitRivalTurnSettle(deps: { read: () => RivalSettleProbe; tick: (ms: number, check: number) => Promise<void>; now: () => number }): Promise<'quiet' | 'cap'> {
+  const startedAt = deps.now();
+  let state = createRivalSettleState(deps.read());
+  for (let check = 0; ; check++) {
+    await deps.tick(RIVAL_SETTLE_LIMITS.GAP_MS, check);
+    const step = rivalSettleStep(state, deps.read(), deps.now() - startedAt);
+    if (step.done) return step.done;
+    state = step.state;
+  }
+}
+/** True while the page is in a background tab (browsers then slow every timer down to one per second or less). */
+export function rivalTurnPageHidden(doc: { visibilityState?: string } | null | undefined = typeof document !== 'undefined' ? document : null): boolean {
+  return Boolean(doc) && doc?.visibilityState === 'hidden';
+}
+/** True when a settle check goes without its timer: a background tab, for the first HIDDEN_FAST_CHECKS checks of a wait. */
+export function rivalSettleTickSkipsTimer(pageHidden: boolean, check: number): boolean {
+  return pageHidden && typeof MessageChannel !== 'undefined' && check < RIVAL_SETTLE_LIMITS.HIDDEN_FAST_CHECKS;
+}
+/**
+ * The live pause between settle checks: a timer, then one hop through the message queue React schedules its work on
+ * (whatever React had already queued runs before the check). In a background tab the timer is left out for the first
+ * checks — it would be throttled to a second or more per check, and 'instant' would be slower than 'normal' there;
+ * the hop is not throttled. (`check` = how many checks this wait has already made.)
+ */
+export function rivalSettleTick(ms: number, check: number = 0): Promise<void> {
+  return new Promise<void>(resolve => {
+    const hop = () => {
+      if (typeof MessageChannel === 'undefined') { resolve(); return; }
+      try {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => { channel.port1.close(); resolve(); };
+        channel.port2.postMessage(null);
+      } catch { resolve(); }
+    };
+    if (rivalSettleTickSkipsTimer(rivalTurnPageHidden(), check)) hop(); else setTimeout(hop, ms);
+  });
+}
+
+/** Sleeps that can be cut short (the player picked a faster pace while the rival was waiting). */
+export interface RivalTurnSleeper { sleep: (ms: number) => Promise<void>; wake: () => number; pending: () => number }
+export interface RivalTurnTimers { set: (fn: () => void, ms: number) => unknown; clear: (handle: unknown) => void }
+export function createRivalTurnSleeper(timers?: RivalTurnTimers): RivalTurnSleeper {
+  const clock: RivalTurnTimers = timers || {
+    set: (fn, ms) => setTimeout(fn, ms),
+    clear: handle => clearTimeout(handle as ReturnType<typeof setTimeout>)
+  };
+  const waiting = new Map<number, { handle: unknown; resolve: () => void }>();
+  let nextId = 0;
+  return {
+    sleep: ms => new Promise<void>(resolve => {
+      const id = ++nextId;
+      const handle = clock.set(() => { waiting.delete(id); resolve(); }, ms);
+      waiting.set(id, { handle, resolve });
+    }),
+    wake: () => {
+      const entries = Array.from(waiting.values());
+      waiting.clear();
+      entries.forEach(entry => { clock.clear(entry.handle); entry.resolve(); });
+      return entries.length;
+    },
+    pending: () => waiting.size
+  };
+}
+
+export interface RivalTurnWaitControl { pace: () => RivalTurnPace; sleep: (ms: number) => Promise<void>; settle: () => Promise<unknown> }
+/**
+ * One wait of the rival's turn. At 'normal' this is a single V9.8 timer. A pace picked while the timer runs wakes it
+ * (see createRivalTurnSleeper) and the wait then finishes like a faster pace would: by waiting for the match to settle.
+ */
+export async function rivalTurnWait(kind: RivalTurnWaitKind, baseMs: number, control: RivalTurnWaitControl): Promise<void> {
+  const plan = rivalTurnWaitPlan(kind, baseMs, control.pace());
+  if (plan.sleepMs > 0) await control.sleep(plan.sleepMs);
+  if (rivalWaitSettlesAfterSleep(kind, plan, control.pace())) await control.settle();
+}
+/**
+ * Whether a wait goes on to wait for the match to settle once its sleep is over. Never at 'normal' (the V9.8 timer is
+ * the whole wait) unless the player picked a faster pace while that timer ran (`paceNow`), and never before the turn starts.
+ */
+export function rivalWaitSettlesAfterSleep(kind: RivalTurnWaitKind, plan: RivalTurnWaitPlan, paceNow: RivalTurnPace): boolean {
+  return kind !== 'schedule' && (plan.settle || paceNow !== 'normal');
+}
+
+/** True when a pace change must cut the sleeps that are running (the new pace waits less than the old one). */
+export function rivalPaceChangeWakesSleeps(previous: RivalTurnPace, next: RivalTurnPace): boolean {
+  return RIVAL_TURN_PACES.indexOf(next) > RIVAL_TURN_PACES.indexOf(previous);
+}
+
+// ---- R1: the pace control on the turn pill ----------------------------------------------------------------------------
+export const RIVAL_PACE_CONTROL_LABEL = 'Rival turn speed';
+/**
+ * Where the pace control is drawn: with the turn pill of a solo rival match while the rival plays, and — once the
+ * player has picked another pace than Normal — on their own turn too (an Instant rival turn is over in a moment, so
+ * the control would never stay on screen long enough to change it back). Never on the status-only copy of the pill.
+ */
+export function rivalPaceControlShown(input: { soloRival: boolean; isPlayerTurn: boolean; overBoard: boolean; pace: RivalTurnPace }): boolean {
+  if (!input.soloRival || input.overBoard) return false;
+  return !input.isPlayerTurn || input.pace !== 'normal';
+}
+/**
+ * Scenario Mode: a rival plays there at the chosen pace, but V9.8 draws no turn pill in that mode, so the control had
+ * nowhere to sit and the pace could only be changed in Settings. There the docked turn row carries the control on its
+ * own, under the same rule as beside the pill. (The classic layout has no turn row; it keeps V9.8's screen.)
+ */
+export function rivalPaceControlAloneShown(input: { docked: boolean; overBoard: boolean; soloRival: boolean; isPlayerTurn: boolean; pace: RivalTurnPace }): boolean {
+  return input.docked && rivalPaceControlShown({ soloRival: input.soloRival, isPlayerTurn: input.isPlayerTurn, overBoard: input.overBoard, pace: input.pace });
+}
+/**
+ * The pill's status line while the rival plays. At 'instant' the per-action labels would change several times within
+ * a second (a flicker nobody can read), so the line stays on one label; every action is still in the notifications.
+ */
+export const RIVAL_INSTANT_STATUS = 'Playing its turn…';
+export function rivalTurnStatusLine(pace: RivalTurnPace, summary: string | null): string | null {
+  return pace === 'instant' && summary ? RIVAL_INSTANT_STATUS : summary;
+}
+/**
+ * True when each step of the rival's turn (thinking / replanning / ending) is pushed to the screen. Not at 'instant':
+ * the pill shows one steady line there, and every push re-renders the whole play screen — which the turn would then
+ * have to wait for. The action itself, the notifications and the hand-back are shown at every pace.
+ */
+export function rivalTurnStepsShown(pace: RivalTurnPace): boolean {
+  return pace !== 'instant';
+}
+/**
+ * True when the floating copy of the turn pill (V99TurnPillOverBoard) is left out: at 'instant' the rival's turn is
+ * over before the copy could be read, and it only flashed over the board.
+ */
+export function rivalPillCopySuppressed(pace: RivalTurnPace, soloRival: boolean): boolean {
+  return soloRival && pace === 'instant';
+}
+
+/**
+ * "Rival speed: Normal / Fast / Instant" beside the turn pill. Stateless; `onChange` writes the setting. `compact`
+ * (the player's own turn, where the row also holds the quick actions) shortens the caption.
+ */
+export const V99RivalPaceControl: React.FC<{
+  pace: RivalTurnPace; onChange: (pace: RivalTurnPace) => void; activeClassName: string; idleClassName: string; frameClassName: string; compact?: boolean;
+}> = ({ pace, onChange, activeClassName, idleClassName, frameClassName, compact }) => (
+  <div role="group" aria-label={RIVAL_PACE_CONTROL_LABEL} title={RIVAL_TURN_PACE_DESCRIPTION} data-testid="v99-rival-pace" data-pace={pace}
+    className={`pointer-events-auto inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs ${frameClassName}`}>
+    <span className="px-1 opacity-75 whitespace-nowrap" aria-hidden="true">{compact ? '⏩ Rival' : '⏩ Rival speed'}</span>
+    {RIVAL_TURN_PACE_OPTIONS.map(option => (
+      <button
+        key={option.id}
+        type="button"
+        onClick={() => { if (option.id !== pace) onChange(option.id); }}
+        aria-pressed={option.id === pace}
+        aria-label={`${RIVAL_PACE_CONTROL_LABEL}: ${option.label}`}
+        title={option.hint}
+        data-testid={`v99-rival-pace-${option.id}`}
+        className={`rounded-full px-2 py-0.5 min-h-[28px] sm:min-h-0 font-semibold ${option.id === pace ? activeClassName : `${idleClassName} opacity-80`}`}
+      >
+        {/* the tick marks the choice in every theme (in the retro theme the two button colours are close) */}
+        {option.id === pace ? `✓ ${option.label}` : option.label}
+      </button>
+    ))}
+  </div>
+);
+
+// ---- R1: the turn always comes back -------------------------------------------------------------------------------------
+export interface GuardedStep { id: string; run: () => void }
+/**
+ * Runs every step, in order, whatever the earlier ones did: a step that throws is reported and the rest still run.
+ * Returns the ids of the steps that failed. (The rival's end of turn: one failing subsystem must not keep the turn.)
+ */
+export function runGuardedSteps(steps: readonly GuardedStep[], onFail?: (id: string, error: unknown) => void): string[] {
+  const failed: string[] = [];
+  steps.forEach(step => {
+    try { step.run(); }
+    catch (error) {
+      failed.push(step.id);
+      try { onFail?.(step.id, error); } catch { /* reporting must never stop the hand-back */ }
+    }
+  });
+  return failed;
+}
+
+export const RIVAL_TURN_STEP_ADVANCE_DAY = 'advance_day';
+/** Closing the day at the end of a rival turn: at most once per turn, whichever path (normal end or a recovery) gets there first. */
+export interface RivalDayCloser { tried: () => boolean; mark: () => void; advance: () => void }
+/** What the rival's end of turn does, as plain callbacks (finalizeSoloAiTurn supplies the live ones, the self-tests reducer-backed ones). */
+export interface RivalEndOfTurnDeps { notify: () => void; ledger: () => void; turnTransition: () => void; thinkingOff: () => void; day: RivalDayCloser }
+/**
+ * The rival's end-of-turn steps in V9.6's order: the notification, the ledger entry, the turn-transition systems, the
+ * thinking flag, the day (once). finalizeSoloAiTurn runs exactly this list through runGuardedSteps, then the hand-back.
+ */
+export function buildRivalEndOfTurnSteps(deps: RivalEndOfTurnDeps): GuardedStep[] {
+  return [
+    { id: 'end_notification', run: () => deps.notify() },
+    { id: 'ledger', run: () => deps.ledger() },
+    { id: 'turn_transition', run: () => deps.turnTransition() },
+    { id: 'ai_thinking_off', run: () => deps.thinkingOff() },
+    { id: RIVAL_TURN_STEP_ADVANCE_DAY, run: () => { if (deps.day.tried()) return; deps.day.mark(); deps.day.advance(); } }
+  ];
+}
+export interface RivalHandBackDeps {
+  thinkingOff: () => void; day: RivalDayCloser; resetPlayerActions: () => void; turnToPlayer: () => void; clearAction: () => void; releaseClaim: () => void; idle: () => void;
+}
+/**
+ * The hand-back itself: the player's actions come back, the turn goes to the player, the rival's action label and
+ * claim are cleared. `forced` (a recovery, not the normal end) first drops the thinking flag and closes the day if
+ * this turn never tried to. v99HandBackSoloAiTurn runs exactly this list through runGuardedSteps.
+ */
+export function buildRivalHandBackSteps(deps: RivalHandBackDeps, options: { forced: boolean }): GuardedStep[] {
+  const steps: GuardedStep[] = [];
+  if (options.forced) {
+    steps.push({ id: 'ai_thinking_off', run: () => deps.thinkingOff() });
+    if (!deps.day.tried()) steps.push({ id: RIVAL_TURN_STEP_ADVANCE_DAY, run: () => { deps.day.mark(); deps.day.advance(); } });
+  }
+  steps.push(
+    { id: 'reset_player_actions', run: () => deps.resetPlayerActions() },
+    { id: 'turn_to_player', run: () => deps.turnToPlayer() },
+    { id: 'clear_ai_action', run: () => deps.clearAction() },
+    { id: 'release_claim', run: () => deps.releaseClaim() },
+    { id: 'idle', run: () => deps.idle() }
+  );
+  return steps;
+}
+/** True when this rival turn was already closed in the claim registry (a recovery handed it back): it must not be ended again. */
+export function rivalTurnAlreadyHandedBack(claims: SoloAiClaimRegistry, turnKey: string): boolean {
+  return claims.finished.includes(turnKey);
+}
+/**
+ * What the player is told when the rival's turn had to be recovered. `dayAdvanced` false = the day could not be
+ * closed. The wording keeps clear of the routine turn lines ("…'s turn begins", "Your turn ended", "… ended their
+ * turn"): the toast lane collapses a line that shares most of its words with one already shown (v9DedupeNotifications),
+ * and at a fast pace those lines are still on screen when this one is raised.
+ */
+export function rivalTurnRecoveryNotice(dayAdvanced: boolean): string {
+  const base = "⚠️ A problem interrupted the rival's move. The game recovered and handed play back to you";
+  return dayAdvanced ? `${base}.` : `${base} — the day may not have advanced.`;
+}
+
+export type SoloFatalRecovery = 'abandon' | 'force_hand_back' | 'end_turn' | 'finalize' | 'retry';
+/**
+ * What to do with a rival turn whose loop threw.
+ *   abandon          the live turn is no longer this one (match replaced, game over, turn already moved): touch nothing;
+ *   force_hand_back  finalisation had begun — it can not be entered twice, so only the hand-back is run;
+ *   end_turn         retried too often: end it safely;
+ *   finalize         actions were already committed: finish the turn (a retry would play the whole turn again);
+ *   retry            nothing happened yet: start the same turn again.
+ */
+export function decideSoloFatalRecovery(input: { sameTurn: boolean; endIssued: boolean; successfulActions: number; verdict: 'retry' | 'end_turn' }): SoloFatalRecovery {
+  if (!input.sameTurn) return 'abandon';
+  if (input.endIssued) return 'force_hand_back';
+  if (input.verdict === 'end_turn') return 'end_turn';
+  if (input.successfulActions > 0) return 'finalize';
+  return 'retry';
+}
+
+/** The rival owns the turn and nothing has moved for this long → the turn is recovered. */
+export const V99_RIVAL_STALL_MS = 20000;
+/** …and for at least this many watchdog ticks (a tab that slept, or timers that were throttled, are not a stall). */
+export const V99_RIVAL_STALL_MIN_TICKS = 5;
+export interface RivalStallClock { marker: string; since: number; ticks: number }
+/** Everything that moves while a rival turn is alive, as one string: any change restarts the stall clock. */
+export function rivalTurnProgressMarker(input: { turnKey: string; runtime: SoloAiTurnRuntime | null; claimActive: boolean; turnFinished: boolean; lastAttemptAt: number; lastCommitAt: number }): string {
+  const rt = input.runtime;
+  return [input.turnKey, input.claimActive ? 'claimed' : 'free', input.turnFinished ? 'finished' : 'open', input.lastAttemptAt, input.lastCommitAt,
+    rt ? [rt.phase, rt.totalDecisionAttempts, rt.successfulActions, rt.failedAttempts, rt.overridesUsed, rt.endIssued ? 'end' : 'run', rt.seq].join('/') : 'no-runtime'].join('|');
+}
+export function advanceRivalStallClock(previous: RivalStallClock | null, marker: string, now: number): RivalStallClock {
+  if (!previous || previous.marker !== marker) return { marker, since: now, ticks: 0 };
+  return { marker, since: previous.since, ticks: previous.ticks + 1 };
+}
+export interface RivalStallInput {
+  rivalOwnsTurn: boolean; hasPendingApprovals: boolean; msStalled: number; ticksStalled: number;
+  /** A turn loop holds this turn (its own watchdog, decideAiTurnWatchdog, covers a loop that hangs). */
+  claimActive: boolean;
+  /** This turn was already closed in the claim registry, yet the rival still owns it. */
+  turnFinished: boolean;
+  /** Finalisation of this turn began (and the turn never came back). */
+  endIssued: boolean;
+  relaunchTried: boolean;
+}
+/**
+ * The second watchdog. It does not look at the "thinking" flag (which is false for most of a rival turn): only at who
+ * owns the turn and whether anything moved. A player deciding on an approval is never a stall.
+ */
+export function decideRivalStallRecovery(input: RivalStallInput): 'none' | 'relaunch' | 'force_hand_back' {
+  if (!input.rivalOwnsTurn || input.hasPendingApprovals) return 'none';
+  if (!(input.msStalled >= V99_RIVAL_STALL_MS) || !(input.ticksStalled >= V99_RIVAL_STALL_MIN_TICKS)) return 'none';
+  if (input.endIssued || input.turnFinished) return 'force_hand_back';
+  if (input.claimActive) return 'none';
+  return input.relaunchTried ? 'force_hand_back' : 'relaunch';
+}
+
+// ---- R1: a move that failed is not proposed again -----------------------------------------------------------------------
+/**
+ * Hooks only the LIVE rival passes to the chooser (chooseAction's options.live). Without hooks — the AI Tuning Lab,
+ * the reference bots, team AI — the chooser does exactly what it always did.
+ */
+export interface ClassicAiLiveHooks {
+  /** True for a candidate that must not be proposed now (it already failed this turn, or the game will refuse it). */
+  isRejected?: (candidate: AIAction & { score: number }) => boolean;
+  /** R2: reshapes what the chooser enumerated before anything is filtered or ranked (refineRivalCandidates). */
+  refine?: (candidates: Array<AIAction & { score: number }>) => Array<AIAction & { score: number }>;
+  /** R2: the mistake roll is drawn as always but cannot turn this decision into "thinking" (a paid-for action). */
+  suppressMistake?: boolean;
+}
+/** The candidates the chooser may still propose. No hook = the list itself (same array, same order). */
+export function classicAiProposable<T extends AIAction & { score: number }>(candidates: T[], live: ClassicAiLiveHooks | null | undefined): T[] {
+  const refined = live?.refine ? (live.refine(candidates) as T[]) : candidates;
+  const isRejected = live?.isRejected;
+  if (!isRejected) return refined;
+  return refined.filter(candidate => !isRejected(candidate));
+}
+
+/**
+ * Remembers what failed since the rival's last committed action. Until something commits the state has not changed,
+ * so the same move would fail the same way: it is not proposed again. After a commit it may be tried once more (the
+ * turn runtime rejects it for good at V96_SOLO_AI_LIMITS.MAX_SAME_SIGNATURE_FAILURES).
+ */
+export interface RivalRetryGuard { note: (action: unknown, committed: boolean) => void; blocks: (action: unknown) => boolean; failedSinceCommit: () => string[] }
+export function createRivalRetryGuard(): RivalRetryGuard {
+  const failed = new Set<string>();
+  return {
+    note: (action, committed) => { if (committed) failed.clear(); else failed.add(soloAiActionSignature(action)); },
+    blocks: action => failed.has(soloAiActionSignature(action)),
+    failedSinceCommit: () => Array.from(failed)
+  };
+}
+
+/** A candidate the game is certain to refuse now, whatever the rival does: sabotage that is already active on its target. */
+export function rivalCandidateKnownRefused(candidate: { type?: unknown; data?: unknown } | null | undefined, context: { sabotageEnabled: boolean; opponentDebuffs: unknown }): boolean {
+  if (!candidate || candidate.type !== 'sabotage' || !context.sabotageEnabled) return false;
+  const data = candidate.data;
+  const sabotageId = data && typeof data === 'object' ? (data as { sabotageId?: unknown }).sabotageId : undefined;
+  if (typeof sabotageId !== 'string' || !Array.isArray(context.opponentDebuffs)) return false;
+  return context.opponentDebuffs.some((debuff: unknown) => Boolean(debuff) && typeof debuff === 'object'
+    && (debuff as { type?: unknown }).type === sabotageId && Number((debuff as { remainingDays?: unknown }).remainingDays) > 0);
+}
+
+/** The hooks makeAiDecision gives the chooser for one live rival decision. */
+export function buildRivalLiveHooks(isRejected: (candidate: AIAction & { score: number }) => boolean, context: { sabotageEnabled: boolean; opponentDebuffs: unknown; discipline?: RivalDisciplineInput | null; paidSlot?: boolean; onRuleError?: (error: unknown) => void }): ClassicAiLiveHooks {
+  const hooks: ClassicAiLiveHooks = { isRejected: candidate => rivalCandidateKnownRefused(candidate, context) || isRejected(candidate) };
+  // R2: only a match started on V9.9 gets the rules below (context.discipline is null for every other match).
+  const discipline = context.discipline;
+  if (discipline) {
+    // A failure inside the new rules must not cost the rival its turn (makeAiDecision answers a throw with "end turn"):
+    // that decision is then taken from the list as the chooser enumerated it — the V9.8 list.
+    hooks.refine = candidates => {
+      try { return refineRivalCandidates(candidates, discipline); }
+      catch (error) { try { context.onRuleError?.(error); } catch { /* reporting must not break the decision either */ } return candidates; }
+    };
+    if (context.paidSlot === true) hooks.suppressMistake = true;
+  }
+  return hooks;
+}
+
+// ---- R2: a rival that does not defeat itself (Track R) ----------------------------------------------------------------
+// The live rival is the classic chooser (chooseAction). Four of its habits made matches worse than they should be:
+//   • OVERRIDES. As soon as it was behind — by any amount — it paid $500 / $750 / $1,125 for one extra action each,
+//     with no look at what an action is worth (a full-stake challenge is worth $200–450 early on). It went broke in
+//     exactly the matches that should have been close, and on Easy/Medium it then spent the bought action "thinking".
+//     Now: only when paying leaves a reserve and the action it would really take is expected to bring in more than
+//     the price (shouldRivalBuyOverride, rivalExpectedActionGain), and a paid-for action is never "thinking".
+//   • WAGERS. It wagered min(cash, $500): everything it had once below $500, and $500 on one-in-three shots because
+//     their prize is large — the Expert rival, which goes for the largest expected prize, lost its bankroll fastest.
+//     Now: a share of its cash, at most 40 % and no more than the odds justify (rivalStakeShare), up to the same $500.
+//   • REGIONS. Under "Most regions" it only ever offered a deposit of at most $200, and control needs $300, so the
+//     game refused every deposit and the rival never held a region. It also proposed cashing out stakes it did not
+//     control (always refused). Now: on a regions goal it offers the real price of control where it stands (keeping
+//     its $600 buffer) and then moves on to regions it could claim; on other goals the dead deposit is simply gone.
+//   • GRAND TOUR. It did not know about passport stamps and could not attempt the National Champion finale, so the
+//     race could only be won by the player. Now: it goes for the missing stamp where it stands, travels on to regions
+//     without one, heads for the finale's region once every stamp is held, and attempts the finale there.
+// All four are repaired through the chooser's LIVE HOOKS (ClassicAiLiveHooks.refine / suppressMistake). Only the live
+// solo rival passes hooks; the AI Tuning Lab, the reference bots and team AI call the chooser without them and are
+// byte-identical to V9.8 (enumerateLegalActions itself is untouched).
+//
+// WHICH MATCHES. These rules change what the rival does, so they apply only to matches STARTED on V9.9. The marker
+// is the match seed (gameState.matchSeed, Wave 1): every match started on V9.9 records one, a save or replay
+// checkpoint from V9.8 or older has none, the field is already sanitised on load and reset by a new match — so no
+// new save field is needed. No seed = the V9.8 rival, move for move (rivalDisciplineActive).
+//
+// Randomness: nothing here draws. The override roll is still drawn before the value check, the mistake roll is
+// still drawn on a paid-for action (it is ignored, not skipped), and the value preview enumerates without the RNG.
+
+type RivalCandidate = AIAction & { score: number };
+
+/** True for a match started on V9.9 (it carries a match seed). Older saves and replay checkpoints keep the V9.8 rival. */
+export function rivalDisciplineActive(gameState: unknown): boolean {
+  return readMatchSeed(gameState) !== null;
+}
+
+/** The chooser's wager cap (V9.8's value, also the player's default cap). */
+export const RIVAL_WAGER_CAP = 500;
+/** The largest share of its cash the rival puts on one challenge, however good the odds. */
+export const RIVAL_WAGER_CASH_SHARE = 0.4;
+/**
+ * The share of its cash the odds of a challenge justify staking: the growth-optimal ("Kelly") share of a bet that pays
+ * `reward` times the stake and otherwise loses the stake — chance − (1 − chance) / reward — never above
+ * RIVAL_WAGER_CASH_SHARE. A long shot is worth a small stake however large its prize: V9.8's Expert rival, which
+ * prefers the largest expected prize, put $500 on one-in-three shots and lost its bankroll in a few days. Without
+ * odds the share is RIVAL_WAGER_CASH_SHARE.
+ */
+export function rivalStakeShare(successChance?: number, reward?: number): number {
+  if (typeof successChance !== 'number' || !Number.isFinite(successChance) || typeof reward !== 'number' || !(reward > 0)) return RIVAL_WAGER_CASH_SHARE;
+  const chance = Math.min(1, Math.max(0, successChance));
+  return Math.min(RIVAL_WAGER_CASH_SHARE, Math.max(0, chance - (1 - chance) / reward));
+}
+/**
+ * The rival's stake on a challenge: that share of its cash, at most V9.8's $500 and never under the minimum wager.
+ * A rival with a healthy bankroll stakes $500 as before (from $1,250 up on good odds, later on long shots); a poor
+ * one never stakes its last dollars while it has more than the minimum.
+ */
+export function rivalWagerFor(cash: number, successChance?: number, reward?: number): number {
+  const money = Number.isFinite(cash) ? cash : 0;
+  return Math.min(RIVAL_WAGER_CAP, Math.max(MINIMUM_WAGER, Math.floor(money * rivalStakeShare(successChance, reward))));
+}
+
+/** Cash the rival keeps after buying an extra action: two full stakes (and never less than its safety buffer). */
+export const RIVAL_OVERRIDE_RESERVE = Math.max(AI_SAFETY_BUFFER, 2 * RIVAL_WAGER_CAP);
+/** On a goal that is not counted in dollars an extra action may cost at most this share of the rival's cash. */
+export const RIVAL_OVERRIDE_GOAL_CASH_SHARE = 0.15;
+export interface RivalOverrideInput {
+  /** Price of the next extra action. */
+  cost: number;
+  cash: number;
+  /** What one more action is expected to bring in, in dollars (rivalExpectedActionGain). */
+  expectedActionGain: number;
+  /** WinMetricProfile.goalKind of the match: 'money' | 'net_worth' | 'regions' | 'challenges'. */
+  goalKind: string;
+  /** An action that advances a non-dollar goal is available now (rivalHasGoalAction). */
+  goalAction: boolean;
+}
+/**
+ * Whether an extra action is worth its price. Never when paying would leave less than the reserve. On a money or
+ * net-worth goal only when the action is expected to earn more than it costs; on a regions or challenges goal when
+ * there is a goal action to spend it on and the price is a small share of the rival's cash.
+ */
+export function shouldRivalBuyOverride(input: RivalOverrideInput): boolean {
+  const cost = Number(input.cost), cash = Number(input.cash), gain = Number(input.expectedActionGain);
+  if (!Number.isFinite(cost) || !Number.isFinite(cash) || cost <= 0) return false;
+  if (cash - cost < RIVAL_OVERRIDE_RESERVE) return false;
+  if (input.goalKind === 'regions' || input.goalKind === 'challenges') return input.goalAction === true && cost <= cash * RIVAL_OVERRIDE_GOAL_CASH_SHARE;
+  return Number.isFinite(gain) && gain > cost;
+}
+
+/** The dollars one candidate is expected to bring in at once: a challenge's expected value at its stake, a sale's price; 0 otherwise. */
+export function rivalCandidateCashValue(candidate: { type?: unknown; data?: unknown } | null | undefined): number {
+  if (!candidate) return 0;
+  const data = v99IsRecord(candidate.data) ? candidate.data : {};
+  if (candidate.type === 'challenge') {
+    const wager = Math.max(0, Number(data.wager) || 0);
+    const reward = rivalChallengeReward(data);
+    const chance = Math.min(1, Math.max(0, Number(data.successChance) || 0));
+    return wager * (reward * chance - (1 - chance));
+  }
+  if (candidate.type === 'sell') return Math.max(0, Number(data.price) || 0);
+  return 0;
+}
+/**
+ * How the chooser picks among its ranked moves (pickClassicDecision): the share of decisions that go to its best move,
+ * its second, its third… Expert takes the best nine times in ten; Medium and Easy pick evenly among their best three / four.
+ */
+export const RIVAL_PICK_SHARES: Readonly<Record<string, readonly number[]>> = { expert: [0.9, 0.1], hard: [0.74, 0.26], medium: [1 / 3, 1 / 3, 1 / 3], easy: [0.25, 0.25, 0.25, 0.25] };
+/**
+ * What one more action is expected to bring in, in dollars: the cash value of the moves the rival would really pick,
+ * weighted by how often it picks each (`ranked` = its candidates, best first). Not the value of its single best
+ * move — a Medium rival takes that one only a third of the time. Never negative.
+ */
+export function rivalExpectedActionGain(ranked: ReadonlyArray<{ type?: unknown; data?: unknown }>, difficultyKey: string): number {
+  const shares = (RIVAL_PICK_SHARES[difficultyKey] || RIVAL_PICK_SHARES.expert).slice(0, ranked.length);
+  // With fewer moves than shares the chooser spreads the same way over the moves there are (its last share falls on its last move).
+  const total = shares.reduce((sum, share) => sum + share, 0);
+  if (!(total > 0)) return 0;
+  return Math.max(0, shares.reduce((sum, share, i) => sum + (share / total) * rivalCandidateCashValue(ranked[i]), 0));
+}
+/** Whether one more action could advance a goal that is not counted in dollars: a claim on a regions goal, a challenge on a challenges goal. */
+export function rivalHasGoalAction(candidates: ReadonlyArray<{ type?: unknown }>, goalKind: string): boolean {
+  if (goalKind === 'regions') return candidates.some(candidate => candidate.type === 'region_deposit');
+  if (goalKind === 'challenges') return candidates.some(candidate => candidate.type === 'challenge');
+  return false;
+}
+/** WinMetricProfile.goalKind for a win condition ('money' when it is unknown). */
+export function rivalGoalKind(winCondition: unknown): string {
+  const profile = typeof winCondition === 'string' ? (WIN_METRIC_PROFILES as Record<string, WinMetricProfile | undefined>)[winCondition] : undefined;
+  return String((profile || WIN_METRIC_PROFILES.money).goalKind || 'money');
+}
+
+/** Added to the score of a journey to a region the rival could then claim (regions goal). */
+export const RIVAL_CLAIM_TRAVEL_BONUS = 150;
+/** Added to the score of a journey to a region whose passport stamp the rival lacks (Grand Tour). */
+export const RIVAL_STAMP_TRAVEL_BONUS = 150;
+/** Added, times the chance of success, to a challenge that would earn a missing passport stamp (Grand Tour). */
+export const RIVAL_STAMP_CHALLENGE_BONUS = 300;
+
+/** What refineRivalCandidates reads for one live rival decision. */
+export interface RivalDisciplineInput {
+  /** The rival as the chooser sees it (money, currentRegion, completedThisSeason, debuffs, stats, level…). */
+  actor: unknown;
+  /** The live game state (selectedMode, regionDeposits, grandTourState). */
+  gameState: unknown;
+  settings: { winCondition?: unknown; negotiationMode?: unknown; sabotageEnabled?: unknown };
+  difficultyKey: string;
+  /** The rival's key in regionDeposits and in the Grand Tour progress (RIVAL_OWNER_KEY for the live rival). */
+  ownerKey: string;
+}
+/** The solo rival's key in regionDeposits and in the Grand Tour progress — the one executeAiAction validates and books with. */
+export const RIVAL_OWNER_KEY = 'ai';
+
+interface RivalRegionInfo { name?: string; challenges?: Array<{ name: string; difficulty: number; reward: number; type: string }> }
+function rivalRegionInfo(code: string): RivalRegionInfo | undefined {
+  return (REGIONS as unknown as Record<string, RivalRegionInfo | undefined>)[code];
+}
+/** A challenge's prize multiple as the chooser reads it (enumerateLegalActions: `challenge.reward || 2`). */
+function rivalChallengeReward(data: Record<string, unknown>): number {
+  return (v99IsRecord(data.challenge) ? Number(data.challenge.reward) : 0) || 2;
+}
+/**
+ * A challenge candidate at the rival's stake for its odds (rivalWagerFor); its score scales with the stake exactly as
+ * the chooser's own formula does (expected value is linear in the stake) — so a long shot at a small stake also ranks lower.
+ */
+function rivalWithWagerFloor(candidate: RivalCandidate, money: number): RivalCandidate {
+  if (candidate.type !== 'challenge' || !v99IsRecord(candidate.data)) return candidate;
+  const wager = Number(candidate.data.wager);
+  const next = rivalWagerFor(money, Number(candidate.data.successChance), rivalChallengeReward(candidate.data));
+  if (!(wager > 0) || next === wager) return candidate;
+  return { ...candidate, data: { ...candidate.data, wager: next }, score: (Number(candidate.score) || 0) * (next / wager) };
+}
+
+/**
+ * The live rival's candidates, after the chooser enumerated them and before anything is ranked:
+ *   1. challenges are staked with rivalWagerFor (never the last dollars);
+ *   2. the deposit the game always refused is dropped. On a regions goal it is replaced by the real price of
+ *      control where the rival stands (when it keeps its safety buffer); with nothing to claim there, journeys to
+ *      regions it could claim are favoured; a held region is never cashed out. On other goals a cash-out is only
+ *      proposed for a region the rival controls (the game refuses any other);
+ *   3. in Grand Tour the rival collects stamps (a challenge where the stamp is missing, journeys to regions without
+ *      one), goes to the finale's region once every stamp is held, and attempts the finale there.
+ * The input list is never mutated. Pure; draws nothing.
+ */
+export function refineRivalCandidates(candidates: RivalCandidate[], input: RivalDisciplineInput): RivalCandidate[] {
+  const actor = v99IsRecord(input.actor) ? input.actor : {};
+  const gs = v99IsRecord(input.gameState) ? input.gameState : {};
+  const money = Number(actor.money) || 0;
+  const region = String(actor.currentRegion || '');
+  const mode = typeof gs.selectedMode === 'string' ? gs.selectedMode : '';
+  const profile = AI_DIFFICULTY_PROFILES[input.difficultyKey] || AI_DIFFICULTY_PROFILES.expert;
+  const quality = Number(profile.decisionQuality) || 0.95;
+  const dataOf = (candidate: RivalCandidate): Record<string, unknown> => (v99IsRecord(candidate.data) ? candidate.data : {});
+  const top = (list: RivalCandidate[]): number => list.reduce((best, candidate) => Math.max(best, Number(candidate.score) || 0), 0);
+  const travelBlocked = input.settings.sabotageEnabled === true && Array.isArray(actor.debuffs) && isTravelBlocked(actor.debuffs as Array<{ type: string; remainingDays: number }>);
+  const travelCostTo = (code: string): number | null => (code === region || !rivalRegionInfo(code) || travelBlocked ? null : classicTravelCost(region, code, actor));
+  /** Adds `bonus` to journeys to `targets` (never below `floor`); a journey the chooser did not list is added when the rival can pay for it. */
+  const favourTravel = (list: RivalCandidate[], targets: string[], bonus: number, floor: number): RivalCandidate[] => {
+    const next = list.map(candidate => (candidate.type === 'travel' && targets.includes(String(dataOf(candidate).region || ''))
+      ? { ...candidate, score: Math.max((Number(candidate.score) || 0) + bonus, floor) } : candidate));
+    targets.forEach(code => {
+      if (next.some(candidate => candidate.type === 'travel' && dataOf(candidate).region === code)) return;
+      const cost = travelCostTo(code);
+      if (cost === null || cost > money) return;
+      next.push({ type: 'travel', description: `Travel to ${rivalRegionInfo(code)?.name || code}`, data: { region: code, cost }, score: Math.max(bonus, floor), plan: AI_TUNING_LAB_DEFAULT_PLAN });
+    });
+    return next;
+  };
+
+  // 1. stakes
+  let out = candidates.map(candidate => rivalWithWagerFloor(candidate, money));
+
+  // 2. region control
+  const deposits = sanitizeRegionDeposits(gs.regionDeposits);
+  const controller = (code: string): string | null => getRegionControlSnapshot(deposits[code] || {}).controllerId;
+  const regionsGoal = rivalGoalKind(input.settings.winCondition) === 'regions' && mode !== 'grand_tour' && isCompetitiveModeSelection(mode) && input.settings.negotiationMode !== true;
+  out = out.filter(candidate => candidate.type !== 'region_deposit');
+  if (regionsGoal) {
+    out = out.filter(candidate => candidate.type !== 'cashout_region');
+    let claimHere = false;
+    if (rivalRegionInfo(region) && controller(region) !== input.ownerKey) {
+      const required = getRequiredDepositToControl(deposits, region, input.ownerKey);
+      if (money - required >= AI_SAFETY_BUFFER) {
+        claimHere = true;
+        out.push({
+          type: 'region_deposit', description: `Deposit ${fmtMoney(required)} in ${rivalRegionInfo(region)?.name || region}`,
+          data: { region, amount: required, reason: 'to take control' },
+          // Holding regions IS the goal: where the rival stands, the claim leads the list.
+          score: Math.max(top(out), (required * 0.2 + 50) * quality), plan: AI_TUNING_LAB_DEFAULT_PLAN
+        });
+      }
+    }
+    // It moves on to a region it could claim only when there is nothing to claim where it stands (a rival that picks
+    // among its best few moves would otherwise wander off, paying for journeys instead of regions).
+    if (!claimHere) {
+      const claimable = Object.keys(REGIONS).filter(code => {
+        if (code === region || controller(code) === input.ownerKey) return false;
+        const cost = travelCostTo(code);
+        return cost !== null && money - cost - getRequiredDepositToControl(deposits, code, input.ownerKey) >= AI_SAFETY_BUFFER;
+      });
+      out = favourTravel(out, claimable, RIVAL_CLAIM_TRAVEL_BONUS * quality, 0);
+    }
+  } else {
+    out = out.filter(candidate => candidate.type !== 'cashout_region' || controller(String(dataOf(candidate).region || '')) === input.ownerKey);
+  }
+
+  // 3. Grand Tour
+  const tour = v99GrandTourView(gs, input.ownerKey);
+  if (tour && !tour.finalCompleted) {
+    if (tour.finalUnlocked) {
+      if (region === tour.finalRegion) {
+        if (money >= MINIMUM_WAGER && !out.some(candidate => candidate.type === 'challenge' && v99IsRecord(dataOf(candidate).challenge) && (dataOf(candidate).challenge as Record<string, unknown>).name === GRAND_TOUR_FINAL_CHALLENGE.name)) {
+          const finaleChance = classicSuccessChance(GRAND_TOUR_FINAL_CHALLENGE, actor);
+          out.push({
+            type: 'challenge', description: `Attempt ${GRAND_TOUR_FINAL_CHALLENGE.name}`,
+            data: { challenge: GRAND_TOUR_FINAL_CHALLENGE, wager: rivalWagerFor(money, finaleChance, GRAND_TOUR_FINAL_CHALLENGE.reward), successChance: finaleChance },
+            score: Math.max(top(out) * 2, 1000 * quality), plan: AI_TUNING_LAB_DEFAULT_PLAN
+          });
+        }
+      } else {
+        out = favourTravel(out, [tour.finalRegion], 0, Math.max(top(out) * 2, 1000 * quality));
+      }
+    } else {
+      const stampHere = tour.missing.includes(region);
+      let attemptable = false;
+      if (stampHere) {
+        out = out.map(candidate => {
+          if (candidate.type !== 'challenge') return candidate;
+          attemptable = true;
+          return { ...candidate, score: (Number(candidate.score) || 0) + RIVAL_STAMP_CHALLENGE_BONUS * quality * Math.min(1, Math.max(0, Number(dataOf(candidate).successChance) || 0)) };
+        });
+        if (!attemptable && money >= MINIMUM_WAGER) {
+          // No challenge here has a positive expected value, but any win earns the stamp: the best odds at the minimum wager.
+          const done = Array.isArray(actor.completedThisSeason) ? actor.completedThisSeason : [];
+          const open = (rivalRegionInfo(region)?.challenges || []).filter(challenge => !done.includes(challenge.name))
+            .map(challenge => ({ challenge, chance: classicSuccessChance(challenge, actor) })).sort((a, b) => b.chance - a.chance)[0];
+          if (open) {
+            attemptable = true;
+            out.push({ type: 'challenge', description: `Attempt ${open.challenge.name}`, data: { challenge: open.challenge, wager: MINIMUM_WAGER, successChance: open.chance }, score: RIVAL_STAMP_CHALLENGE_BONUS * quality * open.chance, plan: AI_TUNING_LAB_DEFAULT_PLAN });
+          }
+        }
+      }
+      // Leave for the next missing stamp only when this region's stamp is held (or cannot be tried for now).
+      if (!attemptable) out = favourTravel(out, tour.missing.filter(code => code !== region), RIVAL_STAMP_TRAVEL_BONUS * quality, 0);
+    }
+  }
+  return out;
+}
+
+/** What the turn loop tells the decision engine about the action it is about to choose. */
+export interface RivalDecisionOptions {
+  isRejected?: (candidate: RivalCandidate) => boolean;
+  /** The action being chosen was bought with an Action Override (it is never spent "thinking"). */
+  paidSlot?: boolean;
+}
+/**
+ * The live hooks for one rival decision (makeAiDecision passes them to chooseAction): the turn loop's "already
+ * failed" filter, and — in a match started on V9.9 — the R2 rules. Undefined when there is nothing to hook (then the
+ * chooser is exactly V9.8's).
+ */
+export function rivalLiveHooksFor(input: { options: RivalDecisionOptions | null | undefined; aiState: unknown; gameState: unknown; playerState: unknown; settings: GameSettingsState; difficultyKey: string; onRuleError?: (error: unknown) => void }): ClassicAiLiveHooks | undefined {
+  const discipline: RivalDisciplineInput | null = rivalDisciplineActive(input.gameState)
+    ? { actor: input.aiState, gameState: input.gameState, settings: input.settings, difficultyKey: input.difficultyKey, ownerKey: RIVAL_OWNER_KEY } : null;
+  const isRejected = input.options?.isRejected;
+  if (!isRejected && !discipline) return undefined;
+  return buildRivalLiveHooks(isRejected || (() => false), {
+    sabotageEnabled: input.settings.sabotageEnabled === true, opponentDebuffs: v99IsRecord(input.playerState) ? input.playerState.debuffs : undefined,
+    discipline, paidSlot: input.options?.paidSlot === true, onRuleError: input.onRuleError
+  });
+}
+/** What the live game does with a failure inside the R2 rules: it is logged; the decision went on with the V9.8 list. */
+export function reportRivalRuleError(error: unknown): void {
+  console.error("[V9.9] the rival's new decision rules failed; this decision used the V9.8 list", error);
+}
+
+export interface RivalPreviewInput {
+  gameState: unknown; player: unknown; aiPlayer: unknown; settings: GameSettingsState; weights: Record<string, number>;
+  specialAbilityActive: boolean; isRejected?: (candidate: RivalCandidate) => boolean;
+}
+/** The live rival's difficulty key as makeAiDecision reads it. */
+export function rivalDifficultyKey(gameState: unknown): string {
+  return String((v99IsRecord(gameState) ? gameState.aiDifficulty : '') || 'medium').toLowerCase() || 'medium';
+}
+/**
+ * What the live rival could do now — the chooser's own enumeration with the same live hooks, without picking and
+ * WITHOUT a draw (enumerateLegalActions never reads the RNG; a self-test pins that). `ranked` true = scored and
+ * sorted best first the way the chooser ranks them (scoreCandidate; the memory / overlay nudges are left out).
+ */
+export function previewRivalCandidates(input: RivalPreviewInput, ranked: boolean = false): RivalCandidate[] {
+  const ai = v99IsRecord(input.aiPlayer) ? input.aiPlayer : {};
+  const aiId = String(ai.id || 'ai');
+  const difficultyKey = rivalDifficultyKey(input.gameState);
+  const state = canonicalStateFromLiveRuntime({ gameState: input.gameState, player: input.player, aiPlayer: input.aiPlayer, gameSettings: input.settings, actorsById: { player: input.player, [aiId]: input.aiPlayer } });
+  const ctx: ClassicAiRuntimeContext = { settings: weightsToGameSettings(input.settings, input.weights), weights: input.weights, rng: { next: () => 0 }, difficultyKey, specialAbilityActive: input.specialAbilityActive };
+  const live = rivalLiveHooksFor({ options: { isRejected: input.isRejected }, aiState: input.aiPlayer, gameState: input.gameState, playerState: input.player, settings: input.settings, difficultyKey });
+  const list = classicAiProposable(enumerateLegalActions(state, aiId, ctx), live);
+  if (!ranked) return list;
+  return list.map(candidate => scoreCandidate(state, candidate, input.weights, ctx).candidate).sort((a, b) => (b.score || 0) - (a.score || 0));
+}
+/**
+ * The value check of the rival's Action Override (soloAiOverrideRef calls it after its own roll). A match started
+ * before V9.9 always passes (V9.8 bought whenever the roll allowed). A failure to evaluate means "do not buy".
+ */
+export function rivalOverrideWorthBuying(input: RivalPreviewInput & { cost: number }): boolean {
+  if (!rivalDisciplineActive(input.gameState)) return true;
+  try {
+    const candidates = previewRivalCandidates(input, true);
+    const goalKind = rivalGoalKind(input.settings.winCondition);
+    const cash = v99IsRecord(input.aiPlayer) ? Number(input.aiPlayer.money) || 0 : 0;
+    return shouldRivalBuyOverride({ cost: input.cost, cash, expectedActionGain: rivalExpectedActionGain(candidates, rivalDifficultyKey(input.gameState)), goalKind, goalAction: rivalHasGoalAction(candidates, goalKind) });
+  } catch {
+    return false;
+  }
+}
+
+// ---- R2: the rival's daily actions are visible -------------------------------------------------------------------------
+// Simple settings' "Actions per day" only ever set the PLAYER's number; the rival's (aiActionsPerDay) stayed at its own
+// value with nothing saying so. The row now says "Your actions per day", and the rival's number sits on the line
+// under it with its own slider (the pinned Simple key list is unchanged: this is a companion of that row).
+
+/** Keys the Simple view may write although they are not rows of SIMPLE_SETTINGS. */
+export const SIMPLE_COMPANION_SETTING_KEYS: readonly string[] = ['aiActionsPerDay'];
+export function isSimpleCompanionSettingKey(key: unknown): boolean {
+  return typeof key === 'string' && SIMPLE_COMPANION_SETTING_KEYS.includes(key);
+}
+export interface RivalActionsNote { you: number; rival: number; even: boolean; text: string }
+/** The two daily budgets side by side, and one sentence about them. */
+export function rivalActionsNote(settings: { playerActionsPerDay?: unknown; aiActionsPerDay?: unknown } | null | undefined): RivalActionsNote {
+  const whole = (value: unknown): number => { const n = Math.floor(Number(value)); return Number.isFinite(n) && n >= 1 ? n : 3; };
+  const you = whole(settings?.playerActionsPerDay), rival = whole(settings?.aiActionsPerDay);
+  const even = you === rival;
+  return { you, rival, even, text: even ? `Even: you and the rival both get ${you} a day.` : `Uneven: you get ${you} a day, the rival ${rival}.` };
+}
+/** The rival's action budget for the day as shown on screen: its daily number plus ONE action per override bought (V9.6 rule). */
+export function rivalActionBudgetShown(actionsPerDay: unknown, overridesUsedToday: unknown): number {
+  const base = Math.max(0, Math.floor(Number(actionsPerDay) || 0));
+  const extra = Math.max(0, Math.floor(Number(overridesUsedToday) || 0));
+  return base + extra * V96_SOLO_AI_LIMITS.OVERRIDE_ACTIONS_GRANTED;
+}
+/** The rival's line under "Your actions per day" in the Simple settings view. */
+export function V99RivalActionsRow({ settings, onChange, isDark }: { settings: GameSettingsState; onChange: (key: string, value: boolean | string | number) => void; isDark: boolean }) {
+  const note = rivalActionsNote(settings);
+  const id = 'simple-setting-aiActionsPerDay';
+  return (
+    <div className="w-full flex flex-wrap items-center justify-between gap-2 text-sm" data-testid={id}>
+      <label htmlFor={id + '-input'} className="flex-1 min-w-[12rem]">
+        <span className="font-medium">Rival's actions per day</span>
+        <span className="block text-xs opacity-70">How many actions the rival gets each day. <span className={note.even ? '' : (isDark ? 'text-amber-300 font-semibold' : 'text-amber-700 font-semibold')} data-testid="simple-setting-actions-note">{note.text}</span></span>
+      </label>
+      <span className="flex items-center gap-2">
+        {!note.even && <button type="button" onClick={() => onChange('aiActionsPerDay', note.you)} className={`px-2 py-1 rounded text-xs font-semibold ${isDark ? 'bg-slate-700 hover:bg-slate-600 text-white' : 'bg-slate-200 hover:bg-slate-300 text-slate-800'}`} data-testid="simple-setting-actions-match">Same as mine</button>}
+        <input id={id + '-input'} type="range" min={1} max={10} step={1} value={Math.min(10, note.rival)} onChange={e => onChange('aiActionsPerDay', Number(e.target.value))} aria-valuetext={String(note.rival)} />
+        <span className="w-16 text-right text-xs">{note.rival}</span>
+      </span>
+    </div>
+  );
+}
+
+/** Track R's part of suite v99mf (called from runV99MatchFlowSelfTests). */
+function runV99RivalTurnChecks(check: (id: string, name: string, fn: () => true | string) => void): void {
+  const json = (v: unknown) => JSON.stringify(v);
+  const profiles = [AI_DIFFICULTY_PROFILES.easy, AI_DIFFICULTY_PROFILES.medium, AI_DIFFICULTY_PROFILES.hard, AI_DIFFICULTY_PROFILES.expert];
+  type Candidate = AIAction & { score: number };
+
+  // ---- R1: pace ------------------------------------------------------------------------------------------------------------
+  check('v99mf_r01_normal_is_v98_timing', "At 'normal' every wait of the rival's turn is the V9.8 timer and nothing else: 1000 ms before it starts, the drawn thinking time, 800 ms after an action, 700 ms before the hand-back", () => {
+    const plans = [rivalTurnWaitPlan('schedule', RIVAL_TURN_BASE_WAIT_MS.schedule, 'normal'), rivalTurnWaitPlan('think', 1234.5, 'normal'), rivalTurnWaitPlan('settle', RIVAL_TURN_BASE_WAIT_MS.settle, 'normal'), rivalTurnWaitPlan('finalize', RIVAL_TURN_BASE_WAIT_MS.finalize, 'normal')];
+    return (json(plans) === json([{ sleepMs: 1000, settle: false }, { sleepMs: 1234.5, settle: false }, { sleepMs: 800, settle: false }, { sleepMs: 700, settle: false }])
+      && DEFAULT_RIVAL_TURN_PACE === 'normal' && createDefaultGameSettings().rivalTurnPace === 'normal') || json(plans);
+  });
+  check('v99mf_r02_faster_paces', "'fast' sleeps 35% of each wait and 'instant' does not sleep; both then wait for the match to settle (except before the turn starts); neither is ever longer than 'normal'", () => {
+    const kinds: RivalTurnWaitKind[] = ['schedule', 'think', 'settle', 'finalize'];
+    const bases = [0, 1, 500, 700, 800, 1000, 1499.6, 2500];
+    const bad: string[] = [];
+    kinds.forEach(kind => bases.forEach(base => {
+      const normal = rivalTurnWaitPlan(kind, base, 'normal'), fast = rivalTurnWaitPlan(kind, base, 'fast'), instant = rivalTurnWaitPlan(kind, base, 'instant');
+      if (fast.sleepMs !== Math.round(base * 0.35) || fast.sleepMs > normal.sleepMs || instant.sleepMs !== 0) bad.push(`${kind}/${base}: sleep`);
+      if (fast.settle !== (kind !== 'schedule') || instant.settle !== (kind !== 'schedule') || normal.settle) bad.push(`${kind}/${base}: settle`);
+    }));
+    const junk = [NaN, -5, Infinity].map(b => rivalTurnWaitPlan('settle', b, 'fast').sleepMs);
+    return (bad.length === 0 && json(junk) === json([0, 0, 0]) && RIVAL_TURN_FAST_FACTOR === 0.35) || json({ bad: bad.slice(0, 4), junk });
+  });
+  check('v99mf_r03_think_draw_at_every_pace', "The thinking time is V9.8's expression with its one draw, and a three-decision turn draws the same numbers at every pace (the pace only scales the wait)", () => {
+    const expression = profiles.every(p => [0, 0.25, 0.999].every(d => rivalThinkTimeMs(p, () => d) === p.thinkingTimeMin + d * (p.thinkingTimeMax - p.thinkingTimeMin)));
+    const turn = (pace: RivalTurnPace) => {
+      const registry = new GameplayRngRegistry(4242);
+      let draws = 0;
+      const waits = [0, 1, 2].map(() => rivalTurnWaitPlan('think', rivalThinkTimeMs(AI_DIFFICULTY_PROFILES.medium, () => { draws += 1; return registry.draw('AIReasoning'); }), pace).sleepMs);
+      return { draws, next: registry.draw('AIReasoning'), waits };
+    };
+    const normal = turn('normal'), fast = turn('fast'), instant = turn('instant');
+    return (expression && normal.draws === 3 && fast.draws === 3 && instant.draws === 3 && normal.next === fast.next && normal.next === instant.next
+      && normal.waits.every(w => w >= 800 && w <= 1500) && fast.waits.every((w, i) => w === Math.round(normal.waits[i] * 0.35)) && instant.waits.every(w => w === 0)) || json({ expression, normal, fast, instant });
+  });
+  check('v99mf_r04_settle_needs_two_still_checks', 'The match counts as settled only after two checks in a row with no new render and no pending effect; a render in between starts the count again', () => {
+    const run = (probes: RivalSettleProbe[]) => {
+      let state = createRivalSettleState(probes[0]);
+      const done: Array<string | null> = [];
+      probes.slice(1).forEach((probe, i) => { const step = rivalSettleStep(state, probe, (i + 1) * 16); state = step.state; done.push(step.done); });
+      return done;
+    };
+    const still = run([{ renders: 5, flushed: 5 }, { renders: 5, flushed: 5 }, { renders: 5, flushed: 5 }]);
+    const interrupted = run([{ renders: 5, flushed: 5 }, { renders: 5, flushed: 5 }, { renders: 6, flushed: 6 }, { renders: 6, flushed: 6 }, { renders: 6, flushed: 6 }]);
+    const effectsPending = run([{ renders: 5, flushed: 4 }, { renders: 5, flushed: 4 }, { renders: 5, flushed: 4 }, { renders: 5, flushed: 5 }, { renders: 5, flushed: 5 }]);
+    return (json(still) === json([null, 'quiet']) && json(interrupted) === json([null, null, null, 'quiet']) && json(effectsPending) === json([null, null, null, 'quiet'])
+      && RIVAL_SETTLE_LIMITS.QUIET_CHECKS === 2) || json({ still, interrupted, effectsPending });
+  });
+  check('v99mf_r05_settle_waits_out_a_chain', 'A chain "action → render → effect → dispatch → render" is waited out to its end, however slow each render is; an endless re-render is cut off', () => {
+    // One probe per check. The chain: render 11 commits, its effects run (and dispatch), render 12 commits, its effects run.
+    // The check that falls between "effects ran" and "next render" (the 2nd) looks still on its own — that is why two in a row are needed.
+    const chain: RivalSettleProbe[] = [{ renders: 10, flushed: 10 }, { renders: 11, flushed: 10 }, { renders: 11, flushed: 11 }, { renders: 12, flushed: 11 }, { renders: 12, flushed: 12 }, { renders: 12, flushed: 12 }, { renders: 12, flushed: 12 }];
+    let state = createRivalSettleState(chain[0]);
+    let doneAt = -1;
+    chain.slice(1).forEach((probe, i) => { if (doneAt >= 0) return; const step = rivalSettleStep(state, probe, (i + 1) * 900); state = step.state; if (step.done === 'quiet') doneAt = i + 1; });
+    let endless = createRivalSettleState({ renders: 0, flushed: 0 });
+    let cutAt = -1;
+    for (let i = 1; i <= 40 && cutAt < 0; i++) { const step = rivalSettleStep(endless, { renders: i, flushed: i }, i * 16); endless = step.state; if (step.done) cutAt = step.done === 'cap' ? i : -2; }
+    const slow = rivalSettleStep(createRivalSettleState({ renders: 3, flushed: 3 }), { renders: 4, flushed: 3 }, RIVAL_SETTLE_LIMITS.CAP_MS).done;
+    return (doneAt === 5 && cutAt === RIVAL_SETTLE_LIMITS.MAX_RENDERS && slow === 'cap') || json({ doneAt, cutAt, slow });
+  });
+  check('v99mf_r06_sleeper', 'A sleep ends when its timer fires, or at once when the player picks a faster pace — and then its timer is cancelled', () => {
+    const timers = new Map<number, () => void>();
+    let nextHandle = 0;
+    const cleared: number[] = [];
+    const sleeper = createRivalTurnSleeper({ set: fn => { nextHandle += 1; timers.set(nextHandle, fn); return nextHandle; }, clear: handle => { cleared.push(Number(handle)); timers.delete(Number(handle)); } });
+    void sleeper.sleep(800); void sleeper.sleep(1500); void sleeper.sleep(700);
+    const pendingBefore = sleeper.pending();
+    timers.get(1)?.(); timers.delete(1);   // the first timer fires on its own
+    const afterFire = sleeper.pending();
+    const woken = sleeper.wake();
+    return (pendingBefore === 3 && afterFire === 2 && woken === 2 && sleeper.pending() === 0 && json(cleared) === json([2, 3]) && timers.size === 0 && sleeper.wake() === 0) || json({ pendingBefore, afterFire, woken, cleared });
+  });
+  check('v99mf_r07_wait_first_step', "A wait starts the way its pace says: 'normal' sets one timer and does not look at the screen; 'instant' sets no timer and waits for the match to settle; before the turn starts nothing waits to settle", () => {
+    const probe = (kind: RivalTurnWaitKind, base: number, pace: RivalTurnPace) => {
+      const calls: string[] = [];
+      const never = new Promise<void>(() => undefined);
+      void rivalTurnWait(kind, base, { pace: () => pace, sleep: ms => { calls.push(`sleep ${ms}`); return never; }, settle: () => { calls.push('settle'); return never; } });
+      return calls.join(',');
+    };
+    const got = [probe('settle', 800, 'normal'), probe('settle', 800, 'fast'), probe('settle', 800, 'instant'), probe('think', 1000, 'instant'), probe('finalize', 700, 'instant'), probe('schedule', 1000, 'instant'), probe('schedule', 1000, 'normal')];
+    return json(got) === json(['sleep 800', 'sleep 280', 'settle', 'settle', 'settle', '', 'sleep 1000']) || json(got);
+  });
+  check('v99mf_r07c_normal_never_settles', "After its sleep a 'normal' wait is over — it never goes on to wait for the screen (V9.8 timing exactly); 'fast' and 'instant' do, and so does a wait whose pace was raised while it slept; nothing settles before the turn starts", () => {
+    const kinds: RivalTurnWaitKind[] = ['think', 'settle', 'finalize'];
+    const after = (kind: RivalTurnWaitKind, planned: RivalTurnPace, now: RivalTurnPace) => rivalWaitSettlesAfterSleep(kind, rivalTurnWaitPlan(kind, 800, planned), now);
+    const normalStays = kinds.every(kind => !after(kind, 'normal', 'normal'));
+    const fasterSettle = kinds.every(kind => after(kind, 'fast', 'fast') && after(kind, 'instant', 'instant') && after(kind, 'fast', 'normal'));
+    const raised = kinds.every(kind => after(kind, 'normal', 'fast') && after(kind, 'normal', 'instant'));
+    const schedule = RIVAL_TURN_PACES.every(planned => RIVAL_TURN_PACES.every(now => !after('schedule', planned, now)));
+    return (normalStays && fasterSettle && raised && schedule) || json({ normalStays, fasterSettle, raised, schedule });
+  });
+  check('v99mf_r07b_background_tab','A background tab is recognised (its timers are throttled, so the settle check does not use one there); a visible page and a missing document are not hidden', () => {
+    const canHop = typeof MessageChannel !== 'undefined';
+    return (rivalTurnPageHidden({ visibilityState: 'hidden' }) && !rivalTurnPageHidden({ visibilityState: 'visible' }) && !rivalTurnPageHidden({}) && !rivalTurnPageHidden(null)
+      && rivalSettleTickSkipsTimer(true, 0) === canHop && rivalSettleTickSkipsTimer(true, RIVAL_SETTLE_LIMITS.HIDDEN_FAST_CHECKS - 1) === canHop
+      && !rivalSettleTickSkipsTimer(true, RIVAL_SETTLE_LIMITS.HIDDEN_FAST_CHECKS) && !rivalSettleTickSkipsTimer(false, 0)) || 'wrong';
+  });
+  check('v99mf_r08_pace_change_wakes', 'Only a change to a faster pace cuts the waits that are running', () => {
+    const wakes = RIVAL_TURN_PACES.flatMap(from => RIVAL_TURN_PACES.filter(to => rivalPaceChangeWakesSleeps(from, to)).map(to => `${from}>${to}`));
+    return json(wakes) === json(['normal>fast', 'normal>instant', 'fast>instant']) || json(wakes);
+  });
+  check('v99mf_r09_pace_is_a_profile_setting', 'The pace is a profile preference: never stored in a save, kept between visits, and anything unknown reads as Normal', () => {
+    const save: SaveGameData = JSON.parse(json(createV95SaveFixture()));
+    (save.gameSettings as unknown as Record<string, unknown>).rivalTurnPace = 'instant';
+    const restored = validateSaveDataCore(save).gameSettings as unknown as Record<string, unknown>;
+    return (V95_PROFILE_SCOPED_SETTING_KEYS.includes('rivalTurnPace') && V99_PERSISTED_PROFILE_SETTING_KEYS.includes('rivalTurnPace') && !('rivalTurnPace' in restored)
+      && sanitizeGameSettings({ rivalTurnPace: 'turbo' }).rivalTurnPace === 'normal' && sanitizeGameSettings({}).rivalTurnPace === 'normal' && sanitizeGameSettings({ rivalTurnPace: 'instant' }).rivalTurnPace === 'instant')
+      || json({ inSave: 'rivalTurnPace' in restored });
+  });
+
+  // ---- R1: the pace control --------------------------------------------------------------------------------------------------
+  check('v99mf_r10_control_where', "The speed control is drawn with the turn pill while the solo rival plays, stays on the player's turn once a pace other than Normal is chosen, and is never on the status-only copy or in team modes", () => {
+    const shown = (soloRival: boolean, isPlayerTurn: boolean, overBoard: boolean, pace: RivalTurnPace) => rivalPaceControlShown({ soloRival, isPlayerTurn, overBoard, pace });
+    return (shown(true, false, false, 'normal') && shown(true, false, false, 'instant') && !shown(true, true, false, 'normal') && shown(true, true, false, 'fast') && shown(true, true, false, 'instant')
+      && !shown(true, false, true, 'normal') && !shown(true, true, true, 'instant') && !shown(false, false, false, 'instant') && !shown(false, true, false, 'fast')) || 'wrong placement rule';
+  });
+  check('v99mf_r10b_control_in_scenario_mode', "Scenario Mode has no turn pill, so the docked turn row carries the speed control on its own: during the scenario rival's turn, and on the player's turn once another pace than Normal is chosen — never floating, never in Single Player", () => {
+    const alone = (docked: boolean, soloRival: boolean, isPlayerTurn: boolean, pace: RivalTurnPace, overBoard = false) => rivalPaceControlAloneShown({ docked, overBoard, soloRival, isPlayerTurn, pace });
+    const scenarioRival = isSoloRivalModeSelection('scenario') && !isTeamModeSelection('scenario');
+    return (scenarioRival && !isSoloRivalModeSelection('single')
+      && alone(true, scenarioRival, false, 'normal') && alone(true, scenarioRival, false, 'instant') && alone(true, scenarioRival, true, 'fast') && !alone(true, scenarioRival, true, 'normal')
+      && !alone(false, scenarioRival, false, 'instant') && !alone(true, scenarioRival, false, 'instant', true) && !alone(true, isSoloRivalModeSelection('single'), false, 'instant')) || 'wrong placement rule';
+  });
+  check('v99mf_r11_control_markup','The control offers Normal / Fast / Instant, marks the current one, and reports only a change', () => {
+    const picked: string[] = [];
+    const node = V99RivalPaceControl({ pace: 'fast', onChange: pace => picked.push(pace), activeClassName: 'on', idleClassName: 'off', frameClassName: 'frame' });
+    const caption = (n: unknown) => { const kids = (n as { props?: { children?: unknown } } | null)?.props?.children; const first = Array.isArray(kids) ? kids[0] : null; return String((first as { props?: { children?: unknown } } | null)?.props?.children); };
+    const compactCaption = caption(V99RivalPaceControl({ pace: 'fast', onChange: () => undefined, activeClassName: 'on', idleClassName: 'off', frameClassName: 'frame', compact: true }));
+    const root = node as { props?: { children?: unknown; role?: string; 'data-testid'?: string; 'data-pace'?: string; className?: string } } | null;
+    const flat = (children: unknown): unknown[] => (Array.isArray(children) ? children.flatMap(flat) : [children]);
+    type ButtonNode = { type?: unknown; props: { 'data-testid'?: string; 'aria-pressed'?: boolean; 'aria-label'?: string; className?: string; children?: unknown; onClick?: () => void } };
+    const buttons = flat(root?.props?.children).filter((c): c is ButtonNode => Boolean(c) && typeof c === 'object' && (c as { type?: unknown }).type === 'button');
+    buttons.forEach(b => b.props.onClick?.());
+    const view = buttons.map(b => `${b.props['data-testid']}:${b.props['aria-pressed']}:${String(b.props.className).includes(' on') ? 'on' : 'off'}:${String(b.props.children)}`);
+    return (root?.props?.role === 'group' && root?.props?.['data-testid'] === 'v99-rival-pace' && root?.props?.['data-pace'] === 'fast' && String(root?.props?.className).includes('pointer-events-auto')
+      && json(view) === json(['v99-rival-pace-normal:false:off:Normal', 'v99-rival-pace-fast:true:on:✓ Fast', 'v99-rival-pace-instant:false:off:Instant'])
+      && json(picked) === json(['normal', 'instant']) && buttons.every(b => String(b.props['aria-label']).startsWith(RIVAL_PACE_CONTROL_LABEL))
+      && caption(node) === '⏩ Rival speed' && compactCaption === '⏩ Rival') || json({ view, picked, caption: caption(node), compactCaption });
+  });
+  check('v99mf_r12_instant_is_steady', "At 'instant' the pill keeps one status line and the floating copy is left out; at 'normal' and 'fast' every step is shown as before", () => {
+    return (rivalTurnStatusLine('instant', 'Attempt Surf at Gold Coast') === RIVAL_INSTANT_STATUS && rivalTurnStatusLine('instant', null) === null
+      && rivalTurnStatusLine('normal', 'Thinking...') === 'Thinking...' && rivalTurnStatusLine('fast', 'Ending turn...') === 'Ending turn...'
+      && rivalTurnStepsShown('normal') && rivalTurnStepsShown('fast') && !rivalTurnStepsShown('instant')
+      && rivalPillCopySuppressed('instant', true) && !rivalPillCopySuppressed('instant', false) && !rivalPillCopySuppressed('normal', true) && !rivalPillCopySuppressed('fast', true)) || 'wrong';
+  });
+
+  // ---- R1: the turn always comes back -----------------------------------------------------------------------------------------
+  check('v99mf_r13_guarded_steps', 'Every step runs, in order, whatever the earlier ones did; the failed ones are reported — even when reporting itself throws', () => {
+    const ran: string[] = [];
+    const reported: string[] = [];
+    const failed = runGuardedSteps([
+      { id: 'a', run: () => { ran.push('a'); } },
+      { id: 'b', run: () => { ran.push('b'); throw new Error('boom'); } },
+      { id: 'c', run: () => { ran.push('c'); } },
+      { id: 'd', run: () => { ran.push('d'); throw new Error('again'); } },
+      { id: 'e', run: () => { ran.push('e'); } }
+    ], (id) => { reported.push(id); throw new Error('reporter failed'); });
+    return (json(ran) === json(['a', 'b', 'c', 'd', 'e']) && json(failed) === json(['b', 'd']) && json(reported) === json(['b', 'd']) && runGuardedSteps([]).length === 0) || json({ ran, failed, reported });
+  });
+  /**
+   * The rival's end of turn as the game runs it: the SHIPPED step lists (buildRivalEndOfTurnSteps, then
+   * buildRivalHandBackSteps — what finalizeSoloAiTurn and v99HandBackSoloAiTurn pass to runGuardedSteps), with the real
+   * reducers and the real claim registry behind the callbacks. `throwAt` makes one callback throw; `mode` 'normal' is
+   * the ordinary end, 'forced' a recovery's hand-back alone, 'normal+forced' a recovery arriving after the ordinary end
+   * already tried the day.
+   */
+  const endOfTurnModel = (throwAt: string | null, mode: 'normal' | 'forced' | 'normal+forced' = 'normal') => {
+    let gs = gameStateReducer({ ...JSON.parse(JSON.stringify(initialGameState)), selectedMode: 'ai', gameMode: 'game', currentTurn: 'ai', currentActorId: 'ai', turnCounter: 4, day: 2, isAiThinking: true }, { type: 'SET_AI_THINKING', payload: true });
+    let player = playerReducer({ ...JSON.parse(JSON.stringify(initialPlayerState)), actionsUsedThisTurn: 3 }, { type: 'MERGE_STATE', payload: {} });
+    const claims = createSoloAiClaimRegistry();
+    const key = computeSoloAiTurnKey(gs, 1);
+    claimSoloAiTurn(claims, key);
+    const rt = createSoloAiTurnRuntime(key, 3, 0);
+    soloAiBeginFinalize(rt, 'budget_exhausted', 0);
+    const ran: string[] = [];
+    const step = (id: string, run?: () => void) => () => { ran.push(id); if (throwAt === id) throw new Error(`injected ${id}`); run?.(); };
+    let dayTried = false;
+    const day: RivalDayCloser = { tried: () => dayTried, mark: () => { dayTried = true; }, advance: step(RIVAL_TURN_STEP_ADVANCE_DAY, () => { gs = gameStateReducer(gs, { type: 'NEXT_DAY' }); }) };
+    const thinkingOff = step('ai_thinking_off', () => { gs = gameStateReducer(gs, { type: 'SET_AI_THINKING', payload: false }); });
+    const handBack = (forced: boolean) => runGuardedSteps(buildRivalHandBackSteps({
+      thinkingOff, day,
+      resetPlayerActions: step('reset_player_actions', () => { player = playerReducer(player, { type: 'RESET_ACTIONS' }); }),
+      turnToPlayer: step('turn_to_player', () => { gs = gameStateReducer(gs, { type: 'SET_TURN', payload: 'player' }); }),
+      clearAction: step('clear_ai_action'),
+      releaseClaim: step('release_claim', () => finishSoloAiTurnClaim(claims, key)),
+      idle: step('idle', () => { rt.phase = 'finished'; })
+    }, { forced }));
+    const failed: string[] = [];
+    if (mode !== 'forced') {
+      failed.push(...runGuardedSteps(buildRivalEndOfTurnSteps({ notify: step('end_notification'), ledger: step('ledger'), turnTransition: step('turn_transition'), thinkingOff, day })));
+      failed.push(...handBack(false));
+    }
+    if (mode !== 'normal') failed.push(...handBack(true));
+    return { gs, player, claims, key, rt, failed, ran };
+  };
+  check('v99mf_r14_turn_always_comes_back', "Whichever end-of-turn step throws — the notification, the ledger, the turn transition, the day advance — the player gets the turn back with fresh actions and the rival's claim is closed", () => {
+    const steps = [null, 'end_notification', 'ledger', 'turn_transition', 'ai_thinking_off', RIVAL_TURN_STEP_ADVANCE_DAY, 'clear_ai_action'];
+    const bad = steps.filter(step => {
+      const m = endOfTurnModel(step);
+      const handedBack = m.gs.currentTurn === 'player' && Number(m.player.actionsUsedThisTurn) === 0 && m.claims.active === null && m.claims.finished.includes(m.key) && m.rt.phase === 'finished';
+      const reported = step === null ? m.failed.length === 0 : json(m.failed) === json([step]);
+      const dayOk = step === RIVAL_TURN_STEP_ADVANCE_DAY ? Number(m.gs.day) === 2 : Number(m.gs.day) === 3;   // the day closes exactly once, or (when that is what failed) not at all
+      return !(handedBack && reported && dayOk);
+    });
+    return bad.length === 0 || `not handed back when this step throws: ${json(bad)}`;
+  });
+  check('v99mf_r15_recovered_turn_gets_a_new_key', "After a hand-back whose day could not advance, the rival's next turn is still a new turn: it can be claimed, and the old one can not be played twice", () => {
+    const m = endOfTurnModel(RIVAL_TURN_STEP_ADVANCE_DAY);
+    const nextRivalTurn = gameStateReducer(m.gs, { type: 'SET_TURN', payload: 'ai' });
+    const nextKey = computeSoloAiTurnKey(nextRivalTurn, 1);
+    return (Number(nextRivalTurn.day) === 2 && nextKey !== m.key && !claimSoloAiTurn(m.claims, m.key) && claimSoloAiTurn(m.claims, nextKey)) || json({ key: m.key, nextKey });
+  });
+  check('v99mf_r15b_no_second_ending', 'A turn that a recovery already handed back is not ended a second time; a turn that is merely claimed, or was released for a retry, still is', () => {
+    const reg = createSoloAiClaimRegistry();
+    claimSoloAiTurn(reg, 'a'); claimSoloAiTurn(reg, 'b');
+    const claimed = rivalTurnAlreadyHandedBack(reg, 'b');
+    releaseSoloAiTurnAfterFatal(reg, 'b');
+    const released = rivalTurnAlreadyHandedBack(reg, 'b');
+    finishSoloAiTurnClaim(reg, 'b');
+    return (!claimed && !released && rivalTurnAlreadyHandedBack(reg, 'b') && !rivalTurnAlreadyHandedBack(reg, 'a') && !rivalTurnAlreadyHandedBack(reg, 'never-seen')) || json(reg);
+  });
+  check('v99mf_r15c_shipped_step_order', "The end of the rival's turn runs in V9.6's order — notification, ledger, turn transition, thinking flag, day, then the hand-back: actions reset, turn to the player, label cleared, claim released, idle", () => {
+    const m = endOfTurnModel(null);
+    const ids = [...buildRivalEndOfTurnSteps({ notify: () => undefined, ledger: () => undefined, turnTransition: () => undefined, thinkingOff: () => undefined, day: { tried: () => false, mark: () => undefined, advance: () => undefined } }).map(s => s.id),
+      ...buildRivalHandBackSteps({ thinkingOff: () => undefined, day: { tried: () => false, mark: () => undefined, advance: () => undefined }, resetPlayerActions: () => undefined, turnToPlayer: () => undefined, clearAction: () => undefined, releaseClaim: () => undefined, idle: () => undefined }, { forced: false }).map(s => s.id)];
+    const want = ['end_notification', 'ledger', 'turn_transition', 'ai_thinking_off', RIVAL_TURN_STEP_ADVANCE_DAY, 'reset_player_actions', 'turn_to_player', 'clear_ai_action', 'release_claim', 'idle'];
+    return (json(m.ran) === json(want) && json(ids) === json(want) && m.failed.length === 0) || json({ ran: m.ran, ids });
+  });
+  check('v99mf_r15d_forced_hand_back', "A recovery's hand-back drops the thinking flag and closes the day when the turn never tried to — and never closes it a second time; whichever of its steps throws, the player still gets the turn", () => {
+    const alone = endOfTurnModel(null, 'forced');
+    const after = endOfTurnModel(null, 'normal+forced');
+    const afterFailedDay = endOfTurnModel(RIVAL_TURN_STEP_ADVANCE_DAY, 'normal+forced');
+    const count = (list: string[], id: string) => list.filter(x => x === id).length;
+    const back = (m: ReturnType<typeof endOfTurnModel>) => m.gs.currentTurn === 'player' && m.gs.isAiThinking === false && Number(m.player.actionsUsedThisTurn) === 0 && m.claims.active === null && m.claims.finished.includes(m.key) && m.rt.phase === 'finished';
+    const order = json(alone.ran) === json(['ai_thinking_off', RIVAL_TURN_STEP_ADVANCE_DAY, 'reset_player_actions', 'turn_to_player', 'clear_ai_action', 'release_claim', 'idle']);
+    const stubborn = ['ai_thinking_off', RIVAL_TURN_STEP_ADVANCE_DAY, 'reset_player_actions', 'clear_ai_action', 'release_claim', 'idle'].filter(id => {
+      const m = endOfTurnModel(id, 'forced');
+      return !(m.gs.currentTurn === 'player' && json(m.failed) === json([id]));
+    });
+    return (order && back(alone) && Number(alone.gs.day) === 3 && back(after) && Number(after.gs.day) === 3 && count(after.ran, RIVAL_TURN_STEP_ADVANCE_DAY) === 1
+      && back(afterFailedDay) && Number(afterFailedDay.gs.day) === 2 && count(afterFailedDay.ran, RIVAL_TURN_STEP_ADVANCE_DAY) === 1 && stubborn.length === 0)
+      || json({ order, alone: alone.ran, afterDay: after.gs.day, afterAdvances: count(after.ran, RIVAL_TURN_STEP_ADVANCE_DAY), failedDay: afterFailedDay.gs.day, stubborn });
+  });
+  check('v99mf_r16_fatal_recovery_table', "A rival turn that threw is recovered by what it had reached: handed back if it was ending, finished if it had acted (never replayed), retried if nothing happened, ended after too many retries", () => {
+    const d = (sameTurn: boolean, endIssued: boolean, successfulActions: number, verdict: 'retry' | 'end_turn') => decideSoloFatalRecovery({ sameTurn, endIssued, successfulActions, verdict });
+    const reg = createSoloAiClaimRegistry();
+    const verdicts: string[] = [];
+    for (let i = 0; i <= V96_SOLO_AI_LIMITS.MAX_FATAL_RECOVERIES_PER_TURN; i++) { claimSoloAiTurn(reg, 'k'); verdicts.push(d(true, false, 0, releaseSoloAiTurnAfterFatal(reg, 'k'))); }
+    return (d(true, true, 0, 'retry') === 'force_hand_back' && d(true, true, 3, 'end_turn') === 'force_hand_back' && d(true, false, 2, 'retry') === 'finalize' && d(true, false, 0, 'retry') === 'retry'
+      && d(true, false, 0, 'end_turn') === 'end_turn' && d(true, false, 2, 'end_turn') === 'end_turn' && d(false, true, 2, 'retry') === 'abandon' && d(false, false, 0, 'end_turn') === 'abandon'
+      && json(verdicts) === json(['retry', 'retry', 'end_turn']) && reg.active === null) || json(verdicts);
+  });
+  check('v99mf_r17_recovery_notice', 'The player is told in plain words that the game recovered, and that the day may not have advanced when it did not; the toast lane does not swallow the line as a repeat of the turn lines', () => {
+    const ok = rivalTurnRecoveryNotice(true), stuckDay = rivalTurnRecoveryNotice(false);
+    const lane = (notice: string) => v9DedupeNotifications([
+      { message: 'Your turn ended', type: 'info' }, { message: "🤖 Scientist AI's turn begins", type: 'ai' }, { message: '🤖 Scientist AI is thinking...', type: 'ai' },
+      { message: '🤖 Scientist AI ended their turn — turn recovered safely', type: 'ai' }, { message: 'Day 3 begins', type: 'info' }, { message: notice, type: 'warning' }
+    ], [], () => false).some(n => n.message === notice);
+    return (ok.includes('recovered') && ok.includes('back to you') && !ok.includes('day') && stuckDay.includes('the day may not have advanced') && lane(ok) && lane(stuckDay)) || json({ ok, stuckDay, laneOk: lane(ok), laneStuck: lane(stuckDay) });
+  });
+  check('v99mf_r18_stall_watchdog_table', "The second watchdog acts only when the rival owns the turn and nothing moved for 20 s (and 5 ticks): it starts the turn again once, then hands it back; a turn that was ending is handed back; a waiting approval or a live loop is left alone", () => {
+    const base: RivalStallInput = { rivalOwnsTurn: true, hasPendingApprovals: false, msStalled: V99_RIVAL_STALL_MS, ticksStalled: V99_RIVAL_STALL_MIN_TICKS, claimActive: false, turnFinished: false, endIssued: false, relaunchTried: false };
+    const d = (over: Partial<RivalStallInput>) => decideRivalStallRecovery({ ...base, ...over });
+    const got = [d({}), d({ relaunchTried: true }), d({ endIssued: true, claimActive: true }), d({ turnFinished: true }), d({ claimActive: true }),
+      d({ hasPendingApprovals: true, endIssued: true }), d({ rivalOwnsTurn: false, endIssued: true }), d({ msStalled: V99_RIVAL_STALL_MS - 1, endIssued: true }), d({ ticksStalled: V99_RIVAL_STALL_MIN_TICKS - 1, msStalled: 9e9, endIssued: true }), d({ msStalled: NaN })];
+    return (json(got) === json(['relaunch', 'force_hand_back', 'force_hand_back', 'force_hand_back', 'none', 'none', 'none', 'none', 'none', 'none']) && V99_RIVAL_STALL_MS > V95_AI_TURN_WATCHDOG_MS) || json(got);
+  });
+  check('v99mf_r19_stall_clock', 'The stall clock restarts whenever anything in the rival turn moves (an attempt, a commit, a phase, the claim) and only counts while nothing does', () => {
+    const rt = createSoloAiTurnRuntime('ai:e1:t3:d2', 3, 0);
+    const marker = (lastAttemptAt = 0, claimActive = true) => rivalTurnProgressMarker({ turnKey: rt.turnKey, runtime: rt, claimActive, turnFinished: false, lastAttemptAt, lastCommitAt: 0 });
+    const m0 = marker();
+    let clock = advanceRivalStallClock(null, m0, 1000);
+    clock = advanceRivalStallClock(clock, marker(), 2000);
+    clock = advanceRivalStallClock(clock, marker(), 3000);
+    const idle = { since: clock.since, ticks: clock.ticks };
+    soloAiRecordDecision(rt, { type: 'travel' }, 5);
+    const m1 = marker();
+    soloAiRecordCommit(rt, { type: 'travel' }, 'fp', 6);
+    const m2 = marker();
+    soloAiBeginFinalize(rt, 'budget_exhausted', 7);
+    const m3 = marker();
+    const moved = advanceRivalStallClock(clock, m3, 4000);
+    const distinct = new Set([m0, m1, m2, m3, marker(99), marker(0, false), rivalTurnProgressMarker({ turnKey: 'other', runtime: null, claimActive: false, turnFinished: false, lastAttemptAt: 0, lastCommitAt: 0 })]).size;
+    return (json(idle) === json({ since: 1000, ticks: 2 }) && moved.since === 4000 && moved.ticks === 0 && distinct === 7) || json({ idle, moved, distinct });
+  });
+  check('v99mf_r19b_stall_clock_follows_a_load', "A save loaded while the rival owns the turn (a new match epoch, same day and turn) gives the watchdog a new turn key: its clock starts again and keeps counting — it is not switched off for that turn", () => {
+    const gs = { turnCounter: 6, day: 3 };
+    const before = computeSoloAiTurnKey(gs, 4), afterLoad = computeSoloAiTurnKey(gs, 5);
+    const marker = (key: string) => rivalTurnProgressMarker({ turnKey: key, runtime: null, claimActive: false, turnFinished: false, lastAttemptAt: 0, lastCommitAt: 0 });
+    let clock = advanceRivalStallClock(null, marker(before), 0);
+    for (let tick = 1; tick <= 8; tick++) clock = advanceRivalStallClock(clock, marker(before), tick * 1000);
+    const restarted = advanceRivalStallClock(clock, marker(afterLoad), 9000);
+    let counting = restarted;
+    for (let tick = 10; tick <= 30; tick++) counting = advanceRivalStallClock(counting, marker(afterLoad), tick * 1000);
+    const verdict = decideRivalStallRecovery({ rivalOwnsTurn: true, hasPendingApprovals: false, msStalled: 30000 - counting.since, ticksStalled: counting.ticks, claimActive: false, turnFinished: false, endIssued: false, relaunchTried: false });
+    return (before !== afterLoad && clock.ticks === 8 && restarted.since === 9000 && restarted.ticks === 0 && counting.ticks === 21 && verdict === 'relaunch') || json({ before, afterLoad, restarted, counting, verdict });
+  });
+
+  // ---- R1: a move that failed is not proposed again ----------------------------------------------------------------------------
+  const weights = createSeedGenome().weights;
+  const countingRng = (seed: number) => { const inner = createSeededRng(seed); const box = { draws: 0, rng: { next: () => { box.draws += 1; return inner.next(); } } as SeededRng }; return box; };
+  check('v99mf_r20_no_hooks_is_unchanged', 'Without live hooks the chooser is what it was: same list object, same choice, same number of draws (AI Tuning Lab, reference bots, team AI)', () => {
+    const list: Candidate[] = [{ type: 'travel', description: 'a', score: 2 }, { type: 'sell', description: 'b', score: 1 }];
+    const state = createTuningMatchState(99, false);
+    const same = [1, 5, 9, 42, 99, 1234].every(seed => {
+      const a = countingRng(seed), b = countingRng(seed), c = countingRng(seed);
+      const plain = chooseAction(state, 'ai', weights, a.rng, { difficultyKey: 'medium' });
+      const noLive = chooseAction(state, 'ai', weights, b.rng, { difficultyKey: 'medium', live: undefined });
+      const emptyLive = chooseAction(state, 'ai', weights, c.rng, { difficultyKey: 'medium', live: {} });
+      return json(plain) === json(noLive) && json(plain) === json(emptyLive) && a.draws === b.draws && a.draws === c.draws;
+    });
+    return (classicAiProposable(list, undefined) === list && classicAiProposable(list, null) === list && classicAiProposable(list, {}) === list && same) || 'the chooser changed without hooks';
+  });
+  check('v99mf_r21_rejected_is_never_chosen', 'With the filter the chooser never returns a rejected move (200 seeds, every difficulty) and draws exactly as many numbers as without it', () => {
+    const state = createTuningMatchState(7, false);
+    const bad: string[] = [];
+    (['easy', 'medium', 'hard', 'expert'] as const).forEach(difficultyKey => {
+      for (let seed = 1; seed <= 50; seed++) {
+        const free = countingRng(seed);
+        const first = chooseAction(state, 'ai', weights, free.rng, { difficultyKey });
+        if (!first || first.type === 'think') continue;
+        const signature = soloAiActionSignature(first);
+        const filtered = countingRng(seed);
+        const second = chooseAction(state, 'ai', weights, filtered.rng, { difficultyKey, live: { isRejected: candidate => soloAiActionSignature(candidate) === signature } });
+        if (second && soloAiActionSignature(second) === signature) bad.push(`${difficultyKey}/${seed}: rejected move chosen again`);
+        if (free.draws !== filtered.draws) bad.push(`${difficultyKey}/${seed}: ${free.draws} vs ${filtered.draws} draws`);
+      }
+    });
+    const none = chooseAction(state, 'ai', weights, createSeededRng(3), { difficultyKey: 'expert', live: { isRejected: () => true } });
+    return (bad.length === 0 && (none === null || none.type === 'think')) || json({ bad: bad.slice(0, 4), none: none && none.type });
+  });
+  check('v99mf_r22_retry_guard', 'A move that just failed is blocked until something else commits; a different move is never blocked', () => {
+    const guard = createRivalRetryGuard();
+    const deposit = { type: 'region_deposit', data: { region: 'NSW', amount: 200 } }, travel = { type: 'travel', data: { region: 'VIC' } };
+    const before = guard.blocks(deposit);
+    guard.note(deposit, false);
+    const afterFail = [guard.blocks(deposit), guard.blocks({ type: 'region_deposit', data: { region: 'NSW', amount: 200 } }), guard.blocks(travel), guard.blocks({ type: 'region_deposit', data: { region: 'QLD', amount: 200 } })];
+    guard.note(travel, true);
+    return (!before && json(afterFail) === json([true, true, false, false]) && !guard.blocks(deposit) && guard.failedSinceCommit().length === 0) || json({ before, afterFail });
+  });
+  /** The turn loop's own bookkeeping, run without waits: decide → (refuse | commit) → record, until the loop's stop rule fires. */
+  const playTurn = (budget: number, decide: (isRejected: (a: unknown) => boolean) => Candidate | null, accepts: (a: Candidate) => boolean, useGuard: boolean) => {
+    const rt = createSoloAiTurnRuntime('model', budget, 0);
+    const guard = createRivalRetryGuard();
+    const tried: string[] = [];
+    for (let i = 0; i < 200; i++) {
+      const stop = soloAiStopReason(rt);
+      if (stop) return { rt, reason: stop as string, tried };
+      const decision = decide(a => soloAiIsRejected(rt, a) || (useGuard && guard.blocks(a)));
+      if (!decision || decision.type === 'end_turn') return { rt, reason: 'end_turn_selected', tried };
+      soloAiRecordDecision(rt, decision, i);
+      if (soloAiIsRejected(rt, decision)) { soloAiRecordFailure(rt, decision, 'rejected_this_turn', i); continue; }
+      tried.push(soloAiActionSignature(decision));
+      const ok = accepts(decision);
+      guard.note(decision, ok);
+      if (ok) soloAiRecordCommit(rt, decision, `fp${rt.successfulActions}`, i); else soloAiRecordFailure(rt, decision, 'not_committed', i);
+    }
+    return { rt, reason: 'runaway', tried };
+  };
+  check('v99mf_r23_failed_move_does_not_end_the_turn', "When the game refuses the rival's favourite move, the rival now plays its other moves and uses its whole turn; V9.8 kept proposing the refused move and stopped early", () => {
+    const state = createTuningMatchState(11, false);
+    let wiredFull = 0, wiredRepeats = 0, legacyEarly = 0, cases = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      const favourite = chooseAction(state, 'ai', weights, createSeededRng(seed), { difficultyKey: 'expert' });
+      if (!favourite || favourite.type === 'think') continue;
+      cases += 1;
+      const refused = soloAiActionSignature(favourite);
+      const wiredRng = createSeededRng(seed), legacyRng = createSeededRng(seed);
+      const wired = playTurn(3, isRejected => chooseAction(state, 'ai', weights, wiredRng, { difficultyKey: 'expert', live: { isRejected } }), a => soloAiActionSignature(a) !== refused, true);
+      const legacy = playTurn(3, () => chooseAction(state, 'ai', weights, legacyRng, { difficultyKey: 'expert' }), a => soloAiActionSignature(a) !== refused, false);
+      if (wired.rt.successfulActions === 3 && wired.reason === 'budget_exhausted') wiredFull += 1;
+      // never twice in a row, and never more often than the V9.6 limit allows
+      if (wired.tried.some((sig, i) => sig === refused && wired.tried[i + 1] === refused) || wired.tried.filter(sig => sig === refused).length > V96_SOLO_AI_LIMITS.MAX_SAME_SIGNATURE_FAILURES) wiredRepeats += 1;
+      if (legacy.rt.successfulActions < 3) legacyEarly += 1;
+    }
+    return (cases >= 20 && wiredFull === cases && wiredRepeats === 0 && legacyEarly > cases / 2) || json({ cases, wiredFull, wiredRepeats, legacyEarly });
+  });
+  check('v99mf_r24_known_refused_sabotage', 'Sabotage that is already active on the player is not proposed (the game always refuses it); expired sabotage, other moves and matches without sabotage are untouched', () => {
+    const active = [{ type: 'customs_hold', remainingDays: 1 }], expired = [{ type: 'customs_hold', remainingDays: 0 }];
+    const sabotage = { type: 'sabotage', data: { sabotageId: 'customs_hold' } };
+    const refused = (candidate: unknown, sabotageEnabled: boolean, opponentDebuffs: unknown) => rivalCandidateKnownRefused(candidate as { type?: unknown; data?: unknown }, { sabotageEnabled, opponentDebuffs });
+    const hooks = buildRivalLiveHooks(candidate => candidate.type === 'travel', { sabotageEnabled: true, opponentDebuffs: active });
+    const c = (type: AIAction['type'], data?: unknown): Candidate => ({ type, description: type, data, score: 1 });
+    return (refused(sabotage, true, active) && !refused(sabotage, true, expired) && !refused(sabotage, true, undefined) && !refused(sabotage, false, active)
+      && !refused({ type: 'sabotage', data: { sabotageId: 'border_lockdown' } }, true, active) && !refused({ type: 'travel', data: { sabotageId: 'customs_hold' } }, true, active) && !refused(null, true, active)
+      && hooks.isRejected?.(c('sabotage', { sabotageId: 'customs_hold' })) === true && hooks.isRejected?.(c('travel')) === true && hooks.isRejected?.(c('sell')) === false) || 'wrong';
+  });
+}
+
+/** Track R's R2 part of suite v99mf (called from runV99MatchFlowSelfTests): ids v99mf_r30… */
+function runV99RivalDisciplineChecks(check: (id: string, name: string, fn: () => true | string) => void): void {
+  const json = (v: unknown) => JSON.stringify(v);
+  type Candidate = AIAction & { score: number };
+  type Difficulty = 'easy' | 'medium' | 'hard' | 'expert';
+  const difficulties: Difficulty[] = ['easy', 'medium', 'hard', 'expert'];
+  const weights = createSeedGenome().weights;
+  const countingRng = (seed: number) => { const inner = createSeededRng(seed); const box = { draws: 0, rng: { next: () => { box.draws += 1; return inner.next(); } } as SeededRng }; return box; };
+  const dataOf = (c: { data?: unknown } | null | undefined): Record<string, unknown> => (c && v99IsRecord(c.data) ? c.data : {});
+  const challengeName = (c: { data?: unknown }): string => { const ch = dataOf(c).challenge; return v99IsRecord(ch) ? String(ch.name) : ''; };
+  const allRegions = Object.keys(REGIONS);
+  const expertQuality = Number(AI_DIFFICULTY_PROFILES.expert.decisionQuality) || 0.95;
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(a), Math.abs(b));
+
+  /** A live solo match as the rival's decision reads it: settings, the two actors, the game state (with or without a match seed). */
+  interface BundleOptions {
+    /** null = a match from before V9.9 (no seed). */
+    seed?: number | null; money?: number; playerMoney?: number; region?: string; mode?: string; winCondition?: WinMetric; difficulty?: Difficulty;
+    deposits?: Record<string, Record<string, number>>; stamps?: string[]; finalCompleted?: boolean; completed?: string[]; settings?: Partial<GameSettingsState>;
+  }
+  const bundle = (o: BundleOptions = {}) => {
+    const settings: GameSettingsState = { ...createDefaultGameSettings(), winCondition: o.winCondition || 'money', ...(o.settings || {}) };
+    const player: Record<string, unknown> = { ...createActorSnapshot({ id: 'player', name: 'You', teamId: TEAM_PLAYER_ID, kind: 'human', role: 'leader', character: CHARACTERS[0] }), money: o.playerMoney ?? 1000 };
+    const rival: Record<string, unknown> = { ...createActorSnapshot({ id: 'ai', name: 'Rival', teamId: TEAM_OPPONENT_ID, kind: 'ai', role: 'leader', character: CHARACTERS[1], currentRegion: o.region || 'QLD' }), money: o.money ?? 1500, completedThisSeason: [...(o.completed || [])], inventory: [] };
+    const mode = o.mode || 'ai';
+    const stamps = o.stamps || [];
+    const gameState: Record<string, unknown> = {
+      ...(JSON.parse(JSON.stringify(initialGameState)) as Record<string, unknown>),
+      gameMode: 'game', selectedMode: mode, currentTurn: 'ai', currentActorId: 'ai', turnOrder: ['player', 'ai'], turnCounter: 3, day: 2, aiDifficulty: o.difficulty || 'expert',
+      regionDeposits: o.deposits || {},
+      ...(mode === 'grand_tour' ? { grandTourState: { progressByActorId: { ai: { stamps, finalUnlocked: allRegions.every(code => stamps.includes(code)), finalCompleted: o.finalCompleted === true }, player: { stamps: [], finalUnlocked: false, finalCompleted: false } }, winnerActorId: null, finalChallengeRegion: GRAND_TOUR_FINAL_REGION, requiredRegions: allRegions } } : {}),
+      ...(o.seed === null ? {} : { matchSeed: o.seed ?? 48213 })
+    };
+    return { settings, player, rival, gameState, difficulty: o.difficulty || ('expert' as Difficulty) };
+  };
+  type Bundle = ReturnType<typeof bundle>;
+  const canonical = (b: Bundle) => canonicalStateFromLiveRuntime({ gameState: b.gameState, player: b.player, aiPlayer: b.rival, gameSettings: b.settings, actorsById: { player: b.player, ai: b.rival } });
+  const hooksFor = (b: Bundle, options?: RivalDecisionOptions) => rivalLiveHooksFor({ options, aiState: b.rival, gameState: b.gameState, playerState: b.player, settings: b.settings, difficultyKey: b.difficulty });
+  const preview = (b: Bundle): Candidate[] => previewRivalCandidates({ gameState: b.gameState, player: b.player, aiPlayer: b.rival, settings: b.settings, weights, specialAbilityActive: false });
+  const rankedPreview = (b: Bundle): Candidate[] => previewRivalCandidates({ gameState: b.gameState, player: b.player, aiPlayer: b.rival, settings: b.settings, weights, specialAbilityActive: false }, true);
+  const choose = (b: Bundle, rng: SeededRng, options?: RivalDecisionOptions) => chooseAction(canonical(b), 'ai', weights, rng, { difficultyKey: b.difficulty, settings: b.settings, live: hooksFor(b, options) });
+  const worth = (b: Bundle, cost: number) => rivalOverrideWorthBuying({ gameState: b.gameState, player: b.player, aiPlayer: b.rival, settings: b.settings, weights, specialAbilityActive: false, cost });
+  const travelScore = (list: Candidate[], code: string): number | null => { const hit = list.find(c => c.type === 'travel' && dataOf(c).region === code); return hit ? hit.score : null; };
+  const best = (list: Candidate[]): Candidate | null => list.reduce<Candidate | null>((top, c) => (!top || c.score > top.score ? c : top), null);
+
+  // ---- R2: which matches -----------------------------------------------------------------------------------------------------
+  check('v99mf_r30_only_matches_started_on_v99', "The R2 rules apply only to a match started on V9.9 (it carries a match seed). A V9.8 save, a replay checkpoint or any state without a seed keeps the V9.8 rival: nothing is reshaped, a paid-for action can still be spent thinking, every override the roll allows is bought; a saved V9.9 match keeps the new rules when it is loaded", () => {
+    const fixture = validateSaveDataCore(JSON.parse(json(createV95SaveFixture())) as SaveGameData).gameState;
+    // a save of a match started on V9.9 carries its seed through the save sanitizer: the loaded match keeps the R2 rival
+    const seeded: SaveGameData = JSON.parse(json(createV95SaveFixture()));
+    (seeded.gameState as unknown as Record<string, unknown>).matchSeed = 48213;
+    const reloaded = rivalDisciplineActive(validateSaveDataCore(seeded).gameState);
+    const table: Array<[unknown, boolean]> = [[{ matchSeed: 48213 }, true], [{ matchSeed: 1 }, true], [{}, false], [{ matchSeed: 0 }, false], [{ matchSeed: '48213' }, false], [{ matchSeed: null }, false], [null, false], [undefined, false], [fixture, false]];
+    const wrong = table.filter(([gs, want]) => rivalDisciplineActive(gs) !== want).length;
+    const old = bundle({ seed: null }), fresh = bundle({});
+    const reject = () => false;
+    const oldPlain = hooksFor(old), oldTurn = hooksFor(old, { isRejected: reject, paidSlot: true });
+    const newPlain = hooksFor(fresh), newPaid = hooksFor(fresh, { isRejected: reject, paidSlot: true }), newFree = hooksFor(fresh, { isRejected: reject, paidSlot: false });
+    const oldBuys = rivalOverrideWorthBuying({ gameState: old.gameState, player: old.player, aiPlayer: { ...old.rival, money: 500 }, settings: old.settings, weights, specialAbilityActive: false, cost: 500 });
+    const newBuys = rivalOverrideWorthBuying({ gameState: fresh.gameState, player: fresh.player, aiPlayer: { ...fresh.rival, money: 500 }, settings: fresh.settings, weights, specialAbilityActive: false, cost: 500 });
+    return (wrong === 0 && reloaded && oldPlain === undefined && oldTurn !== undefined && oldTurn.refine === undefined && oldTurn.suppressMistake === undefined && typeof oldTurn.isRejected === 'function'
+      && newPlain !== undefined && typeof newPlain.refine === 'function' && newPlain.suppressMistake === undefined && newPaid?.suppressMistake === true && newFree?.suppressMistake === undefined
+      && oldBuys === true && newBuys === false) || json({ wrong, reloaded, oldPlain: oldPlain === undefined, oldTurn: oldTurn && Object.keys(oldTurn), newPlain: newPlain && Object.keys(newPlain), oldBuys, newBuys });
+  });
+  check('v99mf_r31_old_match_rival_is_unchanged', 'In a match without a seed the chooser gets exactly the hooks R1 gave it — same choice, same number of draws, whatever the turn loop passes (including a paid-for action) — and with nothing rejected that is the V9.8 choice', () => {
+    const bad: string[] = [];
+    difficulties.forEach(difficulty => {
+      for (let seed = 1; seed <= 25; seed++) {
+        const old = bundle({ seed: null, difficulty, money: 2000, winCondition: seed % 2 ? 'money' : 'regions' });
+        const blocked = (candidate: Candidate) => candidate.type === 'sell';
+        const a = countingRng(seed), b = countingRng(seed), c = countingRng(seed), d = countingRng(seed);
+        const viaR2 = choose(old, a.rng, { isRejected: blocked, paidSlot: true });
+        const viaR1 = chooseAction(canonical(old), 'ai', weights, b.rng, { difficultyKey: difficulty, settings: old.settings, live: buildRivalLiveHooks(blocked, { sabotageEnabled: false, opponentDebuffs: undefined }) });
+        const open = choose(old, c.rng, { isRejected: () => false, paidSlot: true });
+        const v98 = chooseAction(canonical(old), 'ai', weights, d.rng, { difficultyKey: difficulty, settings: old.settings });
+        if (json(viaR2) !== json(viaR1) || a.draws !== b.draws) bad.push(`${difficulty}/${seed}: differs from R1`);
+        if (json(open) !== json(v98) || c.draws !== d.draws) bad.push(`${difficulty}/${seed}: differs from V9.8`);
+      }
+    });
+    return bad.length === 0 || json(bad.slice(0, 4));
+  });
+
+  check('v99mf_r31b_rule_failure_keeps_the_turn', "If the new rules themselves fail on a decision, the rival still decides — from the list as the chooser enumerated it (the V9.8 list) — and the failure is reported; it never costs the rival its turn", () => {
+    const b = bundle({ money: 2000, winCondition: 'regions', region: 'NSW' });
+    const broken: Record<string, unknown> = { ...b.rival };
+    Object.defineProperty(broken, 'money', { enumerable: true, get: () => { throw new Error('injected'); } });   // the rules read the rival's cash first
+    const reported: string[] = [];
+    const hooks = buildRivalLiveHooks(() => false, { sabotageEnabled: false, opponentDebuffs: undefined, discipline: { actor: broken, gameState: b.gameState, settings: b.settings, difficultyKey: 'expert', ownerKey: RIVAL_OWNER_KEY }, onRuleError: error => { reported.push(error instanceof Error ? error.message : String(error)); throw new Error('reporter failed too'); } });
+    const list: Candidate[] = [{ type: 'travel', description: 'a', score: 2 }, { type: 'region_deposit', description: 'b', data: { region: 'NSW', amount: 200 }, score: 1 }];
+    const out = hooks.refine ? hooks.refine(list) : null;
+    const healthy = buildRivalLiveHooks(() => false, { sabotageEnabled: false, opponentDebuffs: undefined, discipline: { actor: b.rival, gameState: b.gameState, settings: b.settings, difficultyKey: 'expert', ownerKey: RIVAL_OWNER_KEY }, onRuleError: error => { reported.push(`healthy: ${String(error)}`); } });
+    const refined = healthy.refine ? healthy.refine(list) : [];
+    return (out === list && json(reported) === json(['injected']) && refined !== list && refined.some(c => c.type === 'region_deposit' && Number(dataOf(c).amount) === 300) && !refined.some(c => Number(dataOf(c).amount) === 200)) || json({ same: out === list, reported, refined: refined.map(c => `${c.type}:${dataOf(c).amount ?? ''}`) });
+  });
+
+  // ---- R2: stakes ------------------------------------------------------------------------------------------------------------
+  check('v99mf_r32_wager_table', "The rival's stake is a share of its cash — at most 40%, and no more than the odds justify (a one-in-three shot at a 4x prize is worth 15% of its cash, not $500) — capped at V9.8's $500 and never under the $50 minimum", () => {
+    const table: Array<[number, number]> = [[60, 50], [125, 50], [300, 120], [499, 199], [1000, 400], [1249, 499], [1250, 500], [5000, 500], [0, 50], [-20, 50], [NaN, 50], [Infinity, 50]];
+    const wrong = table.filter(([cash, want]) => rivalWagerFor(cash) !== want).map(([cash]) => cash);
+    const keeps = [126, 200, 499, 800, 1249].every(cash => cash - rivalWagerFor(cash) >= Math.floor(cash * 0.6));
+    const shares: Array<[number, number, number]> = [[0.32, 4, 0.15], [0.57, 2, 0.355], [0.42, 3, 0.42 - 0.58 / 3], [0.72, 2, 0.4], [0.9, 3, 0.4], [1, 2, 0.4], [0.2, 4, 0], [0.1, 2, 0]];
+    const shareWrong = shares.filter(([chance, reward, want]) => !near(rivalStakeShare(chance, reward), want)).map(([chance, reward]) => `${chance}/${reward}`);
+    const noOdds = [rivalStakeShare(), rivalStakeShare(NaN, 2), rivalStakeShare(0.5, 0), rivalStakeShare(0.5, NaN), rivalStakeShare(0.5)];
+    // a long shot: $187 of $1,250, the full $500 only from about $3,340; fair odds: $443 of $1,250, $500 from $1,500; good odds: $500 from $1,250; a bet not worth taking: the minimum
+    const stakes = [rivalWagerFor(1250, 0.32, 4), rivalWagerFor(3340, 0.32, 4), rivalWagerFor(410, 0.32, 4), rivalWagerFor(1250, 0.57, 2), rivalWagerFor(1500, 0.57, 2), rivalWagerFor(1250, 0.72, 2), rivalWagerFor(2000, 0.2, 4)];
+    return (wrong.length === 0 && keeps && shareWrong.length === 0 && noOdds.every(share => share === RIVAL_WAGER_CASH_SHARE) && json(stakes) === json([187, 500, 61, 443, 500, 500, 50])
+      && RIVAL_WAGER_CAP === 500 && RIVAL_WAGER_CASH_SHARE === 0.4 && MINIMUM_WAGER === 50) || json({ wrong, keeps, shareWrong, noOdds, stakes });
+  });
+  check('v99mf_r33_stakes_reach_the_chooser', "Every challenge the live rival considers carries the stake for its own odds, and its score moves with the stake exactly as the chooser's own formula does (so a long shot also ranks lower); a match from before V9.9 still stakes min(cash, $500)", () => {
+    const bad: string[] = [];
+    let compared = 0;
+    [60, 150, 300, 499, 800, 1249, 1250, 3000].forEach(cash => {
+      const stakes = (list: Candidate[]) => list.filter(c => c.type === 'challenge').map(c => { const offer = dataOf(c).challenge; return { name: challengeName(c), wager: Number(dataOf(c).wager), score: c.score, chance: Number(dataOf(c).successChance), reward: (v99IsRecord(offer) ? Number(offer.reward) : 0) || 2 }; });
+      const fresh = stakes(preview(bundle({ money: cash }))), old = stakes(preview(bundle({ money: cash, seed: null })));
+      if (fresh.length !== old.length) { bad.push(`${cash}: ${fresh.length} vs ${old.length} challenges`); return; }
+      fresh.forEach((x, i) => {
+        const y = old[i];
+        compared += 1;
+        if (x.name !== y.name || x.wager !== rivalWagerFor(cash, x.chance, x.reward) || x.wager > Math.max(MINIMUM_WAGER, Math.floor(cash * RIVAL_WAGER_CASH_SHARE)) || y.wager !== Math.max(MINIMUM_WAGER, Math.min(cash, 500)) || !near(x.score * y.wager, y.score * x.wager)) bad.push(`${cash}/${x.name}: ${json(x)} vs ${json(y)}`);
+      });
+    });
+    return (bad.length === 0 && compared >= 8) || json({ bad: bad.slice(0, 3), compared });
+  });
+
+  // ---- R2: Action Overrides ----------------------------------------------------------------------------------------------------
+  check('v99mf_r34_override_decision_table', 'An extra action is bought only when paying leaves the reserve ($1,000) and — on a money or net-worth goal — the action is expected to earn more than it costs; on a regions or challenges goal only for a goal action at 15% of cash or less', () => {
+    const buy = (cost: number, cash: number, expectedActionGain: number, goalKind = 'money', goalAction = false) => shouldRivalBuyOverride({ cost, cash, expectedActionGain, goalKind, goalAction });
+    const got = [buy(500, 5000, 350), buy(500, 5000, 900), buy(500, 900, 900), buy(500, 1499, 900), buy(500, 1500, 900), buy(750, 5000, 750), buy(750, 5000, 751), buy(1125, 5000, 900), buy(500, 5000, 900, 'net_worth'),
+      buy(500, 5000, 0, 'regions', true), buy(500, 5000, 9999, 'regions', false), buy(500, 3000, 0, 'regions', true), buy(750, 5000, 0, 'challenges', true), buy(1125, 5000, 0, 'challenges', true),
+      buy(0, 5000, 900), buy(-5, 5000, 900), buy(NaN, 5000, 900), buy(500, NaN, 900), buy(500, 5000, NaN)];
+    const want = [false, true, false, false, true, false, true, false, true, true, false, false, true, false, false, false, false, false, false];
+    return (json(got) === json(want) && RIVAL_OVERRIDE_RESERVE === 1000 && RIVAL_OVERRIDE_GOAL_CASH_SHARE === 0.15) || json(got);
+  });
+  check('v99mf_r35_override_value_is_what_an_action_brings', "What one more action is worth is read from the moves the rival would really pick — a challenge's expected winnings at its stake, a sale's price — weighted by how often it picks each (Expert its best nine times in ten, Medium evenly among its best three); the value check agrees with it at every price ($500 / $750 / $1,125)", () => {
+    const value = [rivalCandidateCashValue({ type: 'challenge', data: { wager: 500, successChance: 0.7, challenge: { reward: 3 } } }), rivalCandidateCashValue({ type: 'challenge', data: { wager: 500, successChance: 0.6, challenge: { reward: 2 } } }),
+      rivalCandidateCashValue({ type: 'sell', data: { price: 180 } }), rivalCandidateCashValue({ type: 'travel', data: { cost: 200 } }), rivalCandidateCashValue({ type: 'region_deposit', data: { amount: 300 } }), rivalCandidateCashValue(null)];
+    const sale = (price: number) => ({ type: 'sell', data: { price } });
+    const moves = [sale(900), sale(300), sale(0), sale(600)];
+    const picked = [rivalExpectedActionGain(moves, 'expert'), rivalExpectedActionGain(moves, 'hard'), rivalExpectedActionGain(moves, 'medium'), rivalExpectedActionGain(moves, 'easy'), rivalExpectedActionGain(moves, 'unknown'),
+      rivalExpectedActionGain([sale(900)], 'expert'), rivalExpectedActionGain([sale(900)], 'easy'), rivalExpectedActionGain([sale(900), sale(300)], 'medium'), rivalExpectedActionGain([], 'medium')];
+    const pickedOk = [840, 744, 400, 450, 840, 900, 900, 600, 0].every((want, i) => near(picked[i], want));
+    const shareSums = Object.values(RIVAL_PICK_SHARES).every(shares => near(shares.reduce((sum, share) => sum + share, 0), 1));
+    const prices = [0, 1, 2].map(used => calculateActionPointOverrideCost({ money: 5000 }, createDefaultGameSettings(), used));
+    const agree = difficulties.map(difficulty => {
+      const rich = bundle({ money: 5000, playerMoney: 9000, difficulty });
+      const gain = rivalExpectedActionGain(rankedPreview(rich), difficulty);
+      return { difficulty, gain: Math.round(gain), ok: gain > 0 && prices.every(cost => worth(rich, cost) === (gain > cost)) };
+    });
+    const thin = bundle({ money: 1400, playerMoney: 9000 });   // $1,400 − $500 leaves less than the reserve
+    const regions = bundle({ money: 5000, playerMoney: 9000, winCondition: 'regions', region: 'NSW' });   // NSW can be claimed: a goal action
+    const regionsHeld = bundle({ money: 5000, playerMoney: 9000, winCondition: 'regions', region: 'NSW', deposits: allRegions.reduce<Record<string, Record<string, number>>>((acc, code) => { acc[code] = { ai: 300 }; return acc; }, {}) });
+    const unreadable = rivalOverrideWorthBuying({ gameState: thin.gameState, player: thin.player, aiPlayer: null, settings: thin.settings, weights, specialAbilityActive: false, cost: 500 });
+    const sorted = rankedPreview(bundle({ money: 5000 })).every((c, i, list) => i === 0 || list[i - 1].score >= c.score);
+    return (near(value[0], 900) && near(value[1], 400) && value[2] === 180 && value[3] === 0 && value[4] === 0 && value[5] === 0 && pickedOk && shareSums && json(prices) === json([500, 750, 1125]) && agree.every(a => a.ok) && sorted
+      && !worth(thin, 500) && worth(regions, 500) && !worth(regions, 1125) && !worth(regionsHeld, 500) && unreadable === false) || json({ value, picked, shareSums, prices, agree, sorted, thin: worth(thin, 500), regions: [worth(regions, 500), worth(regions, 1125), worth(regionsHeld, 500)], unreadable });
+  });
+  check('v99mf_r36_value_check_draws_nothing', "The value check reads the rival's options without a single random draw (the override roll stays where it was in the sequence), and a decision under the R2 rules draws exactly as many numbers as the V9.8 decision", () => {
+    const b = bundle({ money: 3000, playerMoney: 9000 });
+    let enumerateDraws = 0;
+    const ctx: ClassicAiRuntimeContext = { settings: weightsToGameSettings(b.settings, weights), weights, rng: { next: () => { enumerateDraws += 1; return 0.5; } }, difficultyKey: 'expert', specialAbilityActive: false };
+    const listed = enumerateLegalActions(canonical(b), 'ai', ctx).length;
+    const before = json(globalRngRegistry.exportStreamStates());
+    worth(b, 500); preview(b); refineRivalCandidates(preview(bundle({ money: 3000, seed: null })), { actor: b.rival, gameState: b.gameState, settings: b.settings, difficultyKey: 'expert', ownerKey: RIVAL_OWNER_KEY });
+    const untouched = json(globalRngRegistry.exportStreamStates()) === before;
+    const uneven: string[] = [];
+    difficulties.forEach(difficulty => {
+      for (let seed = 1; seed <= 20; seed++) {
+        (['money', 'regions'] as const).forEach(winCondition => {
+          const a = countingRng(seed), c = countingRng(seed);
+          choose(bundle({ money: 2000, difficulty, winCondition }), a.rng);
+          choose(bundle({ money: 2000, difficulty, winCondition, seed: null }), c.rng);
+          if (a.draws !== c.draws) uneven.push(`${difficulty}/${seed}/${winCondition}: ${a.draws} vs ${c.draws}`);
+        });
+      }
+    });
+    return (listed > 0 && enumerateDraws === 0 && untouched && uneven.length === 0) || json({ listed, enumerateDraws, untouched, uneven: uneven.slice(0, 4) });
+  });
+  check('v99mf_r37_paid_action_is_never_thinking', "An action bought with an override is never spent on 'Contemplating strategy…': the mistake roll is still drawn (same sequence) but ignored, and when the roll would not have been a mistake the choice is the same", () => {
+    const b = bundle({ difficulty: 'easy', money: 2000 });
+    let thinksFree = 0, thinksPaid = 0, changed = 0, drawGap = 0;
+    for (let seed = 1; seed <= 200; seed++) {
+      const f = countingRng(seed), p = countingRng(seed);
+      const free = choose(b, f.rng, { paidSlot: false }), paid = choose(b, p.rng, { paidSlot: true });
+      if (free && free.type === 'think') thinksFree += 1;
+      if (paid && paid.type === 'think') thinksPaid += 1;
+      if (free && free.type !== 'think' && json(free) !== json(paid)) changed += 1;
+      if (free && free.type !== 'think' && f.draws !== p.draws) drawGap += 1;
+    }
+    const old = bundle({ difficulty: 'easy', money: 2000, seed: null });
+    let oldThinks = 0;
+    for (let seed = 1; seed <= 200; seed++) { const pick = choose(old, createSeededRng(seed), { isRejected: () => false, paidSlot: true }); if (pick && pick.type === 'think') oldThinks += 1; }
+    return (thinksPaid === 0 && thinksFree >= 40 && thinksFree <= 100 && changed === 0 && drawGap === 0 && oldThinks === thinksFree) || json({ thinksFree, thinksPaid, changed, drawGap, oldThinks });
+  });
+
+  // ---- R2: regions -------------------------------------------------------------------------------------------------------------
+  check('v99mf_r38_region_claim_at_the_real_price', "On a regions goal the rival offers the price control really costs ($300 for an empty region, one more than the leader's stake otherwise) — the amount the game accepts — and only when it keeps its $600 buffer; the $200 deposit the game always refused is gone on every goal", () => {
+    const bad: string[] = [];
+    const claims = (b: Bundle) => preview(b).filter(c => c.type === 'region_deposit');
+    [400, 899, 900, 1200, 2000, 5000].forEach(cash => {
+      const offered = claims(bundle({ money: cash, winCondition: 'regions', region: 'NSW' }));
+      const required = getRequiredDepositToControl({}, 'NSW', RIVAL_OWNER_KEY);
+      if (offered.length !== (cash - required >= AI_SAFETY_BUFFER ? 1 : 0)) bad.push(`$${cash}: ${offered.length} claims`);
+      if (offered.some(c => Number(dataOf(c).amount) !== required || dataOf(c).region !== 'NSW')) bad.push(`$${cash}: wrong amount`);
+      (['money', 'netWorth', 'challenges'] as const).forEach(winCondition => { if (claims(bundle({ money: cash, winCondition, region: 'NSW' })).length) bad.push(`$${cash}: deposit on ${winCondition}`); });
+    });
+    const amountOf = (deposits: Record<string, Record<string, number>>) => claims(bundle({ money: 3000, winCondition: 'regions', region: 'NSW', deposits })).map(c => Number(dataOf(c).amount));
+    const contested = amountOf({ NSW: { player: 700 } }), retake = amountOf({ NSW: { player: 301, ai: 300 } }), held = amountOf({ NSW: { ai: 300 } }), tooDear = amountOf({ NSW: { player: 2500 } });
+    const accepted = (deposits: Record<string, Record<string, number>>, amount: number) => amount >= getRequiredDepositToControl(sanitizeRegionDeposits(deposits), 'NSW', RIVAL_OWNER_KEY);
+    const legacy = claims(bundle({ money: 2000, winCondition: 'regions', region: 'NSW', seed: null })).map(c => Number(dataOf(c).amount));
+    const elsewhere = [claims(bundle({ money: 3000, winCondition: 'regions', region: 'NSW', mode: 'grand_tour' })).length, claims(bundle({ money: 3000, winCondition: 'regions', region: 'NSW', settings: { negotiationMode: true } })).length];
+    return (bad.length === 0 && json(contested) === json([701]) && json(retake) === json([2]) && held.length === 0 && tooDear.length === 0 && accepted({ NSW: { player: 700 } }, 701) && accepted({ NSW: { player: 301, ai: 300 } }, 2) && accepted({}, 300)
+      && json(legacy) === json([200]) && !accepted({}, 200) && json(elsewhere) === json([0, 0]) && REGION_MIN_CONTROL_STAKE === 300) || json({ bad: bad.slice(0, 4), contested, retake, held, tooDear, legacy, elsewhere });
+  });
+  check('v99mf_r39_rival_claims_then_moves_on', 'Where the rival stands and can claim, the claim leads its list (an Expert rival takes it); once it holds the region, journeys to regions it could still claim are favoured — never while a claim is open here, never to a region it holds, never when it could not pay for the claim on arrival', () => {
+    let claimed = 0;
+    for (let seed = 1; seed <= 40; seed++) { const pick = choose(bundle({ money: 2000, winCondition: 'regions', region: 'NSW' }), createSeededRng(seed)); if (pick && pick.type === 'region_deposit') claimed += 1; }
+    const openHere = bundle({ money: 2500, winCondition: 'regions', region: 'NSW' });
+    const ranked = preview(openHere).map(c => scoreCandidate(canonical(openHere), c, weights).candidate);   // as the chooser ranks them (a regions goal weighs a claim up)
+    const leads = best(ranked)?.type === 'region_deposit' && ranked.filter(c => c.score >= (best(ranked)?.score ?? 0)).length === 1;
+    const deposits = { NSW: { ai: 300 }, VIC: { ai: 300 } };
+    const held = preview(bundle({ money: 2500, winCondition: 'regions', region: 'NSW', deposits }));
+    const plain = preview(bundle({ money: 2500, winCondition: 'regions', region: 'NSW', deposits, seed: null }));
+    const bonus = RIVAL_CLAIM_TRAVEL_BONUS * expertQuality;
+    const targets = allRegions.filter(code => code !== 'NSW' && code !== 'VIC');
+    const favoured = targets.filter(code => { const now = travelScore(held, code), was = travelScore(plain, code); return now !== null && near(now, was === null ? bonus : was + bonus); });
+    const heldSame = travelScore(held, 'VIC') === travelScore(plain, 'VIC');
+    const noWander = allRegions.every(code => travelScore(preview(openHere), code) === travelScore(preview(bundle({ money: 2500, winCondition: 'regions', region: 'NSW', seed: null })), code));
+    const poor = preview(bundle({ money: 1000, winCondition: 'regions', region: 'NSW', deposits }));   // $1,000 − journey − $300 is under the buffer
+    const poorPlain = preview(bundle({ money: 1000, winCondition: 'regions', region: 'NSW', deposits, seed: null }));
+    const poorSame = allRegions.every(code => travelScore(poor, code) === travelScore(poorPlain, code));
+    const noCashOut = !held.some(c => c.type === 'cashout_region') && !held.some(c => c.type === 'region_deposit');
+    return (claimed >= 30 && leads && favoured.length === targets.length && heldSame && noWander && poorSame && noCashOut) || json({ claimed, leads, favoured, targets, heldSame, noWander, poorSame, noCashOut });
+  });
+  check('v99mf_r40_cash_out_only_what_it_controls', 'A cash-out is only proposed for a region the rival controls (the game refuses any other), and never on a regions goal, where holding regions is the goal', () => {
+    const cashOuts = (o: BundleOptions) => preview(bundle({ money: 1500, region: 'QLD', settings: { allowCashOut: true }, ...o })).filter(c => c.type === 'cashout_region').length;
+    const minority = { QLD: { ai: 100, player: 400 } }, control = { QLD: { ai: 400 } };
+    const got = [cashOuts({ deposits: minority }), cashOuts({ deposits: control }), cashOuts({ deposits: control, winCondition: 'regions' }), cashOuts({ deposits: minority, seed: null }), cashOuts({ deposits: control, seed: null })];
+    return json(got) === json([0, 1, 0, 1, 1]) || json(got);
+  });
+
+  // ---- R2: Grand Tour ------------------------------------------------------------------------------------------------------------
+  check('v99mf_r41_grand_tour_finale', "With every stamp held and standing in the finale's region the rival is offered National Champion at its stake, at the top of its list — an Expert rival attempts it; elsewhere the journey to that region leads; without the cash for a stake, after the finale, or in a match from before V9.9, nothing is added", () => {
+    const inAct = bundle({ mode: 'grand_tour', stamps: allRegions, region: GRAND_TOUR_FINAL_REGION, money: 2000 });
+    const list = preview(inAct);
+    const finale = list.filter(c => challengeName(c) === GRAND_TOUR_FINAL_CHALLENGE.name);
+    const payload = dataOf(finale[0]);
+    const offer = v99IsRecord(payload.challenge) ? payload.challenge : {};
+    const executable = typeof offer.name === 'string' && typeof offer.reward === 'number' && typeof offer.difficulty === 'number' && typeof payload.wager === 'number' && Number(payload.wager) <= 2000;   // what executeAiAction validates
+    let attempts = 0;
+    for (let seed = 1; seed <= 20; seed++) { const pick = choose(inAct, createSeededRng(seed)); if (pick && challengeName(pick) === GRAND_TOUR_FINAL_CHALLENGE.name) attempts += 1; }
+    const away = best(preview(bundle({ mode: 'grand_tour', stamps: allRegions, region: 'NSW', money: 2000 })));
+    const has = (o: BundleOptions) => preview(bundle({ mode: 'grand_tour', stamps: allRegions, region: GRAND_TOUR_FINAL_REGION, money: 2000, ...o })).some(c => challengeName(c) === GRAND_TOUR_FINAL_CHALLENGE.name);
+    const none = [has({ money: 40 }), has({ finalCompleted: true }), has({ seed: null }), has({ stamps: allRegions.slice(1) }), has({ mode: 'ai' })];
+    return (finale.length === 1 && best(list) === finale[0] && payload.wager === rivalWagerFor(2000, Number(payload.successChance), GRAND_TOUR_FINAL_CHALLENGE.reward) && Number(payload.wager) >= MINIMUM_WAGER && executable && attempts >= 15
+      && away !== null && away.type === 'travel' && dataOf(away).region === GRAND_TOUR_FINAL_REGION && json(none) === json([false, false, false, false, false])) || json({ finale: finale.length, top: best(list)?.description, executable, attempts, away: away && away.description, none });
+  });
+  check('v99mf_r42_grand_tour_stamps', 'Where its stamp is missing the rival goes for a challenge (and does not leave); where it holds the stamp, journeys to regions without one are favoured and journeys to stamped regions are not; with no worthwhile challenge it tries the best odds at the minimum wager, because any win earns the stamp', () => {
+    const missingHere = { mode: 'grand_tour', stamps: ['NSW'], region: 'QLD', money: 2000 };
+    const a = preview(bundle(missingHere)), a0 = preview(bundle({ ...missingHere, seed: null }));
+    const challenges = (list: Candidate[]) => list.filter(c => c.type === 'challenge');
+    // the same challenge at its V9.9 stake (its score moves with the stake), then the stamp bonus on top where there is one
+    const restaked = (c: Candidate, old: Candidate) => old.score * (Number(dataOf(c).wager) / Number(dataOf(old).wager));
+    const boosted = challenges(a).length > 0 && challenges(a).length === challenges(a0).length && challenges(a).every((c, i) => near(c.score, restaked(c, challenges(a0)[i]) + RIVAL_STAMP_CHALLENGE_BONUS * expertQuality * Number(dataOf(c).successChance)));
+    const stays = allRegions.every(code => travelScore(a, code) === travelScore(a0, code));
+    const heldHere = { mode: 'grand_tour', stamps: ['QLD', 'NSW'], region: 'QLD', money: 2000 };
+    const b = preview(bundle(heldHere)), b0 = preview(bundle({ ...heldHere, seed: null }));
+    const bonus = RIVAL_STAMP_TRAVEL_BONUS * expertQuality;
+    const wanted = allRegions.filter(code => code !== 'QLD' && code !== 'NSW');
+    const onward = wanted.filter(code => { const now = travelScore(b, code), was = travelScore(b0, code); return now !== null && near(now, was === null ? bonus : was + bonus); });
+    const stampedSame = travelScore(b, 'NSW') === travelScore(b0, 'NSW') && challenges(b).length === challenges(b0).length && challenges(b).every((c, i) => near(c.score, restaked(c, challenges(b0)[i])));
+    const lastResort = (money: number) => { const x = bundle({ ...missingHere, money }); return refineRivalCandidates([], { actor: x.rival, gameState: x.gameState, settings: x.settings, difficultyKey: 'expert', ownerKey: RIVAL_OWNER_KEY }); };
+    const tried = lastResort(60).filter(c => c.type === 'challenge'), broke = lastResort(40).filter(c => c.type === 'challenge');
+    const odds = (REGIONS.QLD.challenges as Array<{ name: string; difficulty: number; reward: number; type: string }>).map(c => classicSuccessChance(c, bundle(missingHere).rival));
+    const bestOdds = tried.length === 1 && dataOf(tried[0]).wager === MINIMUM_WAGER && near(Number(dataOf(tried[0]).successChance), Math.max(...odds));
+    return (boosted && stays && onward.length === wanted.length && stampedSame && bestOdds && broke.length === 0) || json({ boosted, stays, onward, wanted, stampedSame, tried: tried.map(c => c.description), broke: broke.length });
+  });
+
+  // ---- R2: the whole thing, played ------------------------------------------------------------------------------------------------
+  /**
+   * A model match (labelled a model: the real chooser, the real value check and the real override price, with a small
+   * executor — a challenge pays its stake times its reward or loses the stake, a journey costs its price). The human
+   * is always ahead, so V9.8's override rule (behind + can pay + a 60 % roll) fires whenever it can.
+   */
+  const arena = (seed: number, disciplined: boolean, difficulty: Difficulty) => {
+    const rng = createSeededRng(seed);
+    const b = bundle({ seed: disciplined ? 48213 : null, money: 1500, difficulty, playerMoney: 4000 });
+    const rival = b.rival;
+    let spent = 0, thinksOnPaid = 0, lowest = Number(rival.money);
+    for (let day = 1; day <= 12; day++) {
+      b.player.money = 4000 + day * 1500;
+      let done = 0, budget = 3, overrides = 0;
+      for (let guard = 0; guard < 12; guard++) {
+        if (done >= budget) {
+          const cost = calculateActionPointOverrideCost({ money: Number(rival.money) }, b.settings, overrides);
+          if (overrides >= OVERRIDE_DAILY_CAP || Number(rival.money) < cost || rng.next() >= 0.6) break;
+          if (!worth(b, cost)) break;   // always true in a match without a seed
+          rival.money = Number(rival.money) - cost; spent += cost; overrides += 1; budget += 1;
+        }
+        const action = choose(b, rng, { paidSlot: done >= 3 });
+        if (!action) break;
+        const d = dataOf(action);
+        if (action.type === 'think') { if (done >= 3) thinksOnPaid += 1; }
+        else if (action.type === 'challenge') {
+          const wager = Number(d.wager) || 0, offer = v99IsRecord(d.challenge) ? d.challenge : {};
+          if (rng.next() < Number(d.successChance)) { rival.money = Number(rival.money) + wager * (Number(offer.reward) || 2); rival.completedThisSeason = [...(rival.completedThisSeason as string[]), String(offer.name)]; }
+          else rival.money = Number(rival.money) - wager;
+        } else if (action.type === 'travel') { rival.money = Number(rival.money) - (Number(d.cost) || 0); rival.currentRegion = String(d.region); }
+        lowest = Math.min(lowest, Number(rival.money));
+        done += 1;
+      }
+    }
+    return { money: Number(rival.money), spent, thinksOnPaid, lowest };
+  };
+  check('v99mf_r43_trailing_rival_keeps_its_cash', "Model match, human always ahead, 12 days, 24 seeds each on Easy, Medium and Expert: under V9.8's rules the rival pours its cash into extra actions and long shots and mostly ends broke; under the R2 rules it spends a fraction of that on extra actions, never thinks on one it paid for, goes broke a third as often at most, and ends with money in hand", () => {
+    const report = (['easy', 'medium', 'expert'] as const).map(difficulty => {
+      const seeds = Array.from({ length: 24 }, (_, i) => i + 1);
+      const old = seeds.map(seed => arena(seed, false, difficulty)), fresh = seeds.map(seed => arena(seed, true, difficulty));
+      const sum = (list: Array<{ spent: number }>) => list.reduce((total, m) => total + m.spent, 0);
+      const median = (list: Array<{ money: number }>) => [...list].map(m => m.money).sort((x, y) => x - y)[Math.floor(list.length / 2)];
+      const broke = (list: Array<{ money: number }>) => list.filter(m => m.money < 100).length;
+      return { difficulty, oldSpent: sum(old), newSpent: sum(fresh), oldBroke: broke(old), newBroke: broke(fresh), oldMedian: median(old), newMedian: median(fresh), paidThinks: fresh.reduce((total, m) => total + m.thinksOnPaid, 0), oldPaidThinks: old.reduce((total, m) => total + m.thinksOnPaid, 0) };
+    });
+    const ok = report.every(r => r.oldSpent > 0 && r.newSpent * 4 <= r.oldSpent && r.newBroke * 3 <= r.oldBroke && r.newMedian >= 2000 && r.newMedian > r.oldMedian && r.paidThinks === 0);
+    return (ok && report.some(r => r.oldBroke > r.newBroke) && report.some(r => r.oldPaidThinks > 0)) || json(report);
+  });
+
+  // ---- R2: the rival's daily actions are visible -----------------------------------------------------------------------------------
+  check('v99mf_r44_actions_row_says_whose', "Simple settings: the row is \"Your actions per day\" and says the rival has its own number; the pinned Simple key list is unchanged, and the rival's number is a companion the Simple view may write", () => {
+    const row = SIMPLE_SETTINGS.find(d => d.key === 'playerActionsPerDay');
+    return (row !== undefined && row.label === 'Your actions per day' && /rival/i.test(row.help) && row.kind === 'range' && row.min === 1 && row.max === 10
+      && !SIMPLE_SETTINGS_KEYS.includes('aiActionsPerDay') && SIMPLE_SETTINGS_KEYS.filter(key => key === 'playerActionsPerDay').length === 1
+      && isSimpleCompanionSettingKey('aiActionsPerDay') && !isSimpleCompanionSettingKey('playerActionsPerDay') && !isSimpleCompanionSettingKey('totalDays') && !isSimpleCompanionSettingKey(undefined)
+      && createDefaultGameSettings().aiActionsPerDay === 3 && createDefaultGameSettings().playerActionsPerDay === 3) || json(row || null);
+  });
+  check('v99mf_r45_actions_note', "The two daily budgets are stated side by side — \"Even\" when they match, \"Uneven: you get 6 a day, the rival 3\" when they do not — and the rival's budget on screen is its daily number plus ONE per override (V9.8 showed a whole extra day per override)", () => {
+    const even = rivalActionsNote({ playerActionsPerDay: 3, aiActionsPerDay: 3 }), uneven = rivalActionsNote({ playerActionsPerDay: 6, aiActionsPerDay: 3 }), junk = rivalActionsNote({ playerActionsPerDay: 'x', aiActionsPerDay: 0 }), none = rivalActionsNote(null);
+    const shown = [rivalActionBudgetShown(3, 0), rivalActionBudgetShown(3, 1), rivalActionBudgetShown(3, 2), rivalActionBudgetShown(5, 3), rivalActionBudgetShown(undefined, undefined), rivalActionBudgetShown(3, -2), rivalActionBudgetShown(3.9, 1.9)];
+    return (even.even && even.text === 'Even: you and the rival both get 3 a day.' && !uneven.even && uneven.text === 'Uneven: you get 6 a day, the rival 3.' && uneven.you === 6 && uneven.rival === 3
+      && junk.you === 3 && junk.rival === 3 && none.even && json(shown) === json([3, 4, 5, 8, 0, 3, 4])) || json({ even, uneven, junk, shown });
+  });
+  check('v99mf_r46_rival_actions_row', "Under \"Your actions per day\" the Simple view shows the rival's actions per day with its own slider; \"Same as mine\" appears only while the two differ and sets the rival's number to the player's", () => {
+    type Node = { type?: unknown; props?: Record<string, unknown> };
+    const flat = (node: unknown): Node[] => {
+      if (Array.isArray(node)) return node.flatMap(flat);
+      if (!node || typeof node !== 'object') return [];
+      const element = node as Node;
+      return [element, ...flat(element.props ? element.props.children : null)];
+    };
+    const text = (node: unknown): string => (Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text((node as Node).props ? (node as Node).props?.children : '') : typeof node === 'string' || typeof node === 'number' ? String(node) : '');
+    const render = (playerActionsPerDay: number, aiActionsPerDay: number) => {
+      const writes: Array<[string, unknown]> = [];
+      const tree = V99RivalActionsRow({ settings: { ...createDefaultGameSettings(), playerActionsPerDay, aiActionsPerDay }, onChange: (key, value) => { writes.push([key, value]); }, isDark: true });
+      const nodes = flat(tree);
+      const slider = nodes.find(n => n.type === 'input');
+      const button = nodes.find(n => n.type === 'button');
+      return { writes, slider, button, words: text(tree), testId: (tree as Node).props?.['data-testid'] };
+    };
+    const uneven = render(6, 3), even = render(4, 4);
+    (uneven.button?.props?.onClick as (() => void) | undefined)?.();
+    (uneven.slider?.props?.onChange as ((e: { target: { value: string } }) => void) | undefined)?.({ target: { value: '7' } });
+    return (uneven.testId === 'simple-setting-aiActionsPerDay' && uneven.words.includes("Rival's actions per day") && uneven.words.includes('Uneven: you get 6 a day, the rival 3.') && uneven.button !== undefined && text(uneven.button) === 'Same as mine'
+      && uneven.slider?.props?.value === 3 && uneven.slider?.props?.min === 1 && uneven.slider?.props?.max === 10 && json(uneven.writes) === json([['aiActionsPerDay', 6], ['aiActionsPerDay', 7]])
+      && even.button === undefined && even.words.includes('Even: you and the rival both get 4 a day.') && even.slider?.props?.value === 4) || json({ words: uneven.words, writes: uneven.writes, evenButton: even.button !== undefined, evenWords: even.words });
+  });
 }
 
 
@@ -203529,6 +205126,26 @@ function AustraliaGame() {
   const soloAiRuntimeRef = useRef<SoloAiTurnRuntime | null>(null);
   const [soloAiPhase, setSoloAiPhase] = useState<SoloAiTurnPhase>('idle');
   const v96LastAttemptAtRef = useRef<number>(0);
+  // V9.9 (SECTION 20AS): the rival turn pace. The probe counts this component's renders and the render whose effects
+  // have run (how 'fast' / 'instant' know the match has settled); the sleeper holds the waits a pace change can cut.
+  const v99RivalSettleProbeRef = useRef<RivalSettleProbe>({ renders: 0, flushed: 0 });
+  v99RivalSettleProbeRef.current.renders += 1;
+  useEffect(() => { v99RivalSettleProbeRef.current.flushed = v99RivalSettleProbeRef.current.renders; });
+  const v99RivalSleeperRef = useRef<RivalTurnSleeper | null>(null);
+  if (v99RivalSleeperRef.current === null) v99RivalSleeperRef.current = createRivalTurnSleeper();
+  const v99RivalPace = coerceRivalTurnPace(gameSettings.rivalTurnPace, DEFAULT_RIVAL_TURN_PACE);
+  const v99RivalPaceRef = useRef<RivalTurnPace>(v99RivalPace);
+  useEffect(() => {
+    if (rivalPaceChangeWakesSleeps(v99RivalPaceRef.current, v99RivalPace)) v99RivalSleeperRef.current?.wake();
+    v99RivalPaceRef.current = v99RivalPace;
+  }, [v99RivalPace]);
+  const v99RivalWait = useCallback((kind: RivalTurnWaitKind, baseMs: number) => rivalTurnWait(kind, baseMs, {
+    pace: () => v99RivalPaceRef.current,
+    sleep: ms => (v99RivalSleeperRef.current ? v99RivalSleeperRef.current.sleep(ms) : Promise.resolve()),
+    settle: () => awaitRivalTurnSettle({ read: () => v99RivalSettleProbeRef.current, tick: rivalSettleTick, now: () => Date.now() })
+  }), []);
+  /** The rival turn (its key) whose day advance was already attempted — a recovery never closes the same day twice. */
+  const v99RivalDayAdvanceTriedRef = useRef<string | null>(null);
   const v96FlowRef = useRef<SoloAiTimelineEntry[]>([]);
   const v96FlowSeqRef = useRef(0);
   const v96Flow = useCallback((kind: string, detail = '') => {
@@ -209719,7 +211336,7 @@ function dispatchGameSettingsChange(
 
 
   // Main AI decision engine
-  const makeAiDecision = useCallback((aiState: any,gameState: any,playerState: any, decisionOptions?: { isRejected?: (candidate: any) => boolean }) => {
+  const makeAiDecision = useCallback((aiState: any,gameState: any,playerState: any, decisionOptions?: RivalDecisionOptions) => {
     try {
       let difficultyKey = (String(gameState.aiDifficulty || 'medium').toLowerCase() || 'medium') as keyof typeof AI_DIFFICULTY_PROFILES;
       if (aiState?.teamId && gameSettings.teamDifficultyOverrides?.[aiState.teamId]) {
@@ -209758,7 +211375,10 @@ function dispatchGameSettingsChange(
         {
           difficultyKey: difficulty,
           specialAbilityActive: Boolean(aiActiveSpecialAbilityRef.current),
-          settings: gameSettings
+          settings: gameSettings,
+          // V9.9 (SECTION 20AS): the turn loop's "this already failed" filter reaches the chooser (it was only read by the unreachable code below),
+          // and a match started on V9.9 gets the R2 rules (stakes, region claims, Grand Tour, paid-for actions). Undefined = V9.8's chooser.
+          live: rivalLiveHooksFor({ options: decisionOptions, aiState, gameState, playerState, settings: gameSettings, difficultyKey: difficulty, onRuleError: reportRivalRuleError })
         }
       );
       return tuningChoice || {
@@ -211284,7 +212904,7 @@ function dispatchGameSettingsChange(
   // This function only ever returns ONE decision object — it never executes/tokens/approves/
   // advances a turn itself — so the "never double-X" guarantees are provided by construction: the
   // existing single call to executeAiAction downstream never runs more than once per decision here.
-  const resolveSoloAiDecisionViaEngine = useCallback((aiState: any,currentGameState: any,playerState: any, decisionOptions?: { isRejected?: (candidate: any) => boolean }) => {
+  const resolveSoloAiDecisionViaEngine = useCallback((aiState: any,currentGameState: any,playerState: any, decisionOptions?: RivalDecisionOptions) => {
     const engineId = resolveAiDecisionEngineForActor('ai');
     const runSelectedEngine = () => {
       switch (engineId) {
@@ -211338,61 +212958,111 @@ function dispatchGameSettingsChange(
   executeAiActionRef.current = executeAiAction;
   const resolveSoloAiDecisionViaEngineRef = useRef(resolveSoloAiDecisionViaEngine);
   resolveSoloAiDecisionViaEngineRef.current = resolveSoloAiDecisionViaEngine;
-  const soloAiOverrideRef = useRef<() => boolean>(() => false);
-  soloAiOverrideRef.current = () => {
+  const soloAiOverrideRef = useRef<(isRejected?: RivalDecisionOptions['isRejected']) => boolean>(() => false);
+  soloAiOverrideRef.current = (isRejected) => {
     // Canonical Action Override: same eligibility as before (behind + can pay + daily cap), now granting the
     // canonical +1 action per override (V9.6) instead of a whole extra day of actions.
     if (!gameSettings.allowActionOverride) return false;
     if (getActorOverridesRemaining('ai') <= 0 || !getUnderdogBonus('ai', 'behavior').isUnderdog) return false;
     if ((aiPlayerRef.current?.money || 0) < calculateActorOverrideCost('ai') || aiRandom() >= 0.6) return false;
+    // V9.9 (SECTION 20AS): in a match started on V9.9 the extra action must also be worth its price and leave a reserve
+    // (the roll above is drawn first, as always; a match from an older save buys exactly as V9.8 did).
+    if (!rivalOverrideWorthBuying({ gameState: gameStateLiveRef.current, player: playerRef.current, aiPlayer: aiPlayerRef.current, settings: gameSettings, weights: resolveLiveAiGenomeWeights(gameSettings, tuningArchiveRef.current, aiPlayerRef.current?.id), specialAbilityActive: Boolean(aiActiveSpecialAbilityRef.current), isRejected, cost: calculateActorOverrideCost('ai') })) return false;
     return applyActorActionOverride('ai');
   };
+
+  // V9.9 (SECTION 20AS): the hand-back itself, every step on its own (runGuardedSteps) so that no failure can keep the
+  // turn with the rival. `forced` = called by a recovery (the loop threw while the turn was ending, or the stall
+  // watchdog): it also clears the thinking flag and closes the day if this turn never tried to. Returns failed steps.
+  const v99HandBackSoloAiTurn = useCallback((turnKey: string, rt: SoloAiTurnRuntime | null, options: { forced: boolean; keepSessionToken: boolean }): string[] => {
+    // The step list itself is buildRivalHandBackSteps (SECTION 20AS) — the self-tests run that same list.
+    const steps = buildRivalHandBackSteps({
+      thinkingOff: () => { isAiThinkingRef.current = false; dispatchGameState({ type: 'SET_AI_THINKING', payload: false }); },
+      day: {
+        tried: () => v99RivalDayAdvanceTriedRef.current === turnKey,
+        mark: () => { v99RivalDayAdvanceTriedRef.current = turnKey; },
+        advance: () => { if (advanceDayRef.current) advanceDayRef.current(); v96Flow('DAY_ADVANCED', 'forced hand-back'); }
+      },
+      resetPlayerActions: () => { dispatchPlayer({ type: 'RESET_ACTIONS' }); v96Flow('PLAYER_AP_RESET', ''); },
+      turnToPlayer: () => { dispatchGameState({ type: 'SET_TURN', payload: 'player' }); v96Flow('TURN_OWNER', 'ai → player'); },
+      clearAction: () => setCurrentAiAction(null),
+      releaseClaim: () => finishSoloAiTurnClaim(soloAiClaimsRef.current, turnKey),
+      idle: () => {
+        if (soloAiTurnSessionTokenRef.current && !options.keepSessionToken) soloAiTurnSessionTokenRef.current = null;
+        if (rt) rt.phase = 'finished';
+        setSoloAiPhase('idle');
+        v96Flow('PLAYER_TURN_STARTED', '');
+      }
+    }, { forced: options.forced });
+    return runGuardedSteps(steps, (step, error) => { console.error(`[V9.9] rival hand-back step "${step}" failed`, error); v96Flow('AI_FINALIZE_STEP_FAILED', step); });
+  }, [v96Flow]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** V9.9 (SECTION 20AS): a recovery hands the turn back without re-entering finalisation, and tells the player. */
+  const v99ForceSoloAiHandBack = useCallback((turnKey: string, rt: SoloAiTurnRuntime | null, why: string) => {
+    v96Flow('AI_FORCED_HAND_BACK', `${turnKey} (${why})`);
+    const dayAlreadyTried = v99RivalDayAdvanceTriedRef.current === turnKey;
+    const failed = v99HandBackSoloAiTurn(turnKey, rt, { forced: true, keepSessionToken: false });
+    try { addNotification(rivalTurnRecoveryNotice(!dayAlreadyTried && !failed.includes(RIVAL_TURN_STEP_ADVANCE_DAY)), 'warning', true); } catch { /* the turn is already back with the player */ }
+  }, [addNotification, v96Flow, v99HandBackSoloAiTurn]);
+  const v99ForceSoloAiHandBackRef = useRef(v99ForceSoloAiHandBack);
+  v99ForceSoloAiHandBackRef.current = v99ForceSoloAiHandBack;
 
   /**
    * V9.6 exactly-once solo AI turn finalisation. Order: finishing → turn-transition systems → AI thinking off →
    * day advances once → human actions reset → SET_TURN player → current action cleared → claim released.
    * Aborts (without touching state) if the match was replaced (load / new game) while it waited.
+   * V9.9 (SECTION 20AS): same order, but each step runs on its own and the hand-back always runs — one exception in
+   * the end-of-turn processing used to leave the match on "AI's turn" with no way back.
    */
   const finalizeSoloAiTurn = useCallback(async (rt: SoloAiTurnRuntime, reason: SoloAiEndReason, epochAtStart: number) => {
     if (!soloAiBeginFinalize(rt, reason, Date.now())) { v96Flow('AI_DUPLICATE_END_BLOCKED', rt.turnKey); return false; }
     v96Flow('AI_TURN_FINALIZING', `reason=${reason} actions=${rt.successfulActions}/${rt.effectiveBudget} attempts=${rt.totalDecisionAttempts}`);
-    setSoloAiPhase('ending');
-    setCurrentAiAction(null);
-    await new Promise(resolve => setTimeout(resolve, reason === 'watchdog_recovery' || reason === 'fatal_error' ? 50 : 700));
+    if (rivalTurnStepsShown(v99RivalPaceRef.current)) { // V9.9 (SECTION 20AS): not at 'instant' (see rivalTurnStepsShown); the hand-back below clears both
+      setSoloAiPhase('ending');
+      setCurrentAiAction(null);
+    }
+    // V9.9 (SECTION 20AS): the closing pause follows the rival turn pace ('normal' = the V9.8 700 ms); the 50 ms recovery pause is unchanged.
+    if (reason === 'watchdog_recovery' || reason === 'fatal_error') await new Promise(resolve => setTimeout(resolve, 50));
+    else await v99RivalWait('finalize', RIVAL_TURN_BASE_WAIT_MS.finalize);
     if (v95MatchEpochRef.current !== epochAtStart) { v96Flow('AI_FINALIZE_ABORTED', 'match replaced'); return false; }
+    // V9.9 (SECTION 20AS): a recovery handed this turn back while the pause above was running — nothing is left to end.
+    if (rivalTurnAlreadyHandedBack(soloAiClaimsRef.current, rt.turnKey)) { v96Flow('AI_FINALIZE_ABORTED', 'turn already handed back'); return false; }
     const live = gameStateLiveRef.current;
     const aiName = aiPlayerRef.current?.name || 'AI';
+    const onStepFailed = (step: string, error: unknown) => { console.error(`[V9.9] rival end-of-turn step "${step}" failed`, error); v96Flow('AI_FINALIZE_STEP_FAILED', step); };
     if (live.gameMode !== 'game') {
       // Game over during the AI turn: no hand-back as if the match continued; just release the AI.
-      isAiThinkingRef.current = false;
-      dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
-      finishSoloAiTurnClaim(soloAiClaimsRef.current, rt.turnKey);
-      rt.phase = 'finished'; setSoloAiPhase('idle');
+      runGuardedSteps([
+        { id: 'ai_thinking_off', run: () => { isAiThinkingRef.current = false; dispatchGameState({ type: 'SET_AI_THINKING', payload: false }); } },
+        { id: 'release_claim', run: () => finishSoloAiTurnClaim(soloAiClaimsRef.current, rt.turnKey) },
+        { id: 'idle', run: () => { rt.phase = 'finished'; setSoloAiPhase('idle'); } }
+      ], onStepFailed);
       v96Flow('AI_TURN_ENDED_GAME_OVER', rt.turnKey);
       return true;
     }
     const reasonText = reason === 'budget_exhausted' ? '' : reason === 'end_turn_selected' || reason === 'no_legal_action' ? ' — no more useful moves'
       : reason === 'watchdog_recovery' || reason === 'fatal_error' ? ' — turn recovered safely' : ' — stopped retrying';
-    addNotification(`🤖 ${aiName} ended their turn${reasonText}`, 'ai', true);
-    dispatchAuthoritativeGameActivityLedgerEvent('action', { actorId: 'ai', actionType: 'end_turn', summary: `${aiName} ended their turn (${rt.successfulActions} action${rt.successfulActions === 1 ? '' : 's'}).`, payload: { reason, successfulActions: rt.successfulActions, attempts: rt.totalDecisionAttempts } });
-    handleTurnTransitionRef.current?.('ai');
-    isAiThinkingRef.current = false;
-    dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
     const dayBefore = Number(live.day) || 0;
-    if (advanceDayRef.current) advanceDayRef.current(); else console.error('[V9.6] advanceDayRef missing at AI turn end');
-    v96Flow('DAY_ADVANCED', `from day ${dayBefore}`);
-    dispatchPlayer({ type: 'RESET_ACTIONS' });
-    v96Flow('PLAYER_AP_RESET', '');
-    dispatchGameState({ type: 'SET_TURN', payload: 'player' });
-    v96Flow('TURN_OWNER', 'ai → player');
-    setCurrentAiAction(null);
-    finishSoloAiTurnClaim(soloAiClaimsRef.current, rt.turnKey);
-    if (soloAiTurnSessionTokenRef.current && reason !== 'watchdog_recovery') soloAiTurnSessionTokenRef.current = null;
-    rt.phase = 'finished';
-    setSoloAiPhase('idle');
-    v96Flow('PLAYER_TURN_STARTED', '');
+    // The step list itself is buildRivalEndOfTurnSteps (SECTION 20AS) — the self-tests run that same list.
+    const failed = runGuardedSteps(buildRivalEndOfTurnSteps({
+      notify: () => { addNotification(`🤖 ${aiName} ended their turn${reasonText}`, 'ai', true); },
+      ledger: () => { dispatchAuthoritativeGameActivityLedgerEvent('action', { actorId: 'ai', actionType: 'end_turn', summary: `${aiName} ended their turn (${rt.successfulActions} action${rt.successfulActions === 1 ? '' : 's'}).`, payload: { reason, successfulActions: rt.successfulActions, attempts: rt.totalDecisionAttempts } }); },
+      turnTransition: () => { handleTurnTransitionRef.current?.('ai'); },
+      thinkingOff: () => { isAiThinkingRef.current = false; dispatchGameState({ type: 'SET_AI_THINKING', payload: false }); },
+      day: {
+        tried: () => v99RivalDayAdvanceTriedRef.current === rt.turnKey, // a recovery already closed this turn's day: never twice
+        mark: () => { v99RivalDayAdvanceTriedRef.current = rt.turnKey; },
+        advance: () => {
+          if (advanceDayRef.current) advanceDayRef.current(); else console.error('[V9.6] advanceDayRef missing at AI turn end');
+          v96Flow('DAY_ADVANCED', `from day ${dayBefore}`);
+        }
+      }
+    }), onStepFailed);
+    failed.push(...v99HandBackSoloAiTurn(rt.turnKey, rt, { forced: false, keepSessionToken: reason === 'watchdog_recovery' }));
+    if (failed.length > 0) {
+      try { addNotification(rivalTurnRecoveryNotice(!failed.includes(RIVAL_TURN_STEP_ADVANCE_DAY)), 'warning', true); } catch { /* the turn is already back with the player */ }
+    }
     return true;
-  }, [addNotification, dispatchAuthoritativeGameActivityLedgerEvent, v96Flow]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [addNotification, dispatchAuthoritativeGameActivityLedgerEvent, v96Flow, v99HandBackSoloAiTurn, v99RivalWait]); // eslint-disable-line react-hooks/exhaustive-deps
   const finalizeSoloAiTurnRef = useRef(finalizeSoloAiTurn);
   finalizeSoloAiTurnRef.current = finalizeSoloAiTurn;
 
@@ -211424,12 +213094,17 @@ function dispatchGameSettingsChange(
     v96Flow('AI_TURN_STARTED', `${turnKey} budget=${rt.baseBudget}`);
     addNotification(`🤖 ${aiPlayerRef.current.name}'s turn begins`, 'ai', true);
 
+    // V9.9 (SECTION 20AS): a move that just failed is not proposed again until something else committed.
+    const v99RetryGuard = createRivalRetryGuard();
     const reason = await runSoloAiTurnLoop({
       runtime: rt,
-      decide: (isRejected) => resolveSoloAiDecisionViaEngineRef.current(aiPlayerRef.current, gameStateLiveRef.current, playerRef.current, { isRejected }),
+      // V9.9 (SECTION 20AS): paidSlot = this action was bought with an override (R2: it is never spent "thinking").
+      decide: (isRejected) => resolveSoloAiDecisionViaEngineRef.current(aiPlayerRef.current, gameStateLiveRef.current, playerRef.current, { isRejected: candidate => isRejected(candidate) || v99RetryGuard.blocks(candidate), paidSlot: rt.successfulActions >= rt.baseBudget }),
       execute: async (action) => {
         v96Flow('AI_ACTION_ATTEMPT', String(action?.type));
-        const ok = await executeAiActionRef.current(action as AIAction);
+        let ok = false;
+        try { ok = await executeAiActionRef.current(action as AIAction); }
+        finally { v99RetryGuard.note(action, ok); }
         v96Flow(ok ? 'AI_ACTION_COMMITTED' : 'AI_ACTION_FAILED', `${action?.type} ${ok ? `actions=${rt.successfulActions + 1}/${rt.effectiveBudget}` : ''}`.trim());
         return ok;
       },
@@ -211437,14 +213112,17 @@ function dispatchGameSettingsChange(
       isStale: isSessionStale,
       ownsTurn: () => gameStateLiveRef.current.currentTurn === 'ai',
       isGameOver: () => gameStateLiveRef.current.gameMode !== 'game',
-      tryOverride: () => soloAiOverrideRef.current(),
+      tryOverride: () => soloAiOverrideRef.current(candidate => soloAiIsRejected(rt, candidate) || v99RetryGuard.blocks(candidate)),
       think: async () => {
-        const thinkingTime = profile.thinkingTimeMin + aiRandom() * (profile.thinkingTimeMax - profile.thinkingTimeMin);
-        await new Promise(resolve => setTimeout(resolve, thinkingTime));
+        // V9.9 (SECTION 20AS): the draw is made at every pace (the rival's random sequence never depends on the pace); only the wait is paced.
+        const thinkingTime = rivalThinkTimeMs(profile, aiRandom);
+        await v99RivalWait('think', thinkingTime);
       },
       // Small delay between actions for visibility — also lets World Reaction / Living Regions settle before the next decision.
-      settle: async () => { await new Promise(resolve => setTimeout(resolve, 800)); },
+      // V9.9 (SECTION 20AS): 'normal' = the V9.8 800 ms; the faster paces wait for that settling itself instead of a fixed time.
+      settle: async () => { await v99RivalWait('settle', RIVAL_TURN_BASE_WAIT_MS.settle); },
       onPhase: (phase) => {
+        if (!rivalTurnStepsShown(v99RivalPaceRef.current)) return; // V9.9 (SECTION 20AS): 'instant' shows one steady line (see rivalTurnStepsShown)
         setSoloAiPhase(phase);
         if (phase === 'thinking' || phase === 'replanning') setCurrentAiAction(null); // an attempt is never shown as committed
       }
@@ -211462,12 +213140,53 @@ function dispatchGameSettingsChange(
     }
     await finalizeSoloAiTurnRef.current(rt, reason, epochAtStart);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameSettings.aiActionsPerDay, addNotification, aiRandom, v96Flow]);
+  }, [gameSettings.aiActionsPerDay, addNotification, aiRandom, v96Flow, v99RivalWait]);
 
   // Always call the freshest performAiTurn without making the scheduler below
   // depend on its identity.
   const performAiTurnRef = useRef(performAiTurn);
   useEffect(() => { performAiTurnRef.current = performAiTurn; }, [performAiTurn]);
+
+  // V9.9 (SECTION 20AS): one launcher for the scheduler, the retry and the stall watchdog, and one recovery for a rival
+  // turn whose loop threw (decideSoloFatalRecovery). The retry is armed here on a timer: it used to wait for a state
+  // change (SET_AI_THINKING false) that was a no-op for most of the turn, so it never came and the match stayed on
+  // "AI's turn". A turn that had begun to end is handed back; one that had committed actions is finished, not replayed.
+  const v99LaunchSoloAiTurnRef = useRef<(turnKey: string) => void>(() => {});
+  const v99RecoverSoloAiTurn = (v96Key: string, err: unknown) => {
+    console.error('[performAiTurn error]', err);
+    const epochNow = v95MatchEpochRef.current;
+    const live = gameStateLiveRef.current;
+    // V9.6: bounded fatal recovery — retry the same turn at most MAX_FATAL_RECOVERIES_PER_TURN times,
+    // then end it safely (never an endless scheduler retry storm).
+    const verdict = releaseSoloAiTurnAfterFatal(soloAiClaimsRef.current, v96Key);
+    const rt = soloAiRuntimeRef.current && soloAiRuntimeRef.current.turnKey === v96Key ? soloAiRuntimeRef.current : null;
+    const sameTurn = live.gameMode === 'game' && live.currentTurn === 'ai' && computeSoloAiTurnKey(live, epochNow) === v96Key;
+    const recovery = decideSoloFatalRecovery({ sameTurn, endIssued: Boolean(rt?.endIssued), successfulActions: rt?.successfulActions ?? 0, verdict });
+    v96Flow('AI_FATAL_ERROR', `${v96Key} → ${recovery}: ${err instanceof Error ? err.message : String(err)}`);
+    if (recovery === 'abandon') {
+      // Another match, or the turn already moved on: nothing to recover. In this match, with the turn back with the player, the thinking flag must not stay up.
+      if (v96Key.startsWith(`ai:e${epochNow}:`) && live.currentTurn !== 'ai') { isAiThinkingRef.current = false; dispatchGameState({ type: 'SET_AI_THINKING', payload: false }); }
+      return;
+    }
+    if (recovery === 'force_hand_back') { v99ForceSoloAiHandBackRef.current(v96Key, rt, 'the turn failed while ending'); return; }
+    if (recovery === 'end_turn' || recovery === 'finalize') {
+      const endRt = rt || createSoloAiTurnRuntime(v96Key, 0, Date.now());
+      soloAiRuntimeRef.current = endRt;
+      finalizeSoloAiTurnRef.current(endRt, 'fatal_error', epochNow).catch(finalizeErr => {
+        console.error('[V9.9] rival turn recovery failed', finalizeErr);
+        v99ForceSoloAiHandBackRef.current(v96Key, endRt, 'the recovery failed');
+      });
+      return;
+    }
+    soloAiTurnSessionTokenRef.current = null;
+    isAiThinkingRef.current = false;
+    dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
+    if (soloAiTurnTimeoutRef.current) clearTimeout(soloAiTurnTimeoutRef.current);
+    soloAiTurnTimeoutRef.current = setTimeout(() => v99LaunchSoloAiTurnRef.current(v96Key), RIVAL_TURN_BASE_WAIT_MS.schedule);
+  };
+  const v99RecoverSoloAiTurnRef = useRef(v99RecoverSoloAiTurn);
+  v99RecoverSoloAiTurnRef.current = v99RecoverSoloAiTurn;
+  v99LaunchSoloAiTurnRef.current = (v96Key: string) => { performAiTurnRef.current().catch(err => v99RecoverSoloAiTurnRef.current(v96Key, err)); };
 
   // Auto-trigger AI turn
   useEffect(() => {
@@ -211480,24 +213199,9 @@ function dispatchGameSettingsChange(
       const v96Key = computeSoloAiTurnKey(gameState, v95MatchEpochRef.current);
       if (isSoloAiTurnClaimed(soloAiClaimsRef.current, v96Key)) return;
       v96Flow('AI_SCHEDULED', v96Key);
-      soloAiTurnTimeoutRef.current = setTimeout(() => {
-        performAiTurnRef.current().catch(err => {
-          console.error('[performAiTurn error]', err);
-          // V9.6: bounded fatal recovery — retry the same turn at most MAX_FATAL_RECOVERIES_PER_TURN times,
-          // then end it safely (never an endless scheduler retry storm).
-          const verdict = releaseSoloAiTurnAfterFatal(soloAiClaimsRef.current, v96Key);
-          v96Flow('AI_FATAL_ERROR', `${v96Key} → ${verdict}: ${err instanceof Error ? err.message : String(err)}`);
-          if (verdict === 'end_turn') {
-            const rt = soloAiRuntimeRef.current && soloAiRuntimeRef.current.turnKey === v96Key ? soloAiRuntimeRef.current : createSoloAiTurnRuntime(v96Key, 0, Date.now());
-            soloAiRuntimeRef.current = rt;
-            void finalizeSoloAiTurnRef.current?.(rt, 'fatal_error', v95MatchEpochRef.current);
-            return;
-          }
-          soloAiTurnSessionTokenRef.current = null;
-          isAiThinkingRef.current = false;
-          dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
-        });
-      }, 1000);
+      // V9.9 (SECTION 20AS): the pause before the rival starts follows the rival turn pace ('normal' = the V9.8 1000 ms);
+      // a turn that throws is recovered by v99RecoverSoloAiTurn (above).
+      soloAiTurnTimeoutRef.current = setTimeout(() => v99LaunchSoloAiTurnRef.current(v96Key), rivalTurnWaitPlan('schedule', RIVAL_TURN_BASE_WAIT_MS.schedule, v99RivalPaceRef.current).sleepMs);
     }
     
     return () => {
@@ -211549,6 +213253,51 @@ function dispatchGameSettingsChange(
       clearInterval(intervalId);
     };
   }, [gameState.isAiThinking, pendingApprovalRequests]);
+
+  // V9.9 (SECTION 20AS): the second watchdog. The one above only runs while the "thinking" flag is up, and that flag is
+  // false for most of a rival turn. This one looks at the turn itself: while the solo rival owns it, if nothing has
+  // moved for V99_RIVAL_STALL_MS (and no approval is waiting for the player) the turn is started again once, and if
+  // that does not help — or the turn had already begun to end — it is handed back (decideRivalStallRecovery).
+  useEffect(() => {
+    if (gameState.gameMode !== 'game' || !isSoloRivalModeSelection(gameState.selectedMode) || gameState.currentTurn !== 'ai') return;
+    let clock: RivalStallClock | null = null;
+    let relaunchTriedFor: string | null = null;
+    const intervalId = setInterval(() => {
+      const live = gameStateLiveRef.current;
+      if (live.gameMode !== 'game' || live.currentTurn !== 'ai' || !isSoloRivalModeSelection(live.selectedMode)) { clock = null; return; }
+      // The match epoch is read on every tick: a save loaded while the rival owns the turn, itself made on the rival's
+      // turn, changes none of this effect's dependencies — an epoch captured once kept the watchdog off for that whole
+      // turn. The key (and with it the progress marker and relaunchTriedFor) follows the load by itself.
+      const key = computeSoloAiTurnKey(live, v95MatchEpochRef.current);
+      const claims = soloAiClaimsRef.current;
+      const rt = soloAiRuntimeRef.current && soloAiRuntimeRef.current.turnKey === key ? soloAiRuntimeRef.current : null;
+      const claimActive = claims.active === key;
+      const turnFinished = claims.finished.includes(key);
+      const now = Date.now();
+      clock = advanceRivalStallClock(clock, rivalTurnProgressMarker({ turnKey: key, runtime: rt, claimActive, turnFinished, lastAttemptAt: v96LastAttemptAtRef.current, lastCommitAt: lastActorActionTimeRef.current }), now);
+      const verdict = decideRivalStallRecovery({
+        rivalOwnsTurn: true,
+        hasPendingApprovals: (pendingApprovalRequests || []).some(r => r.status === 'pending' || r.status === 'displayed'),
+        msStalled: now - clock.since, ticksStalled: clock.ticks, claimActive, turnFinished, endIssued: Boolean(rt?.endIssued), relaunchTried: relaunchTriedFor === key
+      });
+      if (verdict === 'none') return;
+      clock = null;
+      if (verdict === 'relaunch') {
+        relaunchTriedFor = key;
+        v96Flow('AI_STALL_RELAUNCH', key);
+        soloAiTurnSessionTokenRef.current = null;
+        isAiThinkingRef.current = false;
+        if (live.isAiThinking) dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
+        if (soloAiTurnTimeoutRef.current) clearTimeout(soloAiTurnTimeoutRef.current);
+        soloAiTurnTimeoutRef.current = setTimeout(() => v99LaunchSoloAiTurnRef.current(key), 250);
+        return;
+      }
+      v96Flow('AI_STALL_HAND_BACK', key);
+      v99ForceSoloAiHandBackRef.current(key, rt, 'nothing moved');
+    }, 1000);
+    return () => { clearInterval(intervalId); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState.gameMode, gameState.selectedMode, gameState.currentTurn, pendingApprovalRequests]);
 
   // =========================================
   // KEYBOARD SHORTCUTS
@@ -212566,6 +214315,7 @@ function dispatchGameSettingsChange(
     v99TeamAiLockEpochRef.current = -1; // the callers reset the thinking lock themselves; a stale team turn must not release it again
     // "Already done for this day / round" markers: a match left on its first day must not make the next match skip
     // its own day-1 content plan and round-1 diplomacy pass (both are also guarded by the state they write).
+    v99RivalDayAdvanceTriedRef.current = null; // V9.9 (SECTION 20AS)
     dnTurnProcessedRef.current = null;
     contentPlannedDayRef.current = null;
     contentNotifiedDayRef.current = null;
@@ -236935,7 +238685,7 @@ function dispatchGameSettingsChange(
   const wp8SimpleSettingChange = useCallback((key: string, value: boolean | string | number) => {
     if (key === 'experienceMode') { if (value === 'explorer' || value === 'nation' || value === 'full') requestExperienceModeChange(value); return; }
     if (key === 'guidedFirstRunEnabled') { wp8SetGuidedFirstRun(value === true); return; }
-    if (!SIMPLE_SETTINGS_KEYS.includes(key)) return;
+    if (!SIMPLE_SETTINGS_KEYS.includes(key) && !isSimpleCompanionSettingKey(key)) return; // V9.9 (SECTION 20AS): + the rival's actions per day
     trackedSetGameSettings('direct_player_change', '⚙️ Simple settings', prev => ({ ...prev, ...({ [key]: value } as unknown as Partial<GameSettingsState>) }));
   }, [requestExperienceModeChange, trackedSetGameSettings, wp8SetGuidedFirstRun]);
   const glCtx = useMemo<LearningContext>(() => {
@@ -250525,7 +252275,23 @@ function dispatchGameSettingsChange(
   // V9.9 (SECTION 20AU): v99Docked = drawn inside the PLAY turn row (V99TurnRow) instead of floating over the header.
   // v99OverBoard = the status-only copy V99TurnPillOverBoard floats while another player has the turn and the row is out of view.
   const renderTurnIndicator = (v99Docked: boolean = false, v99OverBoard: boolean = false) => {
-    if (!isCompetitiveMode) return null;
+    // V9.9 (SECTION 20AS): "Rival speed: Normal / Fast / Instant" — one control, drawn beside the pill or (Scenario Mode) alone.
+    const v99PaceControl = (compact: boolean) => (
+      <V99RivalPaceControl
+        pace={v99RivalPace}
+        onChange={pace => trackedSetGameSettings("direct_player_change", "✨ New in V9.9", prev => ({ ...prev, rivalTurnPace: pace }))}
+        activeClassName={`${themeStyles.button} text-white`}
+        idleClassName={themeStyles.buttonSecondary}
+        frameClassName={`${themeStyles.card} ${themeStyles.border}`}
+        compact={compact}
+      />
+    );
+    if (!isCompetitiveMode) {
+      // V9.9 (SECTION 20AS): Scenario Mode has no turn pill (as in V9.8), but its rival plays at the chosen pace too: the
+      // docked turn row carries the speed control on its own there (rivalPaceControlAloneShown).
+      const v99Mine = gameState.currentTurn !== 'ai';
+      return rivalPaceControlAloneShown({ docked: v99Docked, overBoard: v99OverBoard, soloRival: isSoloRivalModeSelection(gameState.selectedMode) && !isTeamMode, isPlayerTurn: v99Mine, pace: v99RivalPace }) ? v99PaceControl(v99Mine) : null;
+    }
 
     const activeActor = currentActor || (gameState.currentTurn === 'ai' ? aiPlayer : player);
     const activeTeam = activeActor ? teamsById[activeActor.teamId] : null;
@@ -250556,7 +252322,8 @@ function dispatchGameSettingsChange(
       : soloAiPhase === 'ending' ? 'Ending turn...'
       : (soloAiPhase === 'thinking' || gameState.isAiThinking) ? 'Thinking...'
       : (pendingApprovalRequests.some(r => r.actorId === activeActor?.id) ? null : 'Thinking...'); // AI owns the turn and is about to start
-    const turnSummary = soloAiSummary ? soloAiSummary : isAiTurn
+    // V9.9 (SECTION 20AS): at the 'instant' pace the per-action labels would flicker by unread — one steady line instead.
+    const turnSummary = soloAiSummary ? (rivalTurnStatusLine(v99RivalPace, soloAiSummary) || soloAiSummary) : isAiTurn
       ? (gameState.isAiThinking ? 'Thinking...'
         : activeActorTreasuryRequest ? 'Awaiting funding approval'
         : activeActorHasApprovalPending ? 'Awaiting your approval'
@@ -250580,6 +252347,8 @@ function dispatchGameSettingsChange(
             </div>
           </div>
         </div>
+        {/* V9.9 (SECTION 20AS): "Rival speed: Normal / Fast / Instant" — while the rival plays, and on the player's turn once another pace than Normal is chosen. */}
+        {rivalPaceControlShown({ soloRival: isSoloRival, isPlayerTurn, overBoard: v99OverBoard, pace: v99RivalPace }) && v99PaceControl(isPlayerTurn)}
         {isSoloRival && isPlayerTurn && <GuardianInlineWarning actionType="end_turn" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'end_turn', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} compact className={v99Pill.guardian} />}
       </div>
     );
@@ -253939,7 +255708,8 @@ function dispatchGameSettingsChange(
         {/* Turn Indicator / Transit banner — in PLAY the unified Match Header carries both (no duplicate floating pill). */}
         {/* V9.9 (SECTION 20AU): in PLAY the pill is docked in the turn row; the classic layout floats it under the V9.8 rule. */}
         {v99TurnPill === 'floating' && renderTurnIndicator()}
-        <V99TurnPillOverBoard presentation={v99TurnPill} isPlayerTurn={isPlayerTurn} render={() => renderTurnIndicator(false, true)} />
+        {/* V9.9 (SECTION 20AS): at the 'instant' rival pace the copy is left out (the turn is over before it could be read). */}
+        <V99TurnPillOverBoard presentation={v99TurnPill} isPlayerTurn={isPlayerTurn || rivalPillCopySuppressed(v99RivalPace, isSoloRivalModeSelection(gameState.selectedMode) && !isTeamMode)} render={() => renderTurnIndicator(false, true)} />
 
         {experienceLayer !== 'play' && renderHudTransitBanner()}
 
@@ -254454,7 +256224,7 @@ function dispatchGameSettingsChange(
                     </>
                   ) : (
                     <>
-                      {(aiPlayer?.actionsUsedThisTurn ?? 0)} / {gameSettings.aiActionsPerDay * (1 + (aiPlayer?.overridesUsedToday || 0))}
+                      {(aiPlayer?.actionsUsedThisTurn ?? 0)} / {rivalActionBudgetShown(gameSettings.aiActionsPerDay, aiPlayer?.overridesUsedToday) /* V9.9 (SECTION 20AS): +1 action per override, not a whole extra day */}
                     </>
                   )}
                 </div>
