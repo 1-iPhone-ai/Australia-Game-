@@ -1210,7 +1210,7 @@ export function parseTeamPlanInstruction(instruction: string, ctx: { teamId: str
   const low = text.toLowerCase();
   if (/\b(no|don'?t|do not|avoid)\b[^.]*\b(loan|loans|borrow|debt)\b/.test(low)) constraints.push('No new loans');
   const keep = low.match(/\bkeep\b[^.$\d]*\$?\s?(\d+(?:\.\d+)?)\s?(k|thousand)?/);
-  if (keep) constraints.push(`Keep at least $${Math.round(Number(keep[1]) * (keep[2] ? 1000 : 1)).toLocaleString()} in reserve`);
+  if (keep) constraints.push(`Keep at least $${Math.round(Number(keep[1]) * (keep[2] ? 1000 : 1)).toLocaleString('en-AU')} in reserve`);
   if (/\b(no|don'?t|avoid)\b[^.]*\bsabotage\b/.test(low)) constraints.push('No sabotage');
   const primary = (sentences[0] || text || 'Coordinate the team').replace(/[.!?;]+$/, '').slice(0, 140);
   const secondary = sentences[1] ? sentences[1].replace(/[.!?;]+$/, '').slice(0, 140) : null;
@@ -1706,7 +1706,7 @@ export const ACTION_POINT_CATEGORIES: Array<{
     title: 'Economy Actions',
     actions: [
       { id: 'sell_resources', label: 'Sell Resources', description: 'Sell collected items on the local market', defaultCost: 0 },
-      { id: 'buy_resources', label: 'Buy Resources', description: 'Purchase items on the Commodity Market', defaultCost: 0 },
+      { id: 'buy_resources', label: 'Buy Resources', description: 'Purchase items on the Commodity Market (a Resource Market purchase you make by hand always uses at least 1 action)', defaultCost: 0 }, // V9.9 (SECTION 20AU): the text now says what the game charges
       { id: 'resource_market', label: 'Resource Market Transaction', description: 'Trade bulk commodities', defaultCost: 0 },
       { id: 'investments', label: 'Investment Project', description: 'Start a yield-generating investment', defaultCost: 1 },
       { id: 'emergency_loan', label: 'Emergency Loan', description: 'Borrow emergency funds', defaultCost: 0 },
@@ -5551,8 +5551,8 @@ export const WIN_METRIC_PROFILES: Record<WinMetric, WinMetricProfile> = {
     shortLabel: 'Money',
     icon: '💰',
     description: 'Money mode: winner is based on raw cash only.',
-    formatValue: (val) => `$${Math.round(val).toLocaleString()}`,
-    formatCoachValue: (val) => `$${Math.round(val).toLocaleString()}`,
+    formatValue: (val) => `$${Math.round(val).toLocaleString('en-AU')}`,
+    formatCoachValue: (val) => `$${Math.round(val).toLocaleString('en-AU')}`,
     getDisplayLabel: (opts) => `${opts?.sideLabel ? opts.sideLabel + ' ' : ''}${opts?.isTeam ? 'Cash' : 'Money'}`,
     getGoalText: (teamMode) => teamMode ? 'Goal: Finish with the most team cash' : 'Goal: Finish with the most money',
     getValue: ({ side, teamMode, player, aiPlayer, computeTeamMoney, vaultExclusionActive, treasuryInclusionActive, getTeamActors, teamsById }) => {
@@ -5609,9 +5609,9 @@ export const WIN_METRIC_PROFILES: Record<WinMetric, WinMetricProfile> = {
       const { playerMoney, opponentMoney, playerNetWorth, opponentNetWorth, playerRegions, opponentRegions, selectedMode } = context;
       const modeName = selectedMode ? ` in ${selectedMode}` : '';
       if (delta >= 0) {
-        let text = `Protect your cash lead ($${Math.round(playerMoney).toLocaleString()} vs $${Math.round(opponentMoney).toLocaleString()}${modeName}).`;
+        let text = `Protect your cash lead ($${Math.round(playerMoney).toLocaleString('en-AU')} vs $${Math.round(opponentMoney).toLocaleString('en-AU')}${modeName}).`;
         if (playerNetWorth > playerMoney * 1.25) {
-          text += ` Liquidate excess assets (Net Worth: $${Math.round(playerNetWorth).toLocaleString()}) into cash.`;
+          text += ` Liquidate excess assets (Net Worth: $${Math.round(playerNetWorth).toLocaleString('en-AU')}) into cash.`;
         } else if (opponentRegions > playerRegions) {
           text += ` Watch opponent territory (${opponentRegions} vs ${playerRegions} regions) to protect income.`;
         } else {
@@ -5619,10 +5619,10 @@ export const WIN_METRIC_PROFILES: Record<WinMetric, WinMetricProfile> = {
         }
         return text;
       } else {
-        const gap = Math.round(Math.abs(playerMoney - opponentMoney)).toLocaleString();
-        let text = `Close the $${gap} cash gap ($${Math.round(playerMoney).toLocaleString()} vs $${Math.round(opponentMoney).toLocaleString()}${modeName}).`;
+        const gap = Math.round(Math.abs(playerMoney - opponentMoney)).toLocaleString('en-AU');
+        let text = `Close the $${gap} cash gap ($${Math.round(playerMoney).toLocaleString('en-AU')} vs $${Math.round(opponentMoney).toLocaleString('en-AU')}${modeName}).`;
         if (playerNetWorth > opponentNetWorth) {
-          text += ` Convert your net worth lead ($${Math.round(playerNetWorth).toLocaleString()} vs $${Math.round(opponentNetWorth).toLocaleString()}) into cash.`;
+          text += ` Convert your net worth lead ($${Math.round(playerNetWorth).toLocaleString('en-AU')} vs $${Math.round(opponentNetWorth).toLocaleString('en-AU')}) into cash.`;
         } else if (playerRegions < opponentRegions) {
           text += ` Expand region control (${playerRegions} vs ${opponentRegions} regions) for cash flow.`;
         } else {
@@ -5650,8 +5650,8 @@ export const WIN_METRIC_PROFILES: Record<WinMetric, WinMetricProfile> = {
     shortLabel: 'Net Worth',
     icon: '💎',
     description: 'Net worth mode: winner is based on total net worth including cash, inventory value, investments, and equipment.',
-    formatValue: (val) => `$${Math.round(val).toLocaleString()}`,
-    formatCoachValue: (val) => `$${Math.round(val).toLocaleString()}`,
+    formatValue: (val) => `$${Math.round(val).toLocaleString('en-AU')}`,
+    formatCoachValue: (val) => `$${Math.round(val).toLocaleString('en-AU')}`,
     getDisplayLabel: (opts) => `${opts?.sideLabel ? opts.sideLabel + ' ' : ''}Net Worth`,
     getGoalText: (teamMode) => teamMode ? 'Goal: Finish with the highest team net worth' : 'Goal: Finish with the highest net worth',
     getValue: ({ side, teamMode, player, aiPlayer, computeTeamNetWorth, computeNetWorth, vaultExclusionActive, treasuryInclusionActive, getTeamActors, teamsById }) => {
@@ -5705,9 +5705,9 @@ export const WIN_METRIC_PROFILES: Record<WinMetric, WinMetricProfile> = {
       const { playerMoney, opponentMoney, playerNetWorth, opponentNetWorth, playerRegions, opponentRegions, selectedMode } = context;
       const modeName = selectedMode ? ` [${selectedMode}]` : '';
       if (delta >= 0) {
-        let text = `Protect your net worth lead ($${Math.round(playerNetWorth).toLocaleString()} vs $${Math.round(opponentNetWorth).toLocaleString()}${modeName}).`;
+        let text = `Protect your net worth lead ($${Math.round(playerNetWorth).toLocaleString('en-AU')} vs $${Math.round(opponentNetWorth).toLocaleString('en-AU')}${modeName}).`;
         if (playerMoney > playerNetWorth * 0.3) {
-          text += ` Reinvest liquid cash ($${Math.round(playerMoney).toLocaleString()} vs $${Math.round(opponentMoney).toLocaleString()}) into high-margin assets.`;
+          text += ` Reinvest liquid cash ($${Math.round(playerMoney).toLocaleString('en-AU')} vs $${Math.round(opponentMoney).toLocaleString('en-AU')}) into high-margin assets.`;
         } else if (playerRegions < opponentRegions) {
           text += ` Expand region control (${playerRegions} vs ${opponentRegions} regions) to secure territory value.`;
         } else {
@@ -5715,9 +5715,9 @@ export const WIN_METRIC_PROFILES: Record<WinMetric, WinMetricProfile> = {
         }
         return text;
       } else {
-        let text = `Build net worth ($${Math.round(playerNetWorth).toLocaleString()} vs $${Math.round(opponentNetWorth).toLocaleString()}${modeName}).`;
+        let text = `Build net worth ($${Math.round(playerNetWorth).toLocaleString('en-AU')} vs $${Math.round(opponentNetWorth).toLocaleString('en-AU')}${modeName}).`;
         if (playerMoney < 400 && playerMoney < opponentMoney) {
-          text += ` Boost liquidity ($${Math.round(playerMoney).toLocaleString()} vs $${Math.round(opponentMoney).toLocaleString()}) to fund asset crafting.`;
+          text += ` Boost liquidity ($${Math.round(playerMoney).toLocaleString('en-AU')} vs $${Math.round(opponentMoney).toLocaleString('en-AU')}) to fund asset crafting.`;
         } else if (opponentRegions > playerRegions) {
           text += ` Contest opponent regions (${playerRegions} vs ${opponentRegions} regions) for asset growth.`;
         } else {
@@ -5745,7 +5745,7 @@ export const WIN_METRIC_PROFILES: Record<WinMetric, WinMetricProfile> = {
     shortLabel: 'Regions',
     icon: '🗺️',
     description: `Region mode: winner is based on controlled regions. Majority target is ${REGION_CONTROL_MAJORITY}/${TOTAL_REGION_COUNT}.`,
-    formatValue: (val) => `${Math.round(val).toLocaleString()}`,
+    formatValue: (val) => `${Math.round(val).toLocaleString('en-AU')}`,
     formatCoachValue: (val) => `${val} regions`,
     getDisplayLabel: (opts) => `${opts?.sideLabel ? opts.sideLabel + ' ' : ''}Regions`,
     getGoalText: () => `Goal: Control majority (${REGION_CONTROL_MAJORITY}/${TOTAL_REGION_COUNT})`,
@@ -5794,9 +5794,9 @@ export const WIN_METRIC_PROFILES: Record<WinMetric, WinMetricProfile> = {
       if (delta >= 0) {
         let text = `Protect controlled regions (${playerRegions} vs ${opponentRegions} regions${modeName}).`;
         if (playerMoney < 500) {
-          text += ` Build cash reserves ($${Math.round(playerMoney).toLocaleString()} vs $${Math.round(opponentMoney).toLocaleString()}) to defend deposits.`;
+          text += ` Build cash reserves ($${Math.round(playerMoney).toLocaleString('en-AU')} vs $${Math.round(opponentMoney).toLocaleString('en-AU')}) to defend deposits.`;
         } else if (playerNetWorth > opponentNetWorth) {
-          text += ` Leverage your net worth ($${Math.round(playerNetWorth).toLocaleString()} vs $${Math.round(opponentNetWorth).toLocaleString()}) to lock in territory.`;
+          text += ` Leverage your net worth ($${Math.round(playerNetWorth).toLocaleString('en-AU')} vs $${Math.round(opponentNetWorth).toLocaleString('en-AU')}) to lock in territory.`;
         } else {
           text += ' Reinforce close deposits and avoid cashing out key positions.';
         }
@@ -5804,9 +5804,9 @@ export const WIN_METRIC_PROFILES: Record<WinMetric, WinMetricProfile> = {
       } else {
         let text = `Focus on region control (${playerRegions} vs ${opponentRegions} regions${modeName}).`;
         if (playerMoney < opponentMoney) {
-          text += ` Raise cash ($${Math.round(playerMoney).toLocaleString()} vs $${Math.round(opponentMoney).toLocaleString()}) for travel and region claims.`;
+          text += ` Raise cash ($${Math.round(playerMoney).toLocaleString('en-AU')} vs $${Math.round(opponentMoney).toLocaleString('en-AU')}) for travel and region claims.`;
         } else if (playerNetWorth < opponentNetWorth) {
-          text += ` Improve net worth ($${Math.round(playerNetWorth).toLocaleString()} vs $${Math.round(opponentNetWorth).toLocaleString()}) to support expansion.`;
+          text += ` Improve net worth ($${Math.round(playerNetWorth).toLocaleString('en-AU')} vs $${Math.round(opponentNetWorth).toLocaleString('en-AU')}) to support expansion.`;
         } else {
           text += ' Defend your strongest region and block rival expansion.';
         }
@@ -5832,8 +5832,8 @@ export const WIN_METRIC_PROFILES: Record<WinMetric, WinMetricProfile> = {
     shortLabel: 'Challenges',
     icon: '🎯',
     description: 'Challenge mode: winner is based on accumulated challenge difficulty points.',
-    formatValue: (val) => `${Math.round(val).toLocaleString()} pts`,
-    formatCoachValue: (val) => `${Math.round(val).toLocaleString()} pts`,
+    formatValue: (val) => `${Math.round(val).toLocaleString('en-AU')} pts`,
+    formatCoachValue: (val) => `${Math.round(val).toLocaleString('en-AU')} pts`,
     getDisplayLabel: (opts) => `${opts?.sideLabel ? opts.sideLabel + ' ' : ''}Challenges`,
     getGoalText: (teamMode) => teamMode ? 'Goal: Accumulate the highest team challenge points' : 'Goal: Accumulate the highest challenge points',
     getValue: ({ side, teamMode, player, aiPlayer, getTeamActors }) => {
@@ -5889,9 +5889,9 @@ export const WIN_METRIC_PROFILES: Record<WinMetric, WinMetricProfile> = {
         if (playerRegions < opponentRegions) {
           text += ` Expand region presence (${playerRegions} vs ${opponentRegions} regions) for more challenge hubs.`;
         } else if (playerMoney < 500) {
-          text += ` Save cash ($${Math.round(playerMoney).toLocaleString()} vs $${Math.round(opponentMoney).toLocaleString()}) for challenge gear.`;
+          text += ` Save cash ($${Math.round(playerMoney).toLocaleString('en-AU')} vs $${Math.round(opponentMoney).toLocaleString('en-AU')}) for challenge gear.`;
         } else if (playerNetWorth > opponentNetWorth) {
-          text += ` Utilize high net worth ($${Math.round(playerNetWorth).toLocaleString()} vs $${Math.round(opponentNetWorth).toLocaleString()}) gear for high wagers.`;
+          text += ` Utilize high net worth ($${Math.round(playerNetWorth).toLocaleString('en-AU')} vs $${Math.round(opponentNetWorth).toLocaleString('en-AU')}) gear for high wagers.`;
         } else {
           text += ' Pursue high-difficulty challenges and prepare inventory.';
         }
@@ -5901,9 +5901,9 @@ export const WIN_METRIC_PROFILES: Record<WinMetric, WinMetricProfile> = {
         if (opponentRegions > playerRegions) {
           text += ` Gain territory access (${playerRegions} vs ${opponentRegions} regions) to reach top challenges.`;
         } else if (playerMoney < opponentMoney) {
-          text += ` Build cash ($${Math.round(playerMoney).toLocaleString()} vs $${Math.round(opponentMoney).toLocaleString()}) for travel and challenge prep.`;
+          text += ` Build cash ($${Math.round(playerMoney).toLocaleString('en-AU')} vs $${Math.round(opponentMoney).toLocaleString('en-AU')}) for travel and challenge prep.`;
         } else if (playerNetWorth < opponentNetWorth) {
-          text += ` Raise net worth ($${Math.round(playerNetWorth).toLocaleString()} vs $${Math.round(opponentNetWorth).toLocaleString()}) to pass gear checks.`;
+          text += ` Raise net worth ($${Math.round(playerNetWorth).toLocaleString('en-AU')} vs $${Math.round(opponentNetWorth).toLocaleString('en-AU')}) to pass gear checks.`;
         } else {
           text += ' Gear up and take on high-point wagers.';
         }
@@ -8522,7 +8522,7 @@ export function getExternalTerritoryLockStatus(code: string, actor: any, setting
     },
     {
       key: 'cash',
-      label: `Funds $${terr.unlockConditions.minCash.toLocaleString()} Required (Current: $${(actor?.money || 0).toLocaleString()})`,
+      label: `Funds $${terr.unlockConditions.minCash.toLocaleString('en-AU')} Required (Current: $${(actor?.money || 0).toLocaleString('en-AU')})`,
       passed: (actor?.money || 0) >= terr.unlockConditions.minCash
     }
   ];
@@ -8958,7 +8958,7 @@ const calculateInventoryMarketValue = (
     const livePrice = resourcePrices?.[resource];
     const marketPrice = typeof livePrice === 'number' && isFinite(livePrice)
       ? livePrice
-      : getResourceMarketPrice(resource);
+      : v99ResourceBasePrice(resource); // V9.9 (SECTION 20AU): a crafted good counts at its own value, not as a $120 "unknown item"
     return total + marketPrice;
   }, 0);
 };
@@ -10881,7 +10881,7 @@ export function deliverContractObjectives(contract: any, actor: any, state: any)
     } else if (obj.type === 'invest_capital') {
       if (!here) { notes.push(`Travel to ${obj.targetRegion} to invest`); return; }
       const pay = Math.max(0, Math.min(Math.floor(Number(actor.money || 0)), remaining));
-      if (pay > 0) { actor.money -= pay; obj.currentProgress = Number(obj.currentProgress || 0) + pay; changed = true; notes.push(`Invested $${pay.toLocaleString()}`); }
+      if (pay > 0) { actor.money -= pay; obj.currentProgress = Number(obj.currentProgress || 0) + pay; changed = true; notes.push(`Invested $${pay.toLocaleString('en-AU')}`); }
       else notes.push('No capital available');
     } else if (obj.type === 'build_infrastructure') {
       const projects = Object.values((state?.infrastructureProjects || state?.gameState?.infrastructureProjects || {}) as Record<string, any>);
@@ -18937,7 +18937,7 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     key: 'worldRngMode',
     category: 'randomness',
     label: 'World RNG Mode',
-    description: 'Routes world Math.random() calls through seeded LCG (random vs deterministic).',
+    description: 'How a match gets its world seed: "random" starts every match on a new seed, "deterministic" replays the configured World Seed. Both are fully seeded.', // V9.9 (SECTION 20AU): wording
     valueType: 'string',
     allowedValues: ['random', 'deterministic'],
     defaultValue: 'random',
@@ -23827,7 +23827,7 @@ export function detectReplayTurningPoints(file: ReplayFile): ReplayTurningPoint[
       type: 'largest_economic_swing',
       importance: 85,
       title: 'Largest economic swing',
-      explanation: `${ev.summary} (Δ$${largestSwing.toLocaleString()})`,
+      explanation: `${ev.summary} (Δ$${largestSwing.toLocaleString('en-AU')})`,
       actorId: ev.actorId || undefined,
       stateImpact: ev.stateDelta
     });
@@ -27575,7 +27575,8 @@ export function gameStateReducer(state: any, action: any) {
       } catch (err) {
         console.error("[Non-Blocking Engine Error] NEXT_DAY ledger expectations evaluation failed:", err);
       }
-      return { ...state, day: newDay, season: newSeason, actionsThisTurn: 0, gameActivityLedger: updatedLedger };
+      // V9.9 (SECTION 20AU): a new day also lets oversupply fade and ends yesterday's Double or Nothing offer (v99DayRolloverWorldPatch; empty when neither applies).
+      return { ...state, day: newDay, season: newSeason, actionsThisTurn: 0, gameActivityLedger: updatedLedger, ...v99DayRolloverWorldPatch(state) };
     }
     case 'UPDATE_WEATHER':
       return { ...state, weather: action.payload };
@@ -30077,7 +30078,7 @@ export const resolveThemeStyles = (theme: GameTheme, systemPrefersDark: boolean 
       // === BACKGROUNDS ===
       background: "bg-amber-950 text-amber-100",
       backgroundSecondary: "bg-amber-900",
-      backgroundTertiary: "bg-amber-850",
+      backgroundTertiary: "bg-amber-800", // V9.9 (SECTION 20AU): amber-850 is not a Tailwind step
       backgroundHover: "hover:bg-amber-900",
       backgroundActive: "bg-amber-800",
       overlay: "bg-black bg-opacity-70",
@@ -30085,7 +30086,7 @@ export const resolveThemeStyles = (theme: GameTheme, systemPrefersDark: boolean 
 
       // === CARDS & CONTAINERS ===
       card: "bg-amber-900/90 text-amber-100 border-amber-700",
-      cardHover: "hover:bg-amber-850",
+      cardHover: "hover:bg-amber-800",
       cardElevated: "bg-amber-900 shadow-2xl border-amber-700",
       panel: "bg-amber-900/95 text-amber-100 border-amber-700",
       tooltip: "bg-amber-950 text-amber-100 border-amber-600",
@@ -30176,11 +30177,11 @@ export const resolveThemeStyles = (theme: GameTheme, systemPrefersDark: boolean 
 
       // === TABLES ===
       tableHeader: "bg-amber-900 text-amber-200",
-      tableRow: "border-amber-800 hover:bg-amber-850",
+      tableRow: "border-amber-800 hover:bg-amber-800",
       tableRowAlt: "bg-amber-900/40",
 
       // === LISTS ===
-      listItem: "border-amber-800 hover:bg-amber-850",
+      listItem: "border-amber-800 hover:bg-amber-800",
       listItemActive: "bg-amber-800/40 border-amber-500",
 
       // === ACCORDIONS ===
@@ -30198,6 +30199,17 @@ export const resolveThemeStyles = (theme: GameTheme, systemPrefersDark: boolean 
       menuTitle: "text-amber-400 font-serif",
       headerBackground: "bg-amber-900 text-amber-100 border-amber-700",
       containerBackground: "bg-amber-950 text-amber-100",
+
+      // === V9.9 (SECTION 20AU): SEMANTIC ACCENTS — readable on this theme's cards (see V99_THEME_CONTRAST_PAIRS) ===
+      cardIdle: "bg-amber-950/30 border-2 border-amber-700 hover:border-amber-500 hover:bg-amber-950/50",
+      cardSelected: "bg-amber-950/70 border-2 border-amber-300 shadow-lg shadow-amber-500/30",
+      moneyPositive: "text-green-400",
+      moneyNegative: "text-rose-300",
+      warningText: "text-amber-300",
+      successText: "text-green-400",
+      infoText: "text-sky-300",
+      statMoney: "text-green-400",
+      statInfo: "text-sky-300",
     };
   }
 
@@ -30372,6 +30384,21 @@ export const resolveThemeStyles = (theme: GameTheme, systemPrefersDark: boolean 
     menuTitle: isDark ? "text-white" : "text-gray-900",
     headerBackground: isDark ? "bg-slate-900 text-white border-slate-700" : "bg-slate-100 text-slate-900 border-slate-300",
     containerBackground: isDark ? "bg-slate-900 text-slate-100" : "bg-slate-50 text-slate-800",
+
+    // === V9.9 (SECTION 20AU): SEMANTIC ACCENTS — Dark keeps the classes V9.8 hard-coded; Light gets ones that read on white ===
+    cardIdle: isDark
+      ? "bg-gray-700/50 border-2 border-gray-600 hover:border-gray-500 hover:bg-gray-700/70"
+      : "bg-white/50 border-2 border-gray-200 hover:border-gray-300 hover:bg-white/80",
+    cardSelected: isDark
+      ? "bg-gradient-to-br from-blue-600/30 to-purple-600/30 border-2 border-blue-400 shadow-lg shadow-blue-500/20"
+      : "bg-gradient-to-br from-blue-100 to-purple-100 border-2 border-blue-500 shadow-lg shadow-blue-300/50",
+    moneyPositive: isDark ? "text-green-400" : "text-green-700",
+    moneyNegative: isDark ? "text-red-400" : "text-red-700",
+    warningText: isDark ? "text-amber-300" : "text-amber-700",
+    successText: isDark ? "text-green-400" : "text-green-700",
+    infoText: isDark ? "text-blue-400" : "text-blue-700",
+    statMoney: isDark ? "text-green-500" : "text-green-700",
+    statInfo: isDark ? "text-blue-500" : "text-blue-700",
   };
 };
 
@@ -41525,7 +41552,7 @@ export function composeAskGameResponse(
       break;
 
     case 'PLAYER_STATUS':
-      mainAnswer = `**Player Status Overview**:\n- **Location**: ${evidenceBundle.rawStateSnapshots?.activeRegion}\n- **Cash Balance**: $${evidenceBundle.rawStateSnapshots?.money?.toLocaleString()}\n- **Action Points**: ${evidenceBundle.rawStateSnapshots?.actionPoints} AP\n- **Credit Score**: ${evidenceBundle.rawStateSnapshots?.creditScore}`;
+      mainAnswer = `**Player Status Overview**:\n- **Location**: ${evidenceBundle.rawStateSnapshots?.activeRegion}\n- **Cash Balance**: $${evidenceBundle.rawStateSnapshots?.money?.toLocaleString('en-AU')}\n- **Action Points**: ${evidenceBundle.rawStateSnapshots?.actionPoints} AP\n- **Credit Score**: ${evidenceBundle.rawStateSnapshots?.creditScore}`;
       break;
 
     case 'ACTION_VALIDATE':
@@ -41542,7 +41569,7 @@ export function composeAskGameResponse(
       if (primaryToolResult) {
         const cashReserve = primaryToolResult.cashReserve ?? 0;
         const insolvencyRiskLevel = primaryToolResult.insolvencyRiskLevel || 'stable';
-        mainAnswer = `**Economy Health Diagnosis**:\n- **Financial Score**: ${primaryToolResult.financialScore ?? 0}/100\n- **Cash Reserve**: $${cashReserve.toLocaleString()}\n- **Monthly Net Income**: $${(primaryToolResult.monthlyNetIncome ?? 0).toLocaleString()}\n- **Insolvency Risk**: ${insolvencyRiskLevel.toUpperCase()}\n\n**Recommendations**:\n${(primaryToolResult.recommendations || []).map((r: string) => `- ${r}`).join('\n')}`;
+        mainAnswer = `**Economy Health Diagnosis**:\n- **Financial Score**: ${primaryToolResult.financialScore ?? 0}/100\n- **Cash Reserve**: $${cashReserve.toLocaleString('en-AU')}\n- **Monthly Net Income**: $${(primaryToolResult.monthlyNetIncome ?? 0).toLocaleString('en-AU')}\n- **Insolvency Risk**: ${insolvencyRiskLevel.toUpperCase()}\n\n**Recommendations**:\n${(primaryToolResult.recommendations || []).map((r: string) => `- ${r}`).join('\n')}`;
 
         previewCards.push({
           title: 'Economic Diagnostics Summary',
@@ -49978,10 +50005,10 @@ export const AutoModeProposalDiffCard: React.FC<AutoModeProposalDiffCardProps> =
             <div className="flex items-center justify-between bg-slate-800/50 p-2.5 rounded text-sm">
               <span className="text-slate-300 font-medium">Direct Cash Injection</span>
               <div className="flex items-center space-x-2">
-                <span className="line-through text-slate-500">${Number(prev.money || 0).toLocaleString()}</span>
+                <span className="line-through text-slate-500">${Number(prev.money || 0).toLocaleString('en-AU')}</span>
                 <span className="text-slate-400">→</span>
                 <span className="font-bold text-emerald-400">
-                  ${(Number(prev.money || 0) + payload.directCashInjection).toLocaleString()} (+${payload.directCashInjection.toLocaleString()})
+                  ${(Number(prev.money || 0) + payload.directCashInjection).toLocaleString('en-AU')} (+${payload.directCashInjection.toLocaleString('en-AU')})
                 </span>
               </div>
             </div>
@@ -54039,11 +54066,11 @@ export const ProjectedOutcomePanel: React.FC<ProjectedOutcomePanelProps> = ({
               <div className="grid grid-cols-3 gap-1 pt-1 text-[11px] border-t border-slate-800">
                 <div>
                   <span className="text-slate-400 block">Net Worth</span>
-                  <span className="font-semibold text-slate-200">${tp.projectedNetWorth.toLocaleString()}</span>
+                  <span className="font-semibold text-slate-200">${tp.projectedNetWorth.toLocaleString('en-AU')}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block">Cash</span>
-                  <span className="font-semibold text-slate-200">${tp.projectedMoney.toLocaleString()}</span>
+                  <span className="font-semibold text-slate-200">${tp.projectedMoney.toLocaleString('en-AU')}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block">Regions</span>
@@ -54295,7 +54322,7 @@ export const inspectSettingsDependencies = (settings: GameSettingsState): Settin
     conflicts.push({
       settingA: 'worldRngMode',
       settingB: 'aiReplayRecordingEnabled',
-      description: 'Replay recording with unseeded world RNG cannot be deterministically replayed.',
+      description: 'Replay recording while every match gets a new world seed: a recording only replays on the seed of the match it was made in.', // V9.9 (SECTION 20AU): wording — Random mode is seeded
       recommendedResolution: 'Switch worldRngMode to "deterministic" or disable replay recording.',
       autoFixSettings: { worldRngMode: 'deterministic' }
     });
@@ -61287,7 +61314,7 @@ export const CommandCenterDashboardModal: React.FC<CommandCenterDashboardModalPr
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                         <div>Team: <strong className="text-cyan-300">{commandCenterState.teamSummary.teamName || 'Player Team'}</strong></div>
                         <div>Members: <strong className="text-white">{commandCenterState.teamSummary.memberCount}</strong></div>
-                        <div>Net Worth: <strong className="text-emerald-300">${commandCenterState.teamSummary.totalNetWorth.toLocaleString()}</strong></div>
+                        <div>Net Worth: <strong className="text-emerald-300">${commandCenterState.teamSummary.totalNetWorth.toLocaleString('en-AU')}</strong></div>
                         <div>Alignment: <strong className="text-cyan-300">{commandCenterState.teamSummary.teamAlignmentScore}%</strong></div>
                       </div>
                     </div>
@@ -63505,7 +63532,7 @@ export function formatCoPilotActionNotification(
       const dest = parameters?.destinationRegion || parameters?.targetRegion || parameters?.region || actorAfter?.currentRegion || 'VIC';
       const cost = Math.abs(verifiedDeltas?.cashDelta !== undefined ? verifiedDeltas.cashDelta : (parameters?.cost || 0));
       return {
-        message: `🤖 Co-Pilot: You traveled from ${origin} to ${dest} for $${cost.toLocaleString()}.`,
+        message: `🤖 Co-Pilot: You traveled from ${origin} to ${dest} for $${cost.toLocaleString('en-AU')}.`,
         type: 'success'
       };
     }
@@ -63516,7 +63543,7 @@ export function formatCoPilotActionNotification(
       const resource = parameters?.resource || parameters?.item || 'Gold';
       const earned = verifiedDeltas?.cashDelta !== undefined ? Math.max(0, verifiedDeltas.cashDelta) : (parameters?.totalPrice || parameters?.price || 0);
       return {
-        message: `🤖 Co-Pilot: You sold ${amount} ${resource} for $${earned.toLocaleString()}.`,
+        message: `🤖 Co-Pilot: You sold ${amount} ${resource} for $${earned.toLocaleString('en-AU')}.`,
         type: 'success'
       };
     }
@@ -63526,14 +63553,14 @@ export function formatCoPilotActionNotification(
       const itemName = parameters?.itemName || parameters?.name || parameters?.itemId || parameters?.item || 'Equipment';
       const cost = Math.abs(verifiedDeltas?.cashDelta !== undefined ? verifiedDeltas.cashDelta : (parameters?.cost || parameters?.price || 1600));
       return {
-        message: `🤖 Co-Pilot: You purchased ${itemName} for $${cost.toLocaleString()}.`,
+        message: `🤖 Co-Pilot: You purchased ${itemName} for $${cost.toLocaleString('en-AU')}.`,
         type: 'success'
       };
     }
     case 'challenge': {
       const reward = verifiedDeltas?.cashDelta !== undefined ? Math.max(0, verifiedDeltas.cashDelta) : (parameters?.reward || parameters?.amount || 850);
       return {
-        message: `🤖 Co-Pilot: Your challenge succeeded and earned $${reward.toLocaleString()}.`,
+        message: `🤖 Co-Pilot: Your challenge succeeded and earned $${reward.toLocaleString('en-AU')}.`,
         type: 'success'
       };
     }
@@ -63543,7 +63570,7 @@ export function formatCoPilotActionNotification(
     case 'draw_credit_line': {
       const amount = verifiedDeltas?.cashDelta !== undefined ? Math.max(0, verifiedDeltas.cashDelta) : (parameters?.principal || parameters?.amount || 1000);
       return {
-        message: `🤖 Co-Pilot: Your loan request added $${amount.toLocaleString()} cash.`,
+        message: `🤖 Co-Pilot: Your loan request added $${amount.toLocaleString('en-AU')} cash.`,
         type: 'success'
       };
     }
@@ -63552,7 +63579,7 @@ export function formatCoPilotActionNotification(
     case 'repay_debt': {
       const amount = Math.abs(verifiedDeltas?.debtDelta !== undefined ? verifiedDeltas.debtDelta : (parameters?.amount || 500));
       return {
-        message: `🤖 Co-Pilot: You repaid $${amount.toLocaleString()} of loan principal.`,
+        message: `🤖 Co-Pilot: You repaid $${amount.toLocaleString('en-AU')} of loan principal.`,
         type: 'success'
       };
     }
@@ -63582,27 +63609,27 @@ export function formatCoPilotActivityLedgerSummary(
       const origin = parameters?.origin || parameters?.from || 'current location';
       const dest = parameters?.destinationRegion || parameters?.targetRegion || parameters?.region || 'destination';
       const cost = Math.abs(verifiedDeltas?.cashDelta !== undefined ? verifiedDeltas.cashDelta : (parameters?.cost || 0));
-      return `[Co-Pilot] Human player traveled from ${origin} to ${dest} for $${cost.toLocaleString()}`;
+      return `[Co-Pilot] Human player traveled from ${origin} to ${dest} for $${cost.toLocaleString('en-AU')}`;
     }
     case 'sell':
     case 'sellResource': {
       const amount = parameters?.quantity || parameters?.amount || 1;
       const resource = parameters?.resource || parameters?.item || 'resources';
       const earned = verifiedDeltas?.cashDelta !== undefined ? Math.max(0, verifiedDeltas.cashDelta) : (parameters?.totalPrice || parameters?.price || 0);
-      return `[Co-Pilot] Human player sold ${amount} ${resource} for $${earned.toLocaleString()}`;
+      return `[Co-Pilot] Human player sold ${amount} ${resource} for $${earned.toLocaleString('en-AU')}`;
     }
     case 'buy_equipment': {
       const item = parameters?.itemName || parameters?.name || parameters?.itemId || parameters?.item || 'Equipment';
       const cost = Math.abs(verifiedDeltas?.cashDelta !== undefined ? verifiedDeltas.cashDelta : (parameters?.cost || parameters?.price || 0));
-      return `[Co-Pilot] Human player purchased ${item} for $${cost.toLocaleString()}`;
+      return `[Co-Pilot] Human player purchased ${item} for $${cost.toLocaleString('en-AU')}`;
     }
     case 'challenge': {
       const reward = verifiedDeltas?.cashDelta !== undefined ? Math.max(0, verifiedDeltas.cashDelta) : (parameters?.reward || 0);
-      return `[Co-Pilot] Human player completed challenge and earned $${reward.toLocaleString()}`;
+      return `[Co-Pilot] Human player completed challenge and earned $${reward.toLocaleString('en-AU')}`;
     }
     case 'take_loan': {
       const amount = verifiedDeltas?.cashDelta !== undefined ? Math.max(0, verifiedDeltas.cashDelta) : (parameters?.principal || parameters?.amount || 1000);
-      return `[Co-Pilot] Human player took loan adding $${amount.toLocaleString()} cash`;
+      return `[Co-Pilot] Human player took loan adding $${amount.toLocaleString('en-AU')} cash`;
     }
     case 'end_turn':
       return `[Co-Pilot] Human player ended turn`;
@@ -63930,7 +63957,7 @@ export const CoPilotModal: React.FC<CoPilotModalProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-3.5">
                   <div className="text-xs text-gray-400 uppercase font-semibold">Cash & Liquidity</div>
-                  <div className="text-xl font-bold text-emerald-400 mt-1">${(player?.money ?? 0).toLocaleString()}</div>
+                  <div className="text-xl font-bold text-emerald-400 mt-1">${(player?.money ?? 0).toLocaleString('en-AU')}</div>
                   <div className="text-[11px] text-gray-400 mt-0.5">Turn: {gameState?.turnCounter || 1} | Day: {gameState?.day || 1}</div>
                 </div>
                 <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-3.5">
@@ -64095,7 +64122,7 @@ export const CoPilotModal: React.FC<CoPilotModalProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                 <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-4 space-y-2">
                   <label className="text-xs font-bold text-gray-200 block">
-                    Spend Limit Per Turn (${customSpendLimit.toLocaleString()})
+                    Spend Limit Per Turn (${customSpendLimit.toLocaleString('en-AU')})
                   </label>
                   <input
                     type="range"
@@ -64166,11 +64193,11 @@ export const CoPilotModal: React.FC<CoPilotModalProps> = ({
                 </div>
                 <div className="p-2 bg-slate-900/60 rounded-lg">
                   <span className="text-gray-400 block">Spent This Turn:</span>
-                  <span className="font-bold text-emerald-400">${(takeoverSession.spentThisPlayerTurn || 0).toLocaleString()}</span>
+                  <span className="font-bold text-emerald-400">${(takeoverSession.spentThisPlayerTurn || 0).toLocaleString('en-AU')}</span>
                 </div>
                 <div className="p-2 bg-slate-900/60 rounded-lg">
                   <span className="text-gray-400 block">Total Spent:</span>
-                  <span className="font-bold text-amber-400">${(takeoverSession.totalSpent || 0).toLocaleString()}</span>
+                  <span className="font-bold text-amber-400">${(takeoverSession.totalSpent || 0).toLocaleString('en-AU')}</span>
                 </div>
               </div>
 
@@ -65523,7 +65550,7 @@ export function getActionDisabledReason(actionId: string, context: ActionContext
 }
 
 const formatCoachMetricValue = (metric: WinMetric, value: number) => {
-  return WIN_METRIC_PROFILES[metric]?.formatCoachValue(value) ?? `$${Math.round(value).toLocaleString()}`;
+  return WIN_METRIC_PROFILES[metric]?.formatCoachValue(value) ?? `$${Math.round(value).toLocaleString('en-AU')}`;
 };
 
 export function getWinConditionProgressSummary(context: WinConditionContext): WinConditionSummary {
@@ -65598,7 +65625,7 @@ export function contractAcceptBlocker(contract: any, actor: any, gameState?: any
   const shopOff = settings ? settings.equipmentShopEnabled === false : false;
   const standingOff = settings ? settings.regionalStandingEnabled === false : false;
   if (typeof req.requiredMoney === 'number' && cash < req.requiredMoney) {
-    return `Contract requires $${req.requiredMoney.toLocaleString()} (have $${cash.toLocaleString()})`;
+    return `Contract requires $${req.requiredMoney.toLocaleString('en-AU')} (have $${cash.toLocaleString('en-AU')})`;
   }
   const missingEq = !shopOff && Array.isArray(req.requiredEquipment) ? req.requiredEquipment.filter((e: string) => !actorHasEquipment(actor, e)) : [];
   if (missingEq.length) return `Contract requires equipment: ${missingEq.join(', ')}`;
@@ -65830,7 +65857,7 @@ export function deriveGoalPath(goal: {
       if (typeof req.requiredMoney === 'number') {
         steps.push({
           id: 'cash',
-          label: `Have $${req.requiredMoney.toLocaleString()}`,
+          label: `Have $${req.requiredMoney.toLocaleString('en-AU')}`,
           completed: cash >= req.requiredMoney,
           navigation: cash >= req.requiredMoney ? null : navAction('market', 'Show cash actions')
         });
@@ -65893,7 +65920,7 @@ export function deriveGoalPath(goal: {
       const travelCost = territory.travelCost || unlock.minCash || 0;
       steps.push({
         id: 't_cash',
-        label: `Save $${travelCost.toLocaleString()} travel cost`,
+        label: `Save $${travelCost.toLocaleString('en-AU')} travel cost`,
         completed: cash >= travelCost,
         navigation: cash >= travelCost ? null : navAction('market', 'Show cash actions')
       });
@@ -65937,7 +65964,7 @@ export function deriveGoalPath(goal: {
     if (project) {
       steps.push({
         id: 'infra_cash',
-        label: `Have $${Number(project.totalCost || 0).toLocaleString()}`,
+        label: `Have $${Number(project.totalCost || 0).toLocaleString('en-AU')}`,
         completed: cash >= (project.totalCost || 0),
         navigation: cash >= (project.totalCost || 0) ? null : navAction('market', 'Show cash actions')
       });
@@ -66023,7 +66050,7 @@ function buildWinConditionObjective(state: any, settings: any, actor: any): Curr
     const v99Left = actor && settings && typeof settings === 'object' && settings.actionLimitsEnabled !== false && typeof actor.actionsUsedThisTurn === 'number' ? getRemainingActionPoints(actor, settings) : null;
     const v99Step = v99WinObjectiveNextStep(String(metric), actor, state, settings, v99Left);
     const v99Nav = v99Step.target ? navAction(v99Step.target, v99Step.navLabel) : null;
-    const req = makeRequirement('win_metric', `${title} (you have ${metric === 'money' || metric === 'netWorth' ? `$${Math.round(playerValue).toLocaleString()}` : Math.round(playerValue)})`, false, {
+    const req = makeRequirement('win_metric', `${title} (you have ${metric === 'money' || metric === 'netWorth' ? `$${Math.round(playerValue).toLocaleString('en-AU')}` : Math.round(playerValue)})`, false, {
       currentValue: playerValue,
       howToFix: v99Step.detail,
       navigation: v99Nav
@@ -66150,7 +66177,7 @@ function buildContractObjective(state: any, actor: any, contractId?: string): Cu
   const acceptMissing = contractAcceptBlocker(contract, actor, state);
   const requirements: ObjectiveRequirement[] = [];
   if (typeof req.requiredMoney === 'number') {
-    requirements.push(makeRequirement('cash', `$${req.requiredMoney.toLocaleString()} required cash`, (actor?.money || 0) >= req.requiredMoney, {
+    requirements.push(makeRequirement('cash', `$${req.requiredMoney.toLocaleString('en-AU')} required cash`, (actor?.money || 0) >= req.requiredMoney, {
       navigation: (actor?.money || 0) >= req.requiredMoney ? null : navAction('market', 'Show cash actions')
     }));
   }
@@ -66268,8 +66295,8 @@ function buildRegionControlObjective(state: any, actor: any, regionId?: string):
   if (!regionId && yours <= 0 && bestRival <= 0) return null;
   const reqs = [
     makeRequirement('presence', `Be in ${dest}`, actor?.currentRegion === dest, { navigation: navAction('travel', 'Open Map') }),
-    makeRequirement('lead', `Hold the highest deposit in ${dest} (you $${yours.toLocaleString()} vs rival $${bestRival.toLocaleString()})`, lead > 0, {
-      howToFix: lead > 0 ? undefined : `Deposit $${Math.max(1, bestRival - yours + 1).toLocaleString()} more`,
+    makeRequirement('lead', `Hold the highest deposit in ${dest} (you $${yours.toLocaleString('en-AU')} vs rival $${bestRival.toLocaleString('en-AU')})`, lead > 0, {
+      howToFix: lead > 0 ? undefined : `Deposit $${Math.max(1, bestRival - yours + 1).toLocaleString('en-AU')} more`,
       navigation: navAction('map', 'Open Map')
     })
   ];
@@ -66300,7 +66327,7 @@ function buildEconomyObjective(state: any, actor: any): CurrentObjective | null 
   const cash = actor?.money || 0;
   const reserve = 5000;
   const reqs = [
-    makeRequirement('reserve', `Hold a $${reserve.toLocaleString()} cash reserve`, cash >= reserve, {
+    makeRequirement('reserve', `Hold a $${reserve.toLocaleString('en-AU')} cash reserve`, cash >= reserve, {
       currentValue: cash,
       targetValue: reserve,
       howToFix: cash >= reserve ? undefined : 'Sell high-demand resources or attempt a challenge',
@@ -66482,7 +66509,7 @@ export function explainUnavailableAction(kind: string, context: {
     const cash = actor?.money || 0;
     if (typeof req.requiredMoney === 'number') {
       const ok = cash >= req.requiredMoney;
-      (ok ? satisfied : missing).push(makeRequirement('cash', `$${req.requiredMoney.toLocaleString()} required cash`, ok, {
+      (ok ? satisfied : missing).push(makeRequirement('cash', `$${req.requiredMoney.toLocaleString('en-AU')} required cash`, ok, {
         navigation: ok ? null : navAction('market', 'Show cash actions')
       }));
     }
@@ -66518,7 +66545,7 @@ export function explainUnavailableAction(kind: string, context: {
     const cost = territory?.travelCost || 0;
     if (cost) {
       const ok = (actor?.money || 0) >= cost;
-      (ok ? satisfied : missing).push(makeRequirement('cash', `$${cost.toLocaleString()} travel cost`, ok, { navigation: ok ? null : navAction('market', 'Show cash actions') }));
+      (ok ? satisfied : missing).push(makeRequirement('cash', `$${cost.toLocaleString('en-AU')} travel cost`, ok, { navigation: ok ? null : navAction('market', 'Show cash actions') }));
     }
     if (context.settings?.sabotageEnabled && typeof isTravelBlocked === 'function' && isTravelBlocked(actor?.debuffs)) {
       missing.push(makeRequirement('debuff', 'Travel blocked by Customs Hold', false));
@@ -66534,7 +66561,7 @@ export function explainUnavailableAction(kind: string, context: {
     const cost = Number(context.choice?.cost || context.choice?.prepCost || 0);
     if (cost > 0) {
       const ok = (actor?.money || 0) >= cost;
-      (ok ? satisfied : missing).push(makeRequirement('cash', `$${cost.toLocaleString()} expedition prep`, ok, { navigation: ok ? null : navAction('market', 'Show cash actions') }));
+      (ok ? satisfied : missing).push(makeRequirement('cash', `$${cost.toLocaleString('en-AU')} expedition prep`, ok, { navigation: ok ? null : navAction('market', 'Show cash actions') }));
     }
     if (context.choice && context.choice.id && typeof checkExpeditionBeatChoiceRequirements === 'function') {
       title = 'Expedition choice unavailable';
@@ -66557,7 +66584,7 @@ export function explainUnavailableAction(kind: string, context: {
     const item = context.choice || {};
     const cost = Number(item.cost || item.price || 0);
     const okCash = (actor?.money || 0) >= cost;
-    (okCash ? satisfied : missing).push(makeRequirement('cash', `$${cost.toLocaleString()} purchase price`, okCash, { navigation: okCash ? null : navAction('market', 'Show cash actions') }));
+    (okCash ? satisfied : missing).push(makeRequirement('cash', `$${cost.toLocaleString('en-AU')} purchase price`, okCash, { navigation: okCash ? null : navAction('market', 'Show cash actions') }));
     if (context.regionId && actor?.currentRegion && actor.currentRegion !== context.regionId) {
       missing.push(makeRequirement('loc', `Travel to ${context.regionId}`, false, { navigation: navAction('travel', 'Open Map') }));
     }
@@ -66582,7 +66609,7 @@ export function explainUnavailableAction(kind: string, context: {
     const cost = Number(context.choice?.cost || context.choice?.amount || 0);
     if (cost > 0) {
       const ok = (actor?.money || 0) >= cost;
-      (ok ? satisfied : missing).push(makeRequirement('cash', `$${cost.toLocaleString()} required`, ok, { navigation: ok ? null : navAction('market', 'Show cash actions') }));
+      (ok ? satisfied : missing).push(makeRequirement('cash', `$${cost.toLocaleString('en-AU')} required`, ok, { navigation: ok ? null : navAction('market', 'Show cash actions') }));
     }
     nextAction = missing[0]?.navigation || deriveRelevantNavigationTarget(kind);
   }
@@ -66617,7 +66644,7 @@ export function summarizeActionImpact(candidate: any, guardianNote?: string): Ga
   const cash = typeof delta.cashDelta === 'number' ? delta.cashDelta : 0;
   // V9.9 (SECTION 20AR): a wager is described by its odds and stakes — its average is not "what changed".
   const changed = (v99IsRolledAction(candidate?.actionType, candidate?.parameters) ? candidate?.expectedOutcome : null) || [
-    cash ? `Cash ${cash >= 0 ? '↑' : '↓'} $${Math.abs(cash).toLocaleString()}` : null,
+    cash ? `Cash ${cash >= 0 ? '↑' : '↓'} $${Math.abs(cash).toLocaleString('en-AU')}` : null,
     delta.apDelta ? `AP ${delta.apDelta}` : null,
     delta.standingDelta ? `Standing ${delta.standingDelta > 0 ? '↑' : '↓'}` : null
   ].filter(Boolean).join(' • ') || candidate?.expectedOutcome || 'Impact depends on execution.';
@@ -66634,7 +66661,7 @@ export function classifyPlayerAttentionState(state: any, settings: any, actorHin
   const actor = resolveIntentActor(state, actorHint);
   const cash = actor?.money || 0;
   if (cash <= BANKRUPTCY_THRESHOLD) {
-    return { state: 'critical', label: 'Bankruptcy danger', detail: `Cash is $${cash.toLocaleString()}. Raise funds before the next upkeep.`, navigation: navAction('market', 'Show cash actions') };
+    return { state: 'critical', label: 'Bankruptcy danger', detail: `Cash is $${cash.toLocaleString('en-AU')}. Raise funds before the next upkeep.`, navigation: navAction('market', 'Show cash actions') };
   }
   const contract = findActiveAssignedContract(state, actor);
   if (contract && typeof contract.turnsRemaining === 'number' && contract.turnsRemaining <= 2) {
@@ -66656,7 +66683,7 @@ export function classifyPlayerAttentionState(state: any, settings: any, actorHin
   // starting cash, so it was up from the first second of every match), and its button is only there when the Sell
   // Market has something to show.
   if (cash < v99LowLiquidityFloor(actor)) {
-    return { state: 'needs_attention', label: 'Low liquidity', detail: `Cash reserve is $${cash.toLocaleString()}.`, navigation: v99HasSellableGoods(actor) ? navAction('market', 'Show cash actions') : null };
+    return { state: 'needs_attention', label: 'Low liquidity', detail: `Cash reserve is $${cash.toLocaleString('en-AU')}.`, navigation: v99HasSellableGoods(actor) ? navAction('market', 'Show cash actions') : null };
   }
   const teammates = Object.values(state?.actorsById || {}).filter((a: any) => a && a.teamId && a.teamId === actor?.teamId && a.id !== actor?.id);
   const hurt = teammates.find((a: any) => (a.money || 0) <= BANKRUPTCY_THRESHOLD || a.condition === 'critical') as { name?: string; id?: string } | undefined;
@@ -66773,7 +66800,7 @@ export function rankContextualRecommendations(
     if ((c.apCost ?? 1) === 0) { /* V9.9 (SECTION 20AR): a free action is not "only 1 AP"; its cost label already reads "free action" */ }
     else if ((c.apCost ?? 1) <= 1) whyPoints.push('costs only 1 AP');
     if ((c.costEstimate || 0) === 0) whyPoints.push('no extra cash required');
-    if ((c.expectedStateDelta?.cashDelta || 0) > 0) whyPoints.push(`${v99IsRolledAction(c.actionType, c.parameters) ? 'on average' : 'expected'} +$${Math.round(c.expectedStateDelta.cashDelta).toLocaleString()}`); // V9.9 (SECTION 20AR): a wager's figure is an average
+    if ((c.expectedStateDelta?.cashDelta || 0) > 0) whyPoints.push(`${v99IsRolledAction(c.actionType, c.parameters) ? 'on average' : 'expected'} +$${Math.round(c.expectedStateDelta.cashDelta).toLocaleString('en-AU')}`); // V9.9 (SECTION 20AR): a wager's figure is an average
     if ((c.rewardScore || 0) >= 70) whyPoints.push('strong expected return');
     if (np && (np.band === 'strong' || np.band === 'moderate')) whyPoints.push(`also ${np.reason.charAt(0).toLowerCase()}${np.reason.slice(1)}`);
     else if (np && np.band === 'conflict') whyPoints.push(`note: ${np.reason.charAt(0).toLowerCase()}${np.reason.slice(1)}`);
@@ -66786,7 +66813,7 @@ export function rankContextualRecommendations(
     else if (hh && hh.reason && hh.relevanceDelta < 0) whyPoints.push(`concentration strain: ${hh.reason}`);
     if (!whyPoints.length) whyPoints.push(c.expectedOutcome || c.description || 'legal this turn');
     const costBits = [
-      (c.costEstimate || 0) > 0 ? `$${Number(c.costEstimate).toLocaleString()}` : null,
+      (c.costEstimate || 0) > 0 ? `$${Number(c.costEstimate).toLocaleString('en-AU')}` : null,
       `${c.apCost ?? 1} AP`
     ].filter(Boolean);
     return {
@@ -66946,7 +66973,7 @@ export function buildIntentDecisionCard(input: {
 }): IntentDecisionCardModel {
   const expl = summarizeActionImpact(input.candidate, input.guardianNote);
   const cost = input.costOverride
-    || [input.candidate?.costEstimate ? `$${Number(input.candidate.costEstimate).toLocaleString()}` : null, input.candidate?.apCost != null ? `${input.candidate.apCost} AP` : null].filter(Boolean).join(' • ')
+    || [input.candidate?.costEstimate ? `$${Number(input.candidate.costEstimate).toLocaleString('en-AU')}` : null, input.candidate?.apCost != null ? `${input.candidate.apCost} AP` : null].filter(Boolean).join(' • ')
     || 'See details';
   return {
     title: input.title,
@@ -67029,7 +67056,7 @@ export function answerIntentLayerQuestion(rawQuery: string, state: any, settings
     const cash = actor?.money || 0;
     return createGameExplanation({
       whatHappened: 'You asked why the current position is slipping.',
-      why: recent || `Your cash is $${cash.toLocaleString()} and the tracked goal is ${objective.title}.`,
+      why: recent || `Your cash is $${cash.toLocaleString('en-AU')} and the tracked goal is ${objective.title}.`,
       whatChanged: objective.blockers[0] || `Goal progress ${objective.progress.completed}/${objective.progress.total}.`,
       next: objective.recommendedNextStep?.label || 'Raise cash or contest the nearest region.',
       navigation: [objective.recommendedNextStep?.navigation || navAction('progress', 'Open Progress'), navAction('ledger', 'Open Activity Ledger')].filter(Boolean) as IntentNavAction[],
@@ -67183,7 +67210,8 @@ function getGroupedInventory(inventory: string[], resourcePrices: Record<string,
   }, {});
 
   return Object.entries(counts).map(([resource, count]) => {
-    const basePrice = getResourceMarketPrice(resource);
+    // V9.9 (SECTION 20AU): crafted goods have a price (v99ResourceBasePrice) — every one of them was listed, and sold, at $120.
+    const basePrice = v99ResourceBasePrice(resource);
     const currentPrice = resourcePrices[resource] || basePrice || 100;
     const usedInRecipes = CRAFTING_RECIPES
       .filter(recipe => Boolean((recipe.inputs as unknown as Record<string, number>)?.[resource]))
@@ -67207,7 +67235,7 @@ function getGroupedInventory(inventory: string[], resourcePrices: Record<string,
     return {
       resource,
       count,
-      category: RESOURCE_CATEGORIES[resource] || 'unknown',
+      category: v99InventoryCategory(resource), // V9.9 (SECTION 20AU): a crafted good shows its recipe's category (was 'unknown')
       currentPrice,
       basePrice,
       trendLabel,
@@ -99325,8 +99353,9 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
             return true;
           }
         })();
-        const isDark = resolveIsDarkTheme(activeTheme, sysDark);
+        const isDark = resolveIsDarkSurface(activeTheme, sysDark); // V9.9 (SECTION 20AU): Retro is a dark surface
         const isRetro = activeTheme === 'retro';
+        const v99Shell = v99SettingsShellClasses(isDark, isRetro); // V9.9 (SECTION 20AU): the window chrome follows Retro too
         const modalBgClass = isRetro
           ? 'bg-amber-900 border-amber-700 text-amber-100'
           : isDark
@@ -99346,14 +99375,14 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
             {/* Top Header Navigation */}
             <div className={`flex justify-between items-center px-3 sm:px-6 py-2 sm:py-4 border-b shrink-0 ${navBgClass}`}>
               <div className="flex items-center gap-3">
-                <div className={`flex p-1 rounded-lg border ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
+                <div className={`flex p-1 rounded-lg border ${v99Shell.switcher}`}>
                   <button
                     type="button"
                     onClick={() => setViewMode('simple')}
                     className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${
                       viewMode === 'simple'
                         ? 'bg-sky-600 text-white shadow'
-                        : isDark ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                        : v99Shell.tabIdle
                     }`}
                     data-testid="settings-view-simple"
                   >
@@ -99365,7 +99394,7 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
                     className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${
                       viewMode === 'experience'
                         ? 'bg-sky-600 text-white shadow'
-                        : isDark ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                        : v99Shell.tabIdle
                     }`}
                   >
                     🎮 Game Experience
@@ -99376,7 +99405,7 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
                     className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${
                       viewMode === 'advanced'
                         ? 'bg-sky-600 text-white shadow'
-                        : isDark ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                        : v99Shell.tabIdle
                     }`}
                   >
                     ⚙️ Advanced Settings
@@ -99386,14 +99415,14 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
               <button
                 type="button"
                 onClick={handleClose}
-                className={`px-3 py-1 rounded transition-colors text-xs font-bold ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white' : 'bg-slate-200 hover:bg-slate-300 text-slate-700 hover:text-slate-900'}`}
+                className={`px-3 py-1 rounded transition-colors text-xs font-bold ${v99Shell.close}`}
               >
                 ✕
               </button>
             </div>
 
         {/* V9.9 (SECTION 20AT): what "saving" means here — said once, for all three views. */}
-        <div className={`px-4 py-1.5 text-[11px] leading-snug border-b shrink-0 ${isDark ? 'border-slate-700 text-slate-400 bg-slate-950/40' : 'border-slate-200 text-slate-600 bg-slate-50'}`} data-testid="v99-settings-saved-note">
+        <div className={`px-4 py-1.5 text-[11px] leading-snug border-b shrink-0 ${v99Shell.note}`} data-testid="v99-settings-saved-note">
           💾 {SETTINGS_SAVED_NOTE}{isLiveMatch ? null : <span className="hidden sm:inline"> {SETTINGS_MENU_NOTE}</span>}
         </div>
 
@@ -99404,6 +99433,7 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
             onChange={(key, value) => { if (onSimpleSettingChange) onSimpleSettingChange(key, value); else if (onUpdateSettings) onUpdateSettings(prev => ({ ...prev, ...({ [key]: value } as unknown as Partial<GameSettingsState>) })); }}
             onShowAll={() => setViewMode('advanced')}
             isDark={isDark}
+            isRetro={isRetro}
           />
         ) : viewMode === 'experience' ? (
           <InlineRenderErrorBoundary fallbackTitle="Game Experience crashed after applying settings">
@@ -101235,7 +101265,7 @@ export function buildContextualActionSet(input: ContextualActionInput): Contextu
       blockReason: null,
       relevance,
       urgency: addressesAttention && attention?.state === 'critical' ? 'critical' : relevance >= 80 ? 'high' : 'normal',
-      benefit: cashDelta > 0 && !v99IsRolledAction(c.actionType, c.parameters) ? `Expected +$${Math.round(cashDelta).toLocaleString()}` : (c.expectedOutcome || null), // V9.9 (SECTION 20AR): a wager shows its odds and stakes, not an average dressed as a result
+      benefit: cashDelta > 0 && !v99IsRolledAction(c.actionType, c.parameters) ? `Expected +$${Math.round(cashDelta).toLocaleString('en-AU')}` : (c.expectedOutcome || null), // V9.9 (SECTION 20AR): a wager shows its odds and stakes, not an average dressed as a result
       risk: describeContextualRisk(Number(c.riskFactor || 0)),
       costEstimate: cost > 0 ? cost : 0,
       apCost: Number(rec.apCost ?? c.apCost ?? 1),
@@ -101243,7 +101273,7 @@ export function buildContextualActionSet(input: ContextualActionInput): Contextu
       reasons,
       evidence: [
         `Co-Pilot candidate scoring — utility ${utility}, risk ${Math.round(Number(c.riskFactor || 0))}, reward ${Math.round(Number(c.rewardScore || 0))}`,
-        `Passed the canonical legality filter: ${rec.apCost ?? 1} AP${cost > 0 ? `, $${cost.toLocaleString()}` : ', no cash cost'} (you have ${apRemaining} AP)`
+        `Passed the canonical legality filter: ${rec.apCost ?? 1} AP${cost > 0 ? `, $${cost.toLocaleString('en-AU')}` : ', no cash cost'} (you have ${apRemaining} AP)`
       ],
       sourceSystem: 'Co-Pilot action candidates',
       confidence: Number.isFinite(Number(c.rewardScore)) ? Math.max(0, Math.min(1, Number(c.rewardScore) / 100)) : null,
@@ -101390,7 +101420,7 @@ export function buildContextualActionSet(input: ContextualActionInput): Contextu
       blockReason: reason,
       relevance: Math.round(utility * 0.5),
       urgency: 'low',
-      benefit: Number(c.expectedStateDelta?.cashDelta || 0) > 0 ? `Would be worth +$${Math.round(Number(c.expectedStateDelta.cashDelta)).toLocaleString()}` : (c.expectedOutcome || null),
+      benefit: Number(c.expectedStateDelta?.cashDelta || 0) > 0 ? `Would be worth +$${Math.round(Number(c.expectedStateDelta.cashDelta)).toLocaleString('en-AU')}` : (c.expectedOutcome || null),
       risk: describeContextualRisk(Number(c.riskFactor || 0)),
       costEstimate: Number(c.costEstimate || 0) || null,
       apCost: Number(c.apCost ?? 1),
@@ -101649,7 +101679,7 @@ function nextIntelligenceAnswerId(prefix: string): string {
 
 function describeContextualCost(c: ContextualActionCandidate): string {
   const bits: string[] = [];
-  if (typeof c.costEstimate === 'number' && c.costEstimate > 0) bits.push(`$${c.costEstimate.toLocaleString()}`);
+  if (typeof c.costEstimate === 'number' && c.costEstimate > 0) bits.push(`$${c.costEstimate.toLocaleString('en-AU')}`);
   if (typeof c.apCost === 'number' && c.apCost > 0) bits.push(`${c.apCost} AP`);
   return bits.length ? bits.join(' • ') : 'No cost';
 }
@@ -101804,8 +101834,8 @@ export function buildNextStepIntelligenceAnswer(input: {
     evidence.push({ source: 'Player attention monitor', detail: `${input.attention.state.replace(/_/g, ' ')}: ${input.attention.label}` });
   }
   if (input.focus === 'recovery' && typeof input.cash === 'number') {
-    lines.push(`Cash on hand: $${Math.round(input.cash).toLocaleString()}.`);
-    evidence.push({ source: 'Player state', detail: `Cash $${Math.round(input.cash).toLocaleString()}` });
+    lines.push(`Cash on hand: $${Math.round(input.cash).toLocaleString('en-AU')}.`);
+    evidence.push({ source: 'Player state', detail: `Cash $${Math.round(input.cash).toLocaleString('en-AU')}` });
   }
   if (rec) {
     lines.push(`Recommended: ${rec.label} — ${rec.reasons[0] || rec.description || 'highest-ranked legal action'}. Cost: ${describeContextualCost(rec)}.`);
@@ -101923,7 +101953,7 @@ export function buildActivityIntelligenceAnswer(input: {
   const session = input.session;
   if (session) {
     const executed = (session.executedActionTypes || []).slice(-5);
-    lines.push(`This Co-Pilot session: ${session.actionsExecutedCount || 0} action(s) executed${executed.length ? ` (latest: ${executed.join(', ')})` : ''}, $${Math.round(session.totalSpent || 0).toLocaleString()} spent.`);
+    lines.push(`This Co-Pilot session: ${session.actionsExecutedCount || 0} action(s) executed${executed.length ? ` (latest: ${executed.join(', ')})` : ''}, $${Math.round(session.totalSpent || 0).toLocaleString('en-AU')} spent.`);
     if (session.activeObjective?.description) lines.push(`Objective: ${session.activeObjective.description}.`);
     if (session.returnReason) lines.push(`Control returned because: ${String(session.returnReason).replace(/_/g, ' ')}.`);
     if (session.lastActionError) lines.push(`Last error: ${session.lastActionError}.`);
@@ -103681,15 +103711,15 @@ export function buildGIOption(kind: GIOptionKind, clause: string, world: GIWorld
       let block: string | null = notTurn;
       let prerequisite: string | null = null;
       if (!block && world.negotiationMode) block = 'Negotiation mode is on — region control changes through proposals.';
-      if (!block && !r.isHere) { block = `You must be in ${r.name} to deposit there.`; prerequisite = `Travel to ${r.name}${r.travelCost !== null ? ` ($${r.travelCost.toLocaleString()})` : ''}`; }
-      if (!block && !defending && cash < amount) block = `Taking control needs $${amount.toLocaleString()} (you have $${cash.toLocaleString()}).`;
+      if (!block && !r.isHere) { block = `You must be in ${r.name} to deposit there.`; prerequisite = `Travel to ${r.name}${r.travelCost !== null ? ` ($${r.travelCost.toLocaleString('en-AU')})` : ''}`; }
+      if (!block && !defending && cash < amount) block = `Taking control needs $${amount.toLocaleString('en-AU')} (you have $${cash.toLocaleString('en-AU')}).`;
       if (!block && defending && amount <= 0) block = 'Set a deposit amount in the region panel first.';
-      if (!block && defending && cash < amount) block = `Your deposit amount is $${amount.toLocaleString()} (you have $${cash.toLocaleString()}).`;
+      if (!block && defending && cash < amount) block = `Your deposit amount is $${amount.toLocaleString('en-AU')} (you have $${cash.toLocaleString('en-AU')}).`;
       if (!block && !ap.ok) block = ap.reason || 'Not enough Action Points.';
       return {
         id: `opt_deposit_${r.code}`,
         kind,
-        label: defending ? `Defend ${r.name}${amount > 0 ? ` (deposit $${amount.toLocaleString()})` : ''}` : `Take control of ${r.name}`,
+        label: defending ? `Defend ${r.name}${amount > 0 ? ` (deposit $${amount.toLocaleString('en-AU')})` : ''}` : `Take control of ${r.name}`,
         regionId: r.code,
         amount,
         intent: amount > 0 ? { actionType: 'region_deposit', parameters: { region: r.code, regionCode: r.code, amount }, targetId: r.code, costEstimate: amount } : undefined,
@@ -103709,7 +103739,7 @@ export function buildGIOption(kind: GIOptionKind, clause: string, world: GIWorld
       const cost = r.travelCost ?? 0;
       let block: string | null = notTurn;
       if (!block && r.isHere) block = `You are already in ${r.name}.`;
-      if (!block && cash < cost) block = `Travel costs $${cost.toLocaleString()} (you have $${cash.toLocaleString()}).`;
+      if (!block && cash < cost) block = `Travel costs $${cost.toLocaleString('en-AU')} (you have $${cash.toLocaleString('en-AU')}).`;
       if (!block && !ap.ok) block = ap.reason || 'Not enough Action Points.';
       return {
         id: `opt_travel_${r.code}`,
@@ -103761,7 +103791,7 @@ export function buildGIOption(kind: GIOptionKind, clause: string, world: GIWorld
       const ap = giApCost(world, 'buy_market');
       let block: string | null = notTurn;
       if (!block && typeof price !== 'number') block = `No market price is available for ${resource.id}.`;
-      if (!block && cash < price) block = `${resource.id} costs $${price.toLocaleString()} (you have $${cash.toLocaleString()}).`;
+      if (!block && cash < price) block = `${resource.id} costs $${price.toLocaleString('en-AU')} (you have $${cash.toLocaleString('en-AU')}).`;
       if (!block && !ap.ok) block = ap.reason || 'Not enough Action Points.';
       return {
         id: `opt_buy_${resource.id}`,
@@ -103784,7 +103814,7 @@ export function buildGIOption(kind: GIOptionKind, clause: string, world: GIWorld
       let block: string | null = notTurn;
       if (!block && (p.status === 'active' || p.remaining <= 0)) block = `${p.title} is already fully funded.`;
       if (!block && p.status === 'locked') block = `${p.title} is locked.`;
-      if (!block && cash < step) block = `The smallest funding step is $${step.toLocaleString()} (you have $${cash.toLocaleString()}).`;
+      if (!block && cash < step) block = `The smallest funding step is $${step.toLocaleString('en-AU')} (you have $${cash.toLocaleString('en-AU')}).`;
       return {
         id: `opt_fund_${p.id}`,
         kind,
@@ -106311,8 +106341,8 @@ function buildGIUnderstoodConstraints(frame: GISemanticFrame, world: GIWorld, no
   let targetLabel: string | null = null;
   if (cashGoal) {
     const amt = resolveGIQuantityAmount(cashGoal.amount, world) || 0;
-    if (cashGoal.kind === 'cash_reach') { targetAmount = Math.max(0, amt - world.player.money); targetLabel = `reaching $${amt.toLocaleString()}`; }
-    else { targetAmount = amt; targetLabel = `another $${amt.toLocaleString()}`; }
+    if (cashGoal.kind === 'cash_reach') { targetAmount = Math.max(0, amt - world.player.money); targetLabel = `reaching $${amt.toLocaleString('en-AU')}`; }
+    else { targetAmount = amt; targetLabel = `another $${amt.toLocaleString('en-AU')}`; }
   } else {
     const m = normalized.match(/\$?\s?(\d[\d,]*)(\s?k)?\b/);
     if (m && /\$|k\b|thousand|money|cash|dollars/.test(normalized) && !frame.quantities.some(q => q.role === 'state' || q.role === 'floor' || q.role === 'ceiling' || q.role === 'amount')) {
@@ -106708,8 +106738,8 @@ export function applyGIConstraintPolicies(cands: ContextualActionCandidate[], co
     if (sellPolicy === 'forbidden') { out.removed.push({ candidate: c, reason: `you don't want to sell ${res || 'anything'}` }); return; }
     if (sellPolicy === 'fallback_only') { out.fallback.push({ candidate: c, reason: `selling ${res || 'resources'} is your last resort` }); return; }
     if (sellPolicy === 'avoid') { out.avoided.push({ candidate: c, reason: `you'd rather not sell ${res || 'resources'}` }); return; }
-    if (floor > 0 && cost > 0 && world.player.money - cost < floor) { out.removed.push({ candidate: c, reason: `it would take you below the $${floor.toLocaleString()} you want to keep` }); return; }
-    if (constraints.spendCeiling && cost > constraints.spendCeiling) { out.removed.push({ candidate: c, reason: `it costs more than the $${constraints.spendCeiling.toLocaleString()} you want to spend` }); return; }
+    if (floor > 0 && cost > 0 && world.player.money - cost < floor) { out.removed.push({ candidate: c, reason: `it would take you below the $${floor.toLocaleString('en-AU')} you want to keep` }); return; }
+    if (constraints.spendCeiling && cost > constraints.spendCeiling) { out.removed.push({ candidate: c, reason: `it costs more than the $${constraints.spendCeiling.toLocaleString('en-AU')} you want to spend` }); return; }
     out.allowed.push(c);
   });
   return out;
@@ -107232,7 +107262,7 @@ function claim(text: string, kind: GIClaim['kind'], certainty: GICertainty, fact
   return { id: `c${giClaimCounter}`, text: tidyGISentence(text), kind, certainty, factIds, ...extra };
 }
 
-const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
+const money = (n: number) => `$${Math.round(n).toLocaleString('en-AU')}`;
 
 export function diagnoseGIPosition(world: GIWorld, exec: GIExecution, economic: boolean): GICause[] {
   const causes: GICause[] = [];
@@ -107262,7 +107292,7 @@ export function diagnoseGIPosition(world: GIWorld, exec: GIExecution, economic: 
     const w = world.win;
     const delta = w.playerValue - w.opponentValue;
     if (delta < 0) {
-      add('behind_metric', 75, claim(`You trail your rival on ${w.metricLabel.toLowerCase()} (${w.playerValue.toLocaleString()} vs ${w.opponentValue.toLocaleString()}).`, 'fact', 'confirmed', ['win.player', 'win.rival']));
+      add('behind_metric', 75, claim(`You trail your rival on ${w.metricLabel.toLowerCase()} (${w.playerValue.toLocaleString('en-AU')} vs ${w.opponentValue.toLocaleString('en-AU')}).`, 'fact', 'confirmed', ['win.player', 'win.rival']));
     }
     if (w.regionsTarget && w.rivalRegions > w.playerRegions) {
       add('behind_regions', 80, claim(`Your rival controls ${w.rivalRegions} region(s) to your ${w.playerRegions}; ${w.regionsTarget} are needed to win.`, 'fact', 'confirmed', ['win.rivalRegions', 'win.playerRegions', 'win.regionsTarget']));
@@ -107300,7 +107330,7 @@ export function compareGIOptions(world: GIWorld, u: GIQueryUnderstanding, exec: 
     if (o.kind === 'deposit' && region) {
       if (region.controlledByPlayer) {
         const threatened = threat?.threatened?.some((t: any) => t.region.code === region.code);
-        const raise = o.amount && region.rivalCostToControl !== null ? ` (your rival's cost to take it rises from $${region.rivalCostToControl.toLocaleString()} to $${(region.rivalCostToControl + o.amount).toLocaleString()})` : '';
+        const raise = o.amount && region.rivalCostToControl !== null ? ` (your rival's cost to take it rises from $${region.rivalCostToControl.toLocaleString('en-AU')} to $${(region.rivalCostToControl + o.amount).toLocaleString('en-AU')})` : '';
         objectiveEffect = threatened ? `protects ${region.name}, which is currently exposed${raise}` : `adds to your hold on ${region.name}${raise}`;
         score += threatened ? 40 : 15;
       } else {
@@ -107449,7 +107479,7 @@ export interface GILanguageDiagnostics {
 export function buildGILanguageDiagnostics(u: GIQueryUnderstanding, plan: GIQueryPlan): GILanguageDiagnostics | undefined {
   const f = u.frame;
   if (!f) return undefined;
-  const money = (q: GIQuantity) => q.fraction !== undefined ? `${Math.round(q.fraction * 100)}% of cash` : q.value !== null ? (q.unit === '$' ? `$${q.value.toLocaleString()}` : `${q.value} ${q.unit}`) : q.raw;
+  const money = (q: GIQuantity) => q.fraction !== undefined ? `${Math.round(q.fraction * 100)}% of cash` : q.value !== null ? (q.unit === '$' ? `$${q.value.toLocaleString('en-AU')}` : `${q.value} ${q.unit}`) : q.raw;
   return {
     originalQuery: u.originalQuery,
     normalizedQuery: f.normalizedText,
@@ -107460,7 +107490,7 @@ export function buildGILanguageDiagnostics(u: GIQueryUnderstanding, plan: GIQuer
     concepts: f.concepts.map(c => `${c.id} ← “${c.evidence}”`),
     actions: f.actions.map(a => `${a.negated ? 'not ' : ''}${a.family}${a.regionId ? ' ' + a.regionId : ''}${a.resource ? ' ' + a.resource : ''} (step ${a.step + 1})`),
     goals: f.goals.map(g => `${g.kind}${g.regionId ? ' ' + g.regionId : ''}${g.count ? ' ' + g.count : ''}${g.amount ? ' ' + money(g.amount) : ''} · ${g.priority}`),
-    problems: f.problems.map(p => `${p.kind}${p.claimedAmount ? ` (you said $${p.claimedAmount.toLocaleString()} — checked against the game)` : ''}`),
+    problems: f.problems.map(p => `${p.kind}${p.claimedAmount ? ` (you said $${p.claimedAmount.toLocaleString('en-AU')} — checked against the game)` : ''}`),
     threats: f.threats.map(t => `${t.actorId || '?'} → ${t.regionId || '?'}${t.inferredActor ? ' (actor inferred)' : ''} · ${t.urgency}`),
     constraints: [...f.constraints, ...f.preferences].map(c => `${c.subject}${c.target ? ':' + c.target : ''} = ${c.policy}${c.amount ? ` ${money(c.amount)}` : ''}`),
     quantities: f.quantities.map(q => `${q.raw} → ${money(q)} · ${q.role}${q.bound !== 'exact' ? ' ' + q.bound : ''}${q.approx ? ' ~' : ''}${q.additional ? ' +' : ''}`),
@@ -110940,7 +110970,7 @@ function teamOsHash(text: string): string {
   return h.toString(36);
 }
 
-const tosMoney = (n: number) => `$${Math.round(n).toLocaleString()}`;
+const tosMoney = (n: number) => `$${Math.round(n).toLocaleString('en-AU')}`;
 
 /** Threat level per held region from observable information only (fog of war respected). */
 export function assessTeamThreats(inputs: TeamOSInputs): TeamSituationSnapshot['threatenedRegions'] {
@@ -112597,16 +112627,16 @@ export const TeamMissionBoard: React.FC<TeamMissionBoardProps> = ({ view, theme,
         </div>
         <div>
           <div className={label}>Resources</div>
-          <div className="font-bold">${Math.round(ev.resources.freeCash).toLocaleString()} free</div>
-          <div className="text-xs opacity-75">{ev.resources.protectedCash ? `$${Math.round(ev.resources.protectedCash).toLocaleString()} protected • ` : ''}{c.constraints.reserveFloor ? `reserve $${Math.round(c.constraints.reserveFloor).toLocaleString()}` : 'no reserve floor'}</div>
+          <div className="font-bold">${Math.round(ev.resources.freeCash).toLocaleString('en-AU')} free</div>
+          <div className="text-xs opacity-75">{ev.resources.protectedCash ? `$${Math.round(ev.resources.protectedCash).toLocaleString('en-AU')} protected • ` : ''}{c.constraints.reserveFloor ? `reserve $${Math.round(c.constraints.reserveFloor).toLocaleString('en-AU')}` : 'no reserve floor'}</div>
         </div>
         <div>
           <div className={label}>Threat</div>
-          <div className="text-xs">{threat ? `${threat.code}: rival needs $${Math.round(threat.opponentCostToTake).toLocaleString()}${threat.opponentCanAfford === true ? ' (can afford)' : threat.opponentCanAfford === null ? ' (rival cash hidden)' : ''}` : 'No held region under visible threat'}</div>
+          <div className="text-xs">{threat ? `${threat.code}: rival needs $${Math.round(threat.opponentCostToTake).toLocaleString('en-AU')}${threat.opponentCanAfford === true ? ' (can afford)' : threat.opponentCanAfford === null ? ' (rival cash hidden)' : ''}` : 'No held region under visible threat'}</div>
         </div>
         <div>
           <div className={label}>Opportunity</div>
-          <div className="text-xs">{opportunity ? `${opportunity.code} for $${Math.round(opportunity.cost).toLocaleString()}` : 'None affordable now'}</div>
+          <div className="text-xs">{opportunity ? `${opportunity.code} for $${Math.round(opportunity.cost).toLocaleString('en-AU')}` : 'None affordable now'}</div>
         </div>
         <div>
           <div className={label}>Readiness</div>
@@ -112686,15 +112716,15 @@ export const TeamOSInspector: React.FC<TeamOSInspectorProps> = ({ view, theme, e
         {c.objectives.map(o => <div key={o.id}>P{o.priority} / tier {o.tier} — {o.description} [{o.status}{o.pausedReason ? `: ${o.pausedReason}` : ''}] {Math.round(o.progress * 100)}%</div>)}
         <div className={h}>Live status</div>
         <div>Health: {v.evaluation.health.health.replace(/_/g, ' ')} — {v.evaluation.health.reason} • readiness {Math.round(v.evaluation.readiness.overall * 100)}% • confidence {v.evaluation.confidence.label}</div>
-        <div>Threats: {v.evaluation.snapshot.threatenedRegions.map(t => `${t.code} (rival needs $${Math.round(t.opponentCostToTake).toLocaleString()}${t.opponentCanAfford === null ? ', cash hidden' : t.opponentCanAfford ? ', affordable' : ''})`).join('; ') || 'none'} • pressure {v.evaluation.snapshot.rivalPressure}</div>
+        <div>Threats: {v.evaluation.snapshot.threatenedRegions.map(t => `${t.code} (rival needs $${Math.round(t.opponentCostToTake).toLocaleString('en-AU')}${t.opponentCanAfford === null ? ', cash hidden' : t.opponentCanAfford ? ', affordable' : ''})`).join('; ') || 'none'} • pressure {v.evaluation.snapshot.rivalPressure}</div>
         {c.taskGraph.map(t => <div key={t.id}>{t.id}: {t.label} → {t.assignedActorIds.join('+') || '—'} [{t.status}{t.humanStatus ? `, ${t.humanStatus}` : ''}] P{t.priority}{t.dependencies.length ? ` deps ${t.dependencies.join(',')}` : ''}{t.blockers.length ? ` — ${t.blockers.join('; ')}` : ''}</div>)}
         {v.evaluation.graphIssues.length > 0 && <div>Graph issues: {v.evaluation.graphIssues.join('; ')}</div>}
         <div className={h}>Constraints</div>
-        <div>Reserve floor ${Math.round(c.constraints.reserveFloor || 0).toLocaleString()} • spend locks {c.constraints.spendLockedActorIds.join(', ') || 'none'} • protected {c.protectedRegions.join(', ') || 'none'} • deprioritised {c.constraints.deprioritizedRegions.join(', ') || 'none'} • role locks {c.locks.roles.join(', ') || 'none'} • mission lock {String(c.locks.mission)}</div>
+        <div>Reserve floor ${Math.round(c.constraints.reserveFloor || 0).toLocaleString('en-AU')} • spend locks {c.constraints.spendLockedActorIds.join(', ') || 'none'} • protected {c.protectedRegions.join(', ') || 'none'} • deprioritised {c.constraints.deprioritizedRegions.join(', ') || 'none'} • role locks {c.locks.roles.join(', ') || 'none'} • mission lock {String(c.locks.mission)}</div>
         <div className={h}>Resource policy (planning allocations over real balances)</div>
-        <div>Free ${Math.round(r.freeCash).toLocaleString()} • actor cash ${Math.round(r.actorCash).toLocaleString()} • protected ${Math.round(r.protectedCash).toLocaleString()} • Treasury ${Math.round(r.treasuryBalance).toLocaleString()} (reserve ${Math.round(r.treasuryReserve).toLocaleString()}) • shortfall ${Math.round(r.shortfall).toLocaleString()}</div>
-        {r.envelopes.map(e => <div key={e.category}>{e.category}: ${Math.round(e.allocated).toLocaleString()} / ${Math.round(e.target).toLocaleString()}{e.allocated < e.target ? ' (partial)' : ''}{e.hardFloor ? ' (hard floor)' : ''} • priority {e.priority}</div>)}
-        {v.evaluation.fundingIntents.map(f => <div key={f.taskId}>Funding intent: {f.purpose} — needs ${Math.round(f.required).toLocaleString()}, {f.actorId} can safely fund ${Math.round(f.actorSafe).toLocaleString()}, gap ${Math.round(f.gap).toLocaleString()} → {f.treasuryCanCover ? 'suggested Treasury request' : 'Treasury cannot cover yet'}{f.governorReason ? ` (Governor: ${f.governorReason})` : ''}</div>)}
+        <div>Free ${Math.round(r.freeCash).toLocaleString('en-AU')} • actor cash ${Math.round(r.actorCash).toLocaleString('en-AU')} • protected ${Math.round(r.protectedCash).toLocaleString('en-AU')} • Treasury ${Math.round(r.treasuryBalance).toLocaleString('en-AU')} (reserve ${Math.round(r.treasuryReserve).toLocaleString('en-AU')}) • shortfall ${Math.round(r.shortfall).toLocaleString('en-AU')}</div>
+        {r.envelopes.map(e => <div key={e.category}>{e.category}: ${Math.round(e.allocated).toLocaleString('en-AU')} / ${Math.round(e.target).toLocaleString('en-AU')}{e.allocated < e.target ? ' (partial)' : ''}{e.hardFloor ? ' (hard floor)' : ''} • priority {e.priority}</div>)}
+        {v.evaluation.fundingIntents.map(f => <div key={f.taskId}>Funding intent: {f.purpose} — needs ${Math.round(f.required).toLocaleString('en-AU')}, {f.actorId} can safely fund ${Math.round(f.actorSafe).toLocaleString('en-AU')}, gap ${Math.round(f.gap).toLocaleString('en-AU')} → {f.treasuryCanCover ? 'suggested Treasury request' : 'Treasury cannot cover yet'}{f.governorReason ? ` (Governor: ${f.governorReason})` : ''}</div>)}
         <div className={h}>Conflicts</div>
         {v.state.conflicts.length ? v.state.conflicts.map(x => <div key={x.id}>{x.type.replace(/_/g, ' ')} [{x.severity}, {x.status}] — {x.selectedResolution || 'unresolved'} ({x.reason}{x.winnerTier ? `; tier ${x.winnerTier} beats tier ${x.loserTier}` : ''})</div>) : <div>None</div>}
         <div className={h}>Contingencies</div>
@@ -113647,7 +113677,7 @@ export function createEmptyGI3StrategyState(): GI3StrategyState {
   return { version: 1, active: null, progress: null, events: [], history: [], recentPlayerActions: [], lastObservedLedgerId: null, notices: [] };
 }
 
-const gi3Money = (n: number) => `$${Math.round(n).toLocaleString()}`;
+const gi3Money = (n: number) => `$${Math.round(n).toLocaleString('en-AU')}`;
 const gi3Hash = (text: string) => { let h = 2166136261; for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h.toString(36); };
 const gi3RegionName = (world: GIWorld, code?: string) => (code ? world.regions[code]?.name || getGILocationName(code) || code : 'the region');
 
@@ -114578,7 +114608,7 @@ export function evaluateNationalPriorityGuardian(context: GuardianEvaluationCont
   const cost = typeof payload.cost === 'number' ? payload.cost : typeof payload.amount === 'number' && !/loan/.test(context.actionType) ? payload.amount : typeof payload.price === 'number' ? payload.price : 0;
   const w = nationalPriorityGuardianWarning(gs.nationalPriorities || null, Number(context.currentCash) || 0, cost);
   if (!w.warn) return [];
-  return [{ id: `risk_national_priority_${context.actorId}_t${context.turn}_${context.actionType}`, category: 'liquidity', severity: 'informational', title: 'National priority is critical', description: w.text, evidence: [`Critical national priority: ${w.priority}`, `Spend $${Math.round(cost).toLocaleString()} of $${Math.round(Number(context.currentCash) || 0).toLocaleString()}`],
+  return [{ id: `risk_national_priority_${context.actorId}_t${context.turn}_${context.actionType}`, category: 'liquidity', severity: 'informational', title: 'National priority is critical', description: w.text, evidence: [`Critical national priority: ${w.priority}`, `Spend $${Math.round(cost).toLocaleString('en-AU')} of $${Math.round(Number(context.currentCash) || 0).toLocaleString('en-AU')}`],
     assumptions: ['Uses the public national-priority state and canonical cash only. Ignoring a national priority is a legitimate strategy.'], probability: 1, estimatedImpact: cost, confidence: 0.8, reversible: true, immediate: false, triggeredSettingKeys: [], systemIds: ['national_priorities'] }];
 }
 
@@ -115073,8 +115103,8 @@ export const GI3StrategicCommandCenter: React.FC<GI3PanelProps & { nameOf?: (id:
         <div className="grid grid-cols-2 gap-3">
           <div>
             <div className={label}>Resources</div>
-            <div className="font-bold">${Math.round(p.resourceStatus.cash).toLocaleString()}<span className="text-xs font-normal opacity-75"> {p.resourceStatus.cashSource === 'team' ? 'team free cash' : 'cash'}</span></div>
-            <div className="text-xs opacity-75">{p.resourceStatus.reserve ? `reserve $${Math.round(p.resourceStatus.reserve).toLocaleString()} • ` : ''}loans {p.resourceStatus.loanPolicy}</div>
+            <div className="font-bold">${Math.round(p.resourceStatus.cash).toLocaleString('en-AU')}<span className="text-xs font-normal opacity-75"> {p.resourceStatus.cashSource === 'team' ? 'team free cash' : 'cash'}</span></div>
+            <div className="text-xs opacity-75">{p.resourceStatus.reserve ? `reserve $${Math.round(p.resourceStatus.reserve).toLocaleString('en-AU')} • ` : ''}loans {p.resourceStatus.loanPolicy}</div>
           </div>
           <div>
             <div className={label}>Progress</div>
@@ -115585,7 +115615,7 @@ export function createEmptyBackgroundAIState(mode: BackgroundAIMode = 'advisor')
 // ---- Small deterministic helpers (no randomness anywhere in this section) ----------------------------
 
 const bgHash = (text: string) => { let h = 2166136261; for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h.toString(36); };
-const bgMoney = (n: number) => `$${Math.round(n).toLocaleString()}`;
+const bgMoney = (n: number) => `$${Math.round(n).toLocaleString('en-AU')}`;
 const bgSevRank: Record<BGSeverity, number> = { low: 1, medium: 2, high: 3, critical: 4 };
 const bgSigRank: Record<BGSignificance, number> = { trivial: 0, minor: 1, meaningful: 2, major: 3, critical: 4 };
 const bgLevelRank: Record<BGInterruptLevel, number> = { silent: 0, indicator: 1, notice: 2, warning: 3, critical: 4 };
@@ -117682,8 +117712,8 @@ export const SETTINGS_INTELLIGENCE_METADATA: SettingsIntelligenceMetadata[] = [
     zone: { base: [1, 3] }, effects: { randomness: 1 }
   },
   {
-    key: 'worldRngMode', domain: 'replay', axis: 'World RNG', playerMeaning: 'Whether world randomness is seeded (replayable).',
-    levels: { deterministic: { rank: 1, label: 'Seeded', meaning: 'Replayable world randomness.' }, random: { rank: 2, label: 'Random', meaning: 'Unseeded — replays can diverge.' } },
+    key: 'worldRngMode', domain: 'replay', axis: 'World RNG', playerMeaning: 'Whether every match starts on a new world seed or replays the configured one (both are seeded).', // V9.9 (SECTION 20AU): wording
+    levels: { deterministic: { rank: 1, label: 'Seeded', meaning: 'Replayable world randomness.' }, random: { rank: 2, label: 'Random', meaning: 'A new seed for every match — a match still replays from its own seed.' } },
     zone: { base: [1, 2] }, effects: { replay_compatibility: -1 }
   },
   {
@@ -118007,7 +118037,7 @@ export function siSpendingProtectionLayers(snap: SISnapshot): Array<{ key: strin
   if (siActive(snap, 'vaultLockPercentage') && Number(siVal(snap, 'vaultLockPercentage')) >= 56) layers.push({ key: 'vaultLockPercentage', label: `Protected Cash ${siVal(snap, 'vaultLockPercentage')}% (${snap.byKey.vaultLockPercentage.interpretation.level})`, strength: Number(siVal(snap, 'vaultLockPercentage')) >= 76 ? 2 : 1 });
   if (gov && siVal(snap, 'economySpendingApprovalStrictness') === 'strict') layers.push({ key: 'economySpendingApprovalStrictness', label: 'Economy Governor: Strict', strength: 1 });
   if (gov && ['high', 'maximum'].includes(String(siVal(snap, 'economyReserveStrength')))) layers.push({ key: 'economyReserveStrength', label: `Reserve strength: ${snap.byKey.economyReserveStrength.interpretation.level}`, strength: siVal(snap, 'economyReserveStrength') === 'maximum' ? 2 : 1 });
-  if (gov && Number(siVal(snap, 'economyCashFloor')) >= 1500) layers.push({ key: 'economyCashFloor', label: `Cash floor $${Number(siVal(snap, 'economyCashFloor')).toLocaleString()}`, strength: 1 });
+  if (gov && Number(siVal(snap, 'economyCashFloor')) >= 1500) layers.push({ key: 'economyCashFloor', label: `Cash floor $${Number(siVal(snap, 'economyCashFloor')).toLocaleString('en-AU')}`, strength: 1 });
   if (gov && Number(siVal(snap, 'economyRecoverySpendingCap')) <= 0.05) layers.push({ key: 'economyRecoverySpendingCap', label: `Recovery spending limit ${Math.round(Number(siVal(snap, 'economyRecoverySpendingCap')) * 100)}%`, strength: 1 });
   if (siActive(snap, 'teamAiReservationStrictness') && ['high', 'strict'].includes(String(siVal(snap, 'teamAiReservationStrictness')))) layers.push({ key: 'teamAiReservationStrictness', label: `Resource reservations: ${snap.byKey.teamAiReservationStrictness.interpretation.level}`, strength: 1 });
   return layers;
@@ -118369,9 +118399,9 @@ export function diagnoseSettingsSymptom(intent: SIIntent, snap: SISnapshot, sett
       const m = evidence.mate;
       if (m) {
         if (m.taskTypes.some(t => t === 'generate_cash' || t === 'preserve_reserve')) gameplay.push(`${m.name}'s current Team OS task is “${m.tasks[m.taskTypes.findIndex(t => t === 'generate_cash' || t === 'preserve_reserve')]}”, which intentionally builds or preserves cash.`);
-        if (m.reserveFloor) gameplay.push(`The active team strategy keeps a $${m.reserveFloor.toLocaleString()} reserve floor.`);
+        if (m.reserveFloor) gameplay.push(`The active team strategy keeps a $${m.reserveFloor.toLocaleString('en-AU')} reserve floor.`);
         if (m.inRecovery) gameplay.push(`${m.name} is in economic recovery, which restricts spending by design.`);
-        if (m.money - m.protectedCash < 500) gameplay.push(`${m.name} only has $${Math.max(0, Math.round(m.money - m.protectedCash)).toLocaleString()} of spendable cash.`);
+        if (m.money - m.protectedCash < 500) gameplay.push(`${m.name} only has $${Math.max(0, Math.round(m.money - m.protectedCash)).toLocaleString('en-AU')} of spendable cash.`);
       }
       break;
     }
@@ -119973,13 +120003,13 @@ export function validateDiplomaticDeal(deal: DiplomaticDeal, world: DiplomacyWor
         const auth = world.authority[t.actorId];
         const avail = payer?.teamId ? world.treasuryAvailable[payer.teamId] : null;
         if (!world.teamMode || avail === null || avail === undefined) err('treasury', 'Team Treasury is not available for this deal.', t.id);
-        else if ((t.amount || 0) > avail) err('treasury_funds', `The Treasury cannot currently fund $${(t.amount || 0).toLocaleString()} (available $${avail.toLocaleString()}).`, t.id, ['Change amount', 'Pay from your own cash', 'Cancel']);
+        else if ((t.amount || 0) > avail) err('treasury_funds', `The Treasury cannot currently fund $${(t.amount || 0).toLocaleString('en-AU')} (available $${avail.toLocaleString('en-AU')}).`, t.id, ['Change amount', 'Pay from your own cash', 'Cancel']);
         if (auth && !auth.canCommitTreasury) err('treasury_authority', auth.reason || 'You cannot commit Treasury funds.', t.id);
         else if (auth?.requiresApproval) warn('governance', `Treasury payment needs ${auth.route} approval before it can be sent.`, t.id);
       } else if (payer && payer.money !== null && t.timing === 'on_acceptance' && (t.amount || 0) > payer.money && payer.id === world.viewerId) {
-        err('insufficient_funds', `You cannot currently fund the proposed upfront payment ($${(t.amount || 0).toLocaleString()} needed, $${payer.money.toLocaleString()} available).`, t.id, ['Change amount', 'Conditional payment', 'Cancel']);
+        err('insufficient_funds', `You cannot currently fund the proposed upfront payment ($${(t.amount || 0).toLocaleString('en-AU')} needed, $${payer.money.toLocaleString('en-AU')} available).`, t.id, ['Change amount', 'Conditional payment', 'Cancel']);
       } else if (payer && payer.money !== null && (t.amount || 0) > payer.money && payer.id === world.viewerId) {
-        warn('future_funds', `You don't have $${(t.amount || 0).toLocaleString()} yet — the payment must be affordable when due.`, t.id);
+        warn('future_funds', `You don't have $${(t.amount || 0).toLocaleString('en-AU')} yet — the payment must be affordable when due.`, t.id);
       }
     }
     if (t.kind === 'transfer_resource') {
@@ -120301,13 +120331,13 @@ function dnValueTerm(term: DiplomaticTerm, deal: DiplomaticDeal, E: string, C: s
       const amt = term.amount || 0;
       if (owedByMe) {
         const pain = me?.money ? 1 + Math.max(0, amt / Math.max(1, me.money) - 0.3) : 1;
-        return mk(`give_cash_${term.id}`, `Pays $${amt.toLocaleString()}`, -amt * pain * Math.max(0.8, P.greed), `paying $${amt.toLocaleString()}`);
+        return mk(`give_cash_${term.id}`, `Pays $${amt.toLocaleString('en-AU')}`, -amt * pain * Math.max(0.8, P.greed), `paying $${amt.toLocaleString('en-AU')}`);
       }
       const upfront = term.timing === 'on_acceptance';
       const perTurn = term.timing === 'per_turn' ? turns : 1;
       const certainty = upfront ? 1 : (1 - betrayal) * 0.95;
       const v = amt * perTurn * P.greed * dnCashNeed(me) * certainty;
-      return mk(`cash_${term.id}`, `Receives $${(amt * perTurn).toLocaleString()}${upfront ? ' upfront' : ' later'}`, v, `$${(amt * perTurn).toLocaleString()}${upfront ? '' : ' (paid later)'}`, 'public');
+      return mk(`cash_${term.id}`, `Receives $${(amt * perTurn).toLocaleString('en-AU')}${upfront ? ' upfront' : ' later'}`, v, `$${(amt * perTurn).toLocaleString('en-AU')}${upfront ? '' : ' (paid later)'}`, 'public');
     }
     case 'transfer_resource': {
       const qty = term.quantity || 0; const price = world.prices?.[term.resourceId || ''] || 200;
@@ -120468,7 +120498,7 @@ function dnApplyOp(src: DiplomaticDeal, op: DNCounterOp, E: string, C: string, w
       if (payer && payer.money !== null && t.timing === 'on_acceptance' && next > payer.money) return null;
       const pct = (next - t.amount) / t.amount;
       const prev = t.amount; t.amount = next; t.id = makeDiplomaticTerm({ ...t, id: undefined }).id;
-      return { deal: d, size: DN_OP_SIZE[op] * Math.max(0.3, pct * 2), text: `$${next.toLocaleString()} instead of $${prev.toLocaleString()}` };
+      return { deal: d, size: DN_OP_SIZE[op] * Math.max(0.3, pct * 2), text: `$${next.toLocaleString('en-AU')} instead of $${prev.toLocaleString('en-AU')}` };
     }
     case 'add_payment': {
       if (d.terms.some(x => x.actorId === C && x.kind === 'pay_cash') || shortfall <= 0 || P.greed < 0.75) return null;
@@ -120476,7 +120506,7 @@ function dnApplyOp(src: DiplomaticDeal, op: DNCounterOp, E: string, C: string, w
       const payer = world.actors[C];
       if (payer && payer.money !== null && amt > payer.money) return null;
       d.terms.push(makeDiplomaticTerm({ actorId: C, kind: 'pay_cash', targetActorId: E, amount: amt, timing: 'on_acceptance', startTurn: d.startTurn, endTurn: d.expirationTurn }));
-      return { deal: d, size: DN_OP_SIZE[op], text: `a $${amt.toLocaleString()} payment` };
+      return { deal: d, size: DN_OP_SIZE[op], text: `a $${amt.toLocaleString('en-AU')} payment` };
     }
     case 'reduce_duration': {
       const turns = dealDurationTurns(d, world.turn, world.turnsLeft);
@@ -120830,7 +120860,7 @@ export function validateDiplomaticObligation(ob: DNObligation, payer: { money: n
   if (!payer) return { ok: false, reason: 'Payer not found.' };
   if (ob.kind === 'pay_cash') {
     if (ob.source === 'treasury') return treasuryAvailable !== null && treasuryAvailable >= ob.amount ? { ok: true, reason: null } : { ok: false, reason: 'The Treasury cannot cover this payment.' };
-    return payer.money >= ob.amount ? { ok: true, reason: null } : { ok: false, reason: `Needs $${ob.amount.toLocaleString()} but only $${Math.max(0, Math.floor(payer.money)).toLocaleString()} is available.` };
+    return payer.money >= ob.amount ? { ok: true, reason: null } : { ok: false, reason: `Needs $${ob.amount.toLocaleString('en-AU')} but only $${Math.max(0, Math.floor(payer.money)).toLocaleString('en-AU')} is available.` };
   }
   const have = payer.inventory?.[ob.resourceId || ''] || 0;
   return have >= ob.quantity ? { ok: true, reason: null } : { ok: false, reason: `Needs ${ob.quantity} ${ob.resourceId} (has ${have}).` };
@@ -120884,7 +120914,7 @@ export function confirmDealActivation(state: DiplomacyState, dealId: string, res
     if (old) { next = { ...next, ...dnReplaceDeal(next, dnClose(old, 'superseded', turn, `superseded by an amended agreement`, old.compliance)) }; }
   }
   events.push(dnEvent(state, { turn, kind: 'activated', dealId, actorId: null, counterpartId: null, summary: `Agreement active: ${describeDealShort(active, names)}`, snapshot: active }));
-  results.filter(r => r.success).forEach(r => { const t = deal.terms.find(x => x.id === r.termId); if (t) events.push(dnEvent(state, { turn, kind: 'payment', dealId, actorId: t.actorId, counterpartId: t.targetActorId, summary: `${names[t.actorId] || t.actorId} paid ${t.kind === 'pay_cash' ? `$${(t.amount || 0).toLocaleString()}` : `${t.quantity} ${t.resourceId}`} under the agreement.` })); });
+  results.filter(r => r.success).forEach(r => { const t = deal.terms.find(x => x.id === r.termId); if (t) events.push(dnEvent(state, { turn, kind: 'payment', dealId, actorId: t.actorId, counterpartId: t.targetActorId, summary: `${names[t.actorId] || t.actorId} paid ${t.kind === 'pay_cash' ? `$${(t.amount || 0).toLocaleString('en-AU')}` : `${t.quantity} ${t.resourceId}`} under the agreement.` })); });
   return { state: dnPush({ ...next, events }, {}), activated: true, consequences: [] };
 }
 
@@ -121102,7 +121132,7 @@ export function advanceDiplomacyTurn(state: DiplomacyState, input: DNTurnInput, 
       const cond = term.condition;
       const cash = input.cash[ob.payerId];
       if (cond?.kind === 'cash_below' && cond.effect === 'defer_payment' && cash !== null && cash !== undefined && cash < (cond.amount || 0) && !updated.history.some(h => h.kind === `deferred_${term.id}`)) {
-        updated = { ...updated, history: [...updated.history, { turn: input.turn, kind: `deferred_${term.id}`, actorId: ob.payerId, text: `Payment deferred one turn (${nm(ob.payerId)} is below $${(cond.amount || 0).toLocaleString()}).` }].slice(-12) };
+        updated = { ...updated, history: [...updated.history, { turn: input.turn, kind: `deferred_${term.id}`, actorId: ob.payerId, text: `Payment deferred one turn (${nm(ob.payerId)} is below $${(cond.amount || 0).toLocaleString('en-AU')}).` }].slice(-12) };
         return;
       }
       obligations.push(ob);
@@ -121132,11 +121162,11 @@ export function recordObligationResult(state: DiplomacyState, ob: DNObligation, 
   if (!deal) return { state, consequence: null };
   if (success) {
     const term = deal.terms.find(t => t.id === ob.termId);
-    const updated: DiplomaticDeal = { ...deal, terms: deal.terms.map(t => t.id === ob.termId && t.timing !== 'per_turn' ? { ...t, status: 'satisfied' as const } : t), history: [...deal.history, { turn, kind: `paid_${ob.termId}_${turn}`, actorId: ob.payerId, text: `${names[ob.payerId] || ob.payerId} paid ${ob.kind === 'pay_cash' ? `$${ob.amount.toLocaleString()}` : `${ob.quantity} ${ob.resourceId}`}.` }].slice(-12) };
-    const events = [...state.events, dnEvent(state, { turn, kind: 'payment', dealId: deal.id, actorId: ob.payerId, counterpartId: ob.payeeId, summary: `${names[ob.payerId] || ob.payerId} made a promised ${term?.kind === 'pay_cash' ? `$${ob.amount.toLocaleString()} payment` : 'transfer'}.` })];
+    const updated: DiplomaticDeal = { ...deal, terms: deal.terms.map(t => t.id === ob.termId && t.timing !== 'per_turn' ? { ...t, status: 'satisfied' as const } : t), history: [...deal.history, { turn, kind: `paid_${ob.termId}_${turn}`, actorId: ob.payerId, text: `${names[ob.payerId] || ob.payerId} paid ${ob.kind === 'pay_cash' ? `$${ob.amount.toLocaleString('en-AU')}` : `${ob.quantity} ${ob.resourceId}`}.` }].slice(-12) };
+    const events = [...state.events, dnEvent(state, { turn, kind: 'payment', dealId: deal.id, actorId: ob.payerId, counterpartId: ob.payeeId, summary: `${names[ob.payerId] || ob.payerId} made a promised ${term?.kind === 'pay_cash' ? `$${ob.amount.toLocaleString('en-AU')} payment` : 'transfer'}.` })];
     return { state: dnPush({ ...state, ...dnReplaceDeal(state, updated), events }, {}), consequence: null };
   }
-  return applyDiplomaticViolation(state, deal.id, ob.payerId, reason || 'a promised payment was not made', turn, names, `a promised ${ob.kind === 'pay_cash' ? `$${ob.amount.toLocaleString()} payment` : 'transfer'} was not made${reason ? ` (${reason})` : ''}`);
+  return applyDiplomaticViolation(state, deal.id, ob.payerId, reason || 'a promised payment was not made', turn, names, `a promised ${ob.kind === 'pay_cash' ? `$${ob.amount.toLocaleString('en-AU')} payment` : 'transfer'} was not made${reason ? ` (${reason})` : ''}`);
 }
 
 export function endMatchDiplomacy(state: DiplomacyState, turn: number, names: Record<string, string> = {}): DiplomacyState {
@@ -121232,9 +121262,9 @@ export function deriveDiplomaticObservations(state: DiplomacyState | null | unde
     const left = d.expirationTurn !== null ? d.expirationTurn - turn : null;
     if (left !== null && left <= 2 && left >= 0) out.push({ id: `exp_${d.id}`, kind: 'expiring', dealId: d.id, counterpartId: cp, text: `Your ${describeDealShort(d, names)} expires in ${left + 1} turn${left === 0 ? '' : 's'}. This may be a good window to finish your current phase before pressure returns — or consider extending it.` });
     d.terms.filter(t => t.actorId === playerId && t.kind === 'pay_cash' && t.status !== 'satisfied' && (t.timing === 'next_turn' || t.timing === 'per_turn')).forEach(t => {
-      out.push({ id: `pay_${d.id}_${t.id}`, kind: 'payment_due', dealId: d.id, counterpartId: cp, text: `Your $${(t.amount || 0).toLocaleString()} diplomatic payment to ${names[cp] || cp} is due ${t.timing === 'per_turn' ? 'every turn' : 'next turn'}.` });
+      out.push({ id: `pay_${d.id}_${t.id}`, kind: 'payment_due', dealId: d.id, counterpartId: cp, text: `Your $${(t.amount || 0).toLocaleString('en-AU')} diplomatic payment to ${names[cp] || cp} is due ${t.timing === 'per_turn' ? 'every turn' : 'next turn'}.` });
       const cash = world.actors[playerId]?.money;
-      if (cash !== null && cash !== undefined && cash < (t.amount || 0)) out.push({ id: `risk_${d.id}_${t.id}`, kind: 'violation_risk', dealId: d.id, counterpartId: cp, text: `You have $${cash.toLocaleString()} — not enough for the $${(t.amount || 0).toLocaleString()} payment. Missing it would break the agreement; renegotiating first avoids that.` });
+      if (cash !== null && cash !== undefined && cash < (t.amount || 0)) out.push({ id: `risk_${d.id}_${t.id}`, kind: 'violation_risk', dealId: d.id, counterpartId: cp, text: `You have $${cash.toLocaleString('en-AU')} — not enough for the $${(t.amount || 0).toLocaleString('en-AU')} payment. Missing it would break the agreement; renegotiating first avoids that.` });
     });
   });
   const incoming = state.deals.find(d => d.status === 'under_review' && d.recipientActorIds.includes(playerId));
@@ -121283,7 +121313,7 @@ export function describeDiplomaticTerm(t: DiplomaticTerm, names: Record<string, 
   const who = perspectiveId && t.actorId === perspectiveId ? '' : '';
   const tgt = t.targetActorId ? names[t.targetActorId] || t.targetActorId : 'them';
   switch (t.kind) {
-    case 'pay_cash': return `${who}Pay $${(t.amount || 0).toLocaleString()}${t.source === 'treasury' ? ' from the Team Treasury' : ''} ${t.timing === 'on_acceptance' ? 'upon acceptance' : t.timing === 'next_turn' ? 'next turn' : t.timing === 'per_turn' ? 'every turn' : 'when the agreement completes'}${t.condition?.kind === 'cash_below' ? ` (deferred once if cash is below $${(t.condition.amount || 0).toLocaleString()})` : ''}`;
+    case 'pay_cash': return `${who}Pay $${(t.amount || 0).toLocaleString('en-AU')}${t.source === 'treasury' ? ' from the Team Treasury' : ''} ${t.timing === 'on_acceptance' ? 'upon acceptance' : t.timing === 'next_turn' ? 'next turn' : t.timing === 'per_turn' ? 'every turn' : 'when the agreement completes'}${t.condition?.kind === 'cash_below' ? ` (deferred once if cash is below $${(t.condition.amount || 0).toLocaleString('en-AU')})` : ''}`;
     case 'transfer_resource': return `Give ${t.quantity} ${t.resourceId} ${t.timing === 'on_acceptance' ? 'upon acceptance' : t.timing === 'next_turn' ? 'next turn' : 'later'}`;
     case 'avoid_region': return `Stay out of ${DN_REGION_NAME(t.regionId)} (no deposits or investments${t.scope === 'presence' ? ', no travel there' : '; travel allowed'})`;
     case 'do_not_challenge_region': return `Do not challenge ${DN_REGION_NAME(t.regionId)}${t.condition?.kind === 'region_attacked' ? ` (only if ${t.condition.regionId} is attacked by someone else)` : ''}`;
@@ -121311,7 +121341,7 @@ export function describeDealShort(deal: DiplomaticDeal, names: Record<string, st
   const regions = Array.from(new Set(deal.terms.map(t => t.regionId).filter(Boolean)));
   const cash = deal.terms.filter(t => t.kind === 'pay_cash').reduce((s, t) => s + (t.amount || 0), 0);
   const label = deal.type === 'non_aggression' ? 'non-aggression pact' : deal.type === 'cash_for_withdrawal' ? 'cash-for-withdrawal deal' : deal.type === 'regional_ceasefire' ? 'ceasefire' : deal.type === 'resource_trade' ? 'resource trade' : deal.type === 'mutual_support' ? 'no-sabotage pact' : deal.type === 'temporary_alliance' ? 'temporary alliance' : 'agreement';
-  return `${regions.length ? `${regions.join('–')} ` : ''}${label}${cash ? ` ($${cash.toLocaleString()})` : ''} with ${deal.participants.filter(p => p !== 'player').map(p => names[p] || p).join(', ') || names[deal.participants[1]] || 'them'}`;
+  return `${regions.length ? `${regions.join('–')} ` : ''}${label}${cash ? ` ($${cash.toLocaleString('en-AU')})` : ''} with ${deal.participants.filter(p => p !== 'player').map(p => names[p] || p).join(', ') || names[deal.participants[1]] || 'them'}`;
 }
 
 // ---- AI Memory write-through (the one relationship store) ---------------------------------------
@@ -121451,7 +121481,7 @@ export function compileDiplomaticProposalFromText(query: string, gw: GIWorld, vi
       if (gain && /\b(ends?|over|terminat\w*|off|cancel\w*|void)\b/.test(lower)) { conditions.push({ kind: 'region_control_gained', actorId: /\b(i|we)\b/.test(text) ? playerId : cp, regionId: regions[0], effect: 'terminate', text: `ends if ${/\b(i|we)\b/.test(text) ? 'you gain' : `${nm(cp)} gains`} ${regions[0]}` }); res.understood.push(`Ends automatically if ${regions[0]} is gained.`); return; }
       if (/sabotag/.test(text) && /\b(either|anyone|any of us|one of us|either side|either of us|someone)\b/.test(text)) { conditions.push({ kind: 'any_sabotage', effect: 'terminate', text: 'ends if either side sabotages the other' }); res.understood.push('Ends automatically if either side sabotages the other.'); return; }
       const below = /\b(fall|drop|go|am|get)s? (below|under) \$?\s*([\d.,]+\s*k?)/.exec(text);
-      if (below && /\b(delay|defer|postpone|skip|push back)\b/.test(lower)) { const amt = dnParseMoney(below[3]) || 0; conditions.push({ kind: 'cash_below', actorId: playerId, amount: amt, effect: 'defer_payment', text: `payment deferred once if your cash is below $${amt.toLocaleString()}` }); res.understood.push(`Payment deferred once if your cash is below $${amt.toLocaleString()}.`); return; }
+      if (below && /\b(delay|defer|postpone|skip|push back)\b/.test(lower)) { const amt = dnParseMoney(below[3]) || 0; conditions.push({ kind: 'cash_below', actorId: playerId, amount: amt, effect: 'defer_payment', text: `payment deferred once if your cash is below $${amt.toLocaleString('en-AU')}` }); res.understood.push(`Payment deferred once if your cash is below $${amt.toLocaleString('en-AU')}.`); return; }
       if (/\b(another|a third|someone else|anyone else|other|third)\b.*\b(attack|contest|challeng)\w*/.test(text) && regions.length) { conditions.push({ kind: 'region_attacked', regionId: regions[0], actorId: null, effect: 'activate', text: `activates if a third party attacks ${regions[0]}` }); res.understood.push(`Activates if a third party attacks ${regions[0]}.`); return; }
     }
     if (/\bchanges (control|hands)\b/.test(text) && /\b(ends?|over|until)\b/.test(lower) && regions.length) return;
@@ -121476,7 +121506,7 @@ export function compileDiplomaticProposalFromText(query: string, gw: GIWorld, vi
     const money = dnMoneyIn(text);
     if (DN_PAY.test(text) && money.length) {
       const payer = /\b(give|pay|send|offer) me\b|\bpays? (me|us)\b/.test(text) || subj === 'counterpart' ? cp : playerId;
-      add(makeDiplomaticTerm({ actorId: payer, kind: 'pay_cash', targetActorId: payer === playerId ? cp : playerId, amount: money[0], timing, source: payer === playerId && treasury ? 'treasury' : 'self', sourceText: text }), `${payer === playerId ? 'You pay' : `${nm(cp)} pays`} $${money[0].toLocaleString()}${payer === playerId && treasury ? ' from the Team Treasury' : ''}.`);
+      add(makeDiplomaticTerm({ actorId: payer, kind: 'pay_cash', targetActorId: payer === playerId ? cp : playerId, amount: money[0], timing, source: payer === playerId && treasury ? 'treasury' : 'self', sourceText: text }), `${payer === playerId ? 'You pay' : `${nm(cp)} pays`} $${money[0].toLocaleString('en-AU')}${payer === playerId && treasury ? ' from the Team Treasury' : ''}.`);
       if (!regions.length) return;
     }
     const res2 = c.tokens.filter(t => t.entity?.kind === 'resource');
@@ -121524,8 +121554,8 @@ export function modifyDiplomaticDraft(draft: DiplomaticDeal, text: string, view:
   const money = dnMoneyIn(lower);
   if (money.length) {
     const t = d.terms.find(x => x.kind === 'pay_cash' && x.actorId === playerId) || d.terms.find(x => x.kind === 'pay_cash');
-    if (t) { const prev = t.amount; t.amount = money[0]; t.id = makeDiplomaticTerm({ ...t, id: undefined }).id; changed.push(`payment $${(prev || 0).toLocaleString()} → $${money[0].toLocaleString()}`); }
-    else { d.terms.push(makeDiplomaticTerm({ actorId: playerId, kind: 'pay_cash', targetActorId: cp, amount: money[0], timing: 'on_acceptance' })); changed.push(`added a $${money[0].toLocaleString()} payment`); }
+    if (t) { const prev = t.amount; t.amount = money[0]; t.id = makeDiplomaticTerm({ ...t, id: undefined }).id; changed.push(`payment $${(prev || 0).toLocaleString('en-AU')} → $${money[0].toLocaleString('en-AU')}`); }
+    else { d.terms.push(makeDiplomaticTerm({ actorId: playerId, kind: 'pay_cash', targetActorId: cp, amount: money[0], timing: 'on_acceptance' })); changed.push(`added a $${money[0].toLocaleString('en-AU')} payment`); }
   }
   const dur = dnDurationFromText(lower.replace(/\$\s*[\d.,]+\s*k?/g, ''), view.world.turn, view.world.clock);
   if (dur.duration) {
@@ -121607,7 +121637,7 @@ function dnSideToTerm(side: DNBuilderSide, owner: string, other: string): Diplom
 export function buildDiplomaticDealFromBuilder(input: DNBuilderInput, view: DiplomacyWorldView): DiplomaticDeal {
   const p = view.playerId; const c = input.counterpartId;
   const terms = [...input.offer.map(s => dnSideToTerm(s, p, c)), ...input.request.map(s => dnSideToTerm(s, c, p))].filter(Boolean) as DiplomaticTerm[];
-  if (input.paymentDeferIfCashBelow) terms.forEach(t => { if (t.actorId === p && t.kind === 'pay_cash') { t.condition = { kind: 'cash_below', actorId: p, amount: input.paymentDeferIfCashBelow!, effect: 'defer_payment', text: `payment deferred once if your cash is below $${input.paymentDeferIfCashBelow!.toLocaleString()}` }; if (t.timing === 'on_acceptance') t.timing = 'next_turn'; } });
+  if (input.paymentDeferIfCashBelow) terms.forEach(t => { if (t.actorId === p && t.kind === 'pay_cash') { t.condition = { kind: 'cash_below', actorId: p, amount: input.paymentDeferIfCashBelow!, effect: 'defer_payment', text: `payment deferred once if your cash is below $${input.paymentDeferIfCashBelow!.toLocaleString('en-AU')}` }; if (t.timing === 'on_acceptance') t.timing = 'next_turn'; } });
   const deal = createDiplomaticDeal({ initiatorActorId: p, recipientActorIds: [c], terms, duration: input.duration, turn: view.world.turn, terminationConditions: input.terminationConditions || [], seq: view.state.revision });
   deal.status = 'preview'; deal.playerFacingSummary = describeDealShort(deal, view.names);
   return deal;
@@ -121657,9 +121687,9 @@ export function buildDiplomaticImpactPreview(deal: DiplomaticDeal, view: Diploma
   deal.terms.filter(t => t.actorId === cp && t.regionId && (t.kind === 'avoid_region' || t.kind === 'do_not_challenge_region')).forEach(t => impact.push(`${t.regionId} pressure: likely lower${view.world.regions[t.regionId!]?.controllerId === p ? ' (you hold it)' : ''}.`));
   const upfront = deal.terms.filter(t => t.actorId === p && t.kind === 'pay_cash' && t.source === 'self' && t.timing === 'on_acceptance').reduce((s, t) => s + (t.amount || 0), 0);
   const cash = view.world.actors[p]?.money;
-  if (upfront && cash !== null && cash !== undefined) impact.push(`Liquidity: $${cash.toLocaleString()} → $${Math.max(0, cash - upfront).toLocaleString()} if accepted.`);
+  if (upfront && cash !== null && cash !== undefined) impact.push(`Liquidity: $${cash.toLocaleString('en-AU')} → $${Math.max(0, cash - upfront).toLocaleString('en-AU')} if accepted.`);
   const treas = deal.terms.filter(t => t.actorId === p && t.kind === 'pay_cash' && t.source === 'treasury').reduce((s, t) => s + (t.amount || 0), 0);
-  if (treas) impact.push(`Team Treasury: $${treas.toLocaleString()} requested through Governance if accepted.`);
+  if (treas) impact.push(`Team Treasury: $${treas.toLocaleString('en-AU')} requested through Governance if accepted.`);
   const cashGoal = view.gi3?.active?.goals.find(g => /cash|money|liquid/.test(String(g.type)) && g.status !== 'completed' && g.amount);
   if (cashGoal && (upfront || treas)) impact.push(`GI3: “${cashGoal.label}” would temporarily move farther away.`);
   const protectGoal = view.gi3?.active?.goals.find(g => g.regionId && deal.terms.some(t => t.actorId === cp && t.regionId === g.regionId));
@@ -121670,7 +121700,7 @@ export function buildDiplomaticImpactPreview(deal: DiplomaticDeal, view: Diploma
   const validation = validateDiplomaticDeal(deal, view.world, view.state.deals);
   // Guardian: financial safety only (protected reserve / catastrophic immediate payment) — not whether the deal is wise.
   if (upfront && cash !== null && cash !== undefined) {
-    if (view.reserveFloor && cash - upfront < view.reserveFloor) validation.issues.push({ severity: 'warning', code: 'guardian_reserve', message: `Guardian: paying $${upfront.toLocaleString()} upfront would take you below your protected reserve ($${view.reserveFloor.toLocaleString()}).` });
+    if (view.reserveFloor && cash - upfront < view.reserveFloor) validation.issues.push({ severity: 'warning', code: 'guardian_reserve', message: `Guardian: paying $${upfront.toLocaleString('en-AU')} upfront would take you below your protected reserve ($${view.reserveFloor.toLocaleString('en-AU')}).` });
     else if (upfront >= cash * 0.75) validation.issues.push({ severity: 'warning', code: 'guardian_catastrophic', message: `Guardian: this payment uses ${Math.round((upfront / Math.max(1, cash)) * 100)}% of your cash at once.` });
   }
   const outlook = validation.ok ? estimateDiplomaticOutlook(deal, cp, view.world, view.state) : null;
@@ -121684,7 +121714,7 @@ export function compareDiplomaticOptions(deals: DiplomaticDeal[], view: Diplomac
     const pv = buildDiplomaticImpactPreview(d, view);
     const cost = d.terms.filter(t => t.actorId === view.playerId && t.kind === 'pay_cash').reduce((s, t) => s + (t.amount || 0), 0);
     const align = pv.impact.filter(x => x.startsWith('GI3')).join(' ') || 'No direct effect on your strategy.';
-    return { label: `Option ${String.fromCharCode(65 + i)}`, cost: cost ? `$${cost.toLocaleString()}` : 'No cash', duration: describeDealDuration(d), alignment: align, outlook: pv.outlook ? pv.outlook.outlook : 'invalid', constraints: pv.validation.issues.filter(x => x.severity === 'error').map(x => x.message).join(' ') || 'OK' };
+    return { label: `Option ${String.fromCharCode(65 + i)}`, cost: cost ? `$${cost.toLocaleString('en-AU')}` : 'No cash', duration: describeDealDuration(d), alignment: align, outlook: pv.outlook ? pv.outlook.outlook : 'invalid', constraints: pv.validation.issues.filter(x => x.severity === 'error').map(x => x.message).join(' ') || 'OK' };
   });
 }
 
@@ -121986,7 +122016,7 @@ export function buildDiplomaticDialogue(ev: DiplomaticEvaluation, deal: Diplomat
     case 'counter':
     case 'request_guarantee': {
       if (ev.response === 'request_guarantee') lines.push(dnPick(v.guarantee, key));
-      else if (topCost && cashTerm && ev.victoryBlock === false) { const t = dnFirstPerson(topCost.publicText); lines.push(`${t.charAt(0).toUpperCase() + t.slice(1)} — $${(cashTerm.amount || 0).toLocaleString()} isn't enough for that.`); }
+      else if (topCost && cashTerm && ev.victoryBlock === false) { const t = dnFirstPerson(topCost.publicText); lines.push(`${t.charAt(0).toUpperCase() + t.slice(1)} — $${(cashTerm.amount || 0).toLocaleString('en-AU')} isn't enough for that.`); }
       else lines.push(dnPick(v.counter, key));
       if (ev.counter) {
         const c = ev.counter.deal;
@@ -122998,7 +123028,7 @@ export function createEmptyWorldReactionState(): WorldReactionState {
 export interface SWRActionRef { id: string | null; actorId: string; actionType: string; regionId?: string | null; amount?: number | null; summary?: string }
 export interface SWRDetectContext { action?: SWRActionRef | null; ownerToActor?: (ownerKey: string) => string }
 
-const swrMoney = (n: number) => `$${Math.round(Math.abs(n)).toLocaleString()}`;
+const swrMoney = (n: number) => `$${Math.round(Math.abs(n)).toLocaleString('en-AU')}`;
 const swrBump = (s: SWRSignificance, by = 1): SWRSignificance => SWR_SIG_BY_RANK[Math.min(4, SWR_SIG_RANK[s] + by)];
 
 function swrRegionMetrics(r: SWRInputs['regions'][number]) {
@@ -125513,7 +125543,7 @@ export function lrPreviewProject(lr: LivingRegionsState, s: LRInputs, projectId:
   const fakeEvent = { id: `preview_${projectId}`, turn: s.turn, day: 0, sourceSystem: 'preview', sourceEventId: null, actorId: null, teamId: null, kind: 'project_completed', subjectType: 'project', subjectId: projectId, magnitude: 100, significance: 'major', visibility: 'public', observers: [], evidence: [], before: {}, after: {}, delta: {}, strategicMeaning: '', affectedDomains: ['projects'], tags: [], layer: 'world', confidence: 'moderate', claimKind: 'projection', causedByEventId: null, contributingCauses: [], rootEventId: `preview_${projectId}`, reactionDepth: 0, expiresTurn: null, dedupeKey: `preview:${projectId}` } as StrategicWorldEvent;
   const before = lr.regions[p.regionId];
   const after = lrApplyWorldEvent(lr, fakeEvent, sim).state.regions[p.regionId];
-  const immediate = p.remainingCost > 0 ? [`−$${Math.round(p.remainingCost).toLocaleString()} to finish ${p.title}`] : [`${p.title} is already funded`];
+  const immediate = p.remainingCost > 0 ? [`−$${Math.round(p.remainingCost).toLocaleString('en-AU')} to finish ${p.title}`] : [`${p.title} is already funded`];
   const regional: string[] = [];
   (Object.keys(after.infrastructure.capacity) as Array<keyof LRCapacity>).forEach(k => { const d = after.infrastructure.capacity[k] - before.infrastructure.capacity[k]; if (d >= 5) regional.push(`${k[0].toUpperCase()}${k.slice(1)} capacity ↑ (${before.infrastructure.capacity[k]} → ${after.infrastructure.capacity[k]})`); });
   if (after.infrastructure.band !== before.infrastructure.band) regional.push(`Infrastructure ${before.infrastructure.band} → ${after.infrastructure.band}`);
@@ -125766,7 +125796,7 @@ export function composeLivingRegionsAnswer(query: LRQuery, gw: GIWorld): GICompo
         return { r, amount, controls, core, visible: pres.length > 0 };
       }).filter(x => x.visible || x.core).sort((a, b) => Number(b.core) - Number(a.core) || b.amount - a.amount || Number(b.controls) - Number(a.controls) || a.r.regionId.localeCompare(b.r.regionId));
       if (!rows.length) say('none', null, [lrClaimOf(`You can't see any ${name} holdings right now.`, 'fact')]);
-      else say('rank', null, rows.slice(0, 3).map((x, i) => lrClaimOf(`${i + 1}. ${x.r.name}${x.core ? ' — appears to be its core region' : ''}${x.controls ? `; controlled since round ${x.r.core.controlSince}` : ''}${!s.fogOfWar && x.amount ? `; $${x.amount.toLocaleString()} deposited` : ''}.`, x.core ? 'inference' : 'fact')));
+      else say('rank', null, rows.slice(0, 3).map((x, i) => lrClaimOf(`${i + 1}. ${x.r.name}${x.core ? ' — appears to be its core region' : ''}${x.controls ? `; controlled since round ${x.r.core.controlSince}` : ''}${!s.fogOfWar && x.amount ? `; $${x.amount.toLocaleString('en-AU')} deposited` : ''}.`, x.core ? 'inference' : 'fact')));
       if (s.fogOfWar) say('fog', null, [lrClaimOf('Fog of war: exact rival deposits are hidden, so this uses control and regional history only.', 'inference', 'high')]);
       break;
     }
@@ -125842,7 +125872,7 @@ export const LivingRegionCard: React.FC<{ view: LivingRegionsWorldView | null; r
       <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5">{rows.slice(0, compact ? 5 : rows.length).map(([k, v]) => <React.Fragment key={k}><dt className="opacity-70">{k}</dt><dd className="font-semibold">{v}</dd></React.Fragment>)}</dl>
       {!compact && <p className="opacity-90" data-testid="lr-story">{lrStorySummary(reg, view.inputs, view.viewerKeys)}</p>}
       {!compact && presence.length > 0 && (
-        <div data-testid="lr-presence"><span className="opacity-70">Presence: </span>{presence.map(p => `${view.viewerKeys.includes(p.ownerKey) ? 'You' : p.name}${p.controls ? ' (controls)' : ''}${p.amount !== null ? ` $${p.amount.toLocaleString()}` : p.band === 'unknown' ? ' (hidden)' : ' (significant, estimated)'}`).join(' · ')}</div>
+        <div data-testid="lr-presence"><span className="opacity-70">Presence: </span>{presence.map(p => `${view.viewerKeys.includes(p.ownerKey) ? 'You' : p.name}${p.controls ? ' (controls)' : ''}${p.amount !== null ? ` $${p.amount.toLocaleString('en-AU')}` : p.band === 'unknown' ? ' (hidden)' : ' (significant, estimated)'}`).join(' · ')}</div>
       )}
       {!compact && (
         <div className="flex flex-wrap gap-2">
@@ -127456,7 +127486,7 @@ export const RegionStakeholdersPanel: React.FC<{
           <div className="opacity-80">{dilemma.need}.</div>
           {dilemma.options.map(o => (
             <div key={o.id} className="border-t border-slate-700/40 pt-1">
-              <div className="font-semibold">{o.label}{o.cost !== null ? ` — $${Math.round(o.cost).toLocaleString()}` : ''}</div>
+              <div className="font-semibold">{o.label}{o.cost !== null ? ` — $${Math.round(o.cost).toLocaleString('en-AU')}` : ''}</div>
               <div>{o.stances.filter(x => x.stance !== 'neutral').map(x => `${RF_DEF_BY_ID[x.factionId].name}: ${RF_STANCE_LABEL[x.stance]}`).join(' · ') || 'No stakeholder reaction'}</div>
               <div className="opacity-80">Expected: {o.effect.join('; ')}{o.risk.length ? ` · Risk: ${o.risk.join('; ')}` : ''}</div>
               <button type="button" className="underline" onClick={() => onChoose(dilemma, o.id)}>Choose</button>
@@ -127948,7 +127978,7 @@ function v9Similar(a: string, b: string): boolean {
   return hit / Math.min(A.size, B.size) >= 0.6;
 }
 function v9Hash(v: unknown): string { const raw = JSON.stringify(v); let h = 2166136261; for (let i = 0; i < raw.length; i++) { h ^= raw.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
-const v9Money = (n: number) => `$${Math.round(n).toLocaleString()}`;
+const v9Money = (n: number) => `$${Math.round(n).toLocaleString('en-AU')}`;
 const v9Simple = (p: V9Presentation) => p === 'simple' || p === 'guided';
 
 /** Compact signature: only rebuild presentation when one of these changes (never the whole game state). */
@@ -128181,7 +128211,7 @@ const V9MatchHeaderView: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() =>
         <V99FinalDayChip show={h.finalDay === true} />
         <span key={h.turnLabel} className="font-extrabold v94-enter" data-testid="v9-turn-owner">{h.turnLabel}</span>
         <span key={h.controlLabel} className={`v94-pop px-2 py-0.5 rounded-full text-xs font-extrabold ${V9_CONTROL_TONE[h.controlTone]}`} data-testid="v9-control-owner" role="status">{h.controlLabel}</span>
-        {h.apLabel && <FeelValue value={apZero ? <span className="font-bold text-amber-300">⚡ 0 actions left</span> : h.apLabel} valueKey={h.apLabel} delta={apDelta} testId="v94-ap" />}
+        {h.apLabel && <FeelValue value={apZero ? <span className={`font-bold ${theme.warningText || 'text-amber-300'}`}>⚡ 0 actions left</span> : h.apLabel} valueKey={h.apLabel} delta={apDelta} testId="v94-ap" />}
         <FeelValue value={<span className="font-bold">{h.cashLabel}</span>} valueKey={h.cashLabel} delta={cashDelta} testId="v94-cash" />
         <button type="button" className={`underline decoration-dotted ${endgame ? 'font-bold rounded px-1 border border-amber-500/60' : ''}`} onClick={onStanding} title="Match standing" data-testid="v94-win">{endgame ? '⏳ ' : ''}{h.winLabel}</button>
         {h.transitLabel && <span className="text-cyan-300" data-testid="v9-transit">{h.transitLabel}</span>}
@@ -128190,7 +128220,7 @@ const V9MatchHeaderView: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() =>
           <span className="ml-auto flex flex-wrap items-center gap-2">
             {endTurnExtra}
             {/* End-turn context is informative, never a forced block; the game's own End Turn confirmation (with "Don't ask again") still applies. */}
-            {w.length > 0 && <span className="text-xs text-amber-300" role="note" title={w.join('\n')} data-testid="v9-end-turn-context">Before ending: {w[0]}{w.length > 1 ? ` (+${w.length - 1})` : ''}</span>}
+            {w.length > 0 && <span className={`text-xs ${theme.warningText || 'text-amber-300'}`} role="note" title={w.join('\n')} data-testid="v9-end-turn-context">Before ending: {w[0]}{w.length > 1 ? ` (+${w.length - 1})` : ''}</span>}
             <button type="button" className={`${apZero ? `${theme.button} v94-ring px-4 py-1.5 text-sm` : `${theme.buttonSecondary} px-3 py-1 text-xs`} rounded-lg font-bold`} data-testid="v9-header-end-turn" data-emphasis={apZero ? 'primary' : 'secondary'} aria-describedby={w.length ? 'v9-end-turn-context-sr' : undefined} onClick={onEndTurn}>⏭ End Turn{h.finalDay === true ? ' — finish match' : apZero ? ' — no actions left' : ''}</button>
             {w.length > 0 && <span id="v9-end-turn-context-sr" className="sr-only">{w.join('. ')}</span>}
           </span>
@@ -129199,7 +129229,7 @@ export function buildEconomicRoiTable(settings: any = DEFAULT_GAME_SETTINGS): Ec
   [0, 1, 2].forEach(n => rows.push({ mechanic: `Action override #${n + 1}`, cost: `$${calculateActionPointOverrideCost({ netWorth: 5000, money: 5000 }, settings, n)} (at $5K net worth)`, ap: -1, time: 'today', payout: '+1 action', secondary: 'fatigue lowers challenge odds', paybackTurns: null, risk: 'none', conditions: `max ${settings.maxDailyOverrides || OVERRIDE_DAILY_CAP}/day`, verdict: 'Worth it only when the extra action beats its price.' }));
   PRESET_REGIONAL_CONTRACTS.forEach(c => {
     const e = estimateContractEffectiveValue(c, null, null);
-    rows.push({ mechanic: `Contract: ${c.title}`, cost: `needs $${(c.requirements?.requiredMoney || 0).toLocaleString()} on hand; deliverables ≈$${e.deliverableCost.toLocaleString()}`, ap: e.apEstimate, time: `${e.turns} turns once accepted`, payout: `$${e.reward.toLocaleString()}`, secondary: 'standing, regional development', paybackTurns: null, risk: `${Math.round(e.failureRisk * 100)}% est. failure`, conditions: 'contracts setting on; requirements met', verdict: `Effective EV ≈$${e.expectedValue.toLocaleString()}` });
+    rows.push({ mechanic: `Contract: ${c.title}`, cost: `needs $${(c.requirements?.requiredMoney || 0).toLocaleString('en-AU')} on hand; deliverables ≈$${e.deliverableCost.toLocaleString('en-AU')}`, ap: e.apEstimate, time: `${e.turns} turns once accepted`, payout: `$${e.reward.toLocaleString('en-AU')}`, secondary: 'standing, regional development', paybackTurns: null, risk: `${Math.round(e.failureRisk * 100)}% est. failure`, conditions: 'contracts setting on; requirements met', verdict: `Effective EV ≈$${e.expectedValue.toLocaleString('en-AU')}` });
   });
   SABOTAGE_ACTIONS.forEach((s: any) => rows.push({ mechanic: `Sabotage: ${s.name}`, cost: `$${s.cost}`, ap: 1, time: `${s.duration} day(s)`, payout: s.description, secondary: 'denies rival value', paybackTurns: null, risk: 'reveals hostility', conditions: 'sabotage setting on', verdict: 'Situational: worth it only when the rival has value to lose right now.' }));
   return rows;
@@ -129302,7 +129332,7 @@ export function buildDecisionTradeoffLines(i: {
   if (pressure) out.push(`${pressure.text.replace(/ high$/, '')} goes unanswered while you do this.`);
   if (c.costEstimate && c.costEstimate > 0) {
     const after = i.cash - c.costEstimate;
-    out.push(`It spends $${Math.round(c.costEstimate).toLocaleString()}, leaving $${Math.round(after).toLocaleString()}${after < 500 ? ' — little cushion for the next opportunity' : ''}.`);
+    out.push(`It spends $${Math.round(c.costEstimate).toLocaleString('en-AU')}, leaving $${Math.round(after).toLocaleString('en-AU')}${after < 500 ? ' — little cushion for the next opportunity' : ''}.`);
   }
   if (i.daysLeft !== null && i.daysLeft <= 5 && /invest|infrastructure|build/i.test(c.actionType)) out.push(`Only ${i.daysLeft} day(s) remain — a long-payback investment may not return its cost before the match ends.`);
   if (c.risk && /high|moderate/i.test(c.risk)) out.push(`Risk: ${c.risk}.`);
@@ -129338,7 +129368,7 @@ export const StrategicBalanceInspector: React.FC<{ theme: any; winCondition: Bal
             <>
               <div className={label}>Policy simulation (vs balanced baseline, {report.config.seeds} seeds)</div>
               <table className="w-full text-[11px]" data-testid="sbi-policies"><thead><tr className="opacity-70"><th className="text-left">Policy</th><th>Win</th><th>Final</th><th>Rival</th><th>Decided day</th><th>Viable</th><th>Fake</th></tr></thead>
-                <tbody>{report.policies.map(p => <tr key={p.policy}><td>{p.policy}</td><td className="text-center">{Math.round(p.winRate * 100)}%</td><td className="text-center">{p.avgFinal.toLocaleString()}</td><td className="text-center">{p.avgRivalFinal.toLocaleString()}</td><td className="text-center">{p.avgDecidedDay}</td><td className="text-center">{p.avgViable}</td><td className="text-center">{Math.round(p.avgFakeChoice * 100)}%</td></tr>)}</tbody></table>
+                <tbody>{report.policies.map(p => <tr key={p.policy}><td>{p.policy}</td><td className="text-center">{Math.round(p.winRate * 100)}%</td><td className="text-center">{p.avgFinal.toLocaleString('en-AU')}</td><td className="text-center">{p.avgRivalFinal.toLocaleString('en-AU')}</td><td className="text-center">{p.avgDecidedDay}</td><td className="text-center">{p.avgViable}</td><td className="text-center">{Math.round(p.avgFakeChoice * 100)}%</td></tr>)}</tbody></table>
               <div className={label}>Findings</div>
               {report.flags.length ? report.flags.map(f => <div key={f.id} className={f.severity === 'warning' ? 'text-amber-300' : ''}>• {f.text}</div>) : <div>No dominant simple policy and no fake-choice hotspots in this configuration.</div>}
               <div className={label}>Mechanic utilization (balanced + expert)</div>
@@ -129712,7 +129742,7 @@ export interface LearningConceptDefinition {
   lesson: (c: LearningContext) => LearningLesson;
 }
 
-const glMoney = (n: number) => `$${Math.round(n).toLocaleString()}`;
+const glMoney = (n: number) => `$${Math.round(n).toLocaleString('en-AU')}`;
 
 /** Concept registry. Text is short, uses live values, teaches meaning + tradeoffs; the Mechanics Directory holds depth. */
 export const LEARNING_CONCEPTS: LearningConceptDefinition[] = [
@@ -130006,7 +130036,7 @@ export function buildBlockedActionHelp(kind: string, blocker: string, ctx: { cas
   } else if (/\$|cash|afford|money/i.test(text)) {
     conceptId = 'cash_vs_networth';
     const req = nums[0]; const short = req !== undefined ? Math.max(0, req - ctx.cash) : null;
-    need = short !== null ? `$${short.toLocaleString()} more (you have $${Math.round(ctx.cash).toLocaleString()})` : 'more cash';
+    need = short !== null ? `$${short.toLocaleString('en-AU')} more (you have $${Math.round(ctx.cash).toLocaleString('en-AU')})` : 'more cash';
     if (ctx.inventoryCount > 0) how.push('Sell resources');
     how.push('Win a challenge', 'Complete a contract');
     if (ctx.loansPossible) how.push('Take a loan (costs interest daily)');
@@ -130614,8 +130644,8 @@ export function evaluateContentReq(req: ContentReq, ctx: ContentContext, regionI
     case 'faction': { const v = Math.round(ctx.factionInfluence[req.factionId] || 0); const n = (typeof RF_DEF_BY_ID !== 'undefined' && RF_DEF_BY_ID[req.factionId]?.name) || req.factionId; return res(v >= req.min, `${n} influence ${v}`, `${n} influence ${v} < ${req.min}`); }
     case 'faction_conflict': { const hit = ctx.factionConflicts.find(c => ((c.a === req.a && c.b === req.b) || (c.a === req.b && c.b === req.a)) && (!regionId || c.regionId === regionId)); return res(Boolean(hit), `${RF_DEF_BY_ID[req.a]?.name || req.a} and ${RF_DEF_BY_ID[req.b]?.name || req.b} disagree over ${name}`, `no ${req.a} / ${req.b} conflict in ${name}`); }
     case 'diplomacy': return res(ctx.diplomacy.enabled && (req.state === 'pact_expiring' ? ctx.diplomacy.pactExpiring : ctx.diplomacy.tension >= 60), req.state === 'pact_expiring' ? 'a pact is about to expire' : `diplomatic tension ${ctx.diplomacy.tension}`, req.state === 'pact_expiring' ? 'no pact expiring' : 'diplomatic tension is low');
-    case 'liquidity_min': return res(ctx.player.money >= req.amount, `you hold $${Math.round(ctx.player.money).toLocaleString()}`, `cash below $${req.amount.toLocaleString()}`);
-    case 'in_debt': return res(ctx.player.debt > 0, `you carry $${Math.round(ctx.player.debt).toLocaleString()} of debt`, 'no debt');
+    case 'liquidity_min': return res(ctx.player.money >= req.amount, `you hold $${Math.round(ctx.player.money).toLocaleString('en-AU')}`, `cash below $${req.amount.toLocaleString('en-AU')}`);
+    case 'in_debt': return res(ctx.player.debt > 0, `you carry $${Math.round(ctx.player.debt).toLocaleString('en-AU')} of debt`, 'no debt');
     case 'flag': { const v = state?.flags[req.key]; return res(v === req.value, `earlier decision: ${ctLabel(req.key)} = ${String(v)}`, `requires earlier decision ${ctLabel(req.key)}`); }
     case 'no_flag': return res(state?.flags[req.key] === undefined, `no earlier ${ctLabel(req.key)} decision`, `already decided ${ctLabel(req.key)}`);
     case 'campaign_var': { const v = ctx.campaignVars[req.key]; return res(v === req.value, `campaign: ${ctLabel(req.key)} = ${String(v)}`, `campaign variable ${req.key} not ${String(req.value)}`); }
@@ -130855,7 +130885,7 @@ export function instantiateContractTemplate(t: ContractTemplate, regionId: strin
   const title = text.title.replace(/\{region\}/g, REGIONS[regionId]?.name || regionId);
   const description = text.description.replace(/\{region\}/g, REGIONS[regionId]?.name || regionId).replace(/\{item\}/g, item || 'resources').replace(/\{n\}/g, String(target));
   const faction = t.issuingFactionId && RF_DEF_BY_ID[t.issuingFactionId] ? RF_DEF_BY_ID[t.issuingFactionId] : null;
-  const objDesc = t.objective.type === 'invest_capital' ? `Invest $${target.toLocaleString()} in ${REGIONS[regionId]?.name || regionId}`
+  const objDesc = t.objective.type === 'invest_capital' ? `Invest $${target.toLocaleString('en-AU')} in ${REGIONS[regionId]?.name || regionId}`
     : t.objective.type === 'deliver_resource' ? `Deliver ${target} ${item || 'units'} in ${REGIONS[regionId]?.name || regionId}`
       : t.objective.type === 'maintain_presence' ? `Stay in ${REGIONS[regionId]?.name || regionId} for ${target} days`
         : `Have an operating infrastructure project in ${REGIONS[regionId]?.name || regionId}`;
@@ -131247,7 +131277,7 @@ export function resolveContentDilemma(stateIn: MatchContentState, choiceId: stri
   const c = d.choices.find(x => x.id === choiceId);
   if (!c) return { state: stateIn, effects: [], error: 'Unknown choice.', choice: null };
   const cost = c.effects.filter(e => e.k === 'cash').reduce((s, e: any) => s + Math.max(0, -e.amount), 0);
-  if (cost > money) return { state: stateIn, effects: [], error: `Needs $${cost.toLocaleString()} (you have $${Math.round(money).toLocaleString()}).`, choice: c };
+  if (cost > money) return { state: stateIn, effects: [], error: `Needs $${cost.toLocaleString('en-AU')} (you have $${Math.round(money).toLocaleString('en-AU')}).`, choice: c };
   const st: MatchContentState = { ...stateIn, flags: { ...stateIn.flags }, cooldowns: { ...stateIn.cooldowns }, activeDilemma: null, revision: stateIn.revision + 1 };
   c.effects.forEach(e => { if (e.k === 'flag') st.flags[e.key] = e.value; });
   st.flags[`dilemma_${d.templateId}`] = c.id;
@@ -132596,8 +132626,8 @@ export const ContentMomentCard: React.FC<{ theme: any; moment: ContentMoment; mo
               <div key={c.id} className={`rounded-lg border ${theme.border} p-2 flex flex-col`} data-testid={`v93-choice-${c.id}`}>
                 <div className="font-bold">{c.label}</div>
                 <ul className="text-[11px] mt-0.5 flex-1">{c.pros.map(p => <li key={p} className="text-emerald-300">+ {p}</li>)}{c.cons.map(p => <li key={p} className="text-rose-300">− {p}</li>)}</ul>
-                <div className="text-[11px] opacity-80 mt-1">{cost > 0 ? `Cost: $${cost.toLocaleString()}` : 'No cash cost'}</div>
-                <button type="button" disabled={blocked} title={!canAct ? 'Wait for your turn' : cost > money ? `Needs $${cost.toLocaleString()}` : undefined} className={`${theme.buttonSecondary} mt-1 px-2 py-1 rounded text-xs font-bold disabled:opacity-50`} onClick={() => h.onChoose(c.id)}>Choose</button>
+                <div className="text-[11px] opacity-80 mt-1">{cost > 0 ? `Cost: $${cost.toLocaleString('en-AU')}` : 'No cash cost'}</div>
+                <button type="button" disabled={blocked} title={!canAct ? 'Wait for your turn' : cost > money ? `Needs $${cost.toLocaleString('en-AU')}` : undefined} className={`${theme.buttonSecondary} mt-1 px-2 py-1 rounded text-xs font-bold disabled:opacity-50`} onClick={() => h.onChoose(c.id)}>Choose</button>
               </div>
             );
           })}
@@ -132638,7 +132668,7 @@ export const ContentMomentCard: React.FC<{ theme: any; moment: ContentMoment; mo
     <section className={card} aria-label="New contract offer" data-testid="v93-offer">
       <div className="text-[11px] font-bold uppercase tracking-wider opacity-70">New offer · open until day {o.offer.expiresDay}</div>
       <div className="font-bold">📜 {o.title}</div>
-      <div className="text-xs opacity-85">Pays ${o.reward.toLocaleString()} on completion.</div>
+      <div className="text-xs opacity-85">Pays ${o.reward.toLocaleString('en-AU')} on completion.</div>
       <button type="button" className="text-xs underline mt-1" onClick={() => h.onNav('contracts', 'Contracts')}>Review in Contracts</button>
     </section>
   );
@@ -133119,7 +133149,7 @@ export function fmtMoneyCompact(n: number): string {
   if (a >= 1_000_000) return `${s}$${(a / 1_000_000).toFixed(a >= 10_000_000 ? 0 : 1).replace(/\.0$/, '')}M`;
   if (a >= 10_000) return `${s}$${Math.round(a / 1000)}K`;
   if (a >= 1000) return `${s}$${(a / 1000).toFixed(1).replace(/\.0$/, '')}K`;
-  return `${s}$${a.toLocaleString()}`;
+  return `${s}$${a.toLocaleString('en-AU')}`;
 }
 /** Signed delta text with sign always present (never color-only). */
 export function fmtDelta(n: number, unit: 'money' | 'actions' | 'standing' | 'points' = 'money'): string {
@@ -141018,7 +141048,7 @@ export const InfraNetworksIntelPanel: React.FC<{ state: StrategicInfrastructureS
         {INFRA_NETWORK_KINDS.includes(tab as StrategicInfrastructureNetworkKind) && !state.networks.some(n => n.networkKind === tab) && <div className="opacity-70">No {tab} network has formed yet.</div>}
         {tab === 'critical' && (state.criticalPoints.length ? state.criticalPoints.filter(c => c.severity !== 'meaningful').slice(0, 8).map(c => <div key={c.id}>{c.severity === 'critical' ? '⛔' : '⚠'} {c.reason}{c.affectedIndustries.length ? ` Industries: ${c.affectedIndustries.slice(0, 3).join(', ')}.` : ''}</div>) : <div className="opacity-70">No single points of failure.</div>)}
         {tab === 'resilience' && state.networks.map(n => <div key={n.id}>{n.name}: {NATIONAL_RESILIENCE_LABEL[n.resilienceBand]} ({n.resilience}/100) · capacity use {Math.round(n.utilization * 100)}% · redundancy {n.redundancyBand}{n.gatewayProjectIds.length ? ` · gateways ${n.gatewayProjectIds.length}` : ''}</div>)}
-        {tab === 'contributors' && state.networks.filter(n => Object.keys(n.contributors).length).map(n => <div key={n.id}>{n.name}: {Object.entries(n.contributors).sort((a, b) => b[1] - a[1]).map(([a, v]) => `${names[a] || a} $${Math.round(v).toLocaleString()}`).join(' · ')} <span className="opacity-60">(funding provenance — not ownership)</span></div>)}
+        {tab === 'contributors' && state.networks.filter(n => Object.keys(n.contributors).length).map(n => <div key={n.id}>{n.name}: {Object.entries(n.contributors).sort((a, b) => b[1] - a[1]).map(([a, v]) => `${names[a] || a} $${Math.round(v).toLocaleString('en-AU')}`).join(' · ')} <span className="opacity-60">(funding provenance — not ownership)</span></div>)}
       </div>
       <div className="flex flex-wrap gap-2 mt-2 text-xs">{['Where is Australia relying on a single gateway?', 'Which infrastructure is redundant?', 'How can I make the energy network more resilient?'].map(q => <button key={q} type="button" className="underline" onClick={() => onAsk(q)}>{q}</button>)}</div>
     </section>
@@ -141689,7 +141719,7 @@ export function evaluateMegaprojectPrerequisite(p: MegaprojectPrerequisite, worl
       const ok = p.minProjectStatus === 'active' ? v103Functional(pr.status) : v103Started(pr.status);
       return r(ok, `${pr.title}: ${pr.status.replace(/_/g, ' ')}`);
     }
-    case 'capital': { if (!actor) return r(true, 'Checked against the acting team\'s cash'); return r(actor.money >= v103N(p.amount), `Cash $${Math.round(actor.money).toLocaleString()} (needs $${v103N(p.amount).toLocaleString()})`); }
+    case 'capital': { if (!actor) return r(true, 'Checked against the acting team\'s cash'); return r(actor.money >= v103N(p.amount), `Cash $${Math.round(actor.money).toLocaleString('en-AU')} (needs $${v103N(p.amount).toLocaleString('en-AU')})`); }
     case 'faction_support': {
       const s = def ? megaprojectFactionSupport(def, world) : { score: 0, supporters: [], opponents: [] };
       return r(s.score >= v103N(p.minSupport, 0), `Stakeholder support ${s.score >= 0 ? '+' : ''}${s.score}${s.supporters.length ? ` · for: ${s.supporters.join(', ')}` : ''}${s.opponents.length ? ` · against: ${s.opponents.join(', ')}` : ''}`);
@@ -141869,8 +141899,8 @@ export function applyMegaprojectCommand(prev: MegaprojectsPersisted | null, cmd:
     if (!actor.currentRegion || !regs.includes(actor.currentRegion)) { if (!capital) return fail(`Labour must be on site: travel to ${regs.join(' / ')}.`); labor = 0; }
   }
   if (capital <= 0 && labor <= 0) return fail(capLeft <= 0 && laborLeft <= 0 ? 'This stage is fully funded — it completes when its component projects are active.' : 'A contribution must add capital or on-site labour.');
-  if (capital > 0 && capital < Math.min(V103_LIMITS.minContribution, capLeft)) return fail(`Minimum contribution is $${Math.min(V103_LIMITS.minContribution, capLeft).toLocaleString()}.`);
-  if (capital > actor.money) return fail(`Not enough cash ($${Math.round(actor.money).toLocaleString()} available).`);
+  if (capital > 0 && capital < Math.min(V103_LIMITS.minContribution, capLeft)) return fail(`Minimum contribution is $${Math.min(V103_LIMITS.minContribution, capLeft).toLocaleString('en-AU')}.`);
+  if (capital > actor.money) return fail(`Not enough cash ($${Math.round(actor.money).toLocaleString('en-AU')} available).`);
   if (cmd.op === 'commit' && capital <= 0) return fail('Commitment needs a capital contribution.');
   st.progressCapital += capital; st.progressLabor += labor;
   if (st.startedTurn === null) st.startedTurn = turn;
@@ -141881,7 +141911,7 @@ export function applyMegaprojectCommand(prev: MegaprojectsPersisted | null, cmd:
   prog.contributorTotals[actor.id] = { capital: tot.capital + capital, labor: tot.labor + labor, teamId: actor.teamId };
   if (actor.teamId) prog.teamTotals[actor.teamId] = v103N(prog.teamTotals[actor.teamId]) + capital;
   // Contributions are recorded in the program's contribution list (provenance) and the Activity Ledger — never as program history.
-  if (cmd.op === 'commit') { prog.committedTurn = turn; prog.committedBy = actor.id; prog.status = 'committed'; v103PushHistory(state, prog, 'committed', turn, actor.id, `${def.title} committed with $${capital.toLocaleString()}`, st.id); }
+  if (cmd.op === 'commit') { prog.committedTurn = turn; prog.committedBy = actor.id; prog.status = 'committed'; v103PushHistory(state, prog, 'committed', turn, actor.id, `${def.title} committed with $${capital.toLocaleString('en-AU')}`, st.id); }
   bump(prog);
   return { ok: true, reason: null, persisted: state, moneySpent: capital, laborApplied: labor, programId: prog.id };
 }
@@ -142182,11 +142212,11 @@ export function megaprojectAssessment(kind: MegaprojectKind, prog: NationalMegap
     networkImpact: `${netKinds.length ? netKinds.join(' + ') : INFRA_NETWORK_LABEL[def.infraKind]} via ${full.projects.length} canonical component project(s); ${INFRA_NETWORK_LABEL[def.infraKind].toLowerCase()} networks currently reach ${covered}/${def.regionIds.length} program regions.`,
     industryImpact: `${strong.length ? `Supports ${strong.map(x => `${INDUSTRY_LABEL[x.k].toLowerCase()} (${Math.round(x.v)})`).join(', ')}` : 'No strong industry in the program regions yet'}${lowDemand ? ` — ${NATIONAL_NETWORK_LABEL[def.primaryNetwork].toLowerCase()} demand is currently low (surplus), so the immediate value is lower` : cond ? ` — ${NATIONAL_NETWORK_LABEL[def.primaryNetwork].toLowerCase()} is ${NATIONAL_CONDITION_LABEL[cond]}` : ''}.`,
     resilienceImpact: res.length ? `Chosen design: ${res.join(', ')} resilience vs the alternative.` : `Design not chosen yet: ${def.choices.map(c => `${c.title} (${c.options.map(o => `${o.label}: ${o.resilience}`).join(' / ')})`).join('; ')}.`,
-    capitalBurden: `≈$${Math.round(remainingCapital).toLocaleString()} still needed ($${Math.round(full.coordinationCapital).toLocaleString()} program + $${Math.round(full.componentCapital).toLocaleString()} canonical components) — ${Number.isFinite(ratio) ? `${ratio.toFixed(1)}× your cash` : 'you have no cash'}.`,
+    capitalBurden: `≈$${Math.round(remainingCapital).toLocaleString('en-AU')} still needed ($${Math.round(full.coordinationCapital).toLocaleString('en-AU')} program + $${Math.round(full.componentCapital).toLocaleString('en-AU')} canonical components) — ${Number.isFinite(ratio) ? `${ratio.toFixed(1)}× your cash` : 'you have no cash'}.`,
     time: `≈${estimatedTurns} turns of construction/coordination left; ${daysLeft} days remain in this match.`,
     strategyRelevance: myShare > 0 ? `${Math.round(myShare * 100)}% of program regions are part of your position.` : 'None of the program regions are part of your position yet.',
     risks: {
-      liquidity: { band: liqBand, evidence: `Next stage needs $${Math.round(nextNeed).toLocaleString()} vs your $${Math.round(viewer.money).toLocaleString()}.` },
+      liquidity: { band: liqBand, evidence: `Next stage needs $${Math.round(nextNeed).toLocaleString('en-AU')} vs your $${Math.round(viewer.money).toLocaleString('en-AU')}.` },
       completion: { band: compBand, evidence: `≈${estimatedTurns} turns needed vs ${daysLeft} days left.` },
       dependency: { band: depBand, evidence: blocked.length ? `${blocked.map(x => x.title).join(', ')} closed or damaged.` : prog?.stallReason ? prog.stallReason : `${remainingIds.length} component project(s) still to build.` },
       freeRider: { band: frBand, evidence: `Rivals hold ${Math.round(rivalShare * 100)}% of the program regions and benefit whether or not they contribute.` }
@@ -142238,7 +142268,7 @@ export function projectMegaprojectStageFunding(s: MegaprojectsPersisted, program
   const cashBefore = typeof cash === 'number' ? cash : null; const cashAfter = cashBefore === null ? null : cashBefore - capped;
   const networks = Array.from(new Set(st.partialEffects.filter(e => e.network).map(e => `${INFRA_NETWORK_LABEL[e.network!]} (${e.regionIds.join(', ')})`)));
   return { capped, remainingAfter: left - capped, completesFunding, waitingOn, cashBefore, cashAfter, liquidityBefore: cashBefore === null ? null : band(cashBefore), liquidityAfter: cashAfter === null ? null : band(cashAfter), networks,
-    text: `${cashBefore !== null ? `Cash $${Math.round(cashBefore).toLocaleString()} → $${Math.round(cashAfter!).toLocaleString()}. ` : ''}$${capped.toLocaleString()} of $${amount.toLocaleString()} would apply (stage remainder $${left.toLocaleString()} — the rest stays with you). Stage ${p.currentStageIndex + 1} ${Math.round((st.progressCapital / Math.max(1, st.requiredCapital)) * 100)}% → ${completesFunding ? 'funded' : `${Math.round(((st.progressCapital + capped) / Math.max(1, st.requiredCapital)) * 100)}%`}. ${completesFunding ? (waitingOn.length ? `Funding complete, but the stage waits on: ${waitingOn.join(', ')}.` : 'The stage would complete at the next evaluation.') : `Still needed: $${(left - capped).toLocaleString()}${laborLeft ? ` and ${laborLeft} on-site labour` : ''}.`}${networks.length ? ` Likely improves: ${networks.join(', ')} (through the component projects).` : ''}` };
+    text: `${cashBefore !== null ? `Cash $${Math.round(cashBefore).toLocaleString('en-AU')} → $${Math.round(cashAfter!).toLocaleString('en-AU')}. ` : ''}$${capped.toLocaleString('en-AU')} of $${amount.toLocaleString('en-AU')} would apply (stage remainder $${left.toLocaleString('en-AU')} — the rest stays with you). Stage ${p.currentStageIndex + 1} ${Math.round((st.progressCapital / Math.max(1, st.requiredCapital)) * 100)}% → ${completesFunding ? 'funded' : `${Math.round(((st.progressCapital + capped) / Math.max(1, st.requiredCapital)) * 100)}%`}. ${completesFunding ? (waitingOn.length ? `Funding complete, but the stage waits on: ${waitingOn.join(', ')}.` : 'The stage would complete at the next evaluation.') : `Still needed: $${(left - capped).toLocaleString('en-AU')}${laborLeft ? ` and ${laborLeft} on-site labour` : ''}.`}${networks.length ? ` Likely improves: ${networks.join(', ')} (through the component projects).` : ''}` };
 }
 export function projectMegaprojectFullProgram(kind: MegaprojectKind, choices: Record<string, { optionId: string }>, world: MegaprojectWorld, progress?: NationalMegaproject | null): { coordinationCapital: number; componentCapital: number; labor: number; projects: Array<{ id: string; title: string; remaining: number; networks: string[] }>; longHorizon: true; text: string } {
   const def = MEGAPROJECT_DEF_BY_KIND[kind]; const defs = megaprojectStageDefs(def, choices);
@@ -142249,7 +142279,7 @@ export function projectMegaprojectFullProgram(kind: MegaprojectKind, choices: Re
   const projects = ids.map(id => { const pr = world.projects[id]; const prof = pr ? INFRA_NETWORK_PROFILES[pr.projectType as InfrastructureProjectType] : null; return { id, title: pr?.title || id, remaining: pr ? (v103Functional(pr.status) ? 0 : Math.max(0, pr.totalCost - pr.totalInvestedMoney)) : 0, networks: (prof?.contributesTo || []).filter(c => c.role !== 'local_support').map(c => INFRA_NETWORK_LABEL[c.network]) }; });
   const componentCapital = projects.reduce((a, x) => a + x.remaining, 0);
   return { coordinationCapital, componentCapital, labor, projects, longHorizon: true,
-    text: `LONG-HORIZON PROJECTION (uncertain): about $${(coordinationCapital + componentCapital).toLocaleString()} in total — $${coordinationCapital.toLocaleString()} program coordination plus $${componentCapital.toLocaleString()} still owed on ${projects.filter(p => p.remaining > 0).length} canonical component project(s) — and ${labor} on-site labour. Anyone may fund the component projects; benefits reach non-contributors too.` };
+    text: `LONG-HORIZON PROJECTION (uncertain): about $${(coordinationCapital + componentCapital).toLocaleString('en-AU')} in total — $${coordinationCapital.toLocaleString('en-AU')} program coordination plus $${componentCapital.toLocaleString('en-AU')} still owed on ${projects.filter(p => p.remaining > 0).length} canonical component project(s) — and ${labor} on-site labour. Anyone may fund the component projects; benefits reach non-contributors too.` };
 }
 export function compareMegaprojectChoice(kind: MegaprojectKind, choiceId: string, world: MegaprojectWorld, decided: Record<string, { optionId: string }> = {}): Array<{ optionId: string; label: string; tradeoffs: string[]; total: number; resilience: string; projects: string[]; networks: string[]; regions: string[]; costDelta: number; timeDelta: number; factionHooks: string[] }> {
   const def = MEGAPROJECT_DEF_BY_KIND[kind]; const ch = def.choices.find(c => c.id === choiceId); if (!ch) return [];
@@ -142274,7 +142304,7 @@ export function megaprojectPlayLine(s: MegaprojectsPersisted | null, world: Mega
   if (!st) return null;
   const left = Math.max(0, st.requiredCapital - st.progressCapital), lab = Math.max(0, st.requiredLabor - st.progressLabor);
   const waiting = st.requiredProjectIds.filter(id => !v103Functional(world.projects[id]?.status)).map(id => world.projects[id]?.title || id);
-  return { text: head, need: left || lab ? `$${left.toLocaleString()}${lab ? ` + ${lab} labour` : ''}` : waiting.length ? `Waiting on ${waiting[0]}${waiting.length > 1 ? ` +${waiting.length - 1}` : ''}` : 'Ready to complete', next, programId: p.id, tone: 'info' };
+  return { text: head, need: left || lab ? `$${left.toLocaleString('en-AU')}${lab ? ` + ${lab} labour` : ''}` : waiting.length ? `Waiting on ${waiting[0]}${waiting.length > 1 ? ` +${waiting.length - 1}` : ''}` : 'Ready to complete', next, programId: p.id, tone: 'info' };
 }
 /** Current Focus: only when the player explicitly tracks a program (never hijacked by mere existence). */
 export function megaprojectFocus(s: MegaprojectsPersisted | null, world: MegaprojectWorld, actorId: string): { title: string; regionIds: string[]; risk: string | null } | null {
@@ -142592,7 +142622,7 @@ export function runV103NationalMegaprojectSelfTests(): V9SelfTestResult[] {
 // ---- V10.3 National Megaprojects: UI (renders program memory + derived views; every action goes through onCommand) ----
 
 const V103_SEG_STYLE = { completed: { stroke: '#22c55e', dash: undefined, w: 5, label: '✓ built' }, under_construction: { stroke: '#f59e0b', dash: '6 3', w: 4, label: '● building' }, planned: { stroke: '#94a3b8', dash: '2 4', w: 2, label: '○ planned' }, stalled: { stroke: '#ef4444', dash: '4 4', w: 4, label: '⏸ stalled' } } as const;
-const v103Money = (n: number) => `$${Math.round(n).toLocaleString()}`;
+const v103Money = (n: number) => `$${Math.round(n).toLocaleString('en-AU')}`;
 const V103_RISK_CLASS: Record<MegaprojectRiskBand, string> = { LOW: 'text-emerald-300', MODERATE: 'text-amber-300', HIGH: 'text-rose-300' };
 
 /** Map badge for one program: participating region + segment state (icon + text, never colour alone). */
@@ -142845,7 +142875,7 @@ export function composeMegaprojectAnswer(query: MegaprojectQuery, gw: GIWorld): 
   const v = gw.national!.megaprojects!; const w = v.world; const sections: GIAnswerSection[] = [];
   const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | '' | undefined>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
   const C = (t: string, k: LRClaim) => nsClaim(t, k);
-  const $ = (n: number) => `$${Math.round(n).toLocaleString()}`;
+  const $ = (n: number) => `$${Math.round(n).toLocaleString('en-AU')}`;
   const kind = query.kind; let title = 'National megaprojects'; let shape: GIAnswerShape = 'explanation';
   const def = kind ? MEGAPROJECT_DEF_BY_KIND[kind] : null;
   const p = kind ? v.persisted?.programs[megaprojectIdFor(kind)] || null : null;
@@ -142920,7 +142950,7 @@ export function composeMegaprojectAnswer(query: MegaprojectQuery, gw: GIWorld): 
       title = `What if you choose ${opt.label}?`; shape = 'comparison';
       const cmp = compareMegaprojectChoice(def.kind, ch.id, w, p?.choices || {});
       say('f', 'Fact', [C(`${opt.label}: ${opt.description}`, 'fact'), p?.choices[ch.id] ? C(`This decision is already made (${ch.options.find(o => o.id === p.choices[ch.id].optionId)?.label}) and is permanent.`, 'fact') : null]);
-      say('c', 'Calculated', cmp.map(c => C(`${c.label}: ≈$${Math.round(c.total).toLocaleString()} total · regions ${c.regions.join('/')} · ${c.networks.join(', ') || 'no network component'} · resilience ${c.resilience}.`, 'calculated')));
+      say('c', 'Calculated', cmp.map(c => C(`${c.label}: ≈$${Math.round(c.total).toLocaleString('en-AU')} total · regions ${c.regions.join('/')} · ${c.networks.join(', ') || 'no network component'} · resilience ${c.resilience}.`, 'calculated')));
       say('i', 'Inference', [C(opt.tradeoffs.join(' '), 'inference')]);
       say('p', 'Projection', [C('Long-horizon and uncertain: effects arrive only as the canonical component projects become active.', 'projection')]);
       break;
@@ -143309,7 +143339,7 @@ export function computeNationalDevelopment(i: NationalDevelopmentInputs, prevIn:
     addF(vulns, `vul:cp:${c.id}`, 'network', n?.networkKind === 'trade' ? 'Single Export Gateway' : n?.networkKind === 'digital' ? 'Digital Single Point of Failure' : n?.networkKind === 'energy' ? 'Energy Concentration' : `${n ? INFRA_NETWORK_LABEL[n.networkKind] : 'Network'} Single Point of Failure`, 70, [c.subjectId, ...c.affectedRegions].filter(r => REGIONS[r]).slice(0, 4), [v104Ev(`ev:vul:${c.id}`, 'infrastructure_networks', c.id, c.reason.slice(0, 120), 0.7, turn)]); });
   (i.industries?.dependencies || []).filter(d => (d.importance === 'critical' || d.shareBand === 'dominant') && (d.consumerIndustry === 'manufacturing' || d.consumerIndustry === 'technology')).slice(0, 1).forEach(d => addF(vulns, `vul:input:${d.id}`, 'dependency', `${INDUSTRY_LABEL[d.consumerIndustry]} Input Dependence`, 72, [d.consumerRegionId, d.providerRegionId], [v104Ev(`ev:vul:${d.id}`, 'industries', d.id, `${d.consumerRegionId} ${INDUSTRY_LABEL[d.consumerIndustry].toLowerCase()} relies on ${d.providerRegionId} ${SUPPLY_LABEL[d.supply].toLowerCase()} (${d.shareBand})`, d.share, turn)]));
   if (i.national && (i.national.national.water.condition === 'bottlenecked' || i.national.national.water.condition === 'critical') && m.indTop3.agriculture >= 0.35) addF(vulns, 'vul:water', 'water', 'Water Exposure', 65, lead('agriculture'), [v104Ev('ev:vul:water', 'national_systems', 'water', `Water network ${i.national.national.water.condition}`, 0.6, turn)]);
-  if (i.viewer && i.viewer.committedProgramCapital > 0 && i.viewer.cash < i.viewer.committedProgramCapital * 0.5) addF(vulns, 'vul:liquidity', 'capital', 'Overinvestment / Liquidity Pressure', 60, [], [v104Ev('ev:vul:liq', 'megaprojects', 'capital', `$${Math.round(i.viewer.committedProgramCapital).toLocaleString()} committed vs $${Math.round(i.viewer.cash).toLocaleString()} cash`, 0.5, turn)]);
+  if (i.viewer && i.viewer.committedProgramCapital > 0 && i.viewer.cash < i.viewer.committedProgramCapital * 0.5) addF(vulns, 'vul:liquidity', 'capital', 'Overinvestment / Liquidity Pressure', 60, [], [v104Ev('ev:vul:liq', 'megaprojects', 'capital', `$${Math.round(i.viewer.committedProgramCapital).toLocaleString('en-AU')} committed vs $${Math.round(i.viewer.cash).toLocaleString('en-AU')} cash`, 0.5, turn)]);
   // Dependencies (V10.1 + V10.0 critical relationships).
   (i.industries?.dependencies || []).filter(d => d.importance === 'critical' || d.importance === 'high').sort((a, b) => b.share - a.share || a.id.localeCompare(b.id)).slice(0, 4).forEach(d => addF(deps, `dep:${d.id}`, 'supply', `${d.consumerRegionId} ${INDUSTRY_LABEL[d.consumerIndustry]} ← ${d.providerRegionId} ${SUPPLY_LABEL[d.supply]}`, d.importance === 'critical' ? 82 : 62, [d.consumerRegionId, d.providerRegionId], [v104Ev(`ev:dep:${d.id}`, 'industries', d.id, d.reason.slice(0, 120), d.share, turn)]));
   (i.national?.dependencies || []).filter(d => d.importance === 'critical').slice(0, 2).forEach(d => addF(deps, `dep:ns:${d.id}`, 'network', `${d.consumerRegionId} ${NATIONAL_NETWORK_LABEL[d.network]} ← ${d.providerRegionId}`, 70, [d.consumerRegionId, d.providerRegionId], [v104Ev(`ev:dep:ns:${d.id}`, 'national_systems', d.id, `${d.consumerRegionId} relies on ${d.providerRegionId} for ${NATIONAL_NETWORK_LABEL[d.network].toLowerCase()}`, 0.6, turn)]));
@@ -143330,7 +143360,7 @@ export function computeNationalDevelopment(i: NationalDevelopmentInputs, prevIn:
   if (sectorConcentration.band === 'HIGH' && (divNow === 'highly_specialized' || divNow === 'specialized')) tn('ten:spec_div', 'Specialization vs Diversification', `${sectorConcentration.sector ? INDUSTRY_LABEL[sectorConcentration.sector] : 'One sector'} is highly productive, but national industrial diversity is ${divNow === 'highly_specialized' ? 'very low' : 'low'}${divPrev && divPrev !== divNow ? ' and falling' : ''}.`, 'Specialization', 'Diversification', 'meaningful', [v104Ev('ev:ten:div', 'industries', 'diversity', `Industrial diversity: ${String(divNow).replace(/_/g, ' ')}`, 0.5, turn)]);
   const rivalDefining = defining.filter(r => i.owners[r] === 'rival');
   if (defining.length && rivalDefining.length / defining.length >= 0.4) tn('ten:national_competitive', 'National Benefit vs Competitive Benefit', `Your national development model leans on ${rivalDefining.join(', ')} — regions where the rival holds influence.`, 'National benefit', 'Competitive benefit', 'meaningful', [v104Ev('ev:ten:rival', 'canonical', 'control', `${rivalDefining.length} of ${defining.length} defining regions rival-held`, 0.5, turn)]);
-  if (i.viewer && i.viewer.committedProgramCapital >= 10000 && i.viewer.cash < i.viewer.committedProgramCapital) tn('ten:capacity_liquidity', 'Capacity vs Liquidity', 'Megaproject commitments are building long-term capacity but reducing current cash flexibility.', 'Long-term capacity', 'Liquidity', i.viewer.cash < i.viewer.committedProgramCapital * 0.4 ? 'major' : 'meaningful', [v104Ev('ev:ten:liq', 'megaprojects', 'capital', `$${Math.round(i.viewer.committedProgramCapital).toLocaleString()} committed vs $${Math.round(i.viewer.cash).toLocaleString()} cash`, 0.5, turn)]);
+  if (i.viewer && i.viewer.committedProgramCapital >= 10000 && i.viewer.cash < i.viewer.committedProgramCapital) tn('ten:capacity_liquidity', 'Capacity vs Liquidity', 'Megaproject commitments are building long-term capacity but reducing current cash flexibility.', 'Long-term capacity', 'Liquidity', i.viewer.cash < i.viewer.committedProgramCapital * 0.4 ? 'major' : 'meaningful', [v104Ev('ev:ten:liq', 'megaprojects', 'capital', `$${Math.round(i.viewer.committedProgramCapital).toLocaleString('en-AU')} committed vs $${Math.round(i.viewer.cash).toLocaleString('en-AU')} cash`, 0.5, turn)]);
   // Resilience (interprets V10.0 / V10.2).
   const why: string[] = [];
   vulns.filter(v => v.category === 'network').forEach(v => why.push(v.label));
@@ -145577,7 +145607,7 @@ export function systemicLiquidityProfile(i: SystemicRiskInputs, spend = 0): Liqu
   const ratio = free <= 0 ? 0 : free / (free + capitalAtRisk * 0.6 + v.debt + 1);
   let resilience = v106R(v106C(ratio * (free < 5000 ? 0.5 : free < 15000 ? 0.8 : 1)) * 100);
   const band = systemicBand(resilience);
-  const explanation = [`Cash ${cash < 0 ? '−' : ''}$${Math.abs(Math.round(cash)).toLocaleString()}`, v.dailyObligations ? `Daily obligations (debt interest / upkeep from the canonical model) $${Math.round(v.dailyObligations).toLocaleString()}` : 'No canonical recurring obligations', v.debt ? `Outstanding debt $${Math.round(v.debt).toLocaleString()}` : 'No outstanding debt', capitalAtRisk ? `$${Math.round(capitalAtRisk).toLocaleString()} tied up in ${progs.length} unfinished program(s)` : 'No capital tied up in unfinished programs'];
+  const explanation = [`Cash ${cash < 0 ? '−' : ''}$${Math.abs(Math.round(cash)).toLocaleString('en-AU')}`, v.dailyObligations ? `Daily obligations (debt interest / upkeep from the canonical model) $${Math.round(v.dailyObligations).toLocaleString('en-AU')}` : 'No canonical recurring obligations', v.debt ? `Outstanding debt $${Math.round(v.debt).toLocaleString('en-AU')}` : 'No outstanding debt', capitalAtRisk ? `$${Math.round(capitalAtRisk).toLocaleString('en-AU')} tied up in ${progs.length} unfinished program(s)` : 'No capital tied up in unfinished programs'];
   return { cash: Math.round(cash), debt: Math.round(v.debt), dailyObligations: Math.round(v.dailyObligations), freeBuffer: Math.round(free), capitalAtRisk: Math.round(capitalAtRisk), programsAtRisk: progs.map(p => p.id), band, resilience, explanation };
 }
 
@@ -145654,7 +145684,7 @@ export function computeSystemicDomains(i: SystemicRiskInputs, prevScores: Partia
     finish('infrastructure', { exposure: Math.min(100, 20 + cps.length * 12), resilience: 100 * (0.5 * v106C(res) + 0.3 * v106C(1 - damaged.length / 4) + 0.2 * v106C(1 - cps.length / 5)), spareCapacity: 0, redundancy: v106R(v106C(res) * 100), concentration: v106R(v106C(cps.length / 5) * 100),
       topRisks: [...damaged.slice(0, 2).map(p => `${p.title} is damaged`), ...cps.slice(0, 2).map(c => c.reason.slice(0, 90))], buffers: [], evidence: [v106Ev('ev:infra:dmg', 'infrastructure', 'damaged', `${damaged.length} damaged project(s)`, damaged.length, t)] });
   }
-  finish('liquidity', { exposure: v106C(liq.capitalAtRisk / Math.max(1, liq.cash + liq.capitalAtRisk)) * 100, resilience: liq.resilience, spareCapacity: Math.max(0, liq.freeBuffer), redundancy: 0, concentration: v106R(v106C(liq.capitalAtRisk / Math.max(1, liq.cash + liq.capitalAtRisk)) * 100), topRisks: liq.band === 'fragile' || liq.band === 'critical' ? liq.explanation.slice(0, 3) : [], buffers: liq.freeBuffer > 20000 ? [`Free cash buffer $${liq.freeBuffer.toLocaleString()}`] : [], evidence: liq.explanation.map((e, k) => v106Ev(`ev:liq:${k}`, 'economy', 'viewer', e, 0, t)), recoveryCapacity: liq.resilience });
+  finish('liquidity', { exposure: v106C(liq.capitalAtRisk / Math.max(1, liq.cash + liq.capitalAtRisk)) * 100, resilience: liq.resilience, spareCapacity: Math.max(0, liq.freeBuffer), redundancy: 0, concentration: v106R(v106C(liq.capitalAtRisk / Math.max(1, liq.cash + liq.capitalAtRisk)) * 100), topRisks: liq.band === 'fragile' || liq.band === 'critical' ? liq.explanation.slice(0, 3) : [], buffers: liq.freeBuffer > 20000 ? [`Free cash buffer $${liq.freeBuffer.toLocaleString('en-AU')}`] : [], evidence: liq.explanation.map((e, k) => v106Ev(`ev:liq:${k}`, 'economy', 'viewer', e, 0, t)), recoveryCapacity: liq.resilience });
   finish('stability', { exposure: 40, resilience: stab === null ? 55 : stab, spareCapacity: 0, redundancy: 0, concentration: 0, topRisks: stab !== null && stab < 40 ? ['Recovery capacity is constrained by instability (Public Stability owns the value)'] : [], buffers: stab !== null && stab >= 65 ? ['Stable public support'] : [], evidence: [v106Ev('ev:stab', 'public_stability', 'national', `National stability ${stab ?? '—'}`, stabF, t)], recoveryCapacity: 100 * stabF });
   return out;
 }
@@ -145815,7 +145845,7 @@ export function computeSystemicRisk(i: SystemicRiskInputs, prevIn: SystemicRiskP
   dependencies.filter(d => d.alternatives.length).slice(0, 4).forEach(d => allBuffers.push({ id: `bf:alt:${d.id}`, domain: d.domain, sourceId: d.alternatives.join(','), kind: d.sourceSystem === 'industries' ? 'supplier_redundancy' : 'route_redundancy', structural: true, strength: Math.min(60, 20 * d.alternatives.length), available: Math.min(60, 20 * d.alternatives.length), explanation: `${d.alternatives.join('/')} can cover part of ${d.providerId}'s ${d.domain}` }));
   (NATIONAL_NETWORKS as NationalNetworkKind[]).forEach(n => { const s = systems[V106_NET_DOMAIN[n]]; if (s.spareCapacity >= 20) allBuffers.push({ id: `bf:spare:${n}`, domain: V106_NET_DOMAIN[n], sourceId: n, kind: 'spare_capacity', structural: false, strength: s.spareCapacity, available: s.spareCapacity, explanation: `Spare national ${NATIONAL_NETWORK_LABEL[n].toLowerCase()} capacity` }); });
   (['grid_scale_storage', 'advanced_logistics', 'advanced_water_systems'] as EmergingCapabilityId[]).forEach(id => { const sc = v106CapScale(i, id); if (sc > 0) allBuffers.push({ id: `bf:cap:${id}`, domain: id === 'grid_scale_storage' ? 'energy' : id === 'advanced_logistics' ? 'freight' : 'water', sourceId: id, kind: 'capability', structural: true, strength: v106R(20 * sc), available: v106R(20 * sc), explanation: `${CAPABILITY_DEF_BY_ID[id].label} (bounded — never immunity)` }); });
-  if (liquidity.freeBuffer > 20000) allBuffers.push({ id: 'bf:liq', domain: 'liquidity', sourceId: 'cash', kind: 'liquidity_reserve', structural: false, strength: Math.min(100, liquidity.freeBuffer / 1000), available: Math.min(100, liquidity.freeBuffer / 1000), explanation: `Free cash buffer $${liquidity.freeBuffer.toLocaleString()}` });
+  if (liquidity.freeBuffer > 20000) allBuffers.push({ id: 'bf:liq', domain: 'liquidity', sourceId: 'cash', kind: 'liquidity_reserve', structural: false, strength: Math.min(100, liquidity.freeBuffer / 1000), available: Math.min(100, liquidity.freeBuffer / 1000), explanation: `Free cash buffer $${liquidity.freeBuffer.toLocaleString('en-AU')}` });
   const strongestBuffer = [...allBuffers].sort((a, b) => (b.structural ? 1 : 0) - (a.structural ? 1 : 0) || b.strength - a.strength)[0]?.explanation || null;
   const resilienceProfile: NationalResilienceProfile = { domains: Object.fromEntries(SYSTEMIC_DOMAINS.map(d => [d, systems[d].condition])) as any, mostResilient: best, mostFragile: worst, highestExposure: dependencies[0]?.reason || null, criticalSinglePoint: criticalPoints[0] ? `${criticalPoints[0].label} — ${criticalPoints[0].reason}` : null, strongestBuffer, liquidity: liquidity.band,
     summary: `${SYSTEMIC_DOMAIN_LABEL[worst]} is the most fragile system (${SYSTEMIC_BAND_LABEL[systems[worst].condition].toLowerCase()}); ${SYSTEMIC_DOMAIN_LABEL[best]} is the most resilient (${SYSTEMIC_BAND_LABEL[systems[best].condition].toLowerCase()}).` };
@@ -145843,7 +145873,7 @@ export function stressScenarioLabel(i: SystemicRiskInputs, s: StressTestScenario
     case 'network_loss': return `${s.regionId} ${NATIONAL_NETWORK_LABEL[s.network].toLowerCase()} capacity −${Math.round(s.fraction * 100)}%`;
     case 'project_damage': return `Damage ${i.projects.find(p => p.id === s.projectId)?.title || s.projectId}`;
     case 'gateway_loss': return 'Lose the largest export gateway'; case 'largest_supplier': return 'Lose the largest supplier'; case 'digital_backbone': return 'Damage the national digital backbone';
-    case 'drought': return `Major drought (${s.regionIds.join(', ')})`; case 'liquidity_shock': return `Liquidity shock −$${Math.round(s.amount).toLocaleString()}`; case 'megaproject_delay': return `Delay ${MEGAPROJECT_DEF_BY_KIND[(i.megaprojects?.programs[s.programId]?.kind || '') as MegaprojectKind]?.title || s.programId}`;
+    case 'drought': return `Major drought (${s.regionIds.join(', ')})`; case 'liquidity_shock': return `Liquidity shock −$${Math.round(s.amount).toLocaleString('en-AU')}`; case 'megaproject_delay': return `Delay ${MEGAPROJECT_DEF_BY_KIND[(i.megaprojects?.programs[s.programId]?.kind || '') as MegaprojectKind]?.title || s.programId}`;
   }
 }
 /** Resolve composite scenarios to concrete ones using the CURRENT structure (largest supplier / gateway / digital backbone). */
@@ -145974,7 +146004,7 @@ export function systemicLiquidityWarning(i: SystemicRiskInputs, spend: number): 
   const before = systemicLiquidityProfile(i), after = systemicLiquidityProfile(i, spend);
   const drop = SYSTEMIC_BAND_RANK[before.band] - SYSTEMIC_BAND_RANK[after.band];
   const warn = spend > 0 && (after.band === 'fragile' || after.band === 'critical') && (drop >= 1 || after.freeBuffer < 5000);
-  return { warn, severity: after.band === 'critical' ? 'caution' : 'informational', text: `SYSTEMIC RISK: spending $${Math.round(spend).toLocaleString()} would leave liquidity ${SYSTEMIC_BAND_LABEL[after.band].toLowerCase()} (free buffer $${after.freeBuffer.toLocaleString()}${after.capitalAtRisk ? `; $${after.capitalAtRisk.toLocaleString()} already tied up in unfinished programs` : ''}). A major shock could force selling assets, borrowing or pausing programs.`, evidence: after.explanation };
+  return { warn, severity: after.band === 'critical' ? 'caution' : 'informational', text: `SYSTEMIC RISK: spending $${Math.round(spend).toLocaleString('en-AU')} would leave liquidity ${SYSTEMIC_BAND_LABEL[after.band].toLowerCase()} (free buffer $${after.freeBuffer.toLocaleString('en-AU')}${after.capitalAtRisk ? `; $${after.capitalAtRisk.toLocaleString('en-AU')} already tied up in unfinished programs` : ''}). A major shock could force selling assets, borrowing or pausing programs.`, evidence: after.explanation };
 }
 export function systemicPlayLine(s: NationalSystemicRiskState | null): { tone: 'contained' | 'escalated' | 'risk' | 'recovery'; title: string; text: string } | null {
   if (!s) return null;
@@ -146379,7 +146409,7 @@ export function composeSystemicAnswer(query: SystemicQuery, gw: GIWorld): GIComp
     case 'cash_reserves': {
       const l = s.liquidity; title = 'Are you keeping enough cash reserves?'; shape = 'diagnosis';
       say('f', 'Fact', l.explanation.map(e => C(e + '.', 'fact')));
-      say('c', 'Calculated', [C(`Liquidity resilience: ${SYSTEMIC_BAND_LABEL[l.band]} (free buffer $${l.freeBuffer.toLocaleString()}).`, 'calculated')]);
+      say('c', 'Calculated', [C(`Liquidity resilience: ${SYSTEMIC_BAND_LABEL[l.band]} (free buffer $${l.freeBuffer.toLocaleString('en-AU')}).`, 'calculated')]);
       say('i', 'Inference', [C(l.band === 'fragile' || l.band === 'critical' ? 'Thin: a shock could force selling assets, borrowing or pausing programs. That is a legitimate high-growth choice — just a fragile one.' : 'Your buffer can absorb a moderate shock.', 'inference')]);
       break;
     }
@@ -146499,11 +146529,11 @@ export const ResilienceCenter: React.FC<{ view: SystemicRiskWorldView; theme: an
         {tab === 'active cascades' && (s.activeStressChains.length ? s.activeStressChains.map(c => <div key={c.id} className="mb-1" data-testid="sr-chain"><div><b>{c.label}</b> · {c.outcome === 'contained' ? '✓ contained' : c.outcome === 'escalated' ? '⚠ escalated' : 'limited'} · since R{c.startedTurn}</div><SystemicCascadeView nodes={c.nodes} title="" /></div>) : <div className="opacity-70">No active cascade. Shocks come from the Crisis Engine and damaged infrastructure.</div>)}
         {tab === 'recovery' && (s.recovery.length ? s.recovery.map(r => <div key={r.id} className="mb-1" data-testid="sr-recovery"><b>{r.label}</b>: {r.status.replace(/_/g, ' ')} ({Math.round(r.progress * 100)}%){r.stalled ? ' · STALLED' : ''}<div className="pl-3">Baseline: {r.baselineCondition}</div><div className="pl-3">Now: {r.currentCondition}</div>{r.blockers.length > 0 && <div className="pl-3 text-amber-300">Blocked by: {r.blockers.join('; ')}</div>}{r.recoveryDrivers.length > 0 && <div className="pl-3 text-emerald-300">Drivers: {r.recoveryDrivers.join('; ')}</div>}<div className="pl-3 opacity-80">Paths: {r.paths.join(' / ')}</div></div>) : <div className="opacity-70">Nothing to recover from.</div>)}
         {tab === 'liquidity' && <div data-testid="sr-liquidity">
-          <div>Liquidity <b className={V106_BAND_CLASS[s.liquidity.band]}>{SYSTEMIC_BAND_LABEL[s.liquidity.band]}</b> · free buffer ${s.liquidity.freeBuffer.toLocaleString()}</div>
+          <div>Liquidity <b className={V106_BAND_CLASS[s.liquidity.band]}>{SYSTEMIC_BAND_LABEL[s.liquidity.band]}</b> · free buffer ${s.liquidity.freeBuffer.toLocaleString('en-AU')}</div>
           {s.liquidity.explanation.map(e => <div key={e}>• {e}</div>)}
           <div className="flex items-center gap-1 mt-1">What if I spend <input aria-label="Spend" type="number" min={0} step={5000} value={spend} onChange={e => setSpend(Math.max(0, Number(e.target.value) || 0))} className="w-24 bg-transparent border rounded px-1" />
             <button type="button" className={`px-2 py-0.5 rounded border ${theme.border}`} onClick={() => setLiq(systemicLiquidityProfile(view.inputs, spend))} data-testid="sr-liq-run">Project</button></div>
-          {liq && <div className="mt-1 p-2 rounded bg-slate-900/50" data-testid="sr-liq-result">Cash ${liq.cash.toLocaleString()} · Liquidity resilience <b className={V106_BAND_CLASS[liq.band]}>{SYSTEMIC_BAND_LABEL[liq.band]}</b> · free buffer ${liq.freeBuffer.toLocaleString()} <span className="opacity-70">(isolated — uses only canonical obligations)</span></div>}
+          {liq && <div className="mt-1 p-2 rounded bg-slate-900/50" data-testid="sr-liq-result">Cash ${liq.cash.toLocaleString('en-AU')} · Liquidity resilience <b className={V106_BAND_CLASS[liq.band]}>{SYSTEMIC_BAND_LABEL[liq.band]}</b> · free buffer ${liq.freeBuffer.toLocaleString('en-AU')} <span className="opacity-70">(isolated — uses only canonical obligations)</span></div>}
         </div>}
         {tab === 'history' && <div data-testid="sr-history">{(view.persisted?.history || []).length ? [...view.persisted!.history].reverse().slice(0, 15).map(h => <div key={h.id}>R{h.turn}: {h.summary}</div>) : <div className="opacity-70">No systemic history yet — it begins when something happens (never reconstructed).</div>}</div>}
       </div>
@@ -152962,7 +152992,7 @@ const v109R = (x: number, d = 1) => {
   return Math.round((Number.isFinite(x) ? x : 0) * f) / f;
 };
 const v109C = (x: number, a = 0, b = 100) => Math.max(a, Math.min(b, Number.isFinite(x) ? x : 0));
-const v109Money = (x: number) => `$${Math.round(Number.isFinite(x) ? x : 0).toLocaleString()}`;
+const v109Money = (x: number) => `$${Math.round(Number.isFinite(x) ? x : 0).toLocaleString('en-AU')}`;
 
 function v109ValBand(score: number): CapitalValueBand {
   if (score >= 78) return 'very_high';
@@ -178774,6 +178804,9 @@ export function simulateHouseholdEconomyWhatIf(
 
   // Advance turn on cloned inputs and zero out hysteresis so projected structural direction is visible
   clonedInputs.turn = (clonedInputs.turn || 1) + 1;
+  // V9.9 (SECTION 20AU): the live inputs carry no `regions` map (and the JSON clone drops an undefined key), so the
+  // Households panel threw "reading 'VIC'" on every render in Nation / Full mode. The what-if starts from an empty map.
+  if (!clonedInputs.regions || typeof clonedInputs.regions !== 'object' || Array.isArray(clonedInputs.regions)) clonedInputs.regions = {};
   const targetReg = (clonedInputs.regions![scenario.targetRegionId] ?? {
     regionId: scenario.targetRegionId,
     economyBand: 'moderate',
@@ -184900,7 +184933,7 @@ export function finalStretchStartDay(totalDays: number, pct: number): number {
 const roundForMetric = (metric: string, v: number): number => (metric === 'regions' || metric === 'challenges' ? Math.round(v) : Math.round(v / 10) * 10);
 export function formatMatchShapeValue(metric: string, value: number): string {
   const profile = (WIN_METRIC_PROFILES as Record<string, { formatValue: (v: number) => string } | undefined>)[metric];
-  return profile ? profile.formatValue(value) : `$${Math.round(value).toLocaleString()}`;
+  return profile ? profile.formatValue(value) : `$${Math.round(value).toLocaleString('en-AU')}`;
 }
 export function formatMatchShapeDelta(metric: string, value: number): string {
   return `${value < 0 ? '−' : '+'}${formatMatchShapeValue(metric, Math.abs(value))}`;
@@ -186503,7 +186536,7 @@ export const FirstRunPanel = React.memo(function FirstRunPanel({ view, onSkip, t
         <button type="button" onClick={onSkip} className="px-5 py-3 rounded-lg font-bold text-base bg-sky-600 hover:bg-sky-500 text-white shadow" data-testid="first-run-skip">Skip tutorial — open the full game</button>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs" data-testid="first-run-goal">
-        <div><div className="flex justify-between"><span>💰 Cash</span><span className="font-mono">${view.money.toLocaleString()} / ${view.moneyTarget.toLocaleString()}</span></div><div className="h-2 rounded bg-black/30 overflow-hidden" role="meter" aria-label="Cash towards the goal" aria-valuemin={0} aria-valuemax={view.moneyTarget} aria-valuenow={Math.min(view.money, view.moneyTarget)}><div className="h-2 bg-emerald-500" style={{ width: `${frBar(view.money, view.moneyTarget)}%` }} /></div></div>
+        <div><div className="flex justify-between"><span>💰 Cash</span><span className="font-mono">${view.money.toLocaleString('en-AU')} / ${view.moneyTarget.toLocaleString('en-AU')}</span></div><div className="h-2 rounded bg-black/30 overflow-hidden" role="meter" aria-label="Cash towards the goal" aria-valuemin={0} aria-valuemax={view.moneyTarget} aria-valuenow={Math.min(view.money, view.moneyTarget)}><div className="h-2 bg-emerald-500" style={{ width: `${frBar(view.money, view.moneyTarget)}%` }} /></div></div>
         <div><div className="flex justify-between"><span>🎯 Challenges won</span><span className="font-mono">{view.challenges} / {view.challengesTarget}</span></div><div className="h-2 rounded bg-black/30 overflow-hidden" role="meter" aria-label="Challenges towards the goal" aria-valuemin={0} aria-valuemax={view.challengesTarget} aria-valuenow={Math.min(view.challenges, view.challengesTarget)}><div className="h-2 bg-sky-500" style={{ width: `${frBar(view.challenges, view.challengesTarget)}%` }} /></div></div>
       </div>
       <div className="flex flex-wrap items-center gap-1 text-xs" data-testid="first-run-unlocked">
@@ -186549,10 +186582,12 @@ export const SIMPLE_SETTINGS: readonly SimpleSettingDescriptor[] = [
 ];
 export const SIMPLE_SETTINGS_KEYS: readonly string[] = SIMPLE_SETTINGS.map(d => d.key);
 const simpleValueText = (d: SimpleSettingDescriptor, v: number) => (d.unit === 'percent' ? `${Math.round(v * 100)}%` : d.unit === 'days' ? `${v} days` : d.unit === 'actions' ? `${v}` : String(v));
-export const SimpleSettingsPanel = React.memo(function SimpleSettingsPanel({ settings, onChange, onShowAll, isDark }: { settings: GameSettingsState; onChange: (key: string, value: boolean | string | number) => void; onShowAll: () => void; isDark: boolean }) {
+export const SimpleSettingsPanel = React.memo(function SimpleSettingsPanel({ settings, onChange, onShowAll, isDark, isRetro = false }: { settings: GameSettingsState; onChange: (key: string, value: boolean | string | number) => void; onShowAll: () => void; isDark: boolean; isRetro?: boolean }) {
   const groups = Array.from(new Set(SIMPLE_SETTINGS.map(d => d.group)));
   const values = settings as unknown as Record<string, unknown>;
-  const box = isDark ? 'border-slate-700 bg-slate-950/60' : 'border-slate-200 bg-slate-50';
+  // V9.9 (SECTION 20AU): Retro (cream text) used the white Light boxes; it has its own surfaces now. Dark and Light are unchanged.
+  const v99Simple = v99SimpleSettingsClasses(isDark, isRetro);
+  const box = v99Simple.box;
   return (
     <div className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-6 py-4 space-y-4" data-testid="simple-settings">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -186570,7 +186605,7 @@ export const SimpleSettingsPanel = React.memo(function SimpleSettingsPanel({ set
                 <label htmlFor={id + '-input'} className="flex-1 min-w-[12rem]"><span className="font-medium">{d.label}</span><span className="block text-xs opacity-70">{d.help}</span></label>
                 {d.kind === 'toggle' && <input id={id + '-input'} type="checkbox" checked={v === true} onChange={e => onChange(d.key, e.target.checked)} />}
                 {d.kind === 'select' && (
-                  <select id={id + '-input'} value={typeof v === 'string' ? v : String(d.options?.[0]?.value || '')} onChange={e => onChange(d.key, e.target.value)} className={`rounded px-2 py-1 text-sm ${isDark ? 'bg-slate-800' : 'bg-white border'}`}>
+                  <select id={id + '-input'} value={typeof v === 'string' ? v : String(d.options?.[0]?.value || '')} onChange={e => onChange(d.key, e.target.value)} className={`rounded px-2 py-1 text-sm ${v99Simple.select}`}>
                     {(d.options || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 )}
@@ -187945,7 +187980,7 @@ export function buildCampaignMenuView(settings: { rivalryCampaignEnabled?: boole
   const status: Record<CampaignChapterStatus, string> = {
     briefing: `Briefing — chapter ${n} is ready to begin.`,
     playing: `In progress — chapter ${n}.`,
-    debrief: result ? `Debrief — chapter ${n} ${result.outcome} (${result.playerScore.toLocaleString()} vs ${result.rivalScore.toLocaleString()}).` : `Debrief — chapter ${n}.`,
+    debrief: result ? `Debrief — chapter ${n} ${result.outcome} (${result.playerScore.toLocaleString('en-AU')} vs ${result.rivalScore.toLocaleString('en-AU')}).` : `Debrief — chapter ${n}.`,
     branching: n < CAMPAIGN_CHAPTER_COUNT ? `Choice made — the story moves on to chapter ${n + 1}.` : 'Choice made — ready to finish.',
     complete: `Campaign complete — ${campaignEndingLabel(campaign.endingId)}.`
   };
@@ -194909,6 +194944,9 @@ export function runV99SessionSafetySelfTests(): V9SelfTestResult[] {
 // (classicPlayScreenLayout restores the V9.8 layout), keyboard shortcuts do what they say, and prices and other
 // rule values are the same wherever they are shown and charged. Helpers the fixes call live here; the fixes
 // themselves are made in place and marked `// V9.9 (SECTION 20AU): …`.
+// Wave 2 (Track E) added: E1 — rules that do what the screen says (crafted goods, action limits, challenge points,
+// journeys); E2 — look and language (Retro and Light are readable, one number and money format on every machine,
+// the settings hub says which switches do nothing and asks before a group reset).
 // Suite v99ps (runV99PlayScreenRulesSelfTests).
 // ============================================================================
 
@@ -195129,7 +195167,9 @@ export const V99_LIQUIDATION_PRICE_SHARE = 0.75;
 export function v99LiquidateInventory(money: number, inventory: readonly string[] | null | undefined, prices: Readonly<Record<string, number>> | null | undefined, threshold: number, mode: 'until_safe' | 'all' = 'until_safe'): V99LiquidationResult {
   const items = Array.isArray(inventory) ? inventory : [];
   if (items.length === 0) return { cash: 0, remaining: [], soldCount: 0 };
-  const valueOf = (resource: string) => Math.floor(((prices && prices[resource]) || 100) * V99_LIQUIDATION_PRICE_SHARE);
+  // Wave 2 (E1): goods without a live price (crafted goods, island resources) are valued at their own base price; only a
+  // thing that is neither a resource nor a recipe output still counts as $100.
+  const valueOf = (resource: string) => Math.floor(v99ResourceReferencePrice(resource, prices, 100) * V99_LIQUIDATION_PRICE_SHARE);
   if (mode === 'all') return { cash: items.reduce((sum, r) => sum + valueOf(r), 0), remaining: [], soldCount: items.length };
   const order = items.map((resource, index) => ({ resource, index, value: valueOf(resource) }))
     .sort((a, b) => b.value - a.value || (a.resource < b.resource ? -1 : a.resource > b.resource ? 1 : 0) || a.index - b.index);
@@ -195146,8 +195186,8 @@ export function v99LiquidateInventory(money: number, inventory: readonly string[
 
 /** The player's liquidation toast: the V9.8 sentence when everything went, otherwise how much was kept. */
 export function buildLiquidationNotice(cash: number, remainingCount: number): string {
-  if (remainingCount <= 0) return `Emergency liquidation sold your inventory for $${cash} (75% value).`;
-  return `Emergency liquidation sold part of your inventory for $${cash} (75% value) to get you back over the bankruptcy line. ${remainingCount} item${remainingCount === 1 ? '' : 's'} kept.`;
+  if (remainingCount <= 0) return `Emergency liquidation sold your inventory for ${fmtMoney(cash)} (75% value).`;
+  return `Emergency liquidation sold part of your inventory for ${fmtMoney(cash)} (75% value) to get you back over the bankruptcy line. ${remainingCount} item${remainingCount === 1 ? '' : 's'} kept.`;
 }
 
 // ---- D1: End Turn asks about what is actually left ----------------------------------------------------------------------
@@ -195237,7 +195277,7 @@ export function v99EndTurnSkipsConfirm(arg: unknown): boolean {
 
 /** "You now control Queensland" / "🤖 Riley now controls Queensland" (V9.8 said "You now controls"). */
 export function buildControlGainNotice(actorName: string, isHuman: boolean, regionName: string, amount: number): string {
-  return `${actorName} now ${isHuman ? 'control' : 'controls'} ${regionName} at $${amount}.`;
+  return `${actorName} now ${isHuman ? 'control' : 'controls'} ${regionName} at ${fmtMoney(amount)}.`;
 }
 
 // ---- D1: keyboard shortcuts know their context -----------------------------------------------------------------------------
@@ -195798,6 +195838,712 @@ export const V99TurnRow: React.FC<V99TurnRowProps> = ({ theme, pill, actions, pi
   );
 };
 
+// ---- E1: rules that do what the screen says ----------------------------------------------------------------------------
+// Wave 2 (Track E, Package E1). Pure helpers for the in-place fixes marked `// V9.9 (SECTION 20AU): …`: crafted goods
+// have a real price, crafting / buying / staking obey the action limit, "All" is one sale that pays what it shows,
+// oversupply recovers, challenge points are no longer wiped at a season change, and day rollover does in solo modes
+// what it always did in team modes. Tests: v99ps_e… in runV99PlayScreenRulesSelfTests.
+
+// ---- E1 / b2-01, c3-06: a crafted good is worth what the Workshop says --------------------------------------------------
+/** A crafted good sells for its recipe's value, but never for more than this multiple of its materials. */
+export const V99_CRAFTED_VALUE_CAP = 2;
+
+/** The recipe that produces an item (null for raw resources and for things nobody crafts). */
+export function v99RecipeForOutput(resource: string): (typeof CRAFTING_RECIPES)[number] | null {
+  if (!resource || RESOURCE_CATEGORIES[resource]) return null;
+  return CRAFTING_RECIPES.find(recipe => recipe.output === resource) || null;
+}
+
+function v99CraftedPriceAtDepth(resource: string, depth: number): number | null {
+  const recipe = v99RecipeForOutput(resource);
+  if (!recipe) return null;
+  let materials = 0;
+  for (const [input, count] of Object.entries(recipe.inputs)) {
+    // Recipes are acyclic (gear is made of goods, goods of raw resources); the depth limit is a guard, not a rule.
+    const crafted = depth < 4 ? v99CraftedPriceAtDepth(input, depth + 1) : null;
+    materials += (crafted ?? getResourceMarketPrice(input)) * (Number(count) || 0);
+  }
+  const bounded = Math.round(materials * V99_CRAFTED_VALUE_CAP);
+  const face = Number(recipe.baseValue) || 0;
+  return face > 0 ? Math.min(face, bounded) : bounded;
+}
+
+/**
+ * What a crafted good is worth before the seller's modifiers: the recipe's value, capped at twice the base price of
+ * its materials (crafted materials at their own reference price). V9.8 had no price for crafted goods at all, so
+ * every one of them sold for the $120 "unknown item" fallback — an Opal Jewelry the Workshop valued at ~$800 lost
+ * $330 against its own materials. The cap keeps the Workshop's promise for the goods (Opal Jewelry 800, Steel 700,
+ * Tourist Package 450 …) without turning expedition gear, whose listed value is a use value 5–14× its materials,
+ * into a money printer (Thermal Survival Gear 1,080, not 4,500). Null for anything that is not a recipe output.
+ * Pure: no RNG, no state.
+ */
+export function v99CraftedReferencePrice(resource: string): number | null {
+  return v99CraftedPriceAtDepth(resource, 0);
+}
+
+/**
+ * Base price of anything that can be in an inventory: a crafted good's reference price, else its category price.
+ * `unknownPrice` is what a caller has always charged for a thing that is neither a resource nor a recipe output
+ * (the AI's sales and the forced sale used $100); without it such a thing gets the generic category price ($120).
+ */
+export function v99ResourceBasePrice(resource: string, unknownPrice?: number): number {
+  const crafted = v99CraftedReferencePrice(resource);
+  if (crafted !== null) return crafted;
+  if (unknownPrice !== undefined && !RESOURCE_CATEGORIES[resource]) return unknownPrice;
+  return getResourceMarketPrice(resource);
+}
+
+/**
+ * The market price of one unit today: the live price when the market quotes one, else the base price. This is the
+ * one fallback chain for "what is this worth" — the Sell Market list, net worth, the AI's sales and the forced sale
+ * each had their own ($120, $100 or the category price) and none knew crafted goods.
+ */
+export function v99ResourceReferencePrice(resource: string, resourcePrices: Readonly<Record<string, number>> | null | undefined, unknownPrice?: number): number {
+  const live = resourcePrices ? resourcePrices[resource] : undefined;
+  return typeof live === 'number' && Number.isFinite(live) && live > 0 ? live : v99ResourceBasePrice(resource, unknownPrice);
+}
+
+/** The category shown for an inventory item: a raw resource's own, else the recipe's (was "unknown" for every crafted good). */
+export function v99InventoryCategory(resource: string): string {
+  if (RESOURCE_CATEGORIES[resource]) return RESOURCE_CATEGORIES[resource];
+  const recipe = v99RecipeForOutput(resource);
+  return recipe ? recipe.category : 'unknown';
+}
+
+/** Base price of everything a recipe consumes — what the Workshop card compares the sale value with. */
+export function v99RecipeMaterialsValue(recipe: { inputs: object } | null | undefined): number {
+  if (!recipe) return 0;
+  return Object.entries(recipe.inputs).reduce((sum, [input, count]) => sum + v99ResourceBasePrice(input) * (Number(count) || 0), 0);
+}
+
+/** The Workshop card's value line: what the item sells for, next to what its materials are worth. */
+export function v99WorkshopValueLabel(recipe: { output: string; inputs: object }): string {
+  return `Sells for about ${fmtMoney(v99ResourceBasePrice(recipe.output))} (materials about ${fmtMoney(v99RecipeMaterialsValue(recipe))})`;
+}
+
+// ---- E1 / b2-02: crafting, buying and staking obey the action limit -----------------------------------------------------
+/** The result shape of validateActionPointRequest (what requestActionOverrideForAction reads). */
+export type V99ActionGate = ReturnType<typeof validateActionPointRequest>;
+
+/**
+ * validateActionPointRequest for an action whose cost is not the table's unit cost (a craft of several actions, a
+ * Resource Market purchase). Same result shape and same override rules; with the unit cost it returns exactly what
+ * validateActionPointRequest returns.
+ */
+export function v99ValidateActionCost(actor: unknown, actionId: string, cost: number, settings: unknown): V99ActionGate {
+  const unit = validateActionPointRequest(actor, actionId, settings);
+  if (!v99IsRecord(settings) || settings.actionLimitsEnabled === false) return unit;
+  const need = Number.isFinite(cost) ? Math.max(0, Math.floor(cost)) : 0;
+  if (need === unit.cost) return unit;
+  const remaining = getRemainingActionPoints(actor, settings);
+  if (need <= 0 || remaining >= need) return { allowed: true, actionId: unit.actionId, cost: need, remaining, missing: 0, canOverride: false, overrideCost: 0 };
+  const overridesToday = v99IsRecord(actor) ? Number(actor.overridesUsedToday) || 0 : 0;
+  const canOverride = settings.allowActionOverride !== false && overridesToday < (Number(settings.maxDailyOverrides) || 3);
+  return {
+    allowed: false, actionId: unit.actionId, cost: need, remaining, missing: need - remaining, canOverride,
+    overrideCost: calculateActionPointOverrideCost(actor, settings, overridesToday),
+    reason: canOverride ? 'Action point limit reached. Override available.' : 'Action point limit reached.'
+  };
+}
+
+export interface V99CraftActionCost {
+  /** Actions the craft needs (and spends) while action limits are on. */
+  cost: number;
+  /** True for the Tourist's instant tourism crafts. */
+  free: boolean;
+}
+
+/**
+ * What a craft costs in actions: the table's cost for crafting (the 'craft' action id, 1 by default) for every unit
+ * of the recipe's craft time; nothing for the Tourist's tourism crafts. V9.8 spent these actions without ever
+ * checking that the player had them, so crafting worked at "0 actions left".
+ */
+export function v99CraftActionCost(recipe: { craftTime?: number; category?: string } | null | undefined, actor: unknown, settings: unknown): V99CraftActionCost {
+  const character = v99IsRecord(actor) && v99IsRecord(actor.character) ? actor.character : null;
+  const bonus = character && v99IsRecord(character.craftingBonus) && v99IsRecord(character.craftingBonus.effect) ? character.craftingBonus.effect : null;
+  const speed = bonus && v99IsRecord(bonus.categorySpeedBonus) ? bonus.categorySpeedBonus : null;
+  if (recipe && recipe.category === 'tourism' && speed !== null && speed.tourism === 1.0) return { cost: 0, free: true };
+  if (!v99IsRecord(settings) || settings.actionLimitsEnabled === false) return { cost: 0, free: false };
+  const unit = getActionPointCost('craft', settings, false);
+  const time = Math.max(1, Math.floor(Number(recipe && recipe.craftTime) || 1));
+  return { cost: Math.max(0, unit) * time, free: false };
+}
+
+/**
+ * How many times the spend step runs (each run is one action, with the Efficiency Expert roll): the gated cost while
+ * action limits are on; with limits off the V9.8 count, so the counters and the seeded 'Mastery' draws are unchanged.
+ */
+export function v99ActionSpendCount(gatedCost: number, legacyCount: number, settings: unknown): number {
+  if (!v99IsRecord(settings) || settings.actionLimitsEnabled === false) return Math.max(0, Math.floor(legacyCount) || 0);
+  return Math.max(0, Math.floor(gatedCost) || 0);
+}
+
+/**
+ * Null when the player can pay for going over the action limit AND for the thing itself; otherwise the sentence to
+ * show. Without it the override was charged first and the purchase or stake then took whatever cash was left.
+ */
+export function v99OverrideCashShortfall(cash: number, gate: V99ActionGate, price: number, what: string): string | null {
+  if (gate.allowed || !gate.canOverride) return null;
+  const have = Math.floor(Number(cash) || 0);
+  if (have < gate.overrideCost || have >= gate.overrideCost + price) return null;
+  return `No actions left: going over the limit costs ${fmtMoney(gate.overrideCost)} and ${what} costs ${fmtMoney(price)} — you have ${fmtMoney(have)}.`;
+}
+
+/** The reducer action that pays for going over the action limit: the fee, and the missing actions it grants. */
+export interface V99ActionOverrideAction { type: 'USE_ACTION_OVERRIDE'; payload: { cost: number; grantedCapacity: number } }
+
+/**
+ * The payment for going over the action limit, as ONE action object. requestActionOverrideForAction dispatches it
+ * AND applies it to the player ref before the paid-for action commits: a commit that goes through
+ * updateActorState('player') (a purchase, a stake) merges the WHOLE ref back into the reducer, and a ref that does
+ * not carry the payment yet would undo it — the fee, the granted action and the day's override count.
+ */
+export function v99ActionOverrideAction(gate: { overrideCost: number; missing: number }): V99ActionOverrideAction {
+  return { type: 'USE_ACTION_OVERRIDE', payload: { cost: gate.overrideCost, grantedCapacity: gate.missing } };
+}
+
+/** The line under a Buy button: what the purchase costs in actions (the cost table's "0" never applied to a purchase by hand). */
+export function v99MarketBuyActionNote(actor: V99AdviceActorView | null | undefined, settings: unknown): string {
+  const cost = v99MarketBuyActionCost(actor, settings);
+  return cost > 0 ? `Each purchase uses ${cost} action${cost === 1 ? '' : 's'}.` : 'Purchases use no actions (action limits are off).';
+}
+
+// ---- E1 / b2-10, b2-09: the price on the button is the price paid --------------------------------------------------------
+export interface V99BulkSaleQuote {
+  units: number;
+  /** What the whole sale pays. */
+  total: number;
+  /** Price of each unit in order: every unit sold lowers the next one's price by 1% (to at most 25%). */
+  unitPrices: number[];
+  first: number;
+  last: number;
+  regionalBonus: number;
+  /** Oversupply modifier of the first and of the last unit. */
+  supplyDemandModFirst: number;
+  supplyDemandModLast: number;
+}
+
+/**
+ * What selling `count` units pays, unit by unit, with v99ComputeSellPrice (the one sale price) — unit k is priced
+ * with k more units already sold. The Sell Market row, the confirmation and the sale itself all read this quote.
+ * V9.8's "All" sold every unit at the first unit's price (and, from $200 a unit, sold exactly one).
+ */
+export function v99QuoteBulkSale(input: V99SellPriceInput, count: number): V99BulkSaleQuote {
+  const units = Math.max(0, Math.floor(Number(count) || 0));
+  const sold = Number(input.unitsAlreadySold) || 0;
+  const unitPrices: number[] = [];
+  let regionalBonus = 1;
+  let supplyDemandModFirst = 1;
+  let supplyDemandModLast = 1;
+  for (let k = 0; k < units; k++) {
+    const quote = v99ComputeSellPrice({ ...input, unitsAlreadySold: sold + k });
+    if (k === 0) { regionalBonus = quote.regionalBonus; supplyDemandModFirst = quote.supplyDemandMod; }
+    supplyDemandModLast = quote.supplyDemandMod;
+    unitPrices.push(quote.finalPrice);
+  }
+  return {
+    units, total: unitPrices.reduce((sum, price) => sum + price, 0), unitPrices,
+    first: units > 0 ? unitPrices[0] : 0, last: units > 0 ? unitPrices[units - 1] : 0,
+    regionalBonus, supplyDemandModFirst, supplyDemandModLast
+  };
+}
+
+/** How many units a sale may cover: what was asked for (1 when nothing was), never more than the seller holds. */
+export function v99SaleUnits(inventory: readonly unknown[] | null | undefined, resource: string, requested: number | null | undefined): number {
+  const held = Array.isArray(inventory) ? inventory.filter(item => item === resource).length : 0;
+  const wanted = Math.max(1, Math.floor(Number(requested) || 1));
+  return Math.min(wanted, held);
+}
+
+/** A sale is confirmed first when one unit lists for $200 or more (as in V9.8) or the whole sale brings that much. */
+export function v99SaleNeedsConfirmation(listPrice: number, quote: V99BulkSaleQuote): boolean {
+  return listPrice >= 200 || (quote.units > 1 && quote.total >= 200);
+}
+
+/** The confirmation's sentence — the amount that will really be paid, not the list price. */
+export function v99SaleConfirmMessage(resource: string, quote: V99BulkSaleQuote): string {
+  if (quote.units <= 1) return `Sell ${resource} for ${fmtMoney(quote.first)}?`;
+  const spread = quote.first === quote.last ? `${fmtMoney(quote.first)} each` : `${fmtMoney(quote.first)} down to ${fmtMoney(quote.last)} each — every unit sold lowers the price of the next`;
+  return `Sell ${quote.units} × ${resource} for ${fmtMoney(quote.total)} in total (${spread})?`;
+}
+
+/** The "Sold …" toast. One unit: the V9.8 sentence. */
+export function v99SaleNotice(resource: string, quote: V99BulkSaleQuote, notes: readonly string[]): string {
+  const tail = notes.length > 0 ? ` (${notes.join(', ')})` : '';
+  if (quote.units <= 1) return `Sold ${resource} for ${fmtMoney(quote.first)}${tail}`;
+  return `Sold ${quote.units} × ${resource} for ${fmtMoney(quote.total)}${tail}`;
+}
+
+export interface V99PurchaseQuote { unitBase: number; unitPrice: number; tariffPercent: number; quantity: number; total: number }
+
+/**
+ * What a Resource Market purchase costs — v99MarketBuyUnitPrice, the sum buyResourceFromMarket charges, for the
+ * quantity asked. V9.8 printed the price without the regional tariff and then refused the purchase for lack of money.
+ */
+export function v99QuoteResourcePurchase(resource: string, rawQuantity: number, actorId: string, region: string, tariffState: unknown): V99PurchaseQuote {
+  const quantity = Math.max(1, Math.floor(Number(rawQuantity) || 0));
+  const unitBase = getResourceMarketPrice(resource);
+  const unitPrice = v99MarketBuyUnitPrice(resource, actorId, region, tariffState);
+  return { unitBase, unitPrice, tariffPercent: Math.round(calculateRegionalTariffRate(actorId, region, tariffState) * 100), quantity, total: unitPrice * quantity };
+}
+
+/** "$132 each (incl. 10% tariff)" — or just the price when no tariff applies. */
+export function v99PurchasePriceLabel(quote: V99PurchaseQuote): string {
+  return quote.tariffPercent > 0 ? `${fmtMoney(quote.unitPrice)} each (incl. ${quote.tariffPercent}% tariff)` : `${fmtMoney(quote.unitPrice)} each`;
+}
+
+/** The empty-region line of the Region Control panel: the stake that really takes the region (it said "$1" and refused under $300). */
+export function v99EmptyRegionStakeText(minimumStake: number): string {
+  return `No deposits yet. Stake at least ${fmtMoney(Math.max(1, Math.floor(Number(minimumStake) || 1)))} to claim control.`;
+}
+
+// ---- E1 / b2-09: oversupply recovers --------------------------------------------------------------------------------------
+/** Share of the "units sold" counter that is still there a day later. */
+export const V99_SUPPLY_RECOVERY_KEEP = 0.7;
+
+/**
+ * Oversupply fades: each day the market forgets 30% of the units sold into it (25 → 17 → 11 → 7 → 4 → 2 → 1 → 0).
+ * V9.8 never lowered the counter, so 25 sales of an item cut its price by 25% for the rest of the match.
+ * Returns the same object when there is nothing to forget; draws no RNG.
+ */
+export function v99DecaySupplyDemand(supplyDemand: unknown): Record<string, number> {
+  if (!v99IsRecord(supplyDemand)) return {};
+  const entries = Object.entries(supplyDemand);
+  if (!entries.some(([, units]) => typeof units === 'number' && units !== 0)) return supplyDemand as Record<string, number>;
+  const next: Record<string, number> = {};
+  for (const [resource, units] of entries) {
+    const kept = Math.floor(Math.max(0, Number(units) || 0) * V99_SUPPLY_RECOVERY_KEEP);
+    if (kept > 0) next[resource] = kept;
+  }
+  return next;
+}
+
+/**
+ * What a new day changes in the match state besides the calendar: oversupply fades, and yesterday's Double or
+ * Nothing offer is gone (it used to stay on the action bar for the rest of the match). Empty when nothing changes.
+ */
+export function v99DayRolloverWorldPatch(state: unknown): { supplyDemand?: Record<string, number>; doubleOrNothingAvailable?: boolean; lastChallengeReward?: number } {
+  if (!v99IsRecord(state)) return {};
+  const patch: { supplyDemand?: Record<string, number>; doubleOrNothingAvailable?: boolean; lastChallengeReward?: number } = {};
+  if (v99IsRecord(state.supplyDemand)) {
+    const faded = v99DecaySupplyDemand(state.supplyDemand);
+    if (faded !== state.supplyDemand) patch.supplyDemand = faded;
+  }
+  if (state.doubleOrNothingAvailable === true) { patch.doubleOrNothingAvailable = false; patch.lastChallengeReward = 0; }
+  return patch;
+}
+
+/**
+ * Double or Nothing risks the reward that was just won, so the player must still hold it: with less cash the "loss"
+ * took only what was there (nothing at $0) while a win paid in full.
+ */
+export function v99DoubleOrNothingStakeCovered(cash: number, reward: number): boolean {
+  return Number.isFinite(cash) && Number.isFinite(reward) && reward > 0 && cash >= reward;
+}
+
+// ---- E1 / b2-05: a new season re-opens the challenges, it does not wipe the score ------------------------------------------
+/**
+ * Season change for one actor: `completedThisSeason` (what makes a challenge available again) is emptied;
+ * `challengesCompleted` — the list "Most Challenge Points" is counted from — is kept. V9.8 emptied both, for the
+ * rival only in 1v1 and for everyone in team modes, so the win condition was decided by the days after the last
+ * season change. Returns the same object when the season did not change.
+ */
+export function applySeasonRolloverToActor<T extends object>(actor: T, seasonChanged: boolean): T {
+  if (!seasonChanged || !actor) return actor;
+  return { ...actor, completedThisSeason: [] };
+}
+
+// ---- E1 / b2-11, b2-12: day rollover in solo modes -------------------------------------------------------------------------
+/**
+ * One day of travel for one actor, exactly as the team branch of the day advance does it: a journey moves on (and
+ * may arrive), otherwise a committed stay counts down. Solo modes never called this, so an expedition stayed
+ * "in transit" for the rest of the match. Returns the same object when the actor is not travelling or staying
+ * (and draws no RNG then).
+ */
+export function v99AdvanceActorJourney<T>(actor: T, settings: unknown, notify?: (msg: string, type?: string, sys?: boolean) => void): T {
+  if (!actor) return actor;
+  const wasInTransit = isActorInTransit(actor);
+  const gameSettings = settings as GameSettingsState | undefined;
+  let next: T = applyTransitProgress(actor, notify, gameSettings);
+  if (!wasInTransit) next = applyCommittedStayProgress(next, gameSettings, notify);
+  return next;
+}
+
+/** The actor fields a journey day can change, besides money and inventory (which the solo commit already carries). */
+export const V99_JOURNEY_COMMIT_KEYS = ['activeJourney', 'currentRegion', 'visitedRegions', 'committedStayTurnsLeft', 'committedOriginRegion', 'currentSupplies', 'condition', 'lastRetreatReason'] as const;
+
+/**
+ * What the solo day advance adds to the human's commit. Always: the per-turn flags the rival's hand-back used to
+ * reset — Single Player has no rival, so one bought extra action lasted the whole match and the free daily
+ * challenge worked once. And, only when the journey step changed the actor, the journey fields.
+ */
+export function v99SoloPlayerDayPatch(before: unknown, after: unknown): Record<string, unknown> {
+  const patch: Record<string, unknown> = { overrideActionsGranted: 0, usedFreeChallengeThisTurn: false };
+  if (before === after || !v99IsRecord(after)) return patch;
+  for (const key of V99_JOURNEY_COMMIT_KEYS) {
+    if (key in after) patch[key] = after[key];
+  }
+  return patch;
+}
+
+// ---- E1 / b2-08: the Tourist's retry is the retry -------------------------------------------------------------------------
+export interface V99ChallengeAttemptAbility {
+  /** The ability this attempt uses (null = none). */
+  ability: string | null;
+  /** Success chance after the ability. */
+  chance: number;
+  /** True when the attempt uses up one ability use. */
+  consumesUse: boolean;
+  /** True for the Tourist's retry: the second chance at the challenge that just failed costs no action. */
+  freeRetry: boolean;
+}
+
+/**
+ * Which ability applies to one challenge attempt and what it does to the odds. `override` is the ability a button
+ * passes explicitly ("Retry Challenge" passes 'Tourist Luck'): V9.8 set the ability in React state and attempted in
+ * the same click, so the retry ran at the old odds, cost a second action, and the +20% landed on the NEXT challenge.
+ */
+export function resolveChallengeAttemptAbility(input: { activeAbility: string | null | undefined; override?: string | null; baseChance: number; difficulty: number }): V99ChallengeAttemptAbility {
+  const ability = input.override || input.activeAbility || null;
+  let chance = input.baseChance;
+  if (ability === 'Calculate Odds' && input.difficulty <= 2) chance = 1.0;
+  if (ability === 'Tourist Luck') chance = Math.min(0.95, chance + 0.2);
+  return { ability, chance, consumesUse: Boolean(ability), freeRetry: input.override === 'Tourist Luck' };
+}
+
+/** Label of the Tourist's retry button: what it gives and what it costs. */
+export const V99_TOURIST_RETRY_LABEL = 'Retry (+20%, no action)';
+
+// ---- E2: look and language -------------------------------------------------------------------------------------------
+// c4-09 / a3-08 — themes. V9.8 split every themed surface two ways (`isDark ? dark : light`) and counted Retro as
+// "not dark", so Retro — pale amber text on dark amber — got the LIGHT surfaces on the first screen (white character
+// cards, a white Simple-settings screen under cream text), and Light showed the dark themes' pale accent colours
+// (amber-300 / green-400) on white. Two repairs, both without touching what Dark looks like:
+//   • resolveIsDarkSurface: the flag such a two-way split needs — "does this theme paint pale text on a dark
+//     surface?" — true for Dark, Retro and System-on-a-dark-OS. The menu, the difficulty and scenario pickers, the end
+//     screen and the settings shell read it. resolveIsDarkTheme itself is unchanged: resolveThemeStyles and the
+//     Experience screen (which test Retro first) still rely on its V9.8 meaning.
+//   • semantic accent keys on every theme object of resolveThemeStyles (V99_THEME_ACCENT_KEYS): card surfaces and the
+//     text colours for money, warnings, success and figures. Dark keeps the classes V9.8 hard-coded; Light and Retro
+//     get ones that read on their cards. v99ThemeContrastPairs + wcagContrastRatio prove it without a browser.
+
+/** True when the theme paints pale text on a dark surface: Dark, Retro (dark amber) and System on a dark OS. */
+export function resolveIsDarkSurface(theme: string | null | undefined, systemPrefersDark: boolean): boolean {
+  if (theme === 'retro') return true;
+  if (theme === 'system') return systemPrefersDark === true;
+  return theme === 'dark';
+}
+
+/** The semantic accent keys every theme object of resolveThemeStyles defines (V9.9). */
+export const V99_THEME_ACCENT_KEYS = ['cardIdle', 'cardSelected', 'moneyPositive', 'moneyNegative', 'warningText', 'successText', 'infoText', 'statMoney', 'statInfo'] as const;
+export type V99ThemeAccentKey = typeof V99_THEME_ACCENT_KEYS[number];
+
+/** The three concrete looks (System resolves to Dark or Light). */
+export type V99ConcreteTheme = 'dark' | 'light' | 'retro';
+export const V99_CONCRETE_THEMES: readonly V99ConcreteTheme[] = ['dark', 'light', 'retro'];
+
+/** The accent text classes of the Dark theme (what V9.8 hard-coded on every theme); resolveThemeStyles('dark') carries the same values. */
+export const V99_DARK_ACCENT_TEXT: Readonly<Record<Exclude<V99ThemeAccentKey, 'cardIdle' | 'cardSelected'>, string>> = {
+  moneyPositive: 'text-green-400', moneyNegative: 'text-red-400', warningText: 'text-amber-300', successText: 'text-green-400', infoText: 'text-blue-400', statMoney: 'text-green-500', statInfo: 'text-blue-500',
+};
+
+/**
+ * The accent class for a spot where V9.8 hard-coded `v98Class` (a pale colour meant for a dark panel). A theme whose
+ * accent is Dark's own keeps `v98Class` exactly — so Dark does not change by a shade — and any other theme (Light,
+ * and Retro where it differs) gets its readable accent. A theme object without the key keeps `v98Class` too.
+ */
+export function v99ThemeAccent(theme: object | null | undefined, key: Exclude<V99ThemeAccentKey, 'cardIdle' | 'cardSelected'>, v98Class: string): string {
+  const value = (theme as Record<string, unknown> | null | undefined)?.[key];
+  if (typeof value !== 'string' || !value.trim() || value === V99_DARK_ACCENT_TEXT[key]) return v98Class;
+  return value;
+}
+
+/** Hex values of the Tailwind colours the themed cards and accents use (Tailwind v3 palette). */
+export const V99_TAILWIND_HEX: Readonly<Record<string, string>> = {
+  white: '#ffffff', black: '#000000',
+  'gray-50': '#f9fafb', 'gray-100': '#f3f4f6', 'gray-200': '#e5e7eb', 'gray-300': '#d1d5db', 'gray-400': '#9ca3af', 'gray-500': '#6b7280', 'gray-600': '#4b5563', 'gray-700': '#374151', 'gray-800': '#1f2937', 'gray-900': '#111827', 'gray-950': '#030712',
+  'slate-50': '#f8fafc', 'slate-200': '#e2e8f0', 'slate-700': '#334155', 'slate-800': '#1e293b', 'slate-900': '#0f172a', 'slate-950': '#020617',
+  'amber-50': '#fffbeb', 'amber-100': '#fef3c7', 'amber-200': '#fde68a', 'amber-300': '#fcd34d', 'amber-400': '#fbbf24', 'amber-500': '#f59e0b', 'amber-600': '#d97706', 'amber-700': '#b45309', 'amber-800': '#92400e', 'amber-900': '#78350f', 'amber-950': '#451a03',
+  'yellow-300': '#fde047',
+  'green-400': '#4ade80', 'green-500': '#22c55e', 'green-600': '#16a34a', 'green-700': '#15803d',
+  'emerald-300': '#6ee7b7', 'emerald-400': '#34d399', 'emerald-700': '#047857',
+  'red-400': '#f87171', 'red-700': '#b91c1c', 'rose-300': '#fda4af',
+  'blue-100': '#dbeafe', 'blue-400': '#60a5fa', 'blue-500': '#3b82f6', 'blue-600': '#2563eb', 'blue-700': '#1d4ed8',
+  'purple-100': '#f3e8ff', 'purple-600': '#9333ea', 'sky-300': '#7dd3fc',
+};
+
+/** '#rgb' or '#rrggbb' → [r, g, b] (0–255); null when the text is not a hex colour. */
+export function v99ParseHexColor(hex: string | null | undefined): [number, number, number] | null {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(hex || '').trim());
+  if (!m) return null;
+  const h = m[1].length === 3 ? m[1].split('').map(c => c + c).join('') : m[1];
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+/** `top` painted at `alpha` over `bottom`, as a hex colour. Unreadable input returns `bottom`. */
+export function v99BlendHex(top: string, bottom: string, alpha: number): string {
+  const t = v99ParseHexColor(top);
+  const b = v99ParseHexColor(bottom);
+  if (!t || !b) return bottom;
+  const a = Math.max(0, Math.min(1, Number.isFinite(alpha) ? alpha : 1));
+  return '#' + [0, 1, 2].map(i => Math.round(t[i] * a + b[i] * (1 - a)).toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * WCAG 2 contrast ratio of two opaque colours, 1 (identical) to 21 (black on white), rounded to two decimals.
+ * Symmetric. Unreadable input returns 1 — "no contrast" — so a broken table fails its test instead of passing it.
+ */
+export function wcagContrastRatio(fgHex: string, bgHex: string): number {
+  const fg = v99ParseHexColor(fgHex);
+  const bg = v99ParseHexColor(bgHex);
+  if (!fg || !bg) return 1;
+  const luminance = (rgb: [number, number, number]) => {
+    const [r, g, b] = rgb.map(v => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const a = luminance(fg);
+  const b = luminance(bg);
+  return Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100;
+}
+
+/** One `<prefix>-<colour>[-<step>][/<alpha>]` class of a class string as { hex, alpha }; null when there is none or it is not in V99_TAILWIND_HEX. */
+export function v99TailwindColor(className: string | null | undefined, prefix: 'text' | 'bg' | 'from' | 'to'): { hex: string; alpha: number } | null {
+  for (const token of String(className || '').split(/\s+/)) {
+    if (token.includes(':')) continue; // hover:, focus:, sm: … are not the resting colour
+    const m = new RegExp(`^${prefix}-([a-z]+(?:-\\d{2,3})?)(?:/(\\d{1,3}))?$`).exec(token);
+    if (!m) continue;
+    const hex = V99_TAILWIND_HEX[m[1]];
+    if (!hex) continue;
+    return { hex, alpha: m[2] ? Number(m[2]) / 100 : 1 };
+  }
+  return null;
+}
+
+/** The colours a themed surface class paints over `under`: one for a flat `bg-…`, both ends for a `from-… to-…` gradient. */
+export function v99SurfaceColors(className: string | null | undefined, under: string): string[] {
+  const from = v99TailwindColor(className, 'from');
+  const to = v99TailwindColor(className, 'to');
+  if (from && to) return [v99BlendHex(from.hex, under, from.alpha), v99BlendHex(to.hex, under, to.alpha)];
+  const bg = v99TailwindColor(className, 'bg');
+  return [bg ? v99BlendHex(bg.hex, under, bg.alpha) : under];
+}
+
+/** The page colour behind each theme's menu and the opaque card colour of its panels (what the accents sit on). */
+export const V99_THEME_BASE_SURFACES: Readonly<Record<V99ConcreteTheme, { menuPage: string; panel: string }>> = {
+  dark: { menuPage: '#030712', panel: '#1f2937' },
+  light: { menuPage: '#f8fafc', panel: '#ffffff' },
+  retro: { menuPage: '#451a03', panel: '#73320e' },
+};
+
+export interface V99ContrastPair { theme: V99ConcreteTheme; what: string; fg: string; bg: string; min: number }
+
+/**
+ * The text / background pairs the V9.9 theme repair is about, read from the live theme objects: the three text lines
+ * of a menu character card on its idle and selected surface, and every accent text on the theme's panel colour.
+ * `min` is 4.5 (WCAG AA body text) except where V9.8's own colours are kept: the muted line and the money line on
+ * Light's pastel selected card, and Dark's bold figures (statInfo), which stay as they were.
+ */
+export function v99ThemeContrastPairs(): V99ContrastPair[] {
+  const pairs: V99ContrastPair[] = [];
+  for (const theme of V99_CONCRETE_THEMES) {
+    const styles = resolveThemeStyles(theme, theme === 'dark') as Record<string, string>;
+    const base = V99_THEME_BASE_SURFACES[theme];
+    const menuCard = v99SurfaceColors(styles.menuCard, base.menuPage)[0];
+    const textOn = (cls: string, bg: string): string | null => { const c = v99TailwindColor(cls, 'text'); return c ? v99BlendHex(c.hex, bg, c.alpha) : null; };
+    const add = (what: string, cls: string, bg: string, min: number) => { const fg = textOn(cls, bg); pairs.push({ theme, what, fg: fg || bg, bg, min }); };
+    for (const [surface, cls] of [['idle card', styles.cardIdle], ['selected card', styles.cardSelected]] as const) {
+      v99SurfaceColors(cls, menuCard).forEach((bg, i) => {
+        const where = `${surface}${i ? ' (gradient end)' : ''}`;
+        const pastel = theme === 'light' && surface === 'selected card';
+        add(`character name on the ${where}`, styles.text, bg, 4.5);
+        add(`character ability on the ${where}`, styles.textMuted, bg, pastel ? 3.5 : 4.5);
+        add(`starting money on the ${where}`, styles.moneyPositive, bg, pastel ? 3.5 : 4.5);
+      });
+    }
+    add('moneyPositive on a panel', styles.moneyPositive, base.panel, 4.5);
+    add('moneyNegative on a panel', styles.moneyNegative, base.panel, 4.5);
+    add('warningText on a panel', styles.warningText, base.panel, 4.5);
+    add('successText on a panel', styles.successText, base.panel, 4.5);
+    add('infoText on a panel', styles.infoText, base.panel, 4.5);
+    add('statMoney on a panel', styles.statMoney, base.panel, 4.5);
+    add('statInfo on a panel', styles.statInfo, base.panel, theme === 'dark' ? 3.9 : 4.5);
+  }
+  return pairs;
+}
+
+/** Surfaces of the Simple settings screen: V9.8's two for Dark and Light, amber ones for Retro. */
+export interface V99SimpleSettingsClasses { box: string; select: string }
+export function v99SimpleSettingsClasses(isDark: boolean, isRetro: boolean): V99SimpleSettingsClasses {
+  if (isRetro) return { box: 'border-amber-700 bg-amber-950/40', select: 'bg-amber-900 border border-amber-700 text-amber-100' };
+  return isDark ? { box: 'border-slate-700 bg-slate-950/60', select: 'bg-slate-800' } : { box: 'border-slate-200 bg-slate-50', select: 'bg-white border' };
+}
+
+/** Chrome of the settings window (view switcher, its idle tabs, the close button, the "saved" note). */
+export interface V99SettingsShellClasses { switcher: string; tabIdle: string; close: string; note: string }
+export function v99SettingsShellClasses(isDark: boolean, isRetro: boolean): V99SettingsShellClasses {
+  if (isRetro) return {
+    switcher: 'bg-amber-950 border-amber-700',
+    tabIdle: 'text-amber-200 hover:text-amber-100 hover:bg-amber-800',
+    close: 'bg-amber-800 hover:bg-amber-700 text-amber-100',
+    note: 'border-amber-700 text-amber-200 bg-amber-950/40',
+  };
+  return isDark
+    ? { switcher: 'bg-slate-900 border-slate-700', tabIdle: 'text-slate-300 hover:text-white hover:bg-slate-800', close: 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white', note: 'border-slate-700 text-slate-400 bg-slate-950/40' }
+    : { switcher: 'bg-slate-100 border-slate-200', tabIdle: 'text-slate-600 hover:text-slate-900 hover:bg-slate-200', close: 'bg-slate-200 hover:bg-slate-300 text-slate-700 hover:text-slate-900', note: 'border-slate-200 text-slate-600 bg-slate-50' };
+}
+
+// b5-02 — one number format for game text. `n.toLocaleString()` without a locale follows the BROWSER's language, so a
+// German or French player read "$6.000" / "$6 000" — and the assistant's own fact check (verifyGIClaims re-reads the
+// numbers out of each sentence, "." being a decimal point) threw the sentence away: "How much money do I have?" was
+// answered with "not enough information" for any cash that is not a small round thousand. Every number
+// `.toLocaleString()` in the file now names the locale (the literal 'en-AU', which formatMoneyDelta already used;
+// identical output to en-US for these numbers, so nothing moves for an English browser); the five Date receivers keep
+// the player's own date format. New code should call formatGameNumber or fmtMoney (SECTION 20AQ).
+export const V99_GAME_NUMBER_LOCALE = 'en-AU';
+/** A number as game text: thousands separated by commas, a decimal point — on every machine. Not finite → '0'. */
+export function formatGameNumber(n: number): string {
+  return typeof n === 'number' && Number.isFinite(n) ? n.toLocaleString(V99_GAME_NUMBER_LOCALE) : '0';
+}
+
+// c4-12 — one money format. The play screen printed money three ways ('$1,000' in the header, '$1000' on the menu
+// cards, raw numbers in most toasts and confirmations). The messages, labels and figures of the main component that
+// a player reads while playing now go through fmtMoney (SECTION 20AQ): about 180 call sites — menu cards, travel,
+// challenge, market, deposit, loan, treasury and day-change messages, the stats panels and the confirmation windows.
+// Values below $1,000 read exactly as before. Left as they were: the rival-turn functions (Track R edits them in
+// parallel), AI reasoning strings, replay checkpoint labels and engine-side advice text whose format tests pin.
+
+// c1-12 / c2-06 — settings that nothing reads. Verified by reading every occurrence: outside their default, type,
+// sanitizer, presets, reset list and their own control in the hub, no code looks at these values. Nothing is removed
+// (keys, defaults and saved values stay, the controls still work); the hub says so next to each control.
+export const V99_NO_EFFECT_LABEL = 'No effect in this version';
+export interface V99InertSetting { key: keyof GameSettingsState; reason: string }
+export const V99_INERT_SETTINGS: readonly V99InertSetting[] = [
+  { key: 'scenarioEngineV73Enabled', reason: 'Scenarios run the same whether this is on or off. The switch is kept so saved games and scenario presets keep their value.' },
+  { key: 'customScenarioBuilderEnabled', reason: 'This version has no scenario builder screen. The switch is kept so saved games keep their value.' },
+  { key: 'nationalEventsEnabled', reason: 'Nothing reads this switch — world events follow their own settings. Kept so saved games keep their value.' },
+  { key: 'aiPersistentAivsAiEnabled', reason: 'AI-vs-AI matches do not consult this switch in this version.' },
+  { key: 'priorityTransparencyEnabled', reason: 'No panel reads this switch in this version.' },
+  { key: 'decisionTransparencyExplanationDepth', reason: 'The explanations do not change with this value in this version.' },
+  { key: 'projectedOutcomeEnabled', reason: 'It only shows or hides the options below; the projection itself does not check this switch.' },
+  { key: 'governanceVetoUsesPerMatch', reason: 'No veto counter reads this value in this version.' },
+];
+/** Why a setting has no effect, or null for every setting that does something. */
+export function v99InertSettingReason(key: string | null | undefined): string | null {
+  const hit = V99_INERT_SETTINGS.find(s => s.key === key);
+  return hit ? hit.reason : null;
+}
+/** The "No effect in this version" chip the hub shows next to a control whose setting nothing reads; nothing for any other key. */
+export const V99NoEffectChip: React.FC<{ settingKey: string }> = ({ settingKey }) => {
+  const reason = v99InertSettingReason(settingKey);
+  if (!reason) return null;
+  return <span className="ml-2 inline-block align-middle text-[10px] font-semibold px-1.5 py-0.5 rounded border border-current opacity-70 whitespace-nowrap" title={reason} data-testid={`v99-no-effect-${settingKey}`}>{V99_NO_EFFECT_LABEL}</span>;
+};
+
+// c2-07 — "Reset …" buttons in the hub's section headers. Each one resets a hand-written GROUP of settings (the
+// Team Mode one: more than two hundred, sitting in the header of sections that hold fifteen) at one click, during a
+// match too. What they reset is unchanged; V9.9 asks first and says how many settings would change. The count comes
+// from running the handler against a preview: while one is installed, the settings dispatcher records the result
+// instead of writing it, and the ledger line / Co-Pilot side effect of a reset are skipped.
+const V99_SETTINGS_RESET_PREVIEW: { current: GameSettingsState | null } = { current: null };
+
+/** True while a reset is only being previewed (nothing may be written or logged). */
+export function v99SettingsPreviewActive(): boolean {
+  return V99_SETTINGS_RESET_PREVIEW.current !== null;
+}
+
+/**
+ * The settings dispatcher calls this first. Outside a preview it returns false and does nothing; during one it applies
+ * the write to the preview copy and returns true — the caller must then return without touching state or the ledger.
+ */
+export function v99SettingsPreviewCapture(keyOrPatch: keyof GameSettingsState | Partial<GameSettingsState> | ((prev: GameSettingsState) => GameSettingsState), newValue: unknown): boolean {
+  const cur = V99_SETTINGS_RESET_PREVIEW.current;
+  if (cur === null) return false;
+  if (typeof keyOrPatch === 'function') V99_SETTINGS_RESET_PREVIEW.current = keyOrPatch(cur);
+  else if (typeof keyOrPatch === 'string') V99_SETTINGS_RESET_PREVIEW.current = { ...cur, [keyOrPatch]: newValue } as GameSettingsState;
+  else if (keyOrPatch && typeof keyOrPatch === 'object') V99_SETTINGS_RESET_PREVIEW.current = { ...cur, ...keyOrPatch };
+  return true;
+}
+
+/** The settings whose value differs between two settings objects (deep comparison; internal `_` keys ignored). */
+export function v99ChangedSettingKeys(before: GameSettingsState, after: GameSettingsState): string[] {
+  const a = before as unknown as Record<string, unknown>;
+  const b = after as unknown as Record<string, unknown>;
+  return Array.from(new Set([...Object.keys(a), ...Object.keys(b)])).filter(k => !k.startsWith('_') && !settingsValuesEqual(a[k], b[k]));
+}
+
+/**
+ * Which settings `run` (a reset handler) would change, without changing anything. Null when it cannot be told (the
+ * handler threw, or a preview is already running) — the caller then asks without a number.
+ */
+export function v99PreviewSettingsReset(current: GameSettingsState, run: () => void): string[] | null {
+  if (V99_SETTINGS_RESET_PREVIEW.current !== null) return null;
+  V99_SETTINGS_RESET_PREVIEW.current = current;
+  try {
+    run();
+    return v99ChangedSettingKeys(current, V99_SETTINGS_RESET_PREVIEW.current || current);
+  } catch {
+    return null;
+  } finally {
+    V99_SETTINGS_RESET_PREVIEW.current = null;
+  }
+}
+
+/** Title of the question a "Reset …" button asks. */
+export function v99ResetConfirmTitle(label: string): string {
+  return `${String(label || 'Reset settings').replace(/[?.!\s]+$/, '')}?`;
+}
+
+/** The question itself: how many settings change, that the button covers a group, and what that means mid-match. */
+export function v99ResetConfirmMessage(changedCount: number | null, liveMatch: boolean): string {
+  const lead = changedCount === null
+    ? 'This puts a whole group of settings back to their defaults.'
+    : `This puts ${changedCount} ${changedCount === 1 ? 'setting' : 'settings'} back to ${changedCount === 1 ? 'its default' : 'their defaults'}.`;
+  const scope = ' The button resets every setting of the group it names — that can be more than the section it sits in.';
+  const live = liveMatch ? ' Rules of the match you are playing (game length, action limits and the like) change at once.' : '';
+  return `${lead}${scope}${live} It cannot be undone.`;
+}
+
+/** What a reset button says when nothing differs from the defaults. */
+export const V99_RESET_NOTHING_TO_DO = 'Nothing to reset — these settings are already at their defaults.';
+
+/** Replaces every handler of a reset registry by its asking version (labels unchanged). */
+export function v99WrapResetHandlers(handlers: Record<string, { label: string; fn: () => void }>, wrap: (label: string, fn: () => void) => () => void): void {
+  Object.keys(handlers).forEach(key => {
+    const h = handlers[key];
+    handlers[key] = { label: h.label, fn: wrap(h.label, h.fn) };
+  });
+}
+
+// "Don't ask me again" could be ticked but never un-ticked. A row in the hub's V9.9 section puts the questions back.
+export const V99_DONT_ASK_LABELS: Readonly<Record<V99DontAskType, string>> = { travel: 'travelling', sell: 'selling', challenge: 'taking a challenge', endDay: 'ending a turn with actions left' };
+
+/** The everyday questions the player has silenced, in the fixed order of CONFIRMATION_TYPES_WITH_DONT_ASK. */
+export function v99SilencedConfirmations(prefs: Readonly<Partial<Record<string, boolean>>> | null | undefined): V99DontAskType[] {
+  return CONFIRMATION_TYPES_WITH_DONT_ASK.filter(t => prefs?.[t] === true);
+}
+
+/** One sentence saying which questions are silenced. */
+export function v99AskAgainSummary(silenced: readonly V99DontAskType[]): string {
+  if (silenced.length === 0) return 'The game asks before travelling, selling, taking a challenge and ending a turn with actions left.';
+  const names = silenced.map(t => V99_DONT_ASK_LABELS[t]);
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return `You ticked "Don't ask me again" for ${list}.`;
+}
+
+/** The row itself: what is silenced and one button that restores every question. Not a setting — it edits the match's "don't ask" ticks. */
+export const V99AskAgainRow: React.FC<{ prefs: Readonly<Partial<Record<string, boolean>>> | null | undefined; onReset: () => void; buttonClassName: string; disabledClassName: string }> = ({ prefs, onReset, buttonClassName, disabledClassName }) => {
+  const silenced = v99SilencedConfirmations(prefs);
+  return (
+    <div className="flex items-center justify-between gap-3" data-testid="v99-ask-again-row">
+      <div>
+        <div className="font-semibold">Confirmation questions</div>
+        <div className="text-sm opacity-75" data-testid="v99-ask-again-summary">{v99AskAgainSummary(silenced)}</div>
+      </div>
+      <button type="button" data-testid="v99-ask-again" disabled={silenced.length === 0} onClick={onReset} className={`px-4 py-2 rounded font-semibold shrink-0 ${silenced.length === 0 ? disabledClassName : buttonClassName}`}>Ask me again</button>
+    </div>
+  );
+};
+
 export function runV99PlayScreenRulesSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
   const check = (id: string, name: string, fn: () => true | string) => {
@@ -195980,7 +196726,7 @@ export function runV99PlayScreenRulesSelfTests(): V9SelfTestResult[] {
     const all = buildLiquidationNotice(2430, 0);
     const part = buildLiquidationNotice(134, 19);
     const one = buildLiquidationNotice(134, 1);
-    return (all === 'Emergency liquidation sold your inventory for $2430 (75% value).' && part.includes('$134') && part.includes('19 items kept') && one.includes('1 item kept')) || J([all, part, one]);
+    return (all === 'Emergency liquidation sold your inventory for $2,430 (75% value).' && part.includes('$134') && part.includes('19 items kept') && one.includes('1 item kept')) || J([all, part, one]);
   });
 
   // ---- D1: End Turn question -------------------------------------------------------------------------------------------------
@@ -196026,7 +196772,7 @@ export function runV99PlayScreenRulesSelfTests(): V9SelfTestResult[] {
   check('v99ps_33_control_notice_grammar', '"You now control …" for the player, "… now controls …" for a rival', () => {
     const you = buildControlGainNotice('You', true, 'Queensland', 1500);
     const ai = buildControlGainNotice('🤖 Riley', false, 'Queensland', 900);
-    return (you === 'You now control Queensland at $1500.' && ai === '🤖 Riley now controls Queensland at $900.') || J([you, ai]);
+    return (you === 'You now control Queensland at $1,500.' && ai === '🤖 Riley now controls Queensland at $900.') || J([you, ai]);
   });
 
   // ---- D1: keyboard shortcuts ----------------------------------------------------------------------------------------------
@@ -196367,6 +197113,627 @@ export function runV99PlayScreenRulesSelfTests(): V9SelfTestResult[] {
       && copy.wrapper === `${v98.wrapper} pointer-events-none` && /\bfixed\b/.test(copy.wrapper) && copy.pill === `${v98.pill} pointer-events-none` && copy.status === v98.status && copy.icon === v98.icon
       && V99_TURN_ROW_SELECTOR.includes('v99-turn-row');
     return ok || J({ got, inView, copy });
+  });
+  // ---- E1 (Wave 2): rules that do what the screen says ---------------------------------------------------------------------
+  const eSettings = (over: Record<string, unknown> = {}): Record<string, unknown> => ({ ...DEFAULT_GAME_SETTINGS, actionLimitsEnabled: true, playerActionsPerDay: 3, allowActionOverride: true, ...over });
+  const eActor = (over: Record<string, unknown> = {}): Record<string, unknown> => ({ id: 'player', kind: 'human', money: 5000, actionsUsedThisTurn: 0, overrideActionsGranted: 0, overridesUsedToday: 0, ...over });
+  const eRecipe = (id: string) => CRAFTING_RECIPES.find(r => r.id === id) || CRAFTING_RECIPES[0];
+  const eSale = (over: Partial<V99SellPriceInput> = {}): V99SellPriceInput => ({ resource: 'Coral', listPrice: 150, region: 'QLD', unitsAlreadySold: 0, activeEvents: [], season: 'Off', seller: { character: { name: 'Tourist' } }, isUnderdog: false, leaderTax: false, approachesEnabled: false, sabotageEnabled: false, ...over });
+
+  // b2-01 / c3-06 — crafted goods have a price
+  check('v99ps_e01_crafted_goods_have_their_price', 'Crafted goods are worth what the Workshop says: Opal Jewelry 800, Tourist Package 450, Steel 700 … (they all sold for the $120 fallback)', () => {
+    const got = ['Opal Jewelry', 'Designer Bag', 'Gourmet Box', 'Tourist Package', 'Steel', 'Furniture Set', 'Energy Cell', 'Thermal Survival Gear'].map(v99CraftedReferencePrice);
+    return J(got) === J([800, 900, 600, 450, 700, 550, 960, 1080]) || J(got);
+  });
+  check('v99ps_e02_every_recipe_bounded', 'Every recipe output is worth at least its materials, at most twice its materials, and never more than the recipe value', () => {
+    const bad = CRAFTING_RECIPES.filter(r => {
+      const price = v99CraftedReferencePrice(r.output);
+      const materials = v99RecipeMaterialsValue(r);
+      return price === null || materials <= 0 || price < materials || price > materials * V99_CRAFTED_VALUE_CAP || price > r.baseValue;
+    }).map(r => `${r.output}:${String(v99CraftedReferencePrice(r.output))}/${v99RecipeMaterialsValue(r)}`);
+    return (CRAFTING_RECIPES.length >= 20 && bad.length === 0) || bad.join(', ');
+  });
+  check('v99ps_e03_sell_market_lists_crafted_price', 'The Sell Market lists a crafted good at its price and under its recipe category; raw resources are unchanged', () => {
+    const rows = getGroupedInventory(['Opal Jewelry', 'Opal Jewelry', 'Coral', 'Mystery Crate'], { Coral: 170 });
+    const row = (name: string) => rows.find(r => r.resource === name);
+    const jewel = row('Opal Jewelry'); const coral = row('Coral'); const crate = row('Mystery Crate');
+    const ok = Boolean(jewel && coral && crate) && jewel!.currentPrice === 800 && jewel!.basePrice === 800 && jewel!.count === 2 && jewel!.category === 'luxury'
+      && coral!.currentPrice === 170 && coral!.basePrice === 150 && coral!.category === 'luxury' && crate!.currentPrice === 120 && crate!.category === 'unknown';
+    return ok || J(rows.map(r => [r.resource, r.currentPrice, r.basePrice, r.category]));
+  });
+  check('v99ps_e04_net_worth_counts_crafted_goods', 'Net worth counts a crafted good at its price; raw resources and live prices count exactly as before', () => {
+    const crafted = calculateInventoryMarketValue(['Opal Jewelry'], {});
+    const raw = calculateInventoryMarketValue(['Coral', 'Wool'], {});
+    const live = calculateInventoryMarketValue(['Coral', 'Wool'], { Coral: 170, Wool: 90 });
+    const unknown = calculateInventoryMarketValue(['Mystery Crate'], null);
+    const worth = calculateNetWorth({ money: 100, inventory: ['Steel'] }, {}) - calculateNetWorth({ money: 100, inventory: [] }, {});
+    return (crafted === 800 && raw === 250 && live === 260 && unknown === 120 && worth === 700) || J({ crafted, raw, live, unknown, worth });
+  });
+  check('v99ps_e05_reference_price_chain', 'One price chain: the live price wins; without one a crafted good, an island resource and an unknown thing each get their own base price', () => {
+    const got = [
+      v99ResourceReferencePrice('Coral', { Coral: 171 }), v99ResourceReferencePrice('Coral', { Coral: 0 }), v99ResourceReferencePrice('Coral', null),
+      v99ResourceReferencePrice('Opal Jewelry', { Coral: 171 }), v99ResourceReferencePrice('Lagoon Pearls', {}), v99ResourceReferencePrice('Mystery Crate', {}),
+      v99ResourceReferencePrice('Mystery Crate', {}, 100), v99ResourceReferencePrice('Opal Jewelry', {}, 100), v99ResourceReferencePrice('Lagoon Pearls', {}, 100),
+      v99ResourceReferencePrice('Coral', { Coral: Number.NaN })
+    ];
+    return J(got) === J([171, 150, 150, 800, 150, 120, 100, 800, 150, 150]) || J(got);
+  });
+  check('v99ps_e06_crafted_price_is_pure', 'The crafted price draws no random number and is the same on every call (the daily market draws are untouched)', () => {
+    const before = J(globalRngRegistry.exportStreamStates());
+    const a = CRAFTING_RECIPES.map(r => v99CraftedReferencePrice(r.output));
+    const b = CRAFTING_RECIPES.map(r => v99CraftedReferencePrice(r.output));
+    const raw = RESOURCE_MARKET_RESOURCES.map(v99CraftedReferencePrice);
+    return (before === J(globalRngRegistry.exportStreamStates()) && J(a) === J(b) && raw.every(x => x === null) && v99CraftedReferencePrice('') === null) || 'not pure';
+  });
+  check('v99ps_e07_crafted_sale_pays_the_card_value', "Selling the audit's Opal Jewelry pays the $800 the card shows (a Businessman gets his +10% and +20% crafted bonus on top)", () => {
+    const list = getGroupedInventory(['Opal Jewelry'], {})[0].currentPrice;
+    const tourist = v99ComputeSellPrice(eSale({ resource: 'Opal Jewelry', listPrice: list })).finalPrice;
+    const businessman = v99ComputeSellPrice(eSale({ resource: 'Opal Jewelry', listPrice: list, seller: { character: { name: 'Businessman', craftingBonus: { effect: { sellBonus: 0.2 } } } } })).finalPrice;
+    const label = v99WorkshopValueLabel(eRecipe('opal_jewelry'));
+    return (list === 800 && tourist === 800 && businessman === Math.floor(Math.floor(800 * 1.1) * 1.2) && label === 'Sells for about $800 (materials about $450)') || J({ list, tourist, businessman, label });
+  });
+  check('v99ps_e08_forced_sale_knows_crafted_goods', 'The forced sale values a crafted good at 75% of its price (it was 75% of $100); an unknown thing still counts as $100', () => {
+    const crafted = v99LiquidateInventory(0, ['Opal Jewelry'], {}, 100000, 'all');
+    const unknown = v99LiquidateInventory(0, ['Mystery Crate'], {}, 100000, 'all');
+    const live = v99LiquidateInventory(0, ['Gold'], { Gold: 179 }, 100000, 'all');
+    return (crafted.cash === 600 && unknown.cash === 75 && live.cash === Math.floor(179 * 0.75)) || J([crafted, unknown, live]);
+  });
+
+  // b2-02 — the action limit applies to crafting, buying and staking
+  check('v99ps_e10_no_actions_left_blocks_craft_buy_stake', 'With 3 of 3 actions used, a craft, a Resource Market purchase and a region stake are each refused (the override is offered)', () => {
+    const s = eSettings(); const spent = eActor({ actionsUsedThisTurn: 3 });
+    const craft = v99ValidateActionCost(spent, 'craft', v99CraftActionCost(eRecipe('opal_jewelry'), spent, s).cost, s);
+    const buy = v99ValidateActionCost(spent, 'buy_resources', v99MarketBuyActionCost(spent, s), s);
+    const stake = v99ValidateActionCost(spent, 'regional_deposit', getActionPointCost('regional_deposit', s, false), s);
+    const ok = [craft, buy, stake].every(g => g.allowed === false && g.cost === 1 && g.missing === 1 && g.remaining === 0 && g.canOverride === true && g.overrideCost > 0)
+      && craft.actionId === 'equipment_purchase' && buy.actionId === 'buy_resources' && stake.actionId === 'regional_deposit';
+    return ok || J([craft, buy, stake]);
+  });
+  check('v99ps_e11_actions_left_allows_them', 'With an action left all three are allowed at one action each; spending it leaves none', () => {
+    const s = eSettings(); const fresh = eActor({ actionsUsedThisTurn: 2 });
+    const gates = [v99ValidateActionCost(fresh, 'craft', 1, s), v99ValidateActionCost(fresh, 'buy_resources', v99MarketBuyActionCost(fresh, s), s), v99ValidateActionCost(fresh, 'regional_deposit', 1, s)];
+    const after = playerReducer({ ...initialPlayerState, actionsUsedThisTurn: 2 }, { type: 'INCREMENT_ACTIONS' });
+    return (gates.every(g => g.allowed && g.cost === 1) && after.actionsUsedThisTurn === 3 && getRemainingActionPoints(after, s) === 0 && v99ActionSpendCount(1, 1, s) === 1) || J(gates);
+  });
+  check('v99ps_e12_same_answer_at_the_table_cost', "At the cost table's own cost the check is exactly validateActionPointRequest (travel, challenge, stake; allowed and refused)", () => {
+    const s = eSettings();
+    const bad = ['travel', 'challenges', 'regional_deposit', 'sell_resources'].filter(id => [0, 2, 3].some(used => {
+      const actor = eActor({ actionsUsedThisTurn: used });
+      return J(v99ValidateActionCost(actor, id, getActionPointCost(id, s, false), s)) !== J(validateActionPointRequest(actor, id, s));
+    }));
+    return bad.length === 0 || bad.join(', ');
+  });
+  check('v99ps_e13_two_action_craft_needs_two', 'A 2-action craft with 1 action left is refused for the missing one (the unit-cost re-check would have waved it through for free)', () => {
+    const s = eSettings(); const cell = eRecipe('energy_cell');
+    const cost = v99CraftActionCost(cell, eActor(), s).cost;
+    const one = v99ValidateActionCost(eActor({ actionsUsedThisTurn: 2 }), 'craft', cost, s);
+    const two = v99ValidateActionCost(eActor({ actionsUsedThisTurn: 1 }), 'craft', cost, s);
+    const unit = validateActionPointRequest(eActor({ actionsUsedThisTurn: 2 }), 'craft', s);
+    return (cell.craftTime === 2 && cost === 2 && one.allowed === false && one.missing === 1 && one.cost === 2 && two.allowed === true && two.cost === 2 && unit.allowed === true) || J({ cost, one, two });
+  });
+  check('v99ps_e14_craft_cost_rules', "A craft costs the table's crafting cost per unit of craft time; the Tourist's tourism crafts are free; with action limits off nothing is gated and the V9.8 count is spent", () => {
+    const s = eSettings();
+    const tourist = { character: CHARACTERS.find(c => c.name === 'Tourist') };
+    const plain = v99CraftActionCost(eRecipe('opal_jewelry'), eActor(), s);
+    const free = v99CraftActionCost(eRecipe('tourist_package'), tourist, s);
+    const touristOther = v99CraftActionCost(eRecipe('opal_jewelry'), tourist, s);
+    const notTourist = v99CraftActionCost(eRecipe('tourist_package'), eActor(), s);
+    const doubled = v99CraftActionCost(eRecipe('energy_cell'), eActor(), eSettings({ actionPointConsumptionSettings: { costScope: 'shared', actionCosts: { ...DEFAULT_ACTION_POINT_COSTS, equipment_purchase: 2 } } }));
+    const off = eSettings({ actionLimitsEnabled: false });
+    const offCost = v99CraftActionCost(eRecipe('energy_cell'), eActor(), off);
+    const ok = plain.cost === 1 && !plain.free && free.cost === 0 && free.free && touristOther.cost === 1 && notTourist.cost === 1 && doubled.cost === 4
+      && offCost.cost === 0 && v99ActionSpendCount(offCost.cost, 2, off) === 2 && v99ActionSpendCount(2, 2, s) === 2 && v99ActionSpendCount(0, 1, s) === 0;
+    return ok || J({ plain, free, touristOther, notTourist, doubled, offCost });
+  });
+  check('v99ps_e15_limits_off_gates_nothing', 'With action limits off a craft, a purchase and a stake are always allowed at no cost', () => {
+    const off = eSettings({ actionLimitsEnabled: false }); const spent = eActor({ actionsUsedThisTurn: 9 });
+    const gates = [v99ValidateActionCost(spent, 'craft', 3, off), v99ValidateActionCost(spent, 'buy_resources', 1, off), v99ValidateActionCost(spent, 'regional_deposit', 1, off)];
+    return (gates.every(g => g.allowed && g.cost === 0) && v99MarketBuyActionCost(spent, off) === 0 && /no actions/.test(v99MarketBuyActionNote(spent, off)) && v99MarketBuyActionNote(spent, eSettings()) === 'Each purchase uses 1 action.') || J(gates);
+  });
+  check('v99ps_e16_override_needs_cash_for_both', 'Going over the limit is only offered when the cash covers the override AND the purchase or stake', () => {
+    const s = eSettings(); const spent = eActor({ actionsUsedThisTurn: 3 });
+    const gate = v99ValidateActionCost(spent, 'buy_resources', 1, s);
+    const short = v99OverrideCashShortfall(gate.overrideCost + 131, gate, 132, '1× Coral');
+    const enough = v99OverrideCashShortfall(gate.overrideCost + 132, gate, 132, '1× Coral');
+    const broke = v99OverrideCashShortfall(gate.overrideCost - 1, gate, 132, '1× Coral');   // the override prompt itself says "not enough money"
+    const allowed = v99OverrideCashShortfall(0, v99ValidateActionCost(eActor(), 'buy_resources', 1, s), 132, '1× Coral');
+    return (typeof short === 'string' && short.includes(fmtMoney(gate.overrideCost)) && short.includes(fmtMoney(132)) && enough === null && broke === null && allowed === null) || J({ short, enough, broke, allowed });
+  });
+
+  // b2-10 / b2-09 — the price on the button is the price paid
+  check('v99ps_e20_bulk_sale_is_the_sum_of_single_sales', '"All" pays exactly what selling the units one after another pays — less than N × the first price', () => {
+    const input = eSale({ resource: 'Dairy', listPrice: 100, unitsAlreadySold: 3 });
+    const bulk = v99QuoteBulkSale(input, 30);
+    let sum = 0;
+    for (let k = 0; k < 30; k++) sum += v99ComputeSellPrice({ ...input, unitsAlreadySold: 3 + k }).finalPrice;
+    const ok = bulk.units === 30 && bulk.total === sum && bulk.total < 30 * bulk.first && bulk.unitPrices.length === 30 && bulk.first === 97 && bulk.last === 75
+      && bulk.unitPrices.every((p, k) => k === 0 || p <= bulk.unitPrices[k - 1]) && bulk.supplyDemandModLast === 0.75;
+    return ok || J({ total: bulk.total, sum, first: bulk.first, last: bulk.last });
+  });
+  check('v99ps_e21_one_unit_quote_is_the_sale_price', 'The row quote for one unit is the one sale price (v99ComputeSellPrice), for 20 seeded inputs; an empty quote pays nothing', () => {
+    const resources = ['Gold', 'Dairy', 'Hydropower', 'Coral', 'Opal Jewelry'];
+    const regions = ['QLD', 'NSW', 'WA', 'VIC'];
+    const seasons = ['Summer', 'Autumn', 'Winter', 'Spring'];
+    const bad: string[] = [];
+    for (let i = 0; i < 20; i++) {
+      const input = eSale({ resource: resources[i % 5], listPrice: 90 + i * 17, region: regions[i % 4], season: seasons[(i * 3) % 4], unitsAlreadySold: i * 2, seller: { character: { name: i % 2 ? 'Businessman' : 'Tourist' } } });
+      const one = v99QuoteBulkSale(input, 1);
+      if (one.total !== v99ComputeSellPrice(input).finalPrice || one.first !== one.total || one.last !== one.total) bad.push(String(i));
+    }
+    const none = v99QuoteBulkSale(eSale(), 0);
+    return (bad.length === 0 && none.total === 0 && none.units === 0 && none.unitPrices.length === 0) || bad.join(',');
+  });
+  check('v99ps_e22_sale_units_never_exceed_stock', 'A sale covers what was asked for, one unit when nothing was, and never more than the seller holds', () => {
+    const inv = ['Gold', 'Gold', 'Gold', 'Coral'];
+    const got = [v99SaleUnits(inv, 'Gold', undefined), v99SaleUnits(inv, 'Gold', 2), v99SaleUnits(inv, 'Gold', 9), v99SaleUnits(inv, 'Coral', 5), v99SaleUnits(inv, 'Wool', 5), v99SaleUnits(null, 'Gold', 1), v99SaleUnits(inv, 'Gold', 0)];
+    return J(got) === J([1, 2, 3, 1, 0, 0, 1]) || J(got);
+  });
+  check('v99ps_e23_confirmation_names_what_is_paid', 'The sale confirmation names the amount paid — one question for a whole "All" with its total; a cheap single sale still asks nothing', () => {
+    const gold = v99QuoteBulkSale(eSale({ resource: 'Gold', listPrice: 250, season: 'Summer' }), 1);
+    const five = v99QuoteBulkSale(eSale({ resource: 'Dairy', listPrice: 100 }), 5);
+    const cheap = v99QuoteBulkSale(eSale({ resource: 'Dairy', listPrice: 100 }), 1);
+    const msgGold = v99SaleConfirmMessage('Gold', gold); const msgFive = v99SaleConfirmMessage('Dairy', five);
+    const ok = v99SaleNeedsConfirmation(250, gold) && msgGold === `Sell Gold for $${gold.first}?` && v99SaleNeedsConfirmation(100, five) && msgFive.includes(`$${five.total} in total`) && msgFive.startsWith('Sell 5 × Dairy')
+      && msgFive.includes(`$${five.first} down to $${five.last} each`) && !v99SaleNeedsConfirmation(100, cheap) && five.total === 100 + 99 + 98 + 97 + 96
+      && v99SaleNotice('Dairy', five, ['4% oversupply']) === `Sold 5 × Dairy for $${five.total} (4% oversupply)` && v99SaleNotice('Dairy', cheap, []) === 'Sold Dairy for $100';
+    return ok || J({ msgGold, msgFive });
+  });
+  check('v99ps_e24_purchase_label_is_the_charge', 'The Resource Market label is the sum that is charged, tariff included (50 Hydropower: $6,600, not $6,000), for every item on sale', () => {
+    const q = v99QuoteResourcePurchase('Hydropower', 50, 'player', 'QLD', {});
+    const bad = RESOURCE_MARKET_RESOURCES.filter(r => {
+      const one = v99QuoteResourcePurchase(r, 3, 'player', 'NSW', {});
+      return one.unitPrice !== v99MarketBuyUnitPrice(r, 'player', 'NSW', {}) || one.total !== one.unitPrice * 3 || one.unitPrice !== Math.round(getResourceMarketPrice(r) * 1.1);
+    });
+    const ok = q.unitBase === 120 && q.unitPrice === 132 && q.total === 6600 && q.tariffPercent === 10 && q.quantity === 50 && v99PurchasePriceLabel(q) === '$132 each (incl. 10% tariff)'
+      && v99QuoteResourcePurchase('Coral', 0, 'player', 'QLD', {}).quantity === 1 && v99PurchasePriceLabel({ ...q, tariffPercent: 0 }) === '$132 each' && bad.length === 0;
+    return ok || J({ q, bad });
+  });
+  check('v99ps_e25_region_stake_text_is_the_rule', 'An empty region says the stake that really claims it ($300), which is what the rule requires', () => {
+    const need = getRequiredDepositToControl({}, 'QLD', 'player');
+    return (need === REGION_MIN_CONTROL_STAKE && v99EmptyRegionStakeText(need) === 'No deposits yet. Stake at least $300 to claim control.' && v99EmptyRegionStakeText(Number.NaN).includes('$1 ')) || String(need);
+  });
+  check('v99ps_e26_oversupply_fades', 'Oversupply fades day by day (25 → 17 → 11 → 7 → 4 → 2 → 1 → gone) and never goes negative; an empty market is returned untouched', () => {
+    const seen: number[] = [];
+    let market: Record<string, number> = { Dairy: 25, Gold: 150 };
+    for (let day = 0; day < 8; day++) { market = v99DecaySupplyDemand(market); seen.push(market.Dairy || 0); }
+    const empty: Record<string, number> = {};
+    const zero = { Coral: 0 };
+    const ok = J(seen) === J([17, 11, 7, 4, 2, 1, 0, 0]) && !('Dairy' in market) && market.Gold === 7 && v99DecaySupplyDemand(empty) === empty && v99DecaySupplyDemand(zero) === zero
+      && J(v99DecaySupplyDemand({ Wool: -4, Coal: 1 })) === '{}' && J(v99DecaySupplyDemand(null)) === '{}' && v99SupplyDemandModifier(25) === 0.75 && Math.abs(v99SupplyDemandModifier(7) - 0.93) < 1e-9;
+    return ok || J({ seen, market });
+  });
+  check('v99ps_e27_new_day_fades_oversupply_and_ends_the_offer', 'The day change itself lets oversupply fade and ends yesterday\'s Double or Nothing offer; a match with neither is changed in nothing else', () => {
+    const base = { day: 3, season: 'Summer', actionsThisTurn: 2, supplyDemand: { Dairy: 25 }, doubleOrNothingAvailable: true, lastChallengeReward: 400, gameActivityLedger: null };
+    const next = gameStateReducer(base, { type: 'NEXT_DAY' });
+    const quiet = { day: 3, season: 'Summer', actionsThisTurn: 2, supplyDemand: {}, doubleOrNothingAvailable: false, lastChallengeReward: 0, gameActivityLedger: null };
+    const quietNext = gameStateReducer(quiet, { type: 'NEXT_DAY' });
+    const ok = next.day === 4 && next.supplyDemand.Dairy === 17 && next.doubleOrNothingAvailable === false && next.lastChallengeReward === 0 && base.supplyDemand.Dairy === 25
+      && quietNext.day === 4 && quietNext.supplyDemand === quiet.supplyDemand && quietNext.doubleOrNothingAvailable === false && J(v99DayRolloverWorldPatch(quiet)) === '{}' && J(v99DayRolloverWorldPatch(null)) === '{}'
+      && J(Object.keys(quietNext).sort()) === J(Object.keys(quiet).sort());
+    return ok || J({ next, quietNext });
+  });
+  check('v99ps_e28_double_or_nothing_needs_the_stake', 'Double or Nothing needs the reward at risk in hand (with $0 a loss cost nothing)', () => {
+    const got = [v99DoubleOrNothingStakeCovered(1000, 1000), v99DoubleOrNothingStakeCovered(999, 1000), v99DoubleOrNothingStakeCovered(0, 1000), v99DoubleOrNothingStakeCovered(5000, 0), v99DoubleOrNothingStakeCovered(Number.NaN, 100)];
+    return J(got) === J([true, false, false, false, false]) || J(got);
+  });
+
+  // b2-05 — challenge points survive the season change
+  check('v99ps_e30_season_change_keeps_the_score_list', 'A new season empties completedThisSeason (challenges re-open) and keeps challengesCompleted (the score); no change, same object', () => {
+    const actor = { name: 'Rival', challengesCompleted: ['Reef Dive', 'Opera Night'], completedThisSeason: ['Opera Night'], money: 900 };
+    const next = applySeasonRolloverToActor(actor, true);
+    const ok = next !== actor && J(next.challengesCompleted) === J(['Reef Dive', 'Opera Night']) && next.completedThisSeason.length === 0 && next.money === 900
+      && actor.completedThisSeason.length === 1 && applySeasonRolloverToActor(actor, false) === actor;
+    return ok || J(next);
+  });
+  check('v99ps_e31_score_never_drops_at_a_season_change', '"Most Challenge Points" is the same before and after a season change, for a human-shaped and an AI-shaped actor, across four seasons of play', () => {
+    const names = Object.keys(ALL_CHALLENGE_DIFFICULTIES).slice(0, 8);
+    if (names.length < 8) return 'not enough challenges to test with';
+    let human: { challengesCompleted: string[]; completedThisSeason: string[] } = { challengesCompleted: [], completedThisSeason: [] };
+    let rival: { challengesCompleted: string[]; completedThisSeason: string[]; isAi: boolean } = { challengesCompleted: [], completedThisSeason: [], isAi: true };
+    let last = [0, 0];
+    for (let season = 0; season < 4; season++) {
+      human = { ...human, challengesCompleted: [...human.challengesCompleted, names[season]], completedThisSeason: [...human.completedThisSeason, names[season]] };
+      rival = { ...rival, challengesCompleted: [...rival.challengesCompleted, names[season + 4], names[season]], completedThisSeason: [...rival.completedThisSeason, names[season + 4]] };
+      const before = [computeActorChallengeScore(human), computeActorChallengeScore(rival)];
+      human = applySeasonRolloverToActor(human, true);
+      rival = applySeasonRolloverToActor(rival, true);
+      const after = [computeActorChallengeScore(human), computeActorChallengeScore(rival)];
+      if (J(before) !== J(after) || after[0] <= last[0] || after[1] <= last[1] || human.completedThisSeason.length !== 0 || rival.completedThisSeason.length !== 0) return `season ${season}: ${J(before)} → ${J(after)}`;
+      last = after;
+    }
+    return (human.challengesCompleted.length === 4 && rival.challengesCompleted.length === 8) || J([human, rival]);
+  });
+
+  // b2-11 / b2-12 — day rollover in solo modes
+  const eIsland = Object.keys(EXTERNAL_TERRITORIES)[0];
+  check('v99ps_e32_journey_arrives_in_solo_modes', 'A one-day expedition arrives on the next day (destination reached and visited, no longer in transit); a longer one counts down first', () => {
+    const traveller = (days: number) => ({ id: 'player', kind: 'human', name: 'Tester', money: 1000, currentRegion: 'QLD', visitedRegions: ['QLD'], inventory: [] as string[], currentSupplies: 100, maxSupplies: 100,
+      activeJourney: { destinationRegion: eIsland, daysRemaining: days, originRegion: 'QLD', travelType: 'expedition' as const, hazardRisk: 0 } });
+    const one = v99AdvanceActorJourney(traveller(1), eSettings());
+    const twoA = v99AdvanceActorJourney(traveller(2), eSettings());
+    const twoB = v99AdvanceActorJourney(twoA, eSettings());
+    const ok = one.activeJourney === null && one.currentRegion === eIsland && one.visitedRegions.includes(eIsland) && !isActorInTransit(one) && one.money >= 1000
+      && isActorInTransit(twoA) && twoA.activeJourney.daysRemaining === 1 && twoA.currentRegion === 'QLD' && twoB.currentRegion === eIsland && !isActorInTransit(twoB);
+    return ok || J({ one, twoA, twoB });
+  });
+  check('v99ps_e33_idle_actor_untouched_and_stay_counts_down', 'An actor who is not travelling is returned as is and draws no random number; a committed stay counts down and then returns home', () => {
+    const idle = { id: 'player', kind: 'human', currentRegion: 'QLD', money: 500, inventory: ['Coral'] };
+    const before = J(globalRngRegistry.exportStreamStates());
+    const same = v99AdvanceActorJourney(idle, eSettings());
+    const noDraw = before === J(globalRngRegistry.exportStreamStates());
+    const s = eSettings({ multiTurnJourneyEnabled: false });
+    const guest = { id: 'player', kind: 'human', name: 'Tester', currentRegion: eIsland, committedStayTurnsLeft: 2, committedOriginRegion: 'NSW', money: 500 };
+    const day1 = v99AdvanceActorJourney(guest, s);
+    const day2 = v99AdvanceActorJourney(day1, s);
+    return (same === idle && noDraw && day1.committedStayTurnsLeft === 1 && day1.currentRegion === eIsland && day2.committedStayTurnsLeft === 0 && day2.currentRegion === 'NSW' && v99AdvanceActorJourney(null, s) === null) || J({ day1, day2, noDraw });
+  });
+  check('v99ps_e34_solo_day_patch', 'The solo day commit always ends the per-turn flags, and carries the journey fields only when the journey moved', () => {
+    const idle = { id: 'player', currentRegion: 'QLD' };
+    const quiet = v99SoloPlayerDayPatch(idle, idle);
+    const arrived = { id: 'player', currentRegion: eIsland, visitedRegions: ['QLD', eIsland], activeJourney: null, currentSupplies: 90, condition: 'healthy', money: 1300, inventory: ['Coral'] };
+    const moved = v99SoloPlayerDayPatch(idle, arrived);
+    const ok = J(quiet) === J({ overrideActionsGranted: 0, usedFreeChallengeThisTurn: false })
+      && moved.currentRegion === eIsland && moved.activeJourney === null && 'visitedRegions' in moved && moved.currentSupplies === 90 && moved.overrideActionsGranted === 0 && moved.usedFreeChallengeThisTurn === false
+      && !('money' in moved) && !('inventory' in moved) && !('committedStayTurnsLeft' in moved);
+    return ok || J({ quiet, moved });
+  });
+  check('v99ps_e35_single_player_flags_end_with_the_day', 'A bought extra action and the used free challenge end with the day: after the commit the player has exactly the daily actions again', () => {
+    const s = eSettings();
+    const stuck = { ...initialPlayerState, actionsUsedThisTurn: 0, overrideActionsGranted: 2, usedFreeChallengeThisTurn: true };
+    const before = getRemainingActionPoints(stuck, s);
+    const after = playerReducer(stuck, { type: 'MERGE_STATE', payload: { actionsUsedThisTurn: 0, ...v99SoloPlayerDayPatch(stuck, stuck) } });
+    return (before === 5 && after.overrideActionsGranted === 0 && after.usedFreeChallengeThisTurn === false && getRemainingActionPoints(after, s) === 3 && after.currentRegion === stuck.currentRegion) || J({ before, after: getRemainingActionPoints(after, s) });
+  });
+
+  // b2-08 — the Tourist's retry
+  check('v99ps_e36_tourist_retry_gets_the_bonus', 'The retry itself carries Tourist Luck: 10% becomes 30%, it uses the ability up and costs no action; nothing leaks onto the next challenge', () => {
+    const retry = resolveChallengeAttemptAbility({ activeAbility: null, override: 'Tourist Luck', baseChance: 0.10, difficulty: 3 });
+    const next = resolveChallengeAttemptAbility({ activeAbility: null, baseChance: 0.10, difficulty: 3 });
+    const capped = resolveChallengeAttemptAbility({ activeAbility: null, override: 'Tourist Luck', baseChance: 0.9, difficulty: 1 });
+    const ok = Math.abs(retry.chance - 0.30) < 1e-9 && retry.consumesUse && retry.freeRetry && retry.ability === 'Tourist Luck'
+      && next.chance === 0.10 && !next.consumesUse && !next.freeRetry && next.ability === null && capped.chance === 0.95 && V99_TOURIST_RETRY_LABEL.includes('+20%');
+    return ok || J({ retry, next, capped });
+  });
+  check('v99ps_e37_other_abilities_unchanged', 'An ability switched on with its own button works as before: Tourist Luck +20% (an action is still spent), Calculate Odds guarantees difficulty ≤ 2 only', () => {
+    const luck = resolveChallengeAttemptAbility({ activeAbility: 'Tourist Luck', baseChance: 0.5, difficulty: 2 });
+    const easy = resolveChallengeAttemptAbility({ activeAbility: 'Calculate Odds', baseChance: 0.4, difficulty: 2 });
+    const hard = resolveChallengeAttemptAbility({ activeAbility: 'Calculate Odds', baseChance: 0.4, difficulty: 3 });
+    const other = resolveChallengeAttemptAbility({ activeAbility: 'Market Insight', baseChance: 0.4, difficulty: 1 });
+    const ok = luck.chance === 0.7 && luck.consumesUse && !luck.freeRetry && easy.chance === 1 && easy.consumesUse && hard.chance === 0.4 && hard.consumesUse && other.chance === 0.4 && other.consumesUse && !other.freeRetry;
+    return ok || J({ luck, easy, hard, other });
+  });
+
+  // b2-02 (repair) — paying to go over the limit survives the purchase or stake it pays for
+  check('v99ps_e39_override_payment_survives_a_whole_state_commit', 'A purchase commits by merging the whole player ref: with the payment applied to the ref the fee, the granted action and the override count all stay; a ref from before the payment loses them (the bug)', () => {
+    const s = eSettings();
+    const before = { ...initialPlayerState, money: 6000, inventory: [] as string[], actionsUsedThisTurn: 3, overrideActionsGranted: 0, overridesUsedToday: 0, overrideFatigue: 0 };
+    const gate = v99ValidateActionCost(before, 'buy_resources', 1, s);
+    if (gate.allowed || !gate.canOverride || gate.overrideCost !== 500 || gate.missing !== 1) return J(gate);
+    const pay = v99ActionOverrideAction(gate);
+    const buy = (ref: typeof before) => ({ ...ref, money: ref.money - 165, inventory: [...ref.inventory, 'Aboriginal Art'] });
+    const paid = playerReducer(before, pay);                                                        // the dispatch
+    const stale = playerReducer(paid, { type: 'MERGE_STATE', payload: buy(before) });               // commit from a ref without the payment
+    const fresh = playerReducer(paid, { type: 'MERGE_STATE', payload: buy(playerReducer(before, pay)) }); // commit from a ref that carries it
+    const spent = playerReducer(fresh, { type: 'INCREMENT_ACTIONS' });
+    const ok = J(pay) === J({ type: 'USE_ACTION_OVERRIDE', payload: { cost: 500, grantedCapacity: 1 } })
+      && stale.money === 5835 && stale.overridesUsedToday === 0 && stale.overrideActionsGranted === 0
+      && fresh.money === 6000 - 500 - 165 && fresh.overrideActionsGranted === 1 && fresh.overridesUsedToday === 1 && fresh.inventory.length === 1
+      && spent.actionsUsedThisTurn === 4 && getRemainingActionPoints(spent, s) === 0;
+    return ok || J({ stale: [stale.money, stale.overrideActionsGranted, stale.overridesUsedToday], fresh: [fresh.money, fresh.overrideActionsGranted, fresh.overridesUsedToday], left: getRemainingActionPoints(spent, s) });
+  });
+  check('v99ps_e40_overrides_cost_more_and_run_out', 'Three paid purchases past the limit in one day: each override is counted, the price rises each time, and after the third no fourth is offered', () => {
+    const s = eSettings();
+    let ref = { ...initialPlayerState, money: 20000, inventory: [] as string[], actionsUsedThisTurn: 3, overrideActionsGranted: 0, overridesUsedToday: 0, overrideFatigue: 0 };
+    const fees: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const gate = v99ValidateActionCost(ref, 'buy_resources', 1, s);
+      if (gate.allowed || !gate.canOverride) return `override ${i + 1} was not offered: ${J(gate)}`;
+      fees.push(gate.overrideCost);
+      const pay = v99ActionOverrideAction(gate);
+      const paid = playerReducer(ref, pay);
+      const refAfterPay = playerReducer(ref, pay);
+      const merged = playerReducer(paid, { type: 'MERGE_STATE', payload: { ...refAfterPay, money: refAfterPay.money - 165, inventory: [...refAfterPay.inventory, 'Aboriginal Art'] } });
+      ref = playerReducer(merged, { type: 'INCREMENT_ACTIONS' });
+    }
+    const last = v99ValidateActionCost(ref, 'buy_resources', 1, s);
+    const ok = fees[0] === 500 && fees[1] > fees[0] && fees[2] > fees[1] && ref.overridesUsedToday === 3 && ref.inventory.length === 3
+      && ref.money === 20000 - fees[0] - fees[1] - fees[2] - 3 * 165 && !last.allowed && !last.canOverride;
+    return ok || J({ fees, used: ref.overridesUsedToday, money: ref.money, last });
+  });
+
+  // a4-08 — the Households what-if with live-shaped inputs
+  check('v99ps_e38_households_what_if_without_region_map', 'The Households what-if works with the inputs the live game builds (no region map) — every scenario, every region, inputs untouched', () => {
+    const inputs = buildHouseholdEconomyInputs({ turn: 4, gameState: { day: 4, turnCounter: 4 }, gameSettings: { ...DEFAULT_GAME_SETTINGS } });
+    if (inputs.regions !== undefined) return 'the live-shaped inputs unexpectedly carry a region map';
+    const persisted = createInitialHouseholdEconomyPersisted(1);
+    const snapshot = J(inputs);
+    const scenarios: V1013WhatIfScenarioInput['scenarioType'][] = ['concentrate_industrial_expansion', 'diversify_second_center', 'essential_water_infrastructure', 'essential_transport_energy', 'automation_transition'];
+    const failed: string[] = [];
+    for (const scenarioType of scenarios) {
+      for (const targetRegionId of ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT']) {
+        try {
+          const r = simulateHouseholdEconomyWhatIf(inputs, persisted, { scenarioType, targetRegionId });
+          if (!r || r.mutatedLiveState !== false || typeof r.summary !== 'string') failed.push(`${scenarioType}/${targetRegionId}: bad result`);
+        } catch (err) { failed.push(`${scenarioType}/${targetRegionId}: ${err instanceof Error ? err.message : String(err)}`); }
+      }
+    }
+    return (failed.length === 0 && J(inputs) === snapshot) || failed.slice(0, 3).join(' | ') || 'inputs were mutated';
+  });
+
+  // ==== Track E / Package E2: look and language =========================================================================
+  // c4-09 / a3-08 — themes
+  const e2Styles = (theme: string, sysDark: boolean) => resolveThemeStyles(theme as GameTheme, sysDark) as Record<string, string>;
+  check('v99ps_e41_dark_surface_flag', 'Retro counts as a dark surface (pale text on dark amber); Dark, Light and System keep their V9.8 answer', () => {
+    const got = [resolveIsDarkSurface('retro', false), resolveIsDarkSurface('retro', true), resolveIsDarkSurface('dark', false), resolveIsDarkSurface('light', true),
+      resolveIsDarkSurface('system', true), resolveIsDarkSurface('system', false), resolveIsDarkSurface('neon', true), resolveIsDarkSurface(null, true), resolveIsDarkSurface(undefined, false)];
+    const want = [true, true, true, false, true, false, false, false, false];
+    // The V9.8 flag (non-exported) is what resolveThemeStyles branches on: the Light look has a white card, the Dark look a gray one.
+    const v98Dark = (theme: string, sys: boolean) => e2Styles(theme, sys).card === 'bg-gray-800';
+    const agrees = (['dark', 'light', 'system'] as const).every(t => [false, true].every(sys => resolveIsDarkSurface(t, sys) === v98Dark(t, sys)));
+    return (J(got) === J(want) && agrees) || J({ got, agrees });
+  });
+  check('v99ps_e42_accent_keys_on_every_theme', 'Every theme object defines every semantic accent key as real classes — and Dark keeps exactly the classes V9.8 hard-coded', () => {
+    const missing: string[] = [];
+    for (const theme of ['dark', 'light', 'retro', 'system']) for (const sys of [false, true]) {
+      const s = e2Styles(theme, sys);
+      for (const key of V99_THEME_ACCENT_KEYS) {
+        const v = s[key];
+        if (typeof v !== 'string' || !v.trim() || /undefined|null/.test(v)) missing.push(`${theme}/${sys}/${key}`);
+        else if (key !== 'cardIdle' && key !== 'cardSelected' && !/^text-[a-z]+-\d{3}$/.test(v)) missing.push(`${theme}/${sys}/${key} is not one text class: ${v}`);
+      }
+    }
+    const dark = e2Styles('dark', false);
+    const v98Dark = { cardIdle: 'bg-gray-700/50 border-2 border-gray-600 hover:border-gray-500 hover:bg-gray-700/70', cardSelected: 'bg-gradient-to-br from-blue-600/30 to-purple-600/30 border-2 border-blue-400 shadow-lg shadow-blue-500/20',
+      moneyPositive: 'text-green-400', moneyNegative: 'text-red-400', warningText: 'text-amber-300', successText: 'text-green-400', infoText: 'text-blue-400', statMoney: 'text-green-500', statInfo: 'text-blue-500' };
+    const moved = V99_THEME_ACCENT_KEYS.filter(k => dark[k] !== v98Dark[k]);
+    const light = e2Styles('light', false);
+    const lightCards = light.cardIdle === 'bg-white/50 border-2 border-gray-200 hover:border-gray-300 hover:bg-white/80' && light.cardSelected === 'bg-gradient-to-br from-blue-100 to-purple-100 border-2 border-blue-500 shadow-lg shadow-blue-300/50';
+    const systemFollows = J(e2Styles('system', true)) === J(e2Styles('dark', false)) && J(e2Styles('system', false)) === J(e2Styles('light', true));
+    return (missing.length === 0 && moved.length === 0 && lightCards && systemFollows) || J({ missing: missing.slice(0, 5), moved, lightCards, systemFollows });
+  });
+  check('v99ps_e43_no_made_up_colour_steps', 'No theme value uses a colour step Tailwind does not have (Retro used amber-850, which paints nothing)', () => {
+    const steps = new Set(['50', '100', '200', '300', '400', '500', '600', '700', '800', '900', '950']);
+    const bad: string[] = [];
+    for (const theme of ['dark', 'light', 'retro']) {
+      for (const [key, value] of Object.entries(e2Styles(theme, theme === 'dark'))) {
+        for (const m of String(value).matchAll(/(?:^|[\s:])(?:bg|text|border|ring|from|to|via|shadow|accent|placeholder)-(amber|emerald|rose|sky|yellow|green|red|blue|purple|pink|slate)-(\d+)/g)) {
+          if (!steps.has(m[2])) bad.push(`${theme}.${key}: ${m[1]}-${m[2]}`);
+        }
+      }
+    }
+    return bad.length === 0 || bad.slice(0, 6).join(', ');
+  });
+  check('v99ps_e44_wcag_contrast_ratio', 'wcagContrastRatio: 21 for black on white, 1 for identical colours, symmetric, short hex accepted, unreadable input reads as no contrast', () => {
+    const got = [wcagContrastRatio('#000', '#fff'), wcagContrastRatio('#ffffff', '#000000'), wcagContrastRatio('#fff', '#ffffff'), wcagContrastRatio('#777777', '#ffffff'), wcagContrastRatio('#ffffff', '#777777'),
+      wcagContrastRatio('fcd34d', '#ffffff'), wcagContrastRatio('not a colour', '#ffffff'), wcagContrastRatio('#b45309', '#ffffff')];
+    const want = [21, 21, 1, 4.48, 4.48, 1.44, 1, 5.02];
+    const blend = [v99BlendHex('#000000', '#ffffff', 0.5), v99BlendHex('#451a03', '#73320e', 0), v99BlendHex('#451a03', '#73320e', 1), v99BlendHex('junk', '#123456', 0.5), v99BlendHex('#ffffff', '#000000', 9)];
+    const wantBlend = ['#808080', '#73320e', '#451a03', '#123456', '#ffffff'];
+    const parsed = [v99TailwindColor('text-xs mt-2 text-amber-300/80 hover:text-white', 'text'), v99TailwindColor('bg-gradient-to-br from-blue-100 to-purple-100', 'bg'), v99TailwindColor('bg-white/50 border-2', 'bg'), v99TailwindColor('text-chartreuse-500', 'text')];
+    const wantParsed = [{ hex: '#fcd34d', alpha: 0.8 }, null, { hex: '#ffffff', alpha: 0.5 }, null];
+    return (J(got) === J(want) && J(blend) === J(wantBlend) && J(parsed) === J(wantParsed)) || J({ got, blend, parsed });
+  });
+  check('v99ps_e45_theme_pairs_readable', 'Every declared text / background pair of the three themes reaches its contrast minimum (menu character cards and accent texts)', () => {
+    const pairs = v99ThemeContrastPairs();
+    const weak = pairs.map(p => ({ ...p, ratio: wcagContrastRatio(p.fg, p.bg) })).filter(p => p.ratio < p.min).map(p => `${p.theme}: ${p.what} ${p.ratio} < ${p.min} (${p.fg} on ${p.bg})`);
+    const themes = new Set(pairs.map(p => p.theme));
+    const strict = pairs.filter(p => p.min >= 4.5).length;
+    return (weak.length === 0 && themes.size === 3 && pairs.length >= 39 && strict >= pairs.length - 6) || J({ weak: weak.slice(0, 6), themes: [...themes], n: pairs.length, strict });
+  });
+  check('v99ps_e46_the_v98_looks_fail_the_same_measure', 'The measure is not vacuous: V9.8\'s Retro menu cards and its pale accents on Light\'s white fail it; the V9.9 ones pass', () => {
+    const retro = e2Styles('retro', false);
+    const light = e2Styles('light', false);
+    const retroMenuCard = v99SurfaceColors(retro.menuCard, V99_THEME_BASE_SURFACES.retro.menuPage)[0];
+    const hex = (cls: string) => v99TailwindColor(cls, 'text')?.hex || '#000000';
+    // V9.8: Retro fell into the light branch — a white/50 idle card and a blue-100 selected card under amber-100 text.
+    const v98Idle = v99SurfaceColors('bg-white/50 border-2 border-gray-200', retroMenuCard)[0];
+    const v98Name = wcagContrastRatio(hex(retro.text), v98Idle);
+    const v98Selected = wcagContrastRatio(hex(retro.text), V99_TAILWIND_HEX['blue-100']);
+    const v99Idle = wcagContrastRatio(hex(retro.text), v99SurfaceColors(retro.cardIdle, retroMenuCard)[0]);
+    const v99Selected = wcagContrastRatio(hex(retro.text), v99SurfaceColors(retro.cardSelected, retroMenuCard)[0]);
+    // V9.8: Light showed the dark themes' accents on white.
+    const v98Warning = wcagContrastRatio(V99_TAILWIND_HEX['amber-300'], '#ffffff');
+    const v98Success = wcagContrastRatio(V99_TAILWIND_HEX['green-400'], '#ffffff');
+    const v99Warning = wcagContrastRatio(hex(light.warningText), '#ffffff');
+    const v99Success = wcagContrastRatio(hex(light.successText), '#ffffff');
+    const ok = v98Name < 3 && v98Selected < 1.5 && v99Idle >= 7 && v99Selected >= 7 && v98Warning < 2 && v98Success < 2 && v99Warning >= 4.5 && v99Success >= 4.5;
+    return ok || J({ v98Name, v98Selected, v99Idle, v99Selected, v98Warning, v98Success, v99Warning, v99Success });
+  });
+  check('v99ps_e47_settings_screen_classes', 'Simple settings and the settings window chrome: Dark and Light keep V9.8\'s classes, Retro gets amber ones (no white or slate box under cream text)', () => {
+    const simple = [v99SimpleSettingsClasses(true, false), v99SimpleSettingsClasses(false, false)];
+    const wantSimple = [{ box: 'border-slate-700 bg-slate-950/60', select: 'bg-slate-800' }, { box: 'border-slate-200 bg-slate-50', select: 'bg-white border' }];
+    const shellDark = v99SettingsShellClasses(true, false);
+    const shellLight = v99SettingsShellClasses(false, false);
+    const v98 = shellDark.switcher === 'bg-slate-900 border-slate-700' && shellDark.tabIdle === 'text-slate-300 hover:text-white hover:bg-slate-800' && shellDark.close === 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white'
+      && shellDark.note === 'border-slate-700 text-slate-400 bg-slate-950/40' && shellLight.switcher === 'bg-slate-100 border-slate-200' && shellLight.tabIdle === 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+      && shellLight.close === 'bg-slate-200 hover:bg-slate-300 text-slate-700 hover:text-slate-900' && shellLight.note === 'border-slate-200 text-slate-600 bg-slate-50';
+    // Retro wins over the flag: the shell passes isDark=true for it, an older caller might still pass false.
+    const retroAll = [...Object.values(v99SimpleSettingsClasses(true, true)), ...Object.values(v99SimpleSettingsClasses(false, true)), ...Object.values(v99SettingsShellClasses(true, true)), ...Object.values(v99SettingsShellClasses(false, true))];
+    const retroOk = retroAll.every(c => /amber/.test(c) && !/slate|white|gray/.test(c));
+    const retroBox = v99SurfaceColors(v99SimpleSettingsClasses(true, true).box, '#78350f')[0];
+    const retroText = wcagContrastRatio(V99_TAILWIND_HEX['amber-100'], retroBox);
+    return (J(simple) === J(wantSimple) && v98 && retroOk && retroText >= 7) || J({ simple, v98, retroOk, retroText });
+  });
+
+  check('v99ps_e61_accent_keeps_dark_exact', 'v99ThemeAccent: Dark (and a theme sharing Dark\'s accent) keeps the exact class V9.8 used at that spot; Light gets its readable accent', () => {
+    const dark = e2Styles('dark', false);
+    const light = e2Styles('light', false);
+    const retro = e2Styles('retro', false);
+    const tableMatches = (Object.keys(V99_DARK_ACCENT_TEXT) as Array<keyof typeof V99_DARK_ACCENT_TEXT>).every(k => dark[k] === V99_DARK_ACCENT_TEXT[k]);
+    const got = [v99ThemeAccent(dark, 'warningText', 'text-yellow-400'), v99ThemeAccent(light, 'warningText', 'text-yellow-400'), v99ThemeAccent(retro, 'warningText', 'text-yellow-400'),
+      v99ThemeAccent(dark, 'infoText', 'text-purple-400'), v99ThemeAccent(light, 'infoText', 'text-purple-400'), v99ThemeAccent(retro, 'infoText', 'text-purple-400'),
+      v99ThemeAccent(retro, 'moneyNegative', 'text-red-400'), v99ThemeAccent({}, 'successText', 'text-green-400'), v99ThemeAccent(null, 'successText', 'text-green-400')];
+    const want = ['text-yellow-400', 'text-amber-700', 'text-yellow-400', 'text-purple-400', 'text-blue-700', 'text-sky-300', 'text-rose-300', 'text-green-400', 'text-green-400'];
+    return (tableMatches && J(got) === J(want)) || J({ tableMatches, got });
+  });
+
+  // b5-02 — one number format whatever the browser's language
+  /** Runs fn on a host whose bare number formatting is German-style (1.234.567,5), like a de-DE browser. Restored afterwards. */
+  const e2WithGermanHost = <T,>(fn: () => T): T => {
+    const proto = Number.prototype as unknown as { toLocaleString: (this: number, ...args: unknown[]) => string };
+    const original = proto.toLocaleString;
+    proto.toLocaleString = function (this: number, ...args: unknown[]): string {
+      if (args.length > 0 && args[0] !== undefined) return original.apply(this, args);
+      return original.call(this, 'en-US').replace(/[.,]/g, c => (c === ',' ? '.' : ','));
+    };
+    try { return fn(); } finally { proto.toLocaleString = original; }
+  };
+  check('v99ps_e48_game_number_format_is_fixed', 'formatGameNumber and fmtMoney give the same text on a German-formatting host as on an English one', () => {
+    const emulationWorks = e2WithGermanHost(() => (1234567.5).toLocaleString()) === '1.234.567,5' && (1234567.5).toLocaleString('en-US') === '1,234,567.5';
+    const table: Array<[number, string]> = [[0, '0'], [999, '999'], [1000, '1,000'], [1234567, '1,234,567'], [-1250, '-1,250'], [12.5, '12.5'], [NaN, '0'], [Infinity, '0']];
+    const plain = table.filter(([n, want]) => formatGameNumber(n) !== want).map(([n]) => `${n}→${formatGameNumber(n)}`);
+    const german = e2WithGermanHost(() => table.filter(([n, want]) => formatGameNumber(n) !== want).map(([n]) => `${n}→${formatGameNumber(n)}`));
+    const money = e2WithGermanHost(() => [fmtMoney(1234567), fmtMoney(-1250), formatMoneyDelta(12500), fmtMoneyCompact(15000)]);
+    const moneyOk = J(money) === J(['$1,234,567', '-$1,250', '+$12,500', '$15K']);
+    return (emulationWorks && plain.length === 0 && german.length === 0 && moneyOk && V99_GAME_NUMBER_LOCALE === 'en-AU') || J({ emulationWorks, plain, german, money });
+  });
+  check('v99ps_e49_assistant_answers_money_on_a_german_host', 'Game Intelligence answers "How much money do I have?" on a German-formatting host (V9.8: "not enough information" for $6,000 and $12,500)', () => {
+    const ask = (money: number) => runGameIntelligenceCore('How much money do I have?', createGIFixtureWorld({ money }).world, createGIConversationContext()).answer.lines.join(' ');
+    const english = [ask(6000), ask(12500), ask(1850)];
+    const german = e2WithGermanHost(() => [ask(6000), ask(12500), ask(1850)]);
+    const ok = J(german) === J(english) && german[0].includes('$6,000') && german[1].includes('$12,500') && german[2].includes('$1,850') && german.every(a => !/enough information/i.test(a) && !/\d\.\d{3}\b/.test(a));
+    return ok || J({ english, german });
+  });
+  check('v99ps_e50_win_condition_figures_on_a_german_host', 'Win-condition figures read the same on a German-formatting host (every metric profile)', () => {
+    const render = () => (Object.keys(WIN_METRIC_PROFILES) as WinMetric[]).map(k => `${k}:${WIN_METRIC_PROFILES[k].formatValue(1234567)}`);
+    const english = render();
+    const german = e2WithGermanHost(render);
+    const dotted = german.filter(s => /\d\.\d{3}/.test(s));
+    return (J(english) === J(german) && dotted.length === 0 && german.some(s => s.includes('$1,234,567'))) || J({ dotted, sample: german.slice(0, 3) });
+  });
+  const e2ComponentSource = String(AustraliaGame);
+  const e2SourceReadable = /\bgameSettings\b/.test(e2ComponentSource) && /addNotification/.test(e2ComponentSource); // false in a minified build: names are gone
+  check('v99ps_e51_no_host_locale_numbers_in_the_play_screen', 'The main component formats no number through the browser\'s language: every bare .toLocaleString() left is a date', () => {
+    if (!e2SourceReadable) return true;
+    const bare: string[] = [];
+    for (const m of e2ComponentSource.matchAll(/\.toLocaleString\(\)/g)) {
+      const before = e2ComponentSource.slice(Math.max(0, (m.index || 0) - 60), m.index || 0);
+      if (!/new Date\([^()]*\)$/.test(before)) bare.push(before.slice(-40));
+    }
+    const pinned = (e2ComponentSource.match(/\.toLocaleString\(['"]en-AU['"]\)/g) || []).length;
+    return (bare.length === 0 && pinned >= 100) || J({ bare: bare.slice(0, 4), pinned });
+  });
+
+  // c4-12 — one money format
+  check('v99ps_e52_money_format_adopted', 'The play screen writes money through fmtMoney: the menu cards, travel, challenge, purchase and deposit messages no longer print raw numbers', () => {
+    if (!e2SourceReadable) return true;
+    // Patterns, not literal snippets: the bundler may rename a local (targetName → targetName2).
+    const raw = [/Traveled to \$\{\w+\} for \$\$\{/, /Highest challenge reward: \$\$\{/, /Lost your \$\$\{/, /Wager \$\$\{/, /Pay \$\$\{\w+\} to continue/, /completed! Won \$\$\{/]
+      .filter(re => re.test(e2ComponentSource)).map(String);
+    const uses = e2ComponentSource.split('fmtMoney(').length - 1;
+    const formatted = [/Traveled to \$\{\w+\} for \$\{fmtMoney\(/, /Pay \$\{fmtMoney\(\w+\)\} to continue/, /Wager \$\{fmtMoney\(/, /completed! Won \$\{fmtMoney\(/].filter(re => !re.test(e2ComponentSource)).map(String);
+    return (raw.length === 0 && formatted.length === 0 && uses >= 150) || J({ raw, formatted, uses });
+  });
+
+  // c1-12 / c2-06 — settings nothing reads
+  check('v99ps_e53_inert_settings_are_real_and_kept', 'Every "no effect" setting is a real setting that still loads and saves its value; settings that do something are not marked', () => {
+    const defaults = DEFAULT_GAME_SETTINGS as unknown as Record<string, unknown>;
+    const keys = V99_INERT_SETTINGS.map(s => String(s.key));
+    const unknown = keys.filter(k => !(k in defaults));
+    const dupes = keys.filter((k, i) => keys.indexOf(k) !== i);
+    const noReason = V99_INERT_SETTINGS.filter(s => s.reason.trim().length < 20).map(s => String(s.key));
+    // The sanitizer keeps a non-default value of each one (nothing was removed or forced).
+    const flipped: Record<string, unknown> = {};
+    for (const k of keys) flipped[k] = typeof defaults[k] === 'boolean' ? !defaults[k] : typeof defaults[k] === 'number' ? Number(defaults[k]) + 1 : defaults[k];
+    const kept = sanitizeGameSettings({ ...DEFAULT_GAME_SETTINGS, ...flipped }) as unknown as Record<string, unknown>;
+    const lost = keys.filter(k => kept[k] !== flipped[k]);
+    const live = ['totalDays', 'actionLimitsEnabled', 'campaignModeEnabled', 'fogOfWarEnabled', 'matchRecoveryEnabled', '', 'nope'].filter(k => v99InertSettingReason(k) !== null);
+    const ok = unknown.length === 0 && dupes.length === 0 && noReason.length === 0 && lost.length === 0 && live.length === 0 && keys.length === 8
+      && v99InertSettingReason(null) === null && v99InertSettingReason('nationalEventsEnabled') !== null && V99_NO_EFFECT_LABEL === 'No effect in this version';
+    return ok || J({ unknown, dupes, noReason, lost, live, n: keys.length });
+  });
+  check('v99ps_e54_inert_list_not_stale', 'The "no effect" list is not stale: the main component still touches each of those settings only in its own control and reset line', () => {
+    if (!e2SourceReadable) return true;
+    // Occurrences of `.key` in the component today (the control's own reads and writes, the group reset). More than this means
+    // somebody wired the setting up — then it must leave V99_INERT_SETTINGS.
+    const ceiling: Record<string, number> = { scenarioEngineV73Enabled: 0, customScenarioBuilderEnabled: 0, nationalEventsEnabled: 0, aiPersistentAivsAiEnabled: 4, priorityTransparencyEnabled: 4,
+      decisionTransparencyExplanationDepth: 2, projectedOutcomeEnabled: 4, governanceVetoUsesPerMatch: 1 };
+    const over: string[] = [];
+    for (const s of V99_INERT_SETTINGS) {
+      const key = String(s.key);
+      const n = (e2ComponentSource.match(new RegExp(`\\.${key}\\b`, 'g')) || []).length;
+      if (!(key in ceiling) || n > ceiling[key]) over.push(`${key}: ${n}`);
+    }
+    return over.length === 0 || over.join(', ');
+  });
+
+  // c2-07 — a reset asks first and says how much it changes
+  check('v99ps_e55_reset_preview_counts_without_writing', 'Previewing a reset reports exactly the settings it would change and writes nothing (function, key and object writes; several in a row)', () => {
+    const current: GameSettingsState = { ...DEFAULT_GAME_SETTINGS, totalDays: 55, sabotageEnabled: !DEFAULT_GAME_SETTINGS.sabotageEnabled, overrideCost: DEFAULT_GAME_SETTINGS.overrideCost + 100 };
+    const snapshot = J(current);
+    const outsideBefore = v99SettingsPreviewCapture('totalDays', 1);
+    let insideActive = false;
+    let captured: boolean[] = [];
+    const changed = v99PreviewSettingsReset(current, () => {
+      insideActive = v99SettingsPreviewActive();
+      captured = [
+        v99SettingsPreviewCapture(prev => ({ ...prev, totalDays: DEFAULT_GAME_SETTINGS.totalDays, playerActionsPerDay: prev.playerActionsPerDay }), undefined),
+        v99SettingsPreviewCapture('sabotageEnabled', DEFAULT_GAME_SETTINGS.sabotageEnabled),
+        v99SettingsPreviewCapture({ overrideCost: DEFAULT_GAME_SETTINGS.overrideCost, maxActionsPerTurn: DEFAULT_GAME_SETTINGS.maxActionsPerTurn }, undefined),
+      ];
+    });
+    const nothing = v99PreviewSettingsReset(DEFAULT_GAME_SETTINGS, () => { v99SettingsPreviewCapture(prev => ({ ...prev, totalDays: DEFAULT_GAME_SETTINGS.totalDays }), undefined); });
+    const ok = outsideBefore === false && insideActive && J(captured) === J([true, true, true]) && J([...(changed || [])].sort()) === J(['overrideCost', 'sabotageEnabled', 'totalDays'])
+      && J(current) === snapshot && !v99SettingsPreviewActive() && J(nothing) === '[]';
+    return ok || J({ outsideBefore, insideActive, captured, changed, same: J(current) === snapshot, active: v99SettingsPreviewActive(), nothing });
+  });
+  check('v99ps_e56_reset_preview_is_safe', 'A preview never nests, never stays installed after a handler throws, and compares nested settings by value', () => {
+    const base: GameSettingsState = { ...DEFAULT_GAME_SETTINGS };
+    let nested: string[] | null = [];
+    const outer = v99PreviewSettingsReset(base, () => { nested = v99PreviewSettingsReset(base, () => undefined); });
+    const thrown = v99PreviewSettingsReset(base, () => { throw new Error('boom'); });
+    const afterThrow = v99SettingsPreviewActive();
+    // A reset that rebuilds a nested object with the same contents changes nothing; one that changes a leaf changes one setting.
+    const sameNested = v99PreviewSettingsReset(base, () => { v99SettingsPreviewCapture(prev => ({ ...prev, manualPriorityWeights: JSON.parse(JSON.stringify(prev.manualPriorityWeights)) }), undefined); });
+    const withPrivate = { ...base, _internal: 1 } as unknown as GameSettingsState;
+    const privateIgnored = v99ChangedSettingKeys(base, withPrivate);
+    const leaf = v99ChangedSettingKeys(base, { ...base, manualPriorityWeights: { ...base.manualPriorityWeights, v99Probe: 1 } as unknown as GameSettingsState['manualPriorityWeights'] });
+    const ok = nested === null && J(outer) === '[]' && thrown === null && afterThrow === false && J(sameNested) === '[]' && privateIgnored.length === 0 && J(leaf) === J(['manualPriorityWeights']);
+    return ok || J({ nested, outer, thrown, afterThrow, sameNested, privateIgnored, leaf });
+  });
+  check('v99ps_e57_reset_question_text', 'The reset question names the number of settings, says the button covers a group, and mentions the running match only during one', () => {
+    const one = v99ResetConfirmMessage(1, false);
+    const many = v99ResetConfirmMessage(234, true);
+    const unknownCount = v99ResetConfirmMessage(null, false);
+    const ok = one.startsWith('This puts 1 setting back to its default.') && !/match you are playing/.test(one) && many.startsWith('This puts 234 settings back to their defaults.') && /match you are playing/.test(many)
+      && unknownCount.startsWith('This puts a whole group of settings back to their defaults.') && [one, many, unknownCount].every(m => /every setting of the group it names/.test(m) && m.endsWith('It cannot be undone.'))
+      && v99ResetConfirmTitle('Reset Team Mode Settings') === 'Reset Team Mode Settings?' && v99ResetConfirmTitle('Reset Auto Mode?? ') === 'Reset Auto Mode?' && v99ResetConfirmTitle('') === 'Reset settings?';
+    return ok || J({ one, many, unknownCount });
+  });
+  check('v99ps_e58_reset_handlers_are_wrapped', 'Wrapping a reset registry keeps every label and routes every button through the asking wrapper (the original runs only when the wrapper says so)', () => {
+    const ran: string[] = [];
+    const asked: string[] = [];
+    const registry: Record<string, { label: string; fn: () => void }> = { a: { label: 'Reset A', fn: () => { ran.push('a'); } }, b: { label: 'Reset B', fn: () => { ran.push('b'); } } };
+    v99WrapResetHandlers(registry, (label, fn) => () => { asked.push(label); if (label === 'Reset B') fn(); });
+    registry.a.fn(); registry.b.fn();
+    return (J(asked) === J(['Reset A', 'Reset B']) && J(ran) === J(['b']) && registry.a.label === 'Reset A' && registry.b.label === 'Reset B' && V99_RESET_NOTHING_TO_DO.startsWith('Nothing to reset')) || J({ asked, ran });
+  });
+
+  // "Don't ask me again" can be taken back
+  check('v99ps_e59_ask_me_again', 'The "Ask me again" row lists exactly the silenced questions and restoring the defaults silences none', () => {
+    const none = v99SilencedConfirmations({ ...DEFAULT_DONT_ASK });
+    const some = v99SilencedConfirmations({ travel: true, sell: false, challenge: true, endDay: false });
+    const all = v99SilencedConfirmations({ endDay: true, challenge: true, sell: true, travel: true });
+    const loose = v99SilencedConfirmations({ travel: 1 as unknown as boolean, emergencyLoan: true, sell: true });
+    const texts = [v99AskAgainSummary(none), v99AskAgainSummary(['sell']), v99AskAgainSummary(some), v99AskAgainSummary(all)];
+    const ok = none.length === 0 && J(some) === J(['travel', 'challenge']) && J(all) === J(['travel', 'sell', 'challenge', 'endDay']) && J(loose) === J(['sell']) && v99SilencedConfirmations(null).length === 0
+      && texts[0].startsWith('The game asks before') && texts[1] === 'You ticked "Don\'t ask me again" for selling.' && texts[2] === 'You ticked "Don\'t ask me again" for travelling and taking a challenge.'
+      && texts[3] === 'You ticked "Don\'t ask me again" for travelling, selling, taking a challenge and ending a turn with actions left.'
+      && all.every(t => shouldSkipConfirmation(t, { travel: true, sell: true, challenge: true, endDay: true })) && all.every(t => !shouldSkipConfirmation(t, { ...DEFAULT_DONT_ASK }));
+    return ok || J({ none, some, all, loose, texts });
+  });
+
+  // Wording: Random mode is fully seeded since V9.9 (a new seed per match)
+  check('v99ps_e60_world_rng_wording', 'The settings texts no longer call Random mode "unseeded": registry description, Settings Intelligence meaning and the replay conflict rule', () => {
+    const registry = SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(d => d.key === 'worldRngMode');
+    const meta = SETTINGS_INTELLIGENCE_METADATA.find(m => m.key === 'worldRngMode');
+    const conflict = inspectSettingsDependencies({ ...DEFAULT_GAME_SETTINGS, worldRngMode: 'random', aiReplayRecordingEnabled: true }).conflicts.find(c => c.settingA === 'worldRngMode');
+    const texts = [registry?.description || '', meta?.playerMeaning || '', JSON.stringify(meta?.levels || {}), conflict?.description || ''];
+    const stale = texts.filter(t => /unseeded|Math\.random/i.test(t));
+    const ok = texts.every(t => t.length > 10) && stale.length === 0 && /new seed/i.test(texts[0]) && /seed/i.test(texts[1]) && /seed/i.test(texts[3])
+      // the rule itself is untouched: same pair, same automatic fix
+      && conflict?.settingB === 'aiReplayRecordingEnabled' && J(conflict?.autoFixSettings) === J({ worldRngMode: 'deterministic' });
+    return ok || J({ texts, stale });
   });
   return results;
 }
@@ -201176,6 +202543,7 @@ function dispatchGameSettingsChange(
   currentSettings?: GameSettingsState,
   dispatchLedgerEvent?: (category: any, payload?: any) => void
 ): void {
+  if (v99SettingsPreviewCapture(keyOrPatch, newValue)) return; // V9.9 (SECTION 20AU): a reset that is only being previewed is counted, never written or logged
   const timestamp = Date.now();
 
   // SH3: Unified state updater helper function to compute next state cleanly across all patch types
@@ -201268,6 +202636,7 @@ function dispatchGameSettingsChange(
   // rather than emitting one event per individual field the reset touches, since a reset handler
   // is one player-initiated bulk action, not many independent field edits.
   const recordSettingsSectionResetEvent = useCallback((sectionLabel: string, source: SettingsChangeSource) => {
+    if (v99SettingsPreviewActive()) return; // V9.9 (SECTION 20AU): previewing a reset writes no ledger line
     dispatchAuthoritativeGameActivityLedgerEvent('settings_change', {
       source,
       causalLinkage: { causalChainId: nextCorrelationId() },
@@ -201291,7 +202660,7 @@ function dispatchGameSettingsChange(
     section: string,
     updater: (prev: GameSettingsState) => GameSettingsState
   ): void => {
-    if (section.includes('Co-Pilot') || section.includes('Auto Mode') || source === 'preset') {
+    if (!v99SettingsPreviewActive() && (section.includes('Co-Pilot') || section.includes('Auto Mode') || source === 'preset')) { // V9.9 (SECTION 20AU): not while a reset is only previewed
       setCoPilotManualOverride(false);
     }
     dispatchGameSettingsChange(setGameSettings, updater, undefined, source, { section, day: gameState?.day, turn: gameState?.turnCounter }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent);
@@ -202552,13 +203921,13 @@ function dispatchGameSettingsChange(
         case 'challenge':
           if (value > updated.highestChallenge) {
             updated.highestChallenge = value;
-            addNotification(`New record! Highest challenge reward: $${value}`, 'success', false);
+            addNotification(`New record! Highest challenge reward: ${fmtMoney(Number(value))}`, 'success', false);
           }
           break;
         case 'resource':
           if (value.price > updated.mostExpensiveResourceSold.price) {
             updated.mostExpensiveResourceSold = value;
-            addNotification(`New record! Most valuable sale: ${value.resource} for $${value.price}`, 'success', false);
+            addNotification(`New record! Most valuable sale: ${value.resource} for ${fmtMoney(Number(value.price))}`, 'success', false);
           }
           break;
         case 'consecutiveWins':
@@ -204141,7 +205510,7 @@ function dispatchGameSettingsChange(
       ? `Directive: ${directiveLabel} • ${formatDirectiveStrengthLabel(directiveMeta.strength)} • ${directiveInfluence >= 0 ? '+' : ''}${directiveInfluence.toFixed(1)} score`
       : 'Directive: No active directive';
     const economyLine = teamModeMeta
-      ? `Economy: Cash $${Math.round(Number(teamModeMeta.actorMoney || options.actor.money || 0)).toLocaleString()} • Net $${Math.round(Number(teamModeMeta.actorNetWorth || 0)).toLocaleString()} • Share ${Math.round((Number(teamModeMeta.cashShare || 0) * 100))}% • ${teamModeMeta.economyStateLabel || 'Unknown'}`
+      ? `Economy: Cash $${Math.round(Number(teamModeMeta.actorMoney || options.actor.money || 0)).toLocaleString('en-AU')} • Net $${Math.round(Number(teamModeMeta.actorNetWorth || 0)).toLocaleString('en-AU')} • Share ${Math.round((Number(teamModeMeta.cashShare || 0) * 100))}% • ${teamModeMeta.economyStateLabel || 'Unknown'}`
       : 'Economy: Team mode not active';
     const roleModeLine = teamModeMeta
       ? `Role: ${teamModeMeta.teamAiRoleLabel ? `${teamModeMeta.teamAiRoleLabel} • ` : ''}${teamModeMeta.roleModeLabel || formatAiRoleModeLabel(teamModeMeta.roleMode || options.actor.aiRoleMode || 'normal')} • ${String(teamModeMeta.roleModeSource || options.actor.aiRoleModeSource || 'none').replace(/_/g, ' ')} • ${teamModeMeta.teamAiRoleReason || teamModeMeta.roleModeReason || options.actor.aiRoleModeReason || 'No explicit role pressure'}${teamModeMeta.teamObjective ? ` • Objective: ${teamModeMeta.teamObjective}` : ''}`
@@ -204842,7 +206211,7 @@ function dispatchGameSettingsChange(
       overridesUsedToday: (prev.overridesUsedToday || 0) + 1,
       overrideFatigue: (prev.overrideFatigue || 0) + getOverrideFatigueIncrement(prev.overridesUsedToday || 0)
     }));
-    addNotification(`🤖 ${getActorDisplayName(actorId)} paid $${overrideCost} for extra actions`, 'ai', true);
+    addNotification(`🤖 ${getActorDisplayName(actorId)} paid ${fmtMoney(overrideCost)} for extra actions`, 'ai', true);
     return true;
   }, [addNotification, calculateActorOverrideCost, deductMoney, gameSettings.allowActionOverride, getActorDisplayName, getActorOverridesRemaining, getActorState, updateActorState]);
 
@@ -205432,8 +206801,9 @@ function dispatchGameSettingsChange(
     // Validate base price
     let price = resourcePrices[resource];
     if (typeof price !== 'number' || price < 0 || !isFinite(price)) {
-      console.warn(`Invalid base price for ${resource}: ${price}, using default 100`);
-      price = 100;
+      // V9.9 (SECTION 20AU): no live price is normal for a crafted good or an island resource — it sells at its own
+      // base price (v99ResourceBasePrice), not at a flat $100 with a console warning.
+      price = v99ResourceBasePrice(resource, 100);
     }
 
     // Accumulate all multipliers before applying (more accurate than sequential Math.floor)
@@ -206624,7 +207994,7 @@ function dispatchGameSettingsChange(
         // V10.3: at most one national-program contribution candidate (long-horizon value; may decline or free-ride).
         // Executes through executeAiAction → the canonical command path and costs one normal action (no extra loop).
         const v103Mp = mpAiCandidateRef.current?.(aiState);
-        if (v103Mp) { const mpc = v103Mp!; decisions.push({ type: 'megaproject_contribute', description: `Fund a national program stage ($${Math.round(mpc.cmd.amount || 0).toLocaleString()}) — ${mpc.reason}`, data: { command: mpc.cmd }, score: mpc.score * profile.decisionQuality }); }
+        if (v103Mp) { const mpc = v103Mp!; decisions.push({ type: 'megaproject_contribute', description: `Fund a national program stage ($${Math.round(mpc.cmd.amount || 0).toLocaleString('en-AU')}) — ${mpc.reason}`, data: { command: mpc.cmd }, score: mpc.score * profile.decisionQuality }); }
 
         getAiLoanDecisionCandidates(aiState).forEach(decision => {
           decisions.push({
@@ -210145,6 +211515,11 @@ function dispatchGameSettingsChange(
     };
   }, [gameState.regionDeposits, isTeamMode]);
 
+  // V9.9 (SECTION 20AU): the stake box opens at the amount that really takes (or, once held, tops up) the region the
+  // player is in. It used to open at $1 next to "Deposit $1 to claim control" and then refuse anything under $300.
+  const v99StakeMinimum = getRegionControlInfo(player.currentRegion).minimumPlayerDeposit;
+  useEffect(() => { setRegionDepositInput(v99StakeMinimum); }, [player.currentRegion, v99StakeMinimum]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const playerControlKey = isTeamMode ? TEAM_PLAYER_ID : 'player';
   const opponentControlKey = isTeamMode ? TEAM_OPPONENT_ID : 'ai';
   const playerControlledRegions = regionControlStats.totalControlled[playerControlKey] || 0;
@@ -210437,7 +211812,7 @@ function dispatchGameSettingsChange(
     const endgameActive = isEndgamePeriod(gameState.day, gameSettings.totalDays, gameSettings.teamAiEndgameStartPercent);
     const phase = computeEconomicPhase(actor, spendableCash, gameSettings, endgameActive);
     const vaultEffect = gameSettings.teamCashVaultEnabled
-      ? `Vault active: $${(actor.protectedCash || 0).toLocaleString()} protected, $${spendableCash.toLocaleString()} spendable.`
+      ? `Vault active: $${(actor.protectedCash || 0).toLocaleString('en-AU')} protected, $${spendableCash.toLocaleString('en-AU')} spendable.`
       : 'Vault inactive.';
     const governorCategoryByType: Partial<Record<AIAction['type'], EconomySpendCategory>> = {
       buy_equipment: 'equipment', invest: 'investment', sabotage: 'sabotage', region_deposit: 'region_deposit', travel: 'travel', give_cash: 'support', give_resource: 'support'
@@ -211512,7 +212887,7 @@ function dispatchGameSettingsChange(
   }, [gameSettings.winConditionTieBreakers]);
 
   const formatWinMetricValue = useCallback((metric: WinMetric, value: number) => {
-    return WIN_METRIC_PROFILES[metric]?.formatValue(value) ?? `$${Math.round(value).toLocaleString()}`;
+    return WIN_METRIC_PROFILES[metric]?.formatValue(value) ?? `$${Math.round(value).toLocaleString('en-AU')}`;
   }, []);
 
   const getWinMetricGoalText = useCallback((metric: WinMetric, teamMode = isTeamMode) => {
@@ -213335,7 +214710,7 @@ function dispatchGameSettingsChange(
         'proposal_completed'
       );
       addNotification(
-        `Proposal terms settled: $${cashAmount}${Object.keys(resourcesToTransfer).length > 0 ? ' + resources' : ''}.`,
+        `Proposal terms settled: ${fmtMoney(cashAmount)}${Object.keys(resourcesToTransfer).length > 0 ? ' + resources' : ''}.`,
         'info',
         false,
         'task_completion'
@@ -213970,6 +215345,8 @@ function dispatchGameSettingsChange(
     }
   }, [appendTeamAiTraceNote, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamInitiativeEnabled, gameSettings.teamInitiativeMaximum, gameSettings.teamInitiativeGainMultiplier, gameSettings.teamInitiativeTransparencyEnabled, gameState.day, updateTeamState]);
 
+  // V9.9 (SECTION 20AU): the pay-to-override prompt (requestActionOverrideForAction is defined further down).
+  const v99ActionOverrideRef = useRef<((actionId: ActionPointActionId, apValidation: V99ActionGate, onAuthorizedCommit: () => void, v99RequiredCost?: number) => void) | null>(null);
   const depositInRegion = useCallback((
     regionCode: string,
     actorId: string,
@@ -213994,8 +215371,8 @@ function dispatchGameSettingsChange(
     if ((actorState.money || 0) < amount) {
       if (!options?.silent) {
         const prefix = actorState.kind === 'human' ? '' : '🤖 ';
-        addNotification(`${prefix}${actorState.name} cannot afford a $${amount} region deposit.`, actorState.kind === 'human' ? 'error' : 'ai', false, 'deposit');
-        if (actorState.kind === 'human') reportBlockedActionRef.current?.('region_deposit', `A $${amount} stake needs $${amount} cash (have $${Math.floor(actorState.money || 0)})`);
+        addNotification(`${prefix}${actorState.name} cannot afford a ${fmtMoney(amount)} region deposit.`, actorState.kind === 'human' ? 'error' : 'ai', false, 'deposit');
+        if (actorState.kind === 'human') reportBlockedActionRef.current?.('region_deposit', `A ${fmtMoney(amount)} stake needs ${fmtMoney(amount)} cash (have ${fmtMoney(Math.floor(actorState.money || 0))})`);
       }
       return false;
     }
@@ -214008,12 +215385,16 @@ function dispatchGameSettingsChange(
     if (!isDefending && amount < requiredToTake) {
       if (!options?.silent) {
         const actorLabel = actorState.kind === 'human' ? 'You need' : `🤖 ${actorState.name} needs`;
-        addNotification(`${actorLabel} at least $${requiredToTake} to take control of ${REGIONS[regionCode].name}.`, 'warning', false, 'deposit');
-        if (actorState.kind === 'human') reportBlockedActionRef.current?.('region_deposit', `Taking ${REGIONS[regionCode].name} needs a stake of at least $${requiredToTake} (you offered $${amount})`);
+        addNotification(`${actorLabel} at least ${fmtMoney(requiredToTake)} to take control of ${REGIONS[regionCode].name}.`, 'warning', false, 'deposit');
+        if (actorState.kind === 'human') reportBlockedActionRef.current?.('region_deposit', `Taking ${REGIONS[regionCode].name} needs a stake of at least ${fmtMoney(requiredToTake)} (you offered ${fmtMoney(amount)})`);
       }
       return false;
     }
 
+    // V9.9 (SECTION 20AU): a stake by hand needs the action it spends. V9.8 spent it without looking, so staking
+    // worked at "0 actions left". Everything from here on is the V9.8 body, run once the action is available (or paid for).
+    const v99StakeAp = actorState.kind === 'human' && options?.consumeAction !== false ? getActionPointCost('regional_deposit', gameSettings, false) : 0;
+    const v99CommitStake = (): boolean => {
     updateActorState(actorId, (prev: any) => ({ ...prev, money: deductMoney(prev.money, amount) }));
     updateActorContribution(actorId, {
       regionsInvested: (actorState.contributionStats?.regionsInvested || 0) + amount
@@ -214069,14 +215450,14 @@ function dispatchGameSettingsChange(
     }
 
     if (actorState.kind === 'human' && options?.consumeAction !== false) {
-      incrementAction();
+      for (let v99i = v99ActionSpendCount(v99StakeAp, 1, gameSettings); v99i > 0; v99i--) incrementAction(); // V9.9 (SECTION 20AU): the configured cost (1 by default, as before)
     }
 
     if (!options?.silent) {
       const actorName = actorState.kind === 'human' ? 'You' : `🤖 ${actorState.name}`;
       const reasonSuffix = options?.reason ? ` (${options.reason})` : '';
       addNotification(
-        `${actorName} deposited $${amount} in ${REGIONS[regionCode].name}.${reasonSuffix}`,
+        `${actorName} deposited ${fmtMoney(amount)} in ${REGIONS[regionCode].name}.${reasonSuffix}`,
         actorState.kind === 'human' ? 'info' : 'ai',
         false,
         'deposit'
@@ -214108,16 +215489,27 @@ function dispatchGameSettingsChange(
         magnitude: amount,
         success: true,
         turn: gameState.turnCounter,
-        summary: `${actorState.name} deposited $${amount} in ${REGIONS[regionCode].name}.`,
+        summary: `${actorState.name} deposited ${fmtMoney(amount)} in ${REGIONS[regionCode].name}.`,
         stableKey: `human-deposit-${gameState.turnCounter}-${actorId}-${regionCode}-${amount}`
       });
     }
 
     return true;
+    };
+    // V9.9 (SECTION 20AU): no action left → the same "Action Limit Reached" prompt a challenge or a trip gets.
+    const v99StakeGate = v99ValidateActionCost(actorState, 'regional_deposit', v99StakeAp, gameSettings);
+    if (v99StakeAp > 0 && !v99StakeGate.allowed) {
+      const v99Short = v99OverrideCashShortfall(Number(actorState.money) || 0, v99StakeGate, amount, `the ${fmtMoney(amount)} stake`);
+      if (v99Short) { if (!options?.silent) addNotification(v99Short, 'warning', false, 'deposit'); return false; }
+      v99ActionOverrideRef.current?.('regional_deposit', v99StakeGate, () => { v99CommitStake(); }, v99StakeAp);
+      return false;
+    }
+    return v99CommitStake();
   }, [
     addNotification,
     deductMoney,
     gainTeamInitiative,
+    gameSettings,
     gameSettings.negotiationMode,
     gameState.day,
     gameState.turnCounter,
@@ -214200,7 +215592,7 @@ function dispatchGameSettingsChange(
       const actorName = actorState.kind === 'human' ? 'You' : `🤖 ${getControllerDisplayName(actorId)}`;
       const reasonSuffix = options?.reason ? ` (${options.reason})` : '';
       addNotification(
-        `${actorName} cashed out ${REGIONS[regionCode].name} for $${refund} (50% of $${actorDeposit}).${reasonSuffix}`,
+        `${actorName} cashed out ${REGIONS[regionCode].name} for ${fmtMoney(refund)} (50% of ${fmtMoney(actorDeposit)}).${reasonSuffix}`,
         actorState.kind === 'human' ? 'warning' : 'ai',
         true,
         'cashout'
@@ -214381,7 +215773,7 @@ function dispatchGameSettingsChange(
       incrementAction();
     }
     addNotification(
-      `${getActorDisplayName(fromActorId)} ${allowRemoteTeamAid ? 'sent' : 'gave'} $${amount} to ${getActorDisplayName(toActorId)}.`,
+      `${getActorDisplayName(fromActorId)} ${allowRemoteTeamAid ? 'sent' : 'gave'} ${fmtMoney(amount)} to ${getActorDisplayName(toActorId)}.`,
       fromActor.kind === 'human' ? 'success' : 'ai',
       false,
       'system'
@@ -214394,7 +215786,7 @@ function dispatchGameSettingsChange(
         magnitude: amount,
         success: true,
         turn: gameState.turnCounter,
-        summary: `${getActorDisplayName(fromActorId)} gave $${amount} to ${getActorDisplayName(toActorId)}.`,
+        summary: `${getActorDisplayName(fromActorId)} gave ${fmtMoney(amount)} to ${getActorDisplayName(toActorId)}.`,
         stableKey: `human-aid-${gameState.turnCounter}-${fromActorId}-${toActorId}-${amount}`
       });
     }
@@ -214446,7 +215838,7 @@ function dispatchGameSettingsChange(
       amount,
       balanceBefore,
       balanceAfter,
-      reason: `${getActorDisplayName(actorId)} contributed $${amount} to the Team Treasury.`,
+      reason: `${getActorDisplayName(actorId)} contributed ${fmtMoney(amount)} to the Team Treasury.`,
       automatic: false
     };
     updateActorState(actorId, (prev: any) => ({ ...prev, money: deductMoney(prev.money, amount) }));
@@ -214464,7 +215856,7 @@ function dispatchGameSettingsChange(
         transactions: [...prev.treasury.transactions, transaction].slice(-60)
       }
     }));
-    addNotification(`${getActorDisplayName(actorId)} contributed $${amount} to the Team Treasury.`, actor.kind === 'human' ? 'success' : 'ai', false, 'system');
+    addNotification(`${getActorDisplayName(actorId)} contributed ${fmtMoney(amount)} to the Team Treasury.`, actor.kind === 'human' ? 'success' : 'ai', false, 'system');
     // GL10: manual/AI Treasury contribution coverage — the prior Treasury emissions only covered
     // funding-request approve/reject; this is the first Ledger record of money actually flowing
     // INTO the Treasury.
@@ -214555,7 +215947,7 @@ function dispatchGameSettingsChange(
       amount: affordable,
       balanceBefore,
       balanceAfter,
-      reason: `${getActorDisplayName(actorId)} automatically contributed $${affordable} of ${incomeKind.replace('_', ' ')} income to the Team Treasury.`,
+      reason: `${getActorDisplayName(actorId)} automatically contributed ${fmtMoney(affordable)} of ${incomeKind.replace('_', ' ')} income to the Team Treasury.`,
       automatic: true
     };
     updateActorState(actorId, (prev: any) => ({ ...prev, money: deductMoney(prev.money, affordable) }));
@@ -214665,7 +216057,7 @@ function dispatchGameSettingsChange(
     const spendableCash = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
     const syntheticDecision = {
       type: 'request_team_funds',
-      description: `${getActorDisplayName(actor.id)} requests $${request.requestedAmount} from the Team Treasury: ${request.reason}`,
+      description: `${getActorDisplayName(actor.id)} requests ${fmtMoney(request.requestedAmount)} from the Team Treasury: ${request.reason}`,
       data: {},
       score: 0,
       plan: undefined
@@ -214684,9 +216076,9 @@ function dispatchGameSettingsChange(
       successProbability: null,
       minCashRemaining: spendableCash,
       vaultEffect: gameSettings.teamCashVaultEnabled
-        ? `Vault active: $${(actor.protectedCash || 0).toLocaleString()} protected, $${spendableCash.toLocaleString()} spendable.`
+        ? `Vault active: $${(actor.protectedCash || 0).toLocaleString('en-AU')} protected, $${spendableCash.toLocaleString('en-AU')} spendable.`
         : 'Vault inactive.',
-      governorRuling: `Treasury balance: $${team?.treasury.balance ?? 0}, reserve: $${team?.treasury.reserve ?? 0}, available: $${team ? getTreasuryAvailableAmount(team) : 0}.`,
+      governorRuling: `Treasury balance: ${fmtMoney(team?.treasury.balance ?? 0)}, reserve: ${fmtMoney(team?.treasury.reserve ?? 0)}, available: ${fmtMoney(team ? getTreasuryAvailableAmount(team) : 0)}.`,
       requirementsSummary: request.reason,
       aiExplanation: request.reason,
       fallbackAvailable: true,
@@ -214783,7 +216175,7 @@ function dispatchGameSettingsChange(
       amount,
       balanceBefore,
       balanceAfter,
-      reason: `${getActorDisplayName(request.requestingActorId)}'s Team Treasury request approved for $${amount}${partial ? ' (partial)' : ''}.`,
+      reason: `${getActorDisplayName(request.requestingActorId)}'s Team Treasury request approved for ${fmtMoney(amount)}${partial ? ' (partial)' : ''}.`,
       fundingRequestId: requestId,
       automatic: false
     };
@@ -214812,14 +216204,14 @@ function dispatchGameSettingsChange(
           : r)
       }
     }));
-    addNotification(`${getActorDisplayName(request.requestingActorId)} received $${amount} from the Team Treasury${partial ? ' (partial approval)' : ''}.`, actor.kind === 'human' ? 'success' : 'ai', false, 'system');
+    addNotification(`${getActorDisplayName(request.requestingActorId)} received ${fmtMoney(amount)} from the Team Treasury${partial ? ' (partial approval)' : ''}.`, actor.kind === 'human' ? 'success' : 'ai', false, 'system');
     appendAiOperationsEvent(teamId, {
       ...buildAiOperationsEventBase(teamId, request.requestingActorId, 'treasury', true),
       type: 'TREASURY_FUNDING_REQUEST_RESOLVED',
       requestId,
       status: partial ? 'partially_approved' : 'approved'
     });
-    dispatchAuthoritativeGameActivityLedgerEvent('treasury', { teamId, actorId: request.requestingActorId, treasuryRequestId: requestId, summary: `Treasury request approved for $${amount}${partial ? ' (partial)' : ''}.` });
+    dispatchAuthoritativeGameActivityLedgerEvent('treasury', { teamId, actorId: request.requestingActorId, treasuryRequestId: requestId, summary: `Treasury request approved for ${fmtMoney(amount)}${partial ? ' (partial)' : ''}.` });
   }, [addNotification, gameSettings, gameState.day, gameState.turnCounter, getActorDisplayName, getActorState, getTreasuryAvailableAmount, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase, dispatchAuthoritativeGameActivityLedgerEvent]);
   resolveTreasuryFundingRequestRef.current = resolveTreasuryFundingRequest;
 
@@ -214854,9 +216246,9 @@ function dispatchGameSettingsChange(
       successProbability: null,
       minCashRemaining: spendableCash,
       vaultEffect: gameSettings.teamCashVaultEnabled
-        ? `Vault active: $${(actor.protectedCash || 0).toLocaleString()} protected, $${spendableCash.toLocaleString()} spendable.`
+        ? `Vault active: $${(actor.protectedCash || 0).toLocaleString('en-AU')} protected, $${spendableCash.toLocaleString('en-AU')} spendable.`
         : 'Vault inactive.',
-      governorRuling: `Requested scope: ${exception.scope}; max reserve breach: $${exception.maxReserveBreach}.`,
+      governorRuling: `Requested scope: ${exception.scope}; max reserve breach: ${fmtMoney(exception.maxReserveBreach)}.`,
       requirementsSummary: exception.reason,
       aiExplanation: exception.reason,
       fallbackAvailable: true,
@@ -215519,7 +216911,7 @@ function dispatchGameSettingsChange(
         amount: unused,
         balanceBefore,
         balanceAfter,
-        reason: `${getActorDisplayName(actorId)} returned $${unused} of unused Team Treasury funds.`,
+        reason: `${getActorDisplayName(actorId)} returned ${fmtMoney(unused)} of unused Team Treasury funds.`,
         fundingRequestId: requestId,
         automatic: true
       };
@@ -216433,7 +217825,7 @@ function dispatchGameSettingsChange(
 
     if (!options?.silent) {
       const actorPrefix = actor.kind === 'human' ? 'Received' : `🤖 ${getActorDisplayName(actorId)} received`;
-      addNotification(`${actorPrefix} ${tier.name}: +$${tier.amount} (${Math.floor(actualInterestRate * 100)}% interest, ${tier.term} days)`, actor.kind === 'human' ? 'money' : 'ai', true, 'system');
+      addNotification(`${actorPrefix} ${tier.name}: +${fmtMoney(tier.amount)} (${Math.floor(actualInterestRate * 100)}% interest, ${tier.term} days)`, actor.kind === 'human' ? 'money' : 'ai', true, 'system');
     }
     if (options?.closeModal && actor.kind === 'human') {
       updateUiState({ showAdvancedLoans: false });
@@ -216443,7 +217835,7 @@ function dispatchGameSettingsChange(
         teamId: actor.teamId,
         actorId,
         actionType: 'take_advanced_loan',
-        summary: `${getActorDisplayName(actorId)} took loan ${tier.name} ($${tier.amount}).`,
+        summary: `${getActorDisplayName(actorId)} took loan ${tier.name} (${fmtMoney(tier.amount)}).`,
         payload: {
           category: 'action',
           actionType: 'take_advanced_loan',
@@ -216473,7 +217865,7 @@ function dispatchGameSettingsChange(
 
     if (actor.money < totalOwed) {
       if (!options?.silent) {
-        addNotification(`Need $${Math.floor(totalOwed)} to repay this loan`, actor.kind === 'human' ? 'warning' : 'ai', true, 'system');
+        addNotification(`Need ${fmtMoney(Math.floor(totalOwed))} to repay this loan`, actor.kind === 'human' ? 'warning' : 'ai', true, 'system');
       }
       return false;
     }
@@ -216504,8 +217896,8 @@ function dispatchGameSettingsChange(
 
     if (!options?.silent) {
       const message = isEarlyRepayment
-        ? `Early repayment: Paid $${Math.floor(totalOwed)} (50% interest discount!)`
-        : `Repaid loan: $${Math.floor(totalOwed)}`;
+        ? `Early repayment: Paid ${fmtMoney(Math.floor(totalOwed))} (50% interest discount!)`
+        : `Repaid loan: ${fmtMoney(Math.floor(totalOwed))}`;
       addNotification(actor.kind === 'human' ? message : `🤖 ${getActorDisplayName(actorId)} ${message.toLowerCase()}`, actor.kind === 'human' ? 'success' : 'ai', true, 'system');
     }
     if (!options?.suppressLedgerEvent) {
@@ -216513,7 +217905,7 @@ function dispatchGameSettingsChange(
         teamId: actor.teamId,
         actorId,
         actionType: 'repay_advanced_loan',
-        summary: `${getActorDisplayName(actorId)} repaid loan ($${Math.floor(totalOwed)}).`,
+        summary: `${getActorDisplayName(actorId)} repaid loan (${fmtMoney(Math.floor(totalOwed))}).`,
         payload: {
           category: 'action',
           actionType: 'repay_advanced_loan',
@@ -216572,7 +217964,8 @@ function dispatchGameSettingsChange(
   const requestActionOverrideForAction = useCallback((
     actionId: ActionPointActionId,
     apValidation: ReturnType<typeof validateActionPointRequest>,
-    onAuthorizedCommit: () => void
+    onAuthorizedCommit: () => void,
+    v99RequiredCost?: number   // V9.9 (SECTION 20AU): an action that costs more than the table's unit cost (a 2-action craft, a purchase) is re-checked at ITS cost
   ) => {
     if (!gameSettings.allowActionOverride) {
       showConfirmation(
@@ -216598,7 +217991,7 @@ function dispatchGameSettingsChange(
       showConfirmation(
         'actionLimitNotice',   // V9.9 (SECTION 20AU): was 'endDay' — hidden for good once "Don't ask me again" was ticked on End Turn
         'Action Limit Reached',
-        `Action requires ${apValidation.cost} AP (${apValidation.remaining} remaining). Action Override cost: $${apValidation.overrideCost}. Available money: $${player.money}. Not enough money.`,
+        `Action requires ${apValidation.cost} AP (${apValidation.remaining} remaining). Action Override cost: ${fmtMoney(apValidation.overrideCost)}. Available money: ${fmtMoney(Number(player.money))}. Not enough money.`,
         'Close',
         () => {}
       );
@@ -216608,13 +218001,15 @@ function dispatchGameSettingsChange(
     showConfirmation(
       'actionOverride',   // V9.9 (SECTION 20AU): was 'endDay' — "Don't ask me again" on End Turn made this payment silent
       'Action Limit Reached',
-      `Action requires ${apValidation.cost} AP (${apValidation.remaining} remaining). Pay $${apValidation.overrideCost} to override action limit? (${Math.max(0, (OVERRIDE_DAILY_CAP) - (player.overridesUsedToday || 0))} override(s) remaining today)`,
+      `Action requires ${apValidation.cost} AP (${apValidation.remaining} remaining). Pay ${fmtMoney(apValidation.overrideCost)} to override action limit? (${Math.max(0, (OVERRIDE_DAILY_CAP) - (player.overridesUsedToday || 0))} override(s) remaining today)`,
       'Pay & Continue',
       () => {
-        const currentValidation = validateActionPointRequest(player, actionId, gameSettings);
+        const currentValidation = v99RequiredCost === undefined ? validateActionPointRequest(player, actionId, gameSettings) : v99ValidateActionCost(player, actionId, v99RequiredCost, gameSettings);
         if (!currentValidation.allowed && player.money >= apValidation.overrideCost) {
-          dispatchPlayer({ type: 'USE_ACTION_OVERRIDE', payload: { cost: apValidation.overrideCost, grantedCapacity: apValidation.missing } });
-          addNotification(`Paid $${apValidation.overrideCost} to override action limit for ${actionId}`, 'warning');
+          const v99Override = v99ActionOverrideAction(apValidation);
+          dispatchPlayer(v99Override);
+          playerRef.current = playerReducer(playerRef.current, v99Override); // V9.9 (SECTION 20AU): a commit through updateActorState('player') merges the whole ref — without this the purchase or stake undid the payment
+          addNotification(`Paid ${fmtMoney(apValidation.overrideCost)} to override action limit for ${actionId}`, 'warning');
           onAuthorizedCommit();
         } else if (currentValidation.allowed) {
           onAuthorizedCommit();
@@ -216624,6 +218019,7 @@ function dispatchGameSettingsChange(
       }
     );
   }, [player, gameSettings, showConfirmation, addNotification]);
+  v99ActionOverrideRef.current = requestActionOverrideForAction; // V9.9 (SECTION 20AU): for depositInRegion, which is defined above this
 
   const travelToRegion = useCallback((region: any, v99Opts?: { confirmed?: boolean }) => {
     if (v96BlockHumanAction('Travel')) return;
@@ -216694,17 +218090,17 @@ function dispatchGameSettingsChange(
               dispatchPlayer({ type: 'SET_ACTIVE_JOURNEY', payload: journey });
               updateUiState({ showTravelModal: false });
               const targetName = terr?.name || region;
-              addNotification(`Departed on expedition to ${targetName} for $${cost}. Transit will take ${terr.multiTurnDuration} day(s).`, 'travel');
+              addNotification(`Departed on expedition to ${targetName} for ${fmtMoney(cost)}. Transit will take ${terr.multiTurnDuration} day(s).`, 'travel');
             } else {
               dispatchPlayer({ type: 'UPDATE_MONEY', payload: -cost });
               dispatchPlayer({ type: 'SET_REGION', payload: region });
               if (isCommitted && terr) {
                 const duration = terr.multiTurnDuration || 1;
                 dispatchPlayer({ type: 'MERGE_STATE', payload: { committedStayTurnsLeft: duration } });
-                addNotification(`Arrived at ${terr.name || region} for $${cost}. Initiated committed stay of ${duration} day(s).`, 'travel');
+                addNotification(`Arrived at ${terr.name || region} for ${fmtMoney(cost)}. Initiated committed stay of ${duration} day(s).`, 'travel');
               } else {
                 const targetName = (REGIONS[region] || EXTERNAL_TERRITORIES[region])?.name || region;
-                addNotification(`Traveled to ${targetName} for $${cost}`, 'travel');
+                addNotification(`Traveled to ${targetName} for ${fmtMoney(cost)}`, 'travel');
               }
               updateUiState({ showTravelModal: false });
               
@@ -216753,7 +218149,7 @@ function dispatchGameSettingsChange(
     showConfirmation(
       'travel',
       'Confirm Travel',
-      `Travel to ${targetName} for $${cost}?`,
+      `Travel to ${targetName} for ${fmtMoney(cost)}?`,
       'Travel',
       commitAuthorizedTravel,
       { region, cost }
@@ -216772,6 +218168,11 @@ function dispatchGameSettingsChange(
   const handleDoubleOrNothing = useCallback(() => {
     if (v96BlockHumanAction('Double or Nothing')) return;
     if (!gameState.doubleOrNothingAvailable || gameState.lastChallengeReward <= 0) return;
+    // V9.9 (SECTION 20AU): the reward at risk must still be in hand — with less cash a loss took only what was there.
+    if (!v99DoubleOrNothingStakeCovered(Number(player.money) || 0, gameState.lastChallengeReward)) {
+      addNotification(`Double or Nothing risks the ${fmtMoney(Number(gameState.lastChallengeReward))} you just won — you need that much cash in hand.`, 'warning');
+      return;
+    }
 
     executeUniversalActionPipeline(
       {
@@ -216798,11 +218199,11 @@ function dispatchGameSettingsChange(
 
         if (success) {
           dispatchPlayer({ type: 'UPDATE_MONEY', payload: gameState.lastChallengeReward }); // Add the extra amount
-          addNotification(`Double or Nothing SUCCESS! Won extra $${gameState.lastChallengeReward}! Total: $${doubleReward}`, 'success', true);
+          addNotification(`Double or Nothing SUCCESS! Won extra ${fmtMoney(Number(gameState.lastChallengeReward))}! Total: ${fmtMoney(doubleReward)}`, 'success', true);
           updatePersonalRecords('earned', gameState.lastChallengeReward);
         } else {
           dispatchPlayer({ type: 'UPDATE_MONEY', payload: -gameState.lastChallengeReward }); // Lose the original reward
-          addNotification(`Double or Nothing FAILED! Lost your $${gameState.lastChallengeReward} reward!`, 'error', true);
+          addNotification(`Double or Nothing FAILED! Lost your ${fmtMoney(Number(gameState.lastChallengeReward))} reward!`, 'error', true);
         }
 
         dispatchGameState({ type: 'SET_DOUBLE_OR_NOTHING', payload: { available: false, reward: 0 } });
@@ -216980,7 +218381,7 @@ function dispatchGameSettingsChange(
       dispatchPlayer({ type: 'MERGE_STATE', payload: applyApproachResolutionToActor(player, res, chainRep, chainItems) });
       const moneyDelta = chainMoney - plan.upfrontCost;
       if (moneyDelta !== 0) dispatchPlayer({ type: 'UPDATE_MONEY', payload: moneyDelta });
-      if (plan.upfrontCost > 0) addNotification(`💳 Paid $${plan.upfrontCost} for “${plan.label}”.`, 'info');
+      if (plan.upfrontCost > 0) addNotification(`💳 Paid ${fmtMoney(plan.upfrontCost)} for “${plan.label}”.`, 'info');
       res.lines.forEach(line => addNotification(line, success ? 'success' : 'warning'));
       chains.forEach(c => addNotification(describeChainCompletion(c), 'levelup', true));
       commitMatchMemory({ actionType: approachMemoryActionType(plan.style), actorId: player.id || 'player', regionId: def.region, success, turn: gameState.turnCounter, amount: plan.wager, summary: `${player.name || 'Player'} chose “${plan.label}” (${APPROACH_STYLE_LABEL[plan.style]}) for ${def.name}.`, stableKey: `approach:${gameState.turnCounter}:${def.id}:${plan.approachId}:${success ? 'w' : 'l'}:${before.length}` });
@@ -217034,7 +218435,7 @@ function dispatchGameSettingsChange(
       return buildChallengeAdvisorAnswer(query, topic, { actor: player, region: String(player.currentRegion || ''), world: { weather: gameState.weather, season: gameState.season, activeEvents: gameState.activeEvents }, wager: Math.max(MINIMUM_WAGER, Math.min(Number(uiState.wagerAmount) || 100, Number(player.money) || 0)), settings: gameSettings, day: Number(gameState.day) || 1, seed: resolveEffectiveMatchSeed(gameState, Number(gameSettings.worldRngSeed) || 1) /* V9.9 (SECTION 20AS): the match's seed */, themes: wp3LiveThemesRef.current || undefined });
     };
 
-    const takeChallenge = useCallback((challengeInput: any, wager: any, approachPlan?: ChallengeApproachPlan | null) => {
+    const takeChallenge = useCallback((challengeInput: any, wager: any, approachPlan?: ChallengeApproachPlan | null, v99AbilityOverride?: string | null) => {
       if (v96BlockHumanAction('Challenge')) return;
     const challengeName = typeof challengeInput === 'object' ? challengeInput.name : challengeInput;
     const challenge = typeof challengeInput === 'object' ? challengeInput : (REGIONS[player.currentRegion]?.challenges || []).find((c: any) => c.name === challengeName) || { name: challengeName, difficulty: 1, reward: 1.5 };
@@ -217042,21 +218443,20 @@ function dispatchGameSettingsChange(
     // V9.6 (SECTION 20AH): an approach brings its own odds (abilities below still apply).
     let successChance = approachPlan ? approachPlan.successChance : calculateSuccessChance(challenge);
 
+    // V9.9 (SECTION 20AU): the ability of THIS attempt (resolveChallengeAttemptAbility — the same two rules that were
+    // written out here). "Retry Challenge" names it explicitly: the React state it used to set had not been rendered
+    // yet when the attempt ran, so the retry got no bonus and the +20% landed on the next challenge instead.
+    const v99Attempt = resolveChallengeAttemptAbility({ activeAbility: activeSpecialAbility, override: v99AbilityOverride, baseChance: successChance, difficulty: challenge.difficulty });
+    const v99Ability = v99Attempt.ability;
     // Calculate Odds: Guarantee success on challenges under difficulty 2
-    const hasCalculateOdds = activeSpecialAbility === 'Calculate Odds';
-    if (hasCalculateOdds && challenge.difficulty <= 2) {
-      successChance = 1.0;
-    }
-
+    const hasCalculateOdds = v99Ability === 'Calculate Odds';
     // Tourist Luck: +20% bonus to success chance when active
-    const hasTouristLuck = activeSpecialAbility === 'Tourist Luck';
-    if (hasTouristLuck) {
-      successChance = Math.min(0.95, successChance + 0.2);
-    }
+    const hasTouristLuck = v99Ability === 'Tourist Luck';
+    successChance = v99Attempt.chance;
 
     const isFree = (player.masteryUnlocks.includes("Master of Challenges") || player.masteryUnlocks.includes("Challenge Master")) && !player.usedFreeChallengeThisTurn && !usedFreeChallengeThisTurn;
     const configuredApCost = getActionPointCost('challenges', gameSettings, false);
-    const challengeApCost = isFree ? 0 : configuredApCost;
+    const challengeApCost = isFree || v99Attempt.freeRetry ? 0 : configuredApCost; // V9.9 (SECTION 20AU): the Tourist's retry is a second chance at the action already spent
 
     const apValidation = validateActionPointRequest(player, 'challenges', gameSettings);
 
@@ -217171,7 +218571,7 @@ function dispatchGameSettingsChange(
               addNotification(`${masteryLabel}! ${challenge.name} rewards boosted for this run.`, 'success');
             }
 
-            addNotification(`${challenge.name} completed! Won $${reward}${player.masteryUnlocks.includes("Quick Study") ? ' (+50% XP)' : ''}`, 'success');
+            addNotification(`${challenge.name} completed! Won ${fmtMoney(reward)}${player.masteryUnlocks.includes("Quick Study") ? ' (+50% XP)' : ''}`, 'success');
             updatePersonalRecords('challenge', reward);
             updatePersonalRecords('consecutiveWins', newStreak);
             updatePersonalRecords('earned', reward);
@@ -217183,7 +218583,7 @@ function dispatchGameSettingsChange(
               if (v99ShouldAnnounceDoubleOrNothing(gameSettings, reward)) addNotification('Double or Nothing available! Risk your reward for 2x!', 'info', true);
             }
 
-            if (activeSpecialAbility) {
+            if (v99Attempt.consumesUse) { // V9.9 (SECTION 20AU): the ability this attempt used (was the not-yet-rendered state)
               setActiveSpecialAbility(null);
               dispatchPlayer({ type: 'USE_SPECIAL_ABILITY' });
             }
@@ -217210,16 +218610,18 @@ function dispatchGameSettingsChange(
               summary: `${player.name || 'Player'} failed challenge ${challenge.name}.`,
               payload: { challengeName: challenge.name, wager, success: false }
             });
-            addNotification(`${challenge.name} failed. Lost $${approachPlan ? approachPlan.failureLoss : wager}`, 'error');
+            addNotification(`${challenge.name} failed. Lost ${fmtMoney(Number(approachPlan ? approachPlan.failureLoss : wager))}`, 'error');
 
             dispatchGameState({ type: 'SET_DOUBLE_OR_NOTHING', payload: { available: false, reward: 0 } });
 
-            if (player.character.name === "Tourist" && player.specialAbilityUses > 0 && !activeSpecialAbility) {
+            if (player.character.name === "Tourist" && player.specialAbilityUses > 0 && !v99Ability) {
               setFailedChallengeData({ challenge, wager, approachPlan: approachPlan || null });
               addNotification('Tourist Luck available! You can retry this challenge.', 'info', true);
+            } else if (v99Attempt.freeRetry) {
+              setFailedChallengeData(null); // V9.9 (SECTION 20AU): the retry was the second chance — its button goes away
             }
 
-            if (activeSpecialAbility) {
+            if (v99Attempt.consumesUse) { // V9.9 (SECTION 20AU): the ability this attempt used (was the not-yet-rendered state)
               setActiveSpecialAbility(null);
               dispatchPlayer({ type: 'USE_SPECIAL_ABILITY' });
             }
@@ -217236,7 +218638,7 @@ function dispatchGameSettingsChange(
           showConfirmation(
             'challenge',
             'Risky Challenge',
-            `This challenge has only a ${Math.round(successChance * 100)}% success rate. Wager $${wager}?${hasTouristLuck ? ' (Tourist Luck active!)' : ''}`,
+            `This challenge has only a ${Math.round(successChance * 100)}% success rate. Wager ${fmtMoney(Number(wager))}?${hasTouristLuck ? ' (Tourist Luck active!)' : ''}`,
             'Take Challenge',
             confirmChallenge,
             { challenge, wager, successChance }
@@ -217252,7 +218654,7 @@ function dispatchGameSettingsChange(
       showConfirmation(
         'challenge',
         'Risky Challenge',
-        `This challenge has only a ${Math.round(successChance * 100)}% success rate. Wager $${wager}?${hasTouristLuck ? ' (Tourist Luck active!)' : ''}`,
+        `This challenge has only a ${Math.round(successChance * 100)}% success rate. Wager ${fmtMoney(Number(wager))}?${hasTouristLuck ? ' (Tourist Luck active!)' : ''}`,
         'Take Challenge',
         confirmChallenge,
         { challenge, wager, successChance }
@@ -217293,10 +218695,25 @@ function dispatchGameSettingsChange(
     return 1 - reduction;
   }, [gameState.supplyDemand]);
 
-    const sellResource = useCallback((resource: any, price: any, v99Opts?: { confirmed?: boolean }) => {
+  // V9.9 (SECTION 20AU): what the Sell Market pays the player for the next `units` of an item, unit by unit — the row,
+  // the confirmation and the sale read this one quote (v99QuoteBulkSale over the one sale price, v99ComputeSellPrice).
+  const v99QuotePlayerSale = useCallback((resource: string, listPrice: number, units: number): V99BulkSaleQuote => {
+    const { isUnderdog, leader } = getUnderdogBonus('player');
+    return v99QuoteBulkSale({
+      resource, listPrice, region: player.currentRegion, unitsAlreadySold: gameState.supplyDemand[resource] || 0,
+      activeEvents: gameState.activeEvents, season: gameState.season, seller: player,
+      isUnderdog, leaderTax: leader === 'player' && getWealthState().ratio > 2,
+      approachesEnabled: gameSettings.challengeApproachesEnabled === true, sabotageEnabled: Boolean(gameSettings.sabotageEnabled)
+    }, units);
+  }, [player, gameState.supplyDemand, gameState.activeEvents, gameState.season, gameSettings.challengeApproachesEnabled, gameSettings.sabotageEnabled, getUnderdogBonus, getWealthState]);
+
+    const sellResource = useCallback((resource: any, price: any, v99Opts?: { confirmed?: boolean; quantity?: number }) => {
       if (v96BlockHumanAction('Selling')) return;
     const apValidation = validateActionPointRequest(player, 'sell_resources', gameSettings);
     const sellApCost = apValidation.cost;
+    // V9.9 (SECTION 20AU): "All" is ONE sale of N units (quantity) — V9.8 called this N times in a row, which sold every
+    // unit at the first unit's price and, from $200 a unit, sold exactly one (each call replaced the same confirmation).
+    const v99Units = v99SaleUnits(player.inventory, resource, v99Opts?.quantity);
 
     const confirmSell = () => {
       executeUniversalActionPipeline(
@@ -217304,8 +218721,8 @@ function dispatchGameSettingsChange(
           actorId: player.id || 'player',
           teamId: player.teamId,
           actionType: 'sell',
-          action: { type: 'sell', actorId: player.id || 'player', item: resource, price, parameters: { resource, price } },
-          parameters: { resource, price },
+          action: { type: 'sell', actorId: player.id || 'player', item: resource, price, parameters: v99Units > 1 ? { resource, price, quantity: v99Units } : { resource, price } },
+          parameters: v99Units > 1 ? { resource, price, quantity: v99Units } : { resource, price },
           getActorState: () => player,
           getTeamState: () => (isTeamMode ? (player.teamId ? (teamsByIdRef.current[player.teamId] || null) : null) : null),
           checkRequirements: () => {
@@ -217324,23 +218741,20 @@ function dispatchGameSettingsChange(
             // V9.9 (SECTION 20AR): the sale price comes from ONE pure helper (v99ComputeSellPrice — the same steps, in the
             // same order, that were written out here), which the "Sell …" recommendation also quotes: the card, the
             // Sell Market and "Do It" pay the same amount.
-            const { isUnderdog, leader } = getUnderdogBonus('player');
-            const v99Sale = v99ComputeSellPrice({
-              resource, listPrice: price, region: player.currentRegion, unitsAlreadySold: gameState.supplyDemand[resource] || 0,
-              activeEvents: gameState.activeEvents, season: gameState.season, seller: player,
-              isUnderdog, leaderTax: leader === 'player' && getWealthState().ratio > 2,
-              approachesEnabled: gameSettings.challengeApproachesEnabled === true, sabotageEnabled: Boolean(gameSettings.sabotageEnabled)
-            });
-            const finalPrice = v99Sale.finalPrice;
+            // V9.9 (SECTION 20AU): the same quote the row and the confirmation showed; every unit is priced with the
+            // units before it already sold (the oversupply step), and the whole sale is one action.
+            const v99Sale = v99QuotePlayerSale(resource, price, Math.max(1, v99Units));
+            const finalPrice = v99Sale.total;
             const regionalBonus = v99Sale.regionalBonus;
-            const supplyDemandMod = v99Sale.supplyDemandMod;
+            const supplyDemandMod = v99Sale.supplyDemandModLast;
 
             if (sellApCost > 0) {
               dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: sellApCost, actionId: 'sell_resources' } });
             }
-            dispatchPlayer({ type: 'SELL_RESOURCE', payload: { resource, price: finalPrice, apCost: sellApCost } });
+            // V9.9 (SECTION 20AU): apCost 0 here — the action was charged on the line above (V9.8 charged a configured sale cost twice).
+            v99Sale.unitPrices.forEach(unitPrice => dispatchPlayer({ type: 'SELL_RESOURCE', payload: { resource, price: unitPrice, apCost: 0 } }));
 
-            dispatchGameState({ type: 'UPDATE_SUPPLY_DEMAND', payload: { resource, amount: 1 } });
+            dispatchGameState({ type: 'UPDATE_SUPPLY_DEMAND', payload: { resource, amount: v99Sale.units } });
 
             const bonusMessages = [];
             if (regionalBonus > 1) bonusMessages.push(`+${Math.round((regionalBonus - 1) * 100)}% regional demand`);
@@ -217353,8 +218767,8 @@ function dispatchGameSettingsChange(
               }
             }
 
-            addNotification(`Sold ${resource} for $${finalPrice}${bonusMessages.length > 0 ? ` (${bonusMessages.join(', ')})` : ''}`, 'money');
-            updatePersonalRecords('resource', { resource, price: finalPrice });
+            addNotification(v99SaleNotice(resource, v99Sale, bonusMessages), 'money');
+            updatePersonalRecords('resource', { resource, price: v99Sale.first });
             updatePersonalRecords('earned', finalPrice);
             updatePersonalRecords('money', player.money + finalPrice);
           }
@@ -217367,11 +218781,13 @@ function dispatchGameSettingsChange(
       return;
     }
 
-    if (price >= 200 && !v99Opts?.confirmed) { // V9.9 (SECTION 20AR): a recommendation card names the item and the price, so its "Do It" is the confirmation
+    // V9.9 (SECTION 20AU): the question names what will really be paid (it quoted the list price), and one question covers a whole "All".
+    const v99ConfirmQuote = v99QuotePlayerSale(resource, price, Math.max(1, v99Units));
+    if (v99SaleNeedsConfirmation(price, v99ConfirmQuote) && !v99Opts?.confirmed) { // V9.9 (SECTION 20AR): a recommendation card names the item and the price, so its "Do It" is the confirmation
       showConfirmation(
         'sell',
         'Confirm Sale',
-        `Sell ${resource} for $${price}?`,
+        v99SaleConfirmMessage(resource, v99ConfirmQuote),
         'Sell',
         confirmSell,
         { resource, price }
@@ -217379,7 +218795,7 @@ function dispatchGameSettingsChange(
     } else {
       confirmSell();
     }
-  }, [player, gameSettings, gameState.activeEvents, gameState.season, addNotification, showConfirmation, requestActionOverrideForAction, updatePersonalRecords, calculateRegionalBonus, calculateSupplyDemandModifier, getUnderdogBonus, getWealthState, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent]);
+  }, [player, gameSettings, gameState.activeEvents, gameState.season, addNotification, showConfirmation, requestActionOverrideForAction, updatePersonalRecords, calculateRegionalBonus, calculateSupplyDemandModifier, getUnderdogBonus, getWealthState, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent, v99QuotePlayerSale]);
 
   const buyResourceFromMarket = useCallback((
     resource: string,
@@ -217406,7 +218822,7 @@ function dispatchGameSettingsChange(
     if (marketSpendable < totalCost) {
       if (!options?.silent) {
         const actorLabel = actorState.kind === 'human' ? 'Not enough money' : `🤖 ${actorState.name} cannot afford that purchase`;
-        addNotification(`${actorLabel} ($${totalCost} needed).`, actorState.kind === 'human' ? 'error' : 'ai', false, 'market');
+        addNotification(`${actorLabel} (${fmtMoney(totalCost)} needed).`, actorState.kind === 'human' ? 'error' : 'ai', false, 'market');
       }
       return false;
     }
@@ -217420,6 +218836,11 @@ function dispatchGameSettingsChange(
       return false;
     }
 
+    // V9.9 (SECTION 20AU): a purchase by hand costs an action (v99MarketBuyActionCost — it always did, whatever the cost
+    // table said) and now needs one: V9.8 spent it without looking, so buying worked at "0 actions left". Everything
+    // inside v99CommitPurchase is the V9.8 body, run once the action is available (or paid for).
+    const v99BuyAp = actorState.kind === 'human' && options?.consumeAction !== false ? v99MarketBuyActionCost(actorState, gameSettings) : 0;
+    const v99CommitPurchase = (): boolean => {
     let success = false;
     executeUniversalActionPipeline(
       {
@@ -217454,14 +218875,14 @@ function dispatchGameSettingsChange(
           inventory: [...(prev.inventory || []), ...purchased]
         }));
         if (actorState.kind === 'human' && options?.consumeAction !== false) {
-          incrementAction();
+          for (let v99i = v99ActionSpendCount(v99BuyAp, 1, gameSettings); v99i > 0; v99i--) incrementAction(); // V9.9 (SECTION 20AU): the gated cost (1 by default, as before)
         }
 
         if (!options?.silent) {
           const actorName = actorState.kind === 'human' ? 'Bought' : `🤖 ${actorState.name} bought`;
           const reasonSuffix = options?.reason ? ` (${options.reason})` : '';
           addNotification(
-            `${actorName} ${finalQuantity}x ${resource} for $${finalCost}.${reasonSuffix}`,
+            `${actorName} ${finalQuantity}x ${resource} for ${fmtMoney(finalCost)}.${reasonSuffix}`,
             actorState.kind === 'human' ? 'market' : 'ai',
             false,
             'market'
@@ -217472,7 +218893,17 @@ function dispatchGameSettingsChange(
     );
 
     return success;
-  }, [addNotification, deductMoney, getActorState, incrementAction, updateActorState, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent]);
+    };
+    // V9.9 (SECTION 20AU): no action left → the same "Action Limit Reached" prompt a challenge or a trip gets.
+    const v99BuyGate = v99ValidateActionCost(actorState, 'buy_resources', v99BuyAp, gameSettings);
+    if (v99BuyAp > 0 && !v99BuyGate.allowed) {
+      const v99Short = v99OverrideCashShortfall(Number(actorState.money) || 0, v99BuyGate, totalCost, `${quantity}× ${resource}`);
+      if (v99Short) { if (!options?.silent) addNotification(v99Short, 'warning', false, 'market'); return false; }
+      requestActionOverrideForAction('buy_resources', v99BuyGate, () => { v99CommitPurchase(); }, v99BuyAp);
+      return false;
+    }
+    return v99CommitPurchase();
+  }, [addNotification, deductMoney, getActorState, incrementAction, updateActorState, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent, gameSettings, requestActionOverrideForAction]);
 
   const handlePlayerResourceMarketPurchase = useCallback(() => {
     if (!isHumanPlayerTurn(gameState)) return;
@@ -217568,7 +218999,7 @@ function dispatchGameSettingsChange(
             }
             dispatchPlayer({ type: 'UPDATE_MONEY', payload: -investment.cost });
         dispatchPlayer({ type: 'MERGE_STATE', payload: { investments: [...(player.investments || []), regionCode] } });
-        addNotification(`Purchased ${investment.name} in ${REGIONS[regionCode]?.name || regionCode} for $${investment.cost}.`, 'success', true);
+        addNotification(`Purchased ${investment.name} in ${REGIONS[regionCode]?.name || regionCode} for ${fmtMoney(investment.cost)}.`, 'success', true);
         // AP consumed via CONSUME_ACTION_POINTS above - no duplicate incrementAction
       }
     );
@@ -217618,7 +219049,7 @@ function dispatchGameSettingsChange(
             }
           }
           if (player.money < effectiveCost) {
-            addNotification(`Not enough money for this equipment (costs $${effectiveCost}).`, 'error');
+            addNotification(`Not enough money for this equipment (costs ${fmtMoney(effectiveCost)}).`, 'error');
             return { passed: false, reason: 'Not enough money for this equipment.' };
           }
           return { passed: true };
@@ -217645,7 +219076,7 @@ function dispatchGameSettingsChange(
       (_attempt) => {
         dispatchPlayer({ type: 'UPDATE_MONEY', payload: -effectiveCost });
         dispatchPlayer({ type: 'MERGE_STATE', payload: { equipment: [...(player.equipment || []), itemId] } });
-        addNotification(`Purchased ${item.name} for $${effectiveCost}.`, 'success', true);
+        addNotification(`Purchased ${item.name} for ${fmtMoney(effectiveCost)}.`, 'success', true);
         if (equipApCost > 0) {
           dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: equipApCost, actionId: 'equipment_purchase' } });
         }
@@ -217718,6 +219149,11 @@ function dispatchGameSettingsChange(
       return;
     }
 
+    // V9.9 (SECTION 20AU): a craft needs the actions it spends (v99CraftActionCost). V9.8 spent them without looking, so
+    // crafting worked at "0 actions left". Everything inside v99CommitCraft is the V9.8 body, run once the actions are
+    // available (or paid for).
+    const v99CraftAp = v99CraftActionCost(recipe, player, gameSettings);
+    const v99CommitCraft = () => {
     // Remove materials from inventory
     let newInventory = [...player.inventory];
     for (const [resource, requiredCount] of Object.entries(recipe.inputs)) {
@@ -217768,13 +219204,21 @@ function dispatchGameSettingsChange(
 
     if (!(isTourismItem && hasTourismBonus)) {
       // Normal crafting consumes actions based on craftTime
-      for (let i = 0; i < recipe.craftTime; i++) {
+      for (let i = 0; i < v99ActionSpendCount(v99CraftAp.cost, recipe.craftTime, gameSettings); i++) { // V9.9 (SECTION 20AU): the gated cost (= craftTime by default, as before)
         incrementAction();
       }
     } else {
       addNotification(`Tourist bonus: No action cost for tourism crafting!`, 'info');
     }
-  }, [gameState.currentTurn, player.inventory, player.character, canCraftRecipe, addNotification, incrementAction]);
+    };
+    // V9.9 (SECTION 20AU): not enough actions → the same "Action Limit Reached" prompt a challenge or a trip gets.
+    const v99CraftGate = v99ValidateActionCost(player, 'craft', v99CraftAp.cost, gameSettings);
+    if (v99CraftAp.cost > 0 && !v99CraftGate.allowed) {
+      requestActionOverrideForAction('equipment_purchase', v99CraftGate, v99CommitCraft, v99CraftAp.cost);
+      return;
+    }
+    v99CommitCraft();
+  }, [gameState.currentTurn, player, gameSettings, canCraftRecipe, addNotification, incrementAction, requestActionOverrideForAction]);
 
   const useSabotage = useCallback((sabotageId: string, targetActorId?: string) => {
     if (!gameSettings.sabotageEnabled || !isCompetitiveMode || !isHumanPlayerTurn(gameState)) return;
@@ -217833,8 +219277,9 @@ function dispatchGameSettingsChange(
       return;
     }
 
-    setActiveSpecialAbility('Tourist Luck');
-    takeChallenge(failedChallengeData.challenge, failedChallengeData.wager, failedChallengeData.approachPlan || null);
+    // V9.9 (SECTION 20AU): the retry itself carries Tourist Luck (+20%, no action) and uses it up. V9.8 switched the
+    // ability on in state and attempted in the same click: the attempt ran without it, at full cost.
+    takeChallenge(failedChallengeData.challenge, failedChallengeData.wager, failedChallengeData.approachPlan || null, 'Tourist Luck');
   }, [failedChallengeData, player.specialAbilityUses, addNotification, takeChallenge]);
 
   // V9.9 (SECTION 20AU): automation passes { skipConfirm: true } so it never waits behind a dialog; UI callers pass
@@ -218367,10 +219812,9 @@ function dispatchGameSettingsChange(
           projected.aiRoleModeExpiresTurn = 0;
         }
 
-        if (seasonChanged) {
-          projected.completedThisSeason = [];
-          projected.challengesCompleted = [];
-        }
+        // V9.9 (SECTION 20AU): a new season re-opens the challenges but no longer wipes challengesCompleted — the list
+        // "Most Challenge Points" is counted from. Wiping it left only the days after the last season change to count.
+        projected = applySeasonRolloverToActor(projected, seasonChanged);
 
         const loanTick = applyLoanTick(projected, wp6LoanMultRef.current ? wp6LoanMultRef.current(String(actor.id)) : 1);
         projected.money = loanTick.money;
@@ -218411,8 +219855,8 @@ function dispatchGameSettingsChange(
             projected.money += investmentIncome;
             addNotification(
               actor.kind === 'human'
-                ? `Investment income: +$${investmentIncome}`
-                : `🤖 ${projected.name} earned $${investmentIncome} from investments`,
+                ? `Investment income: +${fmtMoney(investmentIncome)}`
+                : `🤖 ${projected.name} earned ${fmtMoney(investmentIncome)} from investments`,
               actor.kind === 'human' ? 'money' : 'ai',
               true
             );
@@ -218453,7 +219897,7 @@ function dispatchGameSettingsChange(
         if (actor.kind === 'ai' && projected.money < BANKRUPTCY_THRESHOLD && projected.loans.length < MAX_ACTIVE_LOANS) {
           projected.loans = [...projected.loans, { id: `${Math.floor(globalRngRegistry.draw('Replay') * 1e12)}_${actor.id}`, amount: LOAN_AMOUNT, accrued: 0 }];
           projected.money += LOAN_AMOUNT;
-          addNotification(`🤖 ${projected.name} grabbed an emergency $${LOAN_AMOUNT} loan.`, 'ai', true);
+          addNotification(`🤖 ${projected.name} grabbed an emergency ${fmtMoney(LOAN_AMOUNT)} loan.`, 'ai', true);
         }
 
         if (projected.money < BANKRUPTCY_THRESHOLD && projected.inventory.length > 0) {
@@ -218464,7 +219908,7 @@ function dispatchGameSettingsChange(
             addNotification(
               actor.kind === 'human'
                 ? buildLiquidationNotice(cash, remaining.length)   // V9.9 (SECTION 20AU): says how much was kept
-                : `🤖 ${projected.name} liquidated inventory for $${cash} to stay afloat.`,
+                : `🤖 ${projected.name} liquidated inventory for ${fmtMoney(cash)} to stay afloat.`,
               actor.kind === 'human' ? 'warning' : 'ai',
               true
             );
@@ -218477,13 +219921,13 @@ function dispatchGameSettingsChange(
             if (allowsAdaptiveHandicap(gameSettings)) {
               projected.money += AI_STIPEND_AMOUNT;
               projected.stipendCooldown = AI_STIPEND_COOLDOWN;
-              addNotification(`🤖 Emergency fund: ${projected.name} received $${AI_STIPEND_AMOUNT}`, 'ai', true);
+              addNotification(`🤖 Emergency fund: ${projected.name} received ${fmtMoney(AI_STIPEND_AMOUNT)}`, 'ai', true);
             } else if ((projected.loans || []).length < MAX_ACTIVE_LOANS) {
               // V9.1 parity: the same emergency loan (and interest) the human can take — never free money.
               projected.money += LOAN_AMOUNT;
               projected.loans = [...(projected.loans || []), { id: `ai_loan_${newDay}_${(projected.loans || []).length}`, amount: LOAN_AMOUNT, accrued: 0 }];
               projected.stipendCooldown = AI_STIPEND_COOLDOWN;
-              addNotification(`🤖 ${projected.name} took an emergency loan ($${LOAN_AMOUNT}).`, 'ai', true);
+              addNotification(`🤖 ${projected.name} took an emergency loan (${fmtMoney(LOAN_AMOUNT)}).`, 'ai', true);
             }
           }
         }
@@ -218509,7 +219953,7 @@ function dispatchGameSettingsChange(
               // Ratchet: protectedCash only ever increases.
               projected.protectedCash = existingProtected + appliedLock;
               if (gameSettings.vaultTransparencyEnabled) {
-                addNotification(`🤖 ${projected.name} locked $${appliedLock} into the Cash Vault (now protecting $${projected.protectedCash}).`, 'ai', true);
+                addNotification(`🤖 ${projected.name} locked ${fmtMoney(appliedLock)} into the Cash Vault (now protecting ${fmtMoney(projected.protectedCash)}).`, 'ai', true);
               }
             }
             projected.vaultBaselineMilestoneIndex = currentTierIndex;
@@ -218527,12 +219971,12 @@ function dispatchGameSettingsChange(
           if (!projected.inEconomicRecovery && spendableForRecovery < gameSettings.economyCashFloor) {
             projected.inEconomicRecovery = true;
             if (gameSettings.economyGovernorTransparencyEnabled) {
-              addNotification(`🤖 ${projected.name} entered Survival phase (spendable cash below $${gameSettings.economyCashFloor}).`, 'ai', true);
+              addNotification(`🤖 ${projected.name} entered Survival phase (spendable cash below ${fmtMoney(gameSettings.economyCashFloor)}).`, 'ai', true);
             }
           } else if (projected.inEconomicRecovery && spendableForRecovery >= gameSettings.economyRecoveryTarget) {
             projected.inEconomicRecovery = false;
             if (gameSettings.economyGovernorTransparencyEnabled) {
-              addNotification(`🤖 ${projected.name} recovered above $${gameSettings.economyRecoveryTarget} and left Survival phase.`, 'ai', true);
+              addNotification(`🤖 ${projected.name} recovered above ${fmtMoney(gameSettings.economyRecoveryTarget)} and left Survival phase.`, 'ai', true);
             }
           }
         }
@@ -219385,7 +220829,7 @@ function dispatchGameSettingsChange(
               amount: evaluation.amount,
               balanceBefore,
               balanceAfter,
-              reason: `${getActorDisplayName(actorId)} automatically contributed $${evaluation.amount} because ${evaluation.reasonLabel}.`,
+              reason: `${getActorDisplayName(actorId)} automatically contributed ${fmtMoney(evaluation.amount)} because ${evaluation.reasonLabel}.`,
               automatic: true
             };
             updateActorState(actorId, (prev: any) => ({ ...prev, money: deductMoney(prev.money, evaluation.amount) }));
@@ -219428,7 +220872,7 @@ function dispatchGameSettingsChange(
           amount,
           balanceBefore,
           balanceAfter,
-          reason: `${getActorDisplayName(targetActorId)} automatically contributed $${amount} of ${incomeKind} income to the Team Treasury.`,
+          reason: `${getActorDisplayName(targetActorId)} automatically contributed ${fmtMoney(amount)} of ${incomeKind} income to the Team Treasury.`,
           automatic: true
         };
         updateTeamState(teamId, (prev: any) => ({
@@ -219478,7 +220922,7 @@ function dispatchGameSettingsChange(
                 amount: affordable,
                 balanceBefore,
                 balanceAfter,
-                reason: `${getActorDisplayName(actorId)} made their fixed daily Team Treasury contribution of $${affordable}.`,
+                reason: `${getActorDisplayName(actorId)} made their fixed daily Team Treasury contribution of ${fmtMoney(affordable)}.`,
                 automatic: true
               };
               updateActorState(actorId, (prev: any) => ({ ...prev, money: deductMoney(prev.money, affordable) }));
@@ -219631,6 +221075,14 @@ function dispatchGameSettingsChange(
     let projectedPlayer = { ...currentPlayer };
     let projectedAi = { ...currentAi };
 
+    // V9.9 (SECTION 20AU): journeys and committed stays move on in solo modes too (only the team branch did this, so an
+    // expedition in Single Player / AI Opponent / Grand Tour / Scenario stayed "in transit" for the rest of the match).
+    const v99JourneyNotify = (msg: string, type?: string, sys?: boolean) => addNotification(msg, type as Parameters<typeof addNotification>[1], sys);
+    const v99PlayerBeforeJourney = projectedPlayer;
+    projectedPlayer = v99AdvanceActorJourney(projectedPlayer, gameSettings, v99JourneyNotify);
+    projectedAi = v99AdvanceActorJourney(projectedAi, gameSettings, v99JourneyNotify);
+    const v99PlayerDayPatch = v99SoloPlayerDayPatch(v99PlayerBeforeJourney, projectedPlayer);
+
     projectedPlayer.actionsUsedThisTurn = 0;
     projectedPlayer.overridesUsedToday = 0;
     projectedPlayer.overrideFatigue = Math.max(0, (projectedPlayer.overrideFatigue || 0) * OVERRIDE_FATIGUE_DECAY);
@@ -219647,10 +221099,11 @@ function dispatchGameSettingsChange(
     projectedAi.debuffs = tickDebuffs(projectedAi.debuffs || []);
 
     if (seasonChanged) {
-      projectedPlayer.completedThisSeason = [];
-      projectedPlayer.challengesCompleted = [];
-      projectedAi.completedThisSeason = [];
-      projectedAi.challengesCompleted = [];
+      // V9.9 (SECTION 20AU): a new season re-opens the challenges but no longer wipes challengesCompleted. Here only the
+      // rival's list was really wiped (the human's commit below never carried it), so in "Most Challenge Points" the
+      // rival restarted from 0 every 7 days while the human kept counting.
+      projectedPlayer = applySeasonRolloverToActor(projectedPlayer, true);
+      projectedAi = applySeasonRolloverToActor(projectedAi, true);
       addNotification(`Season changed to ${newSeason}. Challenges have refreshed with mastery tiers.`, 'info', true);
     }
 
@@ -219728,7 +221181,7 @@ function dispatchGameSettingsChange(
       }, 0);
       if (playerInvestmentIncome > 0) {
         projectedPlayer.money += playerInvestmentIncome;
-        addNotification(`Investment income: +$${playerInvestmentIncome}`, 'money', true);
+        addNotification(`Investment income: +${fmtMoney(Number(playerInvestmentIncome))}`, 'money', true);
       }
 
       const aiInvestmentIncome = (projectedAi.investments || []).reduce((sum, regionCode) => {
@@ -219745,7 +221198,7 @@ function dispatchGameSettingsChange(
       }, 0);
       if (aiInvestmentIncome > 0) {
         projectedAi.money += aiInvestmentIncome;
-        addNotification(`🤖 ${projectedAi.name} earned $${aiInvestmentIncome} from investments`, 'ai', false);
+        addNotification(`🤖 ${projectedAi.name} earned ${fmtMoney(aiInvestmentIncome)} from investments`, 'ai', false);
       }
     }
 
@@ -219762,7 +221215,7 @@ function dispatchGameSettingsChange(
     if (projectedAi.money < BANKRUPTCY_THRESHOLD && projectedAi.loans.length < MAX_ACTIVE_LOANS) {
       projectedAi.loans = [...projectedAi.loans, { id: Math.floor(globalRngRegistry.draw('Replay') * 1e12).toString(), amount: LOAN_AMOUNT, accrued: 0 }];
       projectedAi.money += LOAN_AMOUNT;
-      addNotification(`🤖 ${projectedAi.name} grabbed an emergency $${LOAN_AMOUNT} loan.`, 'ai', true);
+      addNotification(`🤖 ${projectedAi.name} grabbed an emergency ${fmtMoney(LOAN_AMOUNT)} loan.`, 'ai', true);
     }
 
     // Asset liquidation safety net
@@ -219780,7 +221233,7 @@ function dispatchGameSettingsChange(
       if (cash > 0) {
         projectedAi.money += cash;
         projectedAi.inventory = remaining;
-        addNotification(`🤖 ${projectedAi.name} liquidated inventory for $${cash} to stay afloat.`, 'ai', false);
+        addNotification(`🤖 ${projectedAi.name} liquidated inventory for ${fmtMoney(cash)} to stay afloat.`, 'ai', false);
       }
     }
 
@@ -219790,13 +221243,13 @@ function dispatchGameSettingsChange(
       if (allowsAdaptiveHandicap(gameSettings)) {
         projectedAi.money += AI_STIPEND_AMOUNT;
         projectedAi.stipendCooldown = AI_STIPEND_COOLDOWN;
-        addNotification(`🤖 Emergency fund: ${projectedAi.name} received $${AI_STIPEND_AMOUNT}`, 'ai', true);
+        addNotification(`🤖 Emergency fund: ${projectedAi.name} received ${fmtMoney(AI_STIPEND_AMOUNT)}`, 'ai', true);
       } else if ((projectedAi.loans || []).length < MAX_ACTIVE_LOANS) {
         // V9.1 parity: the same emergency loan (and interest) the human can take — never free money.
         projectedAi.money += LOAN_AMOUNT;
         projectedAi.loans = [...(projectedAi.loans || []), { id: `ai_loan_${newDay}_${(projectedAi.loans || []).length}`, amount: LOAN_AMOUNT, accrued: 0 }];
         projectedAi.stipendCooldown = AI_STIPEND_COOLDOWN;
-        addNotification(`🤖 ${projectedAi.name} took an emergency loan ($${LOAN_AMOUNT}).`, 'ai', true);
+        addNotification(`🤖 ${projectedAi.name} took an emergency loan (${fmtMoney(LOAN_AMOUNT)}).`, 'ai', true);
       }
     }
 
@@ -219821,11 +221274,11 @@ function dispatchGameSettingsChange(
         if (updatedPlayerWorth > updatedAiWorth * 2) {
           const correction = Math.floor(projectedPlayer.money * 0.1);
           projectedPlayer.money = Math.max(0, projectedPlayer.money - correction);
-          addNotification(`Market correction trims $${correction} from your coffers.`, 'warning', true);
+          addNotification(`Market correction trims ${fmtMoney(correction)} from your coffers.`, 'warning', true);
         } else if (updatedAiWorth > updatedPlayerWorth * 2) {
           const correction = Math.floor(projectedAi.money * 0.1);
           projectedAi.money = Math.max(0, projectedAi.money - correction);
-          addNotification(`🤖 Market correction hit the AI for $${correction}.`, 'ai', false);
+          addNotification(`🤖 Market correction hit the AI for ${fmtMoney(correction)}.`, 'ai', false);
         }
       }
     }
@@ -219996,7 +221449,10 @@ function dispatchGameSettingsChange(
         advancedLoans: projectedPlayer.advancedLoans,
         creditScore: projectedPlayer.creditScore,
         loanHistory: projectedPlayer.loanHistory,
-        daysSinceLastBankruptcy: projectedPlayer.daysSinceLastBankruptcy
+        daysSinceLastBankruptcy: projectedPlayer.daysSinceLastBankruptcy,
+        // V9.9 (SECTION 20AU): the per-turn flags (a bought extra action, the free daily challenge) end with the day in
+        // every mode — Single Player has no rival hand-back to reset them — and a journey day lands in the live state.
+        ...v99PlayerDayPatch
       }
     });
     dispatchPlayer({ type: 'SET_LOANS', payload: projectedPlayer.loans });
@@ -220275,7 +221731,7 @@ function dispatchGameSettingsChange(
     const index = (actor.inventory as string[]).indexOf(resource);
     if (index < 0) return false;
 
-    let finalPrice = Math.floor(gameState.resourcePrices[resource] || 100);
+    let finalPrice = Math.floor(v99ResourceReferencePrice(resource, gameState.resourcePrices, 100)); // V9.9 (SECTION 20AU): was `|| 100` — crafted goods and island resources have their own price
     const localResources = REGIONAL_RESOURCES[actor.currentRegion] || [];
     if (!localResources.includes(resource)) {
       finalPrice = Math.floor(finalPrice * 1.1);
@@ -220328,7 +221784,7 @@ function dispatchGameSettingsChange(
         impact: sellImpact
       });
     }
-    addNotification(`${getActorDisplayName(actorId)} sold ${resource} for $${finalPrice}.`, actor.kind === 'human' ? 'money' : 'ai', false, actor.kind === 'human' ? 'resource_sell' : 'ai_trade');
+    addNotification(`${getActorDisplayName(actorId)} sold ${resource} for ${fmtMoney(finalPrice)}.`, actor.kind === 'human' ? 'money' : 'ai', false, actor.kind === 'human' ? 'resource_sell' : 'ai_trade');
     applyAutomaticTreasuryContribution(actorId, finalPrice, 'resource_sale');
     return true;
   }, [addMoney, addNotification, appendTeammatePerformanceSample, applyAutomaticTreasuryContribution, gameSettings.sabotageEnabled, gameState.activeEvents, gameState.resourcePrices, gameState.season, gameState.turnCounter, getActorDisplayName, getActorState, updateActorContribution, updateActorState]);
@@ -220562,7 +222018,7 @@ function dispatchGameSettingsChange(
         } as ChallengeCompletionLogEntry
       });
       applyGrandTourChallengeProgress(actorId, actor.currentRegion, challenge.name);
-      addNotification(`${getActorDisplayName(actorId)} completed ${challenge.name} and won $${reward}.`, actor.kind === 'human' ? 'success' : 'ai', false, actor.kind === 'human' ? 'challenge_result' : 'ai_challenge');
+      addNotification(`${getActorDisplayName(actorId)} completed ${challenge.name} and won ${fmtMoney(reward)}.`, actor.kind === 'human' ? 'success' : 'ai', false, actor.kind === 'human' ? 'challenge_result' : 'ai_challenge');
       applyAutomaticTreasuryContribution(actorId, reward, 'challenge');
       return true;
     }
@@ -220580,7 +222036,7 @@ function dispatchGameSettingsChange(
       actionType: 'challenge',
       impact: wager >= Math.max(250, Math.floor(actor.money * 0.28)) ? -0.45 : -0.35
     });
-    addNotification(`${getActorDisplayName(actorId)} failed ${challenge.name} and lost $${wager}.`, actor.kind === 'human' ? 'error' : 'ai', false, actor.kind === 'human' ? 'challenge_result' : 'ai_challenge');
+    addNotification(`${getActorDisplayName(actorId)} failed ${challenge.name} and lost ${fmtMoney(wager)}.`, actor.kind === 'human' ? 'error' : 'ai', false, actor.kind === 'human' ? 'challenge_result' : 'ai_challenge');
     return true;
   }, [addMoney, addNotification, appendTeammatePerformanceSample, aiRandom, applyAutomaticTreasuryContribution, applyGrandTourChallengeProgress, calculateActorChallengeSuccessChance, deductMoney, gameSettings, isTeamMode, gameState.day, gameState.turnCounter, getActorDisplayName, getActorState, updateActorContribution, updateActorState]);
 
@@ -221034,7 +222490,7 @@ function dispatchGameSettingsChange(
       case 'work': {
         const wage = action.data?.wage || action.data?.amount || 50;
         updateActorState(actorId, (prev: any) => ({ ...prev, money: (prev.money || 0) + wage }));
-        dispatchAuthoritativeGameActivityLedgerEvent('action', { teamId: actor.teamId, actorId, actionType: 'work', summary: `${getActorDisplayName(actorId)} worked for $${wage}.` });
+        dispatchAuthoritativeGameActivityLedgerEvent('action', { teamId: actor.teamId, actorId, actionType: 'work', summary: `${getActorDisplayName(actorId)} worked for ${fmtMoney(Number(wage))}.` });
         actionSucceeded = true;
         break;
       }
@@ -227607,7 +229063,7 @@ function dispatchGameSettingsChange(
               showConfirmation(
                 'teamAiOverrideRequest',
                 'Teammate wants an extra action',
-                `Your teammate wants to spend $${pendingCost} for an extra action to ${pendingDecision?.description || 'take another action'}.`,
+                `Your teammate wants to spend ${fmtMoney(pendingCost)} for an extra action to ${pendingDecision?.description || 'take another action'}.`,
                 'Approve',
                 () => {
                   aiTurnSession.isPausedForApproval = false;
@@ -228207,14 +229663,14 @@ function dispatchGameSettingsChange(
       actions.push({
         id: 'emergency_loan',
         group: 'economy' as const,
-        label: `Emergency Loan ($${LOAN_AMOUNT})`,
+        label: `Emergency Loan (${fmtMoney(LOAN_AMOUNT)})`,
         icon: '💳',
         // V9.9 (SECTION 20AU): one click used to take the loan (25% a day); it now states the real numbers and asks.
-        action: () => showConfirmation('emergencyLoan', 'Take an emergency loan?', buildEmergencyLoanConfirmMessage(LOAN_AMOUNT, LOAN_INTEREST_RATE), `Borrow $${LOAN_AMOUNT}`, () => {
+        action: () => showConfirmation('emergencyLoan', 'Take an emergency loan?', buildEmergencyLoanConfirmMessage(LOAN_AMOUNT, LOAN_INTEREST_RATE), `Borrow ${fmtMoney(LOAN_AMOUNT)}`, () => {
           const newLoan = { id: Math.floor(globalRngRegistry.draw('Replay') * 1e12).toString(), amount: LOAN_AMOUNT, accrued: 0 };
           dispatchPlayer({ type: 'SET_LOANS', payload: [...player.loans, newLoan] });
           dispatchPlayer({ type: 'UPDATE_MONEY', payload: LOAN_AMOUNT });
-          addNotification(`Took emergency loan for $${LOAN_AMOUNT}. Interest 25%/day.`, 'warning', true);
+          addNotification(`Took emergency loan for ${fmtMoney(LOAN_AMOUNT)}. Interest 25%/day.`, 'warning', true);
         }),
         hotkey: null,
         disabled: false,
@@ -228231,18 +229687,18 @@ function dispatchGameSettingsChange(
       actions.push({
         id: 'repay_emergency_loan',
         group: 'economy' as const,
-        label: `Repay Loan ($${owed})`,
+        label: `Repay Loan (${fmtMoney(owed)})`,
         icon: '🏦',
         action: () => {
           if (player.money < owed) return;
           dispatchPlayer({ type: 'SET_LOANS', payload: (player.loans || []).filter((l: any) => l !== repayableLoan) });
           dispatchPlayer({ type: 'UPDATE_MONEY', payload: -owed });
-          addNotification(`Repaid an emergency loan ($${owed}). Its daily interest stops.`, 'success', true);
+          addNotification(`Repaid an emergency loan (${fmtMoney(owed)}). Its daily interest stops.`, 'success', true);
         },
         hotkey: null,
         disabled: player.money < owed,
-        disabledReason: player.money < owed ? `Need $${owed}` : null,
-        tooltip: `Repay the loan principal ($${owed}) and stop its 25%/day interest`
+        disabledReason: player.money < owed ? `Need ${fmtMoney(owed)}` : null,
+        tooltip: `Repay the loan principal (${fmtMoney(owed)}) and stop its 25%/day interest`
       });
     }
     
@@ -228259,7 +229715,7 @@ function dispatchGameSettingsChange(
               overridesRemaining > 0 ? 'actionOverride' : 'actionLimitNotice',   // V9.9 (SECTION 20AU): was 'endDay'
               'Action Limit Reached',
               overridesRemaining > 0
-                ? `You have reached your action limit (${gameSettings.playerActionsPerDay}). Pay $${overrideCost} to continue? (${overridesRemaining} override${overridesRemaining === 1 ? '' : 's'} left today)`
+                ? `You have reached your action limit (${gameSettings.playerActionsPerDay}). Pay ${fmtMoney(overrideCost)} to continue? (${overridesRemaining} override${overridesRemaining === 1 ? '' : 's'} left today)`
                 : `Override cap reached for today (${OVERRIDE_DAILY_CAP}). End your turn or wait for tomorrow.`,
               overridesRemaining > 0 ? 'Pay & Continue' : 'Close',
               () => {
@@ -228267,7 +229723,7 @@ function dispatchGameSettingsChange(
                 if (player.money >= overrideCost && gameSettings.allowActionOverride) {
                   dispatchPlayer({ type: 'USE_ACTION_OVERRIDE', payload: overrideCost });
                   // Action limit override capacity granted without resetting turn usage
-                  addNotification(`💸 Paid $${overrideCost} to override action limit`, 'warning');
+                  addNotification(`💸 Paid ${fmtMoney(overrideCost)} to override action limit`, 'warning');
                   updateUiState({ showMarket: true });
                 } else {
                   addNotification('Not enough money for override', 'error');
@@ -228363,7 +229819,7 @@ function dispatchGameSettingsChange(
               overridesRemaining > 0 ? 'actionOverride' : 'actionLimitNotice',   // V9.9 (SECTION 20AU): was 'endDay'
               'Action Limit Reached',
               overridesRemaining > 0
-                ? `You have reached your action limit (${gameSettings.playerActionsPerDay}). Pay $${overrideCost} to continue? (${overridesRemaining} override${overridesRemaining === 1 ? '' : 's'} left today)`
+                ? `You have reached your action limit (${gameSettings.playerActionsPerDay}). Pay ${fmtMoney(overrideCost)} to continue? (${overridesRemaining} override${overridesRemaining === 1 ? '' : 's'} left today)`
                 : `Override cap reached for today (${OVERRIDE_DAILY_CAP}). End your turn or wait for tomorrow.`,
               overridesRemaining > 0 ? 'Pay & Continue' : 'Close',
               () => {
@@ -228371,7 +229827,7 @@ function dispatchGameSettingsChange(
                 if (player.money >= overrideCost && gameSettings.allowActionOverride) {
                   dispatchPlayer({ type: 'USE_ACTION_OVERRIDE', payload: overrideCost });
                   // Action limit override capacity granted without resetting turn usage
-                  addNotification(`💸 Paid $${overrideCost} to override action limit`, 'warning');
+                  addNotification(`💸 Paid ${fmtMoney(overrideCost)} to override action limit`, 'warning');
                   updateUiState({ showChallenges: true });
                 } else {
                   addNotification('Not enough money for override', 'error');
@@ -228409,7 +229865,7 @@ function dispatchGameSettingsChange(
                 overridesRemaining > 0 ? 'actionOverride' : 'actionLimitNotice',   // V9.9 (SECTION 20AU): was 'endDay'
                 'Action Limit Reached',
                 overridesRemaining > 0
-                  ? `You have reached your action limit (${gameSettings.maxActionsPerTurn}). Pay $${overrideCost} to continue? (${overridesRemaining} override${overridesRemaining === 1 ? '' : 's'} left today)`
+                  ? `You have reached your action limit (${gameSettings.maxActionsPerTurn}). Pay ${fmtMoney(overrideCost)} to continue? (${overridesRemaining} override${overridesRemaining === 1 ? '' : 's'} left today)`
                   : `Override cap reached for today (${OVERRIDE_DAILY_CAP}). End your turn or wait for tomorrow.`,
                 overridesRemaining > 0 ? 'Pay & Continue' : 'Close',
                 () => {
@@ -228417,7 +229873,7 @@ function dispatchGameSettingsChange(
                     if (player.money >= overrideCost && gameSettings.allowActionOverride) {
                       dispatchPlayer({ type: 'USE_ACTION_OVERRIDE', payload: overrideCost });
                       // Action limit override capacity granted without resetting turn usage
-                      addNotification(`💸 Paid $${overrideCost} to override action limit`, 'warning');
+                      addNotification(`💸 Paid ${fmtMoney(overrideCost)} to override action limit`, 'warning');
                       updateUiState({ showTravelModal: true });
                     } else {
                       addNotification('Not enough money for override', 'error');
@@ -229335,7 +230791,7 @@ function dispatchGameSettingsChange(
     if (res && res.nextState) {
       dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
       if (addNotification) {
-        addNotification(`Invested $${amount.toLocaleString()} into project ${projectId}`, 'success', true);
+        addNotification(`Invested $${amount.toLocaleString('en-AU')} into project ${projectId}`, 'success', true);
       }
     }
   }, [gameState, player.id, player.teamId, addNotification]);
@@ -229372,11 +230828,11 @@ function dispatchGameSettingsChange(
         if (paidActor) dispatchPlayer({ type: 'LOAD_STATE', payload: paidActor });
       }
       if (addNotification) {
-        if (launched) addNotification(`Expedition team departed for ${target?.name || targetId} (Cost: $${prepCost.toLocaleString()})`, 'info', true);
-        else addNotification(`Failed to launch expedition to ${target?.name || targetId}. Required cost: $${prepCost.toLocaleString()}`, 'error', true);
+        if (launched) addNotification(`Expedition team departed for ${target?.name || targetId} (Cost: $${prepCost.toLocaleString('en-AU')})`, 'info', true);
+        else addNotification(`Failed to launch expedition to ${target?.name || targetId}. Required cost: $${prepCost.toLocaleString('en-AU')}`, 'error', true);
       }
     } else if (addNotification) {
-      addNotification(`Failed to launch expedition to ${target?.name || targetId}. Required cost: $${prepCost.toLocaleString()}`, 'error', true);
+      addNotification(`Failed to launch expedition to ${target?.name || targetId}. Required cost: $${prepCost.toLocaleString('en-AU')}`, 'error', true);
     }
   }, [gameState, gameSettings, coPilotRuntimeContext, player.id, player.teamId, addNotification]);
 
@@ -231227,7 +232683,7 @@ function dispatchGameSettingsChange(
     if (!mate || !isTeamMode) return null;
     const spends: Array<{ label: string; category: EconomySpendCategory; cost: number }> = [];
     (teamOsView?.state.contract?.taskGraph || []).filter(t => t.resourceRequirement > 0).slice(0, 4).forEach(t => spends.push({ label: t.label, category: t.regionId ? 'region_deposit' : 'investment', cost: t.resourceRequirement }));
-    [500, 1000, 2000].forEach(c => spends.push({ label: `$${c.toLocaleString()} regional support deposit`, category: 'region_deposit', cost: c }));
+    [500, 1000, 2000].forEach(c => spends.push({ label: `$${c.toLocaleString('en-AU')} regional support deposit`, category: 'region_deposit', cost: c }));
     return probeSpendingApprovals({ id: mate.id, money: mate.money, protectedCash: mate.protectedCash, inEconomicRecovery: mate.inRecovery }, spends, s, Number(gameState.day || 1));
   }, [teamOsView, isTeamMode, gameState.day]);
 
@@ -231463,7 +232919,7 @@ function dispatchGameSettingsChange(
       updateActorState(ob.payerId, (prev: any) => ({ ...prev, inventory: consumeResourcesFromInventory(prev.inventory || [], { [ob.resourceId || '']: ob.quantity }).nextInventory }));
       updateActorState(ob.payeeId, (prev: any) => ({ ...prev, inventory: addResourcesToInventory(prev.inventory || [], consumed.spent) }));
     }
-    dnLedger('payment', `${dnNames[ob.payerId] || ob.payerId} ${ob.kind === 'pay_cash' ? `paid $${ob.amount.toLocaleString()}` : `gave ${ob.quantity} ${ob.resourceId}`} to ${dnNames[ob.payeeId] || ob.payeeId} under an agreement.`, { actorId: ob.payerId, targetActorId: ob.payeeId, diagnostics: { canonicalAction: ob.action, dealId: ob.dealId } });
+    dnLedger('payment', `${dnNames[ob.payerId] || ob.payerId} ${ob.kind === 'pay_cash' ? `paid $${ob.amount.toLocaleString('en-AU')}` : `gave ${ob.quantity} ${ob.resourceId}`} to ${dnNames[ob.payeeId] || ob.payeeId} under an agreement.`, { actorId: ob.payerId, targetActorId: ob.payeeId, diagnostics: { canonicalAction: ob.action, dealId: ob.dealId } });
     commitMatchMemory({ actionType: 'diplomatic_payment', actorId: ob.payerId, targetId: ob.payeeId, amount: ob.amount, success: true, turn: gameState.turnCounter, summary: `${dnNames[ob.payerId] || ob.payerId} made a promised payment.`, stableKey: `dnpay:${ob.dealId}:${ob.termId}:${gameState.turnCounter}` });
     return { success: true, reason: null };
   }, [getActorState, createTreasuryFundingRequest, dnNames, gameSettings, setPendingApprovalRequests, buildTreasuryApprovalRequest, evaluateHumanFundingRequestResolution, resolveTreasuryFundingRequest, gameState, updateActorState, deductMoney, addMoney, consumeResourcesFromInventory, addResourcesToInventory, dnLedger, commitMatchMemory]);
@@ -232349,7 +233805,7 @@ function dispatchGameSettingsChange(
     if (who === 'ai') updateAiPlayerState((prev: any) => ({ ...prev, money: Number(next.aiPlayer?.money ?? prev.money) }));
     else dispatchPlayer({ type: 'MERGE_STATE', payload: { money: next.player.money, actionsUsedThisTurn: next.player.actionsUsedThisTurn, ...(typeof next.player.actionPoints === 'number' ? { actionPoints: next.player.actionPoints } : {}) } });
     const pdef = cmd.kind ? MEGAPROJECT_DEF_BY_KIND[cmd.kind] : cmd.programId ? MEGAPROJECT_DEF_BY_KIND[next.megaprojects?.programs?.[cmd.programId]?.kind as MegaprojectKind] : null;
-    appendGameActivityLedgerEvent('decision', { actorId, eventType: `megaproject_${cmd.op}`, summary: `${pdef?.title || 'National program'}: ${cmd.op}${cmd.amount ? ` $${Math.round(cmd.amount).toLocaleString()} (capped at the stage remainder)` : ''}${cmd.labor ? ' +1 labour' : ''}${cmd.optionId ? ` → ${cmd.optionId}` : ''}` } as any);
+    appendGameActivityLedgerEvent('decision', { actorId, eventType: `megaproject_${cmd.op}`, summary: `${pdef?.title || 'National program'}: ${cmd.op}${cmd.amount ? ` $${Math.round(cmd.amount).toLocaleString('en-AU')} (capped at the stage remainder)` : ''}${cmd.labor ? ' +1 labour' : ''}${cmd.optionId ? ` → ${cmd.optionId}` : ''}` } as any);
     return { ok: true, reason: null };
   }, [gameSettings, appendGameActivityLedgerEvent, updateAiPlayerState]);
   const mpExecuteRef = useRef(mpRunCommand); mpExecuteRef.current = mpRunCommand;
@@ -233475,7 +234931,7 @@ function dispatchGameSettingsChange(
       megaprojectSunk: (() => {
         const pid = String(player?.id || 'player');
         const p = Object.values(mpPersisted?.programs || {}).find(x => (x.status === 'suspended' || x.status === 'stalled') && x.contributorTotals[pid]?.capital);
-        return p ? `You have $${Math.round(p.contributorTotals[pid].capital).toLocaleString()} committed to ${MEGAPROJECT_DEF_BY_KIND[p.kind].title}.` : null;
+        return p ? `You have $${Math.round(p.contributorTotals[pid].capital).toLocaleString('en-AU')} committed to ${MEGAPROJECT_DEF_BY_KIND[p.kind].title}.` : null;
       })(),
       infraNetwork: (() => {
         const n = inState?.networks.filter(x => V102_MATURITY_RANK[x.maturity] >= 2).sort((a, b) => b.memberRegionIds.length - a.memberRegionIds.length || a.id.localeCompare(b.id))[0];
@@ -234708,6 +236164,14 @@ function dispatchGameSettingsChange(
         }
       }
     };
+    // V9.9 (SECTION 20AU): every "Reset …" button asks first and says how many settings it would change (c2-07).
+    // What a button resets is unchanged; the count comes from previewing the handler (v99PreviewSettingsReset).
+    const v99AskBeforeReset = (label: string, fn: () => void) => () => {
+      const changed = v99PreviewSettingsReset(gameSettings, fn);
+      if (changed !== null && changed.length === 0) { fn(); addNotification(V99_RESET_NOTHING_TO_DO, 'info', true, 'system'); return; }
+      showConfirmation('settingsPreset', v99ResetConfirmTitle(label), v99ResetConfirmMessage(changed === null ? null : changed.length, gameState.gameMode === 'game'), 'Reset', fn);
+    };
+    v99WrapResetHandlers(settingsResetHandlers, v99AskBeforeReset);
 
     const isSettingsFilteringActive = Boolean(
       (uiState.settingsSearchQuery || '').trim() ||
@@ -238121,7 +239585,7 @@ function dispatchGameSettingsChange(
                       ].map(sw => (
                         <div key={String(sw.key)} className="flex items-center justify-between p-2 rounded bg-black/20 border border-white/10">
                           <div className="pr-2">
-                            <div className="font-semibold text-xs">{sw.label}</div>
+                            <div className="font-semibold text-xs">{sw.label}<V99NoEffectChip settingKey={String(sw.key)} /></div>
                             <div className="text-[11px] opacity-75">{sw.desc}</div>
                           </div>
                           <button
@@ -238172,6 +239636,8 @@ function dispatchGameSettingsChange(
                   offClassName={themeStyles.buttonSecondary}
                   selectClassName={themeStyles.select}
                 />
+                {/* V9.9 (SECTION 20AU): "Don't ask me again" can be taken back (a button, not a setting). */}
+                <V99AskAgainRow prefs={dontAskAgain} onReset={() => { setDontAskAgain({ ...DEFAULT_DONT_ASK }); addNotification('Confirmation questions are back on.', 'success', true, 'system'); }} buttonClassName={themeStyles.buttonSecondary} disabledClassName={themeStyles.buttonDisabled} />
               </SettingsSection>
               <SettingsSection id="ai.settings" tab="aiTeams" title="AI Difficulty" onReset={settingsResetHandlers.ai.fn} resetLabel={settingsResetHandlers.ai.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'ai.settings')!.fieldKeys}>
                 <div className="space-y-4">
@@ -238526,7 +239992,7 @@ function dispatchGameSettingsChange(
                 </div>
               </SettingsSection>
 
-              <SettingsSection id="aiStrategyLab.main" tab="aiTeams" title="AI Strategy Lab" className="bg-purple-900 bg-opacity-10" onReset={resetAiStrategyLabSettings} resetLabel="Reset Strategy Lab Settings" fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'aiStrategyLab.main')!.fieldKeys}>
+              <SettingsSection id="aiStrategyLab.main" tab="aiTeams" title="AI Strategy Lab" className="bg-purple-900 bg-opacity-10" onReset={settingsResetHandlers.aiStrategyLab.fn} resetLabel="Reset Strategy Lab Settings" fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'aiStrategyLab.main')!.fieldKeys}>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -238720,7 +240186,7 @@ function dispatchGameSettingsChange(
               </SettingsSection>
 
               {/* Restored Strategy Lab Sliders Section */}
-              <SettingsSection id="aiTeams.strategySliders" tab="aiTeams" title="Strategy Lab Sliders" chips={['AI', 'Advanced', 'Experimental']} onReset={resetAiStrategyLabSettings} resetLabel="Reset Strategy Lab Sliders" fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'aiTeams.strategySliders')!.fieldKeys}>
+              <SettingsSection id="aiTeams.strategySliders" tab="aiTeams" title="Strategy Lab Sliders" chips={['AI', 'Advanced', 'Experimental']} onReset={settingsResetHandlers.aiStrategyLab.fn} resetLabel="Reset Strategy Lab Sliders" fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'aiTeams.strategySliders')!.fieldKeys}>
                 <div className="space-y-4">
                   <div className="text-sm opacity-75">
                     Fine-tune decision scoring weight sliders for AI evaluation factors (Money, Control, Threat, Investments, Sabotage, Loans, Standing, Support).
@@ -238808,10 +240274,10 @@ function dispatchGameSettingsChange(
                 title="🤖 Human Co-Pilot AI & Takeover Controls"
                 className="bg-indigo-900 bg-opacity-10"
                 description="Configure autonomous co-pilot assistance, takeover limits, authority modes, action category permissions, and financial safety caps."
-                onReset={() => trackedSetGameSettings("direct_player_change", "🤖 Human Co-Pilot System", prev => ({
+                onReset={v99AskBeforeReset('Reset Co-Pilot Settings', () => trackedSetGameSettings("direct_player_change", "🤖 Human Co-Pilot System", prev => ({
                   ...prev,
                   coPilotSettings: createDefaultCoPilotSettings()
-                }))}
+                })))}
                 resetLabel="Reset Co-Pilot Settings"
                 fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'aiTeams.coPilot')!.fieldKeys}
               >
@@ -239020,7 +240486,7 @@ function dispatchGameSettingsChange(
                     <div className="font-bold text-sm">Financial Guardrails & Spending Caps</div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <SettingsSlider
-                        label={(v) => <>Max Spend Per Action: ${v.toLocaleString()}</>}
+                        label={(v) => <>Max Spend Per Action: ${v.toLocaleString('en-AU')}</>}
                         id="setting-copilot-max-spend-action"
                         min="500"
                         max="20000"
@@ -239040,7 +240506,7 @@ function dispatchGameSettingsChange(
                       />
 
                       <SettingsSlider
-                        label={(v) => <>Max Spend Per Turn: ${v.toLocaleString()}</>}
+                        label={(v) => <>Max Spend Per Turn: ${v.toLocaleString('en-AU')}</>}
                         id="setting-copilot-max-spend-turn"
                         min="2000"
                         max="50000"
@@ -239060,7 +240526,7 @@ function dispatchGameSettingsChange(
                       />
 
                       <SettingsSlider
-                        label={(v) => <>Max Debt Increase: ${v.toLocaleString()}</>}
+                        label={(v) => <>Max Debt Increase: ${v.toLocaleString('en-AU')}</>}
                         id="setting-copilot-max-debt-increase"
                         min="0"
                         max="100000"
@@ -239080,7 +240546,7 @@ function dispatchGameSettingsChange(
                       />
 
                       <SettingsSlider
-                        label={(v) => <>Minimum Cash Reserve: ${v.toLocaleString()}</>}
+                        label={(v) => <>Minimum Cash Reserve: ${v.toLocaleString('en-AU')}</>}
                         id="setting-copilot-min-cash-reserve"
                         min="0"
                         max="20000"
@@ -241709,7 +243175,7 @@ function dispatchGameSettingsChange(
                       </div>
 
                       <div>
-                        <SettingsSlider label={(v) => <>Governance Veto Uses Per Match: {v}</>} id="setting-slider-governance-veto-uses" min="0" max="10" step="1" value={gameSettings.governanceVetoUsesPerMatch} onChange={(val) => trackedSetGameSettings("direct_player_change", "Governance", prev => ({ ...prev, governanceVetoUsesPerMatch: val }))} className="w-full" />
+                        <SettingsSlider label={(v) => <>Governance Veto Uses Per Match: {v}<V99NoEffectChip settingKey="governanceVetoUsesPerMatch" /></>} id="setting-slider-governance-veto-uses" min="0" max="10" step="1" value={gameSettings.governanceVetoUsesPerMatch} onChange={(val) => trackedSetGameSettings("direct_player_change", "Governance", prev => ({ ...prev, governanceVetoUsesPerMatch: val }))} className="w-full" />
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -243023,7 +244489,7 @@ function dispatchGameSettingsChange(
                   </div>
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="font-semibold">Persist AI-vs-AI Matches</div>
+                      <div className="font-semibold">Persist AI-vs-AI Matches<V99NoEffectChip settingKey="aiPersistentAivsAiEnabled" /></div>
                       <div className="text-sm opacity-75">Allow simulation matches to read and write persistent profiles.</div>
                     </div>
                     <button
@@ -243444,6 +244910,7 @@ function dispatchGameSettingsChange(
                         <div>
                           <div className="font-semibold flex items-center gap-2">
                             <span>🔮 Enable Projected Outcome</span>
+                            <V99NoEffectChip settingKey="projectedOutcomeEnabled" />
                             <span className="text-xs px-2 py-0.5 rounded bg-indigo-900/60 text-indigo-300 border border-indigo-500/30">Phase 7</span>
                           </div>
                           <div className="text-sm opacity-75">
@@ -243557,7 +245024,7 @@ function dispatchGameSettingsChange(
                     </div>
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="font-semibold">Priority Transparency</div>
+                        <div className="font-semibold">Priority Transparency<V99NoEffectChip settingKey="priorityTransparencyEnabled" /></div>
                         <div className="text-sm opacity-75">Show which domains were promoted or reduced</div>
                       </div>
                       <button
@@ -243667,7 +245134,7 @@ function dispatchGameSettingsChange(
                       <SettingsSlider label={(v) => <>Detail Level: {v}</>} id="setting-slider-106-detail-level-decisiontransparencydetaill" min="1" max="100" value={gameSettings.decisionTransparencyDetailLevel} onChange={(val) => trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({ ...prev, decisionTransparencyDetailLevel: val }))} className="w-full" />
                     </div>
                     <div>
-                      <SettingsSlider label={(v) => <>Explanation Depth: {v}</>} id="setting-slider-107-explanation-depth-decisiontransparencyex" min="1" max="100" value={gameSettings.decisionTransparencyExplanationDepth} onChange={(val) => trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({ ...prev, decisionTransparencyExplanationDepth: val }))} className="w-full" />
+                      <SettingsSlider label={(v) => <>Explanation Depth: {v}<V99NoEffectChip settingKey="decisionTransparencyExplanationDepth" /></>} id="setting-slider-107-explanation-depth-decisiontransparencyex" min="1" max="100" value={gameSettings.decisionTransparencyExplanationDepth} onChange={(val) => trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({ ...prev, decisionTransparencyExplanationDepth: val }))} className="w-full" />
                     </div>
                     <div>
                       <SettingsSlider label={(v) => <>Timeline Length: {v}</>} id="setting-slider-108-timeline-length-decisiontransparencytime" min="5" max="120" value={gameSettings.decisionTransparencyTimelineLength} onChange={(val) => trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({ ...prev, decisionTransparencyTimelineLength: val }))} className="w-full" />
@@ -243974,11 +245441,11 @@ function dispatchGameSettingsChange(
                               <div className="font-bold text-sm flex items-center gap-2">
                                 <span>📹 Live Recorded Event Headroom</span>
                                 <span className={`px-2 py-0.5 text-[10px] font-mono font-bold uppercase rounded border ${badgeStyle}`}>
-                                  {recordedEventsCount.toLocaleString()} / {aiReplayMaxEvents.toLocaleString()} events ({usagePercent}% used)
+                                  {recordedEventsCount.toLocaleString('en-AU')} / {aiReplayMaxEvents.toLocaleString('en-AU')} events ({usagePercent}% used)
                                 </span>
                               </div>
                               <div className="text-xs opacity-75">
-                                Live event headroom display: {recordedEventsCount.toLocaleString()} / {aiReplayMaxEvents.toLocaleString()} events ({Math.round((recordedEventsCount / aiReplayMaxEvents) * 100)}% cap recorded).
+                                Live event headroom display: {recordedEventsCount.toLocaleString('en-AU')} / {aiReplayMaxEvents.toLocaleString('en-AU')} events ({Math.round((recordedEventsCount / aiReplayMaxEvents) * 100)}% cap recorded).
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
@@ -244004,15 +245471,15 @@ function dispatchGameSettingsChange(
                           <div className="grid grid-cols-3 gap-2 text-xs font-mono">
                             <div className="p-2 rounded bg-black/40 border border-white/10 flex flex-col justify-center">
                               <span className="opacity-60 block text-[10px] uppercase font-sans">Recorded Events</span>
-                              <span className="font-bold text-sky-300 text-sm">{recordedEventsCount.toLocaleString()}</span>
+                              <span className="font-bold text-sky-300 text-sm">{recordedEventsCount.toLocaleString('en-AU')}</span>
                             </div>
                             <div className="p-2 rounded bg-black/40 border border-white/10 flex flex-col justify-center">
                               <span className="opacity-60 block text-[10px] uppercase font-sans">Max Cap Limit</span>
-                              <span className="font-bold text-slate-300 text-sm">{aiReplayMaxEvents.toLocaleString()}</span>
+                              <span className="font-bold text-slate-300 text-sm">{aiReplayMaxEvents.toLocaleString('en-AU')}</span>
                             </div>
                             <div className={`p-2 rounded border flex flex-col justify-center ${badgeStyle}`}>
                               <span className="opacity-80 block text-[10px] uppercase font-sans font-semibold">Remaining Headroom</span>
-                              <span className="font-bold text-sm">{(aiReplayMaxEvents - recordedEventsCount).toLocaleString()} ({headroomPercent}%)</span>
+                              <span className="font-bold text-sm">{(aiReplayMaxEvents - recordedEventsCount).toLocaleString('en-AU')} ({headroomPercent}%)</span>
                             </div>
                           </div>
 
@@ -245932,7 +247399,7 @@ function dispatchGameSettingsChange(
                 </div>
                 <div className="p-2.5 bg-slate-800/80 rounded-lg border border-slate-700 text-center">
                   <span className="text-[10px] text-slate-400 uppercase block">Treasury</span>
-                  <span className="text-sm font-bold text-emerald-400">${treasuryBalance.toLocaleString()}</span>
+                  <span className="text-sm font-bold text-emerald-400">${treasuryBalance.toLocaleString('en-AU')}</span>
                 </div>
                 <div className="p-2.5 bg-slate-800/80 rounded-lg border border-slate-700 text-center">
                   <span className="text-[10px] text-slate-400 uppercase block">Incidents</span>
@@ -246159,7 +247626,7 @@ function dispatchGameSettingsChange(
                           <div>
                             <span className="font-bold text-sky-300">{team.name || team.id}</span>
                             <div className="text-[11px] text-slate-400">
-                              Money: ${((team.money ?? team.treasury?.balance) || 0).toLocaleString()} • Actors: {(team.actorIds || []).length}
+                              Money: ${((team.money ?? team.treasury?.balance) || 0).toLocaleString('en-AU')} • Actors: {(team.actorIds || []).length}
                             </div>
                           </div>
                           <span className={`px-2 py-0.5 text-[10px] font-bold rounded ${team.id === (player.teamId || TEAM_PLAYER_ID) ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-700 text-slate-300'}`}>
@@ -246246,7 +247713,7 @@ function dispatchGameSettingsChange(
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="p-3 bg-slate-900/80 rounded border border-slate-800 space-y-1">
                     <span className="opacity-75 text-[11px]">Treasury Balance</span>
-                    <div className="font-bold text-sm text-emerald-400">${treasuryBalance.toLocaleString()}</div>
+                    <div className="font-bold text-sm text-emerald-400">${treasuryBalance.toLocaleString('en-AU')}</div>
                     <div className="text-[11px] opacity-70">Team Vault</div>
                   </div>
                   <div className="p-3 bg-slate-900/80 rounded border border-slate-800 space-y-1">
@@ -246254,7 +247721,7 @@ function dispatchGameSettingsChange(
                     <div className="font-bold text-sm text-sky-400">
                       {gameSettings.teamTreasuryAllowHumanFundingRequests ? 'Enabled' : 'Disabled'}
                     </div>
-                    <div className="text-[11px] opacity-70">Cap: ${gameSettings.teamTreasuryMaxWithdrawalPerRequest || 1000}</div>
+                    <div className="text-[11px] opacity-70">Cap: {fmtMoney(gameSettings.teamTreasuryMaxWithdrawalPerRequest || 1000)}</div>
                   </div>
                   <div className="p-3 bg-slate-900/80 rounded border border-slate-800 space-y-1">
                     <span className="opacity-75 text-[11px]">Distribution Strategy</span>
@@ -246867,8 +248334,8 @@ function dispatchGameSettingsChange(
               <div className="font-bold mb-2">Player Snapshot</div>
               <p>Character: {data?.player?.character?.name || "Player"}</p>
               <p>Level: {data.player.level}</p>
-              <p>Money: ${data.player.money.toLocaleString()}</p>
-              <p>Net Worth: ${netWorth.toLocaleString()}</p>
+              <p>Money: ${data.player.money.toLocaleString('en-AU')}</p>
+              <p>Net Worth: ${netWorth.toLocaleString('en-AU')}</p>
             </div>
 
             <div className={`${themeStyles.border} border rounded-lg p-4`}>
@@ -246996,11 +248463,11 @@ function dispatchGameSettingsChange(
             <div className="space-y-3 mb-6">
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="text-sm opacity-75 mb-1">{isTeamMode ? `${teamsById[TEAM_PLAYER_ID]?.name || 'Your Team'} Net Worth` : 'Your Earnings'}</div>
-                <div className="text-2xl font-bold text-green-400">${dayTransitionData.playerEarned.toLocaleString()}</div>
+                <div className="text-2xl font-bold text-green-400">${dayTransitionData.playerEarned.toLocaleString('en-AU')}</div>
               </div>
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="text-sm opacity-75 mb-1">{isTeamMode ? `${teamsById[TEAM_OPPONENT_ID]?.name || 'AI Team'} Net Worth` : 'AI Earnings'}</div>
-                <div className="text-2xl font-bold text-pink-400">${dayTransitionData.aiEarned.toLocaleString()}</div>
+                <div className="text-2xl font-bold text-pink-400">${dayTransitionData.aiEarned.toLocaleString('en-AU')}</div>
               </div>
             </div>
           )}
@@ -247074,11 +248541,11 @@ function dispatchGameSettingsChange(
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <div className="opacity-75">Money</div>
-                  <div className="font-bold text-green-500">${aiPlayer?.money ?? 0}</div>
+                  <div className={`font-bold ${themeStyles.statMoney}`}>{fmtMoney(aiPlayer?.money ?? 0)}</div>
                 </div>
                 <div>
                   <div className="opacity-75">Net Worth</div>
-                  <div className="font-bold text-blue-500">${getAiNetWorth}</div>
+                  <div className={`font-bold ${themeStyles.statInfo}`}>{fmtMoney(getAiNetWorth)}</div>
                 </div>
                 <div>
                   <div className="opacity-75">Level</div>
@@ -247136,7 +248603,7 @@ function dispatchGameSettingsChange(
                   <div className="opacity-75">Investments</div>
                   <div className="font-bold text-green-500">
                     {aiInvestmentSummary.entries.length}
-                    {aiInvestmentSummary.totalIncome > 0 && ` (+$${aiInvestmentSummary.totalIncome}/day)`}
+                    {aiInvestmentSummary.totalIncome > 0 && ` (+${fmtMoney(aiInvestmentSummary.totalIncome)}/day)`}
                   </div>
                   <div className="text-xs opacity-75 mt-1">
                     {aiInvestmentSummary.entries.length > 0
@@ -247357,9 +248824,9 @@ function dispatchGameSettingsChange(
               </div>
               <div className="text-sm space-y-1">
                 <div>{playerGoalLabel}</div>
-                <div>Cash: ${player.money.toLocaleString()}</div>
-                <div>Net Worth: ${getNetWorth.toLocaleString()}</div>
-                <div>Inventory: ${getInventoryValue.toLocaleString()}</div>
+                <div>Cash: ${player.money.toLocaleString('en-AU')}</div>
+                <div>Net Worth: ${getNetWorth.toLocaleString('en-AU')}</div>
+                <div>Inventory: ${getInventoryValue.toLocaleString('en-AU')}</div>
               </div>
             </div>
 
@@ -247370,7 +248837,7 @@ function dispatchGameSettingsChange(
 	                  <div>{isTeamMode ? (teamsById[TEAM_PLAYER_ID]?.name || 'Your Team') : 'You'}: {playerControlledRegions}/{TOTAL_REGION_COUNT}</div>
 	                  <div>{isTeamMode ? (teamsById[TEAM_OPPONENT_ID]?.name || 'AI Team') : (aiPlayer?.name || "AI Opponent")}: {aiControlledRegions}/{TOTAL_REGION_COUNT}</div>
 	                  <div>Majority Target: {REGION_CONTROL_MAJORITY}</div>
-	                  <div>Invested: {isTeamMode ? (teamsById[TEAM_PLAYER_ID]?.name || 'Your Team') : 'You'} ${playerRegionInvested} • {isTeamMode ? (teamsById[TEAM_OPPONENT_ID]?.name || 'AI Team') : (aiPlayer?.name || "AI Opponent")} ${aiRegionInvested}</div>
+	                  <div>Invested: {isTeamMode ? (teamsById[TEAM_PLAYER_ID]?.name || 'Your Team') : 'You'} {fmtMoney(playerRegionInvested)} • {isTeamMode ? (teamsById[TEAM_OPPONENT_ID]?.name || 'AI Team') : (aiPlayer?.name || "AI Opponent")} {fmtMoney(aiRegionInvested)}</div>
 	                </div>
 	              </div>
 	            )}
@@ -247414,11 +248881,11 @@ function dispatchGameSettingsChange(
                         {netWorthChartPoints.map((point: any) => (
                           <g key={`net-worth-point-${point.day}-${point.x}`}>
                             <circle cx={point.x} cy={point.playerY} r="1.2" fill="#22c55e">
-                              <title>{`Day ${point.day}: ${isTeamMode ? (teamsById[TEAM_PLAYER_ID]?.name || 'Your Team') : 'You'} $${point.playerWorth.toLocaleString()}`}</title>
+                              <title>{`Day ${point.day}: ${isTeamMode ? (teamsById[TEAM_PLAYER_ID]?.name || 'Your Team') : 'You'} $${point.playerWorth.toLocaleString('en-AU')}`}</title>
                             </circle>
                             {isCompetitiveMode && (
                               <circle cx={point.x} cy={point.aiY} r="1.2" fill="#ec4899">
-                                <title>{`Day ${point.day}: ${isTeamMode ? (teamsById[TEAM_OPPONENT_ID]?.name || 'AI Team') : (aiPlayer?.name || "AI Opponent")} $${point.aiWorth.toLocaleString()}`}</title>
+                                <title>{`Day ${point.day}: ${isTeamMode ? (teamsById[TEAM_OPPONENT_ID]?.name || 'AI Team') : (aiPlayer?.name || "AI Opponent")} $${point.aiWorth.toLocaleString('en-AU')}`}</title>
                               </circle>
                             )}
                           </g>
@@ -247470,7 +248937,7 @@ function dispatchGameSettingsChange(
                   Day {gameState.bestDayRecord.day}
                 </div>
                 <div className="text-sm opacity-75">
-                  Earned ${gameState.bestDayRecord.earned.toLocaleString()}
+                  Earned ${gameState.bestDayRecord.earned.toLocaleString('en-AU')}
                 </div>
               </div>
             )}
@@ -247603,13 +249070,13 @@ function dispatchGameSettingsChange(
                 <div>
                   <div className="opacity-75">Highest Challenge Win</div>
                   <div className="font-bold text-lg">
-                    ${personalRecords.highestChallenge}
+                    {fmtMoney(personalRecords.highestChallenge)}
                   </div>
                 </div>
                 <div>
                   <div className="opacity-75">Most Valuable Sale</div>
                   <div className="font-bold text-lg">
-                    ${personalRecords.mostExpensiveResourceSold.price}
+                    {fmtMoney(personalRecords.mostExpensiveResourceSold.price)}
                   </div>
                   {personalRecords.mostExpensiveResourceSold.resource && (
                     <div className="text-xs opacity-75">
@@ -247626,13 +249093,13 @@ function dispatchGameSettingsChange(
                 <div>
                   <div className="opacity-75">Peak Money</div>
                   <div className="font-bold text-lg">
-                    ${personalRecords.maxMoney.toLocaleString()}
+                    ${personalRecords.maxMoney.toLocaleString('en-AU')}
                   </div>
                 </div>
                 <div>
                   <div className="opacity-75">Total Earned</div>
                   <div className="font-bold text-lg">
-                    ${personalRecords.totalEarned.toLocaleString()}
+                    ${personalRecords.totalEarned.toLocaleString('en-AU')}
                   </div>
                 </div>
                 <div>
@@ -247999,7 +249466,7 @@ function dispatchGameSettingsChange(
 
   // Menu Screen with AI Mode Option
   const renderMenu = () => {
-    const isDark = resolveIsDarkTheme(uiState.theme, systemPrefersDark);
+    const isDark = resolveIsDarkSurface(uiState.theme, systemPrefersDark); // V9.9 (SECTION 20AU): Retro is a dark surface
 
     return (
       <div className={`min-h-screen ${themeStyles.menuBackground} ${themeStyles.text} flex items-start justify-center p-6 py-10 relative overflow-x-hidden overflow-y-auto`}>
@@ -248051,14 +249518,10 @@ function dispatchGameSettingsChange(
                 <button
                   key={index}
                   onClick={() => updateUiState({ selectedCharacter: index })}
+                  aria-pressed={uiState.selectedCharacter === index}
                   className={`relative rounded-xl p-4 transition-all duration-300 transform hover:scale-105 ${
-                    uiState.selectedCharacter === index
-                      ? isDark
-                        ? 'bg-gradient-to-br from-blue-600/30 to-purple-600/30 border-2 border-blue-400 shadow-lg shadow-blue-500/20'
-                        : 'bg-gradient-to-br from-blue-100 to-purple-100 border-2 border-blue-500 shadow-lg shadow-blue-300/50'
-                      : isDark
-                        ? 'bg-gray-700/50 border-2 border-gray-600 hover:border-gray-500 hover:bg-gray-700/70'
-                        : 'bg-white/50 border-2 border-gray-200 hover:border-gray-300 hover:bg-white/80'
+                    // V9.9 (SECTION 20AU): the card surfaces come from the theme (Retro used the light ones under pale text).
+                    uiState.selectedCharacter === index ? themeStyles.cardSelected : themeStyles.cardIdle
                   }`}
                 >
                   {uiState.selectedCharacter === index && (
@@ -248069,8 +249532,8 @@ function dispatchGameSettingsChange(
                   <div className="text-4xl mb-2">{char.avatar}</div>
                   <div className={`font-bold ${themeStyles.text}`}>{char.name}</div>
                   <div className={`text-xs ${themeStyles.textMuted} mt-1`}>{char.ability}</div>
-                  <div className={`text-xs mt-2 font-semibold ${isDark ? 'text-green-400' : 'text-green-600'}`}>
-                    💰 ${char.startingMoney}
+                  <div className={`text-xs mt-2 font-semibold ${themeStyles.moneyPositive}`}>
+                    💰 {fmtMoney(char.startingMoney)}
                   </div>
                 </button>
               ))}
@@ -248104,7 +249567,7 @@ function dispatchGameSettingsChange(
                     className={`w-full text-left rounded-xl border px-4 py-3 transition-all ${selected ? 'border-emerald-400 ring-2 ring-emerald-400/60 bg-emerald-500/10' : 'border-current/20 hover:border-current/50'}`}>
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-bold">{opt.icon} {opt.label}</span>
-                      {selected && <span className="text-emerald-400 text-sm">✓ Selected</span>}
+                      {selected && <span className={`${isDark ? 'text-emerald-400' : 'text-emerald-700'} text-sm`}>✓ Selected</span>}
                     </div>
                     <div className="text-xs opacity-80 mt-1">{opt.description}</div>
                   </button>
@@ -248364,7 +249827,7 @@ function dispatchGameSettingsChange(
   const renderCampaignSelect = () => {
     if (!uiState.showCampaignSelect) return null;
     // Escape returns to the main menu from the difficulty/scenario picker.
-    const isDark = resolveIsDarkTheme(uiState.theme, systemPrefersDark);
+    const isDark = resolveIsDarkSurface(uiState.theme, systemPrefersDark); // V9.9 (SECTION 20AU): Retro is a dark surface
     const pendingMode = uiState.pendingMode || 'ai';
 
     if (pendingMode === 'scenario') {
@@ -248427,7 +249890,7 @@ function dispatchGameSettingsChange(
                       <div className={`p-3 rounded-lg text-xs mb-4 grid grid-cols-3 gap-2 ${isDark ? 'bg-gray-900/60' : 'bg-gray-100'}`}>
                         <div>
                           <span className="opacity-70 block">Starting Cash</span>
-                          <span className="font-bold text-emerald-400">${scenario.startingMoney.toLocaleString()}</span>
+                          <span className="font-bold text-emerald-400">${scenario.startingMoney.toLocaleString('en-AU')}</span>
                         </div>
                         <div>
                           <span className="opacity-70 block">Start Regions</span>
@@ -249107,7 +250570,7 @@ function dispatchGameSettingsChange(
             className={`bg-gradient-to-r from-yellow-500 to-orange-500 text-white rounded-lg flex items-center ${actionButtonSize} ${actionButtonGap} disabled:opacity-50 animate-pulse`}
           >
             <span>🍀</span>
-            <span>Retry Challenge</span>
+            <span title="Tourist Luck: try the failed challenge again with +20% success chance. Costs the wager again, but no action.">{V99_TOURIST_RETRY_LABEL}</span>
           </button>
         )}
 
@@ -249117,7 +250580,7 @@ function dispatchGameSettingsChange(
             className={`bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-lg flex items-center ${actionButtonSize} ${actionButtonGap} animate-pulse`}
           >
             <span>🎲</span>
-            <span>Double or Nothing (${gameState.lastChallengeReward})</span>
+            <span>Double or Nothing ({fmtMoney(Number(gameState.lastChallengeReward))})</span>
           </button>
         )}
 
@@ -249165,7 +250628,7 @@ function dispatchGameSettingsChange(
       : gameSettings.sabotageEnabled && isTravelBlocked(player.debuffs)
         ? 'Travel blocked by Customs Hold'
         : player.money < selectedPreviewTravelCost
-          ? `Need $${selectedPreviewTravelCost - player.money} more`
+          ? `Need ${fmtMoney(selectedPreviewTravelCost - player.money)} more`
           : null;
     const selectedPreviewTravelAllowed = selectedPreviewRegionCode !== player.currentRegion && !selectedPreviewTravelBlockedReason;
 
@@ -250031,7 +251494,7 @@ function dispatchGameSettingsChange(
                 <MegaprojectCenter persisted={mpPersisted} world={mpWorld} viewer={mpViewer} names={swrInputs.ownerNames} theme={themeStyles} onCommand={handleMegaprojectCommand} onTrack={mpTrack} onAsk={q => void submitIntelligenceQuery(q)} onMap={mpShowOnMap}
                   guardian={amount => { const gs: any = gameSettings.guardianAiSettings; if (gs && gs.enabled === false) return null; const cash = Number(player.money || 0); if (amount < cash * 0.5) return null;
                     const p = Object.values(mpPersisted?.programs || {}).find(x => !x.abandoned && x.status !== 'completed'); const v = p ? megaprojectProgramView(p, mpWorld) : null; const left = v?.current ? Math.max(0, v.current.requiredCapital - v.current.progressCapital) : 0; const pay = Math.min(amount, left);
-                    return <div className="mt-1 text-amber-200" role="note" data-testid="mp-guardian">⚠ Guardian: committing ${pay.toLocaleString()} would reduce your available cash from ${cash.toLocaleString()} to ${(cash - pay).toLocaleString()}.{v ? ` Later stages still need about $${Math.round(v.capitalTotal - v.capitalDone - pay).toLocaleString()} plus canonical component projects.` : ''} (Warning only — the decision is yours.)</div>; }} />
+                    return <div className="mt-1 text-amber-200" role="note" data-testid="mp-guardian">⚠ Guardian: committing ${pay.toLocaleString('en-AU')} would reduce your available cash from ${cash.toLocaleString('en-AU')} to ${(cash - pay).toLocaleString('en-AU')}.{v ? ` Later stages still need about $${Math.round(v.capitalTotal - v.capitalDone - pay).toLocaleString('en-AU')} plus canonical component projects.` : ''} (Warning only — the decision is yours.)</div>; }} />
               </OptionalSurfaceBoundary>
             )}
             {inState && (
@@ -250495,12 +251958,12 @@ function dispatchGameSettingsChange(
 	                <div className={`${themeStyles.border} border rounded px-3 py-2`}>
 	                  <div className="opacity-75">{playerPrimaryMetricLabel}</div>
 	                  <div className="font-bold text-blue-400">{formatWinMetricValue(gameSettings.winCondition, playerPrimaryMetricValue)}</div>
-	                  <div className="text-xs opacity-75">Cash ${((playerTeamScore?.money) || 0).toLocaleString()} • Net Worth ${((playerTeamScore?.netWorth) || 0).toLocaleString()} • {playerControlledRegions} regions</div>
+	                  <div className="text-xs opacity-75">Cash ${((playerTeamScore?.money) || 0).toLocaleString('en-AU')} • Net Worth ${((playerTeamScore?.netWorth) || 0).toLocaleString('en-AU')} • {playerControlledRegions} regions</div>
 	                </div>
 	                <div className={`${themeStyles.border} border rounded px-3 py-2`}>
 	                  <div className="opacity-75">{opponentPrimaryMetricLabel}</div>
 	                  <div className="font-bold text-pink-400">{formatWinMetricValue(gameSettings.winCondition, opponentPrimaryMetricValue)}</div>
-	                  <div className="text-xs opacity-75">Cash ${((opponentTeamScore?.money) || 0).toLocaleString()} • Net Worth ${((opponentTeamScore?.netWorth) || 0).toLocaleString()} • {aiControlledRegions} regions</div>
+	                  <div className="text-xs opacity-75">Cash ${((opponentTeamScore?.money) || 0).toLocaleString('en-AU')} • Net Worth ${((opponentTeamScore?.netWorth) || 0).toLocaleString('en-AU')} • {aiControlledRegions} regions</div>
 	                </div>
 	                <div className={`${themeStyles.border} border rounded px-3 py-2`}>
 	                  <div className="opacity-75">Current Actor</div>
@@ -250530,7 +251993,7 @@ function dispatchGameSettingsChange(
 	                        : `Ranking: ${(aiPlayer?.name || "AI Opponent")} leads by ${formatWinMetricValue(gameSettings.winCondition, opponentPrimaryMetricValue - playerPrimaryMetricValue)}`}
 	                  </div>
                       <div className="text-[11px] opacity-70 text-center mt-1">
-                        Cash ${player.money.toLocaleString()} • Net Worth ${getNetWorth.toLocaleString()} | ${(aiPlayer?.name || "AI Opponent")} Cash ${(aiPlayer?.money ?? 0).toLocaleString()} • Net Worth ${getAiNetWorth.toLocaleString()}
+                        Cash ${player.money.toLocaleString('en-AU')} • Net Worth ${getNetWorth.toLocaleString('en-AU')} | ${(aiPlayer?.name || "AI Opponent")} Cash ${(aiPlayer?.money ?? 0).toLocaleString('en-AU')} • Net Worth ${getAiNetWorth.toLocaleString('en-AU')}
                       </div>
 	                </div>
 	              </div>
@@ -250619,7 +252082,7 @@ function dispatchGameSettingsChange(
                         disabled={!isPlayerTurn || player.money < MINIMUM_WAGER}
                         className={`${themeStyles.button} text-white px-3 py-2 rounded-lg text-sm mt-3 w-full disabled:opacity-50`}
                       >
-                        Take National Champion (${grandTourFinaleWager})
+                        Take National Champion ({fmtMoney(grandTourFinaleWager)})
                       </button>
                     )}
                   </div>
@@ -250742,11 +252205,11 @@ function dispatchGameSettingsChange(
               </div>
               <div>
                 <div className="text-sm opacity-75">Money</div>
-                <div className="font-bold text-green-500">${player.money}</div>
+                <div className={`font-bold ${themeStyles.statMoney}`}>{fmtMoney(Number(player.money))}</div>
               </div>
               <div>
                 <div className="text-sm opacity-75">Net Worth</div>
-                <div className="font-bold text-blue-500">${getNetWorth}</div>
+                <div className={`font-bold ${themeStyles.statInfo}`}>{fmtMoney(getNetWorth)}</div>
               </div>
 	              <div>
 	                <div className="text-sm opacity-75">Level</div>
@@ -250754,8 +252217,8 @@ function dispatchGameSettingsChange(
 	              </div>
 	              <div>
 	                <div className="text-sm opacity-75">Controlling</div>
-	                <div className="font-bold text-blue-400">
-	                  {playerControlledRegions}/{TOTAL_REGION_COUNT} (${playerRegionInvested} invested)
+	                <div className={`font-bold ${themeStyles.infoText}`}>
+	                  {playerControlledRegions}/{TOTAL_REGION_COUNT} ({fmtMoney(playerRegionInvested)} invested)
 	                </div>
 	              </div>
 	              {isTeamMode ? (
@@ -250763,7 +252226,7 @@ function dispatchGameSettingsChange(
 	                  <div className="border-l border-gray-600 h-10 mx-2"></div>
 	                  <div>
 	                    <div className="text-sm opacity-75">Team Net Worth</div>
-	                    <div className="font-bold text-cyan-400">${(playerTeamScore?.netWorth || 0).toLocaleString()}</div>
+	                    <div className="font-bold text-cyan-400">${(playerTeamScore?.netWorth || 0).toLocaleString('en-AU')}</div>
 	                  </div>
 	                  <div>
 	                    <div className="text-sm opacity-75">Teammates</div>
@@ -250775,7 +252238,7 @@ function dispatchGameSettingsChange(
 	                  <div className="border-l border-gray-600 h-10 mx-2"></div>
                   <div>
                     <div className="text-sm opacity-75">AI Money</div>
-                    <div className="font-bold text-pink-500">${aiPlayer?.money ?? 0}</div>
+                    <div className="font-bold text-pink-500">{fmtMoney(aiPlayer?.money ?? 0)}</div>
                   </div>
 	                  <div>
 	                    <div className="text-sm opacity-75">AI Level</div>
@@ -250784,7 +252247,7 @@ function dispatchGameSettingsChange(
 	                  <div>
 	                    <div className="text-sm opacity-75">AI Control</div>
 	                    <div className="font-bold text-pink-400">
-	                      {aiControlledRegions}/{TOTAL_REGION_COUNT} (${aiRegionInvested} invested)
+	                      {aiControlledRegions}/{TOTAL_REGION_COUNT} ({fmtMoney(aiRegionInvested)} invested)
 	                    </div>
 	                  </div>
 	                  <button
@@ -250901,7 +252364,7 @@ function dispatchGameSettingsChange(
                   <div className="text-sm opacity-75">Investments</div>
                   <div className="font-bold text-green-400">
                     {playerInvestmentSummary.entries.length}
-                    {playerInvestmentSummary.totalIncome > 0 && ` (+$${playerInvestmentSummary.totalIncome}/day)`}
+                    {playerInvestmentSummary.totalIncome > 0 && ` (+${fmtMoney(Number(playerInvestmentSummary.totalIncome))}/day)`}
                   </div>
                   {playerInvestmentSummary.entries.length > 0 && (
                     <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block z-50">
@@ -250909,7 +252372,7 @@ function dispatchGameSettingsChange(
                         {playerInvestmentSummary.entries.map((entry: any) => (
                           <div key={entry.regionCode} className="flex justify-between space-x-2">
                             <span>{entry.name} ({entry.regionName})</span>
-                            <span className="font-semibold">+${entry.dailyIncome}/day</span>
+                            <span className="font-semibold">+{fmtMoney(Number(entry.dailyIncome))}/day</span>
                           </div>
                         ))}
                       </div>
@@ -251073,7 +252536,7 @@ function dispatchGameSettingsChange(
                     <div className={`grid grid-cols-1 md:grid-cols-2 ${isCompactOverview ? 'gap-1.5 text-[10px] mb-2' : 'gap-2 text-[11px] mb-3'}`}>
                       <div className={`${themeStyles.border} border rounded ${isCompactOverview ? 'px-1.5 py-1' : 'px-2 py-2'}`}>
                         <div className="opacity-70">Secondary Metrics</div>
-                        <div>Cash ${teamCash.toLocaleString()} • Net Worth ${teamNetWorth.toLocaleString()} • {teamRegionCount} regions</div>
+                        <div>Cash ${teamCash.toLocaleString('en-AU')} • Net Worth ${teamNetWorth.toLocaleString('en-AU')} • {teamRegionCount} regions</div>
                         {teamModeAiSystemsActive && (
                           <div className="mt-1">Team Objective: {teamObjectiveLabel || 'Waiting for next AI decision'}</div>
                         )}
@@ -251123,7 +252586,7 @@ function dispatchGameSettingsChange(
                                 <div>{WIN_METRIC_PROFILES[gameSettings.winCondition]?.goalKind === 'regions'
                                   ? `Region Deposits ${actor.contributionStats?.regionsInvested || 0}`
                                   : `${getWinMetricDisplayLabel(gameSettings.winCondition)} ${formatWinMetricValue(gameSettings.winCondition, WIN_METRIC_PROFILES[gameSettings.winCondition]?.goalKind === 'money' ? actor.money : computeNetWorth(actor))}`}</div>
-                                <div>Cash ${actor.money.toLocaleString()} • Net ${computeNetWorth(actor).toLocaleString()}</div>
+                                <div>Cash ${actor.money.toLocaleString('en-AU')} • Net ${computeNetWorth(actor).toLocaleString('en-AU')}</div>
                                 <div>{actor.actionsUsedThisTurn || 0}/{getActorActionBudget(actor.id) * (1 + (actor.overridesUsedToday || 0))} actions</div>
                               </div>
                             </div>
@@ -251187,7 +252650,7 @@ function dispatchGameSettingsChange(
                               );
                             })()}
                             <div className={`opacity-70 ${isCompactOverview ? 'mt-1 text-[10px]' : 'mt-2 text-[11px]'}`}>
-                              Earned ${actor.contributionStats?.moneyEarned || 0} ({actorContributionShare?.cashShare || '0%'}) • Crafted ${actor.contributionStats?.craftedValue || 0} ({actorContributionShare?.craftedShare || '0%'}) • Help {actor.contributionStats?.supportGiven || 0} ({actorContributionShare?.supportShare || '0%'})
+                              Earned {fmtMoney(actor.contributionStats?.moneyEarned || 0)} ({actorContributionShare?.cashShare || '0%'}) • Crafted {fmtMoney(actor.contributionStats?.craftedValue || 0)} ({actorContributionShare?.craftedShare || '0%'}) • Help {actor.contributionStats?.supportGiven || 0} ({actorContributionShare?.supportShare || '0%'})
                             </div>
                           </div>
                         );
@@ -251505,7 +252968,7 @@ function dispatchGameSettingsChange(
 	                <div className="text-sm">
 	                  Controller: <span className="font-bold">{currentRegionControllerName}</span>
 	                  {currentRegionControlInfo.highestDeposit > 0 && (
-	                    <span className="opacity-75"> (${currentRegionControlInfo.highestDeposit})</span>
+	                    <span className="opacity-75"> ({fmtMoney(currentRegionControlInfo.highestDeposit)})</span>
 	                  )}
 	                </div>
 	                <div className="text-xs opacity-75">
@@ -251515,19 +252978,19 @@ function dispatchGameSettingsChange(
 	                </div>
 	                <div className="space-y-1 text-sm">
 	                  {currentRegionControlInfo.entries.length === 0 ? (
-	                    <div className="opacity-60">No deposits yet. Deposit $1 to claim control.</div>
+	                    <div className="opacity-60">{v99EmptyRegionStakeText(currentRegionControlInfo.minimumPlayerDeposit)}</div>
 	                  ) : (
 	                    currentRegionControlInfo.entries.map(entry => (
 	                      <div key={`${player.currentRegion}-${entry.playerId}`} className="flex justify-between">
 	                        <span>{getControllerDisplayName(entry.playerId)}</span>
-	                        <span className="font-semibold">${entry.amount}</span>
+	                        <span className="font-semibold">{fmtMoney(entry.amount)}</span>
 	                      </div>
 	                    ))
 	                  )}
 	                </div>
 	                {currentRegionControlInfo.controllerId && currentRegionControlInfo.controllerId !== 'player' && !gameSettings.negotiationMode && (
 	                  <div className="text-xs text-yellow-300">
-	                    Deposit at least ${currentRegionControlInfo.minimumPlayerDeposit} to take control.
+	                    Deposit at least {fmtMoney(currentRegionControlInfo.minimumPlayerDeposit)} to take control.
 	                  </div>
 	                )}
 	                {/* V9.6 (SECTION 20AN): region deposits wait until the guided first run is over. */}
@@ -251568,13 +253031,13 @@ function dispatchGameSettingsChange(
 	                        const refund = Math.floor(deposit * 0.5);
 	                        return (
 	                          <div key={`cashout-${regionCode}`} className="flex justify-between items-center text-xs">
-	                            <span>{regionCode} (${deposit})</span>
+	                            <span>{regionCode} ({fmtMoney(deposit)})</span>
 	                            <button
 	                              onClick={() => cashOutRegionPosition(regionCode, 'player', { consumeAction: true })}
 	                              disabled={!isPlayerTurn}
 	                              className={`${themeStyles.buttonSecondary} px-2 py-1 rounded disabled:opacity-50`}
 	                            >
-	                              Cash Out ${refund}
+	                              Cash Out {fmtMoney(refund)}
 	                            </button>
 	                          </div>
 	                        );
@@ -251599,7 +253062,7 @@ function dispatchGameSettingsChange(
                     >
                       <div className="flex justify-between">
                         <span>{REGIONS[regionCode].name}</span>
-                        <span>${cost}</span>
+                        <span>{fmtMoney(cost)}</span>
                       </div>
                     </button>
                   );
@@ -251704,7 +253167,7 @@ function dispatchGameSettingsChange(
                       role="button"
                       tabIndex={0}
                       aria-pressed={isSelectedPreview || undefined}
-                      aria-label={`${region.name}${isPlayerHere ? ', you are here' : ''}${isAiHere ? ', rival is here' : ''}${isPlayerControlled ? ', controlled by you' : isAiControlled ? ', controlled by rival' : ', neutral'}${!isPlayerHere ? (travelAllowed ? `, travel $${travelCost}` : canAfford ? ', travel blocked' : `, need $${travelCost - player.money} more to travel`) : ''}`}
+                      aria-label={`${region.name}${isPlayerHere ? ', you are here' : ''}${isAiHere ? ', rival is here' : ''}${isPlayerControlled ? ', controlled by you' : isAiControlled ? ', controlled by rival' : ', neutral'}${!isPlayerHere ? (travelAllowed ? `, travel ${fmtMoney(travelCost)}` : canAfford ? ', travel blocked' : `, need ${fmtMoney(travelCost - player.money)} more to travel`) : ''}`}
                       data-testid={`map-region-${code}`}
                       data-selected={isSelectedPreview ? 'true' : undefined}
                       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); v94Activate(); } }}
@@ -251717,7 +253180,7 @@ function dispatchGameSettingsChange(
                       }}
                       onClick={v94Activate}
                       title={interactiveMapActive
-                        ? `${region.name} • ${isPlayerHere ? 'You are here' : travelAllowed ? `Travel $${travelCost}` : canAfford ? 'Travel blocked' : `Need $${travelCost - player.money} more`}${currentObjective.sourceId === code ? ' • Tracked destination' : ''}`
+                        ? `${region.name} • ${isPlayerHere ? 'You are here' : travelAllowed ? `Travel ${fmtMoney(travelCost)}` : canAfford ? 'Travel blocked' : `Need ${fmtMoney(travelCost - player.money)} more`}${currentObjective.sourceId === code ? ' • Tracked destination' : ''}`
                         : undefined}
                     >
 	                      <div
@@ -251740,7 +253203,7 @@ function dispatchGameSettingsChange(
 	                        {code}
 	                        {regionControlInfo.highestDeposit > 0 && (
 	                          <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 text-[10px] bg-black bg-opacity-75 px-1.5 py-0.5 rounded">
-	                            ${regionControlInfo.highestDeposit}
+	                            {fmtMoney(regionControlInfo.highestDeposit)}
 	                          </div>
 	                        )}
                           {nationalLayerShown(gameSettings) && mpMapId && mpPersisted?.programs[mpMapId] ? (() => { const mb = megaprojectMapBadge(mpPersisted, code, mpMapId); return mb ? <div data-testid="mp-map-badge" data-tone={mb.tone} title={mb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${mb.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : mb.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : mb.tone === 'ok' ? 'bg-emerald-950 border-emerald-400 text-emerald-100' : 'bg-slate-900 border-slate-400 text-slate-100'}`}>{mb.text}</div> : null; })() : inMapKind && inState ? (() => { const xb = infraMapBadge(inState, code, inMapKind); return xb ? <div data-testid="in-map-badge" data-tone={xb.tone} title={xb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${xb.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : xb.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-sky-950 border-sky-400 text-sky-100'}`}>{xb.text}</div> : null; })() : scMapLayer && scState ? (() => { const ib = industryMapBadge(scState, code, scMapLayer); return ib ? <div data-testid="sc-map-badge" data-tone={ib.tone} title={ib.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${ib.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : ib.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-violet-950 border-violet-400 text-violet-100'}`}>{ib.text}</div> : null; })() : nsMapNetwork && nsState ? (() => { const nb = nationalMapBadge(nsState, code, nsMapNetwork); return nb ? <div data-testid="ns-map-badge" data-condition={nb.condition} title={nb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${nb.condition === 'critical' ? 'bg-red-950 border-red-400 text-red-100' : nb.condition === 'bottlenecked' ? 'bg-orange-950 border-orange-400 text-orange-100' : nb.condition === 'strained' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-teal-950 border-teal-500 text-teal-100'}`}>{nb.text}</div> : null; })() : (() => { const badge = lrMapBadge(lrState?.regions[code], lrMapMode); return badge ? <div data-testid="lr-map-badge" title={badge.title} className="absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap bg-teal-900/90 text-teal-100 px-1 rounded">{badge.text}</div> : null; })()}
@@ -251787,7 +253250,7 @@ function dispatchGameSettingsChange(
                             {lrState?.regions[code] && <div className="opacity-90 mb-1">{lrState.regions[code].identity.label} · {LR_MOMENTUM_LABEL[lrState.regions[code].momentum.band]}</div>}
                             {rfInfluentialCount(rfState, code) > 0 && <div className="opacity-80 mb-1">{rfInfluentialCount(rfState, code)} influential stakeholder group{rfInfluentialCount(rfState, code) === 1 ? '' : 's'}</div>}
                             <div className={canAfford ? 'text-green-400' : 'text-red-400'}>
-                              Travel: ${travelCost}
+                              Travel: {fmtMoney(travelCost)}
                             </div>
                             {REGIONAL_RESOURCES[code] && (
                               <div className="mt-1 opacity-75">
@@ -251807,7 +253270,7 @@ function dispatchGameSettingsChange(
 	                                regionControlInfo.entries.map(entry => (
 	                                  <div key={`${code}-deposit-${entry.playerId}`} className="flex justify-between">
 	                                    <span>{getControllerDisplayName(entry.playerId)}</span>
-	                                    <span>${entry.amount}</span>
+	                                    <span>{fmtMoney(entry.amount)}</span>
 	                                  </div>
 	                                ))
 	                              )}
@@ -251882,8 +253345,8 @@ function dispatchGameSettingsChange(
                         </div>
                         <div>
                           <div className="font-semibold mb-1">Travel</div>
-                          <div>Cost: ${selectedPreviewTravelCost}</div>
-                          <div className={selectedPreviewTravelAllowed ? 'text-green-400' : 'text-red-400'}>
+                          <div>Cost: {fmtMoney(selectedPreviewTravelCost)}</div>
+                          <div className={selectedPreviewTravelAllowed ? themeStyles.successText : themeStyles.moneyNegative}>
                             {selectedPreviewTravelAllowed ? 'Travel allowed' : selectedPreviewTravelBlockedReason}
                           </div>
                         </div>
@@ -252065,9 +253528,9 @@ function dispatchGameSettingsChange(
 	                      return (
 	                        <div key={vaultTeamId} className={`${vaultTeamId === TEAM_PLAYER_ID ? 'bg-blue-900' : 'bg-pink-900'} bg-opacity-40 rounded p-2`}>
 	                          <div>{teamLabel}</div>
-	                          <div>Spendable: ${(totalMoney - totalProtected).toLocaleString()}</div>
-	                          <div>Protected: ${totalProtected.toLocaleString()}</div>
-	                          <div>Total: ${totalMoney.toLocaleString()}</div>
+	                          <div>Spendable: ${(totalMoney - totalProtected).toLocaleString('en-AU')}</div>
+	                          <div>Protected: ${totalProtected.toLocaleString('en-AU')}</div>
+	                          <div>Total: ${totalMoney.toLocaleString('en-AU')}</div>
 	                        </div>
 	                      );
 	                    })}
@@ -252122,9 +253585,9 @@ function dispatchGameSettingsChange(
 	                      return (
 	                        <div key={treasuryTeamId} className={`${treasuryTeamId === TEAM_PLAYER_ID ? 'bg-blue-900' : 'bg-pink-900'} bg-opacity-40 rounded p-2`}>
 	                          <div className="font-semibold mb-1">{teamLabel}</div>
-	                          <div>Balance: ${balance.toLocaleString()}</div>
-	                          <div>Reserve: ${reserve.toLocaleString()}</div>
-	                          <div>Available: ${available.toLocaleString()}</div>
+	                          <div>Balance: ${balance.toLocaleString('en-AU')}</div>
+	                          <div>Reserve: ${reserve.toLocaleString('en-AU')}</div>
+	                          <div>Available: ${available.toLocaleString('en-AU')}</div>
 	                          {gameSettings.countTeamTreasuryTowardVictory && (
 	                            <div className="opacity-75 mt-1">Counts toward the win condition</div>
 	                          )}
@@ -252132,7 +253595,7 @@ function dispatchGameSettingsChange(
 	                            <div className="mt-2 max-h-24 overflow-y-auto space-y-1 border-t border-white/20 pt-1">
 	                              {recentTransactions.map(tx => (
 	                                <div key={tx.id} className="opacity-80 flex justify-between items-center gap-1">
-	                                  <span>Day {tx.day}: {tx.amount >= 0 ? '+' : ''}${tx.amount.toLocaleString()} ({tx.type})</span>
+	                                  <span>Day {tx.day}: {tx.amount >= 0 ? '+' : ''}${tx.amount.toLocaleString('en-AU')} ({tx.type})</span>
 	                                  <button
 	                                    onClick={(e) => {
 	                                      e.stopPropagation();
@@ -252199,7 +253662,7 @@ function dispatchGameSettingsChange(
 	                                  <div>{directive.objective} <span className="opacity-60 capitalize">({directive.horizon.replace(/_/g, ' ')})</span></div>
 	                                  <div className="opacity-75">Assigned: {getActorDisplayName(directive.assignedActorId)} • expires day {directive.expiresDay} • <span className="capitalize">{directive.status.replace(/_/g, ' ')}</span></div>
 	                                  {directive.maxSpending > 0 && (
-	                                    <div className="opacity-60">Max spending: ${directive.maxSpending.toLocaleString()}{directive.treasuryAllocation > 0 ? ` • Treasury allocated: $${directive.treasuryAllocation.toLocaleString()}` : ''}</div>
+	                                    <div className="opacity-60">Max spending: ${directive.maxSpending.toLocaleString('en-AU')}{directive.treasuryAllocation > 0 ? ` • Treasury allocated: $${directive.treasuryAllocation.toLocaleString('en-AU')}` : ''}</div>
 	                                  )}
 	                                  {directive.requiredResources.length > 0 && (
 	                                    <div className="opacity-60">Needs: {directive.requiredResources.join(', ')}</div>
@@ -252454,7 +253917,7 @@ function dispatchGameSettingsChange(
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="opacity-75 mb-1">Inventory Value</div>
-                <div className="font-bold text-green-400">${getInventoryValue.toLocaleString()}</div>
+                <div className="font-bold text-green-400">${getInventoryValue.toLocaleString('en-AU')}</div>
               </div>
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="opacity-75 mb-1">Crafted Items</div>
@@ -252462,29 +253925,29 @@ function dispatchGameSettingsChange(
               </div>
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="opacity-75 mb-1">Passive Income</div>
-                <div className="font-bold text-blue-400">${playerInvestmentSummary.totalIncome}/day</div>
+                <div className={`font-bold ${themeStyles.infoText}`}>{fmtMoney(Number(playerInvestmentSummary.totalIncome))}/day</div>
               </div>
             </div>
           ) : WIN_METRIC_PROFILES[gameSettings.winCondition]?.goalKind === 'net_worth' ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="opacity-75 mb-1">Net Worth</div>
-                <div className="font-bold text-cyan-400">${getNetWorth.toLocaleString()}</div>
+                <div className="font-bold text-cyan-400">${getNetWorth.toLocaleString('en-AU')}</div>
               </div>
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="opacity-75 mb-1">Investments</div>
-                <div className="font-bold text-yellow-400">{player.investments?.length || 0} owned • ${playerInvestmentSummary.totalIncome}/day</div>
+                <div className="font-bold text-yellow-400">{player.investments?.length || 0} owned • {fmtMoney(Number(playerInvestmentSummary.totalIncome))}/day</div>
               </div>
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="opacity-75 mb-1">Equipment + Inventory</div>
-                <div className="font-bold text-green-400">{player.equipment?.length || 0} equipment • ${getInventoryValue.toLocaleString()} inventory</div>
+                <div className="font-bold text-green-400">{player.equipment?.length || 0} equipment • ${getInventoryValue.toLocaleString('en-AU')} inventory</div>
               </div>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="opacity-75 mb-1">Your Regions</div>
-                <div className="font-bold text-blue-400">{playerControlledRegions}/{TOTAL_REGION_COUNT}</div>
+                <div className={`font-bold ${themeStyles.infoText}`}>{playerControlledRegions}/{TOTAL_REGION_COUNT}</div>
               </div>
               <div className={`${themeStyles.border} border rounded-lg p-3`}>
                 <div className="opacity-75 mb-1">Majority Progress</div>
@@ -252497,7 +253960,7 @@ function dispatchGameSettingsChange(
                     ? (currentRegionControlInfo.controllerId === 'player'
                       ? 'You control via negotiation'
                       : `Negotiate with ${getControllerDisplayName(currentRegionControlInfo.controllerId)}`)
-                    : `$${currentRegionControlInfo.minimumPlayerDeposit}`}
+                    : `${fmtMoney(currentRegionControlInfo.minimumPlayerDeposit)}`}
                 </div>
               </div>
             </div>
@@ -252715,8 +254178,8 @@ function dispatchGameSettingsChange(
                           )}
                         </div>
                         <div className="text-right ml-4">
-                          <div className={`font-bold ${canAfford ? 'text-green-500' : 'text-red-500'}`}>
-                            ${cost}
+                          <div className={`font-bold ${canAfford ? themeStyles.statMoney : v99ThemeAccent(themeStyles, 'moneyNegative', 'text-red-500')}`}>{/* V9.9 (SECTION 20AU): readable on the Light theme too */}
+                            {fmtMoney(cost)}
                           </div>
                           <button
                             onClick={() => travelToRegion(code)}
@@ -252756,7 +254219,7 @@ function dispatchGameSettingsChange(
                                   <span className="text-xs opacity-75">{terr.category}</span>
                                 </div>
                                 <div className="text-xs opacity-75 mt-1">
-                                  Transit: {terr.multiTurnDuration} turn(s) • Base Cost: ${terr.travelCost}
+                                  Transit: {terr.multiTurnDuration} turn(s) • Base Cost: {fmtMoney(Number(terr.travelCost))}
                                 </div>
                                 {terr.description && (
                                   <div className="text-xs opacity-70 italic mt-1">{terr.description}</div>
@@ -252800,7 +254263,7 @@ function dispatchGameSettingsChange(
                               </div>
                               <div className="text-right ml-4">
                                 <div className={`font-bold ${canAfford && !isLocked ? 'text-green-500' : 'text-red-500'}`}>
-                                  ${cost}
+                                  {fmtMoney(cost)}
                                 </div>
                                 <button
                                   onClick={() => travelToRegion(code)}
@@ -252881,13 +254344,13 @@ function dispatchGameSettingsChange(
                 <div className="flex flex-wrap gap-4">
                   <div>
                     <span className="opacity-75">Weather:</span>{' '}
-                    <span className={gameState.weather === 'Stormy' ? 'text-yellow-400' : gameState.weather === 'Rainy' ? 'text-blue-400' : 'text-green-400'}>
+                    <span className={gameState.weather === 'Stormy' ? v99ThemeAccent(themeStyles, 'warningText', 'text-yellow-400') : gameState.weather === 'Rainy' ? themeStyles.infoText : themeStyles.successText}>{/* V9.9 (SECTION 20AU): accents follow the theme */}
                       {gameState.weather}
                     </span>
                   </div>
                   <div>
                     <span className="opacity-75">Season:</span>{' '}
-                    <span className="text-purple-400">{gameState.season}</span>
+                    <span className={v99ThemeAccent(themeStyles, 'infoText', 'text-purple-400')}>{gameState.season}</span>
                   </div>
                   {/* Show active event effects */}
                   {gameState.activeEvents.filter((e: any) => e.region === player.currentRegion).map((event: any) => (
@@ -252926,17 +254389,17 @@ function dispatchGameSettingsChange(
                           <div className="font-bold">{challenge.name}</div>
                           <div className="text-sm opacity-75">{challenge.type} challenge</div>
                           <div className="flex items-center space-x-2 text-sm">
-                            <span className={successChance >= 0.5 ? 'text-green-400' : 'text-red-400'}>
+                            <span className={successChance >= 0.5 ? themeStyles.successText : themeStyles.moneyNegative}>
                               Success: {Math.round(successChance * 100)}%
                             </span>
                             {/* Show modifiers */}
                             {weatherMod !== 0 && (
-                              <span className={weatherMod > 0 ? 'text-green-400 text-xs' : 'text-red-400 text-xs'}>
+                              <span className={`${weatherMod > 0 ? themeStyles.successText : themeStyles.moneyNegative} text-xs`}>
                                 ({weatherMod > 0 ? '+' : ''}{Math.round(weatherMod * 100)}% weather)
                               </span>
                             )}
                             {seasonMod !== 0 && (
-                              <span className={seasonMod > 0 ? 'text-green-400 text-xs' : 'text-red-400 text-xs'}>
+                              <span className={`${seasonMod > 0 ? themeStyles.successText : themeStyles.moneyNegative} text-xs`}>
                                 ({seasonMod > 0 ? '+' : ''}{Math.round(seasonMod * 100)}% season)
                               </span>
                             )}
@@ -252952,7 +254415,7 @@ function dispatchGameSettingsChange(
                           <div className="text-sm">Difficulty: {'⭐'.repeat(challenge.difficulty)}</div>
                           <div className="text-sm">Reward: {challenge.reward}x</div>
                           {gameSettings.dynamicWagerEnabled && (
-                            <div className="text-xs opacity-50">Max bet: ${dynamicMaxWager}</div>
+                            <div className="text-xs opacity-50">Max bet: {fmtMoney(dynamicMaxWager)}</div>
                           )}
                         </div>
                       </div>
@@ -252976,7 +254439,7 @@ function dispatchGameSettingsChange(
                               onChange={(e) => updateUiState({ wagerAmount: parseInt(e.target.value, 10) })}
                               className="flex-1"
                             />
-                            <span className="text-sm font-bold w-16 text-right">${Math.min(uiState.wagerAmount, maxWager)}</span>
+                            <span className="text-sm font-bold w-16 text-right">{fmtMoney(Math.min(uiState.wagerAmount, maxWager))}</span>
                           </div>
 
                           <div className="flex space-x-2">
@@ -252995,7 +254458,7 @@ function dispatchGameSettingsChange(
                               disabled={player.money < 50 || !isPlayerTurn}
                               className={`${themeStyles.button} text-white px-4 py-2 rounded-lg flex-1 disabled:opacity-50`}
                             >
-                              Take Challenge (${Math.min(uiState.wagerAmount, maxWager)})
+                              Take Challenge ({fmtMoney(Math.min(uiState.wagerAmount, maxWager))})
                             </button>
                             )}
                             {/* Max button only shows when dynamic wager is enabled */}
@@ -253176,11 +254639,12 @@ function dispatchGameSettingsChange(
                       const breaksCraftReadyRecipe = item.isCraftReady && CRAFTING_RECIPES.some(recipe => Boolean((recipe.inputs as unknown as Record<string, number>)?.[resource]) && Object.entries(recipe.inputs).every(([input, required]) => (
                         player.inventory.filter((entry: any) => entry === input).length >= Number(required)
                       )));
+                      // V9.9 (SECTION 20AU): "All" is one sale of `count` units — one confirmation, the oversupply step applied unit by unit.
                       const sellAll = () => {
-                        for (let i = 0; i < count; i++) {
-                          sellResource(resource, price);
-                        }
+                        sellResource(resource, price, { quantity: count });
                       };
+                      // V9.9 (SECTION 20AU): what the player is really paid (the row used to show the market's list price as "each").
+                      const v99RowQuote = v99QuotePlayerSale(resource, price, count);
 
                       if (groupedInventoryCardsActive) {
                         return (
@@ -253197,7 +254661,8 @@ function dispatchGameSettingsChange(
                                   {player.inventory.length >= MAX_INVENTORY && <span className="text-[11px] bg-red-600 text-white px-2 py-0.5 rounded">Inventory full</span>}
                                   {player.inventory.length >= MAX_INVENTORY - 5 && player.inventory.length < MAX_INVENTORY && <span className="text-[11px] bg-orange-600 text-white px-2 py-0.5 rounded">Inventory almost full</span>}
                                 </div>
-                                <div className="text-sm opacity-75 mt-1">Current price: ${price} • Base: ${item.basePrice} • Category: {category}</div>
+                                <div className="text-sm opacity-75 mt-1">Current price: {fmtMoney(price)} • Base: {fmtMoney(item.basePrice)} • Category: {category}</div>
+                                <div className="text-sm mt-1" data-testid="v99-sell-quote">You get <span className={`font-bold ${themeStyles.statMoney}`}>{fmtMoney(v99RowQuote.first)}</span>{count > 1 ? <> for the next one • <span className={`font-bold ${themeStyles.statMoney}`}>{fmtMoney(v99RowQuote.total)}</span> for all {count}</> : null}</div>
                                 <div className="text-xs opacity-75 mt-1">Trend: {item.trendLabel}</div>
                                 <div className="text-xs opacity-75 mt-1">Used in: {item.usedInRecipes.join(', ') || 'No known recipes'}</div>
                               </div>
@@ -253267,9 +254732,11 @@ function dispatchGameSettingsChange(
                               </div>
                             </div>
                             <div className="text-right">
-                              <div className="font-bold text-green-500">${price} each</div>
+                              {/* V9.9 (SECTION 20AU): the amounts that will really be paid (v99QuotePlayerSale); the market's list price is the small line. */}
+                              <div className={`font-bold ${themeStyles.statMoney}`} data-testid="v99-sell-quote">You get {fmtMoney(v99RowQuote.first)}{count > 1 ? ' for the next one' : ''}</div>
+                              <div className="text-xs opacity-75">Market price {fmtMoney(price)}</div>
                               <div className="text-xs opacity-75 mb-2">
-                                Total: ${price * count}
+                                {count > 1 ? `All ${count}: ${fmtMoney(v99RowQuote.total)}` : `Total: ${fmtMoney(v99RowQuote.total)}`}
                               </div>
                               <div className="flex space-x-1">
                                 <button
@@ -253327,7 +254794,7 @@ function dispatchGameSettingsChange(
 	              <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
 	                <div>
 	                  <h3 className="text-xl font-bold">🛍️ Resource Market</h3>
-	                  <div className="text-xs opacity-75 mt-1">Unlimited supply. Buy any resource for crafting anytime.</div>
+	                  <div className="text-xs opacity-75 mt-1">Unlimited supply. Buy any resource for crafting on your turn. Prices include the regional tariff.</div>
 	                </div>
 	                <button
 	                  onClick={() => updateUiState({ showResourceMarket: false })}
@@ -253341,7 +254808,7 @@ function dispatchGameSettingsChange(
 	                <div className={`${themeStyles.border} border rounded-lg p-3 mb-4`}>
 	                  <div className="flex flex-wrap justify-between gap-2 text-sm">
 	                    <div>
-	                      <span className="opacity-75">Your Money:</span> <span className="font-bold text-green-400">${player.money}</span>
+	                      <span className="opacity-75">Your Money:</span> <span className={`font-bold ${themeStyles.moneyPositive}`}>{fmtMoney(Number(player.money))}</span>
 	                    </div>
 	                    <div>
 	                      <span className="opacity-75">Inventory:</span> <span className="font-bold">{player.inventory.length}/{MAX_INVENTORY}</span>
@@ -253363,7 +254830,7 @@ function dispatchGameSettingsChange(
 	                      >
 	                        {RESOURCE_MARKET_RESOURCES.map(resource => (
 	                          <option key={resource} value={resource}>
-	                            {resource} (${getResourceMarketPrice(resource)})
+	                            {resource} ({fmtMoney(v99MarketBuyUnitPrice(resource, 'player', player.currentRegion || 'NSW', gameState))})
 	                          </option>
 	                        ))}
 	                      </select>
@@ -253381,8 +254848,10 @@ function dispatchGameSettingsChange(
 	                    </div>
 	                  </div>
 	                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-	                    <div className="text-sm">
-	                      Cost: <span className="font-bold text-yellow-400">${getResourceMarketPrice(resourceMarketSelection) * Math.max(1, resourceMarketQuantity)}</span>
+	                    {/* V9.9 (SECTION 20AU): the sum that is charged — tariff included (the label left it out and the purchase was then refused) — and what it costs in actions. */}
+	                    <div className="text-sm" data-testid="v99-market-cost">
+	                      Cost: <span className={`font-bold ${v99ThemeAccent(themeStyles, 'warningText', 'text-yellow-400')}`}>{fmtMoney(v99QuoteResourcePurchase(resourceMarketSelection, resourceMarketQuantity, 'player', player.currentRegion || 'NSW', gameState).total)}</span>
+	                      <span className="text-xs opacity-75"> — {v99PurchasePriceLabel(v99QuoteResourcePurchase(resourceMarketSelection, resourceMarketQuantity, 'player', player.currentRegion || 'NSW', gameState))}. {v99MarketBuyActionNote(player, gameSettings)}</span>
 	                    </div>
 	                    <button
 	                      onClick={handlePlayerResourceMarketPurchase}
@@ -253396,7 +254865,7 @@ function dispatchGameSettingsChange(
 
 	                <div className="space-y-3">
 	                  {RESOURCE_MARKET_RESOURCES.map(resource => {
-	                    const price = getResourceMarketPrice(resource);
+	                    const price = v99MarketBuyUnitPrice(resource, 'player', player.currentRegion || 'NSW', gameState); // V9.9 (SECTION 20AU): tariff included — the price that is charged
 	                    const category = RESOURCE_CATEGORIES[resource] || 'industrial';
 	                    return (
 	                      <div key={resource} className={`${themeStyles.border} border rounded-lg p-3`}>
@@ -253406,7 +254875,7 @@ function dispatchGameSettingsChange(
 	                            <div className="text-xs opacity-75 capitalize">{category} resource</div>
 	                          </div>
 	                          <div className="text-right">
-	                            <div className="font-bold text-green-400">${price} each</div>
+	                            <div className={`font-bold ${themeStyles.moneyPositive}`}>{fmtMoney(price)} each</div>
 	                            <div className="flex gap-1 mt-1">
 	                              <button
 	                                onClick={() => buyResourceFromMarket(resource, 1, 'player', { consumeAction: true })}
@@ -253504,8 +254973,8 @@ function dispatchGameSettingsChange(
                           </div>
                           <div className="text-right ml-4">
                             <div className={`font-bold ${canAfford && recruitmentAvail.available ? 'text-green-500' : 'text-red-500'}`}>
-                              ${effectiveCost}
-                              {priceDiffers && <span className="text-xs opacity-60 line-through ml-1.5">${item.cost}</span>}
+                              {fmtMoney(effectiveCost)}
+                              {priceDiffers && <span className="text-xs opacity-60 line-through ml-1.5">{fmtMoney(item.cost)}</span>}
                             </div>
                             <button
                               onClick={() => buyEquipment(item.id)}
@@ -253566,7 +255035,7 @@ function dispatchGameSettingsChange(
                   <div className="font-bold mb-2">How Crafting Works:</div>
                   <ul className="space-y-1 text-xs opacity-90">
                     <li>• Combine raw materials to create valuable items</li>
-                    <li>• Crafted items are worth 1.5-2x their materials</li>
+                    <li>• Crafted items sell for more than their materials — about 1.2× to 2× (each card shows both)</li>
                     <li>• 90% base success rate (10% chance to lose materials)</li>
                     <li>• Each craft consumes actions equal to craft time</li>
                     <li>• Character bonuses affect crafting outcomes</li>
@@ -253641,7 +255110,8 @@ function dispatchGameSettingsChange(
                               <div>
                                 <div className="text-xs font-bold mb-1">Output:</div>
                                 <div className="text-sm text-green-400">{recipe.output}</div>
-                                <div className="text-xs opacity-75">Value: ~${recipe.baseValue}</div>
+                                {/* V9.9 (SECTION 20AU): the price the Sell Market really lists (was recipe.baseValue, which nothing paid) */}
+                                <div className="text-xs opacity-75" data-testid="v99-workshop-value">{v99WorkshopValueLabel(recipe)}</div>
                                 <div className="text-xs opacity-75">
                                   Actions: {isTourismWithBonus ? '0 (Tourist bonus!)' : recipe.craftTime}
                                 </div>
@@ -253651,7 +255121,7 @@ function dispatchGameSettingsChange(
                           <div className="ml-4">
                             <button
                               onClick={() => craftItem(recipe.id)}
-                              disabled={!isPlayerTurn || !canCraft || player.inventory.length >= MAX_INVENTORY}
+                              disabled={!isPlayerTurn || !canCraft /* V9.9 (SECTION 20AU): a full inventory no longer blocks crafting — a craft frees space, and craftItem checks the net change */}
                               className={`${themeStyles.button} text-white px-4 py-2 rounded font-bold disabled:opacity-50 whitespace-nowrap`}
                             >
                               {canCraft ? 'Craft' : 'Missing Materials'}
@@ -253719,7 +255189,7 @@ function dispatchGameSettingsChange(
                               ? 'You already own this investment.'
                               : !isPlayerTurn
                                 ? 'Wait for your turn.'
-                                : `Need $${investment.cost.toLocaleString()} to buy this investment.`
+                                : `Need $${investment.cost.toLocaleString('en-AU')} to buy this investment.`
                           }
                         })
                       : null;
@@ -253748,9 +255218,9 @@ function dispatchGameSettingsChange(
                               );
                               return (
                                 <div className="text-xs opacity-75 mt-1">
-                                  Daily Income: ${investment.dailyIncome}
+                                  Daily Income: {fmtMoney(investment.dailyIncome)}
                                   {projectedDaily !== investment.dailyIncome && (
-                                    <span className="text-green-400 font-semibold ml-1">(Current Yield: +${projectedDaily}/day)</span>
+                                    <span className="text-green-400 font-semibold ml-1">(Current Yield: +{fmtMoney(projectedDaily)}/day)</span>
                                   )}
                                 </div>
                               );
@@ -253758,7 +255228,7 @@ function dispatchGameSettingsChange(
                             {owned && <div className="text-xs text-green-400 mt-1">Owned</div>}
                           </div>
                           <div className="text-right ml-4">
-                            <div className={`font-bold ${canAfford ? 'text-green-500' : 'text-red-500'}`}>${investment.cost}</div>
+                            <div className={`font-bold ${canAfford ? 'text-green-500' : 'text-red-500'}`}>{fmtMoney(investment.cost)}</div>
                             <button
                               onClick={() => buyInvestment(regionCode)}
                               disabled={!isPlayerTurn || owned || !canAfford}
@@ -253839,7 +255309,7 @@ function dispatchGameSettingsChange(
                                 ? 'Choose a sabotage target first.'
                                 : !isPlayerTurn
                                   ? 'Wait for your turn.'
-                                  : `Need $${action.cost.toLocaleString()} to use ${action.name}.`
+                                  : `Need $${action.cost.toLocaleString('en-AU')} to use ${action.name}.`
                           }
                         })
                       : null;
@@ -253860,7 +255330,7 @@ function dispatchGameSettingsChange(
                             )}
                           </div>
                           <div className="text-right ml-4">
-                            <div className={`font-bold ${canAfford ? 'text-green-500' : 'text-red-500'}`}>${action.cost}</div>
+                            <div className={`font-bold ${canAfford ? 'text-green-500' : 'text-red-500'}`}>{fmtMoney(action.cost)}</div>
                             <button
                               onClick={() => useSabotage(action.id, sabotageTargetActor?.id)}
                               disabled={!isPlayerTurn || active || !canAfford || !sabotageTargetActor}
@@ -253952,11 +255422,11 @@ function dispatchGameSettingsChange(
                                     <span>📊 View State Delta</span>
                                   </button>
                                 </div>
-                                <div className="text-sm opacity-75">Principal: ${loan.amount} | Interest: ${Math.floor(loan.accrued)}</div>
+                                <div className="text-sm opacity-75">Principal: {fmtMoney(Number(loan.amount))} | Interest: {fmtMoney(Math.floor(loan.accrued))}</div>
                                 <div className="text-xs opacity-75">{loan.daysRemaining} days remaining</div>
                               </div>
                               <div className="text-right">
-                                <div className="font-bold text-red-400">${Math.floor(totalOwed)}</div>
+                                <div className={`font-bold ${themeStyles.moneyNegative}`}>{fmtMoney(Math.floor(totalOwed))}</div>
                                 <div className="space-x-2 mt-2">
                                   <button
                                     onClick={() => repayAdvancedLoan(loan.id, false)}
@@ -253970,9 +255440,9 @@ function dispatchGameSettingsChange(
                                       onClick={() => repayAdvancedLoan(loan.id, true)}
                                       disabled={!playerLoanAccessEnabled || player.money < earlyOwed}
                                       className={`${themeStyles.accent} text-white px-2 py-1 rounded text-xs disabled:opacity-50`}
-                                      title={`Early: $${Math.floor(earlyOwed)} (50% off interest)`}
+                                      title={`Early: ${fmtMoney(Math.floor(earlyOwed))} (50% off interest)`}
                                     >
-                                      Early ${Math.floor(earlyOwed)}
+                                      Early {fmtMoney(Math.floor(earlyOwed))}
                                     </button>
                                   )}
                                 </div>
@@ -254015,7 +255485,7 @@ function dispatchGameSettingsChange(
                             <div className="font-bold">{tier.name}</div>
                             <div className="text-sm opacity-75">{tier.description}</div>
                             <div className="text-xs opacity-75 mt-1">
-                              Amount: ${tier.amount} | Interest: {Math.floor(actualRate * 100)}% | Term: {tier.term} days
+                              Amount: {fmtMoney(tier.amount)} | Interest: {Math.floor(actualRate * 100)}% | Term: {tier.term} days
                             </div>
                             {loanBlocker && (
                               <div className="text-[11px] bg-slate-950/70 border border-amber-700/40 rounded p-2 mt-2 space-y-1">
@@ -254030,7 +255500,7 @@ function dispatchGameSettingsChange(
                             )}
                           </div>
                           <div className="text-right ml-4">
-                            <div className="font-bold text-green-500">+${tier.amount}</div>
+                            <div className="font-bold text-green-500">+{fmtMoney(tier.amount)}</div>
                             <button
                               onClick={() => takeAdvancedLoan(tier.id)}
                               disabled={!playerLoanAccessEnabled || !meetsLevel || !underLimit}
@@ -254111,7 +255581,7 @@ function dispatchGameSettingsChange(
               </div>
               <div className="flex justify-between">
                 <span>Cost:</span>
-                <span className="font-bold text-red-500">${confirmationDialog.data.cost}</span>
+                <span className="font-bold text-red-500">{fmtMoney(Number(confirmationDialog.data.cost))}</span>
               </div>
             </div>
           )}
@@ -254126,7 +255596,7 @@ function dispatchGameSettingsChange(
               </div>
               <div className="flex justify-between">
                 <span>Wager:</span>
-                <span className="font-bold text-yellow-500">${confirmationDialog.data.wager}</span>
+                <span className="font-bold text-yellow-500">{fmtMoney(Number(confirmationDialog.data.wager))}</span>
               </div>
             </div>
           )}
@@ -254139,11 +255609,11 @@ function dispatchGameSettingsChange(
               </div>
               <div className="flex justify-between">
                 <span>Cost:</span>
-                <span className="font-bold text-red-500">${confirmationDialog.data.cost}</span>
+                <span className="font-bold text-red-500">{fmtMoney(Number(confirmationDialog.data.cost))}</span>
               </div>
               <div className="flex justify-between">
                 <span>Remaining cash after:</span>
-                <span className="font-bold">${confirmationDialog.data.remainingCash}</span>
+                <span className="font-bold">{fmtMoney(Number(confirmationDialog.data.remainingCash))}</span>
               </div>
               <div className="flex justify-between">
                 <span>Reason:</span>
@@ -254156,7 +255626,7 @@ function dispatchGameSettingsChange(
             const request = pendingApprovalRequests.find(r => r.id === confirmationDialog.data.requestId);
             if (!request || request.requestKind !== 'ai_action') return null;
             const otherPendingCount = pendingApprovalRequests.length - 1;
-            const fmtNum = (n: number | null) => n === null ? 'n/a' : `$${Math.round(n).toLocaleString()}`;
+            const fmtNum = (n: number | null) => n === null ? 'n/a' : `$${Math.round(n).toLocaleString('en-AU')}`;
             const fmtPct = (n: number | null) => n === null ? 'n/a' : `${Math.round(n * 100)}%`;
             return (
               <div className={`${themeStyles.border} border rounded p-3 mb-4 text-sm space-y-1`}>
@@ -254236,15 +255706,15 @@ function dispatchGameSettingsChange(
                   <div className="text-xs opacity-60 mb-2">+{otherPendingCount} more request(s) awaiting approval — resolve this one to see the next.</div>
                 )}
                 <div className="flex justify-between"><span>Teammate:</span><span className="font-bold">{getActorDisplayName(request.actorId)}</span></div>
-                <div className="flex justify-between"><span>Requested Amount:</span><span className="font-bold text-red-500">${treasuryRequest?.requestedAmount.toLocaleString() ?? request.cost?.toLocaleString() ?? 'n/a'}</span></div>
-                <div className="flex justify-between"><span>Current Cash:</span><span className="font-bold">${request.minCashRemaining?.toLocaleString() ?? 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Requested Amount:</span><span className="font-bold text-red-500">${treasuryRequest?.requestedAmount.toLocaleString('en-AU') ?? request.cost?.toLocaleString('en-AU') ?? 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Current Cash:</span><span className="font-bold">${request.minCashRemaining?.toLocaleString('en-AU') ?? 'n/a'}</span></div>
                 <div className="flex justify-between"><span>Treasury Ruling:</span><span className="font-bold text-right">{request.governorRuling}</span></div>
                 <div className="flex justify-between"><span>Purpose:</span><span className="font-bold text-right">{request.aiExplanation}</span></div>
                 {treasuryRequest?.intendedActionType && (
-                  <div className="flex justify-between"><span>Intended Action:</span><span className="font-bold text-right">{treasuryRequest.intendedActionType}{typeof treasuryRequest.intendedActionCost === 'number' ? ` ($${treasuryRequest.intendedActionCost.toLocaleString()})` : ''}</span></div>
+                  <div className="flex justify-between"><span>Intended Action:</span><span className="font-bold text-right">{treasuryRequest.intendedActionType}{typeof treasuryRequest.intendedActionCost === 'number' ? ` ($${treasuryRequest.intendedActionCost.toLocaleString('en-AU')})` : ''}</span></div>
                 )}
                 {typeof treasuryRequest?.expectedBenefit === 'number' && (
-                  <div className="flex justify-between"><span>Expected Benefit:</span><span className="font-bold">${treasuryRequest.expectedBenefit.toLocaleString()}</span></div>
+                  <div className="flex justify-between"><span>Expected Benefit:</span><span className="font-bold">${treasuryRequest.expectedBenefit.toLocaleString('en-AU')}</span></div>
                 )}
                 <div className="pt-1 flex justify-end">
                   <button
@@ -254297,8 +255767,8 @@ function dispatchGameSettingsChange(
                 <div className="flex justify-between"><span>Teammate:</span><span className="font-bold">{getActorDisplayName(request.actorId)}</span></div>
                 <div className="flex justify-between"><span>Requested Scope:</span><span className="font-bold text-right">{exception?.scope ?? 'n/a'}</span></div>
                 <div className="flex justify-between"><span>Categories:</span><span className="font-bold text-right">{exception?.allowedCategories.join(', ') ?? 'n/a'}</span></div>
-                <div className="flex justify-between"><span>Max Reserve Breach:</span><span className="font-bold">${exception?.maxReserveBreach.toLocaleString() ?? 'n/a'}</span></div>
-                <div className="flex justify-between"><span>Current Cash:</span><span className="font-bold">${request.minCashRemaining?.toLocaleString() ?? 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Max Reserve Breach:</span><span className="font-bold">${exception?.maxReserveBreach.toLocaleString('en-AU') ?? 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Current Cash:</span><span className="font-bold">${request.minCashRemaining?.toLocaleString('en-AU') ?? 'n/a'}</span></div>
                 <div className="flex justify-between"><span>Reason:</span><span className="font-bold text-right">{request.aiExplanation}</span></div>
               </div>
             );
@@ -254447,8 +255917,8 @@ function dispatchGameSettingsChange(
                 )}
                 <div className="flex justify-between"><span>Automation:</span><span className="font-bold text-right">{request.targetLabel}</span></div>
                 <div className="flex justify-between"><span>Action:</span><span className="font-bold text-right">{request.actionSummary}</span></div>
-                {request.cost !== null && (<div className="flex justify-between"><span>Cost/Wager:</span><span className="font-bold">${request.cost}</span></div>)}
-                {request.minCashRemaining !== null && (<div className="flex justify-between"><span>Cash remaining after:</span><span className="font-bold">${request.minCashRemaining}</span></div>)}
+                {request.cost !== null && (<div className="flex justify-between"><span>Cost/Wager:</span><span className="font-bold">{fmtMoney(request.cost)}</span></div>)}
+                {request.minCashRemaining !== null && (<div className="flex justify-between"><span>Cash remaining after:</span><span className="font-bold">{fmtMoney(request.minCashRemaining)}</span></div>)}
               </div>
             );
           })()}
@@ -254700,7 +256170,7 @@ function dispatchGameSettingsChange(
                         <div>{directive.objective} <span className="opacity-60 capitalize">({directive.horizon.replace(/_/g, ' ')})</span></div>
                         <div className="opacity-75">Assigned: {getActorDisplayName(directive.assignedActorId)} • expires day {directive.expiresDay} • <span className="capitalize">{directive.status.replace(/_/g, ' ')}</span></div>
                         {directive.maxSpending > 0 && (
-                          <div className="opacity-60">Max spending: ${directive.maxSpending.toLocaleString()}{directive.treasuryAllocation > 0 ? ` • Treasury allocated: $${directive.treasuryAllocation.toLocaleString()}` : ''}</div>
+                          <div className="opacity-60">Max spending: ${directive.maxSpending.toLocaleString('en-AU')}{directive.treasuryAllocation > 0 ? ` • Treasury allocated: $${directive.treasuryAllocation.toLocaleString('en-AU')}` : ''}</div>
                         )}
                         {directive.requiredResources.length > 0 && (
                           <div className="opacity-60">Needs: {directive.requiredResources.join(', ')}</div>
@@ -255631,7 +257101,7 @@ function dispatchGameSettingsChange(
                     <div className={`${themeStyles.border} border rounded-lg p-3 text-center`}>
                       <div className="text-xs opacity-75">Net Cash Variance</div>
                       <div className={`text-xl font-bold ${netCashVariance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {netCashVariance >= 0 ? '+' : ''}${netCashVariance.toLocaleString()}
+                        {netCashVariance >= 0 ? '+' : ''}${netCashVariance.toLocaleString('en-AU')}
                       </div>
                     </div>
                     <div className={`${themeStyles.border} border rounded-lg p-3 text-center`}>
@@ -255804,7 +257274,7 @@ function dispatchGameSettingsChange(
                     <div className={`${themeStyles.border} border rounded-lg p-3 bg-white/5`}>
                       <div className="opacity-70">Current Net Worth</div>
                       <div className="text-xl font-extrabold text-blue-400 mt-1">
-                        ${profile.trajectory.currentNetWorth.toLocaleString()}
+                        ${profile.trajectory.currentNetWorth.toLocaleString('en-AU')}
                       </div>
                       <div className={`text-[10px] mt-0.5 font-semibold ${profile.trajectory.netGrowthRatePercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                         {profile.trajectory.netGrowthRatePercent >= 0 ? '+' : ''}{profile.trajectory.netGrowthRatePercent}% growth vs start
@@ -255828,7 +257298,7 @@ function dispatchGameSettingsChange(
                         {profile.teamContribution.teamSynergyScore}/100
                       </div>
                       <div className="opacity-60 text-[10px] mt-0.5">
-                        Net Treasury: {profile.teamContribution.netTreasuryContribution >= 0 ? '+' : ''}${profile.teamContribution.netTreasuryContribution.toLocaleString()}
+                        Net Treasury: {profile.teamContribution.netTreasuryContribution >= 0 ? '+' : ''}${profile.teamContribution.netTreasuryContribution.toLocaleString('en-AU')}
                       </div>
                     </div>
                   </div>
@@ -255840,7 +257310,7 @@ function dispatchGameSettingsChange(
                         <span>📈</span> Net Worth & Financial Trajectory
                       </div>
                       <div className="text-xs opacity-75">
-                        Peak: <span className="font-semibold text-green-400">${profile.trajectory?.peakNetWorth?.toLocaleString() || '0'}</span> · Max Drawdown: <span className="font-semibold text-red-400">${(profile.trajectory as unknown as Record<string, any>)?.maxDrawdownAmount?.toLocaleString() || '0'} ({(profile.trajectory as unknown as Record<string, any>)?.maxDrawdownPercent || 0}%)</span>
+                        Peak: <span className="font-semibold text-green-400">${profile.trajectory?.peakNetWorth?.toLocaleString('en-AU') || '0'}</span> · Max Drawdown: <span className="font-semibold text-red-400">${(profile.trajectory as unknown as Record<string, any>)?.maxDrawdownAmount?.toLocaleString('en-AU') || '0'} ({(profile.trajectory as unknown as Record<string, any>)?.maxDrawdownPercent || 0}%)</span>
                       </div>
                     </div>
 
@@ -255858,10 +257328,10 @@ function dispatchGameSettingsChange(
                             </div>
                             <div className="flex items-center gap-3 font-mono">
                               <span className={pt.moneyDelta >= 0 ? 'text-green-400' : 'text-red-400'}>
-                                {pt.moneyDelta >= 0 ? '+' : ''}${pt.moneyDelta.toLocaleString()}
+                                {pt.moneyDelta >= 0 ? '+' : ''}${pt.moneyDelta.toLocaleString('en-AU')}
                               </span>
                               <span className="opacity-75 font-semibold">
-                                NW: ${pt.netWorth.toLocaleString()}
+                                NW: ${pt.netWorth.toLocaleString('en-AU')}
                               </span>
                             </div>
                           </div>
@@ -255912,15 +257382,15 @@ function dispatchGameSettingsChange(
                       <div className="space-y-2 text-xs">
                         <div className="flex justify-between items-center p-2 rounded bg-white/5">
                           <span className="opacity-80">Treasury Deposits:</span>
-                          <span className="font-bold text-green-400">+${profile.teamContribution.treasuryDepositedTotal.toLocaleString()}</span>
+                          <span className="font-bold text-green-400">+${profile.teamContribution.treasuryDepositedTotal.toLocaleString('en-AU')}</span>
                         </div>
                         <div className="flex justify-between items-center p-2 rounded bg-white/5">
                           <span className="opacity-80">Treasury Withdrawals:</span>
-                          <span className="font-bold text-red-400">-${profile.teamContribution.treasuryWithdrawnTotal.toLocaleString()}</span>
+                          <span className="font-bold text-red-400">-${profile.teamContribution.treasuryWithdrawnTotal.toLocaleString('en-AU')}</span>
                         </div>
                         <div className="flex justify-between items-center p-2 rounded bg-white/5">
                           <span className="opacity-80">Region Investment Deposits:</span>
-                          <span className="font-bold text-blue-400">${profile.teamContribution.regionDepositsTotal.toLocaleString()}</span>
+                          <span className="font-bold text-blue-400">${profile.teamContribution.regionDepositsTotal.toLocaleString('en-AU')}</span>
                         </div>
                         <div className="flex justify-between items-center p-2 rounded bg-white/5">
                           <span className="opacity-80">Sabotage Defended / Executed:</span>
@@ -256056,7 +257526,7 @@ function dispatchGameSettingsChange(
                       <div className="flex justify-between p-2 rounded bg-white/5">
                         <span className="opacity-80">Net Cash Projection Variance:</span>
                         <span className={`font-bold ${analytics.expectations.netCashVariance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                          {analytics.expectations.netCashVariance >= 0 ? '+' : ''}${analytics.expectations.netCashVariance.toLocaleString()}
+                          {analytics.expectations.netCashVariance >= 0 ? '+' : ''}${analytics.expectations.netCashVariance.toLocaleString('en-AU')}
                         </span>
                       </div>
                       <div className="flex justify-between p-2 rounded bg-white/5">
@@ -256849,7 +258319,7 @@ function dispatchGameSettingsChange(
                           <div className="p-3 rounded bg-black/30 border border-white/10 text-center">
                             <div className="opacity-70 text-[10px]">UTF-8 Serialized Size</div>
                             <div className="text-xl font-extrabold text-purple-400 mt-1">{footprint.formattedSize}</div>
-                            <div className="opacity-60 text-[9px] mt-0.5">{footprint.totalUtf8Bytes.toLocaleString()} bytes</div>
+                            <div className="opacity-60 text-[9px] mt-0.5">{footprint.totalUtf8Bytes.toLocaleString('en-AU')} bytes</div>
                           </div>
 
                           <div className="p-3 rounded bg-black/30 border border-white/10 text-center">
@@ -257842,14 +259312,14 @@ function dispatchGameSettingsChange(
                   {Object.values(runtime?.actors || {}).map(actor => (
                     <div key={actor.id} className={`${themeStyles.border} border rounded p-2`}>
                       <div className="font-semibold">{actor.name || actor.id}</div>
-                      <div>${actor.money.toLocaleString()} · {actor.region || '—'} · NW ${actor.netWorth.toLocaleString()}</div>
+                      <div>${actor.money.toLocaleString('en-AU')} · {actor.region || '—'} · NW ${actor.netWorth.toLocaleString('en-AU')}</div>
                       <div>AP {actor.actionsUsedThisTurn ?? 'n/a'} · Inv {Object.entries(actor.inventory || {}).filter(([, n]) => n).map(([k, n]) => `${k}×${n}`).slice(0, 4).join(', ') || 'n/a'}</div>
                     </div>
                   ))}
                   {Object.values(runtime?.teams || {}).map(team => (
                     <div key={team.id} className={`${themeStyles.border} border rounded p-2`}>
                       <div className="font-semibold">Team {team.name || team.id}</div>
-                      <div>${team.money.toLocaleString()} · NW ${team.netWorth.toLocaleString()} · Treasury ${team.treasuryBalance ?? 'n/a'}</div>
+                      <div>${team.money.toLocaleString('en-AU')} · NW ${team.netWorth.toLocaleString('en-AU')} · Treasury ${team.treasuryBalance ?? 'n/a'}</div>
                       <div>Regions {(team.controlledRegions || []).join(', ') || 'n/a'}</div>
                     </div>
                   ))}
@@ -259264,7 +260734,7 @@ function dispatchGameSettingsChange(
                             type="button"
                             onClick={() => {
                               if (ch.costMoney > 0 && (player?.money || 0) < ch.costMoney) {
-                                addNotification(`Insufficient money for crisis choice: ${ch.label} ($${ch.costMoney} needed)`, 'warning', true);
+                                addNotification(`Insufficient money for crisis choice: ${ch.label} (${fmtMoney(ch.costMoney)} needed)`, 'warning', true);
                                 return;
                               }
 
@@ -259284,14 +260754,14 @@ function dispatchGameSettingsChange(
                                 dispatchPlayer({ type: 'UPDATE_MONEY', payload: -ch.costMoney });
                               }
 
-                              addNotification(`Applied crisis choice: ${ch.label} (Cost: $${ch.costMoney})`, 'info', true);
+                              addNotification(`Applied crisis choice: ${ch.label} (Cost: ${fmtMoney(ch.costMoney)})`, 'info', true);
                             }}
                             className="p-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-left transition flex flex-col justify-between"
                           >
                             <div className="font-bold text-xs text-blue-200">{ch.label}</div>
                             <div className="text-[11px] text-gray-400 my-1">{ch.description}</div>
                             <div className="flex justify-between items-center text-[10px] text-gray-300 pt-1 border-t border-gray-700/50">
-                              <span>Cost: ${ch.costMoney}</span>
+                              <span>Cost: {fmtMoney(ch.costMoney)}</span>
                               <span className="text-green-400">Success: {Math.round(ch.successProbability * 100)}%</span>
                             </div>
                           </button>
@@ -259362,7 +260832,7 @@ function dispatchGameSettingsChange(
                   <div className="flex gap-2 text-[10px] pt-1">
                     {choice.consequences.moneyDelta !== undefined && (
                       <span className={choice.consequences.moneyDelta >= 0 ? 'text-green-400' : 'text-red-400'}>
-                        {choice.consequences.moneyDelta >= 0 ? '+' : ''}${choice.consequences.moneyDelta}
+                        {choice.consequences.moneyDelta >= 0 ? '+' : ''}{fmtMoney(choice.consequences.moneyDelta)}
                       </span>
                     )}
                     {choice.consequences.stabilityDelta !== undefined && (
@@ -259405,7 +260875,7 @@ function dispatchGameSettingsChange(
               </div>
               <div className="text-right">
                 <span className="text-xs text-gray-400 font-bold uppercase">Total Career XP</span>
-                <div className="text-sm font-bold text-blue-400">{career.totalXP.toLocaleString()} XP</div>
+                <div className="text-sm font-bold text-blue-400">{career.totalXP.toLocaleString('en-AU')} XP</div>
               </div>
             </div>
             <div className="w-full bg-gray-800 rounded-full h-3 overflow-hidden">
@@ -259556,7 +261026,7 @@ function dispatchGameSettingsChange(
               >
                 {Object.entries(RECON_MISSION_TYPES).map(([mTypeKey, mTypeInfo]: [string, any]) => (
                   <option key={mTypeKey} value={mTypeKey}>
-                    {mTypeInfo.name} (${mTypeInfo.cost})
+                    {mTypeInfo.name} ({fmtMoney(Number(mTypeInfo.cost))})
                   </option>
                 ))}
               </select>
@@ -259573,7 +261043,7 @@ function dispatchGameSettingsChange(
                   const typeInfo = (RECON_MISSION_TYPES as Record<string, (typeof RECON_MISSION_TYPES)["satellite_scan"]>)[selectedType] || RECON_MISSION_TYPES.satellite_scan;
 
                   if ((player?.money || 0) < typeInfo.cost) {
-                    addNotification(`Insufficient money for ${typeInfo.name} ($${typeInfo.cost} needed)`, 'warning', true);
+                    addNotification(`Insufficient money for ${typeInfo.name} (${fmtMoney(typeInfo.cost)} needed)`, 'warning', true);
                     return;
                   }
 
@@ -259845,7 +261315,7 @@ function dispatchGameSettingsChange(
                     </div>
                     <p className="text-xs text-gray-300">{c.description || 'Fulfill target requirements before turn deadline.'}</p>
                     <div className="text-xs text-emerald-400 font-semibold">
-                      Reward: +${Number(c.rewardCash ?? c.rewards?.money ?? 0).toLocaleString()} | +{Number(c.rewardPrestige ?? c.rewards?.regionalStandingBoost ?? 0)} Standing
+                      Reward: +${Number(c.rewardCash ?? c.rewards?.money ?? 0).toLocaleString('en-AU')} | +{Number(c.rewardPrestige ?? c.rewards?.regionalStandingBoost ?? 0)} Standing
                     </div>
                     {c.turnsRemaining != null && (
                       <div className={`text-[11px] ${Number(c.turnsRemaining) <= 1 ? 'text-red-300 font-bold' : Number(c.turnsRemaining) <= 3 ? 'text-amber-300 font-semibold' : 'text-gray-300'}`}>⏳ {Number(c.turnsRemaining) <= 1 ? `${c.turnsRemaining} turn remaining` : `${c.turnsRemaining} turns remaining`}</div>
@@ -259854,7 +261324,7 @@ function dispatchGameSettingsChange(
                     {(c.objectives || []).length > 0 && (
                       <ul className="text-[11px] text-gray-300 space-y-0.5" data-testid="contract-objectives">
                         {(c.objectives || []).map((o: any) => (
-                          <li key={o.id}>{o.completed ? '✅' : '◻️'} {o.description} — {Math.min(o.targetValue, o.currentProgress || 0).toLocaleString()} / {Number(o.targetValue).toLocaleString()}</li>
+                          <li key={o.id}>{o.completed ? '✅' : '◻️'} {o.description} — {Math.min(o.targetValue, o.currentProgress || 0).toLocaleString('en-AU')} / {Number(o.targetValue).toLocaleString('en-AU')}</li>
                         ))}
                       </ul>
                     )}
@@ -259905,7 +261375,7 @@ function dispatchGameSettingsChange(
                     {(() => { const rel = lrContractRelevance(lrState, c); const reg = lrState?.regions[c.issuingRegionId || c.regionId]; return rel.reasons.length && reg ? <div className="text-[11px] text-teal-300" data-testid="lr-contract-why">Why here: {reg.name} has {rel.reasons.join(', ')}.</div> : null; })()}
                     {(() => { const fr = rfContractRelevance(rfState, c, rfPlayerId); return fr.factionId ? <div className="text-[11px] text-indigo-300" data-testid="rf-contract-issuer">Issuer: {fr.reasons.join(' · ')}</div> : null; })()}
                     <div className="text-xs text-emerald-400 font-semibold">
-                      Reward: +${Number(c.rewardCash ?? c.rewards?.money ?? 0).toLocaleString()} | +{Number(c.rewardPrestige ?? c.rewards?.regionalStandingBoost ?? 0)} Standing
+                      Reward: +${Number(c.rewardCash ?? c.rewards?.money ?? 0).toLocaleString('en-AU')} | +{Number(c.rewardPrestige ?? c.rewards?.regionalStandingBoost ?? 0)} Standing
                     </div>
                     {(() => {
                       const blocker = explainUnavailableAction('contract', { actor: player, state: gameState, settings: gameSettings, contract: c });
@@ -260024,11 +261494,11 @@ function dispatchGameSettingsChange(
                     {/* Progress bar */}
                     <div className="space-y-1">
                       <div className="flex justify-between text-[11px] text-gray-400">
-                        <span>Funding: ${projFunding.toLocaleString()}</span>
-                        <span>Target: ${projCost.toLocaleString()}</span>
+                        <span>Funding: ${projFunding.toLocaleString('en-AU')}</span>
+                        <span>Target: ${projCost.toLocaleString('en-AU')}</span>
                       </div>
                       <V94ProgressBar value={projFunding} max={projCost} label={`${projName} funding`} tone={isCompleted ? 'good' : 'build'} />
-                      {!isCompleted && !isLocked && <div className="text-[11px] text-gray-400" data-testid="v94-infra-remaining">{fundedPct}% funded · ${Math.max(0, projCost - projFunding).toLocaleString()} to go{Number(proj.laborTurnsRequired || 0) > 0 ? ` · ${Math.max(0, Number(proj.laborTurnsRequired || 0) - Number(proj.currentLaborTurnsCompleted || 0))} build turns once funded` : ''}</div>}
+                      {!isCompleted && !isLocked && <div className="text-[11px] text-gray-400" data-testid="v94-infra-remaining">{fundedPct}% funded · ${Math.max(0, projCost - projFunding).toLocaleString('en-AU')} to go{Number(proj.laborTurnsRequired || 0) > 0 ? ` · ${Math.max(0, Number(proj.laborTurnsRequired || 0) - Number(proj.currentLaborTurnsCompleted || 0))} build turns once funded` : ''}</div>}
                     </div>
 
                     {(isLocked || rivals.length > 0) && (
@@ -260156,7 +261626,7 @@ function dispatchGameSettingsChange(
                         disabled={!!launchBlocker}
                         className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 rounded text-xs font-bold text-white transition-colors disabled:opacity-50"
                       >
-                        Launch New Expedition (${defaultPrepCost.toLocaleString()})
+                        Launch New Expedition (${defaultPrepCost.toLocaleString('en-AU')})
                       </button>
                     </div>
                   );
@@ -260172,7 +261642,7 @@ function dispatchGameSettingsChange(
                         <div>
                           <h4 className="font-bold text-sm text-purple-200">Expedition #{exp.id}</h4>
                           <p className="text-xs text-gray-300">Target: {exp.expeditionTargetId || exp.targetId} | Risk: <span className="capitalize text-amber-400">{exp.riskChoice}</span> | Status: <span className="capitalize text-green-400">{exp.status}</span></p>
-                          <p className="text-[11px] text-gray-400">Turn: {exp.currentTurn || 0} / {exp.endTurn || 3} | Yield Accrued: ${(exp.collectedMoney || 0).toLocaleString()} | Standing: +{exp.standingDelta || 0}</p>
+                          <p className="text-[11px] text-gray-400">Turn: {exp.currentTurn || 0} / {exp.endTurn || 3} | Yield Accrued: ${(exp.collectedMoney || 0).toLocaleString('en-AU')} | Standing: +{exp.standingDelta || 0}</p>
                         </div>
                         {!isForkPending && (
                           <button
@@ -260433,7 +261903,7 @@ function dispatchGameSettingsChange(
                         </div>
                         <div className="p-2 bg-black/30 rounded border border-gray-800">
                           <span className="text-[10px] text-gray-400 block">Player Net Worth</span>
-                          <strong className="text-green-400">${(metrics.netWorthByTeam?.team_player || 0).toLocaleString()}</strong>
+                          <strong className="text-green-400">${(metrics.netWorthByTeam?.team_player || 0).toLocaleString('en-AU')}</strong>
                         </div>
                         <div className="p-2 bg-black/30 rounded border border-gray-800">
                           <span className="text-[10px] text-gray-400 block">Contracts Completed</span>
@@ -260948,7 +262418,7 @@ function dispatchGameSettingsChange(
 
 	  // Game Over Screen
 	  const renderGameOver = () => {
-      const isDark = resolveIsDarkTheme(uiState.theme, systemPrefersDark);
+      const isDark = resolveIsDarkSurface(uiState.theme, systemPrefersDark); // V9.9 (SECTION 20AU): Retro is a dark surface
       // V9.9 (SECTION 20AW): the journal's block for this match — where it ranks and "Play this seed again" (null while the journal is off).
       const wpMjEnd = matchJournalEndViewFor(wpMjEnabled, wpMjJournal, wpMjFiled, v95MatchEpochRef.current);
       const wpMjEndNode = (canReplaySeed: boolean, className?: string) => (wpMjEnd.view ? <V99MatchJournalEndBlock view={wpMjEnd.view} saved={wpMjEnd.saved} canReplaySeed={canReplaySeed} onReplaySeed={wpMjStart} className={className} /> : null);
@@ -261006,7 +262476,7 @@ function dispatchGameSettingsChange(
                       </div>
                       <div className="text-right">
                         <span className="text-sm font-mono font-bold">
-                          {obj.currentValue.toLocaleString()} / {obj.targetValue.toLocaleString()}
+                          {obj.currentValue.toLocaleString('en-AU')} / {obj.targetValue.toLocaleString('en-AU')}
                         </span>
                       </div>
                     </div>
@@ -261117,7 +262587,7 @@ function dispatchGameSettingsChange(
             </div>
             <div className="flex justify-between">
               <span>{isTeamMode ? `${playerSideLabel} Captain Net Worth:` : 'Net Worth:'}</span>
-              <span className="font-bold text-green-500">${getNetWorth.toLocaleString()}</span>
+              <span className="font-bold text-green-500">${getNetWorth.toLocaleString('en-AU')}</span>
             </div>
             <div className="text-xs opacity-75 pt-2">
               {outcome.reason}
@@ -261139,7 +262609,7 @@ function dispatchGameSettingsChange(
                 {playerContributors.map(actor => (
                   <div key={actor.id} className="flex justify-between gap-3">
                     <span>{actor.displayName || actor.name}</span>
-                    <span>${(actor.contributionStats?.moneyEarned || 0).toLocaleString()} earned ({playerContributionSummary?.actorShares?.[actor.id]?.cashShare || '0%'}) • {actor.contributionStats?.challengesCompleted || 0} challenges • ${actor.contributionStats?.craftedValue || 0} crafted ({playerContributionSummary?.actorShares?.[actor.id]?.craftedShare || '0%'})</span>
+                    <span>${(actor.contributionStats?.moneyEarned || 0).toLocaleString('en-AU')} earned ({playerContributionSummary?.actorShares?.[actor.id]?.cashShare || '0%'}) • {actor.contributionStats?.challengesCompleted || 0} challenges • ${actor.contributionStats?.craftedValue || 0} crafted ({playerContributionSummary?.actorShares?.[actor.id]?.craftedShare || '0%'})</span>
                   </div>
                 ))}
               </div>
@@ -261207,7 +262677,7 @@ function dispatchGameSettingsChange(
 	            </div>
 	            <div className="flex justify-between">
 	              <span>{isTeamMode ? `${playerSideLabel} Captain Net Worth:` : 'Net Worth:'}</span>
-	              <span className="font-bold text-green-500">${getNetWorth.toLocaleString()}</span>
+	              <span className="font-bold text-green-500">${getNetWorth.toLocaleString('en-AU')}</span>
 	            </div>
 	            <div className="text-xs opacity-75 pt-2">
 	              {outcome.reason}
@@ -261229,7 +262699,7 @@ function dispatchGameSettingsChange(
                 {playerContributors.map(actor => (
                   <div key={actor.id} className="flex justify-between gap-3">
                     <span>{actor.displayName || actor.name}</span>
-                    <span>${(actor.contributionStats?.moneyEarned || 0).toLocaleString()} earned ({playerContributionSummary?.actorShares?.[actor.id]?.cashShare || '0%'}) • {actor.contributionStats?.challengesCompleted || 0} challenges • ${actor.contributionStats?.craftedValue || 0} crafted ({playerContributionSummary?.actorShares?.[actor.id]?.craftedShare || '0%'})</span>
+                    <span>${(actor.contributionStats?.moneyEarned || 0).toLocaleString('en-AU')} earned ({playerContributionSummary?.actorShares?.[actor.id]?.cashShare || '0%'}) • {actor.contributionStats?.challengesCompleted || 0} challenges • ${actor.contributionStats?.craftedValue || 0} crafted ({playerContributionSummary?.actorShares?.[actor.id]?.craftedShare || '0%'})</span>
                   </div>
                 ))}
               </div>
