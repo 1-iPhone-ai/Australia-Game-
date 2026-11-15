@@ -135726,8 +135726,8 @@ export function prepareSaveLoadTransaction(input: string | unknown): { ok: boole
   v95DiffSection('aiPlayer', raw.aiPlayer, clean.aiPlayer, report);
   // V9.9 (SECTION 20AT): the leaked keys are not "dropped fields" (they were never part of the match); repairs to the
   // three object lists are named, so the preview no longer says "Healthy" for a file that needed them.
-  v95DiffSection('gameState', stripLeakedStateKeys(raw.gameState), clean.gameState, report);
-  if (leakedStateKeysIn(raw.gameState).length > 0) report.strayStateKeysRemoved = leakedStateKeysIn(raw.gameState).length;
+  v95DiffSection('gameState', cleanLoadedMatchState(raw.gameState), clean.gameState, report);
+  if (strayStateKeyCount(raw.gameState) > 0) report.strayStateKeysRemoved = strayStateKeyCount(raw.gameState);
   describeObjectListRepairs(raw.gameState).forEach(line => v95Push(report.fieldsRepaired, line));
   v95DiffSection('gameSettings', raw.gameSettings, clean.gameSettings, report, { profileSettings: true });
   let migrated: SaveGameData = clean;
@@ -193352,8 +193352,15 @@ export const PROFILE_SETTINGS_RECORD_VERSION = 1;
  */
 export const V99_PROFILE_KEYS_NOT_PERSISTED: readonly string[] = ['deferredTransactions', 'v93RecentRare', 'guidedFirstRunEnabled', 'autoModeDiagnosticsDrawerOpen', 'infrastructureEnabled', 'aiDifficulty'];
 
-/** The settings the profile store keeps: every profile-scoped key except the six above. */
-export const V99_PERSISTED_PROFILE_SETTING_KEYS: readonly string[] = V95_PROFILE_SCOPED_SETTING_KEYS.filter(k => !V99_PROFILE_KEYS_NOT_PERSISTED.includes(k));
+/**
+ * V9.9 (SECTION 20AT, W3S — finding Q2-F3): presentation switches the Simple settings list under "Look & sound" although
+ * a save carries them. They are kept on this device with the preferences, and — like every stored preference — a
+ * loaded save never replaces the device's value (stripPersistedProfileSettings).
+ */
+export const V99_DEVICE_KEPT_SAVE_SCOPED_KEYS: readonly string[] = ['showDayTransition'];
+
+/** The settings the profile store keeps: every profile-scoped key except the six above, plus the device-kept presentation switch. */
+export const V99_PERSISTED_PROFILE_SETTING_KEYS: readonly string[] = [...V95_PROFILE_SCOPED_SETTING_KEYS.filter(k => !V99_PROFILE_KEYS_NOT_PERSISTED.includes(k)), ...V99_DEVICE_KEPT_SAVE_SCOPED_KEYS];
 
 /** A stored profile record after sanitising: only allowlisted keys, every value well-formed; the theme only when one was stored. */
 export interface ProfileSettingsRecord { version: 1; settings: Partial<GameSettingsState>; theme?: GameTheme }
@@ -193645,10 +193652,11 @@ export function describeLeaveMatch(ctx: LeaveMatchContext): LeaveMatchPrompt {
   lines.push(ctx.unsavedProgress
     ? 'Everything you played since this match started or was last saved is lost unless you save first. A save is a file you can load again from the main menu.'
     : 'Nothing has been played since this match started or was last saved.');
-  if (ctx.rivalTurn) lines.push('The rival is in the middle of its turn. A save made now picks up with the rest of that turn.');
+  // W3S (finding Q2-F2): a file made mid-turn loads into a different rival turn, so "Save, then leave" waits for the turn.
+  if (ctx.rivalTurn) lines.push('The rival is in the middle of its turn. “Save, then leave” waits for the rest of that turn, so the file picks up exactly at your turn, and then leaves by itself.');
   if (ctx.campaignChapter !== null) lines.push(`This is chapter ${ctx.campaignChapter} of your campaign. The chapter stays unfinished: Continue Campaign on the main menu starts it again, or load your save to carry on from here.`);
   if (ctx.firstRunActive) lines.push('This is the guided first match. Leaving ends the tutorial; Settings → Guided first match brings it back on the next launch.');
-  return { title: 'Leave this match?', lines, saveLabel: '💾 Save, then leave', leaveLabel: 'Leave without saving', stayLabel: 'Keep playing' };
+  return { title: 'Leave this match?', lines, saveLabel: ctx.rivalTurn ? '💾 Save, then leave (after the rival\'s turn)' : '💾 Save, then leave', leaveLabel: 'Leave without saving', stayLabel: 'Keep playing' };
 }
 
 /** The theme classes a V9.9 dialog needs (a subset of the component's theme styles). */
@@ -193802,7 +193810,8 @@ export function saveTimingForTurn(s: { gameMode?: unknown; selectedMode?: unknow
   return s.gameMode === 'game' && isSoloRivalModeSelection(s.selectedMode) && (s.currentTurn === 'ai' || s.isAiThinking === true) ? 'after_rival_turn' : 'now';
 }
 
-export const SAVE_AFTER_RIVAL_TURN_MESSAGE = '💾 Saving as soon as the rival finishes its turn… (Save again to save right now.)';
+// W3S (finding Q2-F2): the "save again" shortcut stays, and says what such a file is.
+export const SAVE_AFTER_RIVAL_TURN_MESSAGE = '💾 Saving as soon as the rival finishes its turn… (Save again for a mid-turn file: loading that one replays the rest of the rival\'s turn, which can go differently.)';
 
 /** What a save made in the middle of the rival's turn says about that turn: how many actions the rival had already used. */
 export interface LoadedRivalTurn { epoch: number; actionsUsed: number }
@@ -193948,7 +193957,7 @@ export function loadedMatchScreen(gameMode: unknown, day: unknown, totalDays: un
 
 /** The last step of the save validator for the match state: leaked keys left out, and the screen it opens on settled. A clean, playable state is returned as it is. */
 export function finalizeLoadedGameState<T extends { gameMode?: unknown; day?: unknown }>(gameState: T, totalDays: unknown): T {
-  const clean = stripLeakedStateKeys(gameState);
+  const clean = cleanLoadedMatchState(gameState); // W3S: … and, in a solo match, the stale actor copies
   const screen = loadedMatchScreen(clean.gameMode, clean.day, totalDays);
   return clean.gameMode === screen ? clean : { ...clean, gameMode: screen };
 }
@@ -194235,6 +194244,226 @@ export function v99ElementText(node: React.ReactNode, depth = 0): string {
   return v99ElementText((node as React.ReactElement<Record<string, unknown>>).props.children as React.ReactNode, depth + 1);
 }
 
+// ---- Wave 3 (track W3S): a new match starts clean; a loaded match is the match that was saved ---------------------------
+// Fixes found by the QA pass on the merged Wave 1 build (Q2-F1 … F3, q3-01 … q3-07) and the lead's leftovers. The
+// helpers are pure; the component calls them from the handlers this track owns (applyLoadedState, handleReturnToMenu,
+// v99LeaveMatchNow, v99SaveAndLeaveMatch, handleSaveGame, restorePreScenarioSettings) and from ONE layout effect that
+// reacts to "the match was replaced" (the match epoch moved). Tests: v99ss_w… at the end of the suite below.
+
+// (1) The player's own rules while a loaded match is on (finding Q2-F1) ---------------------------------------------------
+/**
+ * What a load has to remember so the main menu can give the player's own match rules back: `own` = the rules that
+ * were in force before the first load since the menu (without the stored preferences), `loaded` = every setting the
+ * loaded file(s) brought in. Kept until the player is back on the main menu.
+ */
+export interface RulesBeforeLoad { own: GameSettingsState; loaded: Record<string, unknown> }
+
+/**
+ * Called by every load, before the file's settings are applied. The first load since the menu records the rules in
+ * force (`preScenario` when a scenario started in this session is running: its snapshot IS the player's own rules);
+ * a further load keeps that record and only adds what the new file brings in.
+ */
+export function rememberRulesBeforeLoad(previous: RulesBeforeLoad | null, current: GameSettingsState, preScenario: GameSettingsState | null, loadedSettings: unknown): RulesBeforeLoad {
+  const loaded: Record<string, unknown> = v99IsPlainObject(loadedSettings) ? { ...(stripPersistedProfileSettings(loadedSettings as unknown as GameSettingsState) as unknown as V99SettingsBag) } : {};
+  if (previous) return { own: previous.own, loaded: { ...previous.loaded, ...loaded } };
+  return { own: stripPersistedProfileSettings({ ...(preScenario ?? current) }), loaded };
+}
+
+/**
+ * The settings the main menu shows after a loaded match: every rule the file brought in goes back to the player's own
+ * value — unless it was changed again during the loaded match (the player's or the game's own change stays, exactly
+ * as a change made during any match stays). Preferences are never touched. With nothing to put back the very same
+ * object is returned.
+ */
+export function rulesAfterLoadedMatch(current: GameSettingsState, before: RulesBeforeLoad | null): GameSettingsState {
+  if (!before) return current;
+  const cur = current as unknown as V99SettingsBag;
+  const own = before.own as unknown as V99SettingsBag;
+  let out: Record<string, unknown> | null = null;
+  Object.keys(before.loaded).forEach(key => {
+    if (V99_PERSISTED_PROFILE_SETTING_KEYS.includes(key) || !Object.prototype.hasOwnProperty.call(own, key)) return;
+    if (settingsValuesEqual(cur[key], own[key]) || !settingsValuesEqual(cur[key], before.loaded[key])) return;
+    if (out === null) out = { ...cur };
+    out[key] = own[key];
+  });
+  return out === null ? current : (out as unknown as GameSettingsState);
+}
+
+/**
+ * The rules a scenario hands back when it is left or finished: the snapshot taken when it was launched in this
+ * session, else — for a scenario that came in with a loaded save — the rules in force before that load. null = neither
+ * exists (the scenario switch is simply lowered, as before).
+ */
+export function rulesToRestoreAfterScenario(savedPreScenario: GameSettingsState | null, before: RulesBeforeLoad | null): GameSettingsState | null {
+  return savedPreScenario ?? (before ? before.own : null);
+}
+
+// (2) A save is never a mid-turn file by accident (finding Q2-F2) ---------------------------------------------------------
+/** What a save request does: write the file now, wait for the rival's turn to end, or write a mid-turn file on purpose. */
+export type SaveRequestPlan = 'save_now' | 'wait_for_turn' | 'save_mid_turn';
+
+/**
+ * While the solo rival is moving a save waits for the turn to come back — also "Save, then leave", which then leaves by
+ * itself. Only asking a second time while one is already waiting (or code that passes `now`) writes the file at once.
+ */
+export function planSaveRequest(timing: SaveTiming, request: { now?: boolean; alreadyWaiting: boolean; waitingThenLeave?: boolean }): SaveRequestPlan {
+  if (timing === 'now') return 'save_now';
+  if (request.now === true) return 'save_mid_turn';
+  // A waiting "Save, then leave" is not a plain save the player asked for twice: one more save request keeps waiting (and still leaves).
+  if (request.waitingThenLeave === true) return 'wait_for_turn';
+  return request.alreadyWaiting ? 'save_mid_turn' : 'wait_for_turn';
+}
+
+/** Shown when "Save, then leave" has to wait for the rival. */
+export const SAVE_THEN_LEAVE_WAITING_MESSAGE = '💾 Saving as soon as the rival finishes its turn — then leaving the match…';
+/** The menu's one message after a saved leave. */
+export const SAVED_AND_LEFT_MESSAGE = '💾 Match saved. Load the file from Save / Load to carry on with it.';
+
+/**
+ * The message of a save, honest about a file made in the middle of the rival's turn. (Worded apart from the waiting
+ * message, from "Game saved!" and from the turn lines the play screen shows — "Your turn ended" — so the toast lane
+ * does not fold it into one of them as a near-duplicate.)
+ */
+export function describeSaveDone(plan: SaveRequestPlan, day: unknown, playerName: unknown): string {
+  const who = `Day ${Number(day) || 1}, ${String(playerName || 'Player')}`;
+  if (plan !== 'save_mid_turn') return `Game saved! ${who}`;
+  return `Mid-turn file written (${who}). When it is opened, the rival completes this turn afresh and may choose other moves. An exact copy needs a save made after the rival is done.`;
+}
+
+/** After a deferred "Save, then leave" has been written: leave only when the file exists and the match is still running. */
+export function shouldLeaveAfterDeferredSave(thenLeave: boolean | undefined, saveStatus: string, liveGameMode: unknown): boolean {
+  return thenLeave === true && saveStatus === 'saved' && liveGameMode === 'game';
+}
+
+// (3) What a match leaves behind (findings F3, q3-01, q3-02, q3-04) --------------------------------------------------------
+/**
+ * Interface state that describes something inside ONE match: the "What happened" card, the adjusted-action notice, the
+ * selected region, a pending Double or Nothing, the opened goal panels and a Guardian warning. The value is what a new
+ * match starts with.
+ */
+export const V99_MATCH_SCOPED_UI_DEFAULTS: Readonly<Record<string, null | false>> = {
+  intentTeaching: null, intentAdjustment: null, selectedInteractiveRegion: null, activeGuardianWarningModalConfig: null,
+  showDoubleOrNothing: false, showGuardianWarningModal: false, showIntentPath: false, showIntentChangeGoal: false, showIntentWhyThese: false,
+  showIntentAllActions: false, showIntentGoalPlanner: false,
+};
+
+/** The interface-state patch that clears what the previous match left (empty when nothing was left). */
+export function matchScopedUiPatch(ui: { readonly [key: string]: unknown }): Record<string, null | false> {
+  const patch: Record<string, null | false> = {};
+  Object.keys(V99_MATCH_SCOPED_UI_DEFAULTS).forEach(key => {
+    const clear = V99_MATCH_SCOPED_UI_DEFAULTS[key];
+    const value = ui[key];
+    if (value === undefined || value === clear || (clear === null && value === null)) return;
+    patch[key] = clear;
+  });
+  return patch;
+}
+
+/** `ui` without what the previous match left; the same object when there is nothing to clear. */
+export function withoutMatchScopedUi<T extends { readonly [key: string]: unknown }>(ui: T): T {
+  const patch = matchScopedUiPatch(ui);
+  return Object.keys(patch).length === 0 ? ui : { ...ui, ...patch };
+}
+
+/** True when the match on screen is not the one last cleaned up for (the epoch moved: new match, rematch, restart, leave, load). */
+export function matchWasReplaced(cleanedEpoch: number, currentEpoch: number): boolean {
+  return cleanedEpoch !== currentEpoch;
+}
+
+/**
+ * The opening messages of a match (and the messages of a load) are raised before the new match's day is on screen, so
+ * they carried the day of the screen before ("Success • Day 7 — Scenario Started" on day 1). They are stamped with
+ * the day the match is on. Messages restored from a save keep their own day; nothing to change → the same list.
+ */
+export function stampOpeningNotifications<T extends { day: number; metadata?: unknown }>(list: T[], day: number): T[] {
+  if (!Number.isFinite(day) || !list.some(n => isLiveToast(n) && n.day !== day)) return list;
+  return stampLoadNotifications(list, day);
+}
+
+/** Leaving the guided first match ends the tutorial and its tour: the next match must not carry on with "1 / 4 · Current Focus". */
+export function settingsAfterLeavingFirstRun(settings: GameSettingsState): GameSettingsState {
+  const learning = sanitizeLearningState(settings.guidedLearning);
+  const tourOn = learning.basicsStep !== null;
+  if (settings.guidedFirstRunEnabled === false && !tourOn) return settings;
+  return { ...settings, guidedFirstRunEnabled: false, ...(tourOn ? { guidedLearning: applyLearningEvent(learning, { kind: 'basics_step', step: null, turn: 0 }) } : {}) };
+}
+
+// (4) A question the game is waiting on cannot be closed without an answer (finding q3-03) ----------------------------------
+/** Confirmation types a turn waits on: Escape or a click beside the dialog must not close them. */
+export function confirmationNeedsAnAnswer(type: unknown): boolean {
+  return type === 'aiActionApprovalRequest';
+}
+
+/** Said inside such a dialog. */
+export const APPROVAL_NEEDS_ANSWER_NOTE = 'The turn waits for your answer — choose one of the buttons (Esc does not close this).';
+
+/**
+ * The request the approval dialog shows next: the oldest one still 'pending'; else, during a match, one that is marked
+ * 'displayed' although no dialog is open (its dialog was closed without an answer — V9.8 then waited forever). null
+ * while a dialog is open or nothing waits.
+ */
+export function nextApprovalRequestToShow<T extends { status?: unknown }>(requests: readonly T[], dialogOpen: boolean, gameMode: unknown): T | null {
+  if (dialogOpen) return null;
+  return requests.find(r => r.status === 'pending') || (gameMode === 'game' ? requests.find(r => r.status === 'displayed') : undefined) || null;
+}
+
+// (5) Lead's leftovers ---------------------------------------------------------------------------------------------------
+/**
+ * Finding b5-08 — a load restored the stream positions but not the registry's master seed and flags, so streams the
+ * file does not carry (and campaign draws) continued from whatever the tab had left. A save that knows its match seed
+ * (V9.9) seeds the registry with it first, then takes the saved positions; a save without a seed (pre-V9.9) is
+ * imported exactly as before.
+ */
+export function restoreRngRegistryForLoad(registry: GameplayRngRegistry, matchSeed: number | null, savedStreams: Record<string, RngStreamState>): void {
+  if (matchSeed !== null) {
+    registry.isDeterministic = true;
+    registry.setAuditPolicy('strict');
+    registry.initStreams(matchSeed);
+  }
+  registry.importStreamStates(savedStreams);
+}
+
+/**
+ * The Replay Studio is drawn by the match screen itself while a match is on; everywhere else (main menu, end screens)
+ * the top level draws it. It used to be missing on the main menu, where Save / Load offers "Open Replay Studio".
+ */
+export function replayStudioDrawnAtTopLevel(gameMode: unknown): boolean {
+  return gameMode !== 'game';
+}
+
+/** The scenario picker's line for a scenario this device has completed (null: never completed). */
+export function describeScenarioListRecord(entry: ScenarioRecordEntry | null | undefined): string | null {
+  if (!entry || !(entry.completions > 0)) return null;
+  return `✓ Completed${entry.completions > 1 ? ` ${entry.completions} times` : ''} — best: day ${entry.bestDay}`;
+}
+
+/** The tick shown on a completed scenario's card. */
+export function V99ScenarioCompletedBadge(props: { entry: ScenarioRecordEntry | null | undefined }): React.ReactElement | null {
+  const line = describeScenarioListRecord(props.entry);
+  if (!line) return null;
+  return <div className="text-xs font-semibold text-emerald-400 mb-2" data-testid="v99-scenario-completed">{line}</div>;
+}
+
+/**
+ * A solo match keeps its actors in their own stores; its match state's actorsById is empty. V9.8's "Do It" left stale
+ * copies of the player and the rival there (old cash, old region). True when such a stray map is present.
+ */
+export function hasStraySoloActorMap(gameState: unknown): boolean {
+  if (!v99IsPlainObject(gameState) || isTeamModeSelection(typeof gameState.selectedMode === 'string' ? gameState.selectedMode : null)) return false;
+  return v99IsPlainObject(gameState.actorsById) && Object.keys(gameState.actorsById).length > 0;
+}
+
+/** A loaded match state without what V9.8's "Do It" leaked: the leaked keys, and in a solo match the stale actor copies. A clean state is returned as it is. */
+export function cleanLoadedMatchState<T>(gameState: T): T {
+  const clean = stripLeakedStateKeys(gameState);
+  return hasStraySoloActorMap(clean) ? ({ ...(clean as unknown as Record<string, unknown>), actorsById: {} } as unknown as T) : clean;
+}
+
+/** How many leaked pieces a load leaves out (for the save check's note). */
+export function strayStateKeyCount(rawGameState: unknown): number {
+  return leakedStateKeysIn(rawGameState).length + (hasStraySoloActorMap(rawGameState) ? 1 : 0);
+}
+
 export function runV99SessionSafetySelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
   const check = (id: string, name: string, fn: () => true | string) => {
@@ -194255,14 +194484,14 @@ export function runV99SessionSafetySelfTests(): V9SelfTestResult[] {
 
   // ---- Profile settings store (c2-01) ----------------------------------------------------------------------------------
   check('v99ss_01_allowlist', 'The stored keys are profile-scoped preferences only: no match-scoped key, none of the six state/rule keys, every key has a default', () => {
-    const notProfile = persisted.filter(k => !V95_PROFILE_SCOPED_SETTING_KEYS.includes(k));
+    const notProfile = persisted.filter(k => !V95_PROFILE_SCOPED_SETTING_KEYS.includes(k) && !V99_DEVICE_KEPT_SAVE_SCOPED_KEYS.includes(k)); // W3S: showDayTransition is kept on the device too
     const matchScoped = persisted.filter(k => (V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes(k));
     const excluded = V99_PROFILE_KEYS_NOT_PERSISTED.filter(k => persisted.includes(k) || !V95_PROFILE_SCOPED_SETTING_KEYS.includes(k));
     const noDefault = persisted.filter(k => !(k in defaults));
     const wanted = ['soundEnabled', 'soundVolume', 'reducedMotion', 'visualMode', 'accessibilitySettings', 'rivalryCampaignEnabled', ...V99_SETTING_KEYS].filter(k => !persisted.includes(k));
     const rules = ['totalDays', 'winCondition', 'experienceMode', 'playerActionsPerDay', 'sabotageEnabled', 'guidedFirstRunEnabled', 'aiDifficulty', 'infrastructureEnabled', 'aiPersistentMemoryEnabled'].filter(k => persisted.includes(k));
     return (notProfile.length === 0 && matchScoped.length === 0 && excluded.length === 0 && noDefault.length === 0 && wanted.length === 0 && rules.length === 0
-      && persisted.length === V95_PROFILE_SCOPED_SETTING_KEYS.length - V99_PROFILE_KEYS_NOT_PERSISTED.length) || json({ notProfile, matchScoped, excluded, noDefault, wanted, rules });
+      && persisted.length === V95_PROFILE_SCOPED_SETTING_KEYS.length - V99_PROFILE_KEYS_NOT_PERSISTED.length + V99_DEVICE_KEPT_SAVE_SCOPED_KEYS.length) || json({ notProfile, matchScoped, excluded, noDefault, wanted, rules });
   });
   check('v99ss_02_no_record_is_base', 'With nothing stored the session starts from the very object it was given (the defaults), and nothing is written', () => {
     const base = fresh();
@@ -194404,11 +194633,13 @@ export function runV99SessionSafetySelfTests(): V9SelfTestResult[] {
   // ---- A loaded match never brings preferences (b1-02 write rule) -------------------------------------------------------
   check('v99ss_16_load_keeps_preferences', 'A loaded save carries no stored preference; a raw settings block (replay branch) has them stripped; match rules pass through', () => {
     const validated = validateSaveDataCore(JSON.parse(JSON.stringify(createV95SaveFixture())) as SaveGameData);
-    const carried = persisted.filter(k => k in bag(validated.gameSettings));
+    // W3S: the device-kept presentation switch (showDayTransition) is still written into a save; the apply step strips it.
+    const carried = persisted.filter(k => k in bag(validated.gameSettings) && !V99_DEVICE_KEPT_SAVE_SCOPED_KEYS.includes(k));
+    const deviceKeptInSave = V99_DEVICE_KEPT_SAVE_SCOPED_KEYS.filter(k => k in bag(validated.gameSettings)).length;
     const raw = withSettings({ soundEnabled: false, visualMode: 'classic', totalDays: 45, infrastructureEnabled: !defaults.infrastructureEnabled });
     const stripped = bag(stripPersistedProfileSettings(raw));
     const left = persisted.filter(k => k in stripped);
-    return (carried.length === 0 && stripPersistedProfileSettings(validated.gameSettings) === validated.gameSettings && left.length === 0 && stripped.totalDays === 45 && stripped.infrastructureEnabled === raw.infrastructureEnabled
+    return (carried.length === 0 && Object.keys(bag(stripPersistedProfileSettings(validated.gameSettings))).length === Object.keys(bag(validated.gameSettings)).length - deviceKeptInSave && left.length === 0 && stripped.totalDays === 45 && stripped.infrastructureEnabled === raw.infrastructureEnabled
       && Object.keys(stripped).length === Object.keys(bag(raw)).length - persisted.length && raw.soundEnabled === false) || json({ carried, left });
   });
   check('v99ss_17_scenarios_force_no_preference', 'No scenario forces a stored preference, and every forced value is of its setting\'s kind', () => {
@@ -194928,6 +195159,207 @@ export function runV99SessionSafetySelfTests(): V9SelfTestResult[] {
     return (fromError.error instanceof Error && fromError.error.message === 'render failed' && fromText.error instanceof Error && fromText.error.message === 'plain text' && fromError.downloaded === false
       && kept !== null && kept.data === save && kept.day === save.gameState.day && kept.playerName === save.player.name && holder.current === null && first === save && second === null && pending.current === null
       && reopen !== null && reopen.ok && reopen.data?.gameState.day === save.gameState.day) || 'boundary state';
+  });
+
+  // ---- Wave 3 (track W3S): a new match starts clean; a loaded match is the match that was saved ------------------------
+  const w3Own = (): GameSettingsState => withSettings({ totalDays: 50, sabotageEnabled: false, aiFairnessLevel: 0.75, worldRngMode: 'random', worldRngSeed: 1337, aiDeterministic: false, scenarioModeEnabled: false, soundEnabled: true });
+  const w3ScenarioFile = (): GameSettingsState => withSettings({ totalDays: 30, sabotageEnabled: true, aiFairnessLevel: 0.9, worldRngMode: 'deterministic', worldRngSeed: 10842, aiDeterministic: true, aiDeterministicSeed: 10842, scenarioModeEnabled: true, selectedScenarioId: 'export_economy', soundEnabled: false });
+  const w3AfterLoad = (own: GameSettingsState, file: GameSettingsState): GameSettingsState => ({ ...own, ...stripPersistedProfileSettings(file) });
+  const w3RuleKeys = ['totalDays', 'sabotageEnabled', 'aiFairnessLevel', 'worldRngMode', 'worldRngSeed', 'aiDeterministic', 'scenarioModeEnabled'];
+  check('v99ss_w01_scenario_save_hands_rules_back', 'Q2-F1: leaving a scenario that came in with a loaded save gives the player\'s own rules back (seed mode, seed, sabotage, fairness) — preferences are not part of it', () => {
+    const own = w3Own();
+    const before = rememberRulesBeforeLoad(null, own, null, w3ScenarioFile());
+    const restore = rulesToRestoreAfterScenario(null, before);
+    if (!restore) return 'nothing to restore';
+    const menu = { ...w3AfterLoad(own, w3ScenarioFile()), ...stripPersistedProfileSettings(restore) };
+    const wrong = w3RuleKeys.filter(k => json(bag(menu)[k]) !== json(bag(own)[k]));
+    return (wrong.length === 0 && menu.worldRngMode === 'random' && menu.worldRngSeed === 1337 && !('soundEnabled' in bag(before.own)) && !('soundEnabled' in before.loaded)
+      && before.loaded.worldRngSeed === 10842 && rulesToRestoreAfterScenario(null, null) === null) || json({ wrong });
+  });
+  check('v99ss_w02_loaded_length_not_on_menu', 'Q2-F1: after a loaded 10-day match the menu shows the player\'s own game length again; every rule the file brought in is the player\'s own', () => {
+    const own = w3Own();
+    const file = withSettings({ totalDays: 10, winCondition: 'regions', playerActionsPerDay: 5, soundVolume: 0.1 });
+    const before = rememberRulesBeforeLoad(null, own, null, file);
+    const during = w3AfterLoad(own, file);
+    const menu = rulesAfterLoadedMatch(during, before);
+    const moved = changedKeys(menu, own);
+    return (during.totalDays === 10 && menu.totalDays === 50 && menu.winCondition === own.winCondition && menu.playerActionsPerDay === own.playerActionsPerDay && moved.length === 0 && menu !== during) || json({ moved, totalDays: menu.totalDays });
+  });
+  check('v99ss_w03_change_on_purpose_stays', 'Q2-F1: a rule changed during the loaded match stays changed on the menu (as after any match); a preference changed there is never taken back', () => {
+    const own = w3Own();
+    const before = rememberRulesBeforeLoad(null, own, null, withSettings({ totalDays: 10, sabotageEnabled: true }));
+    const during = { ...w3AfterLoad(own, withSettings({ totalDays: 10, sabotageEnabled: true })), totalDays: 20, soundEnabled: false, reducedMotion: 'on' } as GameSettingsState;
+    const menu = rulesAfterLoadedMatch(during, before);
+    return (menu.totalDays === 20 && menu.sabotageEnabled === false && menu.soundEnabled === false && menu.reducedMotion === 'on') || json({ totalDays: menu.totalDays, sabotage: menu.sabotageEnabled, sound: menu.soundEnabled });
+  });
+  check('v99ss_w04_no_load_nothing_moves', 'Without a load — or after loading a file with the player\'s own rules — returning to the menu leaves the settings object untouched', () => {
+    const own = w3Own();
+    const sameRules = rememberRulesBeforeLoad(null, own, null, { ...own });
+    const during = w3AfterLoad(own, own);
+    return (rulesAfterLoadedMatch(own, null) === own && rulesAfterLoadedMatch(during, sameRules) === during && json(rememberRulesBeforeLoad(null, own, null, 'not settings').loaded) === '{}'
+      && rulesAfterLoadedMatch(own, rememberRulesBeforeLoad(null, own, null, null)) === own) || 'settings moved without a reason';
+  });
+  check('v99ss_w05_second_load_and_session_scenario', 'A second load keeps the first record of the player\'s rules; a scenario started in this session contributes its snapshot, not its own rules', () => {
+    const own = w3Own();
+    const first = rememberRulesBeforeLoad(null, own, null, withSettings({ totalDays: 10 }));
+    const second = rememberRulesBeforeLoad(first, w3AfterLoad(own, withSettings({ totalDays: 10 })), null, withSettings({ totalDays: 15, sabotageEnabled: true }));
+    const inScenario = rememberRulesBeforeLoad(null, w3AfterLoad(own, w3ScenarioFile()), own, withSettings({ totalDays: 10 }));
+    const snapshot = withSettings({ totalDays: 77 });
+    return (second.own === first.own && second.own.totalDays === 50 && second.loaded.totalDays === 15 && second.loaded.sabotageEnabled === true && inScenario.own.totalDays === 50 && inScenario.own.worldRngSeed === 1337
+      && rulesToRestoreAfterScenario(snapshot, first) === snapshot && rulesToRestoreAfterScenario(null, first) === first.own) || json({ second: second.own.totalDays, scenario: inScenario.own.worldRngSeed });
+  });
+  check('v99ss_w06_save_never_mid_turn_by_accident', 'Q2-F2: while the solo rival moves a save — also "Save, then leave" — waits for the turn; only a second request writes a mid-turn file; on the player\'s turn every save is immediate', () => {
+    const plans = [planSaveRequest('after_rival_turn', { alreadyWaiting: false }), planSaveRequest('after_rival_turn', { alreadyWaiting: true }), planSaveRequest('after_rival_turn', { now: true, alreadyWaiting: false }),
+      planSaveRequest('now', { alreadyWaiting: false }), planSaveRequest('now', { alreadyWaiting: true }), planSaveRequest('now', { now: true, alreadyWaiting: false })];
+    const leave = [shouldLeaveAfterDeferredSave(true, 'saved', 'game'), shouldLeaveAfterDeferredSave(true, 'failed', 'game'), shouldLeaveAfterDeferredSave(true, 'saved', 'end'), shouldLeaveAfterDeferredSave(false, 'saved', 'game'), shouldLeaveAfterDeferredSave(undefined, 'saved', 'game')];
+    const whileLeaveWaits = [planSaveRequest('after_rival_turn', { alreadyWaiting: true, waitingThenLeave: true }), planSaveRequest('after_rival_turn', { now: true, alreadyWaiting: true, waitingThenLeave: true }), planSaveRequest('now', { alreadyWaiting: true, waitingThenLeave: true })];
+    return (json(plans) === json(['wait_for_turn', 'save_mid_turn', 'save_mid_turn', 'save_now', 'save_now', 'save_now']) && json(leave) === json([true, false, false, false, false])
+      && json(whileLeaveWaits) === json(['wait_for_turn', 'save_mid_turn', 'save_now'])) || json({ plans, leave, whileLeaveWaits });
+  });
+  check('v99ss_w07_save_wording_is_honest', 'Q2-F2: the waiting message, the mid-turn message and the leave question say what happens; an ordinary save reads as before', () => {
+    const mid = describeSaveDone('save_mid_turn', 4, 'Matilda');
+    const rival = describeLeaveMatch({ day: 4, totalDays: 30, unsavedProgress: true, rivalTurn: true, firstRunActive: false, campaignChapter: null });
+    const mine = describeLeaveMatch({ day: 4, totalDays: 30, unsavedProgress: true, rivalTurn: false, firstRunActive: false, campaignChapter: null });
+    const lane = v9DedupeNotifications([{ message: SAVE_AFTER_RIVAL_TURN_MESSAGE }, { message: describeSaveDone('save_now', 4, 'Matilda') }, { message: mid }], ['your turn ended', 'scientist ai s turn begins', 'your turn'], () => false);
+    return (describeSaveDone('save_now', 6, 'Matilda') === 'Game saved! Day 6, Matilda' && describeSaveDone('wait_for_turn', 6, 'Matilda') === 'Game saved! Day 6, Matilda' && mid.includes('Mid-turn file') && mid.includes('may choose other moves') && mid.includes('Day 4, Matilda') && lane.length === 3
+      && SAVE_AFTER_RIVAL_TURN_MESSAGE.includes('rival finishes') && SAVE_AFTER_RIVAL_TURN_MESSAGE.includes('mid-turn file') && SAVE_THEN_LEAVE_WAITING_MESSAGE.includes('then leaving') && SAVED_AND_LEFT_MESSAGE.includes('Match saved')
+      && rival.lines.length === 3 && rival.lines[2].includes('waits for the rest of that turn') && rival.saveLabel.includes('after the rival\'s turn') && mine.saveLabel === '💾 Save, then leave' && mine.lines.length === 2) || json({ mid, rival });
+  });
+  check('v99ss_w08_match_scoped_ui_cleared', 'F3 / q3-01: the "What happened" card, a pending Double or Nothing, the selected region and the open goal panels do not survive into the next match; preferences and other windows are not touched', () => {
+    const stale = { intentTeaching: { whatHappened: 'Take Tour Great Ocean Road — wager $500', why: 'pays ×2' }, intentAdjustment: { reason: 'x' }, selectedInteractiveRegion: 'VIC', showDoubleOrNothing: true, showIntentPath: true, showIntentGoalPlanner: true,
+      showGuardianWarningModal: true, activeGuardianWarningModalConfig: { id: 'w' }, showMap: true, theme: 'light', showSettings: true, playerName: 'Nia', wagerAmount: 250 };
+    const cleaned = withoutMatchScopedUi(stale);
+    const clean = { intentTeaching: null, intentAdjustment: null, selectedInteractiveRegion: null, showDoubleOrNothing: false, showMap: true, theme: 'dark' };
+    const kept = ['showMap', 'theme', 'showSettings', 'playerName', 'wagerAmount'].every(k => bag(cleaned)[k] === bag(stale)[k]);
+    return (cleaned.intentTeaching === null && cleaned.intentAdjustment === null && cleaned.selectedInteractiveRegion === null && cleaned.showDoubleOrNothing === false && cleaned.showIntentPath === false && cleaned.showIntentGoalPlanner === false
+      && cleaned.showGuardianWarningModal === false && cleaned.activeGuardianWarningModalConfig === null && kept && json(matchScopedUiPatch(clean)) === '{}' && withoutMatchScopedUi(clean) === clean && json(matchScopedUiPatch({})) === '{}'
+      && Object.keys(matchScopedUiPatch(stale)).length === 8) || json(matchScopedUiPatch(stale));
+  });
+  check('v99ss_w09_match_replaced_once', 'The clean-up runs when the match epoch moved (new match, rematch, restart, leave, load) and not again for the same match', () => {
+    return (matchWasReplaced(3, 4) && matchWasReplaced(3, 5) && !matchWasReplaced(4, 4) && !matchWasReplaced(0, 0)) || 'epoch rule';
+  });
+  check('v99ss_w10_opening_messages_own_day', 'q3-07: the opening messages of a restarted scenario carry day 1, not the finished match\'s last day; restored messages keep theirs; nothing to change returns the same list', () => {
+    const list = [{ id: 'a', day: 7, message: 'Scenario Started' }, { id: 'b', day: 7, message: 'Press ? for keyboard shortcuts' }, { id: 'c', day: 1, message: 'later' }, { id: 'd', day: 5, message: 'old', metadata: { restoredFromSave: true } }];
+    const stamped = stampOpeningNotifications(list, 1);
+    const right = [{ id: 'a', day: 1 }, { id: 'c', day: 1 }];
+    const loadedDay = stampOpeningNotifications([{ id: 'l', day: 1, message: 'Resumed' }], 6);
+    return (json(stamped.map(n => n.day)) === json([1, 1, 1, 5]) && list[0].day === 7 && stampOpeningNotifications(right, 1) === right && stampOpeningNotifications(list, Number.NaN) === list && loadedDay[0].day === 6
+      && stampOpeningNotifications([], 3).length === 0) || json(stamped.map(n => n.day));
+  });
+  check('v99ss_w11_first_run_tour_ends_with_leave', 'q3-04: leaving the guided first match ends its tour as well as the tutorial; what was learned stays; settings that have neither are returned as they are', () => {
+    const touring = applyLearningEvent(applyLearningEvent(createEmptyLearningState(), { kind: 'welcome', welcome: 'basics', turn: 0 }), { kind: 'used', conceptId: 'travel', turn: 1 });
+    const inFirstRun = withSettings({ guidedFirstRunEnabled: true, guidedLearning: touring });
+    const left = settingsAfterLeavingFirstRun(inFirstRun);
+    const learning = sanitizeLearningState(left.guidedLearning);
+    const done = withSettings({ guidedFirstRunEnabled: false });
+    const usesKept = json(learning.concepts) === json(sanitizeLearningState(touring).concepts);
+    return (touring.basicsStep === 0 && left.guidedFirstRunEnabled === false && learning.basicsStep === null && learning.welcome === 'started' && usesKept && settingsAfterLeavingFirstRun(done) === done
+      && settingsAfterLeavingFirstRun(left) === left) || json({ step: learning.basicsStep, welcome: learning.welcome, usesKept });
+  });
+  check('v99ss_w12_approval_needs_an_answer', 'q3-03: a team approval request cannot be closed by Escape or a click beside it — every other confirmation still can', () => {
+    const closable = ['travel', 'sell', 'challenge', 'endDay', 'teamAiOverrideRequest', 'persistentAbandon', 'campaignNew', null, undefined].filter(t => confirmationNeedsAnAnswer(t));
+    return (confirmationNeedsAnAnswer('aiActionApprovalRequest') && closable.length === 0 && APPROVAL_NEEDS_ANSWER_NOTE.includes('waits for your answer')) || json(closable);
+  });
+  check('v99ss_w13_displayed_request_gets_its_dialog_back', 'q3-03: a request marked as displayed with no dialog open is shown again during a match — never a "displayed" request without a dialog; pending ones go first; nothing reopens outside a match', () => {
+    const displayed = { id: 'approval_ai_1', status: 'displayed' };
+    const pending = { id: 'approval_ai_2', status: 'pending' };
+    const resolved = { id: 'approval_ai_0', status: 'resolved' };
+    return (nextApprovalRequestToShow([displayed], false, 'game') === displayed && nextApprovalRequestToShow([displayed, pending], false, 'game') === pending && nextApprovalRequestToShow([displayed, pending], true, 'game') === null
+      && nextApprovalRequestToShow([displayed], false, 'end') === null && nextApprovalRequestToShow([displayed], false, 'menu') === null && nextApprovalRequestToShow([pending], false, 'end') === pending
+      && nextApprovalRequestToShow([resolved], false, 'game') === null && nextApprovalRequestToShow([], false, 'game') === null) || 'approval queue';
+  });
+  const w3Draws = (registry: GameplayRngRegistry, domains: readonly RngScopeDomain[], n: number): number[] => domains.flatMap(domain => Array.from({ length: n }, () => registry.draw(domain)));
+  const w3Domains: RngScopeDomain[] = ['World', 'Challenges', 'AIReasoning', 'RandomEvents'];
+  const w3Flags = (registry: GameplayRngRegistry): string => `${registry.masterSeed}/${String(registry.isDeterministic)}/${registry.auditPolicy}`;
+  check('v99ss_w14_loaded_match_continues_its_draws', 'b5-08: a loaded V9.9 match continues every saved stream exactly where the original stood, and a stream the file does not carry starts from the match\'s own seed — not from what the tab had left', () => {
+    const original = new GameplayRngRegistry(999);
+    w3Draws(original, w3Domains, 5);
+    const saved = original.exportStreamStates();
+    const partial: Record<string, RngStreamState> = { ...saved };
+    delete partial.Challenges; delete partial.challenges;
+    // The tab's registry as a session leaves it: another seed, further along, and switched to "not deterministic".
+    const leftover = () => { const r = new GameplayRngRegistry(555); w3Draws(r, w3Domains, 9); r.isDeterministic = false; r.setAuditPolicy('monitor'); return r; };
+    const tab = leftover();
+    const twin = leftover();
+    restoreRngRegistryForLoad(tab, 999, partial);
+    const freshChallenges = new GameplayRngRegistry(999).streams.Challenges;
+    const carried: RngScopeDomain[] = ['World', 'AIReasoning', 'RandomEvents'];
+    const challengesClean = tab.streams.Challenges.drawCount === 0 && tab.streams.Challenges.streamSeed === freshChallenges.streamSeed;
+    const sameLine = json(w3Draws(tab, carried, 3)) === json(w3Draws(original, carried, 3));
+    twin.importStreamStates(partial); // the V9.8 load: positions only
+    return (w3Flags(tab) === '999/true/strict' && challengesClean && sameLine && w3Flags(twin) === '555/false/monitor' && twin.streams.Challenges.drawCount === 9) || json({ flags: w3Flags(tab), challengesClean, sameLine });
+  });
+  check('v99ss_w15_old_save_rng_unchanged', 'b5-08: a save without a match seed (pre-V9.9) is imported exactly as before — positions only, the registry\'s seed and flags are left alone', () => {
+    const original = new GameplayRngRegistry(1337);
+    w3Draws(original, w3Domains, 4);
+    const saved = original.exportStreamStates();
+    const make = () => { const r = new GameplayRngRegistry(555); w3Draws(r, w3Domains, 2); r.isDeterministic = false; r.setAuditPolicy('monitor'); return r; };
+    const viaHelper = make(); restoreRngRegistryForLoad(viaHelper, null, saved);
+    const asBefore = make(); asBefore.importStreamStates(saved);
+    const fixtureSeed = readMatchSeed(v95Fixture().gameState);
+    const untouched = w3Flags(viaHelper) === '555/false/monitor' && json(viaHelper.exportStreamStates()) === json(asBefore.exportStreamStates()) && json(viaHelper.exportStreamStates().World) === json(saved.World);
+    // A deterministic tab (the usual case since V9.9 seeds every match): the old save continues its own line of draws.
+    const seeded = new GameplayRngRegistry(555); w3Draws(seeded, w3Domains, 2);
+    restoreRngRegistryForLoad(seeded, null, saved);
+    return (untouched && seeded.masterSeed === 555 && json(w3Draws(seeded, w3Domains, 3)) === json(w3Draws(original, w3Domains, 3)) && fixtureSeed === null) || json({ flags: w3Flags(viaHelper), fixtureSeed });
+  });
+  check('v99ss_w16_scenario_completion_tick', 'The scenario picker shows what this device remembers: a tick with the best day (and the count after the first time); nothing for a scenario never completed', () => {
+    const store = createV99MemoryStorage();
+    recordScenarioCompletion(store, 'export_economy', 12);
+    recordScenarioCompletion(store, 'export_economy', 9);
+    recordScenarioCompletion(store, 'outback_siege', 20);
+    const records = readScenarioRecords(store).scenarios;
+    const badge = V99ScenarioCompletedBadge({ entry: records.export_economy });
+    return (describeScenarioListRecord(records.export_economy) === '✓ Completed 2 times — best: day 9' && describeScenarioListRecord(records.outback_siege) === '✓ Completed — best: day 20' && describeScenarioListRecord(records.never) === null
+      && describeScenarioListRecord(null) === null && V99ScenarioCompletedBadge({ entry: undefined }) === null && badge !== null && v99ElementText(badge).includes('best: day 9') && byTestId(badge, 'v99-scenario-completed').length === 1) || json(records);
+  });
+  const w3StrayActors = (): Record<string, unknown> => ({ 0: { id: 'player', kind: 'human', money: 1460, currentRegion: 'NSW' }, player: { id: 'player', kind: 'human', money: 1460, currentRegion: 'NSW' }, ai: { id: 'ai', kind: 'human', isHuman: true, money: 5715, currentRegion: 'ACT' } });
+  check('v99ss_w17_stray_solo_actor_copies_removed', 'A polluted V9.8 solo save loads without the stale copies of the player and the rival in its match state, still as a healthy save; a team save keeps its actor and team maps', () => {
+    const save = v95Fixture();
+    const solo = { ...save, gameState: { ...pollutedGameState(), selectedMode: 'ai', actorsById: w3StrayActors() } };
+    const team = { ...save, gameState: { ...rec(save.gameState), selectedMode: 'team_human_ai_vs_ai_ai', actorsById: w3StrayActors(), teamsById: { team_player: { id: 'team_player', name: 'Blue', actorIds: ['player'] } } } };
+    const txSolo = prepareSaveLoadTransaction(json(solo));
+    const txTeam = prepareSaveLoadTransaction(json(team));
+    const loadedSolo = rec(txSolo.data?.gameState);
+    const loadedTeam = rec(txTeam.data?.gameState);
+    const cleanState = rec(save.gameState);
+    return (txSolo.ok && txTeam.ok && json(loadedSolo.actorsById) === '{}' && txSolo.report.integrityStatus === 'intact' && txSolo.report.strayStateKeysRemoved === V99_LEAKED_STATE_KEYS.length + 1
+      && Object.keys(rec(loadedTeam.actorsById)).length === 3 && 'teamsById' in loadedTeam && hasStraySoloActorMap(solo.gameState) && !hasStraySoloActorMap(team.gameState) && !hasStraySoloActorMap(cleanState)
+      && cleanLoadedMatchState(cleanState) === cleanState && strayStateKeyCount(cleanState) === 0 && loadedSolo.day === save.gameState.day) || json({ solo: txSolo.report.integrityStatus, stray: txSolo.report.strayStateKeysRemoved, actors: loadedSolo.actorsById });
+  });
+  check('v99ss_w18_rival_turn_is_the_rivals_after_polluted_load', 'After a polluted solo save is loaded the rival\'s turn is not shown as YOUR TURN — even when the stale actor copies claim the rival is human', () => {
+    const save = v95Fixture();
+    const raw = { ...pollutedGameState(), selectedMode: 'ai', currentTurn: 'ai', currentActorId: 'ai', isAiTurn: undefined, takeoverSession: null, actorsById: w3StrayActors() };
+    const tx = prepareSaveLoadTransaction(json({ ...save, gameState: raw }));
+    const loaded = tx.data ? rec(tx.data.gameState) : null;
+    if (!loaded) return 'the polluted save did not load';
+    const rivalTurn = gameStateReducer(gameStateReducer(loaded, { type: 'SET_TURN', payload: 'player' }), { type: 'SET_TURN', payload: 'ai' });
+    return (isHumanPlayerTurn(raw) === true && isHumanPlayerTurn(loaded) === false && isHumanPlayerTurn(rivalTurn) === false && rivalTurn.currentActorId === 'ai' && isHumanActor('ai', loaded) === false && isHumanActor('player', loaded) === true)
+      || json({ raw: isHumanPlayerTurn(raw), loaded: isHumanPlayerTurn(loaded), after: [rivalTurn.currentTurn, rivalTurn.currentActorId] });
+  });
+  check('v99ss_w19_day_summary_kept_on_device', 'Q2-F3: "Day summary screen" is saved on this device with the other Look & sound switches; a loaded save never replaces the device\'s value; the default is not written', () => {
+    const store = createV99MemoryStorage();
+    writeProfileSettings(store, withSettings({ showDayTransition: true }));
+    const text = store.data[PROFILE_SETTINGS_STORAGE_KEY];
+    const boot = bootProfileSettings(fresh(), store, emptySlot);
+    const oldSave = stripPersistedProfileSettings(withSettings({ showDayTransition: false, totalDays: 10 }));
+    const device = withSettings({ showDayTransition: true });
+    const afterLoad = { ...device, ...oldSave };
+    writeProfileSettings(store, fresh());
+    return (text === '{"version":1,"settings":{"showDayTransition":true}}' && boot.settings.showDayTransition === true && !('showDayTransition' in bag(oldSave)) && afterLoad.showDayTransition === true && afterLoad.totalDays === 10
+      && !(PROFILE_SETTINGS_STORAGE_KEY in store.data) && persisted.includes('showDayTransition') && !V95_PROFILE_SCOPED_SETTING_KEYS.includes('showDayTransition') && json(V99_DEVICE_KEPT_SAVE_SCOPED_KEYS) === json(['showDayTransition'])
+      && SIMPLE_SETTINGS.some(row => row.key === 'showDayTransition' && row.group === 'Look & sound') && SIMPLE_SETTINGS.filter(row => row.group === 'Look & sound').every(row => persisted.includes(row.key))
+      && profileSettingsTouched(fresh(), device)) || `stored: ${text}`;
+  });
+  check('v99ss_w21_replay_studio_outside_a_match', 'The Replay Studio is drawn on the main menu and on the end screens by the top level, and by the match screen during a match (never twice)', () => {
+    return (replayStudioDrawnAtTopLevel('menu') && replayStudioDrawnAtTopLevel('end') && replayStudioDrawnAtTopLevel('start_screen') && !replayStudioDrawnAtTopLevel('game')) || 'replay studio mount';
+  });
+  check('v99ss_w20_day_summary_in_a_save_still_validates', 'Q2-F3 (old save direction): a save that carries showDayTransition still validates and keeps the key in its own settings — only the apply step leaves it to the device', () => {
+    const save = v95Fixture();
+    const withKey = { ...save, gameSettings: { ...save.gameSettings, showDayTransition: true } };
+    const tx = prepareSaveLoadTransaction(json(withKey));
+    const plain = prepareSaveLoadTransaction(json(save));
+    return (tx.ok && tx.data !== null && tx.data.gameSettings.showDayTransition === true && tx.report.integrityStatus === plain.report.integrityStatus && !('showDayTransition' in bag(stripPersistedProfileSettings(tx.data.gameSettings)))) || json({ ok: tx.ok, status: tx.report.integrityStatus });
   });
   return results;
 }
@@ -197749,9 +198181,999 @@ export function runV99PlayScreenRulesSelfTests(): V9SelfTestResult[] {
 // Gating: matchRecoveryEnabled (default OFF, profile-scoped; read with `=== true`). Off: nothing is written to
 // storage and the menu is unchanged. A resumed match goes through the normal load transaction
 // (prepareSaveLoadTransaction → applyLoadedState), never straight into the reducers.
+//
+// What is stored: the bundle the manual save builds (buildSaveData — no second save format), written compactly, with
+// one small header line in front of it (what the menu card shows; the header never enters the match). Two storage
+// keys hold the two newest copies of one match; a write always goes to the key that does NOT hold the newest complete
+// copy, so a write that is cut short can only cost the older of the two. No room for two copies → one copy is kept
+// (replaced in place); no room for one → autosave pauses for the session and the player is told once.
+// When it is written: a moment after the turn comes back to the player (and at match start), a moment after each
+// thing the player does on that turn — whether it moves the position (an action, cash, a trip, goods) or only the
+// match state behind it (a decision that costs nothing) — so a page that dies during the rival's long turn costs
+// nothing the player did; and, always, when the page is hidden or closed or "Leave match" is opened during the
+// player's turn. Never during the rival's turn, never for the guided first match, never during an isolated replay,
+// never from a reducer or a render. The copies are cleared when the match ends, when the setting is switched off, and
+// replaced when another match is started or loaded over them.
+// Determinism: nothing here draws randomness or touches match state; the clock is read only to say how old a copy is.
+// Wiring in AustraliaGame: useV99MatchRecovery (one call), the card in renderMenu, one line in the Save / Load
+// dialog, the "Leave match" wording and one condition in the leave-site warning.
 // Suite v99mr (runV99MatchRecoverySelfTests).
 // ============================================================================
 
+// ---- The stored copy ---------------------------------------------------------------------------------------------------
+/** The two storage keys of the recovery copies ("current" and "previous" — which is which is decided by their headers). */
+export const MATCH_RECOVERY_SLOT_KEYS: readonly string[] = ['aussie-adventure.v99.recovery.a', 'aussie-adventure.v99.recovery.b'];
+export const MATCH_RECOVERY_RECORD_VERSION = 1;
+/** The description an autosave bundle carries (a manual save says "Manual Save Day N" or the player's own words). */
+export const MATCH_RECOVERY_DESCRIPTION = 'Autosave';
+/** A first line longer than this is not a header (a save pasted into the slot by hand has no header line). */
+const MATCH_RECOVERY_HEADER_MAX_CHARS = 2000;
+/** How long after the turn came back, or after the player did something, the copy is made — so that what follows from it has landed. */
+export const MATCH_RECOVERY_TURN_DELAY_MS = 300;
+/** In the AI-vs-AI simulation the next AI starts after 180 ms at the earliest: the copy has to be made before that. */
+export const MATCH_RECOVERY_SPECTATOR_DELAY_MS = 100;
+/** How often the menu card's "saved … ago" is refreshed. */
+export const MATCH_RECOVERY_CARD_REFRESH_MS = 30000;
+
+/** What the menu card says about a stored match. Display only. */
+export interface MatchRecoverySummary {
+  day: number;
+  totalDays: number;
+  cash: number;
+  /** The game mode the match was started in ('ai', 'single', 'team_human_ai_vs_ai_ai' …). */
+  mode: string;
+  playerName: string;
+  region: string;
+  /** False when the copy was made while a rival was moving (only a save put there by hand can be). */
+  yourTurn: boolean;
+  /** 1-based chapter number when the match is a campaign chapter in progress, else null. */
+  campaignChapter: number | null;
+}
+
+/** The header line of a stored copy. `savedAt` is the bundle's own timestamp; it is shown, never loaded into the match. */
+export interface MatchRecoveryHeader {
+  version: 1;
+  /** Counts the copies of one match: the higher number is the newer copy. */
+  seq: number;
+  savedAt: number;
+  /** Which match the copy belongs to. Copies of another match are not kept beside it. */
+  matchId: string;
+  /** The length of the save text that follows the header; a shorter text is an incomplete write. */
+  bytes: number;
+  /** Where the match stood (see recoveryPositionMarker). */
+  marker: string;
+  summary: MatchRecoverySummary;
+}
+
+/** The parts of the match state the recovery helpers look at. */
+export interface RecoveryGameStateView { gameMode?: unknown; selectedMode?: unknown; day?: unknown; turnCounter?: unknown; currentTurn?: unknown; currentActorId?: unknown; isAiThinking?: unknown; matchEnd?: unknown }
+/** The parts of the player the recovery helpers look at. */
+export interface RecoveryPlayerView { money?: unknown; actionsUsedThisTurn?: unknown; currentRegion?: unknown; inventory?: unknown }
+
+/** The menu's name for a game mode. */
+export function recoveryModeLabel(mode: unknown): string {
+  switch (mode) {
+    case 'single': return 'Single Player';
+    case 'ai': return 'AI Opponent';
+    case 'grand_tour': return 'Grand Tour Rival Race';
+    case 'team_human_ai_vs_ai_ai': return 'Team: Human + AI vs AI + AI';
+    case 'team_ai_vs_ai': return 'Team: AI + AI vs AI + AI';
+    case 'scenario': return 'Scenario';
+    default: return 'Match';
+  }
+}
+
+/** Whether the turn is with the player in this match state (in the AI-vs-AI simulation it never is). */
+export function recoveryIsPlayersTurn(gs: RecoveryGameStateView): boolean {
+  if (gs.isAiThinking === true || gs.selectedMode === 'team_ai_vs_ai') return false;
+  if (isTeamModeSelection(typeof gs.selectedMode === 'string' ? gs.selectedMode : null)) return gs.currentActorId === 'player';
+  return gs.currentTurn !== 'ai';
+}
+
+/**
+ * Where a match stands, as one comparable value: the progress marker of SECTION 20AT (turn, day, actions used, cash)
+ * plus the region, the number of goods carried and whose turn it is. Two equal markers mean "nothing was played in
+ * between", which is what decides whether the stored copy still covers the position.
+ */
+export function recoveryPositionMarker(gs: RecoveryGameStateView, player?: RecoveryPlayerView | null): string {
+  const carried = player && Array.isArray(player.inventory) ? player.inventory.length : 0;
+  const region = player && typeof player.currentRegion === 'string' ? player.currentRegion : '';
+  return `${matchProgressMarker(gs, player)}:${region}:${carried}:${String(gs.currentTurn ?? '')}:${String(gs.currentActorId ?? '')}`;
+}
+
+/**
+ * What the menu card says about a save bundle, or null when the bundle is not a match in progress (not a save, no
+ * day, already on its result screen, or carrying an end record). Reads defensively: the input may be anything.
+ */
+export function describeRecoveryBundle(bundle: unknown): MatchRecoverySummary | null {
+  if (!v99IsPlainObject(bundle) || !v99IsPlainObject(bundle.gameState) || !v99IsPlainObject(bundle.player)) return null;
+  const gs = bundle.gameState;
+  const player = bundle.player;
+  const settings = v99IsPlainObject(bundle.gameSettings) ? bundle.gameSettings : {};
+  const day = Math.floor(Number(gs.day));
+  if (!Number.isFinite(day) || day < 1) return null;
+  const total = Math.floor(Number(settings.totalDays));
+  if (loadedMatchScreen(gs.gameMode, day, total) !== 'game' || readMatchEnd(gs) !== null) return null;
+  const cash = Number(player.money);
+  const campaign = v99IsPlainObject(bundle.campaign) ? bundle.campaign : null;
+  const chapterIndex = campaign && campaign.chapterStatus === 'playing' ? Math.floor(Number(campaign.chapterIndex)) : NaN;
+  return {
+    day,
+    totalDays: Number.isFinite(total) && total > 0 ? total : day,
+    cash: Number.isFinite(cash) ? cash : 0,
+    mode: typeof gs.selectedMode === 'string' && gs.selectedMode !== '' ? gs.selectedMode : 'single',
+    playerName: typeof player.name === 'string' && player.name.trim() !== '' ? player.name.trim().slice(0, 40) : 'Player',
+    region: typeof player.currentRegion === 'string' ? player.currentRegion.slice(0, 24) : '',
+    yourTurn: recoveryIsPlayersTurn(gs),
+    campaignChapter: Number.isFinite(chapterIndex) && chapterIndex >= 0 ? chapterIndex + 1 : null,
+  };
+}
+
+/** A stored summary read back: every field of the right kind, or null. */
+export function sanitizeRecoverySummary(raw: unknown): MatchRecoverySummary | null {
+  if (!v99IsPlainObject(raw)) return null;
+  const whole = (v: unknown, min: number): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= min ? Math.floor(v) : null);
+  const day = whole(raw.day, 1);
+  const totalDays = whole(raw.totalDays, 1);
+  if (day === null || totalDays === null || typeof raw.cash !== 'number' || !Number.isFinite(raw.cash)) return null;
+  if (typeof raw.mode !== 'string' || typeof raw.playerName !== 'string' || typeof raw.region !== 'string' || typeof raw.yourTurn !== 'boolean') return null;
+  const chapter = raw.campaignChapter === null || raw.campaignChapter === undefined ? null : whole(raw.campaignChapter, 1);
+  return { day, totalDays, cash: raw.cash, mode: raw.mode.slice(0, 40), playerName: raw.playerName.slice(0, 40), region: raw.region.slice(0, 24), yourTurn: raw.yourTurn, campaignChapter: chapter };
+}
+
+/** A stored header read back: the right version and every field of the right kind, or null (the text then counts as a bare save). */
+export function sanitizeRecoveryHeader(raw: unknown): MatchRecoveryHeader | null {
+  if (!v99IsPlainObject(raw) || raw.version !== MATCH_RECOVERY_RECORD_VERSION) return null;
+  const whole = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : null);
+  const seq = whole(raw.seq);
+  const savedAt = whole(raw.savedAt);
+  const bytes = whole(raw.bytes);
+  const summary = sanitizeRecoverySummary(raw.summary);
+  if (seq === null || savedAt === null || bytes === null || summary === null) return null;
+  if (typeof raw.matchId !== 'string' || raw.matchId === '' || raw.matchId.length > 64 || typeof raw.marker !== 'string') return null;
+  return { version: 1, seq, savedAt, matchId: raw.matchId, bytes, marker: raw.marker.slice(0, 200), summary };
+}
+
+/**
+ * The text one storage key holds for `bundle`: the header line, a line break, then the save exactly as a manual save
+ * writes it, only without the indentation (JSON never contains a raw line break, so the first one ends the header).
+ * null when the bundle is not a match in progress or cannot be written as JSON.
+ */
+export function buildRecoverySlotText(bundle: SaveGameData, seq: number, matchId: string): { text: string; header: MatchRecoveryHeader } | null {
+  const summary = describeRecoveryBundle(bundle);
+  if (!summary) return null;
+  let body = '';
+  try {
+    const text = JSON.stringify(bundle);
+    if (typeof text !== 'string') return null;
+    body = text;
+  } catch { return null; }
+  const stamp = Number(bundle.metadata ? bundle.metadata.timestamp : NaN);
+  const header: MatchRecoveryHeader = {
+    version: 1,
+    seq: Math.max(0, Math.floor(seq)),
+    savedAt: Number.isFinite(stamp) && stamp > 0 ? Math.floor(stamp) : 0,
+    matchId,
+    bytes: body.length,
+    marker: recoveryPositionMarker(bundle.gameState, bundle.player),
+    summary,
+  };
+  return { text: `${JSON.stringify(header)}\n${body}`, header };
+}
+
+/** Splits a stored text into its header and the save text. A text without a header line (a save put there by hand) is all save text. */
+export function parseRecoverySlotText(text: unknown): { header: MatchRecoveryHeader | null; body: string } | null {
+  if (typeof text !== 'string' || text === '') return null;
+  const lineEnd = text.indexOf('\n');
+  if (lineEnd > 0 && lineEnd <= MATCH_RECOVERY_HEADER_MAX_CHARS) {
+    let raw: unknown = null;
+    try { raw = JSON.parse(text.slice(0, lineEnd)); } catch { raw = null; }
+    const header = sanitizeRecoveryHeader(raw);
+    if (header) return { header, body: text.slice(lineEnd + 1) };
+  }
+  return { header: null, body: text };
+}
+
+/** One stored copy. `intact` is false when the save text is shorter or longer than its header says (an incomplete write). */
+export interface MatchRecoverySlot { key: string; header: MatchRecoveryHeader | null; body: string; intact: boolean }
+
+/** Newest first: within one match by its counter, across matches by time; a copy with a header before a bare save. */
+function compareRecoverySlots(a: MatchRecoverySlot, b: MatchRecoverySlot): number {
+  if (a.header && b.header) return a.header.matchId === b.header.matchId ? b.header.seq - a.header.seq : b.header.savedAt - a.header.savedAt;
+  if (a.header) return -1;
+  if (b.header) return 1;
+  return 0;
+}
+
+/** The stored copies, newest first. Blocked storage, a throwing storage and empty keys all read as "no copy". Only the header line is parsed. */
+export function readRecoverySlots(storage: V99StorageLike | null): MatchRecoverySlot[] {
+  if (!storage) return [];
+  const slots: MatchRecoverySlot[] = [];
+  MATCH_RECOVERY_SLOT_KEYS.forEach(key => {
+    let text: string | null = null;
+    try { text = storage.getItem(key); } catch { text = null; }
+    const parsed = parseRecoverySlotText(text);
+    if (parsed) slots.push({ key, header: parsed.header, body: parsed.body, intact: parsed.header === null || parsed.header.bytes === parsed.body.length });
+  });
+  return slots.sort(compareRecoverySlots);
+}
+
+/** What the main menu knows about the stored match without loading it. */
+export interface MatchRecoveryCard {
+  /** False when something is stored but none of it can be read (the card then only offers Discard). */
+  usable: boolean;
+  savedAt: number;
+  summary: MatchRecoverySummary | null;
+  /** True when the newest copy was unusable and this describes the one before it. */
+  olderCopy: boolean;
+  copies: number;
+}
+
+/**
+ * The menu card for what is stored, or null when nothing is. Cheap: a copy this version wrote is described by its
+ * header line alone; only a bare save (no header) is parsed to describe it. The full check happens on Resume.
+ */
+export function describeRecoverySlots(storage: V99StorageLike | null): MatchRecoveryCard | null {
+  const slots = readRecoverySlots(storage);
+  if (slots.length === 0) return null;
+  for (let index = 0; index < slots.length; index++) {
+    const slot = slots[index];
+    if (slot.header) {
+      if (slot.intact) return { usable: true, savedAt: slot.header.savedAt, summary: slot.header.summary, olderCopy: index > 0, copies: slots.length };
+      continue;
+    }
+    let parsed: unknown = null;
+    try { parsed = JSON.parse(slot.body); } catch { parsed = null; }
+    const summary = describeRecoveryBundle(parsed);
+    if (!summary) continue;
+    const stamp = v99IsPlainObject(parsed) && v99IsPlainObject(parsed.metadata) ? Number(parsed.metadata.timestamp) : NaN;
+    return { usable: true, savedAt: Number.isFinite(stamp) && stamp > 0 ? Math.floor(stamp) : 0, summary, olderCopy: index > 0, copies: slots.length };
+  }
+  return { usable: false, savedAt: 0, summary: null, olderCopy: false, copies: slots.length };
+}
+
+export type MatchRecoveryWriteReason = 'ok' | 'no_storage' | 'not_a_live_match' | 'storage_full';
+
+/** What a write did. `generations` = how many copies of this match are stored afterwards; `retried` = two did not fit, one is kept. */
+export interface MatchRecoveryWriteResult { ok: boolean; reason: MatchRecoveryWriteReason; header: MatchRecoveryHeader | null; generations: number; retried: boolean; chars: number }
+
+/**
+ * Stores `bundle` as the newest copy of match `matchId`. Never throws.
+ * - The text goes to the key that does not hold this match's newest COMPLETE copy; that copy becomes the previous
+ *   generation. (A newest copy that was cut short protects nothing: it is the one that gets replaced, and the complete
+ *   copy before it is kept.) Copies of another match (a new match was started or loaded over it) are removed once the
+ *   new copy is in place.
+ * - When the browser refuses (quota), it is tried once more, smaller: the other copy is given up and the newest
+ *   complete one is replaced in place — one generation instead of two. The content is never trimmed, so what is loaded
+ *   is always exactly what a manual save would have held.
+ * - When that fails too, nothing more is tried: this match's newest complete earlier copy is still there, untouched.
+ */
+export function writeRecoveryCopy(storage: V99StorageLike | null, bundle: SaveGameData, matchId: string): MatchRecoveryWriteResult {
+  const failed = (reason: MatchRecoveryWriteReason, chars: number, retried: boolean): MatchRecoveryWriteResult => ({ ok: false, reason, header: null, generations: 0, retried, chars });
+  if (!storage) return failed('no_storage', 0, false);
+  const slots = readRecoverySlots(storage);
+  const own = slots.filter(slot => slot.header !== null && slot.header.matchId === matchId);
+  // The copy a write must not touch is the newest one that is complete (`own` is newest first).
+  const newest = own.find(slot => slot.intact) ?? null;
+  const built = buildRecoverySlotText(bundle, own.reduce((highest, slot) => Math.max(highest, slot.header ? slot.header.seq : 0), 0) + 1, matchId);
+  if (!built) return failed('not_a_live_match', 0, false);
+  const chars = built.text.length;
+  const put = (key: string): boolean => {
+    try {
+      storage.setItem(key, built.text);
+      const back = storage.getItem(key);
+      return typeof back === 'string' && back.length === chars;
+    } catch { return false; }
+  };
+  const drop = (key: string): void => { try { storage.removeItem(key); } catch { /* a blocked storage keeps what it has */ } };
+  const target = MATCH_RECOVERY_SLOT_KEYS.find(key => !newest || key !== newest.key) ?? MATCH_RECOVERY_SLOT_KEYS[0];
+  if (put(target)) {
+    slots.forEach(slot => { if (slot.key !== target && (slot.header === null || slot.header.matchId !== matchId)) drop(slot.key); });
+    return { ok: true, reason: 'ok', header: built.header, generations: newest ? 2 : 1, retried: false, chars };
+  }
+  MATCH_RECOVERY_SLOT_KEYS.forEach(key => { if (!newest || key !== newest.key) drop(key); });
+  if (put(newest ? newest.key : target)) return { ok: true, reason: 'ok', header: built.header, generations: 1, retried: true, chars };
+  return failed('storage_full', chars, true);
+}
+
+/** What Resume found. `generation` says which copy was usable; `problems` names why a newer one was not. */
+export interface MatchRecoveryLoadResult { ok: boolean; data: SaveGameData | null; report: SaveHealthReport | null; header: MatchRecoveryHeader | null; generation: 'current' | 'previous' | null; problems: string[]; /** The storage key of the copy that was opened. */ key: string | null }
+
+/**
+ * The stored match, checked exactly as a save file is (prepareSaveLoadTransaction): the newest copy, or — when that
+ * one is incomplete, unreadable or not a match in progress — the one before it. Nothing is changed by reading.
+ */
+export function loadRecoveryCopy(storage: V99StorageLike | null): MatchRecoveryLoadResult {
+  const problems: string[] = [];
+  const slots = readRecoverySlots(storage);
+  for (let index = 0; index < slots.length; index++) {
+    const slot = slots[index];
+    const label = index === 0 ? 'newest copy' : 'earlier copy';
+    if (!slot.intact) { problems.push(`${label}: incomplete (${slot.body.length} of ${slot.header ? slot.header.bytes : 0} characters)`); continue; }
+    let tx: ReturnType<typeof prepareSaveLoadTransaction> | null = null;
+    try { tx = prepareSaveLoadTransaction(slot.body); } catch { tx = null; }
+    if (!tx || !tx.ok || !tx.data) { problems.push(`${label}: ${tx && tx.report.fatalErrors.length > 0 ? tx.report.fatalErrors[0] : 'not a readable save'}`); continue; }
+    if (!describeRecoveryBundle(tx.data)) { problems.push(`${label}: that match is already over`); continue; }
+    return { ok: true, data: tx.data, report: tx.report, header: slot.header, generation: index === 0 ? 'current' : 'previous', problems, key: slot.key };
+  }
+  return { ok: false, data: null, report: null, header: null, generation: null, problems, key: null };
+}
+
+/**
+ * Removes the stored copies (and nothing else). False when storage is blocked. Never throws.
+ * Without `matchId`: both copies, whatever they hold (Discard, the setting switched off). With it: only the copies of
+ * that match ('' = saves without a header) — a match that ends removes its own copies, not those another tab of
+ * the game wrote for another match.
+ */
+export function clearRecoveryCopies(storage: V99StorageLike | null, matchId?: string): boolean {
+  if (!storage) return false;
+  let cleared = true;
+  const remove = (key: string): void => { try { storage.removeItem(key); } catch { cleared = false; } };
+  if (matchId === undefined) MATCH_RECOVERY_SLOT_KEYS.forEach(remove);
+  else readRecoverySlots(storage).forEach(slot => { if ((slot.header ? slot.header.matchId : '') === matchId) remove(slot.key); });
+  return cleared;
+}
+
+/**
+ * After Resume had to open the earlier copy: the newer one that could not be used is removed, so that the copy that
+ * did open is the one the next write keeps — whatever was wrong with the other (cut short, garbled, already over).
+ */
+export function dropRecoveryCopiesExcept(storage: V99StorageLike | null, keepKey: string | null): void {
+  if (!storage || keepKey === null) return;
+  MATCH_RECOVERY_SLOT_KEYS.forEach(key => { if (key !== keepKey) { try { storage.removeItem(key); } catch { /* a blocked storage keeps what it has */ } } });
+}
+
+// ---- When a copy may be written ----------------------------------------------------------------------------------------
+/** Everything the "may a copy be written now?" decision looks at. */
+export interface RecoveryWriteView {
+  enabled: boolean;
+  /** Autosave was paused for this session after the browser refused to store a copy. */
+  sessionDisabled: boolean;
+  replayActive: boolean;
+  firstRunActive: boolean;
+  matchEnded: boolean;
+  gameMode: unknown;
+  selectedMode: unknown;
+  currentTurn: unknown;
+  currentActorId: unknown;
+  isAiThinking: boolean;
+}
+
+/**
+ * A copy is written only on the player's own turn of a running match (SECTION 20AT explains why a save made during
+ * the rival's turn is not a clean place to resume from): never while any AI is moving, never on the menu or the
+ * result screen, never for a match that carries an end record, never during an isolated replay, and not for the
+ * guided first match (it starts by itself at every launch until it is finished, so it could not be resumed anyway).
+ * In the AI-vs-AI simulation, where the player never has a turn, the moment between two AI turns counts.
+ */
+export function recoveryWriteAllowed(view: RecoveryWriteView): boolean {
+  if (view.enabled !== true || view.sessionDisabled || view.replayActive || view.firstRunActive) return false;
+  if (view.gameMode !== 'game' || view.matchEnded || view.isAiThinking) return false;
+  if (view.selectedMode === 'team_ai_vs_ai') return true;
+  if (isTeamModeSelection(typeof view.selectedMode === 'string' ? view.selectedMode : null)) return view.currentActorId === 'player';
+  return view.currentTurn !== 'ai';
+}
+
+/** One value per hand-back to the player: the copy at the start of a turn is made once per key. The simulation gets one per day. */
+export function recoveryTurnKey(epoch: number, gs: RecoveryGameStateView): string {
+  return `${epoch}:${Number(gs.day) || 0}:${gs.selectedMode === 'team_ai_vs_ai' ? 'day' : Number(gs.turnCounter) || 0}`;
+}
+
+/** What one session knows about its autosave. Lives in a ref of the game component; a self-test makes its own. */
+export interface MatchRecoverySession {
+  /** The browser refused a copy: nothing more is written until the setting is switched off and on again. */
+  disabled: boolean;
+  /** The player has been told about the pause. */
+  notified: boolean;
+  /** `${epoch}|${recoveryPositionMarker}` of the position the newest stored copy holds ('' = none from this session). */
+  lastMarker: string;
+  /** The same marker for the latest position seen on the player's own turn: equal to lastMarker = everything the player did is stored. */
+  playerMarker: string;
+  /**
+   * Match state changed on the player's turn since the newest copy was made without moving the position marker (a
+   * decision that costs no cash and no action, a card that was dismissed): the copy does not hold it yet.
+   */
+  dirty: boolean;
+  /** The simulation's "already copied today" key (see recoveryTurnKey). */
+  lastTurnKey: string;
+  /** The match epoch `matchId` belongs to (-1 = no copy was written or adopted for a match of this session). */
+  lineageEpoch: number;
+  matchId: string;
+  day: number | null;
+  savedAt: number | null;
+  generations: number;
+}
+
+export function createMatchRecoverySession(): MatchRecoverySession {
+  return { disabled: false, notified: false, lastMarker: '', playerMarker: '', dirty: false, lastTurnKey: '', lineageEpoch: -1, matchId: '', day: null, savedAt: null, generations: 0 };
+}
+
+/** Forgets the stored copy (it was cleared or discarded); the pause state stays. */
+export function forgetRecoveryCopy(session: MatchRecoverySession): void {
+  session.lastMarker = '';
+  session.playerMarker = '';
+  session.dirty = false;
+  session.lastTurnKey = '';
+  session.lineageEpoch = -1;
+  session.matchId = '';
+  session.day = null;
+  session.savedAt = null;
+  session.generations = 0;
+}
+
+/**
+ * The setting was switched off: the stored copies are removed and forgotten. (Otherwise the match could be played to
+ * its end unrecorded and still come back as "Resume match" when the setting is switched on again.) True when a copy
+ * was stored — the caller then says so once.
+ */
+export function switchOffMatchRecovery(session: MatchRecoverySession, storage: V99StorageLike | null): boolean {
+  const had = readRecoverySlots(storage).length > 0;
+  clearRecoveryCopies(storage);
+  forgetRecoveryCopy(session);
+  return had;
+}
+
+/** What the player is told when switching the setting off removed a stored match. */
+export function describeRecoverySwitchedOff(inMatch: boolean): string {
+  return inMatch
+    ? 'Autosave is off: the copy of this match was removed from this browser. Use Save / Load to keep the match.'
+    : 'Autosave is off: the autosaved match was removed from this browser.';
+}
+
+/** The message shown once when autosave pauses. */
+export function describeRecoveryPaused(reason: MatchRecoveryWriteReason, keptDay: number | null): string {
+  if (reason === 'no_storage') return '⚠️ Autosave cannot work here: this browser does not let the game store data. Use Save / Load to download a save file instead.';
+  return `⚠️ Autosave is paused: this browser has no room left for the recovery copy.${keptDay !== null ? ` The copy from day ${keptDay} is kept.` : ''} Use Save / Load to download a save file.`;
+}
+
+export interface RecoveryFlushInput {
+  view: RecoveryWriteView;
+  /** The match epoch (a new match or a load moves it). */
+  epoch: number;
+  /** recoveryPositionMarker of the live match. */
+  marker: string;
+  /**
+   * Store this moment even when the position marker did not move (the page is being hidden or closed, "Leave match"
+   * was opened): what the player is then told — "exactly as it stands" — has to be true of everything, not only of
+   * what the marker sees.
+   */
+  force?: boolean;
+  /** Asked for only when a copy is really written — with the setting off, storage is never touched. */
+  storage: () => V99StorageLike | null;
+  /** Builds the save bundle (the manual save's own builder). Called only when a copy is really written. */
+  build: () => SaveGameData | null;
+}
+
+export interface RecoveryFlushOutcome {
+  /**
+   * Nothing the player did would be lost by leaving now: the stored copy holds this very position — or, while a rival
+   * is moving, the player's turn exactly as they left it (only the rival's unfinished turn is played again).
+   */
+  covered: boolean;
+  wrote: boolean;
+  result: MatchRecoveryWriteResult | null;
+  /** A message for the player (only the first time autosave pauses). */
+  notice: string | null;
+}
+
+/**
+ * One autosave attempt. Writes when a copy may be written now and the position moved since the last copy, or match
+ * state changed behind an unmoved position (`session.dirty`), or the caller asks for this moment to be stored
+ * (`force`); otherwise it only answers whether the stored copy covers the current position. A refused write pauses
+ * autosave for the session (the caller shows `notice` once). Never throws.
+ */
+export function flushMatchRecovery(session: MatchRecoverySession, input: RecoveryFlushInput): RecoveryFlushOutcome {
+  const marker = `${input.epoch}|${input.marker}`;
+  const idle = (covered: boolean): RecoveryFlushOutcome => ({ covered, wrote: false, result: null, notice: null });
+  if (input.view.enabled !== true) return idle(false);
+  if (!recoveryWriteAllowed({ ...input.view, sessionDisabled: session.disabled })) {
+    const coverage = recoveryCoverageOf(session, input.epoch, marker, false);
+    return idle(coverage === 'exact' || coverage === 'turn');
+  }
+  session.playerMarker = marker;
+  if (session.lastMarker === marker && !session.dirty && input.force !== true) return idle(true);
+  let bundle: SaveGameData | null = null;
+  try { bundle = input.build(); } catch { bundle = null; }
+  if (!bundle) return idle(false);
+  if (session.lineageEpoch !== input.epoch || session.matchId === '') {
+    const stamp = Number(bundle.metadata ? bundle.metadata.timestamp : NaN);
+    session.lineageEpoch = input.epoch;
+    session.matchId = `${Number.isFinite(stamp) && stamp > 0 ? Math.floor(stamp).toString(36) : '0'}-${input.epoch}`;
+    session.day = null;
+    session.savedAt = null;
+    session.generations = 0;
+  }
+  let storage: V99StorageLike | null = null;
+  try { storage = input.storage(); } catch { storage = null; }
+  const result = writeRecoveryCopy(storage, bundle, session.matchId);
+  if (result.ok && result.header) {
+    session.lastMarker = marker;
+    session.dirty = false;
+    session.day = result.header.summary.day;
+    session.savedAt = result.header.savedAt;
+    session.generations = result.generations;
+    return { covered: true, wrote: true, result, notice: null };
+  }
+  if (result.reason === 'not_a_live_match') return { covered: false, wrote: false, result, notice: null };
+  session.disabled = true;
+  const notice = session.notified ? null : describeRecoveryPaused(result.reason, session.day);
+  session.notified = true;
+  return { covered: false, wrote: false, result, notice };
+}
+
+/** After Resume: the session carries on the stored match's line of copies, and the loaded position counts as stored. */
+export function adoptRecoveryLineage(session: MatchRecoverySession, header: MatchRecoveryHeader | null, epoch: number, data: SaveGameData): void {
+  session.lineageEpoch = epoch;
+  session.matchId = header ? header.matchId : '';
+  session.lastMarker = `${epoch}|${recoveryPositionMarker(data.gameState, data.player)}`;
+  session.playerMarker = recoveryIsPlayersTurn(data.gameState) ? session.lastMarker : '';
+  session.dirty = false;
+  session.lastTurnKey = recoveryTurnKey(epoch, data.gameState);
+  session.day = Number(data.gameState.day) || null;
+  session.savedAt = header ? header.savedAt : null;
+  session.generations = header ? 1 : 0;
+}
+
+// ---- What the player is told -------------------------------------------------------------------------------------------
+/** "3 minutes ago" for the menu card. `now` is passed in (display only — the clock never reaches the match). */
+export function describeRecoveryAge(savedAt: number, now: number): string {
+  if (!Number.isFinite(savedAt) || savedAt <= 0 || !Number.isFinite(now)) return 'at an unknown time';
+  const seconds = Math.floor((now - savedAt) / 1000);
+  if (seconds < 60) return 'just now';
+  const count = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'} ago`;
+  if (seconds < 3600) return count(Math.floor(seconds / 60), 'minute');
+  if (seconds < 86400) return count(Math.floor(seconds / 3600), 'hour');
+  return count(Math.floor(seconds / 86400), 'day');
+}
+
+/** The wording of the "Resume match" card. */
+export interface MatchRecoveryCardView { title: string; headline: string; detail: string; note: string | null; usable: boolean }
+
+export function buildRecoveryCardView(card: MatchRecoveryCard, now: number): MatchRecoveryCardView {
+  const s = card.summary;
+  if (!card.usable || !s) {
+    return { title: 'Autosaved match', headline: 'An autosaved match is stored in this browser, but it cannot be read.', detail: 'Discard it to remove it.', note: null, usable: false };
+  }
+  const chapter = s.campaignChapter !== null ? ` · Campaign chapter ${s.campaignChapter}` : '';
+  const where = s.region !== '' ? ` in ${s.region}` : '';
+  const turn = s.yourTurn || s.mode === 'team_ai_vs_ai' ? '' : " · saved during a rival's turn";
+  return {
+    title: 'Resume match',
+    headline: `Day ${s.day} of ${s.totalDays} · ${fmtMoney(s.cash)} · ${recoveryModeLabel(s.mode)}${chapter}`,
+    detail: `${s.playerName}${where} · autosaved ${describeRecoveryAge(card.savedAt, now)}${turn}`,
+    note: card.olderCopy ? 'The newest copy could not be read; this is the one before it.' : null,
+    usable: true,
+  };
+}
+
+/** Shown when Resume found nothing usable. */
+export function describeRecoveryLoadFailure(problems: readonly string[]): string {
+  return `The autosaved match could not be opened${problems.length > 0 ? ` (${problems.slice(0, 2).join('; ')})` : ''}. Discard it, or load a save file with Save / Load.`;
+}
+
+/**
+ * How well the stored copy covers the match right now: 'exact' this very position; 'turn' the player's turn exactly
+ * as they left it (a rival is moving — only its unfinished turn would be played again); 'earlier' an older position,
+ * or this position without the last thing the player decided; 'none' nothing of this match.
+ */
+export type RecoveryCoverage = 'exact' | 'turn' | 'earlier' | 'none';
+
+/**
+ * The coverage for a session. `marker` is `${epoch}|${recoveryPositionMarker}` of the live match; `writable` says a
+ * copy may be written right now (it then will be, before anything is lost — when the page closes, when "Leave match"
+ * opens — see RecoveryFlushInput.force), which makes the coverage exact. A copy that does not hold everything yet
+ * (`session.dirty`) never counts as 'exact' or 'turn' by itself.
+ */
+export function recoveryCoverageOf(session: MatchRecoverySession, epoch: number, marker: string, writable: boolean): RecoveryCoverage {
+  const mine = session.lineageEpoch === epoch && session.lastMarker !== '';
+  if (!session.disabled && (writable || (mine && !session.dirty && session.lastMarker === marker))) return 'exact';
+  if (!session.disabled && mine && !session.dirty && session.lastMarker === session.playerMarker) return 'turn';
+  return mine && session.day !== null ? 'earlier' : 'none';
+}
+
+/**
+ * The "Leave match" wording with autosave on. 'exact' and 'turn': nothing the player did is lost by leaving — the line
+ * about losing progress is replaced and the leave button says so. 'earlier' (the last thing the player did was not
+ * stored yet, or autosave is paused): one line says which day the copy is from. 'none': the prompt is returned as it is.
+ */
+export function describeLeaveMatchWithRecovery(prompt: LeaveMatchPrompt, coverage: RecoveryCoverage, copyDay: number | null): LeaveMatchPrompt {
+  if (coverage === 'none') return prompt;
+  const lines = prompt.lines.slice();
+  if (coverage === 'exact' || coverage === 'turn') {
+    const kept = coverage === 'exact'
+      ? 'Autosave keeps this match in this browser exactly as it stands: Resume match on the main menu brings you back. A save file is only needed to keep it somewhere else.'
+      : `Autosave keeps your turn${copyDay !== null ? ` on day ${copyDay}` : ''} in this browser exactly as you left it: Resume match on the main menu carries on from there, and the rival plays its turn again. A save file is only needed to keep it somewhere else.`;
+    if (lines.length > 1) lines[1] = kept; else lines.push(kept);
+    // A campaign chapter: "Continue Campaign starts it again, or load your save …" — with autosave it is Resume match that carries on.
+    const worded = lines.map(line => line.replace(', or load your save to carry on from here.', '; Resume match carries on from here instead.'));
+    return { ...prompt, lines: worded, leaveLabel: 'Leave (the autosave keeps it)' };
+  }
+  lines.splice(Math.min(2, lines.length), 0, `Autosave has a copy from ${copyDay !== null ? `your turn on day ${copyDay}` : 'your last turn'}: Resume match on the main menu carries on from there.`);
+  return { ...prompt, lines };
+}
+
+/** Where the autosave stands, for the Save / Load dialog. */
+export interface MatchRecoveryStatus { state: 'off' | 'waiting' | 'saved' | 'paused'; day: number | null; savedAt: number | null; generations: number }
+
+export function recoveryStatusOf(session: MatchRecoverySession, enabled: boolean, epoch: number): MatchRecoveryStatus {
+  const mine = session.lineageEpoch === epoch && session.day !== null;
+  const day = mine ? session.day : null;
+  const savedAt = mine ? session.savedAt : null;
+  if (!enabled) return { state: 'off', day: null, savedAt: null, generations: 0 };
+  if (session.disabled) return { state: 'paused', day, savedAt, generations: mine ? session.generations : 0 };
+  return { state: mine ? 'saved' : 'waiting', day, savedAt, generations: mine ? session.generations : 0 };
+}
+
+/** The one autosave line of the Save / Load dialog: `text`, then (when off) a button, then `tail`. */
+export interface AutosaveLineView { text: string; actionLabel: string | null; tail: string; tone: 'off' | 'on' | 'paused' }
+
+export function describeAutosaveLine(status: MatchRecoveryStatus, inMatch: boolean, now: number): AutosaveLineView {
+  if (status.state === 'off') return { text: 'Autosave is off —', actionLabel: 'turn it on', tail: 'to keep a copy of your match in this browser and resume it after a reload or a crash.', tone: 'off' };
+  if (status.state === 'paused') {
+    return { text: `⚠️ Autosave is paused: this browser would not store the copy.${status.day !== null ? ` The copy from day ${status.day} is kept.` : ''} Download a save file to be safe.`, actionLabel: null, tail: '', tone: 'paused' };
+  }
+  if (!inMatch) return { text: '✅ Autosave is on — a match in progress is offered as "Resume match" on the main menu.', actionLabel: null, tail: '', tone: 'on' };
+  if (status.day === null) return { text: '✅ Autosave is on — a copy is made at the start of each of your turns.', actionLabel: null, tail: '', tone: 'on' };
+  return { text: `✅ Autosave is on — latest copy: day ${status.day}${status.savedAt !== null ? `, ${describeRecoveryAge(status.savedAt, now)}` : ''}.`, actionLabel: null, tail: '', tone: 'on' };
+}
+
+/**
+ * The sentence the AI-memory settings use to say how a match is saved. With autosave off it is the V9.8 sentence,
+ * word for word; with autosave on it no longer claims that a manual download is the only way.
+ */
+export function describeMatchSavesNote(autosaveOn: boolean): string {
+  return autosaveOn
+    ? 'A match is kept in this browser by Autosave & Resume (Settings → New in V9.9); a save file remains a manual JSON download and load.'
+    : 'Match saves remain a manual JSON download and load.';
+}
+
+// ---- Components ----------------------------------------------------------------------------------------------------------
+/** The "Resume match" card of the main menu. Hook-free (the wrapper below holds the "really discard?" step), so a test can press its buttons. */
+export function V99ResumeMatchCardBody(props: { view: MatchRecoveryCardView; isDark: boolean; confirmingDiscard: boolean; onResume: () => void; onAskDiscard: () => void; onDiscard: () => void; onKeep: () => void }): React.ReactElement {
+  const { view, isDark } = props;
+  const quiet = isDark ? 'bg-gray-700/80 hover:bg-gray-600 text-gray-200 border border-gray-600' : 'bg-white/80 hover:bg-white text-gray-700 border border-gray-200 shadow-sm';
+  return (
+    <div data-testid="v99-resume-card" role="region" aria-label={view.title} className="mb-6 rounded-xl border border-emerald-400 bg-emerald-500/10 px-4 py-3 text-left">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-bold">▶️ {view.title}</span>
+      </div>
+      <div className="text-sm font-semibold mt-1" data-testid="v99-resume-headline">{view.headline}</div>
+      <div className="text-xs opacity-80 mt-1" data-testid="v99-resume-detail">{view.detail}</div>
+      {view.note && <div className="text-xs text-yellow-500 mt-1" data-testid="v99-resume-note">{view.note}</div>}
+      {props.confirmingDiscard ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="v99-resume-confirm">
+          <span className="text-sm flex-1">Discard this autosaved match? It cannot be brought back.</span>
+          <button type="button" onClick={props.onDiscard} data-testid="v99-resume-discard-confirm" className="px-3 py-2 rounded-lg text-sm font-semibold bg-red-600 hover:bg-red-500 text-white">Yes, discard</button>
+          <button type="button" onClick={props.onKeep} data-testid="v99-resume-discard-keep" className={`px-3 py-2 rounded-lg text-sm font-semibold ${quiet}`}>Keep it</button>
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {view.usable && <button type="button" onClick={props.onResume} data-testid="v99-resume-match" className="flex-1 py-3 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-500">Resume</button>}
+          <button type="button" onClick={props.onAskDiscard} data-testid="v99-resume-discard" className={`px-3 py-2 rounded-lg text-sm font-semibold ${quiet}`}>Discard</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The card with its "really discard?" step. */
+export const V99ResumeMatchCard: React.FC<{ view: MatchRecoveryCardView; isDark: boolean; onResume: () => void; onDiscard: () => void }> = ({ view, isDark, onResume, onDiscard }) => {
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  // The card sits below the character and mode choices: when it appears, bring it into view once (no animation).
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const node = anchorRef.current;
+    if (node && typeof node.scrollIntoView === 'function') node.scrollIntoView({ block: 'center' });
+  }, []);
+  return (
+    <div ref={anchorRef}>
+      <V99ResumeMatchCardBody view={view} isDark={isDark} confirmingDiscard={confirmingDiscard} onResume={onResume}
+        onAskDiscard={() => setConfirmingDiscard(true)} onDiscard={() => { setConfirmingDiscard(false); onDiscard(); }} onKeep={() => setConfirmingDiscard(false)} />
+    </div>
+  );
+};
+
+/** The autosave line of the Save / Load dialog. Hook-free. */
+export function V99AutosaveLine(props: { view: AutosaveLineView; onEnable: () => void }): React.ReactElement {
+  const { view } = props;
+  return (
+    <p className="text-xs opacity-75 text-center" data-testid="v99-autosave-line" data-tone={view.tone}>
+      {view.text}
+      {view.actionLabel !== null && <>{' '}<button type="button" onClick={props.onEnable} data-testid="v99-autosave-enable" className="underline font-semibold">{view.actionLabel}</button>{' '}{view.tail}</>}
+    </p>
+  );
+}
+
+// ---- The live wiring (one hook, called once by AustraliaGame) -----------------------------------------------------------
+/** Why a copy is being written: the position moved on the player's turn, the page is being hidden, the page is being left, "Leave match" was opened. */
+export type RecoveryFlushReason = 'turn' | 'hidden' | 'unload' | 'leave';
+
+/** The flush a component starts with (before the hook has installed the real one): writes nothing, covers nothing. */
+export function matchRecoveryNoFlush(_reason: RecoveryFlushReason): boolean {
+  return false;
+}
+
+/** What the autosave last cost, for a diagnostics read-out and for measuring (written only by the mounted game). */
+export interface MatchRecoveryStats { writes: number; /** Of `writes`: copies made although the position marker had not moved (state changed behind it, or the moment was asked for). */ stateWrites: number; failures: number; lastReason: string; lastBuildMs: number; lastStoreMs: number; lastChars: number; lastGenerations: number }
+export const V99_MATCH_RECOVERY_STATS: MatchRecoveryStats = { writes: 0, stateWrites: 0, failures: 0, lastReason: '', lastBuildMs: 0, lastStoreMs: 0, lastChars: 0, lastGenerations: 0 };
+
+/**
+ * The match state whose identity the autosave watches. The reducers and setters hand out a new object whenever
+ * something changes, so "the same objects as when the copy was made" means the copy holds all of it — which the
+ * position marker alone cannot say (a decision that costs nothing moves no part of the marker).
+ */
+export interface RecoveryStateParts { gameState: unknown; player: unknown; parts: readonly unknown[] }
+
+export function sameRecoveryState(a: RecoveryStateParts | null, b: RecoveryStateParts | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.gameState === b.gameState && a.player === b.player && a.parts.length === b.parts.length && a.parts.every((part, index) => part === b.parts[index]);
+}
+
+/**
+ * On the player's turn, match state that is not what the newest copy was made from has yet to be stored (the caller
+ * then marks the session dirty). Never during a rival's turn (what a rival changes is not the player's to lose — its
+ * turn is played again), and not in the simulation, where nobody decides anything and one copy a day is the rule.
+ */
+export function recoveryStateIsUnstored(view: RecoveryWriteView, copied: RecoveryStateParts | null, live: RecoveryStateParts): boolean {
+  if (view.selectedMode === 'team_ai_vs_ai' || !recoveryWriteAllowed(view)) return false;
+  return !sameRecoveryState(copied, live);
+}
+
+/**
+ * Whether a flush stores this moment whatever the position marker says (RecoveryFlushInput.force): always when the
+ * page is hidden or closed or "Leave match" is opened — except when the newest copy was built by this very builder.
+ * (buildSaveData is memoised on everything a save holds, so the same builder would build the very same bundle; a
+ * closing page asks two or three times in a row.) The copy a moment after a move ('turn') is never forced.
+ */
+export function recoveryFlushIsForced(reason: RecoveryFlushReason, copiedBuilder: unknown, builder: unknown): boolean {
+  return reason !== 'turn' && (copiedBuilder === null || copiedBuilder !== builder);
+}
+
+/** What AustraliaGame hands the hook on every render. */
+export interface V99MatchRecoveryHost {
+  enabled: boolean;
+  gameState: RecoveryGameStateView;
+  player: RecoveryPlayerView;
+  /** The other match state a save holds (the rival, the actors, the teams, the player's automations): watched by identity, like gameState and player. */
+  matchParts: readonly unknown[];
+  replayActive: boolean;
+  firstRunActive: boolean;
+  /** A Rematch is passing through the menu for one unpainted render: the stored match is not looked up then. */
+  rematchPending: boolean;
+  leaveDialogOpen: boolean;
+  epochRef: { readonly current: number };
+  aiThinkingRef: { readonly current: boolean };
+  /** Always the latest buildSaveData (the manual save's builder). */
+  buildSaveDataRef: { readonly current: (description?: string) => SaveGameData };
+  applyLoadedState: (data: SaveGameData) => boolean;
+  adoptLoadedCampaign: (data: SaveGameData) => void;
+  notify: (message: string, type?: 'info' | 'success' | 'warning' | 'error', persistent?: boolean, subtype?: NotificationType) => void;
+  /** Gives the messages a Resume raised the loaded match's day (they are raised while the menu's state is still current). */
+  stampLoadMessages: (day: number) => void;
+  /** Receives the flush, so code declared earlier in the component (the leave-site warning) can call it. */
+  flushRef: { current: (reason: RecoveryFlushReason) => boolean };
+}
+
+export interface V99MatchRecoveryApi {
+  /** The menu card, or null (setting off, not on the menu, or nothing stored). */
+  card: MatchRecoveryCardView | null;
+  status: MatchRecoveryStatus;
+  coverage: RecoveryCoverage;
+  resume: () => void;
+  discard: () => void;
+}
+
+/**
+ * Match Recovery, live. With the setting off every effect returns at its first line: storage is neither read nor
+ * written and no listener is registered. With it on:
+ * - a moment after the turn is back with the player (and at match start), and a moment after each thing the player
+ *   does on that turn — whether it moves the position marker or only the match state behind it — a copy is written;
+ * - when the page is hidden or closed on the player's turn, that moment is written (unless the newest copy was built
+ *   from this very state);
+ * - when "Leave match" is opened the same happens, so the question can say truthfully what is kept;
+ * - on the main menu the stored match is looked up once (header line only) for the "Resume match" card;
+ * - when the autosaved match reaches its result screen its copies are removed; when the setting is switched off, all are.
+ * Resume loads through prepareSaveLoadTransaction → applyLoadedState, then lets the campaign adopt a chapter bundle.
+ */
+export function useV99MatchRecovery(host: V99MatchRecoveryHost): V99MatchRecoveryApi {
+  const hostRef = useRef(host);
+  hostRef.current = host;
+  const sessionRef = useRef<MatchRecoverySession | null>(null);
+  if (sessionRef.current === null) sessionRef.current = createMatchRecoverySession();
+  const session = sessionRef.current;
+  const [, setRevision] = useState(0);
+  const [cardRevision, setCardRevision] = useState(0);
+  const [card, setCard] = useState<{ card: MatchRecoveryCard; now: number } | null>(null);
+  // The match epoch is a ref: a load at the very same day and turn would otherwise not be noticed.
+  const [epochSeen, setEpochSeen] = useState(host.epochRef.current);
+  useEffect(() => { if (hostRef.current.epochRef.current !== epochSeen) setEpochSeen(hostRef.current.epochRef.current); });
+  // What the newest copy of this session was made from: the match state objects and the builder (buildSaveData is
+  // memoised on everything a save holds, so "the same builder" means "the very same bundle").
+  const copiedRef = useRef<{ state: RecoveryStateParts; build: unknown } | null>(null);
+  const stateOf = (h: V99MatchRecoveryHost): RecoveryStateParts => ({ gameState: h.gameState, player: h.player, parts: h.matchParts });
+  // A value that moves whenever the watched match state does (the timing effect below depends on it).
+  const stateSeenRef = useRef<{ state: RecoveryStateParts; revision: number } | null>(null);
+  if (stateSeenRef.current === null || !sameRecoveryState(stateSeenRef.current.state, stateOf(host))) stateSeenRef.current = { state: stateOf(host), revision: (stateSeenRef.current ? stateSeenRef.current.revision : 0) + 1 };
+  // (Not in the simulation: its one copy a day is timed between two AI turns and must not be put off by every change.)
+  const stateRevision = host.gameState.selectedMode === 'team_ai_vs_ai' ? 0 : stateSeenRef.current.revision;
+
+  const gs = host.gameState;
+  const matchEnded = readMatchEnd(gs) !== null;
+  const viewOf = (h: V99MatchRecoveryHost): RecoveryWriteView => ({
+    enabled: h.enabled, sessionDisabled: session.disabled, replayActive: h.replayActive, firstRunActive: h.firstRunActive,
+    matchEnded: readMatchEnd(h.gameState) !== null, gameMode: h.gameState.gameMode, selectedMode: h.gameState.selectedMode,
+    currentTurn: h.gameState.currentTurn, currentActorId: h.gameState.currentActorId,
+    isAiThinking: h.gameState.isAiThinking === true || h.aiThinkingRef.current === true,
+  });
+  /** On the player's turn: match state that is not what the newest copy was made from has yet to be stored. */
+  const noteState = (h: V99MatchRecoveryHost, view: RecoveryWriteView): void => {
+    if (recoveryStateIsUnstored(view, copiedRef.current ? copiedRef.current.state : null, stateOf(h))) session.dirty = true;
+  };
+
+  const flush = (reason: RecoveryFlushReason): boolean => {
+    const h = hostRef.current;
+    if (!h.enabled) return false;
+    let buildMs = 0;
+    const started = v95Now();
+    const shownBefore = `${session.disabled}:${session.lineageEpoch}:${session.day}:${session.generations}`;
+    const view = viewOf(h);
+    noteState(h, view);
+    const builder = h.buildSaveDataRef.current;
+    const marker = recoveryPositionMarker(h.gameState, h.player);
+    const unmoved = session.lastMarker === `${h.epochRef.current}|${marker}`;
+    const outcome = flushMatchRecovery(session, {
+      view,
+      epoch: h.epochRef.current,
+      marker,
+      // Hidden, closed, "Leave match": this moment is stored whatever the marker says — unless the newest copy was
+      // built by this very builder (nothing a save holds has changed; a closing page asks twice in a row).
+      force: recoveryFlushIsForced(reason, copiedRef.current ? copiedRef.current.build : null, builder),
+      storage: v99BrowserStorage,
+      build: () => {
+        const t0 = v95Now();
+        const bundle = builder(MATCH_RECOVERY_DESCRIPTION);
+        buildMs = v95Now() - t0;
+        rememberEmergencySave(V99_EMERGENCY_SAVE, bundle); // the error screen's copy is this same bundle
+        return bundle;
+      },
+    });
+    if (outcome.wrote) copiedRef.current = { state: stateOf(h), build: builder };
+    if (outcome.result) {
+      const stats = V99_MATCH_RECOVERY_STATS;
+      if (outcome.wrote) { stats.writes += 1; if (unmoved) stats.stateWrites += 1; } else stats.failures += 1;
+      stats.lastReason = `${reason}:${outcome.result.reason}${outcome.result.retried ? ':one-generation' : ''}`;
+      stats.lastBuildMs = Math.round(buildMs * 100) / 100;
+      stats.lastStoreMs = Math.round((v95Now() - started - buildMs) * 100) / 100;
+      stats.lastChars = outcome.result.chars;
+      stats.lastGenerations = outcome.result.generations;
+    }
+    // Redraw only when what the Save / Load line and the leave question show has changed (not after every copy).
+    if (shownBefore !== `${session.disabled}:${session.lineageEpoch}:${session.day}:${session.generations}`) setRevision(v => v + 1);
+    if (outcome.notice) h.notify(outcome.notice, 'warning', true, 'system');
+    return outcome.covered;
+  };
+  host.flushRef.current = flush;
+
+  // Switching the setting on (again) lifts a pause: the browser may have room now.
+  useEffect(() => {
+    if (!host.enabled) return;
+    if (session.disabled || session.notified) { session.disabled = false; session.notified = false; setRevision(v => v + 1); }
+  }, [host.enabled]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Switching the setting off removes the stored copies: with the setting off nothing is recorded, so a copy left
+  // behind would go stale — and a match finished in the meantime would be offered as "Resume match" later.
+  const wasEnabledRef = useRef(host.enabled);
+  useEffect(() => {
+    const was = wasEnabledRef.current;
+    wasEnabledRef.current = host.enabled;
+    if (!was || host.enabled) return;
+    copiedRef.current = null;
+    // Said as a kept warning: a plain info line is filtered out of the lane in the quieter guidance modes, and this one
+    // answers what the player just did in the settings window (it is drawn over it — see v99ToastShowsOverModal).
+    if (switchOffMatchRecovery(session, v99BrowserStorage())) hostRef.current.notify(describeRecoverySwitchedOff(hostRef.current.gameState.gameMode === 'game'), 'warning', true, 'system');
+    setRevision(v => v + 1);
+  }, [host.enabled]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The copy at the start of a turn (and of the match) and after each thing the player does: a moment after the
+  // position moved — or the match state behind an unmoved position did (a decision that costs nothing) — on the
+  // player's turn only. (The simulation, where every moment is an AI's, gets one copy per day.)
+  const position = recoveryPositionMarker(gs, host.player);
+  useEffect(() => {
+    if (!host.enabled) return undefined;
+    const h = hostRef.current;
+    const view = viewOf(h);
+    // Scheduled on what the state says; the "AI is moving" ref (the team layer sets no state for it) is checked again
+    // when the moment has passed — flushMatchRecovery writes nothing while any AI moves.
+    if (!recoveryWriteAllowed({ ...view, isAiThinking: h.gameState.isAiThinking === true })) return undefined;
+    const epoch = h.epochRef.current;
+    const here = `${epoch}|${position}`;
+    if (recoveryWriteAllowed(view)) session.playerMarker = here;
+    noteState(h, view);
+    const simulation = gs.selectedMode === 'team_ai_vs_ai';
+    const key = recoveryTurnKey(epoch, h.gameState);
+    if ((session.lastMarker === here && !session.dirty) || (simulation && session.lastTurnKey === key)) return undefined;
+    const timer = setTimeout(() => {
+      const live = hostRef.current;
+      if (live.epochRef.current !== epoch) return;
+      if (live.flushRef.current('turn')) session.lastTurnKey = key;
+    }, simulation ? MATCH_RECOVERY_SPECTATOR_DELAY_MS : MATCH_RECOVERY_TURN_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [host.enabled, epochSeen, position, stateRevision, gs.gameMode, gs.selectedMode, gs.isAiThinking, host.replayActive, host.firstRunActive, matchEnded]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The page is hidden or closed: keep this moment (only on the player's turn — see recoveryWriteAllowed).
+  useEffect(() => {
+    if (!host.enabled || gs.gameMode !== 'game' || typeof window === 'undefined' || typeof document === 'undefined') return undefined;
+    const onVisibility = () => { if (document.visibilityState === 'hidden') hostRef.current.flushRef.current('hidden'); };
+    const onPageHide = () => { hostRef.current.flushRef.current('hidden'); };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', onPageHide);
+    return () => { document.removeEventListener('visibilitychange', onVisibility); window.removeEventListener('pagehide', onPageHide); };
+  }, [host.enabled, gs.gameMode]);
+
+  // "Leave match" was opened: keep this position, so the question can say what leaving costs.
+  useEffect(() => {
+    if (host.enabled && host.leaveDialogOpen) hostRef.current.flushRef.current('leave');
+  }, [host.enabled, host.leaveDialogOpen]);
+
+  // The autosaved match is over: a finished match is not offered as "in progress". Only this match's own copies are
+  // removed (the game open in a second tab may have stored another match since).
+  useEffect(() => {
+    if (!host.enabled || (gs.gameMode !== 'end' && !matchEnded)) return;
+    if (session.lineageEpoch !== hostRef.current.epochRef.current) return;
+    clearRecoveryCopies(v99BrowserStorage(), session.matchId);
+    forgetRecoveryCopy(session);
+    copiedRef.current = null;
+    setRevision(v => v + 1);
+  }, [host.enabled, gs.gameMode, matchEnded]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The main menu looks the stored match up (before the menu is painted, so the card does not pop in afterwards).
+  useLayoutEffect(() => {
+    if (!host.enabled || gs.gameMode !== 'menu' || host.rematchPending) { setCard(previous => (previous === null ? previous : null)); return undefined; }
+    const found = describeRecoverySlots(v99BrowserStorage());
+    setCard(found ? { card: found, now: Date.now() } : null);
+    if (!found || typeof window === 'undefined') return undefined;
+    const timer = window.setInterval(() => setCard(previous => (previous ? { card: previous.card, now: Date.now() } : previous)), MATCH_RECOVERY_CARD_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [host.enabled, gs.gameMode, host.rematchPending, cardRevision]);
+
+  const resume = () => {
+    const h = hostRef.current;
+    if (!h.enabled) return;
+    const storage = v99BrowserStorage();
+    const found = loadRecoveryCopy(storage);
+    if (!found.ok || !found.data) {
+      h.notify(describeRecoveryLoadFailure(found.problems), 'error', true, 'system');
+      setCardRevision(v => v + 1);
+      return;
+    }
+    if (!h.applyLoadedState(found.data)) return;
+    h.adoptLoadedCampaign(found.data);
+    adoptRecoveryLineage(session, found.header, h.epochRef.current, found.data);
+    copiedRef.current = null; // the loaded match is stored again once it has settled (the load path recomputes derived state)
+    if (found.generation === 'previous') {
+      dropRecoveryCopiesExcept(storage, found.key); // the copy that opened is now the one to keep
+      h.notify('The newest autosave could not be read, so the one before it was opened.', 'warning', true, 'system');
+      h.stampLoadMessages(Number(found.data.gameState.day) || 1);
+    }
+    setRevision(v => v + 1);
+  };
+  const discard = () => {
+    const h = hostRef.current;
+    if (!h.enabled) return;
+    clearRecoveryCopies(v99BrowserStorage());
+    forgetRecoveryCopy(session);
+    copiedRef.current = null;
+    setCardRevision(v => v + 1);
+    h.notify('Autosaved match discarded.', 'info');
+  };
+
+  const epochNow = host.epochRef.current;
+  const status = recoveryStatusOf(session, host.enabled, epochNow);
+  const coverage: RecoveryCoverage = host.enabled && gs.gameMode === 'game' ? recoveryCoverageOf(session, epochNow, `${epochNow}|${position}`, recoveryWriteAllowed(viewOf(host))) : 'none';
+  return { card: host.enabled && card ? buildRecoveryCardView(card.card, card.now) : null, status, coverage, resume, discard };
+}
+
+// ---- Self-tests (v99mr) ---------------------------------------------------------------------------------------------------
 export function runV99MatchRecoverySelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
   const check = (id: string, name: string, fn: () => true | string) => {
@@ -197759,7 +199181,581 @@ export function runV99MatchRecoverySelfTests(): V9SelfTestResult[] {
     catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
   };
   check('v99mr_00_registered', 'Suite v99mr is registered in V95_EXISTING_SUITES', () => V95_EXISTING_SUITES.some(s => s.id === 'v99mr') || 'v99mr is not registered');
-  // tests are added by the owning work package
+  const json = (v: unknown) => JSON.stringify(v);
+  const [KEY_A, KEY_B] = MATCH_RECOVERY_SLOT_KEYS;
+  /** A save bundle of a match in progress on `day` (the player's turn), stamped so that a later day is a later save. */
+  const fx = (day: number, over: { money?: number; mode?: string } = {}): SaveGameData => {
+    const bundle = createV95SaveFixture({ day, money: over.money ?? 1000 + day * 10, mode: over.mode });
+    return { ...bundle, metadata: { ...bundle.metadata, timestamp: 1700000000000 + day * 60000, saveDescription: MATCH_RECOVERY_DESCRIPTION } };
+  };
+  const withState = (bundle: SaveGameData, patch: Record<string, unknown>): SaveGameData => ({ ...bundle, gameState: { ...bundle.gameState, ...patch } as SaveGameData['gameState'] });
+  /** A storage that refuses a write once the stored characters would exceed `capacity` (what a full browser quota does). */
+  const limited = (capacity: number, initial: Record<string, string> = {}) => {
+    const inner = createV99MemoryStorage(initial);
+    const usedWithout = (skip: string) => Object.keys(inner.data).reduce((n, k) => n + (k === skip ? 0 : inner.data[k].length), 0);
+    const storage: V99StorageLike = {
+      getItem: key => inner.getItem(key),
+      setItem: (key, value) => { if (usedWithout(key) + value.length > capacity) throw new Error('QuotaExceededError'); inner.setItem(key, value); },
+      removeItem: key => inner.removeItem(key),
+    };
+    return { storage, data: inner.data };
+  };
+  /** A storage that counts every access. */
+  const counting = () => {
+    const inner = createV99MemoryStorage();
+    const calls = { get: 0, set: 0, remove: 0 };
+    const storage: V99StorageLike = { getItem: k => { calls.get += 1; return inner.getItem(k); }, setItem: (k, v) => { calls.set += 1; inner.setItem(k, v); }, removeItem: k => { calls.remove += 1; inner.removeItem(k); } };
+    return { storage, calls, data: inner.data };
+  };
+  const hostile: V99StorageLike = { getItem: () => { throw new Error('SecurityError'); }, setItem: () => { throw new Error('SecurityError'); }, removeItem: () => { throw new Error('SecurityError'); } };
+  const view = (over: Partial<RecoveryWriteView> = {}): RecoveryWriteView => ({ enabled: true, sessionDisabled: false, replayActive: false, firstRunActive: false, matchEnded: false, gameMode: 'game', selectedMode: 'ai', currentTurn: 'player', currentActorId: 'player', isAiThinking: false, ...over });
+  const dayOf = (r: MatchRecoveryLoadResult): number => (r.data ? Number(r.data.gameState.day) : -1);
+  /** Two validated bundles hold the same match. (The save validator fills a missing top-level campaignState with a default stamped by the wall clock; the load path reads it only for a save without gameState.campaignState, so that one slice is left out of the comparison.) */
+  const sameMatch = (x: SaveGameData, y: SaveGameData): boolean => v99StableStringify({ ...x, campaignState: null }) === v99StableStringify({ ...y, campaignState: null });
+  const byTestId = (tree: React.ReactNode, id: string) => v99FindElements(tree, el => el.props['data-testid'] === id);
+  const press = (tree: React.ReactNode, id: string): boolean => {
+    const found = byTestId(tree, id);
+    const handler = found.length === 1 ? found[0].props.onClick : undefined;
+    if (typeof handler !== 'function') return false;
+    (handler as () => void)();
+    return true;
+  };
+
+  // ---- The stored copy ------------------------------------------------------------------------------------------------
+  check('v99mr_01_round_trip_equals_manual_save', 'A match resumed from the recovery copy is exactly the match a manual save file of the same bundle loads', () => {
+    const bundle = fx(5);
+    const store = createV99MemoryStorage();
+    const written = writeRecoveryCopy(store, bundle, 'm1');
+    const resumed = loadRecoveryCopy(store);
+    const manual = prepareSaveLoadTransaction(JSON.stringify(bundle, null, 2)); // what downloadSaveFile writes
+    if (!written.ok || !resumed.ok || !resumed.data || !manual.ok || !manual.data) return json({ written: written.reason, problems: resumed.problems, manual: manual.report.fatalErrors });
+    return (sameMatch(resumed.data, manual.data) && resumed.generation === 'current' && resumed.problems.length === 0 && dayOf(resumed) === 5) || 'the resumed bundle differs from the manual save';
+  });
+  check('v99mr_02_slot_text_is_header_plus_compact_save', 'One key holds a small header line and then the save text itself — compact, the same JSON a manual save holds', () => {
+    const bundle = fx(7);
+    const store = createV99MemoryStorage();
+    const written = writeRecoveryCopy(store, bundle, 'm1');
+    const text = store.data[KEY_A] ?? '';
+    const lineEnd = text.indexOf('\n');
+    const body = text.slice(lineEnd + 1);
+    const parsed = parseRecoverySlotText(text);
+    const header = parsed ? parsed.header : null;
+    return (written.ok && written.generations === 1 && !written.retried && Object.keys(store.data).length === 1 && lineEnd > 0 && lineEnd < 600 && body === JSON.stringify(bundle) && !body.includes('\n')
+      && header !== null && header.bytes === body.length && header.seq === 1 && header.matchId === 'm1' && header.savedAt === bundle.metadata.timestamp && written.chars === text.length
+      && json(header.summary) === json(describeRecoveryBundle(bundle)) && json(JSON.parse(body)) === json(JSON.parse(JSON.stringify(bundle, null, 2)))) || json({ lineEnd, header, keys: Object.keys(store.data) });
+  });
+  check('v99mr_03_two_generations_rotate', 'Two generations are kept: each write replaces the OLDER copy, never the newest one', () => {
+    const store = createV99MemoryStorage();
+    const steps: string[] = [];
+    [5, 6, 7, 8].forEach(day => {
+      const before = readRecoverySlots(store);
+      const newestKeyBefore = before.length > 0 ? before[0].key : null;
+      const w = writeRecoveryCopy(store, fx(day), 'm1');
+      const after = readRecoverySlots(store);
+      steps.push(`${day}:${w.ok ? w.generations : 'x'}:${after.map(s => `${s.key === KEY_A ? 'a' : 'b'}${s.header ? s.header.summary.day : '?'}#${s.header ? s.header.seq : '?'}`).join(',')}:${newestKeyBefore !== null && after[0].key === newestKeyBefore ? 'OVERWROTE-NEWEST' : 'ok'}`);
+    });
+    const want = ['5:1:a5#1:ok', '6:2:b6#2,a5#1:ok', '7:2:a7#3,b6#2:ok', '8:2:b8#4,a7#3:ok'];
+    const resumed = loadRecoveryCopy(store);
+    return (json(steps) === json(want) && dayOf(resumed) === 8 && resumed.generation === 'current' && Object.keys(store.data).length === 2) || json(steps);
+  });
+  check('v99mr_04_corrupt_current_falls_back', 'A newest copy that is cut short, garbled or not a save falls back to the copy before it — and says so', () => {
+    const make = () => { const s = createV99MemoryStorage(); writeRecoveryCopy(s, fx(5), 'm1'); writeRecoveryCopy(s, fx(6), 'm1'); return s; };
+    const outcomes = [
+      (text: string) => text.slice(0, Math.floor(text.length / 2)),                 // a write that was cut short
+      (text: string) => `${text.slice(0, text.indexOf('\n') + 1)}${'x'.repeat(text.length - text.indexOf('\n') - 1)}`, // right length, not JSON
+      (text: string) => `${text.slice(0, text.indexOf('\n') + 1)}{"hello":"world"}`, // JSON, but not a save (and the wrong length)
+    ].map(damage => {
+      const store = make();
+      store.data[KEY_B] = damage(store.data[KEY_B]);
+      const resumed = loadRecoveryCopy(store);
+      const card = describeRecoverySlots(store);
+      return { ok: resumed.ok, day: dayOf(resumed), generation: resumed.generation, problems: resumed.problems.length, card: card ? `${card.usable}:${card.summary ? card.summary.day : '-'}:${card.olderCopy}` : 'none' };
+    });
+    const intact = loadRecoveryCopy(make());
+    // A garbled body of the right length still has an intact header: the card trusts it, Resume finds out and falls back.
+    return (outcomes.every(o => o.ok && o.day === 5 && o.generation === 'previous' && o.problems === 1) && outcomes[0].card === 'true:5:true' && outcomes[1].card === 'true:6:false' && outcomes[2].card === 'true:5:true'
+      && dayOf(intact) === 6 && intact.generation === 'current') || json(outcomes);
+  });
+  check('v99mr_05_nothing_usable', 'When no copy can be read Resume fails cleanly (nothing thrown, reasons named) and the card only offers Discard', () => {
+    const store = createV99MemoryStorage({ [KEY_A]: '{"version":1}\nnot a save', [KEY_B]: 'garbage' });
+    const resumed = loadRecoveryCopy(store);
+    const card = describeRecoverySlots(store);
+    const cardView = card ? buildRecoveryCardView(card, 0) : null;
+    const empty = createV99MemoryStorage();
+    return (!resumed.ok && resumed.data === null && resumed.problems.length === 2 && card !== null && !card.usable && cardView !== null && !cardView.usable && cardView.headline.includes('cannot be read')
+      && describeRecoverySlots(empty) === null && !loadRecoveryCopy(empty).ok && loadRecoveryCopy(null).ok === false && describeRecoverySlots(null) === null
+      && describeRecoveryLoadFailure(resumed.problems).includes('could not be opened')) || json({ resumed: resumed.problems, card });
+  });
+  check('v99mr_06_quota_one_generation', 'No room for two copies: the write is retried once smaller — one generation, replaced in place, content untouched', () => {
+    const one = buildRecoverySlotText(fx(5), 1, 'm1');
+    if (!one) return 'fixture not buildable';
+    const roomy = limited(Math.floor(one.text.length * 1.5)); // one copy fits, two do not
+    const first = writeRecoveryCopy(roomy.storage, fx(5), 'm1');
+    const second = writeRecoveryCopy(roomy.storage, fx(6), 'm1');
+    const third = writeRecoveryCopy(roomy.storage, fx(7), 'm1');
+    const resumed = loadRecoveryCopy(roomy.storage);
+    const manual = prepareSaveLoadTransaction(JSON.stringify(fx(7), null, 2));
+    return (first.ok && !first.retried && second.ok && second.retried && second.generations === 1 && third.ok && third.retried && Object.keys(roomy.data).length === 1
+      && dayOf(resumed) === 7 && resumed.generation === 'current' && manual.data !== null && resumed.data !== null && sameMatch(resumed.data, manual.data)) || json({ first, second: { ...second, header: null }, keys: Object.keys(roomy.data) });
+  });
+  check('v99mr_07_quota_gives_up_keeps_copy', 'No room even for one: the write fails without throwing, the copy that was there stays loadable, and autosave pauses with one message', () => {
+    const one = buildRecoverySlotText(fx(5), 1, 'm1');
+    if (!one) return 'fixture not buildable';
+    const tight = limited(one.text.length + 10);
+    const first = writeRecoveryCopy(tight.storage, fx(5), 'm1');
+    tight.data['other-feature'] = 'x'.repeat(2000); // something else filled the storage in the meantime
+    const session = createMatchRecoverySession();
+    session.lineageEpoch = 1; session.matchId = 'm1'; session.day = 5;
+    const flush = (day: number) => flushMatchRecovery(session, { view: view(), epoch: 1, marker: `d${day}`, storage: () => tight.storage, build: () => fx(day) });
+    const a = flush(6);
+    const b = flush(7);
+    const resumed = loadRecoveryCopy(tight.storage);
+    const blocked = writeRecoveryCopy(hostile, fx(5), 'm1');
+    const none = writeRecoveryCopy(null, fx(5), 'm1');
+    return (first.ok && a.result !== null && !a.result.ok && a.result.reason === 'storage_full' && a.result.retried && !a.covered && !a.wrote && typeof a.notice === 'string' && a.notice.includes('paused') && a.notice.includes('day 5')
+      && session.disabled && b.result === null && b.notice === null && !b.wrote && dayOf(resumed) === 5 && tight.data['other-feature'].length === 2000
+      && !blocked.ok && blocked.reason === 'storage_full' && !none.ok && none.reason === 'no_storage' && describeRecoveryPaused('no_storage', null).includes('cannot work here')) || json({ a: a.result, notice: a.notice, b, day: dayOf(resumed) });
+  });
+  check('v99mr_08_off_touches_nothing', 'With the setting off nothing is built, read or written — and a throwing storage is never even asked for', () => {
+    const c = counting();
+    let builds = 0;
+    let asked = 0;
+    const session = createMatchRecoverySession();
+    const off = flushMatchRecovery(session, { view: view({ enabled: false }), epoch: 1, marker: 'm', storage: () => { asked += 1; return c.storage; }, build: () => { builds += 1; return fx(5); } });
+    const rival = flushMatchRecovery(session, { view: view({ currentTurn: 'ai' }), epoch: 1, marker: 'm', storage: () => { asked += 1; return c.storage; }, build: () => { builds += 1; return fx(5); } });
+    const before = json(session);
+    const on = flushMatchRecovery(session, { view: view(), epoch: 1, marker: 'm', storage: () => { asked += 1; return c.storage; }, build: () => { builds += 1; return fx(5); } });
+    return (!off.covered && !off.wrote && !rival.covered && !rival.wrote && before === json(createMatchRecoverySession()) && on.wrote && on.covered && builds === 1 && asked === 1 && c.calls.set === 1 && Object.keys(c.data).length === 1
+      && recoveryStatusOf(createMatchRecoverySession(), false, 1).state === 'off') || json({ off, rival, builds, asked, calls: c.calls });
+  });
+  check('v99mr_09_v98_save_in_slot_loads', 'A save file exactly as V9.8 wrote it (indented, stamped 9.6.0, no header), placed in the slot, is offered and loads', () => {
+    const v98 = fx(6);
+    const text = JSON.stringify({ ...v98, metadata: { ...v98.metadata, gameVersion: '9.6.0', saveDescription: 'Manual Save Day 6' } }, null, 2);
+    const store = createV99MemoryStorage({ [KEY_B]: text });
+    const parsed = parseRecoverySlotText(text);
+    const card = describeRecoverySlots(store);
+    const resumed = loadRecoveryCopy(store);
+    const viaFile = prepareSaveLoadTransaction(text);
+    // The next autosave of the resumed match starts its own line of copies and replaces the bare save.
+    const next = writeRecoveryCopy(store, fx(7), 'm-after');
+    return (parsed !== null && parsed.header === null && parsed.body === text && card !== null && card.usable && card.summary !== null && card.summary.day === 6 && card.savedAt === v98.metadata.timestamp
+      && resumed.ok && resumed.header === null && dayOf(resumed) === 6 && resumed.report !== null && resumed.report.sourceVersion === '9.6.0' && viaFile.data !== null && resumed.data !== null
+      && sameMatch(resumed.data, viaFile.data) && next.ok && next.generations === 1 && Object.keys(store.data).length === 1 && dayOf(loadRecoveryCopy(store)) === 7) || json({ card, problems: resumed.problems, keys: Object.keys(store.data) });
+  });
+  check('v99mr_10_new_match_replaces_old_copies', 'A match started (or loaded) over the stored one replaces its copies — the old match never lingers as the "previous" generation', () => {
+    const store = createV99MemoryStorage();
+    writeRecoveryCopy(store, fx(9), 'old');
+    writeRecoveryCopy(store, fx(10), 'old');
+    const first = writeRecoveryCopy(store, fx(1), 'new');
+    const afterFirst = readRecoverySlots(store).map(s => (s.header ? `${s.header.matchId}:${s.header.summary.day}:${s.header.seq}` : '?'));
+    const second = writeRecoveryCopy(store, fx(2), 'new');
+    const afterSecond = readRecoverySlots(store).map(s => (s.header ? `${s.header.matchId}:${s.header.summary.day}:${s.header.seq}` : '?'));
+    return (first.ok && first.generations === 1 && json(afterFirst) === json(['new:1:1']) && second.ok && second.generations === 2 && json(afterSecond) === json(['new:2:2', 'new:1:1'])) || json({ afterFirst, afterSecond });
+  });
+  check('v99mr_11_clear_removes_only_its_keys', 'Clearing removes both copies and nothing else; it never throws', () => {
+    const store = createV99MemoryStorage({ 'aussie-adventure.v99.profile-settings': '{"version":1,"settings":{}}', 'aussie-adventure.v98.campaign': 'kept' });
+    writeRecoveryCopy(store, fx(5), 'm1');
+    writeRecoveryCopy(store, fx(6), 'm1');
+    const had = Object.keys(store.data).length;
+    const cleared = clearRecoveryCopies(store);
+    return (had === 4 && cleared && json(Object.keys(store.data).sort()) === json(['aussie-adventure.v98.campaign', 'aussie-adventure.v99.profile-settings']) && describeRecoverySlots(store) === null
+      && clearRecoveryCopies(null) === false && clearRecoveryCopies(hostile) === false && MATCH_RECOVERY_SLOT_KEYS.length === 2 && MATCH_RECOVERY_SLOT_KEYS.every(k => k.startsWith('aussie-adventure.v99.recovery.'))) || json(Object.keys(store.data));
+  });
+  check('v99mr_12_finished_match_not_stored_or_offered', 'A finished match is never stored as "in progress" and never offered for Resume', () => {
+    const ended = withState(fx(30), { matchEnd: buildMatchEndRecord('day_limit', 'player', 30) });
+    const endScreen = withState(fx(30), { gameMode: 'end' });
+    const store = createV99MemoryStorage();
+    const a = writeRecoveryCopy(store, ended, 'm1');
+    const b = writeRecoveryCopy(store, endScreen, 'm1');
+    // … and one put there by hand is refused at Resume and described as unusable.
+    const planted = createV99MemoryStorage({ [KEY_A]: JSON.stringify(endScreen) });
+    const resumed = loadRecoveryCopy(planted);
+    const card = describeRecoverySlots(planted);
+    return (!a.ok && a.reason === 'not_a_live_match' && !b.ok && Object.keys(store.data).length === 0 && describeRecoveryBundle(ended) === null && describeRecoveryBundle(endScreen) === null && describeRecoveryBundle(fx(30)) !== null
+      && !resumed.ok && resumed.problems.join(' ').includes('already over') && card !== null && !card.usable
+      && [null, undefined, 'x', 5, [], {}, { gameState: {}, player: {} }, { gameState: { day: 'x' }, player: {} }].every(v => describeRecoveryBundle(v) === null)) || json({ a, b, problems: resumed.problems, card });
+  });
+  check('v99mr_13_campaign_chapter_round_trip', 'A campaign chapter in progress is stored as its campaign bundle: Resume brings back the chapter, and the card names it', () => {
+    const bundle = createCampaignSaveFixture('mid_chapter_4');
+    const store = createV99MemoryStorage();
+    const written = writeRecoveryCopy(store, bundle, 'chapter');
+    const resumed = loadRecoveryCopy(store);
+    const card = describeRecoverySlots(store);
+    const want = bundle.campaign;
+    const got = resumed.data ? resumed.data.campaign : undefined;
+    const plain = describeRecoveryBundle(fx(5));
+    const cardText = card ? buildRecoveryCardView(card, 0).headline : '';
+    return (written.ok && resumed.ok && want !== undefined && got !== undefined && v99StableStringify(got) === v99StableStringify(want) && want.chapterStatus === 'playing'
+      && extractCampaignFromSave(resumed.data, { rivalryCampaignEnabled: true }) !== null && card !== null && card.summary !== null && card.summary.campaignChapter === want.chapterIndex + 1
+      && cardText.includes(`Campaign chapter ${want.chapterIndex + 1}`) && plain !== null && plain.campaignChapter === null) || json({ written: written.reason, problems: resumed.problems, card });
+  });
+  check('v99mr_14_header_sanitiser', 'A header is accepted only when every field is well-formed; anything else reads as a bare save, never as a wrong card', () => {
+    const good = buildRecoverySlotText(fx(5), 3, 'm1');
+    if (!good) return 'fixture not buildable';
+    const h = good.header;
+    const bad: unknown[] = [null, 5, 'x', [], {}, { ...h, version: 2 }, { ...h, seq: -1 }, { ...h, seq: 'three' }, { ...h, savedAt: NaN }, { ...h, bytes: null }, { ...h, matchId: '' }, { ...h, matchId: 'x'.repeat(65) }, { ...h, marker: 7 },
+      { ...h, summary: null }, { ...h, summary: { ...h.summary, day: 0 } }, { ...h, summary: { ...h.summary, cash: 'lots' } }, { ...h, summary: { ...h.summary, yourTurn: 'yes' } }, { ...h, summary: { ...h.summary, mode: 5 } }];
+    const accepted = bad.filter(v => sanitizeRecoveryHeader(v) !== null).length;
+    const again = sanitizeRecoveryHeader(JSON.parse(json(h)));
+    const longLine = parseRecoverySlotText(`${'{"a":"'}${'x'.repeat(3000)}"}\nbody`);
+    return (accepted === 0 && json(again) === json(h) && parseRecoverySlotText('') === null && parseRecoverySlotText(null) === null && parseRecoverySlotText(42) === null
+      && longLine !== null && longLine.header === null && json(parseRecoverySlotText('{"version":1}\nrest')) === json({ header: null, body: '{"version":1}\nrest' })) || `accepted ${accepted} malformed headers`;
+  });
+
+  // ---- When a copy may be written ---------------------------------------------------------------------------------------
+  check('v99mr_15_write_only_on_players_turn', 'A copy is written only on the player\'s own turn of a running match: never during a rival\'s turn, on the menu, after the end, in a replay or in the guided first match', () => {
+    const rows: [string, Partial<RecoveryWriteView>, boolean][] = [
+      ['your turn, solo rival mode', {}, true],
+      ['single player', { selectedMode: 'single' }, true],
+      ['scenario, your turn', { selectedMode: 'scenario' }, true],
+      ['setting off', { enabled: false }, false],
+      ['rival\'s turn', { currentTurn: 'ai' }, false],
+      ['rival thinking', { isAiThinking: true }, false],
+      ['turn handed back but the rival is still finishing', { currentTurn: 'player', isAiThinking: true }, false],
+      ['main menu', { gameMode: 'menu' }, false],
+      ['result screen', { gameMode: 'end' }, false],
+      ['end record written, screen not switched yet', { matchEnded: true }, false],
+      ['isolated replay', { replayActive: true }, false],
+      ['guided first match', { firstRunActive: true }, false],
+      ['paused for the session', { sessionDisabled: true }, false],
+      ['team mode, your turn', { selectedMode: 'team_human_ai_vs_ai_ai', currentActorId: 'player' }, true],
+      ['team mode, a teammate\'s turn', { selectedMode: 'team_human_ai_vs_ai_ai', currentActorId: 'ally_ai' }, false],
+      ['team mode, an opponent thinking', { selectedMode: 'team_human_ai_vs_ai_ai', currentActorId: 'ai', isAiThinking: true }, false],
+      ['simulation, between two AI turns', { selectedMode: 'team_ai_vs_ai', currentActorId: 'ai' }, true],
+      ['simulation, an AI moving', { selectedMode: 'team_ai_vs_ai', currentActorId: 'ai', isAiThinking: true }, false],
+    ];
+    const wrong = rows.filter(([, over, want]) => recoveryWriteAllowed(view(over)) !== want).map(([label]) => label);
+    const agrees = saveTimingForTurn({ gameMode: 'game', selectedMode: 'ai', currentTurn: 'ai', isAiThinking: true }) === 'after_rival_turn' && !recoveryWriteAllowed(view({ currentTurn: 'ai', isAiThinking: true }));
+    return (wrong.length === 0 && agrees) || `wrong: ${wrong.join(' | ')}`;
+  });
+  check('v99mr_16_once_per_position', 'The same position is written once; a moved position is written again; a new match (epoch) is a new position', () => {
+    const c = counting();
+    const session = createMatchRecoverySession();
+    const flush = (epoch: number, marker: string, day: number) => flushMatchRecovery(session, { view: view(), epoch, marker, storage: () => c.storage, build: () => fx(day) });
+    const a = flush(1, 'p1', 5);
+    const again = flush(1, 'p1', 5);
+    const moved = flush(1, 'p2', 5);
+    const lineage = session.matchId;
+    const newMatch = flush(2, 'p2', 1);
+    const kept = readRecoverySlots(c.storage).map(s => (s.header ? s.header.summary.day : -1));
+    return (a.wrote && a.covered && !again.wrote && again.covered && moved.wrote && c.calls.set === 3 && newMatch.wrote && session.matchId !== lineage && session.lineageEpoch === 2 && json(kept) === json([1])
+      && recoveryStatusOf(session, true, 2).state === 'saved' && recoveryStatusOf(session, true, 2).day === 1 && recoveryStatusOf(session, true, 3).state === 'waiting') || json({ sets: c.calls.set, kept, session });
+  });
+  check('v99mr_17_rival_turn_keeps_last_copy', 'During the rival\'s turn nothing is written: the copy stays the player\'s turn as they left it — which covers everything they did, unless their last move was not stored yet', () => {
+    const c = counting();
+    const session = createMatchRecoverySession();
+    const rival = view({ currentTurn: 'ai', isAiThinking: true });
+    const mine = flushMatchRecovery(session, { view: view(), epoch: 1, marker: 'my-turn', storage: () => c.storage, build: () => fx(4) });
+    const setsAfterMine = c.calls.set;
+    let rivalBuilds = 0;
+    const rivalMoved = flushMatchRecovery(session, { view: rival, epoch: 1, marker: 'rival-acted', storage: () => c.storage, build: () => { rivalBuilds += 1; return withState(fx(4), { currentTurn: 'ai' }); } });
+    const resumed = loadRecoveryCopy(c.storage);
+    // The player moves once more, but that copy is not made (the page dies before the moment has passed): not covered.
+    const notStored = flushMatchRecovery(session, { view: view(), epoch: 1, marker: 'my-last-move', storage: () => c.storage, build: () => null });
+    const rivalAfter = flushMatchRecovery(session, { view: rival, epoch: 1, marker: 'rival-acted', storage: () => c.storage, build: () => { rivalBuilds += 1; return fx(4); } });
+    // A match that was loaded in the middle of a rival's turn has no copy of its own yet.
+    const otherMatch = flushMatchRecovery(session, { view: rival, epoch: 2, marker: 'rival-acted', storage: () => c.storage, build: () => { rivalBuilds += 1; return fx(4); } });
+    return (mine.wrote && c.calls.set === setsAfterMine && rivalBuilds === 0 && rivalMoved.covered && !rivalMoved.wrote && dayOf(resumed) === 4
+      && resumed.data !== null && resumed.data.gameState.currentTurn !== 'ai' && resumed.header !== null && resumed.header.summary.yourTurn
+      && !notStored.covered && !notStored.wrote && !rivalAfter.covered && !otherMatch.covered
+      && recoveryCoverageOf(session, 1, '1|rival-acted', false) === 'earlier' && recoveryCoverageOf(session, 1, '1|my-last-move', true) === 'exact' && recoveryCoverageOf(session, 2, '2|x', false) === 'none'
+      && recoveryCoverageOf({ ...session, playerMarker: session.lastMarker }, 1, '1|rival-acted', false) === 'turn' && recoveryCoverageOf({ ...session, disabled: true }, 1, session.lastMarker, true) === 'earlier') || json({ sets: c.calls.set, rivalBuilds, rivalMoved, notStored, rivalAfter, otherMatch, session });
+  });
+  check('v99mr_18_turn_key_and_marker', 'One key per hand-back (per day in the simulation); the position marker moves with every action point spent, trip and trade (what it cannot see is covered by v99mr_28 and v99mr_29)', () => {
+    const gs = { day: 4, turnCounter: 6, currentTurn: 'player', currentActorId: 'player', selectedMode: 'ai' };
+    const p = { money: 1200, actionsUsedThisTurn: 1, currentRegion: 'NSW', inventory: ['Opals'] };
+    const base = recoveryPositionMarker(gs, p);
+    const variants = [recoveryPositionMarker({ ...gs, day: 5 }, p), recoveryPositionMarker({ ...gs, turnCounter: 7 }, p), recoveryPositionMarker({ ...gs, currentTurn: 'ai' }, p), recoveryPositionMarker(gs, { ...p, money: 1100 }),
+      recoveryPositionMarker(gs, { ...p, actionsUsedThisTurn: 2 }), recoveryPositionMarker(gs, { ...p, currentRegion: 'VIC' }), recoveryPositionMarker(gs, { ...p, inventory: [] }), recoveryPositionMarker({ ...gs, currentActorId: 'ally_ai' }, p)];
+    const sim = { ...gs, selectedMode: 'team_ai_vs_ai' };
+    return (new Set([base, ...variants]).size === variants.length + 1 && recoveryPositionMarker(gs, { ...p }) === base && recoveryTurnKey(1, gs) === '1:4:6' && recoveryTurnKey(2, gs) !== recoveryTurnKey(1, gs)
+      && recoveryTurnKey(1, { ...gs, turnCounter: 7 }) !== recoveryTurnKey(1, gs) && recoveryTurnKey(1, sim) === recoveryTurnKey(1, { ...sim, turnCounter: 9 }) && recoveryTurnKey(1, sim) !== recoveryTurnKey(1, { ...sim, day: 5 })
+      && recoveryPositionMarker({}, null) === recoveryPositionMarker({}, undefined)) || json({ base, variants });
+  });
+  check('v99mr_19_resume_adopts_lineage', 'After Resume the loaded position counts as stored (no rewrite), and the next turn\'s copy joins the same line of two generations', () => {
+    const store = createV99MemoryStorage();
+    writeRecoveryCopy(store, fx(5), 'm1');
+    writeRecoveryCopy(store, fx(6), 'm1');
+    const resumed = loadRecoveryCopy(store);
+    if (!resumed.ok || !resumed.data) return json(resumed.problems);
+    const session = createMatchRecoverySession(); // a fresh page: the epoch counter starts again
+    adoptRecoveryLineage(session, resumed.header, 1, resumed.data);
+    let builds = 0;
+    const samePlace = flushMatchRecovery(session, { view: view(), epoch: 1, marker: recoveryPositionMarker(resumed.data.gameState, resumed.data.player), storage: () => store, build: () => { builds += 1; return fx(6); } });
+    const nextTurn = flushMatchRecovery(session, { view: view(), epoch: 1, marker: 'day-7', storage: () => store, build: () => { builds += 1; return fx(7); } });
+    const kept = readRecoverySlots(store).map(s => (s.header ? `${s.header.matchId}:${s.header.summary.day}:${s.header.seq}` : '?'));
+    return (session.matchId === 'm1' && session.lastTurnKey === recoveryTurnKey(1, resumed.data.gameState) && samePlace.covered && !samePlace.wrote && nextTurn.wrote && builds === 1
+      && json(kept) === json(['m1:7:3', 'm1:6:2']) && recoveryStatusOf(session, true, 1).day === 7) || json({ kept, builds, session });
+  });
+  check('v99mr_20_forget_and_pause_lift', 'Forgetting the copy (match over, Discard) resets what the session knows; a pause stays until the setting is switched on again', () => {
+    const session = createMatchRecoverySession();
+    const store = createV99MemoryStorage();
+    flushMatchRecovery(session, { view: view(), epoch: 1, marker: 'a', storage: () => store, build: () => fx(5) });
+    session.disabled = true;
+    const paused = recoveryStatusOf(session, true, 1);
+    forgetRecoveryCopy(session);
+    const after = recoveryStatusOf(session, true, 1);
+    return (paused.state === 'paused' && paused.day === 5 && session.disabled && session.lastMarker === '' && session.matchId === '' && session.lineageEpoch === -1 && after.state === 'paused' && after.day === null
+      && recoveryStatusOf({ ...session, disabled: false }, true, 1).state === 'waiting') || json({ paused, after, session });
+  });
+
+  // ---- What the player is told ------------------------------------------------------------------------------------------
+  check('v99mr_21_age_text', '"Saved … ago" is worked out from a clock that is passed in, in plain words', () => {
+    const t = 1700000000000;
+    const rows: [number, number, string][] = [[t, t, 'just now'], [t, t + 59000, 'just now'], [t, t + 60000, '1 minute ago'], [t, t + 3 * 60000, '3 minutes ago'], [t, t + 3600000, '1 hour ago'], [t, t + 5 * 3600000, '5 hours ago'],
+      [t, t + 86400000, '1 day ago'], [t, t + 3 * 86400000, '3 days ago'], [t, t - 5000, 'just now'], [0, t, 'at an unknown time'], [NaN, t, 'at an unknown time'], [t, NaN, 'at an unknown time']];
+    const wrong = rows.filter(([savedAt, now, want]) => describeRecoveryAge(savedAt, now) !== want).map(([savedAt, now]) => `${now - savedAt}→${describeRecoveryAge(savedAt, now)}`);
+    return wrong.length === 0 || wrong.join(' | ');
+  });
+  check('v99mr_22_card_text', 'The card says the day, the cash, the mode and how old the copy is; the timestamp is only ever shown', () => {
+    const bundle = fx(4, { money: 1250 });
+    const store = createV99MemoryStorage();
+    writeRecoveryCopy(store, bundle, 'm1');
+    const card = describeRecoverySlots(store);
+    if (!card) return 'no card';
+    const v = buildRecoveryCardView(card, Number(bundle.metadata.timestamp) + 3 * 60000);
+    const team = describeRecoveryBundle(fx(4, { mode: 'team_human_ai_vs_ai_ai' }));
+    const rivalTurn = describeRecoveryBundle(withState(fx(4), { currentTurn: 'ai' }));
+    const rivalCard = rivalTurn ? buildRecoveryCardView({ usable: true, savedAt: 0, summary: rivalTurn, olderCopy: true, copies: 2 }, 0) : null;
+    const resumed = loadRecoveryCopy(store);
+    const labels = ['single', 'ai', 'grand_tour', 'team_human_ai_vs_ai_ai', 'team_ai_vs_ai', 'scenario', 'nonsense', undefined].map(recoveryModeLabel);
+    return (v.usable && v.title === 'Resume match' && v.headline === 'Day 4 of 30 · $1,250 · AI Opponent' && v.detail === 'Fixture Player in NSW · autosaved 3 minutes ago' && v.note === null
+      && team !== null && recoveryModeLabel(team.mode).startsWith('Team') && team.yourTurn && rivalTurn !== null && !rivalTurn.yourTurn && rivalCard !== null && rivalCard.detail.includes("rival's turn") && rivalCard.note !== null
+      && resumed.data !== null && json(resumed.data).includes('"timestamp":1700000240000') && !json(resumed.data.gameState).includes('savedAt') && !json(resumed.data.gameState).includes('1700000240000')
+      && new Set(labels).size === 7 && labels[6] === 'Match') || json({ v, rivalCard });
+  });
+  check('v99mr_23_card_buttons', 'The card has a working Resume and a two-step Discard; an unreadable copy offers Discard only', () => {
+    const calls: string[] = [];
+    const handlers = { onResume: () => calls.push('resume'), onAskDiscard: () => calls.push('ask'), onDiscard: () => calls.push('discard'), onKeep: () => calls.push('keep') };
+    const good: MatchRecoveryCardView = { title: 'Resume match', headline: 'Day 4 of 30 · $1,250 · AI Opponent', detail: 'Matilda in NSW · autosaved just now', note: null, usable: true };
+    const idle = V99ResumeMatchCardBody({ view: good, isDark: true, confirmingDiscard: false, ...handlers });
+    const asking = V99ResumeMatchCardBody({ view: good, isDark: false, confirmingDiscard: true, ...handlers });
+    const broken = V99ResumeMatchCardBody({ view: { ...good, usable: false }, isDark: true, confirmingDiscard: false, ...handlers });
+    const pressed = [press(idle, 'v99-resume-match'), press(idle, 'v99-resume-discard'), press(asking, 'v99-resume-discard-confirm'), press(asking, 'v99-resume-discard-keep')];
+    return (pressed.every(Boolean) && json(calls) === json(['resume', 'ask', 'discard', 'keep']) && byTestId(idle, 'v99-resume-discard-confirm').length === 0 && byTestId(asking, 'v99-resume-match').length === 0
+      && byTestId(broken, 'v99-resume-match').length === 0 && byTestId(broken, 'v99-resume-discard').length === 1 && v99ElementText(idle).includes('Day 4 of 30') && v99ElementText(asking).includes('cannot be brought back')
+      && byTestId(idle, 'v99-resume-card').length === 1) || json({ pressed, calls });
+  });
+  check('v99mr_24_leave_wording', '"Leave match" with autosave on says the match can be resumed from the menu; with it off the question is unchanged', () => {
+    const prompt = describeLeaveMatch({ day: 6, totalDays: 30, unsavedProgress: true, rivalTurn: false, firstRunActive: false, campaignChapter: 2 });
+    const none = describeLeaveMatchWithRecovery(prompt, 'none', null);
+    const exact = describeLeaveMatchWithRecovery(prompt, 'exact', 6);
+    const earlier = describeLeaveMatchWithRecovery(prompt, 'earlier', 5);
+    const earlierUnknown = describeLeaveMatchWithRecovery(prompt, 'earlier', null);
+    const turn = describeLeaveMatchWithRecovery(prompt, 'turn', 6);
+    const turnText = turn.lines.join(' ');
+    const exactText = exact.lines.join(' ');
+    return (none === prompt && exact.lines.length === prompt.lines.length && exact.lines[0] === prompt.lines[0] && !exactText.includes('lost unless you save first') && exactText.includes('Resume match on the main menu')
+      && exact.leaveLabel !== prompt.leaveLabel && exact.leaveLabel.includes('autosave') && exact.saveLabel === prompt.saveLabel && exactText.includes('chapter 2 of your campaign')
+      && prompt.lines[2].includes('or load your save to carry on from here') && !exactText.includes('load your save') && exactText.includes('Resume match carries on from here instead') && earlier.lines[3] === prompt.lines[2]
+      && earlier.lines.length === prompt.lines.length + 1 && earlier.lines[1] === prompt.lines[1] && earlier.lines[2].includes('day 5') && earlier.lines[2].includes('Resume match') && earlier.leaveLabel === prompt.leaveLabel
+      && earlierUnknown.lines[2].includes('your last turn') && prompt.lines.length === 3
+      && turn.lines.length === prompt.lines.length && !turnText.includes('lost unless you save first') && turnText.includes('your turn on day 6') && turnText.includes('rival plays its turn again') && turn.leaveLabel === exact.leaveLabel) || json({ exact, earlier, turn });
+  });
+  check('v99mr_25_save_load_line', 'The Save / Load dialog has one autosave line: off → "turn it on"; on → where the copy stands; paused → say so', () => {
+    const t = 1700000000000;
+    const off = describeAutosaveLine({ state: 'off', day: null, savedAt: null, generations: 0 }, true, t);
+    const waiting = describeAutosaveLine({ state: 'waiting', day: null, savedAt: null, generations: 0 }, true, t);
+    const saved = describeAutosaveLine({ state: 'saved', day: 4, savedAt: t - 120000, generations: 2 }, true, t);
+    const menu = describeAutosaveLine({ state: 'waiting', day: null, savedAt: null, generations: 0 }, false, t);
+    const paused = describeAutosaveLine({ state: 'paused', day: 3, savedAt: t, generations: 1 }, true, t);
+    let enabled = 0;
+    const offTree = V99AutosaveLine({ view: off, onEnable: () => { enabled += 1; } });
+    const onTree = V99AutosaveLine({ view: saved, onEnable: () => { enabled += 1; } });
+    const pressedOff = press(offTree, 'v99-autosave-enable');
+    return (off.text === 'Autosave is off —' && off.actionLabel === 'turn it on' && off.tone === 'off' && pressedOff && enabled === 1 && v99ElementText(offTree).includes('Autosave is off') && v99ElementText(offTree).includes('turn it on')
+      && byTestId(onTree, 'v99-autosave-enable').length === 0 && saved.text.includes('latest copy: day 4, 2 minutes ago') && saved.actionLabel === null && waiting.text.includes('start of each of your turns')
+      && menu.text.includes('Resume match') && paused.tone === 'paused' && paused.text.includes('paused') && paused.text.includes('day 3')
+      && describeMatchSavesNote(false) === 'Match saves remain a manual JSON download and load.' && describeMatchSavesNote(true).includes('Autosave & Resume') && describeMatchSavesNote(true).includes('manual JSON download')) || json({ off, saved, menu, paused });
+  });
+  check('v99mr_27_whose_turn_and_simulation', 'Whose turn a stored match is on is read from the match itself; the simulation is copied between two AI turns, once per day', () => {
+    const rows: [RecoveryGameStateView, boolean][] = [
+      [{ selectedMode: 'ai', currentTurn: 'player' }, true], [{ selectedMode: 'ai', currentTurn: 'ai' }, false], [{ selectedMode: 'ai', currentTurn: 'player', isAiThinking: true }, false],
+      [{ selectedMode: 'single', currentTurn: 'player' }, true], [{ selectedMode: 'grand_tour', currentTurn: 'ai' }, false], [{}, true],
+      [{ selectedMode: 'team_human_ai_vs_ai_ai', currentActorId: 'player', currentTurn: 'ai' }, true], [{ selectedMode: 'team_human_ai_vs_ai_ai', currentActorId: 'ally_ai', currentTurn: 'player' }, false],
+      [{ selectedMode: 'team_ai_vs_ai', currentActorId: 'player', currentTurn: 'player' }, false],
+    ];
+    const wrong = rows.filter(([gs, want]) => recoveryIsPlayersTurn(gs) !== want).map(([gs]) => json(gs));
+    // The simulation: allowed between two AI turns, refused while one moves; the copy describes itself without a "rival's turn" remark.
+    const c = counting();
+    const session = createMatchRecoverySession();
+    const sim = (over: Partial<RecoveryWriteView>) => view({ selectedMode: 'team_ai_vs_ai', currentActorId: 'ai', currentTurn: 'ai', ...over });
+    const simBundle = withState(fx(3, { mode: 'team_ai_vs_ai' }), { currentActorId: 'ai', currentTurn: 'ai' });
+    const moving = flushMatchRecovery(session, { view: sim({ isAiThinking: true }), epoch: 1, marker: 'd3-a', storage: () => c.storage, build: () => simBundle });
+    const between = flushMatchRecovery(session, { view: sim({}), epoch: 1, marker: 'd3-b', storage: () => c.storage, build: () => simBundle });
+    const card = describeRecoverySlots(c.storage);
+    const text = card ? buildRecoveryCardView(card, 0) : null;
+    return (wrong.length === 0 && !moving.wrote && !moving.covered && between.wrote && c.calls.set === 1 && card !== null && card.summary !== null && !card.summary.yourTurn
+      && text !== null && text.headline.includes('Team: AI + AI vs AI + AI') && !text.detail.includes("rival's turn") && dayOf(loadRecoveryCopy(c.storage)) === 3
+      && sanitizeRecoverySummary({ day: 3, totalDays: 30, cash: 5, mode: 'ai', playerName: 'A', region: 'NSW', yourTurn: true }) !== null && sanitizeRecoverySummary({ day: 3, totalDays: 30, cash: 5, mode: 'ai', playerName: 'A', region: 'NSW' }) === null) || json({ wrong, moving, between, text });
+  });
+  // ---- What the position marker cannot see ------------------------------------------------------------------------------
+  /** The same day, cash, region, goods and actions as `bundle` — only a decision that costs nothing has been taken (regional standing moved). */
+  const decided = (bundle: SaveGameData): SaveGameData => withState(bundle, { standingPerActor: { player: { TAS: 6 } } });
+  const standingOf = (r: MatchRecoveryLoadResult): number => {
+    const gsLoaded = r.data ? (r.data.gameState as unknown as { standingPerActor?: { player?: { TAS?: number } } }) : null;
+    if (!gsLoaded) return -1;
+    return gsLoaded.standingPerActor && gsLoaded.standingPerActor.player ? Number(gsLoaded.standingPerActor.player.TAS ?? 0) : 0;
+  };
+  check('v99mr_28_forced_flush_stores_unmoved_position', 'A decision that costs nothing moves no part of the position marker: page hidden, page closed and "Leave match" (force) store that moment all the same — and only then is it "covered"', () => {
+    const c = counting();
+    const session = createMatchRecoverySession();
+    const before = fx(2);
+    const after = decided(fx(2));
+    const marker = recoveryPositionMarker(before.gameState, before.player);
+    if (recoveryPositionMarker(after.gameState, after.player) !== marker) return 'fixture: the decision moved the marker';
+    let builds = 0;
+    const flush = (bundle: SaveGameData, over: Partial<RecoveryFlushInput> = {}) => flushMatchRecovery(session, { view: view(), epoch: 1, marker, storage: () => c.storage, build: () => { builds += 1; return bundle; }, ...over });
+    const first = flush(before);
+    const unforced = flush(after);                       // the marker did not move: by itself this writes nothing …
+    const stale = standingOf(loadRecoveryCopy(c.storage)); // … and the stored copy does not hold the decision
+    const forced = flush(after, { force: true });        // the page is hidden / closed, "Leave match" was opened
+    const fresh = loadRecoveryCopy(c.storage);
+    const setsAfterForced = c.calls.set;
+    // Force never overrides "may a copy be written now": not during the rival's turn, not with the setting off.
+    const rival = flush(after, { force: true, view: view({ currentTurn: 'ai', isAiThinking: true }) });
+    const off = flush(after, { force: true, view: view({ enabled: false }) });
+    return (first.wrote && !unforced.wrote && unforced.covered && stale === 0 && forced.wrote && forced.covered && standingOf(fresh) === 6 && fresh.generation === 'current' && forced.result !== null && forced.result.generations === 2
+      && builds === 2 && setsAfterForced === 2 && !rival.wrote && rival.covered && !off.wrote && !off.covered && c.calls.set === 2 && builds === 2) || json({ first: first.wrote, unforced, stale, forced: forced.wrote, fresh: standingOf(fresh), builds, sets: c.calls.set, rival, off });
+  });
+  check('v99mr_29_unstored_change_is_not_covered', 'Match state that changed behind an unmoved position (dirty) is not "covered" until it is written: the turn copy writes it, and until then the browser warning and the honest "Leave match" wording stay', () => {
+    const c = counting();
+    const session = createMatchRecoverySession();
+    const before = fx(2);
+    const marker = recoveryPositionMarker(before.gameState, before.player);
+    const mine = (bundle: SaveGameData | null) => flushMatchRecovery(session, { view: view(), epoch: 1, marker, storage: () => c.storage, build: () => bundle });
+    const rivalTurn = () => flushMatchRecovery(session, { view: view({ currentTurn: 'ai', isAiThinking: true }), epoch: 1, marker: 'rival-acted', storage: () => c.storage, build: () => null });
+    const first = mine(before);
+    const cleanExact = recoveryCoverageOf(session, 1, session.lastMarker, false);
+    const cleanRival = rivalTurn();
+    session.dirty = true; // what the live hook notes when a match-state object changed on the player's turn
+    const dirtyExact = recoveryCoverageOf(session, 1, session.lastMarker, false);
+    const dirtyWritable = recoveryCoverageOf(session, 1, session.lastMarker, true); // on the player's turn it will be written before anything is lost
+    const dirtyRival = rivalTurn();                                                  // the turn was handed over before the copy was made
+    const notBuilt = mine(null);                                                     // a copy that could not be built clears nothing
+    const stillDirty = session.dirty;
+    const written = mine(decided(fx(2)));                                            // the turn copy, no force: dirty is reason enough
+    const afterWrite = { dirty: session.dirty, sets: c.calls.set, standing: standingOf(loadRecoveryCopy(c.storage)), rival: rivalTurn().covered, coverage: recoveryCoverageOf(session, 1, 'rival-acted', false) };
+    const again = mine(decided(fx(2)));                                              // … and once written it is not written again
+    session.dirty = true;
+    const adopted = createMatchRecoverySession();
+    adopted.dirty = true;
+    adoptRecoveryLineage(adopted, null, 1, before);
+    forgetRecoveryCopy(session);
+    const dirtyOf = (x: MatchRecoverySession): boolean => x.dirty; // read through a call: the assignments above are not what forget / adopt leave behind
+    const a = { gameState: {}, player: {}, parts: [1, 'x'] as readonly unknown[] };
+    const same = [sameRecoveryState(a, { ...a }), sameRecoveryState(a, { ...a, parts: [1, 'x'] }), sameRecoveryState(null, null)];
+    const differs = [sameRecoveryState(a, { ...a, gameState: {} }), sameRecoveryState(a, { ...a, player: {} }), sameRecoveryState(a, { ...a, parts: [1, 'y'] }), sameRecoveryState(a, { ...a, parts: [1] }), sameRecoveryState(a, null), sameRecoveryState(null, a)];
+    return (first.wrote && cleanExact === 'exact' && cleanRival.covered && dirtyExact === 'earlier' && dirtyWritable === 'exact' && !dirtyRival.covered && !dirtyRival.wrote && !notBuilt.wrote && !notBuilt.covered && stillDirty
+      && written.wrote && written.covered && !afterWrite.dirty && afterWrite.sets === 2 && afterWrite.standing === 6 && afterWrite.rival && afterWrite.coverage === 'turn' && !again.wrote && again.covered && c.calls.set === 2
+      && !dirtyOf(session) && !dirtyOf(adopted) && !dirtyOf(createMatchRecoverySession()) && same.every(Boolean) && !differs.some(Boolean)) || json({ cleanExact, dirtyExact, dirtyWritable, dirtyRival, notBuilt, stillDirty, written: written.wrote, afterWrite, again, same, differs });
+  });
+  check('v99mr_33_what_the_live_hook_decides', 'The live wiring: page hidden / closed / "Leave match" always store the moment unless the newest copy was built from this very state; a changed state object on the player\'s turn is "not stored yet", a rival\'s changes and the simulation\'s are not', () => {
+    const builderA = () => fx(2);
+    const builderB = () => fx(2);
+    const reasons: RecoveryFlushReason[] = ['hidden', 'unload', 'leave'];
+    const forcedFirst = reasons.every(reason => recoveryFlushIsForced(reason, null, builderA));         // no copy from this session yet
+    const forcedChanged = reasons.every(reason => recoveryFlushIsForced(reason, builderA, builderB));   // something a save holds changed since the copy
+    const notTwice = reasons.every(reason => !recoveryFlushIsForced(reason, builderA, builderA));       // the copy was built from exactly this
+    const turnNever = !recoveryFlushIsForced('turn', null, builderA) && !recoveryFlushIsForced('turn', builderA, builderB);
+    const gs1 = {}; const gs2 = {}; const p1 = {}; const rival1 = {}; const rival2 = {};
+    const copied: RecoveryStateParts = { gameState: gs1, player: p1, parts: [rival1] };
+    const unstored = (over: Partial<RecoveryWriteView>, live: RecoveryStateParts, from: RecoveryStateParts | null = copied) => recoveryStateIsUnstored(view(over), from, live);
+    const same = unstored({}, { gameState: gs1, player: p1, parts: [rival1] });
+    const decided = unstored({}, { gameState: gs2, player: p1, parts: [rival1] });                        // a decision that costs nothing: a new gameState, the same marker
+    const part = unstored({}, { gameState: gs1, player: p1, parts: [rival2] });
+    const noCopyYet = unstored({}, { gameState: gs1, player: p1, parts: [rival1] }, null);
+    const rivalMoving = unstored({ currentTurn: 'ai', isAiThinking: true }, { gameState: gs2, player: p1, parts: [rival2] });
+    const teammate = unstored({ selectedMode: 'team_human_ai_vs_ai_ai', currentActorId: 'ally_ai' }, { gameState: gs2, player: p1, parts: [rival1] });
+    const simulation = unstored({ selectedMode: 'team_ai_vs_ai' }, { gameState: gs2, player: p1, parts: [rival1] });
+    const off = unstored({ enabled: false }, { gameState: gs2, player: p1, parts: [rival1] });
+    const ended = unstored({ matchEnded: true }, { gameState: gs2, player: p1, parts: [rival1] });
+    return (forcedFirst && forcedChanged && notTwice && turnNever && !same && decided && part && noCopyYet && !rivalMoving && !teammate && !simulation && !off && !ended)
+      || json({ forcedFirst, forcedChanged, notTwice, turnNever, same, decided, part, noCopyYet, rivalMoving, teammate, simulation, off, ended });
+  });
+  check('v99mr_30_damaged_newest_copy_is_not_the_protected_one', 'After the newest copy went bad, the next write replaces IT and keeps the good copy before it — also when the browser has no room; Resume removes the copy it could not use', () => {
+    const make = (damage: (text: string) => string) => { const s = createV99MemoryStorage(); writeRecoveryCopy(s, fx(5), 'm1'); writeRecoveryCopy(s, fx(6), 'm1'); s.data[KEY_B] = damage(s.data[KEY_B]); return s; };
+    const cutShort = (text: string) => text.slice(0, Math.floor(text.length / 2));
+    const garbled = (text: string) => `${text.slice(0, text.indexOf('\n') + 1)}${'x'.repeat(text.length - text.indexOf('\n') - 1)}`;
+    const show = (s: V99StorageLike) => readRecoverySlots(s).map(slot => `${slot.key === KEY_A ? 'a' : 'b'}${slot.header ? slot.header.summary.day : '?'}#${slot.header ? slot.header.seq : '?'}${slot.intact ? '' : '!'}`).join(',');
+    // 1. Room for two: the damaged newest copy (b, #2) is replaced; the good one (a, day 5) stays as the previous generation.
+    const store = make(cutShort);
+    const startedAs = show(store);
+    const next = writeRecoveryCopy(store, fx(7), 'm1');
+    const afterNext = show(store);
+    // 2. The browser refuses every write: the good copy is still there and still opens.
+    const full = make(cutShort);
+    const frozen: V99StorageLike = { getItem: key => full.getItem(key), setItem: () => { throw new Error('QuotaExceededError'); }, removeItem: key => full.removeItem(key) };
+    const refused = writeRecoveryCopy(frozen, fx(7), 'm1');
+    const afterRefused = loadRecoveryCopy(full);
+    // 3. Room for one only: the damaged copy is given up and the good one is replaced in place by the new copy.
+    const one = buildRecoverySlotText(fx(5), 1, 'm1');
+    if (!one) return 'fixture not buildable';
+    const tight = limited(Math.floor(one.text.length * 1.8), make(cutShort).data);
+    const squeezed = writeRecoveryCopy(tight.storage, fx(7), 'm1');
+    const afterSqueezed = show(tight.storage);
+    // 4. Damage the length check cannot see (right length, not a save): Resume finds out, opens the earlier copy, and
+    //    the unusable one is removed — so the next write keeps the copy that opened.
+    const sly = make(garbled);
+    const opened = loadRecoveryCopy(sly);
+    dropRecoveryCopiesExcept(sly, opened.key);
+    const afterDrop = show(sly);
+    const afterSly = writeRecoveryCopy(sly, fx(7), 'm1');
+    const slyEnd = show(sly);
+    const untouched = make(cutShort);
+    dropRecoveryCopiesExcept(untouched, null);
+    dropRecoveryCopiesExcept(null, KEY_A);
+    return (startedAs === 'b6#2!,a5#1' && next.ok && next.generations === 2 && !next.retried && afterNext === 'b7#3,a5#1' && dayOf(loadRecoveryCopy(store)) === 7
+      && !refused.ok && refused.reason === 'storage_full' && afterRefused.ok && dayOf(afterRefused) === 5
+      && squeezed.ok && squeezed.retried && squeezed.generations === 1 && afterSqueezed === 'a7#3' && dayOf(loadRecoveryCopy(tight.storage)) === 7
+      && opened.ok && opened.key === KEY_A && opened.generation === 'previous' && afterDrop === 'a5#1' && afterSly.ok && afterSly.generations === 2 && slyEnd === 'b7#2,a5#1'
+      && Object.keys(untouched.data).length === 2 && loadRecoveryCopy(createV99MemoryStorage()).key === null) || json({ startedAs, afterNext, next: next.generations, refused: refused.reason, afterRefused: dayOf(afterRefused), squeezed: { ok: squeezed.ok, retried: squeezed.retried, g: squeezed.generations }, afterSqueezed, afterDrop, slyEnd });
+  });
+  check('v99mr_31_match_end_clears_only_its_own_copies', 'A match that ends removes its own copies, not those of another match (the game open in a second tab); Discard removes everything', () => {
+    const mine = buildRecoverySlotText(fx(9), 4, 'mine');
+    const other = buildRecoverySlotText(fx(3), 2, 'other-tab');
+    if (!mine || !other) return 'fixture not buildable';
+    const bare = JSON.stringify(fx(6));
+    const left = (s: { data: Record<string, string> }) => Object.keys(s.data).sort().map(k => (k === KEY_A ? 'a' : k === KEY_B ? 'b' : k)).join(',');
+    const two = createV99MemoryStorage({ [KEY_A]: mine.text, [KEY_B]: other.text, 'aussie-adventure.v99.profile-settings': '{}' });
+    const okMine = clearRecoveryCopies(two, 'mine');
+    const afterMine = left(two);
+    const stillThere = loadRecoveryCopy(two);
+    const nobody = createV99MemoryStorage({ [KEY_A]: mine.text, [KEY_B]: other.text });
+    clearRecoveryCopies(nobody, 'somebody-else');
+    // A match resumed from a save without a header has '' as its match id: only such saves are its copies.
+    const withBare = createV99MemoryStorage({ [KEY_A]: bare, [KEY_B]: other.text });
+    clearRecoveryCopies(withBare, '');
+    const both = createV99MemoryStorage({ [KEY_A]: mine.text, [KEY_B]: mine.text.replace('"seq":4', '"seq":3') });
+    clearRecoveryCopies(both, 'mine');
+    const all = createV99MemoryStorage({ [KEY_A]: mine.text, [KEY_B]: other.text, 'aussie-adventure.v99.profile-settings': '{}' });
+    const okAll = clearRecoveryCopies(all);
+    return (okMine && afterMine === 'aussie-adventure.v99.profile-settings,b' && stillThere.ok && stillThere.header !== null && stillThere.header.matchId === 'other-tab' && left(nobody) === 'a,b'
+      && left(withBare) === 'b' && left(both) === '' && okAll && left(all) === 'aussie-adventure.v99.profile-settings' && clearRecoveryCopies(null, 'mine') === false) || json({ afterMine, nobody: left(nobody), withBare: left(withBare), both: left(both), all: left(all) });
+  });
+  check('v99mr_32_switching_off_removes_the_copies', 'Switching the setting off removes the stored copies (a match finished afterwards cannot come back as "Resume match") and says so only when there was one', () => {
+    const store = createV99MemoryStorage({ 'aussie-adventure.v99.profile-settings': '{"version":1,"settings":{}}' });
+    const session = createMatchRecoverySession();
+    flushMatchRecovery(session, { view: view(), epoch: 1, marker: 'a', storage: () => store, build: () => fx(9) });
+    flushMatchRecovery(session, { view: view(), epoch: 1, marker: 'b', storage: () => store, build: () => fx(9) });
+    session.dirty = true;
+    const stored = Object.keys(store.data).length;
+    const had = switchOffMatchRecovery(session, store);
+    const again = switchOffMatchRecovery(session, store);
+    // Switched on again later: nothing is offered, and nothing of the old match is known.
+    const card = describeRecoverySlots(store);
+    return (stored === 3 && had && !again && json(Object.keys(store.data)) === json(['aussie-adventure.v99.profile-settings']) && card === null && json(session) === json(createMatchRecoverySession())
+      && switchOffMatchRecovery(createMatchRecoverySession(), null) === false && switchOffMatchRecovery(createMatchRecoverySession(), hostile) === false
+      && describeRecoverySwitchedOff(true).includes('copy of this match was removed') && describeRecoverySwitchedOff(true).includes('Save / Load') && describeRecoverySwitchedOff(false).includes('autosaved match was removed') && !describeRecoverySwitchedOff(false).includes('Save / Load')) || json({ stored, had, again, keys: Object.keys(store.data), session });
+  });
+  check('v99mr_26_defaults_and_scope', 'The feature is off by default, profile-scoped (never in a save) and the flush a component starts with does nothing', () => {
+    const defaults = DEFAULT_GAME_SETTINGS as unknown as { readonly [key: string]: unknown };
+    const bundle = fx(5);
+    const validated = prepareSaveLoadTransaction(JSON.stringify({ ...bundle, gameSettings: { ...bundle.gameSettings, matchRecoveryEnabled: true } }));
+    const carried = validated.data ? (validated.data.gameSettings as unknown as { readonly [key: string]: unknown }).matchRecoveryEnabled : 'no data';
+    return (defaults.matchRecoveryEnabled === false && V95_PROFILE_SCOPED_SETTING_KEYS.includes('matchRecoveryEnabled') && V99_PERSISTED_PROFILE_SETTING_KEYS.includes('matchRecoveryEnabled')
+      && carried === undefined && matchRecoveryNoFlush('unload') === false && MATCH_RECOVERY_SPECTATOR_DELAY_MS < 180 && MATCH_RECOVERY_TURN_DELAY_MS >= 200) || json({ carried });
+  });
   return results;
 }
 
@@ -200556,9 +202552,19 @@ function AustraliaGame() {
   const v99LaneModeRef = useRef<string | null>(null);
   /** The match epoch of the team AI turn that holds the "AI is thinking" lock (-1 = none, or the lock was reset with its match). */
   const v99TeamAiLockEpochRef = useRef(-1);
-  const v99PendingSaveRef = useRef<{ epoch: number; description: string | undefined } | null>(null);
+  const v99PendingSaveRef = useRef<{ epoch: number; description: string | undefined; thenLeave?: boolean } | null>(null);
   const v99LoadedRivalTurnRef = useRef<LoadedRivalTurn | null>(null);
+  // V9.9 (SECTION 20AT, W3S): the player's own match rules while a loaded match is on (handed back on the main menu);
+  // the settings as last rendered (the load handler is memoised and must not read a stale copy); a scenario restart
+  // waiting for the reset to render; the last match epoch the "match was replaced" clean-up ran for.
+  const v99RulesBeforeLoadRef = useRef<RulesBeforeLoad | null>(null);
+  const v99LiveRulesRef = useRef<{ settings: GameSettingsState | null; preScenario: GameSettingsState | null }>({ settings: null, preScenario: null });
+  const [v99PendingScenarioRestart, setV99PendingScenarioRestart] = useState<GameScenario | null>(null);
+  const v99CleanedEpochRef = useRef(0);
   const v99CarriedCampaignRef = useRef<CarriedCampaign | null>(null);
+  // V9.9 (SECTION 20AV): the autosave's "keep this position now" — installed by useV99MatchRecovery further down, declared
+  // here so the leave-site warning can ask it. With the setting off it writes nothing and answers false.
+  const v99mrFlushRef = useRef<(reason: RecoveryFlushReason) => boolean>(matchRecoveryNoFlush);
   const [gameState, dispatchGameState] = useReducer(gameStateReducer, initialGameState);
   const setGameState = (nextState: any) => dispatchGameState({ type: 'LOAD_STATE', payload: nextState });
 
@@ -200897,6 +202903,7 @@ function AustraliaGame() {
   const expandedCategoryId = wp7Slice3.expandedCategoryId; const setExpandedCategoryId = wp7Slice3Set.expandedCategoryId;
   const savedPreScenarioSettings = wp7Slice3.savedPreScenarioSettings; const setSavedPreScenarioSettings = wp7Slice3Set.savedPreScenarioSettings;
   const uiState = wp7Slice3.uiState; const setUiState = wp7Slice3Set.uiState;
+  v99LiveRulesRef.current = { settings: gameSettings, preScenario: savedPreScenarioSettings }; // V9.9 (SECTION 20AT, W3S)
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -203709,16 +205716,21 @@ function dispatchGameSettingsChange(
     setShowReplayViewer(true);
   }, [addNotification, loadedReplayFile]);
 
-  const handleSaveGame = useCallback((descriptionOverride?: string, v99Options?: { now?: boolean }): 'saved' | 'deferred' | 'failed' | 'unavailable' => {
+  const handleSaveGame = useCallback((descriptionOverride?: string, v99Options?: { now?: boolean; thenLeave?: boolean }): 'saved' | 'deferred' | 'failed' | 'unavailable' => {
     if (gameState.gameMode === 'menu') {
       addNotification('Start or load a game before saving.', 'warning');
       return 'unavailable';
     }
     // V9.9 (SECTION 20AT): a save asked for while the solo rival is moving is taken when the turn is back with the player
-    // (an effect below performs it), so the file resumes exactly at a turn boundary. Asking twice, or leaving, saves at once.
-    if (v99Options?.now !== true && !v99PendingSaveRef.current && saveTimingForTurn(gameState) === 'after_rival_turn') {
-      v99PendingSaveRef.current = { epoch: v95MatchEpochRef.current, description: typeof descriptionOverride === 'string' ? descriptionOverride : undefined };
-      addNotification(SAVE_AFTER_RIVAL_TURN_MESSAGE, 'info');
+    // (an effect below performs it), so the file resumes exactly at a turn boundary. W3S (finding Q2-F2): "Save, then
+    // leave" waits too and then leaves by itself (`thenLeave`) — a file made mid-turn loads into a different rival turn.
+    // Only asking a second time while a save is already waiting writes a mid-turn file, and its message says so.
+    const v99Waiting = v99PendingSaveRef.current;
+    const v99SavePlan = planSaveRequest(saveTimingForTurn(gameState), { now: v99Options?.now, alreadyWaiting: Boolean(v99Waiting) && v99Options?.thenLeave !== true, waitingThenLeave: v99Waiting?.thenLeave === true });
+    if (v99SavePlan === 'wait_for_turn') {
+      const v99ThenLeave = v99Options?.thenLeave === true || v99Waiting?.thenLeave === true; // a waiting "Save, then leave" stays one
+      v99PendingSaveRef.current = { epoch: v95MatchEpochRef.current, description: typeof descriptionOverride === 'string' ? descriptionOverride : v99Waiting?.description, thenLeave: v99ThenLeave };
+      addNotification(v99ThenLeave ? SAVE_THEN_LEAVE_WAITING_MESSAGE : SAVE_AFTER_RIVAL_TURN_MESSAGE, 'info');
       return 'deferred';
     }
     v99PendingSaveRef.current = null;
@@ -203726,7 +205738,7 @@ function dispatchGameSettingsChange(
       const data = buildSaveData(typeof descriptionOverride === 'string' ? descriptionOverride : undefined);
       downloadSaveFile(data);
       setV99SavedMarker(matchProgressMarker(data.gameState, data.player)); // V9.9 (SECTION 20AT): nothing unsaved from here
-      addNotification(`Game saved! Day ${data.gameState.day}, ${data.player.name}`, 'success');
+      addNotification(describeSaveDone(v99SavePlan, data.gameState.day, data.player.name), v99SavePlan === 'save_mid_turn' ? 'warning' : 'success', v99SavePlan === 'save_mid_turn');
       return 'saved';
     } catch (error) {
       console.error('Save failed', error);
@@ -209671,6 +211683,7 @@ function dispatchGameSettingsChange(
 	          break;
 	        case 'closeModal': {
 	          if (confirmationDialog.isOpen) {
+	            if (confirmationNeedsAnAnswer(confirmationDialog.type)) break; // V9.9 (SECTION 20AT, W3S — q3-03): a turn waits on this answer; Escape must not close it
 	            if (confirmationDialog.type === 'teamAiOverrideRequest' && typeof confirmationDialog.data?.onDeny === 'function') {
 	              confirmationDialog.data.onDeny();
 	            }
@@ -210425,10 +212438,14 @@ function dispatchGameSettingsChange(
 
   // Phase 12: Scenario Launch & Exit Handlers
   const restorePreScenarioSettings = useCallback(() => {
-    if (savedPreScenarioSettings) {
+    // V9.9 (SECTION 20AT, W3S — finding Q2-F1): a scenario that came in with a loaded save has no snapshot from this
+    // session; the rules in force before that load are the player's own, and they are what comes back.
+    const v99OwnRules = rulesToRestoreAfterScenario(savedPreScenarioSettings, v99RulesBeforeLoadRef.current);
+    if (v99OwnRules) {
+      if (!savedPreScenarioSettings) v99RulesBeforeLoadRef.current = null;
       dispatchGameSettingsChange(
         setGameSettings,
-        stripPersistedProfileSettings(savedPreScenarioSettings), // V9.9 (SECTION 20AT): the rules come back; preferences changed during the scenario stay
+        stripPersistedProfileSettings(v99OwnRules), // V9.9 (SECTION 20AT): the rules come back; preferences changed during the scenario stay
         undefined,
         'scenario_exit',
         { day: gameState?.day, turn: gameState?.turnCounter },
@@ -210438,7 +212455,7 @@ function dispatchGameSettingsChange(
       // V9.9 (SECTION 20AS): the registry stays seeded whatever the World RNG Mode (passing "not deterministic" here
       // sent every draw to the browser's unseeded generator until the next match start — and through a loaded save).
       setRngMasterSeed(
-        savedPreScenarioSettings.worldRngSeed || 1337,
+        v99OwnRules.worldRngSeed || 1337,
         true
       );
       setSavedPreScenarioSettings(null);
@@ -210712,7 +212729,20 @@ function dispatchGameSettingsChange(
     setUiState(prev => { const patch = closedMatchDialogsPatch(prev); return Object.keys(patch).length === 0 ? prev : { ...prev, ...patch }; });
     setV99LeaveMatchOpen(false);
     v99PendingSaveRef.current = null;
+    // V9.9 (SECTION 20AT, W3S — finding Q2-F1): the menu shows the player's own rules again, not those of the file that
+    // was loaded (its seed, its length, its scenario switches) — except what was changed on purpose during that match.
+    const v99Before = v99RulesBeforeLoadRef.current;
+    v99RulesBeforeLoadRef.current = null;
+    if (v99Before) setGameSettings(prev => rulesAfterLoadedMatch(prev, v99Before));
     dispatchGameState({ type: 'SET_GAME_MODE', payload: 'menu' });
+  }, [handleRestartGame]); // eslint-disable-line react-hooks/exhaustive-deps
+  // V9.9 (SECTION 20AT, W3S — finding q3-07): "Restart Scenario" resets first and starts once the reset has rendered,
+  // exactly as Rematch does — the new match no longer starts from the finished one's refs, and its opening messages no
+  // longer carry the finished match's last day.
+  const v99RestartScenario = useCallback((scenario: GameScenario) => {
+    handleRestartGame();
+    dispatchGameState({ type: 'SET_GAME_MODE', payload: 'menu' });
+    setV99PendingScenarioRestart(scenario);
   }, [handleRestartGame]); // eslint-disable-line react-hooks/exhaustive-deps
   // "Leave match": the confirmed exit from a running match (the question itself is V99LeaveMatchDialog).
   const v99LeaveMatchNow = useCallback(() => {
@@ -210722,7 +212752,7 @@ function dispatchGameSettingsChange(
     if (wp8State?.active) {
       // Leaving the guided first match ends the tutorial; without a record it would start again at every launch.
       writeFirstRunRecord(firstRunStorage(), 'skipped', Date.now());
-      setGameSettings(prev => (prev.guidedFirstRunEnabled === false ? prev : { ...prev, guidedFirstRunEnabled: false }));
+      setGameSettings(prev => settingsAfterLeavingFirstRun(prev)); // W3S (finding q3-04): … and its tour ends with it
     }
     if (shouldAskPersistentAbandon({
       settings: gameSettings,
@@ -210743,13 +212773,20 @@ function dispatchGameSettingsChange(
   }, [gameSettings, gameState, handleReturnToMenu, isolatedReplayRuntime, restorePreScenarioSettings, showConfirmation, wp8State]); // eslint-disable-line react-hooks/exhaustive-deps
   const v99SaveAndLeaveMatch = useCallback(() => {
     // A failed save keeps the question open (the failure is shown as a toast); nothing is left behind unsaved by accident.
-    if (handleSaveGame(undefined, { now: true }) !== 'saved') return;
-    v99MenuFarewellRef.current = '💾 Match saved. Load the file from Save / Load to carry on with it.';
+    // W3S (finding Q2-F2): during the rival's turn the save waits for the turn to come back (never a mid-turn file); the
+    // question closes and the match is left by the effect below as soon as the file has been written.
+    const v99Status = handleSaveGame(undefined, { thenLeave: true });
+    if (v99Status === 'deferred') { setV99LeaveMatchOpen(false); return; }
+    if (v99Status !== 'saved') return;
+    v99MenuFarewellRef.current = SAVED_AND_LEFT_MESSAGE;
     v99LeaveMatchNow();
   }, [handleSaveGame, v99LeaveMatchNow]);
+  const v99LeaveMatchNowRef = useRef(v99LeaveMatchNow);
+  v99LeaveMatchNowRef.current = v99LeaveMatchNow;
   const v99OpenLeaveMatch = useCallback(() => {
     setUiState(prev => (prev.showSaveLoadModal || prev.simplifiedMoreOpen ? { ...prev, showSaveLoadModal: false, simplifiedMoreOpen: false } : prev));
     v99MenuFarewellRef.current = null;
+    if (v99PendingSaveRef.current?.thenLeave) v99PendingSaveRef.current = null; // W3S: asking again withdraws a "save, then leave" that is still waiting
     setV99LeaveMatchOpen(true);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useV99DialogKeys(v99LeaveMatchOpen && gameState.gameMode === 'game', () => setV99LeaveMatchOpen(false));
@@ -210782,7 +212819,9 @@ function dispatchGameSettingsChange(
   // since the last save. Registered only while that is the case (a permanent handler would disable the page cache).
   useEffect(() => {
     if (!v99UnsavedProgress || typeof window === 'undefined') return undefined;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    // V9.9 (SECTION 20AV): with autosave on, this moment is stored first (on the player's turn, always); when the stored
+    // copy then holds everything the player did there is nothing to warn about (otherwise the browser still asks).
+    const onBeforeUnload = (event: BeforeUnloadEvent) => { if (v99mrFlushRef.current('unload')) return; event.preventDefault(); event.returnValue = ''; };
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [v99UnsavedProgress]);
@@ -210798,8 +212837,12 @@ function dispatchGameSettingsChange(
     const timer = setTimeout(() => {
       const waiting = v99PendingSaveRef.current;
       if (!waiting) return;
+      if (saveTimingForTurn(gameStateLiveRef.current) !== 'now') return; // W3S: the turn moved on again — keep waiting for the next boundary
       v99PendingSaveRef.current = null;
-      if (waiting.epoch === v95MatchEpochRef.current) v99HandleSaveGameRef.current(waiting.description, { now: true });
+      if (waiting.epoch !== v95MatchEpochRef.current) return;
+      const v99Status = v99HandleSaveGameRef.current(waiting.description, { now: true });
+      // W3S (finding Q2-F2): a "Save, then leave" that waited for the rival leaves now — unless the match ended meanwhile.
+      if (shouldLeaveAfterDeferredSave(waiting.thenLeave, v99Status, gameStateLiveRef.current?.gameMode)) { v99MenuFarewellRef.current = SAVED_AND_LEFT_MESSAGE; v99LeaveMatchNowRef.current(); }
     }, 300);
     return () => clearTimeout(timer);
   }, [gameState.currentTurn, gameState.isAiThinking, gameState.gameMode, gameState.turnCounter, gameState.day]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -210826,6 +212869,13 @@ function dispatchGameSettingsChange(
     setNotifications([]);
     if (farewell) addNotification(farewell, 'success');
   }, [gameState.gameMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  // W3S (q3-07): the scenario restart asked for on the end screen starts here — after the layout effect above has emptied
+  // the lane for the (never painted) menu, so the restarted scenario's opening messages are not swept away with it.
+  React.useLayoutEffect(() => {
+    if (!v99PendingScenarioRestart) return;
+    setV99PendingScenarioRestart(null);
+    startScenario(v99PendingScenarioRestart);
+  }, [v99PendingScenarioRestart]); // eslint-disable-line react-hooks/exhaustive-deps
   // The reason a file could not be loaded is shown while the Save / Load dialog stays open; closing the dialog forgets it.
   useEffect(() => {
     if (!uiState.showSaveLoadModal) setV99LoadProblem(null);
@@ -210931,7 +212981,7 @@ function dispatchGameSettingsChange(
 	    // Merge game state with defaults for backward compatibility
 	    const loadedGameState = {
 	      ...initialGameState,
-	      ...stripLeakedStateKeys(data.gameState), // V9.9 (SECTION 20AT): replay branches and checkpoints skip the save sanitizer
+	      ...cleanLoadedMatchState(data.gameState), // V9.9 (SECTION 20AT): replay branches and checkpoints skip the save sanitizer
 	      activeEvents: sanitizeLoadedObjectList(data.gameState.activeEvents),
 	      priceHistory: sanitizeLoadedObjectList(data.gameState.priceHistory),
 	      netWorthHistory: sanitizeLoadedObjectList(data.gameState.netWorthHistory),
@@ -211052,6 +213102,15 @@ function dispatchGameSettingsChange(
     // V9.9 (SECTION 20AT): a loaded match never brings the player's stored preferences with it. A validated save does not
     // carry them anyway; a replay branch or checkpoint snapshot (which skip the save sanitizer) did, and would now be
     // written to the profile store.
+    // W3S (finding Q2-F1): what the player's own match rules were is remembered first (rememberRulesBeforeLoad), so the
+    // main menu can hand them back afterwards; a scenario started in this session gives its snapshot back right here —
+    // the loaded match must not run on that scenario's leftovers, and no stale snapshot may survive the load.
+    const v99Live = v99LiveRulesRef.current;
+    if (v99Live.settings) v99RulesBeforeLoadRef.current = rememberRulesBeforeLoad(v99RulesBeforeLoadRef.current, v99Live.settings, v99Live.preScenario, data.gameSettings);
+    if (v99Live.preScenario) {
+      dispatchGameSettingsChange(setGameSettings, stripPersistedProfileSettings(v99Live.preScenario), undefined, 'scenario_exit', { day: data.gameState?.day, turn: data.gameState?.turnCounter }, undefined, dispatchAuthoritativeGameActivityLedgerEvent);
+      setSavedPreScenarioSettings(null);
+    }
     dispatchGameSettingsChange(setGameSettings, stripPersistedProfileSettings(data.gameSettings), undefined, 'save_loader', { day: data.gameState?.day, turn: data.gameState?.turnCounter }, undefined, dispatchAuthoritativeGameActivityLedgerEvent);
     // V9.9 (SECTION 20AT + 20AU): the save's notifications come back as history — tagged as restored (20AT) and marked as
     // having left the lane (20AU); they are not shown as fresh toasts again unless classicStickyToasts is on.
@@ -211072,7 +213131,9 @@ function dispatchGameSettingsChange(
       ? data.aiRuntime.worldRngState
       : normalizeAiSeed(data.gameSettings.worldRngSeed);
     if (data.rngRegistryState) {
-      globalRngRegistry.importStreamStates(data.rngRegistryState);
+      // V9.9 (SECTION 20AT, W3S — finding b5-08): a save that knows its match seed seeds the registry with it before the
+      // saved stream positions are taken; a pre-V9.9 save is imported exactly as before.
+      restoreRngRegistryForLoad(globalRngRegistry, readMatchSeed(data.gameState), data.rngRegistryState);
     } else {
       const seed = data.gameSettings?.worldRngSeed || data.gameSettings?.aiDeterministicSeed || 1337;
       setRngMasterSeed(seed, true);
@@ -211306,6 +213367,7 @@ function dispatchGameSettingsChange(
       if (!writeCampaignSlot(storage, { ...readCampaignSlot(storage), campaign: v99Offered })) addNotification(CAMPAIGN_NOT_STORED_MESSAGE, 'warning', true, 'system');
       setWp98SlotRevision(v => v + 1);
       wp98ChapterBindingRef.current = v99Offered.chapterStatus === 'playing' ? { campaignId: v99Offered.campaignId, chapterIndex: v99Offered.chapterIndex, epoch: v95MatchEpochRef.current } : null;
+      if (wp98ChapterBindingRef.current) wpMfCampaignEpochRef.current = v95MatchEpochRef.current; // W3S: a loaded chapter is a chapter for the end screen too (no Rematch / seed replay)
       v99CarriedCampaignRef.current = null;
       return;
     }
@@ -211316,6 +213378,7 @@ function dispatchGameSettingsChange(
     if (!loaded) { wp98ChapterBindingRef.current = null; return; }
     wp98CommitCampaign(loaded);
     wp98ChapterBindingRef.current = loaded.chapterStatus === 'playing' ? { campaignId: loaded.campaignId, chapterIndex: loaded.chapterIndex, epoch: v95MatchEpochRef.current } : null;
+    if (wp98ChapterBindingRef.current) wpMfCampaignEpochRef.current = v95MatchEpochRef.current; // W3S: a loaded chapter is a chapter for the end screen too (no Rematch / seed replay)
   }, [gameSettings, wp98CommitCampaign, addNotification]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (gameState.gameMode === 'menu' || gameState.gameMode === 'start_screen') wp98ChapterBindingRef.current = null;
@@ -211398,6 +213461,31 @@ function dispatchGameSettingsChange(
     const timer = setTimeout(() => v99RunPendingRecoveryRef.current(), 0);
     return () => clearTimeout(timer);
   }, []);
+  // V9.9 (SECTION 20AV): Match Recovery — autosave to this browser and "Resume match" (off by default; with the setting
+  // off the hook does nothing). It writes the same bundle the manual save builds (v99BuildSaveDataRef), only on the
+  // player's turn, and resumes through the normal load path; a resumed campaign chapter is bound as that chapter.
+  const v99mr = useV99MatchRecovery({
+    enabled: gameSettings.matchRecoveryEnabled === true,
+    gameState,
+    player,
+    matchParts: [aiPlayer, actorsById, teamsById, humanAutomations],
+    replayActive: Boolean(isolatedReplayRuntime),
+    firstRunActive: Boolean(wp8State?.active),
+    rematchPending: wpMfPendingRematch !== null,
+    leaveDialogOpen: v99LeaveMatchOpen,
+    epochRef: v95MatchEpochRef,
+    aiThinkingRef: isAiThinkingRef,
+    buildSaveDataRef: v99BuildSaveDataRef,
+    applyLoadedState,
+    adoptLoadedCampaign: (data: SaveGameData) => {
+      wp98AdoptLoadedCampaign(data);
+      // The end screen offers no Rematch for a chapter match; a resumed chapter is one.
+      if (wp98ChapterBindingRef.current && wp98ChapterBindingRef.current.epoch === v95MatchEpochRef.current) wpMfCampaignEpochRef.current = v95MatchEpochRef.current;
+    },
+    notify: addNotification,
+    stampLoadMessages: (day: number) => setNotifications(previous => stampLoadNotifications(previous, day)),
+    flushRef: v99mrFlushRef,
+  });
 
   const calculateTravelCost = useCallback((fromRegion: any,toRegion: any) => {
     // V9.1: the canonical formula lives in computeTravelCostCore (shared with balance simulation).
@@ -212085,7 +214173,8 @@ function dispatchGameSettingsChange(
   // already claimed the dialog). Popup visibility is now driven BY request state, never the reverse.
   useEffect(() => {
     if (confirmationDialog.isOpen) return;
-    const next = pendingApprovalRequests.find(r => r.status === 'pending');
+    // V9.9 (SECTION 20AT, W3S — q3-03): … or a request left 'displayed' with no dialog (closed without an answer): shown again.
+    const next = nextApprovalRequestToShow(pendingApprovalRequests, false, gameState.gameMode);
     if (!next) return;
     setPendingApprovalRequests(prev => prev.map(r => r.id === next.id ? { ...r, status: 'displayed' as ApprovalRequestStatus } : r));
     if (next.requestKind === 'ai_action') {
@@ -234993,6 +237082,47 @@ function dispatchGameSettingsChange(
     glDispatch([{ kind: 'blocked', conceptId: help.conceptId, turn: glTurn, detail: `${kind}: ${blocker}`.slice(0, 120) }]);
   }, [player, glLearning, glDispatch, glTurn]);
   const reportBlockedActionRef = useRef(reportBlockedAction); reportBlockedActionRef.current = reportBlockedAction;
+  // V9.9 (SECTION 20AT, W3S — findings F3, q3-01, q3-02, q3-04, q3-07): the ONE place that reacts to "the match was
+  // replaced". A new match, Rematch, Restart Scenario, Leave match / Return to Menu and a load all move the match epoch;
+  // this layout effect notices it before the new screen is painted and clears every piece of interface state that
+  // belonged to the previous match and that no match start sets itself: the "What happened" card and the other
+  // match-scoped interface flags (V99_MATCH_SCOPED_UI_DEFAULTS), team approval requests still waiting, a pending
+  // Double or Nothing, an armed special ability and the "free challenge used" mark, the approach picker, the Co-Pilot
+  // intervention prompt, the "this Do It failed" memory, the treasury-request and save-description drafts, the Ask
+  // answers and their conversation context, a diplomacy exchange / breach prompt, a public-finance what-if, the
+  // dismissed turn brief and after-action lines, the map's focused region, the feedback strips and the Guided
+  // Learning tip / blocked-action help. (A tip the NEW match raises for its own start — the first match's "You arrived
+  // in New South Wales" — is set by a later effect of the same commit and stays.) The opening messages of the new
+  // match are stamped with its own day. A new piece of match-scoped interface state belongs in this list.
+  React.useLayoutEffect(() => {
+    // A match seen running under this epoch (a load replaces the match without leaving 'game' — the scenario record
+    // and the campaign chapter read this mark at the end of the match).
+    if (gameState.gameMode === 'game') wpMfLiveEpochRef.current = v95MatchEpochRef.current;
+    if (!matchWasReplaced(v99CleanedEpochRef.current, v95MatchEpochRef.current)) return;
+    v99CleanedEpochRef.current = v95MatchEpochRef.current;
+    setUiState(prev => withoutMatchScopedUi(prev));
+    setPendingApprovalRequests(prev => (prev.length === 0 ? prev : []));
+    setFailedChallengeData(null);
+    setUsedFreeChallengeThisTurn(false);
+    setActiveSpecialAbility(null);
+    setWp2PickerChallengeId(null);
+    setTakeoverInterventionPrompt(prev => (prev.isOpen ? { isOpen: false } : prev));
+    setV99FailedDoIt(V99_NO_FAILED_DO_IT);
+    setTreasuryRequestForm(prev => (prev.customAmount === '' && prev.reason === '' ? prev : { requestType: 'emergency_cash', customAmount: '', reason: '' }));
+    setSaveDescription('');
+    setV9IntelFeed(prev => (prev.length === 0 ? prev : []));
+    giContextRef.current = createGIConversationContext();
+    setDnExchange(null);
+    setDnBreachPrompt(null);
+    setPf12WhatIf(null);
+    setV9BriefSeenTurn(null);
+    setV9AfterDismissed(prev => (prev.length === 0 ? prev : []));
+    setLrFocusRegion(null);
+    setV94Queue(prev => (prev.length === 0 ? prev : []));
+    setGlAfter(null);
+    setGlBlocked(null);
+    setNotifications(prev => stampOpeningNotifications(prev, Number(gameState.day)));
+  });
   const [mechanicsFocusId, setMechanicsFocusId] = useState<string | null>(null);
   // Guided Learning deep link: open the Mechanics Directory focused on the specific entry.
   const openMechanicsEntry = useCallback((id: string) => {
@@ -244310,7 +246440,7 @@ function dispatchGameSettingsChange(
                     <div className="font-semibold">Memory hierarchy</div>
                     <div>In-match memory: {gameSettings.aiMemoryEnabled ? 'ON' : 'OFF'} (current match only)</div>
                     <div>Cross-match persistence: {gameSettings.aiPersistentMemoryEnabled && isPersistenceConsentActive(loadPersistencePolicy()) ? 'ON' : 'OFF'} (requires consent and verified storage)</div>
-                    <div className="opacity-80">These are separate from full-match autosave. Match saves remain a manual JSON download and load.</div>
+                    <div className="opacity-80">These are separate from full-match autosave. {describeMatchSavesNote(gameSettings.matchRecoveryEnabled === true) /* V9.9 (SECTION 20AV): true with autosave on, too */}</div>
                   </div>
                   <input
                     ref={persistentBackupInputRef}
@@ -244364,7 +246494,7 @@ function dispatchGameSettingsChange(
                         <div>Saved profiles on this device: {profileCount}</div>
                         <div>Cross-match learning: {consentOn && gameSettings.aiPersistentMemoryEnabled && gameSettings.aiPersistentLearningEnabled ? 'on' : 'off'}</div>
                         {policy.lastError ? <div className="text-red-300">Error: {policy.lastError}</div> : null}
-                        <div className="opacity-80">Enabling this does not enable autosave or full-match restore. Match saves remain a manual JSON download and load. Successful verification does not guarantee the browser will keep data forever.</div>
+                        <div className="opacity-80">Enabling this does not enable autosave or full-match restore. {describeMatchSavesNote(gameSettings.matchRecoveryEnabled === true) /* V9.9 (SECTION 20AV) */} Successful verification does not guarantee the browser will keep data forever.</div>
                         <div className="opacity-80 space-y-1">
                           <div>Storage available: {typeof window !== 'undefined' && window.localStorage ? 'yes' : 'no'}</div>
                           <div>Write/read verified: {policy.storageVerifiedAt ? 'yes (current browser storage check, not a reload guarantee)' : 'no'}</div>
@@ -247031,7 +249161,7 @@ function dispatchGameSettingsChange(
                 <p className="text-sm opacity-75 mb-3">Watch the current recording or import a replay file. Playback does not change this save.</p>
                 <div className="flex flex-wrap gap-2">
                   <button onClick={() => { updateUiState({ showSaveLoadModal: false }); openReplayStudio(replayRecordingRef.current || loadedReplayFile); }} className={`${themeStyles.button} px-3 py-2 rounded text-sm font-semibold`}>Open Replay Studio</button>
-                  <button onClick={openReplayLoadDialog} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded text-sm font-semibold`}>Import Replay</button>
+                  <button onClick={() => { updateUiState({ showSaveLoadModal: false }); openReplayLoadDialog(); /* V9.9 (SECTION 20AT, W3S): the studio opens once the file is read — this dialog used to stay on top of it */ }} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded text-sm font-semibold`}>Import Replay</button>
                   {replayRecordingRef.current && (
                     <button onClick={() => downloadReplayFile(replayRecordingRef.current!)} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded text-sm font-semibold`}>Export Current Replay</button>
                   )}
@@ -247066,6 +249196,9 @@ function dispatchGameSettingsChange(
                 >
                   💾 Download Save File
                 </button>
+                {saveTimingForTurn(gameState) === 'after_rival_turn' && (
+                  <p className="text-xs opacity-75 mt-2" data-testid="v99-save-waits-note">The rival is moving: the file is written as soon as its turn is over, so it picks up exactly at your turn.</p> /* V9.9 (SECTION 20AT, W3S — Q2-F2) */
+                )}
                 {gameState.gameMode === 'menu' && (
                   <p className="text-xs text-yellow-500 mt-2">Start a game first before saving</p>
                 )}
@@ -247103,6 +249236,9 @@ function dispatchGameSettingsChange(
                   <V99LeaveMatchEntry className={`${themeStyles.buttonSecondary} px-6 py-3 rounded-lg w-full font-bold flex items-center justify-center gap-2`} onOpen={v99OpenLeaveMatch} testId="v99-leave-match-saveload" />
                 </div>
               )}
+
+              {/* V9.9 (SECTION 20AV): one line about autosave — off: "turn it on"; on: where the copy stands. */}
+              <V99AutosaveLine view={describeAutosaveLine(v99mr.status, gameState.gameMode === 'game', Date.now())} onEnable={() => trackedSetGameSettings("direct_player_change", "✨ New in V9.9", prev => ({ ...prev, matchRecoveryEnabled: true }))} />
 
               {/* Quick Tip */}
               <div className={`text-xs opacity-75 text-center pt-2 border-t ${themeStyles.border}`}>
@@ -249576,6 +251712,9 @@ function dispatchGameSettingsChange(
             </div>
           </div>
 
+          {/* V9.9 (SECTION 20AV): the autosaved match, when autosave is on and one is stored. */}
+          {v99mr.card && <V99ResumeMatchCard view={v99mr.card} isDark={isDark} onResume={v99mr.resume} onDiscard={v99mr.discard} />}
+
           {/* Game Mode Selection */}
           <div className="space-y-3">
             <button
@@ -249831,6 +251970,7 @@ function dispatchGameSettingsChange(
     const pendingMode = uiState.pendingMode || 'ai';
 
     if (pendingMode === 'scenario') {
+      const v99ScenarioRecords = readScenarioRecords(v99BrowserStorage()).scenarios; // V9.9 (SECTION 20AT, W3S): completion ticks
       return (
         <div className={`min-h-screen ${themeStyles.menuBackground} ${themeStyles.text} flex items-start justify-center p-6 py-10 relative overflow-x-hidden overflow-y-auto`}>
           <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -249876,6 +252016,7 @@ function dispatchGameSettingsChange(
                       </div>
 
                       <p className={`text-sm mb-4 ${themeStyles.textMuted}`}>{scenario.description}</p>
+                      <V99ScenarioCompletedBadge entry={v99ScenarioRecords[String(scenario.id)]} />{/* V9.9 (SECTION 20AT, W3S): what this device remembers */}
                       {getScenarioLearnTags(scenario).length > 0 && (
                         <div className="mb-3">
                           <div className="text-[11px] font-bold uppercase tracking-wider opacity-60 mb-1">You'll Practice</div>
@@ -255567,10 +257708,11 @@ function dispatchGameSettingsChange(
     if (!confirmationDialog.isOpen) return null;
     
     return (
-      <div className={`fixed inset-0 ${(!surfaceState.backdropOwner || surfaceState.backdropOwner === "approval_dialog") ? "bg-black bg-opacity-70" : "bg-transparent"} flex items-center justify-center p-4`} style={{ zIndex: globalUISurfaceManager.getZIndex("approval_dialog") }} onClick={() => { if (confirmationDialog.type === 'teamAiOverrideRequest' && typeof confirmationDialog.data?.onDeny === 'function') { confirmationDialog.data.onDeny(); } closeConfirmation(); }}>
+      <div className={`fixed inset-0 ${(!surfaceState.backdropOwner || surfaceState.backdropOwner === "approval_dialog") ? "bg-black bg-opacity-70" : "bg-transparent"} flex items-center justify-center p-4`} style={{ zIndex: globalUISurfaceManager.getZIndex("approval_dialog") }} onClick={() => { if (confirmationNeedsAnAnswer(confirmationDialog.type)) return; /* V9.9 (SECTION 20AT, W3S — q3-03) */ if (confirmationDialog.type === 'teamAiOverrideRequest' && typeof confirmationDialog.data?.onDeny === 'function') { confirmationDialog.data.onDeny(); } closeConfirmation(); }}>
         <div className={`${themeStyles.card} ${themeStyles.border} ${themeStyles.text} border rounded-xl p-6 max-w-md w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden ${themeStyles.shadow}`} onClick={(e) => e.stopPropagation()}>
           <h3 className="text-xl font-bold mb-3">{confirmationDialog.title}</h3>
           <p className={`mb-6 ${confirmationDialog.type === 'enablePersistentMemory' || confirmationDialog.type === 'disablePersistentMemory' || confirmationDialog.type === 'deletePersistentMemory' || confirmationDialog.type === 'importPersistentMemory' ? 'whitespace-pre-wrap text-sm' : ''}`}>{confirmationDialog.message}</p>
+          {confirmationNeedsAnAnswer(confirmationDialog.type) && <p className="text-xs opacity-75 -mt-4 mb-4" data-testid="v99-approval-needs-answer">{APPROVAL_NEEDS_ANSWER_NOTE}</p> /* V9.9 (SECTION 20AT, W3S — q3-03) */}
           
           {/* Show relevant data */}
           {confirmationDialog.data && confirmationDialog.type === 'travel' && (
@@ -262496,7 +264638,8 @@ function dispatchGameSettingsChange(
                   {wpMfScenarioHasReplay ? 'Watch Replay' : 'Watch Replay (not recorded)'}
                 </button>
                 <button
-                  onClick={() => startScenario(activeScenario)}
+                  onClick={() => v99RestartScenario(activeScenario)}
+                  data-testid="v99-scenario-restart"
                   className="flex-1 py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-lg transition-all"
                 >
                   🔄 Restart Scenario
@@ -262777,7 +264920,7 @@ function dispatchGameSettingsChange(
       {gameState.gameMode === "game" && renderGame()}
       {gameState.gameMode === "end" && renderGameOver()}
       {/* V9.9 (SECTION 20AS): the Replay Studio was only mounted inside a match, so "Watch Replay" on the end screen showed nothing and the studio then opened over the next match. */}
-      {gameState.gameMode === "end" && renderReplayDashboard()}
+      {replayStudioDrawnAtTopLevel(gameState.gameMode) && renderReplayDashboard() /* W3S: … and on the main menu, where "Open Replay Studio" (Save / Load) opened nothing */}
       {renderSaveLoadModal()}
       {renderLoadPreviewModal()}
       {/* V9.9 (SECTION 20AT): toasts, confirmations and the shortcuts help also exist outside a match (a match mounts its
@@ -262796,7 +264939,7 @@ function dispatchGameSettingsChange(
       )}
       {v99LeaveMatchOpen && gameState.gameMode === "game" && (
         <V99LeaveMatchDialog
-          prompt={describeLeaveMatch({ day: Number(gameState.day) || 1, totalDays: Number(gameSettings.totalDays) || 1, unsavedProgress: v99UnsavedProgress, rivalTurn: saveTimingForTurn(gameState) === 'after_rival_turn', firstRunActive: Boolean(wp8State?.active), campaignChapter: wp98ChapterBindingRef.current ? wp98ChapterBindingRef.current.chapterIndex + 1 : null })}
+          prompt={describeLeaveMatchWithRecovery(describeLeaveMatch({ day: Number(gameState.day) || 1, totalDays: Number(gameSettings.totalDays) || 1, unsavedProgress: v99UnsavedProgress, rivalTurn: saveTimingForTurn(gameState) === 'after_rival_turn', firstRunActive: Boolean(wp8State?.active), campaignChapter: wp98ChapterBindingRef.current ? wp98ChapterBindingRef.current.chapterIndex + 1 : null }), v99mr.coverage, v99mr.status.day) /* V9.9 (SECTION 20AV): with autosave on, say what Resume match brings back */}
           theme={themeStyles}
           zIndex={globalUISurfaceManager.getZIndex("approval_dialog")}
           onSaveAndLeave={v99SaveAndLeaveMatch}
