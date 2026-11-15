@@ -4061,15 +4061,15 @@ export const V99_CHANGELOG = [
   `${GAME_VERSION_LABEL} - A more solid, more replayable game`,
   "Every match is a different match: new weather, markets, dice and rival play each time (World RNG: Deterministic still replays one seed)",
   "The Recommended Action's Do It does exactly what its card says, and the advice now recommends challenges with the real odds, wager and payout",
-  "Honest endings: a FINAL DAY chip, a mercy rule that is announced, a debrief built from what happened, and a Rematch button",
+  "Honest endings: a FINAL DAY chip, a mercy rule that is announced, and a debrief built from what happened",
   "A rival worth playing: it no longer bankrupts itself, it contests regions and the Grand Tour, and it can never leave the match stuck on its turn",
   "Rival speed: Normal, Fast or Instant - the rival makes the same moves at every speed",
-  "Your settings stay saved on this device, the main menu has a Settings button, Leave match asks first, and a display error offers a way back",
+  "Your display, sound and accessibility choices stay saved on this device (match rules start fresh); Settings is on the main menu; Leave match asks first",
   "Play screen: the turn pill and Quick Actions sit in one row under the header, and routine notifications leave by themselves",
   "Rules that match the screen: crafted goods have a real price, crafting, buying and staking use an action, and the price shown is the price paid",
-  "Readable Retro and Light themes, and one money format in every browser language",
-  "Saves: loading replaces the match cleanly, a save asked for during the rival's turn waits for the turn, and V9.8 saves keep loading",
-  "New and off by default (Settings, New in V9.9): Autosave & Resume, Match Journal & Daily Seed, Turn Digest",
+  "Retro reads on every screen and Light is far easier to read (end screen, decisions, standings); money is written one way in every browser language",
+  "Saves: loading replaces the match cleanly, a save asked for in the rival's turn waits for it, V9.8 saves keep loading, and a display error offers a way back",
+  "New and off by default (Settings, New in V9.9): Autosave & Resume, Match Journal & Daily Seed (with Rematch), Turn Digest, a warning before closing the tab",
   "Prefer the old look? Classic sticky toasts and Classic play-screen layout bring back V9.8's"
 ];
 
@@ -14072,6 +14072,8 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   rivalTurnPace: 'normal' as RivalTurnPace,
   classicStickyToasts: false,
   classicPlayScreenLayout: false,
+  /** V9.9 (SECTION 20AT, W4A): the browser's "leave site?" question before a reload mid-match — off by default. */
+  warnBeforeUnloadEnabled: false,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -15201,6 +15203,7 @@ export function sanitizeGameSettings(input: unknown): GameSettingsState {
     rivalTurnPace: coerceRivalTurnPace(src.rivalTurnPace, 'normal'),
     classicStickyToasts: typeof src.classicStickyToasts === 'boolean' ? src.classicStickyToasts : defaults.classicStickyToasts,
     classicPlayScreenLayout: typeof src.classicPlayScreenLayout === 'boolean' ? src.classicPlayScreenLayout : defaults.classicPlayScreenLayout,
+    warnBeforeUnloadEnabled: typeof src.warnBeforeUnloadEnabled === 'boolean' ? src.warnBeforeUnloadEnabled : defaults.warnBeforeUnloadEnabled, // V9.9 (SECTION 20AT, W4A)
     rememberCategoryNavigationState: typeof src.rememberCategoryNavigationState === 'boolean' ? src.rememberCategoryNavigationState : defaults.rememberCategoryNavigationState,
     rememberCategoryNavigationMode: typeof src.rememberCategoryNavigationMode === 'boolean' ? src.rememberCategoryNavigationMode : defaults.rememberCategoryNavigationMode,
     autoCollapseCategoriesOnNarrow: typeof src.autoCollapseCategoriesOnNarrow === 'boolean' ? src.autoCollapseCategoriesOnNarrow : defaults.autoCollapseCategoriesOnNarrow,
@@ -18311,7 +18314,7 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     key: 'matchJournalEnabled',
     category: 'human_controls',
     label: 'Match Journal & Daily Seed',
-    description: 'Remembers finished matches on this device (results, personal bests), lets you replay a seed and offers a daily seed.',
+    description: 'Remembers finished matches on this device (results, personal bests, scenario ticks), adds Rematch to the end screen, lets you replay a seed and offers a daily seed.',
     valueType: 'boolean',
     defaultValue: false,
     validate: (v: unknown) => typeof v === 'boolean',
@@ -18357,6 +18360,17 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     category: 'interface',
     label: 'Classic play-screen layout',
     description: 'On = the floating turn pill and floating quick-actions bar as before V9.9.',
+    valueType: 'boolean',
+    defaultValue: false,
+    validate: (v: unknown) => typeof v === 'boolean',
+    isLiveSafe: true,
+    affectsFairness: false,
+  },
+  {
+    key: 'warnBeforeUnloadEnabled',
+    category: 'human_controls',
+    label: 'Warn before closing the tab mid-match',
+    description: 'The browser asks before a reload or a closed tab throws away what you played since the last save. It stays quiet while Autosave & Resume holds a current copy.',
     valueType: 'boolean',
     defaultValue: false,
     validate: (v: unknown) => typeof v === 'boolean',
@@ -26804,8 +26818,9 @@ export type GameSettingsState = {
   /** V9.9 Match Recovery (SECTION 20AV): "Autosave & Resume" — keeps a recovery copy of the match in this browser at each turn
    *  and offers Resume match on the main menu. Off = nothing is written and the menu is unchanged. Profile-scoped. */
   matchRecoveryEnabled?: boolean;
-  /** V9.9 Match Journal & Daily Seed (SECTION 20AW): remembers finished matches on this device (results, personal bests),
-   *  lets you replay a seed and offers a daily seed. Off = nothing is recorded or shown. Profile-scoped. */
+  /** V9.9 Match Journal & Daily Seed (SECTION 20AW): remembers finished matches on this device (results, personal bests,
+   *  scenario ticks), adds Rematch to the end screen, lets you replay a seed and offers a daily seed. Off = nothing is
+   *  recorded or shown. Profile-scoped. */
   matchJournalEnabled?: boolean;
   /** V9.9 Turn Digest (SECTION 20AX): one "Since your last turn" card summarising what the rival did and what changed,
    *  instead of a pile of toasts. Off = notifications exactly as before. Profile-scoped. */
@@ -26817,6 +26832,9 @@ export type GameSettingsState = {
   classicStickyToasts?: boolean;
   /** V9.9 Classic play-screen layout (SECTION 20AU): true = the floating turn pill and floating quick-actions bar, as before V9.9. Profile-scoped. */
   classicPlayScreenLayout?: boolean;
+  /** V9.9 (SECTION 20AT, W4A): true = the browser asks before a reload or a closed tab throws away turns played since the last
+   *  save. Off (default) = the page closes without asking, as in V9.8. Profile-scoped. */
+  warnBeforeUnloadEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -62597,6 +62615,9 @@ export interface CoPilotTakeoverSession {
   /** Executed action tokens / IDs for replay prevention */
   executedActionTokens?: string[];
 
+  /** V9.9 (SECTION 20AR, W4B): the free moves made after the last action of one human turn (v99FreeMoveAtTurnEnd) — never the same one twice. */
+  v99FreeMovesAtTurnEnd?: { turnKey: string; signatures: string[] };
+
   /** Notified action tokens / IDs for toast anti-spam prevention */
   notifiedActionTokens?: string[];
 
@@ -64819,7 +64840,7 @@ export const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'gameplay.scenarioMode', tab: 'gameplay', title: '📜 Scenario Mode & Presets', tags: ['Scenario', 'Gameplay'], fieldKeys: ['scenarioModeEnabled', 'selectedScenarioId', 'scenarioEngineV73Enabled', 'customScenarioBuilderEnabled', 'campaignEngineEnabled', 'campaignModeEnabled', 'narrativeEngineEnabled', 'dynamicCrisisChainsEnabled', 'dynamicCrisesEnabled', 'publicStabilityEnabled', 'nationalEventsEnabled', 'careerProgressionEnabled', 'achievementsEnabled', 'fogOfWarEnabled', 'aiRivalryEnabled'], keywords: 'scenario mode presets forced seed objectives outback siege mining tycoon diplomatic blitz hyper inflation coastal supremacy career progression achievements fog of war rivalry' },
   { id: 'gameplay.rivalryCampaign', tab: 'gameplay', title: '🗺️ The Long Rivalry (Campaign)', tags: ['Gameplay', 'Scenario'], chips: ['Off by default'], fieldKeys: ['rivalryCampaignEnabled'], keywords: 'campaign mode long rivalry chapters rival story eight chapters continue new' },
   // V9.9 (SECTION 20AQ): the three new features, the rival turn pace and the two "classic" presentation switches.
-  { id: 'gameplay.v99', tab: 'gameplay', title: '✨ New in V9.9', tags: ['Gameplay', 'UX'], chips: ['Off by default'], fieldKeys: ['matchRecoveryEnabled', 'matchJournalEnabled', 'turnDigestEnabled', 'rivalTurnPace', 'classicStickyToasts', 'classicPlayScreenLayout'], keywords: 'new in v9.9 autosave auto save auto-save resume recovery recover crash continue match backup journal history records results personal bests rematch replay seed daily seed digest recap summary since your last turn what happened speed pace fast faster instant skip rival turn opponent animation wait toasts notifications sticky popups dismiss layout classic old way turn pill quick actions bar floating' },
+  { id: 'gameplay.v99', tab: 'gameplay', title: '✨ New in V9.9', tags: ['Gameplay', 'UX'], chips: ['Off by default'], fieldKeys: ['matchRecoveryEnabled', 'matchJournalEnabled', 'turnDigestEnabled', 'warnBeforeUnloadEnabled', 'rivalTurnPace', 'classicStickyToasts', 'classicPlayScreenLayout'], keywords: 'new in v9.9 warn before closing tab reload leave site unsaved scenario ticks completed autosave auto save auto-save resume recovery recover crash continue match backup journal history records results personal bests rematch replay seed daily seed digest recap summary since your last turn what happened speed pace fast faster instant skip rival turn opponent animation wait toasts notifications sticky popups dismiss layout classic old way turn pill quick actions bar floating' },
   // SH2: Added 4 uncovered keys to advancedSystems.replaySafety
   { id: 'advancedSystems.replaySafety', tab: 'replayDiag', title: 'Replay Safety & Compatibility', tags: ['Replay', 'Advanced'], fieldKeys: ['randomnessMode', 'aiDeterministic', 'worldRngMode', 'aiReplayRecordingEnabled', 'aiReplayMaxEvents', 'aiDeterministicSeed', 'worldRngSeed', 'replayComparisonEnabled', 'replayComparisonToleranceThreshold', 'replayComparisonIgnoreMinorTiming', 'deterministicRngActive', 'whatIfTimelinesEnabled', 'canonicalActionRoutingV97'] },
   { id: 'advancedSystems.humanAutomation', tab: 'automation', title: 'Human Player Automation', tags: ['Advanced'], chips: ['Off by default'], fieldKeys: ['humanAutomationEnabled', 'humanAutomationTransparencyEnabled', 'automationSequenceLaunchEnabled', 'automationSlotProgressionEnabled', 'automationRunHistoryEnabled', 'automationExtendedTriggersEnabled', 'automationExtendedActionsEnabled', 'automationConflictWarningsEnabled', 'automationDailyDigestEnabled', 'automationImportExportEnabled'] },
@@ -64899,7 +64920,7 @@ export function buildSettingsHubSearchIndex(): SettingsHubSearchEntry[] {
         entries.push({
           id: def.key,
           key: def.key,
-          tab: 'aiTeams',
+          tab: v99RegistrySearchTab(def.key), // V9.9 (SECTION 20AT, W4A — f1-03): the V9.9 keys open their own tab; every other key 'aiTeams' as before
           label: def.label,
           description: def.description,
           category: def.category,
@@ -66460,8 +66481,10 @@ export function resolveCurrentObjective(state: any, settings: any, actorHint?: a
     v99ObjectiveSystemOff('contract', settings) ? null : buildContractObjective(state, actor),
     v99ObjectiveSystemOff('expedition', settings) ? null : buildExpeditionObjective(state, actor),
     v99ObjectiveSystemOff('infrastructure', settings) ? null : buildInfrastructureObjective(state, actor),
-    buildRegionControlObjective(state, actor),
-    buildWinConditionObjective(state, settings, actor)
+    // V9.9 (SECTION 20AR, W4B): a stake where the player stands no longer replaces the match goal ("Control Queensland
+    // 2 / 2 — Next: Defend this region" in a match decided on money); the match goal carries it as a side note. A region
+    // the player tracks by hand is resolved above as before.
+    v99MatchGoalWithRegionNote(buildWinConditionObjective(state, settings, actor), buildRegionControlObjective(state, actor))
   ].filter(Boolean) as CurrentObjective[];
 
   const active = candidates.find(c => c.completionState !== 'completed') || candidates[0];
@@ -66674,7 +66697,7 @@ export function classifyPlayerAttentionState(state: any, settings: any, actorHin
   const actor = resolveIntentActor(state, actorHint);
   const cash = actor?.money || 0;
   if (cash <= BANKRUPTCY_THRESHOLD) {
-    return { state: 'critical', label: 'Bankruptcy danger', detail: `Cash is $${cash.toLocaleString('en-AU')}. Raise funds before the next upkeep.`, navigation: navAction('market', 'Show cash actions') };
+    return { state: 'critical', label: 'Bankruptcy danger', detail: `Cash is ${fmtMoney(cash)}. Raise funds before the next upkeep.`, navigation: navAction('market', 'Show cash actions') };
   }
   const contract = findActiveAssignedContract(state, actor);
   if (contract && typeof contract.turnsRemaining === 'number' && contract.turnsRemaining <= 2) {
@@ -66772,6 +66795,8 @@ export function rankContextualRecommendations(
     if (objective?.sourceType === 'contract' && String(c.category || '').includes('contract')) alignment += 20;
     if (objective?.sourceType === 'expedition' && String(c.actionType || '').includes('expedition')) alignment += 20;
     if (objective?.recommendedNextStep?.actionType && c.actionType === objective.recommendedNextStep.actionType) alignment += 25;
+    alignment = v99PointsGoalAlignment(objective, c, alignment, settings); // V9.9 (SECTION 20AR, W4A — f3-06): on a points goal a sale or a wage adds cash, it does not "advance" the goal
+    alignment = v99RegionGoalAlignment(objective, c, alignment); // V9.9 (SECTION 20AR, W4B): only a stake there, or the journey there, advances "Control <region>" (a day of wages "advanced Control Queensland")
     // GI3: strategic alignment is scored only for candidates that already passed every legality filter above.
     const strategy = options?.strategy ? scoreGI3ActionAlignment(c, options.strategy) : null;
     // V10.7: national relevance is ONE small factor (≤ ±2.5) — Current Objective and GI3 stay far more important.
@@ -71618,6 +71643,8 @@ export interface CoPilotRuntimeContext {
   teamsById?: Record<string, any>;
   /** V9.9 (SECTION 20AR): the play screen's own prices (the fare the Travel dialog charges). Absent outside the component. */
   humanRules?: { current: V99HumanDoItHandlers | null } | null;
+  /** V9.9 (SECTION 20AR, W4A — f3-01): the Tourist's free retry while the play screen offers it (null / absent = no offer). */
+  touristRetry?: V99TouristRetryOffer | null;
 }
 
 export function createCoPilotRuntimeContext(
@@ -71713,7 +71740,12 @@ export function generateCoPilotPlayerActionCandidates(
   const v99ChallengeCandidates: CoPilotActionCandidate[] = gameSettings?.challengeApproachesEnabled === true
     ? [...(v99Finale ? v99BuildClassicChallengeCandidates({ ...v99ClassicInput, regionChallenges: false }) : []), ...buildCoPilotApproachCandidates({ actor: actorObj, world: gs, cash, reserve: minReserveFloor, apRemaining: ap, makeId, settings: gameSettings, seed: resolveEffectiveMatchSeed(gs, Number(gameSettings?.worldRngSeed) || 1) /* V9.9 (SECTION 20AS): the match's seed */, livePlans: context?.humanRules?.current?.approachPlans || null })]
     : v99BuildClassicChallengeCandidates(v99ClassicInput);
-  const v99Trip = v99PlanTravel({ actor: actorObj, world: gs, settings: gameSettings, from: currentRegion, neighbours: v99Neighbours, fare: v99FareTo, fallback: travelTarget, worthHere: v99ChallengesWorthTaking(v99ChallengeCandidates), tour: v99Tour });
+  // V9.9 (SECTION 20AR, W4B): on a regions goal the play screen's advice stakes regions and travels to the next one to
+  // take (v99BuildRegionStakeCandidate, v99PlanRegionTrip). Only where the play screen's own deposit can carry it out.
+  const v99RegionAdvice = context?.humanRules?.current?.stakeRegion ? { actor: actorObj, world: gs, settings: gameSettings, cash, reserve: minReserveFloor, rivalName: typeof v99Rival?.name === 'string' ? v99Rival.name : null } : null;
+  const v99Stake = v99RegionAdvice ? v99BuildRegionStakeCandidate({ ...v99RegionAdvice, apSettings, makeId }) : null;
+  const v99RegionTrip = v99RegionAdvice ? v99PlanRegionTrip({ ...v99RegionAdvice, fare: v99FareTo }) : null;
+  const v99Trip = v99RegionTrip ? { target: v99RegionTrip.target, openThere: 0, reason: v99RegionTrip.reason } : v99PlanTravel({ actor: actorObj, world: gs, settings: gameSettings, from: currentRegion, neighbours: v99Neighbours, fare: v99FareTo, fallback: travelTarget, worthHere: v99ChallengesWorthTaking(v99ChallengeCandidates), tour: v99Tour });
   travelTarget = v99Trip.target;
   const travelCost = v99FareTo(travelTarget);
   candidates.push({
@@ -71727,7 +71759,7 @@ export function generateCoPilotPlayerActionCandidates(
     apCost: 1,
     costEstimate: travelCost,
     expectedOutcome: `Establish operational presence in ${travelTarget}`,
-    utilityScore: goal === 'territory' ? 88 : (v99Trip.reason ? 84 : 72), // V9.9 (SECTION 20AR): a trip to open challenges, with none left here, outranks a day's wage
+    utilityScore: v99RegionTrip ? V99_REGION_TRIP_UTILITY : goal === 'territory' ? 88 : (v99Trip.reason ? 84 : 72), // V9.9 (SECTION 20AR): a trip to open challenges, with none left here, outranks a day's wage (W4B: a trip to the next region to take ranks above it)
     riskFactor: 10,
     rewardScore: 65,
     longTermScore: 72,
@@ -71737,6 +71769,7 @@ export function generateCoPilotPlayerActionCandidates(
     adviceReason: v99Trip.reason || undefined,
     parameters: { destinationRegion: travelTarget, region: travelTarget }
   });
+  if (v99Stake) candidates.push(v99Stake); // V9.9 (SECTION 20AR, W4B): the stake that takes the region the player stands in
 
   // Category 2: Infrastructure / Development
   const existingProjects = gs.infrastructureProjects ? Object.values(gs.infrastructureProjects) : [];
@@ -71954,6 +71987,8 @@ export function generateCoPilotPlayerActionCandidates(
   // An approach card quotes what the roll pays (character bonus, streak and mastery included), not the bare wager × multiplier.
   const v99ApproachLeaderTax = context?.humanRules?.current ? v99HumanSellHandicap(gs, actorObj, v99Rival, gameSettings).leaderTax : false;
   v99ChallengeCandidates.forEach(c => { candidates.push(v99ApproachCandidateWithRollPayout(c, actorObj, v99ApproachLeaderTax)); });
+  // V9.9 (SECTION 20AR, W4A — f3-01): the Tourist's free retry, while the play screen offers it and can carry it out.
+  if (context?.touristRetry && context?.humanRules?.current?.touristRetry) candidates.push(v99BuildTouristRetryCandidate({ offer: context.touristRetry, actor: actorObj, world: gs, settings: gameSettings, rival: v99Rival, cash, makeId, liveChance: context.humanRules.current.challengeChance || null }));
 
   // Category 6: Expedition / Discovery
   // V9.9 (SECTION 20AR): a real expedition site or none. The candidate used to invent "site_<region>_<turn>" and was
@@ -73244,7 +73279,13 @@ export function runCoPilotAutonomousStep(input: CoPilotRuntimeStepInput): CoPilo
     resolvedFrom: 'runCoPilotAutonomousStep'
   });
 
-  if (ap <= 0 || actionsThisTurn >= maxPerTurn) {
+  // V9.9 (SECTION 20AR, W4B): out of actions — a free move that is due (a repayment the last action made affordable, a
+  // loan in real danger) is still made before the turn ends: at most V99_FREE_MOVES_AT_TURN_END, never the same one twice.
+  const v99FreeTurnKey = getCoPilotHumanTurnKey(gameState, session.targetActorId);
+  const v99FreeMove = ap <= 0 || actionsThisTurn >= maxPerTurn
+    ? v99FreeMoveAtTurnEnd((input.generateCandidates || generateCoPilotPlayerActionCandidates)(createCoPilotRuntimeContext(player, gameState, gameSettings, session), player, settings), v99FreeMovesTaken(session, v99FreeTurnKey))
+    : null;
+  if ((ap <= 0 || actionsThisTurn >= maxPerTurn) && !v99FreeMove) {
     const reason = ap <= 0 ? 'ap_exhausted' : 'max_actions_per_turn';
     session = transitionTakeoverStatus(session, 'ending_player_turn', reason === 'ap_exhausted' ? 'max_actions_reached' : 'max_actions_reached', gameState, 'copilot_step');
     return { kind: 'end_turn', session, gameState, player, reason, continueTurn: false, executionGeneration: generation };
@@ -73264,6 +73305,7 @@ export function runCoPilotAutonomousStep(input: CoPilotRuntimeStepInput): CoPilo
       .sort((a, b) => (b.utilityScore ?? 0) - (a.utilityScore ?? 0));
     candidateList.push(...others);
   }
+  if (v99FreeMove) candidateList.splice(0, candidateList.length, v99FreeMove); // V9.9 (SECTION 20AR, W4B): out of actions, only the due free move is on offer
 
   if (!candidateList.length) {
     const firstInvalid = candidatesResult?.candidates?.find(c => !c.isValid && c.invalidationReason);
@@ -73411,6 +73453,7 @@ export function runCoPilotAutonomousStep(input: CoPilotRuntimeStepInput): CoPilo
   (session as any).consecutiveFailures = 0;
   session.lastExecutionResult = executionResult;
   session.status = 'active';
+  if (v99FreeMove) session.v99FreeMovesAtTurnEnd = { turnKey: v99FreeTurnKey, signatures: [...v99FreeMovesTaken(session, v99FreeTurnKey), v99FreeMoveSignature(v99FreeMove)] }; // V9.9 (SECTION 20AR, W4B)
 
   const token = selectedActionIntent.actionToken || selectedActionIntent.actionId;
   if (token) {
@@ -73444,7 +73487,12 @@ export function runCoPilotAutonomousStep(input: CoPilotRuntimeStepInput): CoPilo
   const postEval = evaluateControlReturnRules(session, gameState, settings);
   const apAfter = getRemainingActionPoints(player, gameSettings);
   const turnActsAfter = session.actionsThisHumanTurn || 0;
-  const shouldContinue = !postEval.shouldReturnControl && apAfter > 0 && turnActsAfter < maxPerTurn && (session.status as CoPilotTakeoverSession['status']) !== 'completing';
+  // V9.9 (SECTION 20AR, W4B): with the last action spent the step runs once more while a due free move is waiting.
+  const v99Stopping = postEval.shouldReturnControl || (session.status as CoPilotTakeoverSession['status']) === 'completing';
+  const v99FreeNext = !v99Stopping && !(apAfter > 0 && turnActsAfter < maxPerTurn)
+    ? v99FreeMoveAtTurnEnd(generate(createCoPilotRuntimeContext(player, gameState, gameSettings, session), player, settings), v99FreeMovesTaken(session, v99FreeTurnKey))
+    : null;
+  const shouldContinue = !postEval.shouldReturnControl && ((apAfter > 0 && turnActsAfter < maxPerTurn) || v99FreeNext !== null) && (session.status as CoPilotTakeoverSession['status']) !== 'completing';
 
   if (!shouldContinue) {
     const reason = postEval.reason || (apAfter <= 0 ? 'ap_exhausted' : (turnActsAfter >= maxPerTurn ? 'max_actions_per_turn' : 'turn_complete'));
@@ -101397,6 +101445,7 @@ export function buildContextualActionSet(input: ContextualActionInput): Contextu
     });
   }
 
+  v99FreeMovesBeforeEndTurn(actionable); // V9.9 (SECTION 20AR, W4A — f3-01): the free retry leads; End Turn is "the only move" only when it is
   actionable.sort(compareContextualCandidates);
   const recommended = actionable[0] || null;
   const useful = actionable.slice(1, 4);
@@ -101934,7 +101983,7 @@ export function buildWhyActionIntelligenceAnswer(input: {
     lines.push(`What it costs you: ${input.tradeoffs.join(' ')}`);
   }
   if (c.execution?.kind === 'copilot_candidate') {
-    lines.push('Doing it runs through the canonical executor, which re-checks legality, Action Points, cash reserve, spending caps and Guardian protections at that moment.');
+    lines.push(v99WhyDoItLine(c.execution.candidate as { actionType?: unknown; parameters?: unknown } | null)); // V9.9 (SECTION 20AR, W4B): the player's words (it described the engine's internals)
   }
   const evidence: GameIntelligenceEvidence[] = [
     ...c.evidence.map(detail => ({ source: c.sourceSystem, detail })),
@@ -127954,7 +128003,7 @@ export interface V9CohesionInputs {
   factions: { requests: Array<{ id: string; faction: string; title: string; deadline: number; regionId: string; urgent: boolean; committed: boolean }>; commitments: Array<{ id: string; faction: string; promise: string; due: number }>; dilemma: { id: string; title: string; regionId: string; need: string; options: Array<{ id: string; label: string; summary: string }> } | null; regionNotes: Record<string, string[]> };
   contracts: Array<{ id: string; title: string; regionId: string | null; turnsLeft: number | null; reward: number; active: boolean }>;
   crises: Array<{ id: string; name: string; regions: string[]; stage: number }>;
-  team: { mission: string; you: string | null; mates: Array<{ name: string; focus: string }>; issue: string | null } | null;
+  team: { mission: string; you: string | null; mates: Array<{ name: string; focus: string }>; issue: string | null; /** V9.9 (SECTION 20AR, W4B): the name of the actor `you` is about — shown instead of "You" in a watched match. */ youName?: string | null } | null;
   regions: Record<string, { name: string; momentum: string; identity: string; risk: string | null; need: string | null; heldByYou: boolean; rivalPressure: boolean }>;
   focusRegion: string | null;
   pendingApprovals: number;
@@ -127993,7 +128042,7 @@ function v9Similar(a: string, b: string): boolean {
   return hit / Math.min(A.size, B.size) >= 0.6;
 }
 function v9Hash(v: unknown): string { const raw = JSON.stringify(v); let h = 2166136261; for (let i = 0; i < raw.length; i++) { h ^= raw.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
-const v9Money = (n: number) => `$${Math.round(n).toLocaleString('en-AU')}`;
+const v9Money = (n: number) => fmtMoney(n); // V9.9 (SECTION 20AR, W4A — f1-05): the shared format (a negative reads "-$200", it read "$-200")
 const v9Simple = (p: V9Presentation) => p === 'simple' || p === 'guided';
 
 /** Compact signature: only rebuild presentation when one of these changes (never the whole game state). */
@@ -128133,7 +128182,7 @@ export function resolveV9GameplayCohesion(i: V9CohesionInputs): V9Cohesion {
   const nextDue = upcomingSorted[0]; if (nextDue && status.length < 4) status.push({ id: `due_${nextDue.id}`, icon: '⏳', text: `${nextDue.text.slice(0, 40)} · ${nextDue.turnsLeft <= 0 ? 'now' : `${nextDue.turnsLeft}t`}`, tone: nextDue.turnsLeft <= 1 ? 'warn' : 'info' });
   const rivalHot = Object.entries(i.regions).find(([code, r]) => r.rivalPressure && !(i.strategy?.regions || []).includes(code)); if (rivalHot && status.length < 4) status.push({ id: `riv_${rivalHot[0]}`, icon: '🔴', text: `${rivalHot[0]} rival pressure high`, tone: 'bad' });
   // ---- Team (compact) ----
-  const team: V9Cohesion['team'] = i.team ? { mission: i.team.mission, lines: [...(i.team.you ? [`You — ${i.team.you}`] : []), ...i.team.mates.slice(0, simple ? 1 : 3).map(m => `${m.name} — ${m.focus}`)], issue: i.team.issue } : null;
+  const team: V9Cohesion['team'] = i.team ? { mission: i.team.mission, lines: [...(i.team.you ? [`${v99TeamPlanLeadLabel(i.spectator, i.team.youName)} — ${i.team.you}`] : []) /* V9.9 (SECTION 20AR, W4B): a watched match has no "You" */, ...i.team.mates.slice(0, simple ? 1 : 3).map(m => `${m.name} — ${m.focus}`)], issue: i.team.issue } : null;
   // ---- Waiting for another actor (observable only) ----
   const waiting: V9Cohesion['waiting'] = you ? null : { actor: i.currentActorName, status: i.actorStatus, watching: [...(i.strategy?.regions || []).slice(0, 2).map(c => `${c} ${i.regions[c]?.rivalPressure ? 'pressure' : 'status'}`), ...commitments.slice(0, 1).map(c => c.text)].slice(0, 3), recent: merged.filter(e => e.actorId && v9Norm(e.text).includes(v9Norm(i.currentActorName).split(' ')[0])).slice(0, 2).map(e => e.text) };
   // ---- Turn brief (inline, collapsible; once per turn) ----
@@ -128247,7 +128296,7 @@ const V9MatchHeaderView: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() =>
             {/* End-turn context is informative, never a forced block; the game's own End Turn confirmation (with "Don't ask again") still applies. */}
             {w.length > 0 && <span className={`text-xs ${theme.warningText || 'text-amber-300'}`} role="note" title={w.join('\n')} data-testid="v9-end-turn-context">Before ending: {w[0]}{w.length > 1 ? ` (+${w.length - 1})` : ''}</span>}
             <button type="button" className={`${apZero ? `${theme.button} v94-ring px-4 py-1.5 text-sm` : `${theme.buttonSecondary} px-3 py-1 text-xs`} rounded-lg font-bold`} data-testid="v9-header-end-turn" data-emphasis={apZero ? 'primary' : 'secondary'} aria-describedby={w.length ? 'v9-end-turn-context-sr' : undefined} onClick={onEndTurn}>⏭ End Turn{h.finalDay === true ? ' — finish match' : apZero ? ' — no actions left' : ''}</button>
-            {w.length > 0 && <span id="v9-end-turn-context-sr" className="sr-only">{w.join('. ')}</span>}
+            {w.length > 0 && <span id="v9-end-turn-context-sr" className="sr-only" aria-hidden="true">{w.join('. ')}</span> /* V9.9 (SECTION 20AU, W4A — f1-11): the button's description only — it was read a third time as text */}
             {endTurnHint && <kbd className="px-1.5 py-0.5 text-[10px] bg-black bg-opacity-30 rounded hidden sm:inline" title="Keyboard shortcut for End Turn" data-testid="v99-header-end-turn-key">{endTurnHint}</kbd>}
           </span>
         )}
@@ -132651,7 +132700,7 @@ export const ContentMomentCard: React.FC<{ theme: any; moment: ContentMoment; mo
             return (
               <div key={c.id} className={`rounded-lg border ${theme.border} p-2 flex flex-col`} data-testid={`v93-choice-${c.id}`}>
                 <div className="font-bold">{c.label}</div>
-                <ul className="text-[11px] mt-0.5 flex-1">{c.pros.map(p => <li key={p} className="text-emerald-300">+ {p}</li>)}{c.cons.map(p => <li key={p} className="text-rose-300">− {p}</li>)}</ul>
+                <ul className="text-[11px] mt-0.5 flex-1">{c.pros.map(p => <li key={p} className={v99ProConClasses(theme).pro}>+ {p}</li>)}{c.cons.map(p => <li key={p} className={v99ProConClasses(theme).con}>− {p}</li>)}</ul>{/* V9.9 (SECTION 20AU, W4A — f1-04): readable on Light */}
                 <div className="text-[11px] opacity-80 mt-1">{cost > 0 ? `Cost: $${cost.toLocaleString('en-AU')}` : 'No cash cost'}</div>
                 <button type="button" disabled={blocked} title={!canAct ? 'Wait for your turn' : cost > money ? `Needs $${cost.toLocaleString('en-AU')}` : undefined} className={`${theme.buttonSecondary} mt-1 px-2 py-1 rounded text-xs font-bold disabled:opacity-50`} onClick={() => h.onChoose(c.id)}>Choose</button>
               </div>
@@ -133390,7 +133439,7 @@ export function deriveFeedbackEvents(prev: FeelSnapshot | null, next: FeelSnapsh
     out.push(v94Event('cash_change', big ? 'normal' : 'minor', 'cash', fmtDelta(cashDelta), [`${fmtMoneyCompact(prev.cash)} → ${fmtMoneyCompact(next.cash)}`], { now, turn, icon: UI_ICON.money, tone: cashDelta > 0 ? 'positive' : 'negative', before: prev.cash, after: next.cash }));
   }
   if (prev.ap !== null && next.ap !== null && next.ap !== prev.ap && prev.turnKey === next.turnKey) {
-    if (next.ap === 0 && prev.ap > 0) out.push(v94Event('ap_exhausted', 'normal', 'ap', 'No actions left', ['End your turn when you are ready'], { now, turn, icon: UI_ICON.actions, tone: 'warning', before: prev.ap, after: 0 }));
+    if (next.ap === 0 && prev.ap > 0 && next.controlOwner !== 'copilot') /* V9.9 (SECTION 20AU, W4A — F4-05): not "end your turn when you are ready" while the Co-Pilot ends it */ out.push(v94Event('ap_exhausted', 'normal', 'ap', 'No actions left', ['End your turn when you are ready'], { now, turn, icon: UI_ICON.actions, tone: 'warning', before: prev.ap, after: 0 }));
     else out.push(v94Event('ap_change', 'minor', 'ap', fmtDelta(next.ap - prev.ap, 'actions'), [`${prev.ap} → ${next.ap}`], { now, turn, icon: UI_ICON.actions, tone: next.ap < prev.ap ? 'negative' : 'positive', before: prev.ap, after: next.ap }));
   }
   const standingDelta = next.region === prev.region ? next.standingHere - prev.standingHere - absorbedStanding : 0;
@@ -133508,7 +133557,7 @@ export const V94OutcomeHero: React.FC<{ won: boolean; winLabel: string; metricLa
     <div className="text-5xl" aria-hidden="true">{won && !headline ? '🏆' : '🏁'}</div>
     <h2 className={`text-3xl sm:text-4xl font-black tracking-tight ${won && !headline ? 'text-emerald-400' : ''}`} data-testid="v99-outcome-headline">{headline || (won ? 'VICTORY' : 'MATCH OVER')}</h2>
     {endLine && <div className="text-sm font-semibold" data-testid="v99-end-line">{endLine}</div>}
-    <div className="text-sm opacity-85">{solo ? `Solo run · scored on ${metricLabel}` : endedEarly ? `${winLabel} · scores when the match ended` : `${winLabel} · decided by ${metricLabel}`}</div>
+    <div className="text-sm opacity-85">{solo ? `Solo run · scored on ${metricLabel}` : endedEarly ? `${winLabel} · scores when the match ended` : describeDecidedBy(winLabel, metricLabel) /* V9.9 (SECTION 20AS, W4A — f1-07): "Most Money · decided by Most Money" printed one label twice */}</div>
     {solo
       ? <div className="flex justify-center gap-6 text-lg font-bold" data-testid="v99-solo-score"><span>▲ {youName} {you}</span></div>
       : <div className="flex justify-center gap-6 text-lg font-bold" data-testid="v99-outcome-score"><span>▲ {youName} {you}</span><span className="opacity-60">vs</span><span>◆ {rivalName} {rival}</span></div>}
@@ -133846,6 +133895,7 @@ export const V95_PROFILE_SCOPED_SETTING_KEYS: readonly string[] = [
   'rivalTurnPace',
   'classicStickyToasts',
   'classicPlayScreenLayout',
+  'warnBeforeUnloadEnabled', // V9.9 (SECTION 20AT, W4A)
 ];
 
 /** Type-compatible coercion against a default (finite numbers only; plain objects merged over the default). */
@@ -134109,11 +134159,11 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         equipment,
         debuffs,
         activeSpecialAbility: typeof data?.activeSpecialAbility === 'string' && data.activeSpecialAbility.trim() ? data.activeSpecialAbility : null,
-        id: typeof data?.id === 'string' ? data.id : fallbackName.toLowerCase().replace(/\s+/g, '_'),
+        id: restoredActorIdentity(data, fallbackName).id, // V9.9 (SECTION 20AT, W4A — F4-02): the rival slot of a save from before the actor model is the AI rival
         displayName: typeof data?.displayName === 'string' && data.displayName.trim() ? data.displayName : (typeof data?.name === 'string' ? data.name : fallbackName),
         teamId: typeof data?.teamId === 'string' ? data.teamId : (fallbackName === 'AI Opponent' ? TEAM_OPPONENT_ID : TEAM_PLAYER_ID),
-        kind: data?.kind === 'ai' ? 'ai' : 'human',
-        isHuman: data?.kind === 'ai' ? false : true, // CPFIX4: Ensure restored actor state aligns isHuman with kind
+        kind: restoredActorIdentity(data, fallbackName).kind, // V9.9 (SECTION 20AT, W4A — F4-02)
+        isHuman: restoredActorIdentity(data, fallbackName).isHuman, // CPFIX4: Ensure restored actor state aligns isHuman with kind
         role: typeof data?.role === 'string' ? data.role : 'leader',
         aiPlan: data?.aiPlan && typeof data.aiPlan.summary === 'string'
           ? {
@@ -135757,6 +135807,7 @@ export function prepareSaveLoadTransaction(input: string | unknown): { ok: boole
   v95DiffSection('gameState', cleanLoadedMatchState(raw.gameState), clean.gameState, report);
   if (strayStateKeyCount(raw.gameState) > 0) report.strayStateKeysRemoved = strayStateKeyCount(raw.gameState);
   describeObjectListRepairs(raw.gameState).forEach(line => v95Push(report.fieldsRepaired, line));
+  describeLegacyRivalRepair(raw).forEach(line => v95Push(report.fieldsRepaired, line)); // V9.9 (SECTION 20AT, W4A — F4-02)
   v95DiffSection('gameSettings', raw.gameSettings, clean.gameSettings, report, { profileSettings: true });
   let migrated: SaveGameData = clean;
   try {
@@ -186586,7 +186637,7 @@ export interface SimpleSettingDescriptor {
 }
 export const SIMPLE_SETTINGS: readonly SimpleSettingDescriptor[] = [
   { key: 'experienceMode', group: 'Match', label: 'Experience', help: 'Explorer: travel and challenges. Nation: the national economy. Full: everything.', kind: 'select', options: [{ value: 'explorer', label: 'Explorer' }, { value: 'nation', label: 'Nation' }, { value: 'full', label: 'Full' }] },
-  { key: 'totalDays', group: 'Match', label: 'Game length', help: 'Days in a match.', kind: 'range', min: 10, max: 100, step: 5, unit: 'days' },
+  { key: 'totalDays', group: 'Match', label: 'Game length', help: 'Days on the match calendar. The match ends when the day before the last one ends: 10 days = 9 days played.' /* V9.9 (SECTION 20AS, W4A — f3-03) */, kind: 'range', min: 10, max: 100, step: 5, unit: 'days' },
   { key: 'winCondition', group: 'Match', label: 'How to win', help: 'What decides the winner at the end.', kind: 'select', options: [{ value: 'money', label: 'Most money' }, { value: 'netWorth', label: 'Highest net worth' }, { value: 'regions', label: 'Most regions' }, { value: 'challenges', label: 'Most challenge points' }] },
   { key: 'actionLimitsEnabled', group: 'Match', label: 'Daily action limit', help: 'Each day you get a set number of actions.', kind: 'toggle' },
   { key: 'playerActionsPerDay', group: 'Match', label: 'Your actions per day', help: 'How many actions you get each day. The rival has its own number, on the line below.', kind: 'range', min: 1, max: 10, step: 1, unit: 'actions' }, // V9.9 (SECTION 20AS): this row only ever set the player's number
@@ -186622,6 +186673,7 @@ export const SimpleSettingsPanel = React.memo(function SimpleSettingsPanel({ set
         <div><h3 className="font-bold text-lg">Settings</h3><div className="text-xs opacity-75">The settings most players change. Every other setting is one click away.</div></div>
         <button type="button" onClick={onShowAll} className="px-4 py-2 rounded-lg font-semibold bg-sky-600 hover:bg-sky-500 text-white text-sm" data-testid="simple-settings-show-all">Show all settings</button>
       </div>
+      <V99SimpleNewJump />{/* V9.9 (SECTION 20AT): the new switches are one click from the view Settings opens on */}
       {groups.map(g => (
         <section key={g} className={`border rounded-xl p-3 space-y-2 ${box}`} aria-label={g}>
           <h4 className="font-semibold text-sm">{g}</h4>
@@ -186649,6 +186701,8 @@ export const SimpleSettingsPanel = React.memo(function SimpleSettingsPanel({ set
           })}
         </section>
       ))}
+      {/* V9.9 (SECTION 20AT, W4A — f1-03): the V9.9 switches and release notes, findable from the view Settings opens on. */}
+      <V99SimpleNewCard settings={settings} onChange={onChange} boxClassName={box} selectClassName={v99Simple.select} />
     </div>
   );
 });
@@ -188449,10 +188503,11 @@ export function runV98CampaignStateSelfTests(): V9SelfTestResult[] {
 // toast are shown only when something beyond the version stamp changed (saveUpgradeNoticeDue), so a V9.6–V9.8 save
 // (all stamped 9.6.0) loads silently. A save stamped older than 9.6.0 keeps both messages, exactly as V9.8 showed them.
 //
-// Settings (all six PROFILE-scoped: never stored in or restored from a save; read flags with `=== true`):
+// Settings (all seven PROFILE-scoped: never stored in or restored from a save; read flags with `=== true`):
 //   matchRecoveryEnabled     boolean, false   NEW feature (SECTION 20AV): autosave to this browser + Resume match
-//   matchJournalEnabled      boolean, false   NEW feature (SECTION 20AW): results history, personal bests, daily seed
+//   matchJournalEnabled      boolean, false   NEW feature (SECTION 20AW): results history, personal bests, daily seed, Rematch, scenario ticks
 //   turnDigestEnabled        boolean, false   NEW feature (SECTION 20AX): one "Since your last turn" card
+//   warnBeforeUnloadEnabled  boolean, false   NEW (SECTION 20AT, W4A): the browser asks before a reload / closed tab mid-match
 //   rivalTurnPace            RivalTurnPace, 'normal'   how fast the rival's turn is shown ('normal' = V9.8 timing)
 //   classicStickyToasts      boolean, false   true = V9.8 toast behaviour (routine toasts stay until dismissed)
 //   classicPlayScreenLayout  boolean, false   true = V9.8 play-screen layout (floating turn pill + quick-actions bar)
@@ -188485,10 +188540,10 @@ export function coerceRivalTurnPace(value: unknown, fallback: RivalTurnPace): Ri
 }
 
 // ---- The six V9.9 settings as the hub shows them --------------------------------------------------------------------
-export type V99BooleanSettingKey = 'matchRecoveryEnabled' | 'matchJournalEnabled' | 'turnDigestEnabled' | 'classicStickyToasts' | 'classicPlayScreenLayout';
+export type V99BooleanSettingKey = 'matchRecoveryEnabled' | 'matchJournalEnabled' | 'turnDigestEnabled' | 'warnBeforeUnloadEnabled' | 'classicStickyToasts' | 'classicPlayScreenLayout';
 export type V99SettingKey = V99BooleanSettingKey | 'rivalTurnPace';
 
-export const V99_SETTING_KEYS: readonly V99SettingKey[] = ['matchRecoveryEnabled', 'matchJournalEnabled', 'turnDigestEnabled', 'rivalTurnPace', 'classicStickyToasts', 'classicPlayScreenLayout'];
+export const V99_SETTING_KEYS: readonly V99SettingKey[] = ['matchRecoveryEnabled', 'matchJournalEnabled', 'turnDigestEnabled', 'warnBeforeUnloadEnabled', 'rivalTurnPace', 'classicStickyToasts', 'classicPlayScreenLayout'];
 export const V99_SETTINGS_HUB_SECTION_ID = 'gameplay.v99';
 export const V99_SETTINGS_HUB_SECTION_TITLE = '✨ New in V9.9';
 
@@ -188497,8 +188552,10 @@ export interface V99ToggleRow { key: V99BooleanSettingKey; label: string; descri
 /** The three new features. All off by default. */
 export const V99_FEATURE_TOGGLE_ROWS: readonly V99ToggleRow[] = [
   { key: 'matchRecoveryEnabled', label: 'Autosave & Resume', description: 'Keeps a recovery copy of the match in this browser at each turn and offers Resume match on the main menu.' },
-  { key: 'matchJournalEnabled', label: 'Match Journal & Daily Seed', description: 'Remembers finished matches on this device (results, personal bests), lets you replay a seed and offers a daily seed.' },
+  { key: 'matchJournalEnabled', label: 'Match Journal & Daily Seed', description: 'Remembers finished matches on this device (results, personal bests, scenario ticks), adds Rematch to the end screen, lets you replay a seed and offers a daily seed.' },
   { key: 'turnDigestEnabled', label: 'Turn Digest', description: 'One "Since your last turn" card summarising what the rival did and what changed, instead of a pile of toasts.' },
+  // W4A (final review, f2-04): the "leave site?" question V9.9 first asked unconditionally.
+  { key: 'warnBeforeUnloadEnabled', label: 'Warn before closing the tab mid-match', description: 'The browser asks before a reload or a closed tab throws away what you played since the last save. It stays quiet while Autosave & Resume holds a current copy.' },
 ];
 
 /** The two "prefer the old way?" switches. Off = the V9.9 presentation; on = exactly what V9.8 showed. */
@@ -188659,8 +188716,9 @@ export interface SaveMigrationStepResult { data: SaveGameData; changed: boolean 
 
 /**
  * Rung for saves stamped older than 9.9.0 (every V9.6, V9.7 and V9.8 save: they are all stamped 9.6.0).
- * V9.9 changes no save shape yet, so there is nothing to do: the save comes back untouched with changed: false.
- * This is the place for later V9.9 packages to give an old save a new field. Rules for anything added here: pure
+ * V9.9 added only optional fields (gameState.matchSeed, gameState.matchEnd, loans[].principal); an old save needs none
+ * of them (missing = V9.8 behaviour), so this rung changes nothing: the save comes back untouched with changed: false.
+ * A later release appends its own rung. Rules for a rung that does change a save: pure
  * (no Date.now, no id counters, no RNG — the load preview runs it on clones before anything is applied), idempotent,
  * add only what is absent (return a new object, never mutate the input), never write a profile-scoped setting, and
  * report changed: true only when the content really changed. The step runs after the legacy step, so it sees
@@ -188824,7 +188882,7 @@ export function runV99FoundationsSelfTests(): V9SelfTestResult[] {
   check('v99fx_11_settings_defaults', 'The three features and the two classic switches default OFF; the rival turn pace defaults to normal', () => {
     const fresh = createDefaultGameSettings() as unknown as Record<string, unknown>;
     const wrong = [...booleanKeys.filter(k => defaults[k] !== false || fresh[k] !== false), ...(defaults.rivalTurnPace === 'normal' && fresh.rivalTurnPace === 'normal' && DEFAULT_RIVAL_TURN_PACE === 'normal' ? [] : ['rivalTurnPace'])];
-    return (wrong.length === 0 && V99_SETTING_KEYS.length === 6 && booleanKeys.length === 5) || `wrong default: ${wrong.join(', ')}`;
+    return (wrong.length === 0 && V99_SETTING_KEYS.length === 7 && booleanKeys.length === 6) || `wrong default: ${wrong.join(', ')}`; // W4A: + warnBeforeUnloadEnabled
   });
   check('v99fx_12_settings_registry', 'Each of the six settings has a registry entry whose type, default, validator and wording match', () => {
     const rows = [...V99_FEATURE_TOGGLE_ROWS, ...V99_CLASSIC_TOGGLE_ROWS];
@@ -188850,7 +188908,7 @@ export function runV99FoundationsSelfTests(): V9SelfTestResult[] {
       || json({ tab: s.tab, title: s.title, fieldKeys: s.fieldKeys, missingWords, elsewhere });
   });
   check('v99fx_15_settings_sanitiser', "The sanitiser keeps good values and rejects bad ones ('yes', 5, 'turbo') back to the defaults", () => {
-    const allOn = sanitizeGameSettings({ matchRecoveryEnabled: true, matchJournalEnabled: true, turnDigestEnabled: true, rivalTurnPace: 'instant', classicStickyToasts: true, classicPlayScreenLayout: true }) as unknown as Record<string, unknown>;
+    const allOn = sanitizeGameSettings({ matchRecoveryEnabled: true, matchJournalEnabled: true, turnDigestEnabled: true, warnBeforeUnloadEnabled: true, rivalTurnPace: 'instant', classicStickyToasts: true, classicPlayScreenLayout: true }) as unknown as Record<string, unknown>;
     const badValues: readonly unknown[] = ['yes', 5, 'turbo', null, 'true', 1, {}, []];
     const broken: string[] = [];
     badValues.forEach(bad => {
@@ -189380,7 +189438,7 @@ export function v99IsShopEquipmentId(itemId: unknown): boolean {
 // ---- How the player's "Do It" is carried out --------------------------------------------------------------------------
 
 /** 'canonical' = the engine executor; the others are done exactly as the player would do them by hand. */
-export type V99DoItRoute = 'travel' | 'sell' | 'buy_market' | 'buy_equipment' | 'challenge' | 'challenge_approach' | 'canonical';
+export type V99DoItRoute = 'travel' | 'sell' | 'buy_market' | 'buy_equipment' | 'challenge' | 'challenge_approach' | 'region_deposit' | 'canonical';
 
 /**
  * Travel, selling, the Resource Market and the equipment shop each have a hand-operated path with its own rules
@@ -189391,7 +189449,8 @@ export type V99DoItRoute = 'travel' | 'sell' | 'buy_market' | 'buy_equipment' | 
 export function v99HumanDoItRoute(actionType: unknown): V99DoItRoute {
   const type = String(actionType || '');
   // A2: a challenge is taken the way the Challenges dialog takes it (the same roll, payout, streaks, records and notices).
-  return type === 'travel' || type === 'sell' || type === 'buy_market' || type === 'buy_equipment' || type === 'challenge' || type === 'challenge_approach' ? type : 'canonical';
+  // W4B: a region stake is the Region Control panel's own deposit (its minimum, its action cost, its notices and control history).
+  return type === 'travel' || type === 'sell' || type === 'buy_market' || type === 'buy_equipment' || type === 'challenge' || type === 'challenge_approach' || type === 'region_deposit' ? type : 'canonical';
 }
 
 /**
@@ -189405,6 +189464,7 @@ export function v99RunHumanDoIt(route: V99DoItRoute, hands: V99HumanDoItHandlers
   if (route === 'buy_market') { hands.buy(String(p.item || '')); return true; }
   if (route === 'buy_equipment') { hands.buyEquipment(String(p.itemId || p.item || '')); return true; }
   if (route === 'challenge') {
+    if (p.touristRetry === true) { if (!hands.touristRetry) return false; hands.touristRetry(); return true; } // W4A (f3-01): the free retry is the button's own handler
     const c: unknown = p.challenge;
     if (!hands.challenge || p.resolveRoll !== true || !v99IsRecord(c) || typeof c.name !== 'string') return false;
     hands.challenge({ name: c.name, type: String(c.type || ''), difficulty: Number(c.difficulty) || 1, reward: Number(c.reward) || 1, challengeId: typeof c.challengeId === 'string' ? c.challengeId : undefined }, Number(p.wager) || 0);
@@ -189413,6 +189473,12 @@ export function v99RunHumanDoIt(route: V99DoItRoute, hands: V99HumanDoItHandlers
   if (route === 'challenge_approach') {
     if (!hands.challengeApproach || typeof p.challengeId !== 'string' || typeof p.approachId !== 'string') return false;
     hands.challengeApproach(p.challengeId, p.approachId, Number(p.wager) || 0);
+    return true;
+  }
+  if (route === 'region_deposit') {
+    const amount = Math.floor(Number(p.amount) || 0);
+    if (!hands.stakeRegion || typeof p.region !== 'string' || !(amount > 0)) return false;
+    hands.stakeRegion(p.region, amount);
     return true;
   }
   return false;
@@ -189438,6 +189504,10 @@ export interface V99HumanDoItHandlers {
   emergencyLoan?: () => void;
   /** W3F1: presses the Repay Loan quick action. */
   repayLoan?: () => void;
+  /** W4B: stakes `amount` in `region` exactly as the Region Control panel's "Deposit Money" does (only where the player stands). */
+  stakeRegion?: (region: string, amount: number) => void;
+  /** W4A (f3-01): presses the play screen's own "Retry (+20%, no action)" button (the Tourist's second chance). */
+  touristRetry?: () => void;
 }
 
 /** Identifies "this action on this target" for one turn (which candidate was pressed; which one failed). */
@@ -189757,9 +189827,12 @@ export function v99BuildClassicChallengeCandidates(i: V99ChallengeCandidatesInpu
     const successChance = Number.isFinite(live) ? live : v99ClassicChallengeChance(challenge, actor, i.world, i.settings, handicap);
     return { challenge, finale, quote: v99QuoteChallenge({ challenge, actor, successChance, cash: i.cash, reserve: i.reserve, settings: i.settings, leaderPenalty: handicap.leaderTax }) };
   };
+  // W4A (f3-06): on a points goal the best challenges are the ones that add the most points on average (dollars break ties).
+  const byPoints = v99PointsGoal(i.settings);
+  const pointsOf = (x: { challenge: V99ChallengeOffer; quote: V99ChallengeQuote }) => (byPoints ? x.quote.successChance * v99ChallengePoints(x.challenge) : 0);
   const regional = i.regionChallenges === false ? [] : v99OpenChallengesFor(actor, region, i.world, i.settings)
     .map(challenge => quoteFor(challenge, false))
-    .sort((a, b) => (b.quote.expectedValue - a.quote.expectedValue) || (a.challenge.name < b.challenge.name ? -1 : a.challenge.name > b.challenge.name ? 1 : 0))
+    .sort((a, b) => (pointsOf(b) - pointsOf(a)) || (b.quote.expectedValue - a.quote.expectedValue) || (a.challenge.name < b.challenge.name ? -1 : a.challenge.name > b.challenge.name ? 1 : 0))
     .slice(0, 2);
   return [...(i.finale ? [quoteFor(i.finale, true)] : []), ...regional]
     .map(({ challenge, quote, finale }) => {
@@ -189769,21 +189842,25 @@ export function v99BuildClassicChallengeCandidates(i: V99ChallengeCandidatesInpu
       // The Grand Tour finale is the race itself: it is offered at any odds that favour the player (the dialog still asks to confirm a risky one).
       const blocker = !quote.favourable || (!finale && quote.successChance < 0.5) ? `Risky today — only ${pct}% to win (pays ×${challenge.reward})`
         : quote.wager <= 0 ? `Not enough spare cash above your $${Math.max(0, Math.round(i.reserve))} reserve for the $${MINIMUM_WAGER} minimum wager`
-          : !finale && quote.expectedValue < V99_DAY_WAGE ? 'Not worth a wager today — on average it earns less than a day of paid work'
+          : !finale && !byPoints && quote.expectedValue < V99_DAY_WAGE ? 'Not worth a wager today — on average it earns less than a day of paid work'
             : null;
+      // W4A (f1-05): money as everywhere else ("$1,320"); (f3-06): on a points goal the card says what the win adds to the score.
+      const points = v99ChallengePoints(challenge);
+      const winText = fmtMoney(quote.winReward), stakeText = fmtMoney(stake);
+      const pointsText = `+${points} point${points === 1 ? '' : 's'}`;
       const slug = String(challenge.challengeId || challenge.name).toLowerCase().replace(/[^a-z0-9]+/g, '_');
       return {
         id: i.makeId(5, `take_${slug}`),
         category: 'challenges',
         categoryIndex: 5,
         categoryName: 'Challenge / Quest Execution',
-        title: finale ? `Take the finale: ${challenge.name} — wager $${stake}` : `Take ${challenge.name} — wager $${stake}`,
-        description: `${challenge.type} challenge, difficulty ${challenge.difficulty}, pays ×${challenge.reward}: ${pct}% to win $${quote.winReward}; a loss costs the $${stake} wager.`,
+        title: finale ? `Take the finale: ${challenge.name} — wager ${stakeText}` : `Take ${challenge.name} — wager ${stakeText}`,
+        description: `${challenge.type} challenge, difficulty ${challenge.difficulty}, pays ×${challenge.reward}: ${pct}% to win ${winText}${byPoints && !finale ? ` and ${pointsText}` : ''}; a loss costs the ${stakeText} wager.`,
         actionType: 'challenge',
         apCost,
         costEstimate: stake,
-        expectedOutcome: `${pct}% to win $${quote.winReward}; a loss costs the $${stake} wager`,
-        utilityScore: finale ? 95 : v99ChallengeUtility(quote.expectedValue),
+        expectedOutcome: `${pct}% to win ${winText}; a loss costs the ${stakeText} wager`,
+        utilityScore: finale ? 95 : byPoints ? v99ChallengePointsUtility(quote.successChance, points) : v99ChallengeUtility(quote.expectedValue),
         riskFactor: finale ? 0 : Math.round((1 - quote.successChance) * 100),
         rewardScore: finale ? 100 : pct,
         longTermScore: 60,
@@ -189791,10 +189868,10 @@ export function v99BuildClassicChallengeCandidates(i: V99ChallengeCandidatesInpu
         isValid: !blocker,
         invalidationReason: blocker || undefined,
         targetId: String(challenge.challengeId || challenge.name),
-        adviceReason: finale ? `the finale decides the race: ${pct}% to win it (and $${quote.winReward}) on a $${stake} wager` : `${pct}% to win $${quote.winReward} on a $${stake} wager`,
+        adviceReason: finale ? `the finale decides the race: ${pct}% to win it (and ${winText}) on a ${stakeText} wager` : byPoints ? `${pct}% for ${pointsText} (and ${winText}) on a ${stakeText} wager` : `${pct}% to win ${winText} on a ${stakeText} wager`,
         parameters: {
           challengeName: challenge.name, challengeId: challenge.challengeId, wager: stake, difficulty: challenge.difficulty, type: challenge.type, rewardMultiplier: challenge.reward,
-          region, successChance: quote.successChance, winReward: quote.winReward, resolveRoll: true, challenge: { ...challenge }
+          region, successChance: quote.successChance, winReward: quote.winReward, resolveRoll: true, challenge: { ...challenge }, ...(byPoints ? { points } : {})
         }
       };
     });
@@ -189815,7 +189892,7 @@ export function v99ApproachCandidateWithRollPayout(candidate: CoPilotActionCandi
   let expectedOutcome = String(candidate.expectedOutcome || '');
   if (def && approach && wager > 0) {
     const win = v99ChallengeWinReward({ name: def.name, type: '', difficulty: def.difficulty, reward: approach.rewardMultiplier }, actor || {}, wager, leaderPenalty);
-    expectedOutcome = expectedOutcome.replace(/to win \$\d+/, `to win $${win}`);
+    expectedOutcome = expectedOutcome.replace(/to win \$[\d,]+/, `to win ${fmtMoney(win)}`); // W4A (f1-05): one money format
   }
   return { ...candidate, expectedOutcome, adviceReason: candidate.adviceReason || expectedOutcome.split(';')[0] || undefined };
 }
@@ -190176,7 +190253,7 @@ export function v99WinObjectiveNextStep(metric: string, actor: V99ChallengeActor
     if (goals.includes(region) && open.length > 0) return { label: 'Win a challenge for this stamp', detail: `One challenge won in ${v99RegionName(region)} earns its passport stamp (${tour.stamps.length} of ${tour.required.length} so far).`, target: 'challenges', navLabel: 'Open Challenges', actionType: approaches ? 'challenge_approach' : 'challenge' };
     return { label: 'Travel to a missing stamp', detail: `${goals.length} stamp${goals.length === 1 ? '' : 's'} to go: ${goals.join(', ')}.`, target: 'travel', navLabel: 'Open Travel', actionType: 'travel' };
   }
-  if (metric === 'regions') return { label: 'Contest a region', detail: 'Hold the highest deposit in more regions than your rival: reinforce a close region or contest the nearest one.', target: 'map', navLabel: 'Open Map', actionType: null };
+  if (metric === 'regions') return v99RegionsNextStep(actor, world, settings) /* V9.9 (SECTION 20AR, W4B): the stake, the cash it takes, or the journey to the next region */ || { label: 'Contest a region', detail: 'Hold the highest deposit in more regions than your rival: reinforce a close region or contest the nearest one.', target: 'map', navLabel: 'Open Map', actionType: null };
   const what = metric === 'challenges' ? 'Every challenge you win counts towards the result.' : metric === 'netWorth' ? 'Challenge winnings are the fastest way to grow what you are worth.' : 'Challenge winnings are the fastest way to grow your cash.';
   if (actor && typeof actor.money === 'number' && actor.money < MINIMUM_WAGER) return { label: 'Earn cash for a wager', detail: `${what} Work for wages or sell what you carry until you can cover the $${MINIMUM_WAGER} minimum wager.`, target: null, navLabel: '', actionType: null };
   // "Good odds" is the game's own line: under 50% the Challenges dialog asks "are you sure?". (The opt-in handicap terms need the rival and are left out here.)
@@ -190288,6 +190365,157 @@ export function v99FirstRunFinishText(availability: Partial<Record<FirstRunConce
     ? `Every tool this match has is on screen now and the match carries on. ${off.join(', ')} ${off.length === 1 ? 'is' : 'are'} switched off — Settings turns ${off.length === 1 ? 'it' : 'them'} on.`
     : 'Every tool is on screen now and the match carries on.';
 }
+
+// ---- W4A (final review, f3-01): the advice knows the Tourist's free retry ------------------------------------------------------
+// V9.9 repaired the Tourist's "Retry (+20%, no action)" button and the advice separately: after a lost challenge the card
+// said End Turn was "the only move" (or proposed a paid second attempt) while the free retry was on offer below the fold.
+
+/** The retry as the play screen offers it: the challenge that has just failed, the same wager, and how it was taken. */
+export interface V99TouristRetryOffer { challenge: V99ChallengeOffer; wager: number; baseChance: number | null; rewardMultiplier: number }
+
+/** The offer behind the play screen's retry button (its own condition: a failed challenge, a Tourist, an ability use left). Null = no button. */
+export function v99TouristRetryOffer(failed: { challenge?: unknown; wager?: unknown; approachPlan?: { successChance?: unknown; rewardMultiplier?: unknown } | null } | null | undefined, actor: { character?: { name?: unknown } | null; specialAbilityUses?: unknown } | null | undefined): V99TouristRetryOffer | null {
+  const c: unknown = failed ? failed.challenge : null;
+  if (!failed || !v99IsRecord(c) || typeof c.name !== 'string' || !actor || !actor.character || actor.character.name !== 'Tourist' || !(Number(actor.specialAbilityUses) > 0)) return null;
+  const wager = Math.floor(Number(failed.wager) || 0);
+  if (!(wager > 0)) return null;
+  const plan = failed.approachPlan || null;
+  const challenge: V99ChallengeOffer = { name: c.name, type: String(c.type || ''), difficulty: Number(c.difficulty) || 1, reward: Number(c.reward) || 1, challengeId: typeof c.challengeId === 'string' ? c.challengeId : undefined };
+  const planChance = plan ? Number(plan.successChance) : NaN, planReward = plan ? Number(plan.rewardMultiplier) : NaN;
+  return { challenge, wager, baseChance: Number.isFinite(planChance) ? planChance : null, rewardMultiplier: Number.isFinite(planReward) && planReward > 0 ? planReward : challenge.reward };
+}
+
+/** Part of the advice fingerprint: the candidates are rebuilt when the retry comes on offer or goes away. */
+export function v99TouristRetryKey(offer: V99TouristRetryOffer | null | undefined): string {
+  return offer ? `|retry:${offer.challenge.name}:${offer.wager}` : '';
+}
+
+export const V99_TOURIST_RETRY_UTILITY = 96;
+
+/**
+ * "Retry <challenge> (+20%, no action)": the second chance exactly as the button gives it — the same wager, the odds
+ * with Tourist Luck (resolveChallengeAttemptAbility), no action — ranked above another paid attempt and, with no
+ * actions left, above End Turn. Not advice when the odds stay risky even with the +20%.
+ */
+export function v99BuildTouristRetryCandidate(i: { offer: V99TouristRetryOffer; actor: V99ChallengeActorView; world: V99ChallengeWorldView | null | undefined; settings: V99ChallengeSettingsView | null | undefined; rival: V99AdviceActorView | null | undefined; cash: number; makeId: (catIdx: number, slug: string) => string; liveChance?: ((challenge: V99ChallengeOffer) => number) | null }): CoPilotActionCandidate {
+  const { offer } = i;
+  const actor = i.actor || {};
+  const handicap = v99HumanSellHandicap(i.world, actor, i.rival, i.settings);
+  const live = i.liveChance ? i.liveChance(offer.challenge) : NaN;
+  const base = offer.baseChance !== null ? offer.baseChance : Number.isFinite(live) ? live : v99ClassicChallengeChance(offer.challenge, actor, i.world, i.settings, handicap);
+  const chance = resolveChallengeAttemptAbility({ activeAbility: null, override: 'Tourist Luck', baseChance: Math.max(0, Math.min(1, v99Finite(base, 0))), difficulty: offer.challenge.difficulty }).chance;
+  const win = v99ChallengeWinReward({ ...offer.challenge, reward: offer.rewardMultiplier }, actor, offer.wager, handicap.leaderTax);
+  const expected = chance * win - (1 - chance) * offer.wager;
+  const pct = Math.round(chance * 100);
+  const blocker = i.cash < offer.wager ? `Not enough cash for the ${fmtMoney(offer.wager)} wager`
+    : chance < 0.5 || expected <= 0 ? `Risky even with Tourist Luck — only ${pct}% to win` : null;
+  const slug = String(offer.challenge.challengeId || offer.challenge.name).toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  return {
+    id: i.makeId(5, `retry_${slug}`),
+    category: 'challenges',
+    categoryIndex: 5,
+    categoryName: 'Challenge / Quest Execution',
+    title: `Retry ${offer.challenge.name} (+20%, no action) — wager ${fmtMoney(offer.wager)}`,
+    description: `Tourist Luck: a second try at the challenge that just failed, at +20%. ${pct}% to win ${fmtMoney(win)}; a loss costs the ${fmtMoney(offer.wager)} wager. It uses no action.`,
+    actionType: 'challenge',
+    apCost: 0,
+    costEstimate: offer.wager,
+    expectedOutcome: `${pct}% to win ${fmtMoney(win)}; a loss costs the ${fmtMoney(offer.wager)} wager`,
+    utilityScore: V99_TOURIST_RETRY_UTILITY,
+    riskFactor: Math.round((1 - chance) * 100),
+    rewardScore: pct,
+    longTermScore: 60,
+    expectedStateDelta: { cashDelta: Math.round(expected), apDelta: 0 },
+    isValid: !blocker,
+    invalidationReason: blocker || undefined,
+    targetId: `retry:${String(offer.challenge.challengeId || offer.challenge.name)}`,
+    adviceReason: `Tourist Luck: ${pct}% to win ${fmtMoney(win)} on a ${fmtMoney(offer.wager)} wager — and it uses no action`,
+    parameters: { challengeName: offer.challenge.name, challengeId: offer.challenge.challengeId, wager: offer.wager, difficulty: offer.challenge.difficulty, type: offer.challenge.type, rewardMultiplier: offer.rewardMultiplier, successChance: chance, winReward: win, resolveRoll: true, touristRetry: true, apCost: 0, challenge: { ...offer.challenge } }
+  };
+}
+
+/** True for the retry candidate above. */
+export function v99IsTouristRetry(candidate: { parameters?: unknown } | null | undefined): boolean {
+  return Boolean(candidate) && v99IsRecord(candidate?.parameters) && candidate?.parameters.touristRetry === true;
+}
+
+export const V99_END_TURN_ONLY_MOVE_REASON = 'no Action Points left — ending your turn is the only move';
+export const V99_END_TURN_FREE_MOVES_REASON = 'no Action Points left — only free moves remain';
+
+/**
+ * Last step of the contextual action set, before it is sorted: the free retry leads (also over "End Turn" when no
+ * action is left), and "End Turn" stops calling itself "the only move" while any free move is on the list.
+ */
+export function v99FreeMovesBeforeEndTurn(actionable: ContextualActionCandidate[]): void {
+  const isCandidate = (a: ContextualActionCandidate) => a.execution?.kind === 'copilot_candidate';
+  const top = actionable.reduce((max, a) => Math.max(max, Number(a.relevance) || 0), 0);
+  actionable.forEach(a => {
+    if (!isCandidate(a) || a.execution?.kind !== 'copilot_candidate' || !v99IsTouristRetry(a.execution.candidate) || a.relevance > top) return;
+    a.scoreBreakdown = [...(a.scoreBreakdown || []), { factor: 'Free second chance (Tourist Luck)', points: top + 1 - a.relevance }];
+    a.relevance = top + 1;
+    a.urgency = 'high';
+  });
+  const anyFree = actionable.some(a => isCandidate(a) && Number(a.apCost) === 0);
+  const end = actionable.find(a => a.id === 'end_turn');
+  if (end && anyFree && end.reasons[0] === V99_END_TURN_ONLY_MOVE_REASON) end.reasons = [V99_END_TURN_FREE_MOVES_REASON, ...end.reasons.slice(1)];
+}
+
+// ---- W4A (final review, f3-06): "Most challenge points" is advised in points -----------------------------------------------
+/** True when the match is won on challenge points (a challenge is worth its difficulty: computeActorChallengeScore). */
+export function v99PointsGoal(settings: unknown): boolean {
+  return v99IsRecord(settings) && settings.winCondition === 'challenges';
+}
+/** The points a challenge adds to the score when it is won. */
+export function v99ChallengePoints(challenge: { name?: unknown; difficulty?: unknown }): number {
+  const listed = typeof challenge.name === 'string' ? ALL_CHALLENGE_DIFFICULTIES[challenge.name] : undefined;
+  return Math.max(1, Math.floor(Number(listed) || Number(challenge.difficulty) || 1));
+}
+/** How strongly a challenge is recommended on a points goal: by the points it adds on average (0.5 → 81, 2.85 → 95), always above a day's wage. */
+export function v99ChallengePointsUtility(successChance: number, points: number): number {
+  return Math.max(78, Math.min(95, Math.round(78 + 6 * v99Finite(successChance, 0) * v99Finite(points, 1))));
+}
+/**
+ * On a points goal only what wins challenge points — a challenge, or the journey to open ones — "advances the goal";
+ * a sale or a day of wages adds cash and says so. For any other goal the alignment is returned as it is.
+ */
+export function v99PointsGoalAlignment(objective: { sourceType?: unknown } | null | undefined, candidate: { actionType?: unknown } | null | undefined, alignment: number, settings: unknown): number {
+  if (!objective || objective.sourceType !== 'win_condition' || !candidate || !v99PointsGoal(settings)) return alignment;
+  const type = String(candidate.actionType || '');
+  return type === 'challenge' || type === 'challenge_approach' || type === 'travel' ? alignment : 0;
+}
+
+// ---- W4A (final review, f1-12 / f3-04): "What happened" says what happened --------------------------------------------------
+// The card repeated the advice ("Take X — wager $500 … 72% to win $1,320") whether the challenge was won or lost, and
+// stayed through the rival's turn and the next day. It now leads with the result the toast gave, and ends with the turn.
+
+/** The challenge a "Take … / Retry …" card names, or null for any other action. */
+export function v99TeachingChallengeName(whatHappened: unknown): string | null {
+  const m = /^(?:Take the finale: |Take |Retry )(.+?)(?: \(\+20%, no action\))? — wager \$/.exec(String(whatHappened || ''));
+  return m ? m[1] : null;
+}
+/** The result line of the card: the newest notice of today that reports this challenge won or lost (the toast's own sentence). */
+export function v99TeachingOutcome(teaching: { whatHappened?: unknown } | null | undefined, notes: ReadonlyArray<{ message?: unknown; day?: unknown }> | null | undefined, day: number): string | null {
+  const name = teaching ? v99TeachingChallengeName(teaching.whatHappened) : null;
+  if (!name || !Array.isArray(notes)) return null;
+  for (let k = notes.length - 1; k >= 0; k--) {
+    const n = notes[k];
+    const message = n ? String(n.message || '') : '';
+    if (n && Number(n.day) === Number(day) && (message.startsWith(`${name} failed. Lost `) || message.startsWith(`${name} completed! Won `))) return message;
+  }
+  return null;
+}
+/** The card's first lines: the result when there is one ("What happened"), otherwise what the player did ("What you did"). */
+export const V99TeachingLines: React.FC<{ teaching: { whatHappened?: unknown }; notes: ReadonlyArray<{ message?: unknown; day?: unknown }> | null | undefined; day: number }> = ({ teaching, notes, day }) => {
+  const outcome = v99TeachingOutcome(teaching, notes, day);
+  const rolled = v99TeachingChallengeName(teaching.whatHappened) !== null;
+  return (
+    <>
+      <div className="font-semibold" data-testid="v99-teaching-heading">{outcome || !rolled ? 'What happened' : 'What you did'}</div>
+      {outcome && <div className="font-semibold" data-testid="v99-teaching-outcome">{outcome}</div>}
+      <div>{String(teaching.whatHappened || '')}</div>
+    </>
+  );
+};
 
 export function runV99TrustworthyAdviceSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
@@ -190983,7 +191211,7 @@ export function runV99TrustworthyAdviceSelfTests(): V9SelfTestResult[] {
     const s = a1Settings();
     const list = a2Challenges(a1Candidates(a2Player(), a2World(), s));
     if (list.length !== 2) return `${list.length} challenge candidates`;
-    const bad = list.filter(c => !c.isValid || c.costEstimate !== a1Obj(c.parameters).wager || !c.title.startsWith('Take ') || !c.title.includes(`wager $${c.costEstimate}`) || !/^\d+% to win \$\d+ on a \$\d+ wager$/.test(String(c.adviceReason)) || !a2QldNames.includes(String(a1Obj(c.parameters).challengeName)) || c.apCost !== 1);
+    const bad = list.filter(c => !c.isValid || c.costEstimate !== a1Obj(c.parameters).wager || !c.title.startsWith('Take ') || !c.title.includes(`wager $${c.costEstimate}`) || !/^\d+% to win \$[\d,]+ on a \$[\d,]+ wager$/.test(String(c.adviceReason)) || !a2QldNames.includes(String(a1Obj(c.parameters).challengeName)) || c.apCost !== 1);
     if (bad.length) return bad.map(c => `${c.title} | ${String(c.adviceReason)} | valid ${String(c.isValid)} ${String(c.invalidationReason)}`).join(' ; ');
     const surf = list.find(c => a1Obj(c.parameters).challengeName === 'Surf at Gold Coast');
     if (!surf || surf.costEstimate !== 250 || surf.adviceReason !== '82% to win $540 on a $250 wager' || a1Obj(surf.parameters).winReward !== 540) return `Surf: ${surf ? `${surf.title} | ${String(surf.adviceReason)}` : 'missing'}`;
@@ -191192,7 +191420,7 @@ export function runV99TrustworthyAdviceSelfTests(): V9SelfTestResult[] {
       step(a2Player({ money: 20 })).label, step(a2Player(), w, s, 0).label, step(a2Player(), w, a1Settings({ winCondition: 'regions' })).label,
       step(a2Player(), w, a1Settings({ challengeApproachesEnabled: true })).actionType
     ];
-    const want = ['Take a challenge here', 'Travel to open challenges', 'Travel for better odds', 'Earn cash for a wager', 'No actions left today', 'Contest a region', 'challenge_approach'];
+    const want = ['Take a challenge here', 'Travel to open challenges', 'Travel for better odds', 'Earn cash for a wager', 'No actions left today', 'Claim Queensland — stake $300' /* W4B: the regions goal names its stake (was the generic 'Contest a region', kept where stakes are not how regions are taken — v99ad_x05) */, 'challenge_approach'];
     if (JSON.stringify(got) !== JSON.stringify(want)) return JSON.stringify(got);
     if (step(a2Player(), w, s, 0).target !== null || step(a2Player({ money: 20 })).target !== null || step(a2Player({ completedThisSeason: a2QldNames })).actionType !== 'travel') return 'the step opens the wrong screen';
     const spent = resolveCurrentObjective(w, s, a2Player({ actionsUsedThisTurn: 3 }), null);
@@ -191451,7 +191679,7 @@ export function runV99TrustworthyAdviceSelfTests(): V9SelfTestResult[] {
     const s = a1Settings();
     const { set } = a2Ranked(a2Player(), a2World(), s);
     const top = set.ranked.find(c => c.actionType === 'challenge');
-    if (!top || !/^\d+% to win \$\d+; a loss costs the \$\d+ wager$/.test(String(top.benefit)) || top.reasons.some(r => /^expected \+/.test(r)) || !top.reasons.some(r => /^on average \+\$/.test(r))) return `card: benefit "${top ? String(top.benefit) : ''}", reasons ${top ? top.reasons.join(' | ') : 'none'}`;
+    if (!top || !/^\d+% to win \$[\d,]+; a loss costs the \$[\d,]+ wager$/.test(String(top.benefit)) || top.reasons.some(r => /^expected \+/.test(r)) || !top.reasons.some(r => /^on average \+\$/.test(r))) return `card: benefit "${top ? String(top.benefit) : ''}", reasons ${top ? top.reasons.join(' | ') : 'none'}`;
     const cand = a2Challenges(a1Candidates(a2Player(), a2World(), s))[0];
     const taught = summarizeActionImpact(cand);
     if (!/% to win/.test(taught.whatChanged) || /Cash ↑/.test(taught.whatChanged)) return `teaching card: ${taught.whatChanged}`;
@@ -191461,7 +191689,7 @@ export function runV99TrustworthyAdviceSelfTests(): V9SelfTestResult[] {
     const sale = a1Find(a1Candidates(a2Player({ inventory: ['Coral'] }), a2World(), s), 'sell');
     if (!sale || !/^Cash ↑ \$/.test(summarizeActionImpact(sale).whatChanged)) return 'a sale lost its "Cash ↑" line';
     const approach = a1Candidates(a2Player(), a2World(), a1Settings({ challengeApproachesEnabled: true })).find(c => c.actionType === 'challenge_approach');
-    return (approach !== undefined && /^\d+% to win \$\d+$/.test(String(approach.adviceReason))) || `approach card reason: ${approach ? String(approach.adviceReason) : 'missing'}`;
+    return (approach !== undefined && /^\d+% to win \$[\d,]+$/.test(String(approach.adviceReason))) || `approach card reason: ${approach ? String(approach.adviceReason) : 'missing'}`;
   });
 
   // ---- Package A2, review follow-up ---------------------------------------------------------------------------------
@@ -191530,9 +191758,9 @@ export function runV99TrustworthyAdviceSelfTests(): V9SelfTestResult[] {
     const quoteOf = (c: CoPilotActionCandidate, characterName = 'Tourist', consecutiveWins = 0): { quoted: number; bare: number; roll: number; fee: number } | null => {
       const p = a1Obj(c.parameters); const def = getChallengeDefinition(String(p.challengeId));
       const approach = def ? def.approaches.find(a => a.id === p.approachId) : undefined;
-      const m = /^(\d+)% to win \$(\d+)/.exec(String(c.expectedOutcome));
+      const m = /^(\d+)% to win \$([\d,]+)/.exec(String(c.expectedOutcome)); // W4A (f1-05): amounts carry thousands separators
       if (!def || !approach || !m) return null;
-      return { quoted: Number(m[2]), bare: Math.floor(Number(p.wager) * approach.rewardMultiplier), fee: approach.upfrontCost, roll: computeChallengeRewardCore({ wager: Number(p.wager), rewardMultiplier: approach.rewardMultiplier, characterName, consecutiveWins, masteryCount: 1 }).reward };
+      return { quoted: Number(m[2].replace(/,/g, '')), bare: Math.floor(Number(p.wager) * approach.rewardMultiplier), fee: approach.upfrontCost, roll: computeChallengeRewardCore({ wager: Number(p.wager), rewardMultiplier: approach.rewardMultiplier, characterName, consecutiveWins, masteryCount: 1 }).reward };
     };
     const tourist = a1Candidates(a2Player(), a2World(), s).filter(c => c.actionType === 'challenge_approach');
     if (tourist.length === 0) return 'fixture: no approach candidate';
@@ -192093,6 +192321,279 @@ export function runV99TrustworthyAdviceSelfTests(): V9SelfTestResult[] {
     const want = ['Decide by day 9 — the final day', 'Decide by day 9 — the final day', 'Decide by day 8', 'Decide by day 14', 'Decide by day 12', 'Decide by day 12', 'Decide by day 12'];
     return JSON.stringify(got) === JSON.stringify(want) || JSON.stringify(got);
   });
+
+  // ---- Package W4B1: a regions match is advised as one ------------------------------------------------------------------
+  const xFares: Record<string, number> = { NSW: 100, VIC: 150, SA: 300, NT: 220, WA: 400, TAS: 350, ACT: 120, QLD: 90 };
+  const xStaked: string[] = [];
+  const xHands: V99HumanDoItHandlers = { travel: () => undefined, sell: () => undefined, buy: () => false, buyEquipment: () => undefined, travelCost: to => xFares[to] ?? 200, stakeRegion: (region, amount) => { xStaked.push(`${region}:${amount}`); } };
+  const xRegions = (over?: A1Obj): GameSettingsState => a1Settings({ winCondition: 'regions', ...(over || {}) });
+  const xScreen = (player: A1Obj, world: A1Obj, settings: GameSettingsState, hands: V99HumanDoItHandlers | null = xHands): CoPilotCandidateEvaluationResult => generateCoPilotPlayerActionCandidates({ ...a1Context(player, world, settings), humanRules: { current: hands } });
+
+  check('v99ad_x01_regions_goal_proposes_the_stake', 'On a "Most regions" goal the play screen\'s advice proposes the stake that takes the region the player stands in — the deposit handler\'s own minimum ($300 for an empty region, one more than the rival\'s stake otherwise) — first, and only with the cash for the stake, the reserve and the working cash', () => {
+    const empty = xScreen(a2Player(), a2World(), xRegions());
+    const claim = a1Find(empty.candidates, 'region_deposit');
+    if (!claim || !claim.isValid || claim.title !== 'Claim Queensland — stake $300' || claim.costEstimate !== 300 || claim.targetId !== 'QLD' || claim.utilityScore !== V99_REGION_STAKE_UTILITY || a1Obj(claim.parameters).amount !== 300 || a1Obj(claim.parameters).region !== 'QLD') return `empty region: ${claim ? `${claim.title} valid ${String(claim.isValid)} ${claim.invalidationReason || ''} $${claim.costEstimate}` : 'no stake candidate'}`;
+    if (!empty.topRecommendation || empty.topRecommendation.actionType !== 'region_deposit') return `not first: ${empty.topRecommendation ? empty.topRecommendation.title : 'none'}`;
+    if (claim.apCost !== getActionPointCost('regional_deposit', xRegions(), false) || !String(claim.adviceReason).includes('you hold 0, Rival 0')) return `cost ${claim.apCost} / reason ${String(claim.adviceReason)}`;
+    const held = a1Find(xScreen(a2Player(), a2World({ regionDeposits: { QLD: { ai: 300 }, NSW: { ai: 450 } } }), xRegions()).candidates, 'region_deposit');
+    const back = a1Find(xScreen(a2Player(), a2World({ regionDeposits: { QLD: { player: 300, ai: 500 } } }), xRegions()).candidates, 'region_deposit');
+    const tied = a1Find(xScreen(a2Player(), a2World({ regionDeposits: { QLD: { player: 300, ai: 300 } } }), xRegions()).candidates, 'region_deposit');
+    const titles = [held ? `${held.title}|${held.costEstimate}` : '-', back ? `${back.title}|${back.costEstimate}` : '-', tied ? `${tied.title}|${tied.costEstimate}` : '-'];
+    const want = ['Take Queensland from Rival — stake $301|301', 'Take back Queensland — stake $201|201', 'Secure Queensland — stake $1 more|1'];
+    if (JSON.stringify(titles) !== JSON.stringify(want) || !held || !String(held.adviceReason).includes('one region more for you, one fewer for them')) return JSON.stringify(titles);
+    // the amounts are the ones the deposit handler accepts
+    const accepted = [[{}, 300], [{ QLD: { ai: 300 }, NSW: { ai: 450 } }, 301], [{ QLD: { player: 300, ai: 500 } }, 201], [{ QLD: { player: 300, ai: 300 } }, 1]].every(([deposits, amount]) => getRequiredDepositToControl(sanitizeRegionDeposits(deposits), 'QLD', 'player') === amount);
+    if (!accepted) return 'the proposed stake is not the price of control';
+    // short of cash: listed with what is missing, never proposed
+    const short = a1Find(xScreen(a2Player({ money: 600 }), a2World(), xRegions()).candidates, 'region_deposit');
+    if (!short || short.isValid || !String(short.invalidationReason).includes('earn $50 more first')) return `short of cash: ${short ? `${String(short.isValid)} ${String(short.invalidationReason)}` : 'missing'}`;
+    const exact = a1Find(xScreen(a2Player({ money: v99StakeCashNeeded(300, 250) }), a2World(), xRegions()).candidates, 'region_deposit');
+    if (!exact || !exact.isValid || v99StakeCashNeeded(300, 250) !== 650) return `at the line: ${exact ? String(exact.invalidationReason) : 'missing'}`;
+    return true;
+  });
+
+  check('v99ad_x02_stake_only_where_it_belongs', 'No stake is proposed on a money goal, in Grand Tour, in Negotiation mode, for a region the player already controls, or to the Co-Pilot in control (whose engine deposit would not book control)', () => {
+    const stake = (list: CoPilotActionCandidate[]) => a1Find(list, 'region_deposit') !== undefined;
+    const got = [
+      stake(xScreen(a2Player(), a2World(), a1Settings()).candidates),
+      stake(xScreen(a2Player(), a2Tour([]), xRegions()).candidates),
+      stake(xScreen(a2Player(), a2World(), xRegions({ negotiationMode: true })).candidates),
+      stake(xScreen(a2Player(), a2World({ regionDeposits: { QLD: { player: 300 } } }), xRegions()).candidates),
+      stake(a1Candidates(a2Player(), a2World(), xRegions())),
+      stake(xScreen(a2Player(), a2World(), xRegions(), { ...xHands, stakeRegion: undefined }).candidates),
+      stake(xScreen(a2Player(), a2World({ selectedMode: 'single' }), xRegions()).candidates)
+    ];
+    const active = [v99RegionsGoalActive(a2World(), xRegions()), v99RegionsGoalActive(a2World(), a1Settings()), v99RegionsGoalActive(a2Tour([]), xRegions()), v99RegionsGoalActive(a2World(), xRegions({ negotiationMode: true })), v99RegionsGoalActive(null, xRegions()), v99RegionsGoalActive(a2World(), null)];
+    const keys = [v99RegionOwnerKey(a2World(), a2Player()), v99RegionOwnerKey(a2World({ selectedMode: 'team_human_ai_vs_ai_ai' }), a2Player({ teamId: 'team_player' })), v99RegionOwnerKey(a2World({ selectedMode: 'team_human_ai_vs_ai_ai' }), a2Player()), v99RegionOwnerKey(null, null)];
+    // Single Player Mode has nobody to hold the other regions: the card counts the player's only
+    const reasonIn = (mode: string) => String((a1Find(xScreen(a2Player(), a2World({ selectedMode: mode }), xRegions()).candidates, 'region_deposit') || { adviceReason: 'no stake candidate' }).adviceReason);
+    const reasons = [reasonIn('single'), reasonIn('ai'), reasonIn('scenario'), reasonIn('team_human_ai_vs_ai_ai')];
+    const counts = reasons.map(r => r.slice(r.lastIndexOf('(')));
+    const allHeld = Object.keys(REGIONS).reduce<A1Obj>((all, code) => ({ ...all, [code]: { player: 300 } }), {});
+    const holding = [v99RegionsNextStep(a2Player(), a2World({ selectedMode: 'single', regionDeposits: allHeld }), xRegions()), v99RegionsNextStep(a2Player(), a2World({ regionDeposits: allHeld }), xRegions())].map(s => (s ? s.detail.includes('rival') : null));
+    const rivals = ['single', 'ai', 'grand_tour', 'scenario', 'team_human_ai_vs_ai_ai', 'team_ai_vs_ai', ''].map(mode => v99RegionsMatchHasRival({ selectedMode: mode })).concat(v99RegionsMatchHasRival(null));
+    return (got.join() === 'false,false,false,false,false,false,true' && active.join() === 'true,false,false,false,false,false' && keys.join() === 'player,team_player,team_player,player'
+      && counts.join('|') === '(you hold 0)|(you hold 0, Rival 0)|(you hold 0, Rival 0)|(you hold 0, the rival team 0)' && !/rival/i.test(reasons[0]) && holding.join() === 'false,true'
+      && rivals.join() === 'false,true,true,true,true,true,false,false')
+      || JSON.stringify({ got, active, keys, counts, holding, rivals });
+  });
+
+  check('v99ad_x03_next_region_is_the_cheapest_way_ahead', 'Once the player holds the region it stands in, the journey goes where one more region costs least: an empty region, or one the rival took when winning it back is cheaper per region gained; only within reach of the cash, and never while there is something to take here', () => {
+    const trip = (deposits: A1Obj, money: number = 3000, region: string = 'QLD') => v99PlanRegionTrip({ actor: a2Player({ money, currentRegion: region }), world: a2World({ regionDeposits: deposits }), settings: xRegions(), cash: money, reserve: 250, rivalName: 'Rival', fare: to => xFares[to] ?? 200 });
+    const emptyMap = trip({ QLD: { player: 300 } });                                             // every other region is empty: the cheapest fare
+    const rivalNear = trip({ QLD: { player: 300 }, VIC: { ai: 300 } });                          // VIC: (150 + 301) / 2 = 225.5 a region; NSW: 100 + 300 = 400
+    const outStaked = trip({ QLD: { player: 300 }, SA: { player: 300, ai: 400 }, VIC: { ai: 300 } }); // SA: (300 + 101) / 2 = 200.5
+    const dearRival = trip({ QLD: { player: 300 }, VIC: { ai: 2000 } });                         // VIC: (150 + 2001) / 2 — the empty region is cheaper
+    const got = [emptyMap ? `${emptyMap.target}:${emptyMap.required}` : '-', rivalNear ? `${rivalNear.target}:${rivalNear.required}` : '-', outStaked ? `${outStaked.target}:${outStaked.required}` : '-', dearRival ? `${dearRival.target}:${dearRival.required}` : '-'];
+    if (got.join() !== 'NSW:300,VIC:301,SA:101,NSW:300') return got.join();
+    if (!rivalNear || !rivalNear.reason.includes('counts twice') || !outStaked || !outStaked.reason.includes('out-staked you in South Australia') || !emptyMap || !emptyMap.reason.includes('New South Wales can be claimed for $300')) return `reasons: ${[emptyMap && emptyMap.reason, rivalNear && rivalNear.reason, outStaked && outStaked.reason].join(' | ')}`;
+    // reach: fare + stake + reserve + working cash; one dollar short and there is no journey for a region
+    const reach = [trip({ QLD: { player: 300 } }, 100 + 650), trip({ QLD: { player: 300 } }, 100 + 649), trip({}, 3000), v99PlanRegionTrip({ actor: a2Player(), world: a2World({ regionDeposits: { QLD: { player: 300 } } }), settings: a1Settings(), cash: 3000, reserve: 250, fare: () => 100 })];
+    if (reach.map(r => (r ? r.target : '-')).join() !== 'NSW,-,-,-') return `reach: ${reach.map(r => (r ? r.target : '-')).join()}`;
+    // on the play screen: the travel card is that journey, above a journey to open challenges, and never while a stake is on offer here
+    const holding = xScreen(a2Player({ money: 3000 }), a2World({ regionDeposits: { QLD: { player: 300 }, VIC: { ai: 300 } } }), xRegions());
+    const go = a1Find(holding.candidates, 'travel');
+    const first = xScreen(a2Player({ money: 3000 }), a2World(), xRegions());
+    const firstTrip = a1Find(first.candidates, 'travel');
+    return (go !== undefined && go.isValid && go.targetId === 'VIC' && go.utilityScore === V99_REGION_TRIP_UTILITY && String(go.adviceReason).includes('counts twice') && go.costEstimate === 150
+      && firstTrip !== undefined && firstTrip.utilityScore < V99_REGION_TRIP_UTILITY && V99_REGION_TRIP_UTILITY > 84 && V99_REGION_STAKE_UTILITY > 95)
+      || `travel card: ${go ? `${String(go.targetId)} ${go.utilityScore} ${String(go.adviceReason)}` : 'missing'} / before the claim: ${firstTrip ? firstTrip.utilityScore : 'missing'}`;
+  });
+
+  check('v99ad_x04_do_it_presses_the_deposit', '"Do It" on a stake runs the play screen\'s own deposit with the region and the amount on the card; without that handler (the Co-Pilot in control) or without an amount it runs nothing', () => {
+    xStaked.length = 0;
+    const claim = a1Find(xScreen(a2Player(), a2World({ regionDeposits: { QLD: { ai: 300 } } }), xRegions()).candidates, 'region_deposit');
+    if (!claim) return 'no stake candidate';
+    const route = v99HumanDoItRoute(claim.actionType);
+    const ran = [v99RunHumanDoIt(route, xHands, claim), v99RunHumanDoIt('region_deposit', { ...xHands, stakeRegion: undefined }, claim), v99RunHumanDoIt('region_deposit', xHands, { targetId: 'QLD', parameters: { region: 'QLD', amount: 0 } }), v99RunHumanDoIt('region_deposit', xHands, { targetId: 'QLD', parameters: {} })];
+    return (route === 'region_deposit' && ran.join() === 'true,false,false,false' && xStaked.join() === 'QLD:301' && v99DoItSignature(claim) === 'region_deposit:QLD:' && v99HumanDoItRoute('cashout_region') === 'canonical')
+      || JSON.stringify({ route, ran, xStaked });
+  });
+
+  check('v99ad_x05_regions_next_step', 'The focus card of a regions match names the next step: the stake here, the cash it still takes, the journey to the next region, or holding what is held; a money match keeps its own steps', () => {
+    const step = (player: A1Obj, world: A1Obj, settings: GameSettingsState = xRegions()) => v99WinObjectiveNextStep(String(settings.winCondition), player, world, settings, 3);
+    const everything = Object.keys(REGIONS).reduce<A1Obj>((all, code) => ({ ...all, [code]: { player: 300 } }), {});
+    const rows = [
+      step(a2Player(), a2World()), step(a2Player(), a2World({ regionDeposits: { QLD: { ai: 300 } } })), step(a2Player({ money: 500 }), a2World()),
+      step(a2Player({ money: 3000 }), a2World({ regionDeposits: { QLD: { player: 300 } } })), step(a2Player({ money: 400 }), a2World({ regionDeposits: { QLD: { player: 300 } } })),
+      step(a2Player(), a2World({ regionDeposits: everything })), step(a2Player(), a2World(), a1Settings())
+    ];
+    const got = rows.map(r => `${r.label}|${String(r.actionType)}`);
+    const want = ['Claim Queensland — stake $300|region_deposit', 'Take Queensland — stake $301|region_deposit', 'Earn the $300 stake for Queensland|challenge', `${rows[3].label}|travel`, 'Earn cash for the next stake|challenge', 'Hold your regions|null', 'Take a challenge here|challenge'];
+    if (JSON.stringify(got) !== JSON.stringify(want) || !/^Travel to .+ and stake \$300$/.test(rows[3].label)) return JSON.stringify(got);
+    if (step(a2Player(), a2World(), xRegions({ negotiationMode: true })).label !== 'Contest a region') return 'Negotiation mode lost the generic regions step';
+    const focus = resolveCurrentObjective(a2World(), xRegions(), a2Player(), null);
+    return (focus.sourceType === 'win_condition' && focus.recommendedNextStep !== null && focus.recommendedNextStep.label === 'Claim Queensland — stake $300' && focus.recommendedNextStep.actionType === 'region_deposit') || `focus: ${focus.sourceType} ${JSON.stringify(focus.recommendedNextStep)}`;
+  });
+
+  check('v99ad_x06_match_goal_stays_the_focus', 'A stake where the player stands no longer replaces the match goal: the focus stays on the win condition with the region as a side note; a region tracked by hand is still the focus, and under it only a stake there or the journey there "advances" it — never a day of wages', () => {
+    const s = a1Settings();
+    const world = a2World({ regionDeposits: { QLD: { player: 300 } } });
+    const auto = resolveCurrentObjective(world, s, a2Player(), null);
+    if (auto.sourceType !== 'win_condition' || !auto.description.includes('Side note — Hold the highest deposit in QLD (you $300 vs rival $0)') || !auto.requirements.some(r => r.id === 'region_note' && r.satisfied) || auto.completionState !== 'active') return `automatic focus: ${auto.sourceType} "${auto.title}" — ${auto.description}`;
+    const contested = resolveCurrentObjective(a2World({ regionDeposits: { QLD: { player: 300, ai: 500 } } }), s, a2Player(), null);
+    if (contested.sourceType !== 'win_condition' || contested.completionState !== 'active' || !contested.requirements.some(r => r.id === 'region_note' && !r.satisfied)) return `out-staked: ${contested.sourceType} ${contested.completionState}`;
+    const plain = resolveCurrentObjective(a2World(), s, a2Player(), null);
+    if (plain.sourceType !== 'win_condition' || plain.requirements.length !== 1 || plain.description.includes('Side note')) return 'a match with no stake gained a side note';
+    const tracked = resolveCurrentObjective(world, s, a2Player(), { id: 'ctrl_QLD', sourceType: 'region_control', sourceId: 'QLD', title: 'Control Queensland' });
+    if (tracked.sourceType !== 'region_control' || tracked.title !== 'Control Queensland') return `tracked by hand: ${tracked.sourceType}`;
+    if (v99MatchGoalWithRegionNote(null, tracked) !== tracked || v99MatchGoalWithRegionNote(plain, null) !== plain || v99MatchGoalWithRegionNote(null, null) !== null) return 'the note helper does not fall back';
+    const align = [
+      v99RegionGoalAlignment(tracked, { actionType: 'work' }, 24), v99RegionGoalAlignment(tracked, { actionType: 'region_deposit', targetId: 'QLD' }, 49), v99RegionGoalAlignment(tracked, { actionType: 'travel', targetId: 'QLD' }, 16),
+      v99RegionGoalAlignment(tracked, { actionType: 'travel', targetId: 'NSW' }, 16), v99RegionGoalAlignment(plain, { actionType: 'work' }, 24), v99RegionGoalAlignment(null, { actionType: 'work' }, 24)
+    ];
+    if (align.join() !== '0,49,16,0,24,24') return `alignment: ${align.join()}`;
+    const ranked = rankContextualRecommendations(a1Candidates(a2Player(), world, s), tracked, { apRemaining: 3, cash: 1000, limit: 12, settings: s, actor: a2Player(), state: world });
+    const wage = ranked.find(r => r.actionType === 'work');
+    return (wage !== undefined && wage.objectiveAlignment === 0 && !wage.whyPoints.some(w => w.includes('Control Queensland'))) || `wages under a tracked region: ${wage ? `${wage.objectiveAlignment} ${wage.whyPoints.join('; ')}` : 'not ranked'}`;
+  });
+
+  // ---- Package W4B1: the Co-Pilot in control makes a due free move before it ends the turn --------------------------
+  check('v99ad_x07_free_move_at_turn_end_table', 'With no action left the Co-Pilot still makes a repayment that is due or takes a loan in real danger — the best one first, never the same one twice, two at most; a repayment in tight cash, a loan outside danger, a sale and turn bookkeeping are left alone', () => {
+    const cand = (actionType: string, utilityScore: number, over?: Partial<CoPilotActionCandidate>): CoPilotActionCandidate => ({ id: actionType, category: 'x', categoryIndex: 3, categoryName: 'x', title: actionType, description: '', actionType, apCost: 0, costEstimate: 0, expectedOutcome: '', utilityScore, riskFactor: 0, rewardScore: 0, longTermScore: 0, expectedStateDelta: { cashDelta: 0, apDelta: 0 }, isValid: true, ...(over || {}) });
+    const pick = (list: CoPilotActionCandidate[], taken: string[] = []): string => { const c = v99FreeMoveAtTurnEnd({ candidates: list }, taken); return c ? c.actionType : '-'; };
+    const repay = cand('repay_emergency_loan', 97, { v99LoanRank: 'first' }), danger = cand('emergency_loan', 90);
+    const got = [
+      pick([cand('work', 70, { apCost: 1 }), repay]), pick([danger, repay]), pick([danger]), pick([repay], ['repay_emergency_loan:']), pick([repay, danger], ['repay_emergency_loan:']),
+      pick([repay, danger], ['repay_emergency_loan:', 'emergency_loan:']), pick([cand('repay_emergency_loan', 71)]), pick([cand('emergency_loan', 70, { v99LoanRank: 'after_wage' })]),
+      pick([cand('sell', 80), cand('end_turn_prep', 60), cand('conserve_ap', 65)]), pick([{ ...repay, isValid: false }]), pick([{ ...repay, apCost: 1 }]), pick([]), v99FreeMoveAtTurnEnd(null, []) === null ? '-' : 'x'
+    ];
+    const want = ['repay_emergency_loan', 'repay_emergency_loan', 'emergency_loan', '-', 'emergency_loan', '-', '-', '-', '-', '-', '-', '-', '-'];
+    const taken = [v99FreeMovesTaken({ v99FreeMovesAtTurnEnd: { turnKey: 'player:8', signatures: ['a:', 'b:'] } }, 'player:8').join(), v99FreeMovesTaken({ v99FreeMovesAtTurnEnd: { turnKey: 'player:7', signatures: ['a:'] } }, 'player:8').join(), v99FreeMovesTaken({}, 'player:8').join(), v99FreeMovesTaken(null, 'player:8').join()];
+    return (JSON.stringify(got) === JSON.stringify(want) && taken.join('|') === 'a:,b:|||' && V99_FREE_MOVES_AT_TURN_END === 2 && v99FreeMoveSignature(repay) === 'repay_emergency_loan:') || JSON.stringify({ got, taken });
+  });
+
+  check('v99ad_x08_copilot_repays_after_the_last_action', 'The takeover step, out of actions: a due repayment is carried out and the step asks to run once more; the second time nothing is due and the turn ends; with nothing due the turn ends at once, as before; the last action of a turn hands on to the due repayment instead of ending the turn', () => {
+    COPILOT_COMMITTED_ACTION_TOKENS.clear();
+    const coPilot: CoPilotSettings = { ...createDefaultCoPilotSettings(), coPilotEnabled: true, authorityMode: 'full_co_pilot', maxActionsPerTurn: 3, minimumConfidenceThreshold: 0 };
+    const s = a1Settings({ coPilotSettings: coPilot, playerActionsPerDay: 3, actionLimitsEnabled: true });
+    const cand = (actionType: string, utilityScore: number, apCost: number, over?: Partial<CoPilotActionCandidate>): CoPilotActionCandidate => ({ id: `x08_${actionType}`, category: 'loans_and_credit', categoryIndex: 3, categoryName: 'x', title: actionType, description: '', actionType, apCost, costEstimate: 0, expectedOutcome: '', utilityScore, riskFactor: 0, rewardScore: 0, longTermScore: 0, expectedStateDelta: { cashDelta: 0, apDelta: -apCost }, isValid: true, ...(over || {}) });
+    const evaluation = (list: CoPilotActionCandidate[]): CoPilotCandidateEvaluationResult => ({ candidates: list, topRecommendation: list.filter(c => c.isValid).sort((a, b) => b.utilityScore - a.utilityScore)[0] || null, saferAlternative: null, bestLongTermAlternative: null, aggressiveAlternative: null, categoriesEvaluatedCount: 13 });
+    const used = (ctx: unknown): number => { const player = v99IsRecord(ctx) && v99IsRecord(ctx.player) ? ctx.player : {}; return Number(player.actionsUsedThisTurn) || 0; };
+    // the loan becomes "due" once the last action is spent (as when that action's winnings make it affordable)
+    const offers = (repayDue: boolean) => (ctx: unknown): CoPilotCandidateEvaluationResult => {
+      const left = 3 - used(ctx);
+      return evaluation([cand('work', 70, 1, { isValid: left >= 1, invalidationReason: left >= 1 ? undefined : 'Insufficient Action Points' }), ...(repayDue && left <= 0 ? [cand('repay_emergency_loan', V99_REPAY_FIRST_UTILITY, 0, { v99LoanRank: 'first' })] : [])]);
+    };
+    const log: string[] = [];
+    const execute = ((ctx: { gameState?: unknown; player?: unknown }, intent: { actionId?: string; actionType?: string }) => {
+      const before = v99IsRecord(ctx.player) ? ctx.player : {};
+      const player = { ...before, actionsUsedThisTurn: used(ctx) + (intent.actionType === 'work' ? 1 : 0) };
+      log.push(String(intent.actionType));
+      return { updatedState: { ...(v99IsRecord(ctx.gameState) ? ctx.gameState : {}), player }, updatedPlayer: player, executionResult: { actionId: intent.actionId, actionType: intent.actionType, status: 'verified', success: true, verifiedDeltas: { apDelta: intent.actionType === 'work' ? -1 : 0 } } };
+    }) as unknown as typeof executeCoPilotActionIntent;
+    const pass = (() => ({ isValid: true, valid: true })) as unknown as typeof validateTakeoverActionWith10PointPass;
+    const state = (usedActions: number): A1Obj => { const player = a1Player({ money: 1983, actionsUsedThisTurn: usedActions, loans: [wLoan(125)] }); return a1World({ day: 8, turnCounter: 8, player, gameSettings: s }); };
+    const step = (world: A1Obj, session: CoPilotTakeoverSession, repayDue: boolean) => runCoPilotAutonomousStep({ gameState: world, player: a1Obj(world.player), gameSettings: s, session, settings: coPilot, generateCandidates: offers(repayDue) as unknown as typeof generateCoPilotPlayerActionCandidates, executeIntent: execute, validatePass: pass });
+    const session = () => initiateCoPilotTakeover(state(0), { id: 'x08', type: 'tactical_optimization', title: 'T', description: 'T', confidenceScore: 90, reasoningSummary: 'T', multiTurnPlanSequence: [], teachingExplanation: 'T', targetActorId: 'player', generatedTurn: 8, priorityWeight: 1, category: 'economy' }, { id: 'x08_obj', actorId: 'player', type: 'rebuild_team_economy', description: 'T', priority: 'high', targetMetrics: {}, maxTurns: 10, maxSpendAllowed: 10000, allowedActionCategories: [], status: 'active', progressPercentage: 0, targetTurn: 10, createdTurn: 1 }, 'continuous', coPilot);
+    // A whole turn as the controller runs it: step until the step says stop, then one more step (what End Turn would find).
+    const play = (repayDue: boolean): { steps: string[]; after: string; made: string; log: string } => {
+      COPILOT_COMMITTED_ACTION_TOKENS.clear();
+      log.length = 0;
+      let world = state(0), live = session();
+      const steps: string[] = [];
+      for (let i = 0; i < 8; i++) {
+        const r = step(world, live, repayDue);
+        steps.push(`${r.kind}:${String(r.actionType || r.reason || '')}:${r.continueTurn ? 'go' : 'stop'}`);
+        world = r.gameState; live = r.session;
+        if (!r.continueTurn) break;
+      }
+      const extra = step(world, live, repayDue);
+      const made = live.v99FreeMovesAtTurnEnd;
+      COPILOT_COMMITTED_ACTION_TOKENS.clear();
+      return { steps, after: `${extra.kind}:${String(extra.reason || '')}`, made: made ? made.signatures.join() : '', log: log.join() };
+    };
+    // 1. the last action hands on to the repayment that became due; it is made once, then the turn ends
+    const due = play(true);
+    const wantDue = ['action_committed:work:go', 'action_committed:work:go', 'action_committed:work:go', 'action_committed:repay_emergency_loan:stop'];
+    if (JSON.stringify(due.steps) !== JSON.stringify(wantDue) || due.after !== 'end_turn:ap_exhausted' || due.made !== 'repay_emergency_loan:' || due.log !== 'work,work,work,repay_emergency_loan') return `repayment due: ${JSON.stringify(due)}`;
+    // 2. nothing due: the turn ends with the last action, as before
+    const plain = play(false);
+    const wantPlain = ['action_committed:work:go', 'action_committed:work:go', 'action_committed:work:stop'];
+    return (JSON.stringify(plain.steps) === JSON.stringify(wantPlain) && plain.after === 'end_turn:ap_exhausted' && plain.made === '' && plain.log === 'work,work,work') || `nothing due: ${JSON.stringify(plain)}`;
+  });
+
+  // ---- Package W4B1 (leftovers 11 and 17) ------------------------------------------------------------------------------
+  check('v99ad_x09_why_answer_in_the_players_words', 'The "Why?" answer of a recommendation is built from that recommendation — its own reason, its cost, what it brings — and ends by saying what "Do It" does, in plain words (no "canonical executor")', () => {
+    const s = xRegions();
+    const world = a2World();
+    const ranked = rankContextualRecommendations(xScreen(a2Player(), world, s).candidates, resolveCurrentObjective(world, s, a2Player(), null), { apRemaining: 3, cash: 1000, limit: 12, settings: s, actor: a2Player(), state: world });
+    const set = buildContextualActionSet({ rankedRecommendations: ranked, invalidCandidates: [], objective: resolveCurrentObjective(world, s, a2Player(), null), attention: null, apRemaining: 3, isHumanTurn: true });
+    const stake = set.ranked.find(c => c.actionType === 'region_deposit'), wager = set.ranked.find(c => c.actionType === 'challenge');
+    if (!stake || !wager || !set.recommended || set.recommended.id !== stake.id) return `ranked: ${set.ranked.map(c => c.label).join(' / ')}`;
+    const control = derivePlayerControlState({ gameSettings: s, gameState: world, takeoverSession: null, isHumanTurn: true });
+    const whyStake = buildWhyActionIntelligenceAnswer({ query: 'q', candidate: stake, actionSet: set, control }).lines.join(' | ');
+    const whyWager = buildWhyActionIntelligenceAnswer({ query: 'q', candidate: wager, actionSet: set, control }).lines.join(' | ');
+    const ok = whyStake.includes('$300 is the stake that takes control of Queensland') && whyStake.includes('Cost: $300') && whyStake.includes('You control Queensland') && whyStake.includes('spends nothing if it is not')
+      && /\d+% to win \$[\d,]+ on a \$\d+ wager/.test(whyWager) && whyWager.includes('the roll decides') && !/canonical executor|Guardian protections/.test(whyStake + whyWager);
+    return ok || `${whyStake} ### ${whyWager}`;
+  });
+  check('v99ad_x10_team_plan_of_a_watched_match', 'The "Team plan" block of a match the human only watches names the lead AI instead of saying "You"; a played match keeps "You"', () => {
+    const team = { mission: 'Hold the coast', you: 'No active task', mates: [{ name: 'Scientist AI', focus: 'Team income' }], issue: null, youName: 'Tourist AI' };
+    const watched = resolveV9GameplayCohesion(createV9CohesionFixture({ spectator: true, teamMode: true, team })).team;
+    const played = resolveV9GameplayCohesion(createV9CohesionFixture({ teamMode: true, team })).team;
+    const unnamed = resolveV9GameplayCohesion(createV9CohesionFixture({ spectator: true, teamMode: true, team: { ...team, youName: null } })).team;
+    return (watched !== null && watched.lines[0] === 'Tourist AI — No active task' && played !== null && played.lines[0] === 'You — No active task' && unnamed !== null && unnamed.lines[0] === 'Lead AI — No active task'
+      && v99TeamPlanLeadLabel(false, 'Tourist AI') === 'You' && v99TeamPlanLeadLabel(undefined, null) === 'You') || JSON.stringify({ watched, played, unnamed });
+  });
+  // ---- W4A (final review) ----------------------------------------------------------------------------------------------
+  check('v99ad_z01_tourist_retry_is_advised', 'f3-01: a failed challenge, a Tourist with a use left and no actions: the top card is the free retry (same wager, +20%), not End Turn; no offer = no card', () => {
+    const s = a1Settings();
+    const failed = { challenge: { name: 'Explore Daintree Rainforest', type: 'physical', difficulty: 3, reward: 3 }, wager: 500, approachPlan: null };
+    const tourist = { character: { name: 'Tourist' }, specialAbilityUses: 1 };
+    const offer = v99TouristRetryOffer(failed, tourist);
+    const none = [v99TouristRetryOffer(null, tourist), v99TouristRetryOffer(failed, { character: { name: 'Explorer' }, specialAbilityUses: 1 }), v99TouristRetryOffer(failed, { character: { name: 'Tourist' }, specialAbilityUses: 0 }), v99TouristRetryOffer({ ...failed, wager: 0 }, tourist)];
+    if (!offer || none.some(o => o !== null)) return `offer: ${JSON.stringify({ offer, none })}`;
+    const retry = v99BuildTouristRetryCandidate({ offer, actor: a2Player({ money: 1724 }), world: a2World(), settings: s, rival: null, cash: 1724, makeId: (n, slug) => `c${n}_${slug}`, liveChance: () => 0.62 });
+    const p = a1Obj(retry.parameters);
+    if (!retry.isValid || retry.apCost !== 0 || retry.costEstimate !== 500 || p.touristRetry !== true || Math.abs(Number(p.successChance) - 0.82) > 1e-9 || !retry.title.startsWith('Retry Explore Daintree Rainforest (+20%, no action) — wager $500') || !v99IsTouristRetry(retry)) return `candidate: ${retry.title} ${JSON.stringify(p)}`;
+    const capped = v99BuildTouristRetryCandidate({ offer, actor: a2Player(), world: a2World(), settings: s, rival: null, cash: 1724, makeId: (n, slug) => `c${n}_${slug}`, liveChance: () => 0.9 });
+    const risky = v99BuildTouristRetryCandidate({ offer, actor: a2Player(), world: a2World(), settings: s, rival: null, cash: 1724, makeId: (n, slug) => `c${n}_${slug}`, liveChance: () => 0.2 });
+    const poor = v99BuildTouristRetryCandidate({ offer, actor: a2Player(), world: a2World(), settings: s, rival: null, cash: 300, makeId: (n, slug) => `c${n}_${slug}`, liveChance: () => 0.62 });
+    if (Math.abs(Number(a1Obj(capped.parameters).successChance) - 0.95) > 1e-9 || risky.isValid || poor.isValid) return 'cap / risky / cash';
+    // The generator lists it only when the play screen hands the offer in, and it survives "no actions left".
+    const hands: V99HumanDoItHandlers = { travel: () => undefined, sell: () => undefined, buy: () => false, buyEquipment: () => undefined, travelCost: () => 100, challenge: () => undefined, challengeChance: () => 0.62, touristRetry: () => undefined };
+    const spent = a2Player({ money: 1724, actionsUsedThisTurn: 3, actionPoints: 0 });
+    const withOffer = generateCoPilotPlayerActionCandidates({ ...a1Context(spent, a2World(), s), humanRules: { current: hands }, touristRetry: offer }).candidates.filter(c => v99IsTouristRetry(c));
+    const without = generateCoPilotPlayerActionCandidates({ ...a1Context(spent, a2World(), s), humanRules: { current: hands } }).candidates.filter(c => v99IsTouristRetry(c));
+    if (withOffer.length !== 1 || !withOffer[0].isValid || without.length !== 0) return `generator: ${withOffer.length} (${withOffer[0] ? String(withOffer[0].invalidationReason) : ''}) / ${without.length}`;
+    const set = buildContextualActionSet({ rankedRecommendations: [{ id: retry.id, actionType: 'challenge', title: retry.title, candidate: retry, apCost: 0, costEstimate: 500, whyPoints: [String(retry.adviceReason)], objectiveAlignment: 0 }], objective: null, attention: null, apRemaining: 0, isHumanTurn: true } as unknown as ContextualActionInput);
+    const end = set.ranked.find(a => a.id === 'end_turn');
+    const plain = buildContextualActionSet({ rankedRecommendations: [], objective: null, attention: null, apRemaining: 0, isHumanTurn: true } as unknown as ContextualActionInput);
+    const run: string[] = [];
+    const viaRetry = v99RunHumanDoIt('challenge', { ...hands, touristRetry: () => { run.push('retry'); }, challenge: () => { run.push('paid'); } }, retry);
+    return (set.recommended !== null && set.recommended.id === retry.id && end !== undefined && end.reasons[0] === V99_END_TURN_FREE_MOVES_REASON && plain.recommended !== null && plain.recommended.id === 'end_turn'
+      && plain.recommended.reasons[0] === V99_END_TURN_ONLY_MOVE_REASON && viaRetry && run.join() === 'retry' && v99TouristRetryKey(offer) !== v99TouristRetryKey(null))
+      || JSON.stringify({ top: set.recommended ? set.recommended.id : null, end: end ? end.reasons : null, run });
+  });
+  check('v99ad_z02_money_reads_one_way', 'f1-05: the advice prints money as the toasts do ("$1,320", never "$1320"), and a negative amount reads "-$200"', () => {
+    const rich = a2Player({ money: 20000 });
+    const cards = v99BuildClassicChallengeCandidates({ actor: rich, world: a2World(), settings: a1Settings({ dynamicWagerEnabled: true }), rival: null, cash: 20000, reserve: 250, apSettings: a1Settings(), makeId: (n, slug) => `c${n}_${slug}` });
+    const texts = cards.flatMap(c => [c.title, c.description, String(c.expectedOutcome), String(c.adviceReason)]);
+    const raw = texts.filter(t => /\$\d{4,}/.test(t));
+    const grouped = texts.some(t => /\$\d{1,3},\d{3}/.test(t));
+    return (cards.length > 0 && raw.length === 0 && grouped && fmtMoney(-200) === '-$200') || JSON.stringify({ raw, sample: texts.slice(0, 4) });
+  });
+  check('v99ad_z03_points_goal_is_advised_in_points', 'f3-06: under "Most challenge points" challenges are ranked by the points they add on average and the card says so; a sale or a wage no longer "advances" the goal', () => {
+    const money = a1Settings(), points = a1Settings({ winCondition: 'challenges' });
+    const build = (s: GameSettingsState) => v99BuildClassicChallengeCandidates({ actor: a2Player(), world: a2World(), settings: s, rival: null, cash: 1000, reserve: 250, apSettings: s, makeId: (n, slug) => `c${n}_${slug}`, liveChance: c => (c.difficulty >= 3 ? 0.62 : 0.8) });
+    const byMoney = build(money), byPoints = build(points);
+    const worth = (c: CoPilotActionCandidate) => Number(a1Obj(c.parameters).successChance) * Number(a1Obj(c.parameters).points);
+    if (byPoints.length !== 2 || byPoints.some(c => a1Obj(c.parameters).points === undefined) || byMoney.some(c => a1Obj(c.parameters).points !== undefined)) return `points on cards: ${JSON.stringify(byPoints.map(c => c.parameters))}`;
+    if (worth(byPoints[0]) < worth(byPoints[1]) || byPoints[0].utilityScore < byPoints[1].utilityScore || Number(a1Obj(byPoints[0].parameters).difficulty) < 3) return `order: ${byPoints.map(c => `${c.title} ${c.utilityScore}`).join(' | ')}`;
+    if (!byPoints.every(c => /^\d+% for \+\d+ points? \(and \$[\d,]+\) on a \$[\d,]+ wager$/.test(String(c.adviceReason))) || byMoney.some(c => /points?/.test(String(c.adviceReason)))) return `reason: ${byPoints.map(c => String(c.adviceReason)).join(' | ')}`;
+    const goal = { sourceType: 'win_condition' };
+    const align = [v99PointsGoalAlignment(goal, { actionType: 'sell' }, 16, points), v99PointsGoalAlignment(goal, { actionType: 'work' }, 8, points), v99PointsGoalAlignment(goal, { actionType: 'challenge' }, 24, points), v99PointsGoalAlignment(goal, { actionType: 'travel' }, 8, points),
+      v99PointsGoalAlignment(goal, { actionType: 'sell' }, 16, money), v99PointsGoalAlignment({ sourceType: 'region_control' }, { actionType: 'sell' }, 16, points), v99PointsGoalAlignment(null, { actionType: 'sell' }, 16, points)];
+    return (align.join() === '0,0,24,8,16,16,16' && v99ChallengePointsUtility(0.5, 1) === 81 && v99ChallengePointsUtility(0.95, 3) === 95 && v99ChallengePoints({ name: 'no such challenge', difficulty: 2 }) === 2 && !v99PointsGoal(money) && v99PointsGoal(points)) || `alignment: ${align.join()}`;
+  });
+  check('v99ad_z04_what_happened_says_the_result', 'f1-12 / f3-04: after a challenge the "What happened" card leads with the result the toast gave (lost or won); without one it is "What you did"', () => {
+    const card = { whatHappened: 'Take Tour the Blue Mountains — wager $500' };
+    const notes = [{ message: 'Tour the Blue Mountains failed. Lost $500', day: 1 }, { message: 'Day 2 begins', day: 2 }, { message: 'Wine tasting tour completed! Won $1,020', day: 2 }];
+    const got = [v99TeachingOutcome(card, notes, 1), v99TeachingOutcome(card, notes, 2), v99TeachingOutcome({ whatHappened: 'Take Wine tasting tour — wager $300' }, notes, 2), v99TeachingOutcome({ whatHappened: 'Relocate to NSW' }, notes, 2), v99TeachingOutcome(card, null, 1), v99TeachingOutcome(null, notes, 1)];
+    const names = [v99TeachingChallengeName('Take the finale: National Champion — wager $400'), v99TeachingChallengeName('Retry Explore Daintree Rainforest (+20%, no action) — wager $500'), v99TeachingChallengeName('Sell Opals ($152)')];
+    return (JSON.stringify(got) === JSON.stringify(['Tour the Blue Mountains failed. Lost $500', null, 'Wine tasting tour completed! Won $1,020', null, null, null]) && JSON.stringify(names) === JSON.stringify(['National Champion', 'Explore Daintree Rainforest', null])) || JSON.stringify({ got, names });
+  });
   return results;
 }
 
@@ -192474,6 +192975,299 @@ export function v99PressQuickAction(actions: ReadonlyArray<{ id?: string; disabl
   return 'pressed';
 }
 
+// ---- Package W4B1: a regions match is advised as one ----------------------------------------------------------------
+// Under "Most regions" the advice never proposed a stake: a player who followed it held 0 regions against the rival's 6
+// after twelve days, with $32,915 unspent. On a regions goal the play screen's advice now proposes the stake that takes
+// control where the player stands (the deposit handler's own minimum), travels to the region where one more region
+// costs least — an empty one, or one the rival took, whichever is cheaper per region gained — and its "Do It" presses
+// the Region Control panel's own deposit. The Co-Pilot in control is not offered a stake (the engine's deposit does not
+// book control), so it does not travel for one either.
+
+/** What a stake must leave on top of the cash reserve: two minimum wagers, so the next challenge can still be staked. */
+export const V99_STAKE_WORKING_CASH = 2 * MINIMUM_WAGER;
+/** How strongly a stake that takes a region is advised on a regions goal: above every challenge (95 at most), under a due repayment (97). */
+export const V99_REGION_STAKE_UTILITY = 96;
+/** A journey to a region the player can then take: above a journey to open challenges (84), under the best challenges. */
+export const V99_REGION_TRIP_UTILITY = 90;
+
+/** True when regions held decide the match and stakes are how regions are taken (not in Grand Tour, not in Negotiation mode). */
+export function v99RegionsGoalActive(world: unknown, settings: unknown): boolean {
+  if (!v99IsRecord(world) || !v99IsRecord(settings) || settings.negotiationMode === true) return false;
+  const profile = typeof settings.winCondition === 'string' ? (WIN_METRIC_PROFILES as Record<string, WinMetricProfile | undefined>)[settings.winCondition] : undefined;
+  return profile !== undefined && profile.goalKind === 'regions' && world.selectedMode !== 'grand_tour';
+}
+
+/** The key an actor's stakes are booked under: its team in a team mode, the actor itself otherwise (the deposit handler's rule). */
+export function v99RegionOwnerKey(world: unknown, actor: unknown): string {
+  const a = v99IsRecord(actor) ? actor : {};
+  const mode = v99IsRecord(world) && typeof world.selectedMode === 'string' ? world.selectedMode : '';
+  return isTeamModeSelection(mode) ? String(a.teamId || TEAM_PLAYER_ID) : String(a.id || 'player');
+}
+
+/** One region the owner does not control, and what taking it costs. */
+export interface V99RegionStakeOption {
+  region: string;
+  /** The smallest stake that takes control (getRequiredDepositToControl — the amount the deposit handler accepts). */
+  required: number;
+  /** What the owner has already staked there. */
+  mine: number;
+  /** Who controls it now (null: nobody). */
+  holder: string | null;
+  /** The highest stake in the region. */
+  highest: number;
+  /** Regions gained on the other side by taking it: 2 when somebody loses the region as the owner gains it, else 1. */
+  swing: number;
+}
+
+/** Every region `ownerKey` does not control, in map order, with the real price of control. */
+export function v99RegionStakeOptions(world: unknown, ownerKey: string): V99RegionStakeOption[] {
+  const deposits = sanitizeRegionDeposits(v99IsRecord(world) ? world.regionDeposits : undefined);
+  const out: V99RegionStakeOption[] = [];
+  for (const region of Object.keys(REGIONS)) {
+    const entry = deposits[region] || {};
+    const snapshot = getRegionControlSnapshot(entry);
+    if (snapshot.controllerId === ownerKey) continue;
+    out.push({ region, required: getRequiredDepositToControl(deposits, region, ownerKey), mine: Math.max(0, Math.floor(Number(entry[ownerKey]) || 0)), holder: snapshot.controllerId, highest: snapshot.highestDeposit, swing: snapshot.controllerId ? 2 : 1 });
+  }
+  return out;
+}
+
+/** How many regions `ownerKey` controls, and how many everybody else does. */
+export function v99RegionsHeld(world: unknown, ownerKey: string): { mine: number; others: number } {
+  const options = v99RegionStakeOptions(world, ownerKey);
+  return { mine: Object.keys(REGIONS).length - options.length, others: options.filter(o => o.holder !== null).length };
+}
+
+/** The cash the advice never spends: the Co-Pilot's minimum cash reserve ($250 unless the player changed it). */
+export function v99AdviceReserve(settings: unknown): number {
+  const coPilot = v99IsRecord(settings) && v99IsRecord(settings.coPilotSettings) ? settings.coPilotSettings : null;
+  const caps = coPilot && v99IsRecord(coPilot.spendingCaps) ? coPilot.spendingCaps : null;
+  return caps && typeof caps.minimumCashReserve === 'number' && Number.isFinite(caps.minimumCashReserve) ? Math.max(0, caps.minimumCashReserve) : 250;
+}
+
+/** What the regions advice reads. */
+export interface V99RegionAdviceInput {
+  actor: unknown;
+  world: unknown;
+  settings: unknown;
+  cash: number;
+  /** Cash the advice never spends (the Co-Pilot's minimum cash reserve). */
+  reserve: number;
+  /** The rival's name for the card; "the rival team" is used in a team mode. */
+  rivalName?: string | null;
+}
+
+function v99RegionRivalName(i: V99RegionAdviceInput): string {
+  const mode = v99IsRecord(i.world) && typeof i.world.selectedMode === 'string' ? i.world.selectedMode : '';
+  return isTeamModeSelection(mode) ? 'the rival team' : String(i.rivalName || 'your rival');
+}
+
+/** False in a match nobody else plays in (Single Player Mode): the regions advice then names no rival. */
+export function v99RegionsMatchHasRival(world: unknown): boolean {
+  const mode = v99IsRecord(world) && typeof world.selectedMode === 'string' ? world.selectedMode : '';
+  return isSoloRivalModeSelection(mode) || isTeamModeSelection(mode);
+}
+
+/** The cash a stake of `required` takes before the advice proposes it: the stake, the reserve and the working cash. */
+export function v99StakeCashNeeded(required: number, reserve: number): number {
+  return Math.max(0, v99Finite(required, 0)) + Math.max(0, v99Finite(reserve, 0)) + V99_STAKE_WORKING_CASH;
+}
+
+/**
+ * "Claim <region> — stake $300" where the actor stands: the smallest stake that takes control, as a candidate whose
+ * "Do It" is the Region Control panel's own deposit. A region the rival holds is taken (back) with one dollar more than
+ * its stake — one region more for the player and one fewer for the rival. Listed as not available, with what is
+ * missing, while the cash does not cover the stake, the reserve and the working cash. null when regions do not decide
+ * the match, when the actor stands nowhere on the map, or when it already controls the region.
+ */
+export function v99BuildRegionStakeCandidate(i: V99RegionAdviceInput & { apSettings: unknown; makeId: (catIdx: number, slug: string) => string }): CoPilotActionCandidate | null {
+  if (!v99RegionsGoalActive(i.world, i.settings)) return null;
+  const actor = v99IsRecord(i.actor) ? i.actor : {};
+  const region = String(actor.currentRegion || '');
+  if (!REGIONS[region]) return null;
+  const ownerKey = v99RegionOwnerKey(i.world, actor);
+  const option = v99RegionStakeOptions(i.world, ownerKey).find(o => o.region === region);
+  if (!option) return null;
+  const name = v99RegionName(region);
+  const rival = v99RegionRivalName(i);
+  const stake = fmtMoney(option.required);
+  const held = v99RegionsHeld(i.world, ownerKey);
+  const need = v99StakeCashNeeded(option.required, i.reserve);
+  const blocker = i.cash < need ? `A ${stake} stake takes ${name}, and the advice keeps ${fmtMoney(need - option.required)} for reserve and wagers — earn ${fmtMoney(need - i.cash)} more first` : null;
+  const taken = option.holder !== null;
+  const title = taken ? (option.mine > 0 ? `Take back ${name} — stake ${stake}` : `Take ${name} from ${rival} — stake ${stake}`) : option.mine > 0 ? `Secure ${name} — stake ${stake} more` : `Claim ${name} — stake ${stake}`;
+  const reason = taken
+    ? (option.mine > 0
+      ? `${rival} out-staked you in ${name} (${fmtMoney(option.highest)} against your ${fmtMoney(option.mine)}): ${stake} more takes it back — one region more for you, one fewer for them`
+      : `${rival} holds ${name} with ${fmtMoney(option.highest)}: a ${stake} stake takes it — one region more for you, one fewer for them`)
+    : `regions decide this match: ${stake} is the stake that takes control of ${name} (you hold ${held.mine}${v99RegionsMatchHasRival(i.world) ? `, ${rival} ${held.others}` : ''})`;
+  const apCost = v99CandidateRuleApCost('regional_deposit', { isAi: actor.isAi === true, kind: typeof actor.kind === 'string' ? actor.kind : undefined }, i.apSettings);
+  return {
+    id: i.makeId(10, 'region_stake'),
+    category: 'region_control',
+    categoryIndex: 10,
+    categoryName: 'Victory Path Action',
+    title,
+    description: `Deposit ${stake} in ${name} — the smallest stake that gives you control. Deposits are spent; the highest total controls the region.`,
+    actionType: 'region_deposit',
+    apCost,
+    costEstimate: option.required,
+    expectedOutcome: `You control ${name} (${held.mine + 1} region${held.mine + 1 === 1 ? '' : 's'})`,
+    utilityScore: V99_REGION_STAKE_UTILITY,
+    riskFactor: 5,
+    rewardScore: 85,
+    longTermScore: 92,
+    expectedStateDelta: { cashDelta: -option.required, apDelta: apCost > 0 ? -apCost : 0, influenceDelta: 10 },
+    isValid: !blocker,
+    invalidationReason: blocker || undefined,
+    targetId: region,
+    adviceReason: reason,
+    // apCost: the deposit handler charges the "regional deposit" action cost; the candidate carries it so the card agrees.
+    parameters: { region, regionCode: region, amount: option.required, apCost }
+  };
+}
+
+/** A journey whose purpose is the next region. */
+export interface V99RegionTrip { target: string; fare: number; required: number; reason: string }
+
+/**
+ * Where to go for the next region, once nothing is left to take where the actor stands: the region where one more
+ * region on the scoreboard costs least (fare plus stake, halved when the rival loses the region as the player gains
+ * it — so winning back an out-staked region is preferred whenever that is the cheaper way to stay ahead), then the
+ * cheaper fare, then map order. Only regions whose fare, stake, reserve and working cash the actor can pay. null when
+ * regions do not decide the match, while there is something to take here, or when no region is within reach.
+ */
+export function v99PlanRegionTrip(i: V99RegionAdviceInput & { fare: (to: string) => number }): V99RegionTrip | null {
+  if (!v99RegionsGoalActive(i.world, i.settings)) return null;
+  const actor = v99IsRecord(i.actor) ? i.actor : {};
+  const from = String(actor.currentRegion || '');
+  const options = v99RegionStakeOptions(i.world, v99RegionOwnerKey(i.world, actor));
+  if (!REGIONS[from] || options.some(o => o.region === from)) return null;
+  let best: { option: V99RegionStakeOption; fare: number; each: number } | null = null;
+  for (const option of options) {
+    const fare = v99Finite(i.fare(option.region), NaN);
+    if (!Number.isFinite(fare) || fare < 0 || i.cash < fare + v99StakeCashNeeded(option.required, i.reserve)) continue;
+    const each = (fare + option.required) / option.swing;
+    if (!best || each < best.each - 1e-9 || (Math.abs(each - best.each) <= 1e-9 && fare < best.fare)) best = { option, fare, each };
+  }
+  if (!best) return null;
+  const { option, fare } = best;
+  const here = v99RegionName(from), there = v99RegionName(option.region), rival = v99RegionRivalName(i);
+  const reason = option.holder !== null
+    ? (option.mine > 0
+      ? `you hold ${here}; ${rival} out-staked you in ${there} — ${fmtMoney(option.required)} there takes it back (one more for you, one fewer for them)`
+      : `you hold ${here}; taking ${there} from ${rival} costs ${fmtMoney(option.required)} there and counts twice (one more for you, one fewer for them)`)
+    : `you hold ${here}; ${there} can be claimed for ${fmtMoney(option.required)}`;
+  return { target: option.region, fare, required: option.required, reason };
+}
+
+/**
+ * The next step of a regions goal, in the focus card's words: the stake where the player stands, the cash it still
+ * takes, or the journey to the next region. null when regions do not decide the match (the caller keeps its line).
+ */
+export function v99RegionsNextStep(actor: unknown, world: unknown, settings: unknown): { label: string; detail: string; target: 'challenges' | 'travel' | 'map' | null; navLabel: string; actionType: string | null } | null {
+  if (!v99RegionsGoalActive(world, settings)) return null;
+  const a = v99IsRecord(actor) ? actor : {};
+  const region = String(a.currentRegion || '');
+  const cash = v99Finite(a.money, 0);
+  const reserve = v99AdviceReserve(settings);
+  const ownerKey = v99RegionOwnerKey(world, a);
+  const options = v99RegionStakeOptions(world, ownerKey);
+  const held = v99RegionsHeld(world, ownerKey);
+  const challengeType = v99Flag(settings, 'challengeApproachesEnabled') ? 'challenge_approach' : 'challenge';
+  const here = options.find(o => o.region === region);
+  if (here) {
+    const name = v99RegionName(region);
+    const need = v99StakeCashNeeded(here.required, reserve);
+    if (cash >= need) return { label: `${here.holder !== null ? 'Take' : 'Claim'} ${name} — stake ${fmtMoney(here.required)}`, detail: `Regions decide this match. ${fmtMoney(here.required)} is the stake that takes control of ${name} — deposit it in the Region Control panel.`, target: 'map', navLabel: 'Open Map', actionType: 'region_deposit' };
+    return { label: `Earn the ${fmtMoney(here.required)} stake for ${name}`, detail: `Taking ${name} needs ${fmtMoney(need)} in hand (the stake plus your reserve) — you have ${fmtMoney(cash)}. Challenge winnings are the fastest way there.`, target: 'challenges', navLabel: 'Open Challenges', actionType: challengeType };
+  }
+  if (options.length === 0) return { label: 'Hold your regions', detail: `You control all ${held.mine} regions.${v99RegionsMatchHasRival(world) ? ' Keep cash in hand to answer a rival stake.' : ''}`, target: 'map', navLabel: 'Open Map', actionType: null };
+  const trip = v99PlanRegionTrip({ actor: a, world, settings, cash, reserve, fare: to => getActorTravelCost(world, a, region, to, settings) });
+  if (trip) return { label: `Travel to ${v99RegionName(trip.target)} and stake ${fmtMoney(trip.required)}`, detail: `You hold ${held.mine} region${held.mine === 1 ? '' : 's'}. A stake is made where you stand: ${v99RegionName(trip.target)} is the cheapest region to take next.`, target: 'travel', navLabel: 'Open Travel', actionType: 'travel' };
+  return { label: 'Earn cash for the next stake', detail: `You hold ${held.mine} region${held.mine === 1 ? '' : 's'}. The next one takes a fare and a stake you cannot pay yet — challenge winnings are the fastest way there.`, target: 'challenges', navLabel: 'Open Challenges', actionType: challengeType };
+}
+
+// ---- Package W4B1: the match goal stays the focus ----------------------------------------------------------------------
+// A stake where the player stood used to replace the match goal ("Control Queensland 2 / 2 — Next: Defend this region"
+// in a match decided on money), and under that focus every card with the word "regional" in it "advanced Control
+// Queensland" — a day of wages included.
+
+/**
+ * The automatic focus: the match goal, with the region the player stands in as a side note when a stake is held there
+ * (or the rival holds one). The region goal itself is returned only when there is no match goal; a player who wants a
+ * region as the focus still tracks it by hand.
+ */
+export function v99MatchGoalWithRegionNote(win: CurrentObjective | null, region: CurrentObjective | null): CurrentObjective | null {
+  if (!win) return region;
+  if (!region) return win;
+  const lead = region.requirements.find(r => r.id === 'lead');
+  if (!lead) return win;
+  return { ...win, description: `${win.description} Side note — ${lead.label}.`, requirements: [...win.requirements, { ...lead, id: 'region_note', label: `Side note — ${lead.label}` }] };
+}
+
+/**
+ * What a card's wording has in common with a "Control <region>" goal counts only for the actions that are about that
+ * region's control: a stake or a cash-out, and the journey to it. For any other goal the alignment is returned as it is.
+ */
+export function v99RegionGoalAlignment(objective: { sourceType?: unknown; sourceId?: unknown } | null | undefined, candidate: { actionType?: unknown; targetId?: unknown } | null | undefined, alignment: number): number {
+  if (!objective || objective.sourceType !== 'region_control' || !candidate) return alignment;
+  if (candidate.actionType === 'region_deposit' || candidate.actionType === 'cashout_region') return alignment;
+  if (candidate.actionType === 'travel' && candidate.targetId === objective.sourceId) return alignment;
+  return 0;
+}
+
+// ---- Package W4B1: the Co-Pilot in control makes a due free move before it ends the turn -----------------------------
+// The takeover step ended the turn as soon as the last action was spent, so a repayment that the last action made
+// affordable — or a loan in real danger after a lost wager — waited a day (and the loan charged its interest).
+
+/** At most this many free moves are made after the last action of one turn. */
+export const V99_FREE_MOVES_AT_TURN_END = 2;
+
+export function v99FreeMoveSignature(candidate: { actionType?: unknown; targetId?: unknown } | null | undefined): string {
+  return candidate ? `${String(candidate.actionType || '')}:${String(candidate.targetId || '')}` : '';
+}
+
+/** The free moves already made after the last action of the turn `turnKey` (none for another turn or an old session). */
+export function v99FreeMovesTaken(session: { v99FreeMovesAtTurnEnd?: { turnKey: string; signatures: string[] } } | null | undefined, turnKey: string): string[] {
+  const made = session ? session.v99FreeMovesAtTurnEnd : undefined;
+  return made && made.turnKey === turnKey && Array.isArray(made.signatures) ? made.signatures.filter(s => typeof s === 'string') : [];
+}
+
+/**
+ * The free move the Co-Pilot still makes with no action left: a repayment that is due (v99LoanRank 'first') or an
+ * emergency loan in real danger — valid, costing no action, not made already this turn. null when there is none or
+ * V99_FREE_MOVES_AT_TURN_END have been made. Everything else that is free (a sale, turn bookkeeping) is left alone.
+ */
+export function v99FreeMoveAtTurnEnd(evaluation: { candidates?: CoPilotActionCandidate[] } | null | undefined, taken: readonly string[]): CoPilotActionCandidate | null {
+  if (taken.length >= V99_FREE_MOVES_AT_TURN_END) return null;
+  const due = ((evaluation && evaluation.candidates) || []).filter(c => Boolean(c) && c.isValid === true && c.apCost === 0
+    && ((c.actionType === 'repay_emergency_loan' && c.v99LoanRank === 'first') || (c.actionType === 'emergency_loan' && c.v99LoanRank !== 'after_wage' && c.utilityScore >= 90))
+    && !taken.includes(v99FreeMoveSignature(c)));
+  return due.reduce<CoPilotActionCandidate | null>((best, c) => (!best || c.utilityScore > best.utilityScore ? c : best), null);
+}
+
+
+// ---- Package W4B1 (leftovers 11 and 17) -------------------------------------------------------------------------------
+/**
+ * The last line of a "Why?" answer: what pressing "Do It" does, in the player's words. (The answer itself is built from
+ * the recommendation's own reason, cost, odds and expected result; this line described the engine: "runs through the
+ * canonical executor, which re-checks legality, Action Points, cash reserve, spending caps and Guardian protections".)
+ */
+export function v99WhyDoItLine(candidate: { actionType?: unknown; parameters?: unknown } | null | undefined): string {
+  if (candidate && v99IsRolledAction(candidate.actionType, candidate.parameters)) return '"Do It" takes the challenge at this wager: the roll decides, and nothing beyond the wager is at stake.';
+  return '"Do It" checks once more that the move is still allowed — your actions, your cash reserve, your spending limits — and spends nothing if it is not.';
+}
+
+/**
+ * Who the first line of the "Team plan" block is about: "You" in a match the human plays; in a match the human only
+ * watches, the lead AI by its name (the block said "You — No active task" about an AI the player was watching).
+ */
+export function v99TeamPlanLeadLabel(spectator: boolean | undefined, leadName: string | null | undefined): string {
+  return spectator === true ? String(leadName || 'Lead AI') : 'You';
+}
+
+
 
 
 
@@ -192599,10 +193393,13 @@ export interface MatchSeedPlan extends MatchSeedResolution { serial: number | nu
  * Resolves the seed of a match that is about to start. Only a derived seed consumes a match serial, so scenarios,
  * campaign chapters, Deterministic mode and explicit seeds leave the counter alone.
  */
-export function planMatchSeed(input: { settings: MatchSeedSettingsView | null | undefined; explicitSeed?: number | null; fixed?: boolean; storage: V99StorageLike | null; sessionSerial: number; persist?: boolean }): MatchSeedPlan {
+export function planMatchSeed(input: { settings: MatchSeedSettingsView | null | undefined; explicitSeed?: number | null; fixed?: boolean; storage: V99StorageLike | null; sessionSerial: number; persist?: boolean; avoidSeed?: number | null }): MatchSeedPlan {
   const preview = resolveMatchSeed(input.settings, 1, input.explicitSeed, input.fixed === true);
   if (preview.source !== 'derived') return { ...preview, serial: null, persisted: false };
-  const allocated = allocateMatchSerial(input.storage, input.sessionSerial, input.persist !== false);
+  let allocated = allocateMatchSerial(input.storage, input.sessionSerial, input.persist !== false);
+  // W4A (F4-04): `avoidSeed` is the seed of the match just played or loaded — on a device whose counter has not passed
+  // it yet (a loaded save on a new profile) the next serial is taken, so a rematch is never the same match again.
+  if (matchSerialAvoidingSeed(input.settings, allocated.serial, input.avoidSeed) !== allocated.serial) allocated = allocateMatchSerial(input.storage, allocated.serial, input.persist !== false);
   return { ...resolveMatchSeed(input.settings, allocated.serial, null, false), serial: allocated.serial, persisted: allocated.persisted };
 }
 
@@ -193462,7 +194259,7 @@ export function buildMatchDebriefReport(params: DebriefAssemblyParams): DebriefA
     return {
       turn: c.day,
       description: hasRival
-        ? `${watched || (teamMode ? 'Your team' : 'You')} ${amount >= 0 ? 'gained' : 'lost'} ${fmtMoney(Math.abs(amount))} of net worth on ${rivalSide} (${watched ? `${watched} ` : teamMode ? "your team's " : 'yours '}${signed(c.playerDelta)}, ${watched ? `${rivalSide} ` : 'theirs '}${signed(c.rivalDelta)}).` // V9.9 (W3F1): a team's net worth is the team's
+        ? describeSwing({ amount, playerDelta: c.playerDelta, rivalDelta: c.rivalDelta, rivalSide, watched: watched || null, teamMode }) // V9.9 (W3F1): a team's net worth is the team's; W4A (f1-07): who gained on whom
         : `Your net worth ${amount >= 0 ? 'rose' : 'fell'} by ${fmtMoney(Math.abs(amount))}.`,
       netWorthDelta: amount, impact: impactOf(amount, c.playerBefore), pivotalAction: amount >= 0 ? 'Gained ground' : 'Lost ground'
     };
@@ -193594,17 +194391,24 @@ export interface EndScreenActions {
   offerRecording: boolean;
   /** This match was not recorded, but a replay of an earlier match is still loaded: offer it under its own name. */
   openEarlier?: boolean;
+  /** W4A (f2-03): nothing to offer or promise under the disabled Watch Replay (journal off and recording off). */
+  plainReplayNote?: boolean;
 }
 
 /** Which actions the end screen offers. Scenarios keep their own "Restart Scenario"; a campaign chapter continues from the menu. */
-export function endScreenActions(input: { selectedMode: unknown; hasReplay: boolean; recordingEnabled: boolean; campaignChapter: boolean; scenario: boolean; earlierReplay?: boolean }): EndScreenActions {
+// W4A (final review, f2-03): Rematch and "Record my next match" are new end-screen features, so they belong to the
+// off-by-default Match Journal (`journalEnabled` = matchJournalEnabled === true). Without it the end screen has V9.8's
+// buttons; Watch Replay still says when nothing was recorded (that is a fix).
+export function endScreenActions(input: { selectedMode: unknown; hasReplay: boolean; recordingEnabled: boolean; campaignChapter: boolean; scenario: boolean; earlierReplay?: boolean; journalEnabled?: boolean }): EndScreenActions {
   const mode = input.selectedMode;
   const playable = mode === 'single' || mode === 'ai' || mode === 'grand_tour' || mode === 'team_human_ai_vs_ai_ai' || mode === 'team_ai_vs_ai';
+  const extras = input.journalEnabled === true;
   return {
-    rematch: playable && !input.scenario && !input.campaignChapter,
+    rematch: extras && playable && !input.scenario && !input.campaignChapter,
     replay: input.hasReplay ? 'ready' : 'no_recording',
-    offerRecording: !input.hasReplay && !input.recordingEnabled,
-    openEarlier: !input.hasReplay && input.earlierReplay === true
+    offerRecording: extras && !input.hasReplay && !input.recordingEnabled,
+    openEarlier: !input.hasReplay && input.earlierReplay === true,
+    ...(!extras && !input.hasReplay && !input.recordingEnabled ? { plainReplayNote: true } : {})
   };
 }
 
@@ -193632,13 +194436,72 @@ export const V99EndScreenActions: React.FC<{
           <span className="text-[11px] opacity-75">This match was not recorded.</span>
           {actions.offerRecording
             ? <button type="button" onClick={onRecordNext} className="text-[11px] underline" data-testid="v99-record-next">Record my next match</button>
-            : <span className="text-[11px] opacity-75" data-testid="v99-recording-on">Record Replays is on — your next match will be recorded.</span>}
+            : actions.plainReplayNote === true ? null : <span className="text-[11px] opacity-75" data-testid="v99-recording-on">Record Replays is on — your next match will be recorded.</span>}
           {actions.openEarlier === true && onOpenEarlierReplay && <button type="button" onClick={onOpenEarlierReplay} className="text-[11px] underline" data-testid="v99-open-earlier-replay">Open the replay of an earlier match</button>}
         </span>
       )}
     </>
   );
 };
+
+// ---- W4A (final review, F4-01): a match from an older save keeps the V9.8 rival, failed moves included --------------------------
+// R1's "a failed move is not proposed again" was applied to every live rival, so a V9.8 save diverged from V9.8 at the
+// rival's first refused move (V9.8 proposes it once more, then re-decides). Like R2 it now applies to matches started
+// on V9.9 only (rivalLiveHooksFor returns no hooks without a match seed, and the turn loop's guard is asked here).
+/** Whether the retry guard blocks this candidate: never in a match without a seed (a V9.8 save or replay). */
+export function rivalRetryBlocks(guard: RivalRetryGuard, gameState: unknown, candidate: unknown): boolean {
+  return rivalDisciplineActive(gameState) && guard.blocks(candidate);
+}
+
+// ---- W4A (final review, F4-04): a new match never repeats the seed of the match before it ---------------------------------------
+/** The serial after `serial` when the seed it derives is the one to avoid (the match just played or loaded); otherwise `serial`. */
+export function matchSerialAvoidingSeed(settings: MatchSeedSettingsView | null | undefined, serial: number, avoidSeed: number | null | undefined): number {
+  return typeof avoidSeed === 'number' && deriveMatchSeed(configuredMatchSeed(settings), serial) === avoidSeed ? Math.min(MATCH_SERIAL_MAX, serial + 1) : serial;
+}
+
+// ---- W4A (final review, f1-02): the tutorial's last word stays until it is dismissed -------------------------------------------
+/** True for the three sentences firstRunFinishNotice builds (goal met, missed, skipped). */
+export function isFirstRunFinishNotice(message: unknown): boolean {
+  return /^🎓 (?:Goal met — tutorial complete!|Day \d+ is done — not this time:|Tutorial skipped — the full game is open\.)/.test(String(message || ''));
+}
+
+// ---- W4A (final review, f3-02): a "survive N days" scenario gets the days it needs ---------------------------------------------
+/** The longest "days passed" target among a scenario's objectives (0 when it has none). */
+export function scenarioLongestDayTarget(scenario: { objectives?: unknown } | null | undefined): number {
+  const objectives: unknown[] = scenario && Array.isArray(scenario.objectives) ? scenario.objectives : [];
+  return objectives.reduce<number>((max, o) => {
+    if (!v99IsRecord(o) || (o.targetType !== 'daysPassed' && o.targetType !== 'turns_survived')) return max;
+    const target = Number(o.targetValue);
+    return Number.isFinite(target) ? Math.max(max, Math.floor(target)) : max;
+  }, 0);
+}
+/**
+ * The match length a scenario is launched with: the chosen one, raised to what its longest "survive N days" objective
+ * needs (day N must be played, and the last day played is totalDays − 1). Outback Siege (15 days) on a 10-day game
+ * length could not be won from turn 1. A scenario without such an objective keeps the chosen length.
+ */
+export function scenarioTotalDays(scenario: { objectives?: unknown } | null | undefined, chosenTotalDays: unknown): number {
+  const chosen = Number(chosenTotalDays);
+  const base = Number.isFinite(chosen) && chosen >= 2 ? Math.floor(chosen) : Number(DEFAULT_GAME_SETTINGS.totalDays) || 30;
+  const target = scenarioLongestDayTarget(scenario);
+  return target > 0 ? Math.max(base, target + 1) : base;
+}
+
+// ---- W4A (final review, f1-07): a swing is told as who gained on whom -----------------------------------------------------------
+/** "You gained $1,800 on Scientist AI in net worth (you +$1,800, them +$0)." / "Scientist AI gained $1,800 on you …" — never "you lost" when nothing was lost. */
+export function describeSwing(input: { amount: number; playerDelta: number; rivalDelta: number; rivalSide: string; watched: string | null; teamMode: boolean }): string {
+  const signed = (n: number) => `${n >= 0 ? '+' : '-'}${fmtMoney(Math.abs(n))}`;
+  const us = input.watched || (input.teamMode ? 'Your team' : 'You');
+  const usObject = input.watched || (input.teamMode ? 'your team' : 'you');
+  const usShort = input.watched ? `${input.watched} ` : input.teamMode ? 'your team ' : 'you ';
+  const themShort = input.watched ? `${input.rivalSide} ` : 'them ';
+  const lead = input.amount >= 0 ? `${us} gained ${fmtMoney(Math.abs(input.amount))} on ${input.rivalSide}` : `${input.rivalSide} gained ${fmtMoney(Math.abs(input.amount))} on ${usObject}`;
+  return `${lead} in net worth (${usShort}${signed(input.playerDelta)}, ${themShort}${signed(input.rivalDelta)}).`;
+}
+/** The hero's sub-line: the win condition, and what decided the match when that was something else (a tie-break). One label is printed once. */
+export function describeDecidedBy(winLabel: string, metricLabel: string): string {
+  return winLabel === metricLabel ? `Match decided by ${metricLabel}` : `${winLabel} · decided by ${metricLabel}`;
+}
 
 export function runV99MatchFlowSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
@@ -194152,7 +195015,7 @@ export function runV99MatchFlowSelfTests(): V9SelfTestResult[] {
   });
   // The end screen
   check('v99mf_56_end_screen_actions', 'The end screen offers Rematch in every ordinary mode, not in scenarios or campaign chapters, and is honest about the replay', () => {
-    const act = (o: Partial<Parameters<typeof endScreenActions>[0]>) => endScreenActions({ selectedMode: 'ai', hasReplay: false, recordingEnabled: false, campaignChapter: false, scenario: false, ...o });
+    const act = (o: Partial<Parameters<typeof endScreenActions>[0]>) => endScreenActions({ selectedMode: 'ai', hasReplay: false, recordingEnabled: false, campaignChapter: false, scenario: false, journalEnabled: true, ...o }); // W4A: with the journal on (see v99mf_z01)
     const modes = ['single', 'ai', 'grand_tour', 'team_human_ai_vs_ai_ai', 'team_ai_vs_ai'].map(m => act({ selectedMode: m }).rematch);
     return (modes.every(Boolean) && !act({ selectedMode: 'scenario' }).rematch && !act({ scenario: true }).rematch && !act({ campaignChapter: true }).rematch && !act({ selectedMode: null }).rematch
       && act({}).replay === 'no_recording' && act({}).offerRecording && act({ hasReplay: true }).replay === 'ready' && !act({ hasReplay: true }).offerRecording && !act({ recordingEnabled: true }).offerRecording) || json(modes);
@@ -194317,7 +195180,7 @@ export function runV99MatchFlowSelfTests(): V9SelfTestResult[] {
   });
   check('v99mf_73_watch_replay_means_this_match', 'Watch Replay is live only when THIS match was recorded; a replay of an earlier match is offered separately, under its own name', () => {
     const noop = () => undefined;
-    const act = (o: Partial<Parameters<typeof endScreenActions>[0]>) => endScreenActions({ selectedMode: 'ai', hasReplay: false, recordingEnabled: false, campaignChapter: false, scenario: false, ...o });
+    const act = (o: Partial<Parameters<typeof endScreenActions>[0]>) => endScreenActions({ selectedMode: 'ai', hasReplay: false, recordingEnabled: false, campaignChapter: false, scenario: false, journalEnabled: true, ...o }); // W4A: with the journal on
     const stale = act({ earlierReplay: true }), fresh = act({ hasReplay: true, earlierReplay: true }), none = act({});
     const node = V99EndScreenActions({ actions: stale, onRematch: noop, onWatchReplay: noop, onRecordNext: noop, onOpenEarlierReplay: noop, layout: 'bar' });
     const noHandler = V99EndScreenActions({ actions: stale, onRematch: noop, onWatchReplay: noop, onRecordNext: noop, layout: 'bar' });
@@ -194334,8 +195197,88 @@ export function runV99MatchFlowSelfTests(): V9SelfTestResult[] {
     const legacy = matchTurnsPlayed(readMatchEnd({}), 30, 30);
     return (early === 3 && full === 29 && summary(early) === 3 && summary(full) === 29 && legacy >= 29 && legacy <= 30 && matchLengthInDays(10) === 9 && matchLengthInDays(30) === 29) || json({ early, full, legacy });
   });
+
+  // ---- Package W4B1 (leftovers 8 and 15) ------------------------------------------------------------------------------
+  check('v99mf_x02_approvals_only_for_the_players_team', "In a team mode the player is asked to approve only the AI on the player's own team — never the rival team's; outside team modes the gate is as it was", () => {
+    const got = [approvalIsAskedOfThePlayer(true, TEAM_PLAYER_ID), approvalIsAskedOfThePlayer(true, TEAM_OPPONENT_ID), approvalIsAskedOfThePlayer(true, undefined), approvalIsAskedOfThePlayer(true, null), approvalIsAskedOfThePlayer(false, TEAM_OPPONENT_ID), approvalIsAskedOfThePlayer(false, undefined)];
+    return got.join() === 'true,false,false,false,true,true' || got.join();
+  });
+  check('v99mf_x03_load_preview_counts_wins', 'The Load Save preview says how many challenges were won, with the different ones in brackets — the figures of the end screen, not the number of different challenges called "wins"', () => {
+    const wins = (id: string, n: number) => Array.from({ length: n }, (_, i) => ({ id: `c_${id}_${i}`, playerId: id, challengeName: `Challenge ${i % 3}`, region: 'QLD', turn: i + 1, timestamp: 0 }));
+    const player = { id: 'player', challengesCompleted: ['A', 'B', 'C'], challengeMastery: { A: {}, B: {}, C: {} } };
+    const got = [
+      savePreviewChallengeLine({ gameState: { challengeCompletions: [...wins('player', 6), ...wins('ai', 4)] }, player }),
+      savePreviewChallengeLine({ gameState: {}, player }),                                   // a save from before the log: the completed list
+      savePreviewChallengeLine({ gameState: { challengeCompletions: wins('ai', 4) }, player: { id: 'player', challengesCompleted: [] } }),
+      savePreviewChallengeLine(null)
+    ];
+    const rival = challengeStatRow(challengeStatFigures({ challengeCompletions: [...wins('player', 6), ...wins('ai', 4)] }, { id: 'ai', challengesCompleted: ['A', 'B'], challengeMastery: { A: {}, B: {} } }, ['ai']), null, '').value;
+    return (json(got) === json(['Challenges Won: 6 (3 different)', 'Challenges Won: 3', 'Challenges Won: 0', 'Challenges Won: 0']) && rival === '4 (2 different)') || json({ got, rival });
+  });
   runV99RivalTurnChecks(check);   // Track R (the rival's turn): ids v99mf_r…
   runV99RivalDisciplineChecks(check);   // Track R, package R2 (a rival that does not defeat itself): ids v99mf_r30…
+  // ---- W4A (final review) ----------------------------------------------------------------------------------------------
+  check('v99mf_z01_end_screen_without_the_journal', 'f2-03: with the Match Journal off the end screen has no Rematch and no "Record my next match" (Watch Replay stays honest); on = both', () => {
+    const base = { selectedMode: 'ai', hasReplay: false, recordingEnabled: false, campaignChapter: false, scenario: false };
+    const off = endScreenActions(base), on = endScreenActions({ ...base, journalEnabled: true }), offRecording = endScreenActions({ ...base, recordingEnabled: true }), offReady = endScreenActions({ ...base, hasReplay: true });
+    const noop = () => undefined;
+    const offIds = nodeTestIds(V99EndScreenActions({ actions: off, onRematch: noop, onWatchReplay: noop, onRecordNext: noop, layout: 'bar' }));
+    const onIds = nodeTestIds(V99EndScreenActions({ actions: on, onRematch: noop, onWatchReplay: noop, onRecordNext: noop, layout: 'bar' }));
+    const recIds = nodeTestIds(V99EndScreenActions({ actions: offRecording, onRematch: noop, onWatchReplay: noop, onRecordNext: noop, layout: 'bar' }));
+    return (!off.rematch && !off.offerRecording && off.replay === 'no_recording' && off.plainReplayNote === true && on.rematch && on.offerRecording && offReady.replay === 'ready' && !offReady.rematch
+      && !offIds.includes('v99-rematch') && !offIds.includes('v99-record-next') && !offIds.includes('v99-recording-on') && offIds.includes('v99-watch-replay:disabled') && offIds.includes('v99-no-replay')
+      && onIds.includes('v99-rematch') && onIds.includes('v99-record-next') && recIds.includes('v99-recording-on') && !recIds.includes('v99-rematch')) || json({ off, on, offIds, onIds, recIds });
+  });
+  check('v99mf_z02_old_save_keeps_the_v98_rival_on_a_failed_move', 'F4-01: without a match seed the chooser gets no hooks and the retry guard blocks nothing (V9.8 proposes a failed move once more); with a seed both apply', () => {
+    const guard = createRivalRetryGuard();
+    const deposit = { type: 'region_deposit', data: { region: 'NSW', amount: 200 } };
+    guard.note(deposit, false);
+    const seedless = { day: 13 }, seeded = { day: 13, matchSeed: 2053342 };
+    const s = DEFAULT_GAME_SETTINGS;
+    const oldHooks = rivalLiveHooksFor({ options: { isRejected: () => true }, aiState: {}, gameState: seedless, playerState: {}, settings: s, difficultyKey: 'medium' });
+    const newHooks = rivalLiveHooksFor({ options: { isRejected: () => true }, aiState: {}, gameState: seeded, playerState: {}, settings: s, difficultyKey: 'medium' });
+    return (guard.blocks(deposit) && rivalRetryBlocks(guard, seedless, deposit) === false && rivalRetryBlocks(guard, seeded, deposit) === true && oldHooks === undefined
+      && newHooks !== undefined && typeof newHooks.isRejected === 'function' && rivalDisciplineActive(seedless) === false) || json({ old: oldHooks === undefined, fresh: newHooks !== undefined });
+  });
+  check('v99mf_z03_rematch_gets_a_new_seed', 'F4-04: a match whose derived seed would repeat the match just played takes the next serial; any other seed is left alone', () => {
+    const random = { ...DEFAULT_GAME_SETTINGS, worldRngMode: 'random' as const };
+    const s1 = deriveMatchSeed(1337, 1), s2 = deriveMatchSeed(1337, 2);
+    const store = createV99MemoryStorage();
+    const again = planMatchSeed({ settings: random, storage: store, sessionSerial: 0, avoidSeed: s1 });
+    const free = planMatchSeed({ settings: random, storage: createV99MemoryStorage(), sessionSerial: 0, avoidSeed: 12345 });
+    const none = planMatchSeed({ settings: random, storage: createV99MemoryStorage(), sessionSerial: 0 });
+    const explicit = planMatchSeed({ settings: random, storage: createV99MemoryStorage(), sessionSerial: 0, explicitSeed: s1, avoidSeed: s1 });
+    return (again.seed === s2 && again.serial === 2 && readMatchSerial(store) === 2 && free.seed === s1 && free.serial === 1 && none.seed === s1 && explicit.seed === s1 && explicit.source === 'explicit'
+      && matchSerialAvoidingSeed(random, 1, s1) === 2 && matchSerialAvoidingSeed(random, 1, null) === 1) || json({ again, free, none, explicit });
+  });
+  check('v99mf_z04_tutorial_finish_notice_is_recognised', 'f1-02: all three closing sentences of the guided match are recognised (they stay on screen until dismissed); the welcome and unlock notices are not', () => {
+    const three = (['goal_met', 'deadline', 'skipped'] as FirstRunOutcome[]).map(o => firstRunFinishNotice(o, { money: 1000, challengesWon: 0 }, ' Teams line.').message);
+    const others = ['🎓 Welcome! Your first match: Earn $2,000', '🆕 Trade unlocked — sell what you carry', 'Day 7 is done', ''];
+    return (three.every(m => isFirstRunFinishNotice(m)) && others.every(m => !isFirstRunFinishNotice(m)) && !isFirstRunFinishNotice(null)) || json(three);
+  });
+  check('v99mf_z05_survival_scenarios_can_be_won', 'f3-02: every scenario with a "survive N days" objective is launched with enough days, whatever game length is chosen; the others keep the chosen length', () => {
+    const lengths = [10, 15, 30, 100];
+    const unreachable: string[] = [];
+    PRESET_GAME_SCENARIOS.forEach(s => lengths.forEach(chosen => {
+      const forced = (s.forcedSettings || {}) as { totalDays?: unknown };
+      const total = scenarioTotalDays(s, forced.totalDays ?? chosen);
+      const target = scenarioLongestDayTarget(s);
+      if (target > 0 && matchLengthInDays(total) < target) unreachable.push(`${s.id}@${chosen}: ${matchLengthInDays(total)} < ${target}`);
+      if (target === 0 && total !== Number(forced.totalDays ?? chosen)) unreachable.push(`${s.id}@${chosen}: length changed to ${total}`);
+    }));
+    const siege = PRESET_GAME_SCENARIOS.find(s => s.id === 'outback_siege');
+    return (unreachable.length === 0 && siege !== undefined && scenarioLongestDayTarget(siege) === 15 && scenarioTotalDays(siege, 10) === 16 && scenarioTotalDays(siege, 30) === 30
+      && scenarioTotalDays({ objectives: [] }, 10) === 10 && scenarioTotalDays(null, 'x') === Number(DEFAULT_GAME_SETTINGS.totalDays)) || json(unreachable);
+  });
+  check('v99mf_z06_swing_and_decided_by_wording', 'f1-07: a day the rival gained is told as the rival gaining (not "you lost" beside "yours +$0"), and the hero prints one label once', () => {
+    const lost = describeSwing({ amount: -1800, playerDelta: 0, rivalDelta: 1800, rivalSide: 'Scientist AI', watched: null, teamMode: false });
+    const won = describeSwing({ amount: 900, playerDelta: 1200, rivalDelta: 300, rivalSide: 'Scientist AI', watched: null, teamMode: false });
+    const team = describeSwing({ amount: -500, playerDelta: -200, rivalDelta: 300, rivalSide: 'Rose Team', watched: null, teamMode: true });
+    const seen = describeSwing({ amount: 500, playerDelta: 700, rivalDelta: 200, rivalSide: 'Rose Team', watched: 'Gold Team', teamMode: true });
+    return (lost === 'Scientist AI gained $1,800 on you in net worth (you +$0, them +$1,800).' && won === 'You gained $900 on Scientist AI in net worth (you +$1,200, them +$300).'
+      && team === 'Rose Team gained $500 on your team in net worth (your team -$200, them +$300).' && seen === 'Gold Team gained $500 on Rose Team in net worth (Gold Team +$700, Rose Team +$200).'
+      && describeDecidedBy('Most Money', 'Most Money') === 'Match decided by Most Money' && describeDecidedBy('Most Money', 'Net Worth') === 'Most Money · decided by Net Worth') || json({ lost, won, team, seen });
+  });
   return results;
 }
 
@@ -194369,6 +195312,8 @@ export function runV99MatchFlowSelfTests(): V9SelfTestResult[] {
 // (ClassicAiLiveHooks.isRejected — only the live rival passes hooks; the AI Tuning Lab and every other caller of
 // chooseAction pass none and are unchanged), and a move that has just failed is not proposed again until something
 // changed (createRivalRetryGuard). Sabotage that is already active on the player is not proposed at all.
+// W4A (F4-01): like R2, this applies to matches started on V9.9 only (rivalRetryBlocks / rivalLiveHooksFor): a match
+// from a V9.8 save keeps V9.8's sequence at a refused move (proposed once more, then re-decided), move for move.
 // Nothing here is saved, and nothing here draws randomness.
 
 export type RivalTurnWaitKind = 'schedule' | 'think' | 'settle' | 'finalize';
@@ -194521,8 +195466,9 @@ export const RIVAL_PACE_CONTROL_LABEL = 'Rival turn speed';
  * player has picked another pace than Normal — on their own turn too (an Instant rival turn is over in a moment, so
  * the control would never stay on screen long enough to change it back). Never on the status-only copy of the pill.
  */
-export function rivalPaceControlShown(input: { soloRival: boolean; isPlayerTurn: boolean; overBoard: boolean; pace: RivalTurnPace }): boolean {
-  if (!input.soloRival || input.overBoard) return false;
+export function rivalPaceControlShown(input: { soloRival: boolean; isPlayerTurn: boolean; overBoard: boolean; pace: RivalTurnPace; classicLayout?: boolean }): boolean {
+  // W4A (f2-01 / f1-08): the classic layout is V9.8's pill — no control on it (the pace is in Settings, New in V9.9).
+  if (!input.soloRival || input.overBoard || input.classicLayout === true) return false;
   return !input.isPlayerTurn || input.pace !== 'normal';
 }
 /**
@@ -194914,6 +195860,12 @@ export const RIVAL_CLAIM_TRAVEL_BONUS = 150;
 export const RIVAL_STAMP_TRAVEL_BONUS = 150;
 /** Added, times the chance of success, to a challenge that would earn a missing passport stamp (Grand Tour). */
 export const RIVAL_STAMP_CHALLENGE_BONUS = 300;
+/**
+ * V9.9 (SECTION 20AS, W4B): what a journey must leave in the rival's pocket while it could still earn where it stands
+ * (an open challenge or something to sell). Stakes shrink with the rival's cash and challenge scores shrink with the
+ * stake, so for a nearly broke rival a journey outranked every challenge and it paid its last dollars for a ticket.
+ */
+export const RIVAL_TRAVEL_RESERVE = 300;
 
 /** What refineRivalCandidates reads for one live rival decision. */
 export interface RivalDisciplineInput {
@@ -194958,6 +195910,7 @@ function rivalWithWagerFloor(candidate: RivalCandidate, money: number): RivalCan
  *      proposed for a region the rival controls (the game refuses any other);
  *   3. in Grand Tour the rival collects stamps (a challenge where the stamp is missing, journeys to regions without
  *      one), goes to the finale's region once every stamp is held, and attempts the finale there.
+ *   4. a journey that would leave less than RIVAL_TRAVEL_RESERVE is dropped while a challenge or a sale is open here.
  * The input list is never mutated. Pure; draws nothing.
  */
 export function refineRivalCandidates(candidates: RivalCandidate[], input: RivalDisciplineInput): RivalCandidate[] {
@@ -195062,6 +196015,13 @@ export function refineRivalCandidates(candidates: RivalCandidate[], input: Rival
       if (!attemptable) out = favourTravel(out, tour.missing.filter(code => code !== region), RIVAL_STAMP_TRAVEL_BONUS * quality, 0);
     }
   }
+
+  // 4. V9.9 (SECTION 20AS, W4B): the last dollars are not spent on a journey while there is something to do here. Last,
+  // so the journeys the regions and Grand Tour rules added or favoured are covered too; with nothing to attempt or sell
+  // here every journey stays (moving on is then the only way to earn).
+  if (out.some(candidate => candidate.type === 'challenge' || candidate.type === 'sell')) {
+    out = out.filter(candidate => candidate.type !== 'travel' || money - (Number(dataOf(candidate).cost) || 0) >= RIVAL_TRAVEL_RESERVE);
+  }
   return out;
 }
 
@@ -195072,15 +196032,15 @@ export interface RivalDecisionOptions {
   paidSlot?: boolean;
 }
 /**
- * The live hooks for one rival decision (makeAiDecision passes them to chooseAction): the turn loop's "already
- * failed" filter, and — in a match started on V9.9 — the R2 rules. Undefined when there is nothing to hook (then the
- * chooser is exactly V9.8's).
+ * The live hooks for one rival decision (makeAiDecision passes them to chooseAction), in a match started on V9.9: the
+ * turn loop's "already failed" filter and the R2 rules. Undefined for a match without a seed (W4A, F4-01): then the
+ * chooser is exactly V9.8's, also after a refused move.
  */
 export function rivalLiveHooksFor(input: { options: RivalDecisionOptions | null | undefined; aiState: unknown; gameState: unknown; playerState: unknown; settings: GameSettingsState; difficultyKey: string; onRuleError?: (error: unknown) => void }): ClassicAiLiveHooks | undefined {
   const discipline: RivalDisciplineInput | null = rivalDisciplineActive(input.gameState)
     ? { actor: input.aiState, gameState: input.gameState, settings: input.settings, difficultyKey: input.difficultyKey, ownerKey: RIVAL_OWNER_KEY } : null;
   const isRejected = input.options?.isRejected;
-  if (!isRejected && !discipline) return undefined;
+  if (!discipline) return undefined; // W4A (F4-01): no match seed = V9.8's chooser, also after a refused move (it re-proposed it once, then re-decided)
   return buildRivalLiveHooks(isRejected || (() => false), {
     sabotageEnabled: input.settings.sabotageEnabled === true, opponentDebuffs: v99IsRecord(input.playerState) ? input.playerState.debuffs : undefined,
     discipline, paidSlot: input.options?.paidSlot === true, onRuleError: input.onRuleError
@@ -195625,11 +196585,11 @@ function runV99RivalDisciplineChecks(check: (id: string, name: string, fn: () =>
     const newPlain = hooksFor(fresh), newPaid = hooksFor(fresh, { isRejected: reject, paidSlot: true }), newFree = hooksFor(fresh, { isRejected: reject, paidSlot: false });
     const oldBuys = rivalOverrideWorthBuying({ gameState: old.gameState, player: old.player, aiPlayer: { ...old.rival, money: 500 }, settings: old.settings, weights, specialAbilityActive: false, cost: 500 });
     const newBuys = rivalOverrideWorthBuying({ gameState: fresh.gameState, player: fresh.player, aiPlayer: { ...fresh.rival, money: 500 }, settings: fresh.settings, weights, specialAbilityActive: false, cost: 500 });
-    return (wrong === 0 && reloaded && oldPlain === undefined && oldTurn !== undefined && oldTurn.refine === undefined && oldTurn.suppressMistake === undefined && typeof oldTurn.isRejected === 'function'
+    return (wrong === 0 && reloaded && oldPlain === undefined && oldTurn === undefined /* W4A (F4-01): no seed = no hooks at all, also when the turn loop passes its filter */
       && newPlain !== undefined && typeof newPlain.refine === 'function' && newPlain.suppressMistake === undefined && newPaid?.suppressMistake === true && newFree?.suppressMistake === undefined
       && oldBuys === true && newBuys === false) || json({ wrong, reloaded, oldPlain: oldPlain === undefined, oldTurn: oldTurn && Object.keys(oldTurn), newPlain: newPlain && Object.keys(newPlain), oldBuys, newBuys });
   });
-  check('v99mf_r31_old_match_rival_is_unchanged', 'In a match without a seed the chooser gets exactly the hooks R1 gave it — same choice, same number of draws, whatever the turn loop passes (including a paid-for action) — and with nothing rejected that is the V9.8 choice', () => {
+  check('v99mf_r31_old_match_rival_is_unchanged', 'In a match without a seed the chooser gets no hooks at all (W4A, F4-01) — the V9.8 choice with the same number of draws, whatever the turn loop passes (its filter, a paid-for action)', () => {
     const bad: string[] = [];
     difficulties.forEach(difficulty => {
       for (let seed = 1; seed <= 25; seed++) {
@@ -195640,7 +196600,9 @@ function runV99RivalDisciplineChecks(check: (id: string, name: string, fn: () =>
         const viaR1 = chooseAction(canonical(old), 'ai', weights, b.rng, { difficultyKey: difficulty, settings: old.settings, live: buildRivalLiveHooks(blocked, { sabotageEnabled: false, opponentDebuffs: undefined }) });
         const open = choose(old, c.rng, { isRejected: () => false, paidSlot: true });
         const v98 = chooseAction(canonical(old), 'ai', weights, d.rng, { difficultyKey: difficulty, settings: old.settings });
-        if (json(viaR2) !== json(viaR1) || a.draws !== b.draws) bad.push(`${difficulty}/${seed}: differs from R1`);
+        // viaR1 is what R1's hooks alone would choose (a seeded match's filter); the seedless match ignores the filter as V9.8 did.
+        if (json(viaR2) !== json(v98) || a.draws !== d.draws) bad.push(`${difficulty}/${seed}: the loop's filter changed a seedless decision`);
+        if (viaR1 === undefined || b.draws < 0) bad.push(`${difficulty}/${seed}: R1 hooks gave no decision`);
         if (json(open) !== json(v98) || c.draws !== d.draws) bad.push(`${difficulty}/${seed}: differs from V9.8`);
       }
     });
@@ -195890,6 +196852,31 @@ function runV99RivalDisciplineChecks(check: (id: string, name: string, fn: () =>
     const ok = report.every(r => r.oldSpent > 0 && r.newSpent * 4 <= r.oldSpent && r.newBroke * 3 <= r.oldBroke && r.newMedian >= 2000 && r.newMedian > r.oldMedian && r.paidThinks === 0);
     return (ok && report.some(r => r.oldBroke > r.newBroke) && report.some(r => r.oldPaidThinks > 0)) || json(report);
   });
+  // ---- W4B: the last dollars are not spent on a journey ---------------------------------------------------------------------------
+  check('v99mf_x01_no_journey_on_the_last_dollars', "A rival with $250 and an open challenge is offered no journey (none would leave it $300); with $2,000 every journey that leaves $300 stays; with nothing to attempt or sell where it stands its journeys are all kept; something to sell counts like a challenge; a match without a seed keeps V9.8's list", () => {
+    const travel = (list: Array<{ type?: unknown; data?: unknown }>) => list.filter(c => c.type === 'travel').map(c => `${String(dataOf(c).region)}:${Number(dataOf(c).cost)}`).sort();
+    const poor = bundle({ money: 250 }), poorOld = bundle({ money: 250, seed: null });
+    const listed = preview(poor), listedOld = preview(poorOld);
+    const raw = (b: Bundle) => enumerateLegalActions(canonical(b), 'ai', { settings: weightsToGameSettings(b.settings, weights), weights, rng: { next: () => 0 }, difficultyKey: b.difficulty, specialAbilityActive: false });
+    const oldUnchanged = json(listedOld) === json(raw(poorOld)) && travel(listedOld).length > 0;
+    const staysPut = travel(listed).length === 0 && listed.some(c => c.type === 'challenge');
+    const rich = bundle({ money: 2000 }), richOld = bundle({ money: 2000, seed: null });
+    const richKeeps = json(travel(preview(rich))) === json(travel(preview(richOld)).filter(key => 2000 - Number(key.split(':')[1]) >= RIVAL_TRAVEL_RESERVE)) && travel(preview(rich)).length > 0;
+    // every challenge of the region is done this season and the bag is empty: moving on is the only way to earn
+    const doneHere = (REGIONS.QLD.challenges as Array<{ name: string }>).map(c => c.name);
+    const stuck = bundle({ money: 250, completed: doneHere }), stuckOld = bundle({ money: 250, completed: doneHere, seed: null });
+    const stuckList = preview(stuck);
+    const movesOn = !stuckList.some(c => c.type === 'challenge' || c.type === 'sell') && travel(stuckList).length > 0 && json(travel(stuckList)) === json(travel(preview(stuckOld)));
+    // the rule itself, on a hand-made list: a sale keeps the rival here like a challenge does; the input list is not mutated
+    const ticket = (cost: number): RivalCandidate => ({ type: 'travel', description: 'Travel', data: { region: 'NSW', cost }, score: 500, plan: AI_TUNING_LAB_DEFAULT_PLAN });
+    const sale: RivalCandidate = { type: 'sell', description: 'Sell Coal', data: { resource: 'Coal', price: 120 }, score: 120, plan: AI_TUNING_LAB_DEFAULT_PLAN };
+    const input = { actor: { ...stuck.rival, money: 450 }, gameState: stuck.gameState, settings: stuck.settings, difficultyKey: 'medium', ownerKey: RIVAL_OWNER_KEY };
+    const handMade = [ticket(100), ticket(151), sale];
+    const withSale = refineRivalCandidates(handMade, input), withoutSale = refineRivalCandidates([ticket(100), ticket(151)], input);
+    const saleCounts = json(travel(withSale)) === json(['NSW:100']) && withSale.some(c => c.type === 'sell') && travel(withoutSale).length === 2 && handMade.length === 3;
+    return (RIVAL_TRAVEL_RESERVE === 300 && oldUnchanged && staysPut && richKeeps && movesOn && saleCounts)
+      || json({ oldUnchanged, staysPut, richKeeps, movesOn, saleCounts, listed: travel(listed), old: travel(listedOld), stuck: travel(stuckList), withSale: travel(withSale) });
+  });
 
   // ---- R2: the rival's daily actions are visible -----------------------------------------------------------------------------------
   check('v99mf_r44_actions_row_says_whose', "Simple settings: the row is \"Your actions per day\" and says the rival has its own number; the pinned Simple key list is unchanged, and the rival's number is a companion the Simple view may write", () => {
@@ -195930,6 +196917,28 @@ function runV99RivalDisciplineChecks(check: (id: string, name: string, fn: () =>
       && even.button === undefined && even.words.includes('Even: you and the rival both get 4 a day.') && even.slider?.props?.value === 4) || json({ words: uneven.words, writes: uneven.writes, evenButton: even.button !== undefined, evenWords: even.words });
   });
 }
+
+// ---- Package W4B1 (leftovers 8 and 15) ---------------------------------------------------------------------------------
+/**
+ * Whether the player is the one who approves an AI's action: in a team mode only for the AI on the player's own team.
+ * The approval gate asked for every team AI, so the rival team's AI waited for the human to approve its moves — and the
+ * player's automatic approval rules ("reject loans", "reject sabotage") vetoed the rival's turn. Outside team modes the
+ * answer is as before.
+ */
+export function approvalIsAskedOfThePlayer(teamMode: boolean, actorTeamId: unknown): boolean {
+  return !teamMode || actorTeamId === TEAM_PLAYER_ID;
+}
+
+/**
+ * The "Challenges Won" line of the Load Save preview: the same two figures as the end screen's stats row
+ * (challengeStatFigures / challengeStatRow). It used to count the different challenges ever mastered and call them wins.
+ */
+export function savePreviewChallengeLine(data: { gameState?: unknown; player?: unknown } | null | undefined): string {
+  const player = data && v99IsRecord(data.player) ? data.player : {};
+  const row = challengeStatRow(challengeStatFigures(data ? data.gameState : null, player, [String(player.id || 'player')]), null, '');
+  return `${row.label} ${row.value}`;
+}
+
 
 
 
@@ -196724,9 +197733,13 @@ export function isLiveToast(n: { metadata?: unknown }): boolean {
  * when the screen appeared) and whatever is raised afterwards — not the match's routine messages (weather, market …),
  * which stay in the history. Returns the ids to keep out of the lane.
  */
-export function endScreenQuietToastIds(list: readonly { id: string; metadata?: unknown }[]): string[] {
+export function endScreenQuietToastIds(list: readonly { id: string; metadata?: unknown; message?: unknown }[]): string[] {
   const live = list.filter(isLiveToast);
-  return live.slice(0, Math.max(0, live.length - 1)).map(n => n.id);
+  // W4A (F4-03): the notice that closed the match stays too when something followed it (the Grand Tour finale's
+  // "won … by completing the finale" was followed by "New record!", so that ending alone showed no end line).
+  let closing = -1;
+  live.forEach((n, k) => { if (isMatchClosingNotice(n.message)) closing = k; });
+  return live.filter((_n, k) => k < live.length - 1 && k !== closing).map(n => n.id);
 }
 
 /** Whether a notification is drawn in the toast lane: never one restored from a save, never one the end screen keeps quiet. */
@@ -197190,6 +198203,94 @@ export function cleanLoadedMatchState<T>(gameState: T): T {
 /** How many leaked pieces a load leaves out (for the save check's note). */
 export function strayStateKeyCount(rawGameState: unknown): number {
   return leakedStateKeysIn(rawGameState).length + (hasStraySoloActorMap(rawGameState) ? 1 : 0);
+}
+
+// ---- W4A (final review, f2-04): the browser's "leave site?" question is a setting ------------------------------------------
+// V9.8 never asked; V9.9 asked in every match with unsaved turns, with no switch. It is now warnBeforeUnloadEnabled
+// (off by default, profile-scoped). The autosave's last-moment copy does not depend on it.
+export type UnloadGuardPlan = 'none' | 'flush_only' | 'flush_then_warn';
+/** What the beforeunload handler does: nothing registered, store the autosave copy only, or store it and ask if that did not cover everything. */
+export function unloadGuardPlan(unsavedProgress: boolean, settings: { warnBeforeUnloadEnabled?: unknown; matchRecoveryEnabled?: unknown } | null | undefined): UnloadGuardPlan {
+  if (!unsavedProgress) return 'none';
+  if (settings?.warnBeforeUnloadEnabled === true) return 'flush_then_warn';
+  return settings?.matchRecoveryEnabled === true ? 'flush_only' : 'none';
+}
+
+// ---- W4A (final review, f1-03): the V9.9 switches can be found from the Settings screen a player opens -----------------------
+/** True for the keys of the "New in V9.9" block (the Simple view's card may write exactly these). */
+export function isV99SettingKeyName(key: unknown): boolean {
+  return typeof key === 'string' && (V99_SETTING_KEYS as readonly string[]).includes(key);
+}
+/** The hub tab a registry-only search result opens: the V9.9 keys live on the tab of their own section, every other key where it was ('aiTeams'). */
+export function v99RegistrySearchTab(key: string): SettingsHubTabId {
+  const own = SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.v99');
+  return own && (own.fieldKeys as readonly string[]).includes(key) ? own.tab : 'aiTeams';
+}
+/**
+ * "✨ New in V9.9" in the Simple settings view: the same switches as the hub's section (same body, written through the
+ * Simple view's tracked writer) and the release notes one click away. The pinned SIMPLE_SETTINGS list is untouched.
+ */
+export function V99SimpleNewCard({ settings, onChange, boxClassName, selectClassName }: { settings: V99SettingsView; onChange: (key: string, value: boolean | string | number) => void; boxClassName: string; selectClassName: string }): React.ReactElement {
+  return (
+  <section className={`border rounded-xl p-3 space-y-3 ${boxClassName}`} aria-label="New in V9.9" data-testid="v99-simple-new" tabIndex={-1}>
+    <h4 className="font-semibold text-sm">{V99_SETTINGS_HUB_SECTION_TITLE}</h4>
+    <V99SettingsHubBody
+      settings={settings}
+      onToggle={key => onChange(key, settings[key] !== true)}
+      onPaceChange={pace => onChange('rivalTurnPace', pace)}
+      onClassName="bg-emerald-600 text-white"
+      offClassName="bg-slate-500/30"
+      selectClassName={selectClassName}
+    />
+    <details className="text-xs" data-testid="v99-simple-whats-new">
+      <summary className="cursor-pointer font-semibold">What's new in {GAME_VERSION_LABEL}</summary>
+      <ul className="list-disc pl-5 mt-1 space-y-0.5 opacity-90">{V99_CHANGELOG.slice(1).map(line => <li key={line}>{line}</li>)}</ul>
+    </details>
+  </section>
+  );
+}
+/** Selector of the Simple view's "New in V9.9" card (the jump line below scrolls to it). */
+export const V99_SIMPLE_NEW_CARD_SELECTOR = '[data-testid="v99-simple-new"]';
+/**
+ * One line at the top of the Simple settings view that takes the player to the "New in V9.9" card at its end: the
+ * everyday settings stay first, and the new switches are still one click from the screen Settings opens on.
+ */
+export function V99SimpleNewJump(): React.ReactElement {
+  const jump = () => {
+    if (typeof document === 'undefined') return;
+    const card = document.querySelector(V99_SIMPLE_NEW_CARD_SELECTOR);
+    if (card instanceof HTMLElement) { card.scrollIntoView({ block: 'start' }); card.focus({ preventScroll: true }); }
+  };
+  return (
+    <button type="button" onClick={jump} className="w-full text-left text-xs rounded-lg border border-sky-500 px-3 py-2" data-testid="v99-simple-new-jump">
+      <span className="font-semibold">{V99_SETTINGS_HUB_SECTION_TITLE}</span> — autosave, match journal, turn digest, rival speed and the classic look are at the end of this page ↓
+    </button>
+  );
+}
+
+// ---- W4A (final review, F4-03): the end screen keeps the notice that closed the match --------------------------------------------
+/** True for a notice that announces the end of the match: matchOverNotice's ("Match over. …") and the Grand Tour finale's. */
+export function isMatchClosingNotice(message: unknown): boolean {
+  const text = String(message || '');
+  return text.startsWith('Match over.') || / won the Grand Tour Rival Race by completing the National Champion finale\.$/.test(text);
+}
+
+// ---- W4A (final review, F4-02): a save from before the actor model keeps its rival ------------------------------------------------
+/**
+ * Who a restored actor is. A save from before the actor model has an `aiPlayer` without `kind` and `id`: it used to be
+ * restored as a second human called 'ai_opponent', so the rival never played again. The rival slot of such a save is
+ * the AI rival ('ai', the id the solo turn order uses). Anything a save states itself is kept.
+ */
+export function restoredActorIdentity(data: { id?: unknown; kind?: unknown } | null | undefined, fallbackName: string): { id: string; kind: 'ai' | 'human'; isHuman: boolean } {
+  const rivalSlot = fallbackName === 'AI Opponent';
+  const kind: 'ai' | 'human' = data?.kind === 'ai' || (rivalSlot && data?.kind === undefined) ? 'ai' : 'human';
+  const id = typeof data?.id === 'string' ? data.id : rivalSlot ? 'ai' : fallbackName.toLowerCase().replace(/\s+/g, '_');
+  return { id, kind, isHuman: kind !== 'ai' };
+}
+/** The load report's line for it (empty when the save says who its rival is). */
+export function describeLegacyRivalRepair(raw: unknown): string[] {
+  const rival: unknown = v99IsPlainObject(raw) ? raw.aiPlayer : null;
+  return v99IsPlainObject(rival) && rival.kind === undefined ? ['aiPlayer.kind: missing → "ai" (the rival of an older save plays again)'] : [];
 }
 
 export function runV99SessionSafetySelfTests(): V9SelfTestResult[] {
@@ -198089,8 +199190,124 @@ export function runV99SessionSafetySelfTests(): V9SelfTestResult[] {
     const plain = prepareSaveLoadTransaction(json(save));
     return (tx.ok && tx.data !== null && tx.data.gameSettings.showDayTransition === true && tx.report.integrityStatus === plain.report.integrityStatus && !('showDayTransition' in bag(stripPersistedProfileSettings(tx.data.gameSettings)))) || json({ ok: tx.ok, status: tx.report.integrityStatus });
   });
+
+  // ---- Package W4B1 (leftover 7) ---------------------------------------------------------------------------------------
+  check('v99ss_x01_menu_identity_after_a_loaded_match', "After a loaded match the main menu shows the player's own name and character again; the file's stay when the menu was untouched before the load (opening that file was the choice) or when they were changed after it; a second load keeps the first record", () => {
+    const mine: MenuIdentity = { playerName: 'Quinn', selectedCharacter: 2 }, file: MenuIdentity = { playerName: 'Tester', selectedCharacter: 4 }, blank: MenuIdentity = { playerName: '', selectedCharacter: 0 };
+    const before = rememberIdentityBeforeLoad(null, mine, file);
+    const again = rememberIdentityBeforeLoad(before, file, { playerName: 'Other', selectedCharacter: 1 });
+    const untouched = rememberIdentityBeforeLoad(null, blank, file);
+    const got = [
+      identityAfterLoadedMatch(file, before), identityAfterLoadedMatch({ playerName: 'Renamed', selectedCharacter: 4 }, before), identityAfterLoadedMatch({ playerName: 'Tester', selectedCharacter: 5 }, before),
+      identityAfterLoadedMatch({ playerName: 'Other', selectedCharacter: 1 }, again), identityAfterLoadedMatch(file, untouched), identityAfterLoadedMatch(file, rememberIdentityBeforeLoad(null, { playerName: '   ', selectedCharacter: 3 }, file)),
+      identityAfterLoadedMatch(file, rememberIdentityBeforeLoad(null, { playerName: 'Quinn', selectedCharacter: 0 }, file))
+    ].map(i => `${i.playerName}/${i.selectedCharacter}`);
+    const want = ['Quinn/2', 'Renamed/4', 'Tester/5', 'Quinn/2', 'Tester/4', '   /3', 'Quinn/0'];
+    const same = identityAfterLoadedMatch(file, null) === file && identityAfterLoadedMatch(mine, rememberIdentityBeforeLoad(null, mine, mine)) === mine;
+    const choice = [menuIdentityIsAChoice(blank), menuIdentityIsAChoice({ playerName: ' ', selectedCharacter: 0 }), menuIdentityIsAChoice({ playerName: 'Q', selectedCharacter: 0 }), menuIdentityIsAChoice({ playerName: '', selectedCharacter: 1 })];
+    return (json(got) === json(want) && same && choice.join() === 'false,false,true,true' && before.own !== mine && json(again.own) === json(mine)) || json({ got, same, choice });
+  });
+
+  // ---- Package W4B1 (leftover 9) ---------------------------------------------------------------------------------------
+  check('v99ss_x02_first_look_at_a_match_is_not_a_move', "Guided Learning compares two snapshots only when both were taken in the same live match: a match that starts, loads or resumes in another region did not \"travel\" there (no \"You arrived in …\" tip, no travel booked as used)", () => {
+    const menu = learningSnapshotKey(false, 4), first = learningSnapshotKey(true, 4), loaded = learningSnapshotKey(true, 5);
+    const got = [learningSnapshotsComparable(menu, first), learningSnapshotsComparable(first, first), learningSnapshotsComparable(first, loaded), learningSnapshotsComparable(first, menu), learningSnapshotsComparable(null, null), learningSnapshotsComparable(loaded, loaded)];
+    // what the comparison would have "seen" at a match start in Queensland after a menu snapshot in New South Wales
+    const snap = (region: string): LearningSnapshot => ({ turn: 1, humanTurn: true, region, apUsed: 0, inventory: 0, cash: 1000, myDeposits: 0, regionsControlled: 0, contractsActive: 0, contractsDone: 0, loans: 0, strategy: false, copilot: false, lostRegions: [] });
+    const bogus = deriveLearningUses(snap('NSW'), snap('QLD')).map(u => u.conceptId);
+    return (menu === null && first === '4' && got.join() === 'false,true,false,false,false,true' && bogus.includes('travel')) || json({ got, bogus });
+  });
+  // ---- W4A (final review) ----------------------------------------------------------------------------------------------
+  check('v99ss_z01_unload_warning_is_a_setting', "f2-04: the browser's leave-site question is off by default; on = asked; the autosave's last copy is stored either way", () => {
+    const plans = [unloadGuardPlan(false, { warnBeforeUnloadEnabled: true, matchRecoveryEnabled: true }), unloadGuardPlan(true, {}), unloadGuardPlan(true, null), unloadGuardPlan(true, { warnBeforeUnloadEnabled: 'yes' }),
+      unloadGuardPlan(true, { matchRecoveryEnabled: true }), unloadGuardPlan(true, { warnBeforeUnloadEnabled: true }), unloadGuardPlan(true, { warnBeforeUnloadEnabled: true, matchRecoveryEnabled: true })];
+    const reg = SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(s => s.key === 'warnBeforeUnloadEnabled');
+    return (plans.join() === 'none,none,none,none,flush_only,flush_then_warn,flush_then_warn' && DEFAULT_GAME_SETTINGS.warnBeforeUnloadEnabled === false && Boolean(reg) && reg?.defaultValue === false
+      && V95_PROFILE_SCOPED_SETTING_KEYS.includes('warnBeforeUnloadEnabled') && V99_PERSISTED_PROFILE_SETTING_KEYS.includes('warnBeforeUnloadEnabled') && !(V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes('warnBeforeUnloadEnabled')
+      && sanitizeGameSettings({ warnBeforeUnloadEnabled: 'yes' }).warnBeforeUnloadEnabled === false && sanitizeGameSettings({ warnBeforeUnloadEnabled: true }).warnBeforeUnloadEnabled === true) || json(plans);
+  });
+  check('v99ss_z02_v99_settings_can_be_found', 'f1-03: the Simple view has a "New in V9.9" card with every V9.9 switch and the release notes; a search result for a V9.9 key opens the Gameplay tab', () => {
+    const written: Array<[string, boolean | string | number]> = [];
+    const card = V99SimpleNewCard({ settings: { matchJournalEnabled: true }, onChange: (k, v) => { written.push([k, v]); }, boxClassName: 'box', selectClassName: 'sel' });
+    const body = card ? byTestId(card, 'v99-simple-new')[0] : null;
+    const tabs = V99_SETTING_KEYS.map(k => v99RegistrySearchTab(k));
+    const index = buildSettingsHubSearchIndex();
+    const wrongTab = V99_SETTING_KEYS.filter(k => index.some(e => e.key === k && e.tab !== 'gameplay'));
+    const jump = byTestId(V99SimpleNewJump(), 'v99-simple-new-jump');
+    return (Boolean(body) && body?.props.tabIndex === -1 && jump.length === 1 && V99_SIMPLE_NEW_CARD_SELECTOR.includes('v99-simple-new') && tabs.every(t => t === 'gameplay') && v99RegistrySearchTab('aiDifficulty') === 'aiTeams' && wrongTab.length === 0
+      && V99_SETTING_KEYS.every(k => isV99SettingKeyName(k)) && !isV99SettingKeyName('totalDays') && !isV99SettingKeyName(undefined) && V99_SETTING_KEYS.every(k => !SIMPLE_SETTINGS_KEYS.includes(k))) || json({ tabs, wrongTab, written });
+  });
+  check('v99ss_z03_finale_notice_stays_on_the_end_screen', 'F4-03: the notice that closed the match stays in the end screen\'s lane even when a later one (a new record) followed it', () => {
+    const list = [{ id: 'weather', message: 'Weather: sunny' }, { id: 'finale', message: 'You won the Grand Tour Rival Race by completing the National Champion finale.' }, { id: 'record', message: 'New record! Highest challenge reward: $2,400' }];
+    const usual = [{ id: 'market', message: 'Market trend: stable' }, { id: 'over', message: 'Match over. The match ran its full length: 9 days played.' }];
+    const older = [{ id: 'over1', message: 'Match over. Old.' }, { id: 'x', message: 'x' }, { id: 'over2', message: 'Match over. New.' }, { id: 'y', message: 'y' }];
+    return (json(endScreenQuietToastIds(list)) === json(['weather']) && json(endScreenQuietToastIds(usual)) === json(['market']) && json(endScreenQuietToastIds(older)) === json(['over1', 'x'])
+      && isMatchClosingNotice('Scientist AI won the Grand Tour Rival Race by completing the National Champion finale.') && !isMatchClosingNotice('You unlocked the ACT National Champion finale.')) || json(endScreenQuietToastIds(list));
+  });
+  check('v99ss_z04_old_save_keeps_its_rival', 'F4-02: a save whose aiPlayer has no kind loads with an AI rival (id "ai") and says so in the repair list; a save that states its actors is untouched', () => {
+    const got = [restoredActorIdentity({}, 'AI Opponent'), restoredActorIdentity(null, 'AI Opponent'), restoredActorIdentity({ kind: 'human', id: 'p2' }, 'AI Opponent'), restoredActorIdentity({ kind: 'ai', id: 'ai' }, 'AI Opponent'), restoredActorIdentity({}, 'Player'), restoredActorIdentity({ id: 'player', kind: 'human' }, 'Player')];
+    const fixture = JSON.parse(JSON.stringify(createV95SaveFixture())) as Record<string, Record<string, unknown>>;
+    const stated = prepareSaveLoadTransaction(JSON.stringify(fixture));
+    delete fixture.aiPlayer.kind; delete fixture.aiPlayer.id; delete fixture.aiPlayer.isHuman;
+    const legacy = prepareSaveLoadTransaction(JSON.stringify(fixture));
+    const rival = legacy.data ? (legacy.data.aiPlayer as unknown as { kind?: unknown; id?: unknown; isHuman?: unknown }) : null;
+    return (json(got) === json([{ id: 'ai', kind: 'ai', isHuman: false }, { id: 'ai', kind: 'ai', isHuman: false }, { id: 'p2', kind: 'human', isHuman: true }, { id: 'ai', kind: 'ai', isHuman: false }, { id: 'player', kind: 'human', isHuman: true }, { id: 'player', kind: 'human', isHuman: true }])
+      && legacy.ok && rival !== null && rival.kind === 'ai' && rival.id === 'ai' && rival.isHuman === false && isHumanActor(rival as unknown as ActorState) === false && legacy.report.fieldsRepaired.some(l => l.startsWith('aiPlayer.kind'))
+      && stated.ok && !stated.report.fieldsRepaired.some(l => l.startsWith('aiPlayer.kind')) && describeLegacyRivalRepair(null).length === 0) || json({ got, rival, repaired: legacy.report.fieldsRepaired });
+  });
   return results;
 }
+
+// ---- Package W4B1 (leftover 7): the menu's name and character after a loaded match ------------------------------------
+// A load puts the file's player name and character into the main menu's fields (a Rematch of the loaded match needs
+// them there). They used to stay after the match was left, so the next new match started under the file's name.
+
+/** The two fields of the main menu that say who plays. */
+export interface MenuIdentity { playerName: string; selectedCharacter: number }
+/** What the menu showed before a file was loaded, and what the file brought in. */
+export interface IdentityBeforeLoad { own: MenuIdentity; loaded: MenuIdentity }
+
+/** Remembers the menu's own name and character at the first load of a session of loads; a further load only updates what was loaded. */
+export function rememberIdentityBeforeLoad(previous: IdentityBeforeLoad | null, current: MenuIdentity, loaded: MenuIdentity): IdentityBeforeLoad {
+  return { own: previous ? previous.own : { playerName: current.playerName, selectedCharacter: current.selectedCharacter }, loaded: { playerName: loaded.playerName, selectedCharacter: loaded.selectedCharacter } };
+}
+
+/** True when the menu had been given a name or a character other than the first — i.e. the player had chosen who to play. */
+export function menuIdentityIsAChoice(identity: MenuIdentity): boolean {
+  return identity.playerName.trim() !== '' || identity.selectedCharacter !== 0;
+}
+
+/**
+ * The name and character the main menu shows after a loaded match: the player's own choice again. The loaded ones stay
+ * when the player had chosen nothing before opening the file (an untouched menu — opening that file, or resuming that
+ * match, was the choice), and whatever was changed after the load stays as it is. With nothing to put back the same
+ * object is returned.
+ */
+export function identityAfterLoadedMatch(current: MenuIdentity, before: IdentityBeforeLoad | null): MenuIdentity {
+  if (!before) return current;
+  if (current.playerName !== before.loaded.playerName || current.selectedCharacter !== before.loaded.selectedCharacter) return current;
+  if (!menuIdentityIsAChoice(before.own)) return current;
+  if (before.own.playerName === current.playerName && before.own.selectedCharacter === current.selectedCharacter) return current;
+  return { playerName: before.own.playerName, selectedCharacter: before.own.selectedCharacter };
+}
+
+
+// ---- Package W4B1 (leftover 9): the first look at a match is not something the player did -----------------------------
+/** What a Guided Learning snapshot belongs to: the live match it was taken in (null outside a live match). */
+export function learningSnapshotKey(liveMatch: boolean, matchEpoch: number): string | null {
+  return liveMatch ? String(matchEpoch) : null;
+}
+
+/**
+ * Whether two Guided Learning snapshots may be compared for "what did the player just do": only when both were taken
+ * in the same live match. The first snapshot of a match was compared with the menu's (or, after a load, with the
+ * match before it), so a match that started or loaded in another region "travelled": the tip "You arrived in …"
+ * appeared, and travel was booked as a concept the player had used.
+ */
+export function learningSnapshotsComparable(previousKey: string | null, currentKey: string | null): boolean {
+  return previousKey !== null && previousKey === currentKey;
+}
+
 
 
 
@@ -198149,6 +199366,7 @@ export function v99ToastMustStay(n: V99ToastLike | null | undefined): boolean {
   // Both of the player's forced-sale sentences (buildLiquidationNotice) stay: only the partial one mentions the
   // "bankruptcy line", so the full-sale one used to leave by itself — sometimes before it had been drawn at all.
   if (/^\W*Emergency liquidation\b/i.test(String(n.message || ''))) return true;
+  if (isFirstRunFinishNotice(n.message)) return true; // W4A (f1-02): the tutorial's last word (how it went, what is switched off) is not a 10-second toast
   const cls = v9NotificationClass(n);
   return cls === 'decision_required' || cls === 'critical_warning';
 }
@@ -198916,8 +200134,10 @@ export const V99TurnRow: React.FC<V99TurnRowProps> = ({ theme, pill, actions, pi
     window.addEventListener('resize', onResize);
     return () => { window.removeEventListener('resize', onResize); v99SyncToastLaneTop(null); };
   }, []);
+  const headerEndTurnInView = useV99HeaderEndTurnInView(); // W4A (f1-13): the row's End Turn is the copy for when the header's has scrolled away
   if (!pill && !actions) return null;
-  const { main, endTurn } = v99SplitQuickActions(actions || []);
+  const split = v99SplitQuickActions(actions || []);
+  const main = split.main, endTurn = v99RowEndTurnShown(headerEndTurnInView) ? split.endTurn : null;
   const filterOn = Boolean(searchQuery) || !v99QuickDomainTabActive('all', domainFilter);
   const toolsShown = toolsOpen || filterOn;
   const buttonClass = `${theme.button} text-white rounded-lg flex items-center ${compact ? 'px-3 py-1.5 text-xs gap-1.5' : 'px-4 py-2 text-sm gap-2'} min-h-[36px] sm:min-h-0 disabled:opacity-50`;
@@ -198943,13 +200163,13 @@ export const V99TurnRow: React.FC<V99TurnRowProps> = ({ theme, pill, actions, pi
     );
   };
   return (
-    <div ref={rowRef} className={`${V99_TURN_ROW_CLASS} ${theme.card} ${theme.border} ${theme.shadow}`} data-testid="v99-turn-row" data-quick-bar={actions ? 'open' : 'closed'} role="group" aria-label="Your turn and quick actions">
+    <div ref={rowRef} className={`${V99_TURN_ROW_CLASS} ${theme.card} ${theme.border} ${theme.shadow}`} data-testid="v99-turn-row" data-quick-bar={actions ? 'open' : 'closed'} role="group" aria-label={v99TurnRowLabel(canAct)}>
       {/* 640 px and up: the pill and the buttons wrap together at the left, End Turn keeps the top-right corner.
           Narrower: the pill and End Turn share the first line and the buttons follow (the group is display: contents). */}
       <div className={V99_TURN_ROW_MAIN_CLASS} data-testid="v99-quick-bar">
         {pill}
         {actions && main.map((action, index) => renderAction(action, index, 'order-last sm:order-none'))}
-        {actions && main.length === 0 && !endTurn && <span className="order-last sm:order-none text-xs text-gray-400 italic px-2">No matching quick actions</span>}
+        {actions && main.length === 0 && !split.endTurn && <span className="order-last sm:order-none text-xs text-gray-400 italic px-2">No matching quick actions</span>}
       </div>
       {actions && (
         <>
@@ -199716,6 +200936,195 @@ export const V99AskAgainRow: React.FC<{ prefs: Readonly<Partial<Record<string, b
     </div>
   );
 };
+
+// ---- W4A (final review, f1-01): the confirmation dialog takes the keyboard ------------------------------------------------
+// V9.9 asks "End Turn?" when actions are unused, but the dialog never took the focus: Space opened it and then neither
+// Space nor Enter could answer it (Tab reached its button after ~67 presses through the page behind it). The dialog now
+// is an alertdialog, focuses its answer when it opens, keeps Tab inside itself and gives the focus back when it closes.
+/** Which control a confirmation focuses when it opens: the everyday questions their "yes" (so Space, Space ends a turn),
+ *  anything that pays, deletes or cannot be undone its "Cancel", and the approval dialogs (many answers) the card itself. */
+export type V99ConfirmFocusTarget = 'confirm' | 'cancel' | 'card';
+export function confirmationInitialFocus(type: string | null | undefined): V99ConfirmFocusTarget {
+  if (isDontAskConfirmationType(type)) return 'confirm';
+  if (!type || type === 'aiActionApprovalRequest' || type === 'teamAiOverrideRequest') return 'card';
+  return 'cancel';
+}
+export const V99_CONFIRM_TITLE_ID = 'v99-confirm-title';
+const V99_DIALOG_FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Tab inside a dialog with `count` focusable controls while control `index` has the focus (-1 = the focus is outside,
+ * or on the card): the index to focus instead of the browser's choice, -1 for "the card itself" (nothing focusable),
+ * or null when the browser's own step stays inside the dialog.
+ */
+export function v99TrapFocusStep(count: number, index: number, backwards: boolean): number | null {
+  if (count <= 0) return -1;
+  if (index < 0 || index >= count) return backwards ? count - 1 : 0;
+  if (!backwards && index === count - 1) return 0;
+  if (backwards && index === 0) return count - 1;
+  return null;
+}
+
+/**
+ * Focus handling of the confirmation dialog (see above). The focus moves in once the key that opened the dialog is
+ * released, so a held Space cannot answer the question it has just asked. On close the focus returns to the control
+ * that had it — unless that control was focused by a mouse click, where Space keeps its V9.8 meaning (end turn).
+ */
+export function useV99ConfirmDialogFocus(open: boolean, type: string | null | undefined, cardRef: React.RefObject<HTMLDivElement | null>, pointerFocusRef: React.RefObject<EventTarget | null>, onEscapeFromField: () => void): void {
+  const keyHeldRef = useRef(false);
+  const typeRef = useRef(type);
+  typeRef.current = type;
+  const onEscapeRef = useRef(onEscapeFromField);
+  onEscapeRef.current = onEscapeFromField;
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const down = (event: KeyboardEvent) => { if (event.key === ' ' || event.key === 'Enter') keyHeldRef.current = true; };
+    const up = () => { keyHeldRef.current = false; };
+    window.addEventListener('keydown', down, true);
+    window.addEventListener('keyup', up, true);
+    window.addEventListener('blur', up);
+    return () => { window.removeEventListener('keydown', down, true); window.removeEventListener('keyup', up, true); window.removeEventListener('blur', up); };
+  }, []);
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return undefined;
+    const before = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+    const giveBack = before && resolveShortcutFocusKind(before, pointerFocusRef.current) !== 'activatable' ? before : null;
+    const focusAnswer = () => {
+      const card = cardRef.current;
+      if (!card) return;
+      const want = confirmationInitialFocus(typeRef.current);
+      const answer = want === 'card' ? null : card.querySelector<HTMLElement>(`[data-v99-confirm="${want}"]`);
+      (answer ?? card).focus({ preventScroll: true });
+    };
+    const onKeyUp = () => { document.removeEventListener('keyup', onKeyUp, true); focusAnswer(); };
+    if (keyHeldRef.current) document.addEventListener('keyup', onKeyUp, true); else focusAnswer();
+    const onKeyDown = (event: KeyboardEvent) => {
+      const card = cardRef.current;
+      if (!card) return;
+      // Escape with the focus on the dialog's own tick box: the game's shortcuts leave keys in a field alone, so the dialog answers it here.
+      if ((event.key === 'Escape' || event.key === 'Esc') && event.target instanceof HTMLInputElement && card.contains(event.target)) { event.preventDefault(); onEscapeRef.current(); return; }
+      if (event.key !== 'Tab') return;
+      const items = Array.from(card.querySelectorAll<HTMLElement>(V99_DIALOG_FOCUSABLE)).filter(el => el.getClientRects().length > 0);
+      const active = document.activeElement instanceof HTMLElement ? items.indexOf(document.activeElement) : -1;
+      const step = v99TrapFocusStep(items.length, active, event.shiftKey);
+      if (step === null) return;
+      event.preventDefault();
+      (step < 0 ? card : items[step]).focus({ preventScroll: true });
+    };
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      document.removeEventListener('keyup', onKeyUp, true);
+      document.removeEventListener('keydown', onKeyDown, true);
+      if (giveBack && document.contains(giveBack)) giveBack.focus({ preventScroll: true });
+    };
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+// ---- W4A (final review, f1-06): the toast lane starts below the guided-match panel ------------------------------------------------
+/**
+ * Wraps a panel that sits directly under the turn row (the first-run goal panel): while it is mounted the toast lane
+ * starts under ITS bottom edge, so no toast covers its "Skip tutorial" button or its counters. Same measuring as the
+ * turn row and the Turn Digest card; the default layout only (`active` false = nothing is measured).
+ */
+export const V99ToastLaneBelow: React.FC<{ active: boolean; children: React.ReactNode }> = ({ active, children }) => {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const sync = useCallback(() => {
+    if (typeof document === 'undefined' || !ref.current || !document.querySelector(V99_TURN_ROW_SELECTOR)) return;
+    v99SyncToastLaneTop(ref.current);
+  }, []);
+  useLayoutEffect(() => { if (active) sync(); });
+  useEffect(() => {
+    if (!active || typeof window === 'undefined') return undefined;
+    window.addEventListener('resize', sync);
+    window.addEventListener(V99_END_TURN_LAYOUT_EVENT, sync); // the row re-drew by itself (its End Turn came or went) and measured from its own edge
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(sync) : null;
+    const row = document.querySelector(V99_TURN_ROW_SELECTOR);
+    if (observer && ref.current) { observer.observe(ref.current); if (row) observer.observe(row); }
+    return () => {
+      window.removeEventListener('resize', sync);
+      window.removeEventListener(V99_END_TURN_LAYOUT_EVENT, sync);
+      if (observer) observer.disconnect();
+      const rowNow = document.querySelector(V99_TURN_ROW_SELECTOR);
+      v99SyncToastLaneTop(rowNow instanceof HTMLElement ? rowNow : null);
+    };
+  }, [active, sync]);
+  return <div ref={ref} data-testid="v99-toast-lane-below">{children}</div>;
+};
+
+// ---- W4A (final review, F4-05): the docked pill while the Co-Pilot plays the player's turn ------------------------------------
+/** The docked pill's words while the Co-Pilot holds control of the player's turn (null = the usual "YOUR TURN"). The classic pill is V9.8's. */
+export function v99CoPilotPillText(copilotHoldsControl: boolean, classicLayout: boolean, isPlayerTurn: boolean): { title: string; status: string } | null {
+  return copilotHoldsControl && !classicLayout && isPlayerTurn ? { title: "CO-PILOT'S TURN", status: 'Playing for you' } : null;
+}
+
+// ---- W4A (final review, f1-11): the turn row's name ------------------------------------------------------------------------------
+/** The accessible name of the docked row: the player's turn and buttons, or only whose turn it is while someone else plays. */
+export function v99TurnRowLabel(canAct: boolean): string {
+  return canAct ? 'Your turn and quick actions' : 'Turn status';
+}
+
+// ---- W4A (final review, f1-13): one End Turn at the top ---------------------------------------------------------------------------
+// The header's End Turn and the turn row's copy sat 57 px apart. The row keeps its copy for when the header's button
+// has scrolled away (the row stays at the top of the window from 1024 px); while the header's is on screen it is the one.
+export const V99_HEADER_END_TURN_SELECTOR = '[data-testid="v9-header-end-turn"]';
+/** Sent on the window when the row's End Turn appears or goes, so the End Turn chip measures again. */
+export const V99_END_TURN_LAYOUT_EVENT = 'v99-end-turn-layout';
+/** The row draws its End Turn only while the header's button is not (fully) on screen. */
+export function v99RowEndTurnShown(headerEndTurnFullyInView: boolean): boolean {
+  return !headerEndTurnFullyInView;
+}
+/** True when the header's End Turn button exists and is completely inside the window. */
+export function v99HeaderEndTurnFullyInView(): boolean {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return false;
+  const node = document.querySelector(V99_HEADER_END_TURN_SELECTOR);
+  if (!node) return false;
+  const box = node.getBoundingClientRect();
+  return box.height > 0 && box.width > 0 && box.top >= 0 && box.left >= 0 && box.bottom <= window.innerHeight && box.right <= window.innerWidth;
+}
+/** Tracks v99HeaderEndTurnFullyInView for the turn row (measured after every render, on scroll and on resize). */
+export function useV99HeaderEndTurnInView(): boolean {
+  const [inView, setInView] = useState(false);
+  const measure = useCallback(() => { const now = v99HeaderEndTurnFullyInView(); setInView(previous => (previous === now ? previous : now)); }, []);
+  useLayoutEffect(() => { measure(); });
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    let frame = 0;
+    const onMove = () => { if (frame) return; frame = window.requestAnimationFrame(() => { frame = 0; measure(); }); };
+    window.addEventListener('scroll', onMove, { passive: true });
+    window.addEventListener('resize', onMove);
+    return () => { window.removeEventListener('scroll', onMove); window.removeEventListener('resize', onMove); if (frame) window.cancelAnimationFrame(frame); };
+  }, [measure]);
+  useEffect(() => { if (typeof window !== 'undefined') window.dispatchEvent(new Event(V99_END_TURN_LAYOUT_EVENT)); }, [inView]);
+  return inView;
+}
+
+// ---- W4A (final review, f1-09): the pickers start at the top too ------------------------------------------------------------------
+/** The screen part of the scroll key: the game mode, plus the difficulty / scenario picker that replaces the main menu. */
+export function v99ScrollScreenKey(gameMode: unknown, pickerOpen: boolean): string {
+  return `${String(gameMode || '')}${pickerOpen ? ':picker' : ''}`;
+}
+
+// ---- W4A (final review, f1-04): Light theme — the last unreadable surfaces --------------------------------------------------------
+/** The end screen's analytics cards: translucent slate on the dark themes (V9.8); on Light an opaque dark card, so their pale text reads (it was pale text on mid-grey). */
+export function v99DebriefCardClass(darkSurface: boolean): string {
+  return darkSurface ? 'bg-slate-900/60' : 'bg-slate-900 text-gray-100';
+}
+/** The end screen's summary strips ("What happened", "Stakeholders" …): a tint on the dark themes (V9.8), the same opaque dark card on Light. */
+export function v99DebriefStripClass(darkSurface: boolean): string {
+  return darkSurface ? 'bg-black/20' : 'bg-slate-900 text-gray-100';
+}
+/** "+ pro" / "− con" lines of a strategic decision: the dark themes' pale accents, or ones that read on a white card. */
+export function v99ProConClasses(theme: { moneyPositive?: unknown } | null | undefined): { pro: string; con: string } {
+  return theme && theme.moneyPositive === 'text-green-700' ? { pro: 'text-emerald-700', con: 'text-rose-700' } : { pro: 'text-emerald-300', con: 'text-rose-300' };
+}
+/** The rival's figure in the match standing: V9.8's pale pink on the dark themes, a pink that reads on Light's white card. */
+export function v99RivalFigureClass(theme: { moneyPositive?: unknown } | null | undefined): string {
+  return theme && theme.moneyPositive === 'text-green-700' ? 'text-pink-700' : 'text-pink-400';
+}
+/** The docked "YOUR TURN" pill on Light: white on green-500 was 2.2:1; green-700 reads. Every other case keeps the theme's colour. */
+export function v99YourTurnPillTone(successClass: string, docked: boolean, darkSurface: boolean): string {
+  return docked && !darkSurface ? 'bg-green-700' : successClass;
+}
 
 export function runV99PlayScreenRulesSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
@@ -200908,8 +202317,196 @@ export function runV99PlayScreenRulesSelfTests(): V9SelfTestResult[] {
       && conflict?.settingB === 'aiReplayRecordingEnabled' && J(conflict?.autoFixSettings) === J({ worldRngMode: 'deterministic' });
     return ok || J({ texts, stale });
   });
+
+  // ---- Package W4B1 (leftovers 5 and 6) --------------------------------------------------------------------------------
+  check('v99ps_x01_standing_detail_line', 'The small print under the match standing names the rival without a stray "$" and writes every amount the same way', () => {
+    const line = v99StandingDetailLine({ cash: 1234, netWorth: 15600.4, rivalName: 'Scientist AI', rivalCash: 1100, rivalNetWorth: 0 });
+    return (line === 'Cash $1,234 • Net Worth $15,600 | Scientist AI Cash $1,100 • Net Worth $0' && !line.includes('$Scientist')) || line;
+  });
+  check('v99ps_x02_toast_lane_clear_of_the_replay_studio', 'With the Replay Studio open — in a match, on the main menu or on the end screen — the toast lane takes its place over a window, clear of the Close button; otherwise nothing changes', () => {
+    const open = [v99ToastLaneWindowOpen(false, true), v99ToastLaneWindowOpen(true, false), v99ToastLaneWindowOpen(true, true), v99ToastLaneWindowOpen(false, false)];
+    // in PLAY the lane's own class steps aside for a window, so the caller's "window open" position applies
+    const inPlay = [v99ToastLaneClass('top-right', true, v99ToastLaneWindowOpen(false, true), false, false), v99ToastLaneClass('top-right', true, v99ToastLaneWindowOpen(false, false), false, false)];
+    return (open.join() === 'true,true,true,false' && inPlay[0] === null && typeof inPlay[1] === 'string') || J({ open, inPlay });
+  });
+
+  // ---- Package W4B1 (leftover 13) --------------------------------------------------------------------------------------
+  check('v99ps_x03_end_turn_chip_only_when_needed', 'In the default layout a small End Turn chip is drawn only while the player can end the turn and no End Turn button is on screen; a button counts as on screen when at least half of it is inside the window', () => {
+    const shown = [
+      v99EndTurnChipShown({ classicLayout: false, canEndTurn: true, endTurnInView: false }), v99EndTurnChipShown({ classicLayout: false, canEndTurn: true, endTurnInView: true }),
+      v99EndTurnChipShown({ classicLayout: false, canEndTurn: false, endTurnInView: false }), v99EndTurnChipShown({ classicLayout: true, canEndTurn: true, endTurnInView: false })
+    ];
+    const box = (top: number, left: number = 100): { top: number; bottom: number; left: number; right: number } => ({ top, bottom: top + 40, left, right: left + 120 });
+    const seen = [
+      v99BoxInView(box(10), 1280, 720), v99BoxInView(box(-19), 1280, 720), v99BoxInView(box(-21), 1280, 720), v99BoxInView(box(-400), 1280, 720), v99BoxInView(box(699), 1280, 720), v99BoxInView(box(701), 1280, 720),
+      v99BoxInView(box(900), 1280, 720), v99BoxInView(box(10, 330), 390, 844), v99BoxInView(box(10, 340), 390, 844), v99BoxInView({ top: 10, bottom: 10, left: 0, right: 0 }, 390, 844), v99BoxInView(box(10), 0, 0)
+    ];
+    const buttons = V99_END_TURN_BUTTON_SELECTOR.split(',').map(s => s.trim());
+    return (shown.join() === 'true,false,false,false' && seen.join() === 'true,true,false,false,true,false,false,true,false,false,false'
+      && buttons.length === 3 && buttons[0].includes('v9-header-end-turn') && buttons[1].includes(V99_TURN_ROW_SELECTOR) && buttons[1].includes('end_turn') && buttons[2].includes('endTurn') && !V99_END_TURN_BUTTON_SELECTOR.includes('v99-end-turn-chip'))
+      || J({ shown, seen, buttons });
+  });
+  check('v99ps_x04_end_turn_chip_markup', "The chip is one button in the bottom-right corner — under every window, never over the header or the advice — with the header button's words, the actions left beside it from 640 px, and it runs the handler it is given", () => {
+    type Node = { type?: unknown; props?: Record<string, unknown> };
+    const flat = (node: unknown): Node[] => {
+      if (Array.isArray(node)) return node.flatMap(flat);
+      if (!node || typeof node !== 'object') return [];
+      const n = node as Node;
+      return [n, ...flat(n.props ? n.props.children : null)];
+    };
+    const words = (node: unknown): string => (Array.isArray(node) ? node.map(words).join('') : typeof node === 'string' || typeof node === 'number' ? String(node) : node && typeof node === 'object' ? words((node as Node).props ? (node as Node).props!.children : '') : '');
+    let pressed = 0;
+    const theme = resolveThemeStyles('dark', true);
+    const render = (emphasised: boolean, status: string | null, label: string) => flat(V99EndTurnChip({ theme, label, status, emphasised, onEndTurn: () => { pressed += 1; } }));
+    const plain = render(false, '2 actions', v99EndTurnChipLabel(false, false)), spent = render(true, null, v99EndTurnChipLabel(false, true));
+    const button = plain.find(n => n.type === 'button'), root = plain[0], status = plain.find(n => n.props && n.props['data-testid'] === 'v99-end-turn-chip-status');
+    (button?.props?.onClick as (() => void) | undefined)?.();
+    const cls = String(root.props ? root.props.className : '').split(' ');
+    const labels = [v99EndTurnChipLabel(false, false), v99EndTurnChipLabel(false, true), v99EndTurnChipLabel(true, false), v99EndTurnChipLabel(true, true)];
+    const spentButton = spent.find(n => n.type === 'button');
+    return (pressed === 1 && button !== undefined && words(button) === '⏭ End Turn' && button.props?.['data-testid'] === 'v99-end-turn-chip-button' && root.props?.['data-testid'] === 'v99-end-turn-chip'
+      && cls.includes('fixed') && cls.includes('bottom-3') && cls.includes('right-3') && cls.includes('z-40') && !cls.some(c => c.startsWith('top-') || c.startsWith('left-') || c === 'inset-0' || c === 'w-full')
+      && status !== undefined && words(status) === 'Your turn · 2 actions' && String(status.props?.className).includes('hidden sm:inline')
+      && spent.filter(n => n.props && n.props['data-testid'] === 'v99-end-turn-chip-status').length === 0 && spentButton !== undefined && words(spentButton) === '⏭ End Turn — no actions left' && String(spentButton.props?.className).includes(theme.button)
+      && J(labels) === J(['⏭ End Turn', '⏭ End Turn — no actions left', '⏭ End Turn — finish match', '⏭ End Turn — finish match']))
+      || J({ pressed, cls, labels, status: status ? words(status) : null, button: button ? words(button) : null });
+  });
+  // ---- W4A (final review) ----------------------------------------------------------------------------------------------
+  check('v99ps_z01_confirm_takes_the_keyboard', 'f1-01: the End Turn question focuses its "yes" (Space, Space ends a turn), a payment its Cancel, an approval the card; Tab stays inside the dialog', () => {
+    const focus = ['endDay', 'travel', 'sell', 'challenge', 'actionOverride', 'emergencyLoan', 'endTurnLiquidation', 'deletePersistentMemory', 'aiActionApprovalRequest', 'teamAiOverrideRequest', null].map(t => confirmationInitialFocus(t));
+    const steps = [v99TrapFocusStep(3, -1, false), v99TrapFocusStep(3, -1, true), v99TrapFocusStep(3, 2, false), v99TrapFocusStep(3, 0, true), v99TrapFocusStep(3, 1, false), v99TrapFocusStep(3, 1, true), v99TrapFocusStep(0, -1, false)];
+    // With the answer focused (by the dialog, not by a click) Space is left to the browser, which presses the button.
+    const space = resolveShortcutAction({ key: ' ', ctrl: false, meta: false, alt: false, repeat: false, focusKind: 'activatable-keyboard', focusInOverlay: true, modalOpen: false, confirmOpen: true, openFlags: {} });
+    const held = resolveShortcutAction({ key: ' ', ctrl: false, meta: false, alt: false, repeat: true, focusKind: 'none', modalOpen: false, confirmOpen: true, openFlags: {} });
+    return (focus.join() === 'confirm,confirm,confirm,confirm,cancel,cancel,cancel,cancel,card,card,card' && J(steps) === J([0, 2, 0, 2, null, null, -1])
+      && space.action === null && space.preventDefault === false && held.action === null && held.preventDefault === true && V99_CONFIRM_TITLE_ID.length > 0) || J({ focus, steps, space, held });
+  });
+  check('v99ps_z02_tutorial_finish_toast_stays', "f1-02: the guided match's closing notice stays in the lane until dismissed (it left after 10 s); the welcome notice still leaves by itself", () => {
+    const finish = firstRunFinishNotice('deadline', { money: 1000, challengesWon: 0 }, '');
+    const stays = resolveToastLifetime(note({ message: finish.message, type: finish.type }), 10, false);
+    const skipped = resolveToastLifetime(note({ message: firstRunFinishNotice('skipped', { money: 0, challengesWon: 0 }, '').message }), 10, false);
+    const welcome = resolveToastLifetime(note({ message: '🎓 Welcome! Your first match: Earn $2,000 and complete 3 challenges by day 7.' }), 10, false);
+    return (stays.mode === 'sticky' && skipped.mode === 'sticky' && welcome.mode === 'hide' && v99ToastMustStay(note({ message: finish.message }))) || J({ stays, skipped, welcome });
+  });
+  check('v99ps_z03_classic_layout_has_no_pace_control', 'f2-01 / f1-08: the classic layout draws no rival-speed control on its pill (V9.8 had none); the default layout keeps it', () => {
+    const base = { soloRival: true, isPlayerTurn: false, overBoard: false, pace: 'normal' as RivalTurnPace };
+    const got = [rivalPaceControlShown(base), rivalPaceControlShown({ ...base, classicLayout: true }), rivalPaceControlShown({ ...base, classicLayout: false }), rivalPaceControlShown({ ...base, isPlayerTurn: true, pace: 'instant', classicLayout: true }),
+      rivalPaceControlShown({ ...base, isPlayerTurn: true, pace: 'instant' }), rivalPaceControlAloneShown({ ...base, docked: true })];
+    return got.join() === 'true,false,true,false,true,true' || got.join();
+  });
+  check('v99ps_z04_copilot_pill_and_row_names', "F4-05 / f1-11 / f1-13: the docked pill says CO-PILOT'S TURN while the Co-Pilot plays; the row is named for whose turn it is; the row's End Turn shows only while the header's is off screen", () => {
+    const pill = [v99CoPilotPillText(true, false, true), v99CoPilotPillText(true, true, true), v99CoPilotPillText(false, false, true), v99CoPilotPillText(true, false, false)];
+    return (pill[0] !== null && pill[0].title === "CO-PILOT'S TURN" && pill[0].status === 'Playing for you' && pill[1] === null && pill[2] === null && pill[3] === null
+      && v99TurnRowLabel(true) === 'Your turn and quick actions' && v99TurnRowLabel(false) === 'Turn status' && v99RowEndTurnShown(false) && !v99RowEndTurnShown(true)
+      && v99HeaderEndTurnFullyInView() === false) || J(pill);
+  });
+  check('v99ps_z05_pickers_start_at_the_top', 'f1-09: opening the scenario / difficulty picker from a scrolled menu is a new screen (scroll to the top); staying on a screen is not', () => {
+    const k = (mode: string, picker: boolean, epoch = 0): V99ScrollKey => ({ mode: v99ScrollScreenKey(mode, picker), epoch });
+    const got = [shouldResetScrollOnTransition(k('menu', false), k('menu', true)), shouldResetScrollOnTransition(k('menu', true), k('menu', false)), shouldResetScrollOnTransition(k('menu', false), k('menu', false)), shouldResetScrollOnTransition(k('menu', true), k('game', false, 1))];
+    return (got.join() === 'true,true,false,true' && v99ScrollScreenKey('game', false) === 'game') || got.join();
+  });
+  check('v99ps_z06_light_theme_surfaces', 'f1-04: on Light the debrief cards are opaque dark cards, pro / con lines and the docked YOUR TURN pill use colours that read; Dark and Retro keep V9.8\'s classes', () => {
+    const light = v99ProConClasses({ moneyPositive: 'text-green-700' }), dark = v99ProConClasses({ moneyPositive: 'text-green-400' });
+    // white on green-700 (#15803d) and gray-100 on slate-900 (#0f172a), measured with the suite's own contrast function
+    const pill = wcagContrastRatio('#ffffff', '#15803d'), old = wcagContrastRatio('#ffffff', '#22c55e'), card = wcagContrastRatio('#f3f4f6', '#0f172a'), pro = wcagContrastRatio('#047857', '#ffffff'), con = wcagContrastRatio('#be123c', '#ffffff');
+    return (v99DebriefCardClass(true) === 'bg-slate-900/60' && v99DebriefCardClass(false) === 'bg-slate-900 text-gray-100' && v99DebriefStripClass(true) === 'bg-black/20' && v99DebriefStripClass(false) === 'bg-slate-900 text-gray-100' && light.pro === 'text-emerald-700' && light.con === 'text-rose-700' && dark.pro === 'text-emerald-300' && dark.con === 'text-rose-300'
+      && v99ProConClasses(null).pro === 'text-emerald-300' && v99RivalFigureClass({ moneyPositive: 'text-green-700' }) === 'text-pink-700' && v99RivalFigureClass({ moneyPositive: 'text-green-400' }) === 'text-pink-400' && v99RivalFigureClass(null) === 'text-pink-400' && v99YourTurnPillTone('bg-green-500', true, false) === 'bg-green-700' && v99YourTurnPillTone('bg-green-500', false, false) === 'bg-green-500' && v99YourTurnPillTone('bg-green-600', true, true) === 'bg-green-600'
+      && pill >= 4.5 && old < 3 && card >= 7 && pro >= 4.5 && con >= 4.5) || J({ pill, old, card, pro, con });
+  });
   return results;
 }
+
+// ---- Package W4B1 (leftovers 5 and 6) ----------------------------------------------------------------------------------
+/** The small print under the match standing: both sides' cash and net worth. (It printed "$Scientist AI Cash $1,100" — a stray "$" before the rival's name.) */
+export function v99StandingDetailLine(i: { cash: number; netWorth: number; rivalName: string; rivalCash: number; rivalNetWorth: number }): string {
+  return `Cash ${fmtMoney(i.cash)} • Net Worth ${fmtMoney(i.netWorth)} | ${i.rivalName} Cash ${fmtMoney(i.rivalCash)} • Net Worth ${fmtMoney(i.rivalNetWorth)}`;
+}
+
+/**
+ * Whether the toast lane takes its "a window is open" place (bottom right, above the window). The Replay Studio is a
+ * window too, but on the main menu and the end screen nothing registered it as one, so a toast sat on its Close button.
+ */
+export function v99ToastLaneWindowOpen(blockingModalOpen: boolean, replayStudioOpen: boolean): boolean {
+  return blockingModalOpen || replayStudioOpen;
+}
+
+
+// ---- Package W4B1 (leftover 13): End Turn stays in reach ---------------------------------------------------------------
+// In the default layout every End Turn button scrolls with the page: the match header's, the turn row's (sticky only
+// inside the advice block, and only from 1024 px) and the bottom action bar's. At 1280 x 720 none was on screen below
+// scrollY ≈ 880; on a phone between ≈ 320 and 480 and below ≈ 1400. V9.8's floating bar was always there — and always
+// over the page. The chip below is drawn only while none of those buttons is on screen: one small button in the
+// bottom-right corner (under the toast lane's line, clear of the classic bar's place), with the actions left beside it
+// from 640 px. It runs the header button's own handler. The classic layout keeps its floating bar and gets no chip.
+
+/** Every End Turn button of the default play screen (the chip is not one of them). */
+export const V99_END_TURN_BUTTON_SELECTOR = '[data-testid="v9-header-end-turn"], [data-testid="v99-turn-row"] [data-quick-action="end_turn"], [data-action-id="endTurn"]';
+
+/** True when a box is on screen enough to be seen and pressed: at least half of it, both ways, inside the window. */
+export function v99BoxInView(box: { top: number; bottom: number; left: number; right: number }, viewportWidth: number, viewportHeight: number): boolean {
+  const height = box.bottom - box.top, width = box.right - box.left;
+  if (!(height > 0) || !(width > 0) || !(viewportWidth > 0) || !(viewportHeight > 0)) return false;
+  const seenY = Math.min(box.bottom, viewportHeight) - Math.max(box.top, 0);
+  const seenX = Math.min(box.right, viewportWidth) - Math.max(box.left, 0);
+  return seenY >= height / 2 && seenX >= width / 2;
+}
+
+/** The chip is drawn in the default layout, while the player can end the turn and no End Turn button is on screen. */
+export function v99EndTurnChipShown(i: { classicLayout: boolean; canEndTurn: boolean; endTurnInView: boolean }): boolean {
+  return !i.classicLayout && i.canEndTurn && !i.endTurnInView;
+}
+
+/** The chip's words: the header button's own. */
+export function v99EndTurnChipLabel(finalDay: boolean, noActionsLeft: boolean): string {
+  return `⏭ End Turn${finalDay ? ' — finish match' : noActionsLeft ? ' — no actions left' : ''}`;
+}
+
+/** Bottom-right, under every window (their overlays start at z-50) and above the page; never as wide as the screen. */
+export const V99_END_TURN_CHIP_CLASS = 'fixed bottom-3 right-3 z-40 max-w-[calc(100vw-1.5rem)] flex items-center gap-2 rounded-xl border px-2 py-1.5';
+
+export interface V99EndTurnChipProps { theme: V9Theme; label: string; /** "2 actions" — shown from 640 px. */ status: string | null; /** No actions left: the button is the primary one, as in the header. */ emphasised: boolean; onEndTurn: () => void }
+
+/** The chip. Hook-free. */
+export function V99EndTurnChip(props: V99EndTurnChipProps): React.ReactElement {
+  const { theme } = props;
+  return (
+    <div className={`${V99_END_TURN_CHIP_CLASS} ${theme.card} ${theme.border} ${theme.shadow}`} data-testid="v99-end-turn-chip" role="group" aria-label="End your turn">
+      {props.status && <span className="hidden sm:inline text-xs font-semibold opacity-80 pl-1" data-testid="v99-end-turn-chip-status">Your turn · {props.status}</span>}
+      <button type="button" onClick={props.onEndTurn} className={`${props.emphasised ? `${theme.button} text-white` : theme.buttonSecondary} rounded-lg px-3 py-1.5 text-sm font-bold min-h-[36px]`} data-testid="v99-end-turn-chip-button">{props.label}</button>
+    </div>
+  );
+}
+
+/** Watches the End Turn buttons while the player can end the turn and draws the chip once none of them is on screen. */
+export const V99EndTurnInView: React.FC<V99EndTurnChipProps & { classicLayout: boolean; canEndTurn: boolean }> = (props) => {
+  const [endTurnInView, setEndTurnInView] = useState(true);
+  const watching = !props.classicLayout && props.canEndTurn;
+  const measure = useCallback(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    let found = false;
+    document.querySelectorAll(V99_END_TURN_BUTTON_SELECTOR).forEach(node => {
+      if (found || (node instanceof HTMLButtonElement && node.disabled)) return;
+      if (v99BoxInView(node.getBoundingClientRect(), window.innerWidth, window.innerHeight)) found = true;
+    });
+    setEndTurnInView(previous => (previous === found ? previous : found));
+  }, []);
+  // After every render (the buttons come and go with the layout, the page grows and shrinks) …
+  useLayoutEffect(() => { if (watching) measure(); });
+  // … and whenever the page is scrolled or the window resized (once per frame).
+  useEffect(() => {
+    if (!watching) { setEndTurnInView(true); return undefined; }
+    if (typeof window === 'undefined') return undefined;
+    let frame = 0;
+    const onMove = () => { if (frame) return; frame = window.requestAnimationFrame(() => { frame = 0; measure(); }); };
+    window.addEventListener('scroll', onMove, { passive: true });
+    window.addEventListener('resize', onMove);
+    window.addEventListener(V99_END_TURN_LAYOUT_EVENT, onMove); // W4A (f1-13): the turn row's End Turn came or went
+    return () => { window.removeEventListener('scroll', onMove); window.removeEventListener('resize', onMove); window.removeEventListener(V99_END_TURN_LAYOUT_EVENT, onMove); if (frame) window.cancelAnimationFrame(frame); };
+  }, [watching, measure]);
+  if (!v99EndTurnChipShown({ classicLayout: props.classicLayout, canEndTurn: props.canEndTurn, endTurnInView })) return null;
+  return <V99EndTurnChip theme={props.theme} label={props.label} status={props.status} emphasised={props.emphasised} onEndTurn={props.onEndTurn} />;
+};
+
 
 
 
@@ -200935,6 +202532,12 @@ export function runV99PlayScreenRulesSelfTests(): V9SelfTestResult[] {
 // player's turn. Never during the rival's turn, never for the guided first match, never during an isolated replay,
 // never from a reducer or a render. The copies are cleared when the match ends, when the setting is switched off, and
 // replaced when another match is started or loaded over them.
+// What the copy can miss (W4B): the autosave watches the match state a save holds by identity — the game state, the
+// player, the rival, the actors, the teams, the automations and, since W4B, the settings and the "Don't ask me again"
+// choices held in the save. A choice made while a rival is moving is never the player's "unstored" state (the hook
+// cannot tell it from what the rival changes), so it reaches a copy only when the turn is back: the State Capacity
+// delivery approach is therefore offered on the player's turn only (matchChoiceWaitsForTurn); any other panel that
+// still accepts a choice during the rival's turn has this limit — a page that dies in those seconds loses that choice.
 // Determinism: nothing here draws randomness or touches match state; the clock is read only to say how old a copy is.
 // Wiring in AustraliaGame: useV99MatchRecovery (one call), the card in renderMenu, one line in the Save / Load
 // dialog, the "Leave match" wording and one condition in the leave-site warning.
@@ -201675,7 +203278,7 @@ export interface V99MatchRecoveryHost {
   enabled: boolean;
   gameState: RecoveryGameStateView;
   player: RecoveryPlayerView;
-  /** The other match state a save holds (the rival, the actors, the teams, the player's automations): watched by identity, like gameState and player. */
+  /** The other match state a save holds (the rival, the actors, the teams, the player's automations, the settings and the "Don't ask me again" choices — recoveryMatchParts): watched by identity, like gameState and player. */
   matchParts: readonly unknown[];
   replayActive: boolean;
   firstRunActive: boolean;
@@ -201915,6 +203518,12 @@ export function useV99MatchRecovery(host: V99MatchRecoveryHost): V99MatchRecover
 }
 
 // ---- Self-tests (v99mr) ---------------------------------------------------------------------------------------------------
+// ---- W4A (final review, f2-02): no autosave line while the feature is off ----------------------------------------------------
+/** The Save / Load dialog shows its autosave line only while Autosave & Resume is on (off = the V9.8 dialog; the switch is in Settings, New in V9.9). */
+export function autosaveLineShown(status: { state?: unknown } | null | undefined): boolean {
+  return Boolean(status) && status?.state !== 'off';
+}
+
 export function runV99MatchRecoverySelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
   const check = (id: string, name: string, fn: () => true | string) => {
@@ -202497,8 +204106,58 @@ export function runV99MatchRecoverySelfTests(): V9SelfTestResult[] {
     return (defaults.matchRecoveryEnabled === false && V95_PROFILE_SCOPED_SETTING_KEYS.includes('matchRecoveryEnabled') && V99_PERSISTED_PROFILE_SETTING_KEYS.includes('matchRecoveryEnabled')
       && carried === undefined && matchRecoveryNoFlush('unload') === false && MATCH_RECOVERY_SPECTATOR_DELAY_MS < 180 && MATCH_RECOVERY_TURN_DELAY_MS >= 200) || json({ carried });
   });
+
+  // ---- Package W4B1 (leftover 3) ---------------------------------------------------------------------------------------
+  check('v99mr_x01_settings_in_the_save_are_watched', "A choice that changes only the settings held in the save, or a \"Don't ask me again\" choice, is state the newest copy does not hold: the turn is not answered as covered until it is written", () => {
+    const base: { aiPlayer: unknown; actorsById: unknown; teamsById: unknown; humanAutomations: unknown; gameSettings: unknown; dontAskAgain: unknown } = { aiPlayer: {}, actorsById: {}, teamsById: {}, humanAutomations: {}, gameSettings: { smartSettingsProfile: 'guided' }, dontAskAgain: { travel: false } };
+    const gameState = {}, player = {};
+    const parts = (over: Partial<typeof base> = {}): RecoveryStateParts => ({ gameState, player, parts: recoveryMatchParts({ ...base, ...over }) });
+    const view: RecoveryWriteView = { enabled: true, sessionDisabled: false, replayActive: false, firstRunActive: false, matchEnded: false, gameMode: 'game', selectedMode: 'ai', currentTurn: 'player', currentActorId: 'player', isAiThinking: false };
+    const copied = parts();
+    const got = [
+      recoveryStateIsUnstored(view, copied, parts()), recoveryStateIsUnstored(view, copied, parts({ gameSettings: { smartSettingsProfile: 'teaching' } })), recoveryStateIsUnstored(view, copied, parts({ dontAskAgain: { travel: true } })),
+      recoveryStateIsUnstored(view, copied, parts({ aiPlayer: {} })), recoveryStateIsUnstored({ ...view, currentTurn: 'ai', currentActorId: 'ai' }, copied, parts({ gameSettings: {} })), recoveryStateIsUnstored({ ...view, enabled: false }, copied, parts({ gameSettings: {} }))
+    ];
+    const session = createMatchRecoverySession();
+    session.matchId = 'm1'; session.lineageEpoch = 3; session.day = 4; session.lastMarker = '3|same'; session.playerMarker = '3|same';
+    // while the rival moves (no copy may be written): a copy that holds everything covers the turn; one that does not, does not
+    const clean = recoveryCoverageOf(session, 3, '3|rival-acted', false);
+    session.dirty = true;
+    const dirty = recoveryCoverageOf(session, 3, '3|rival-acted', false);
+    return (got.join() === 'false,true,true,true,false,false' && recoveryMatchParts(base).length === 6 && recoveryMatchParts(base)[4] === base.gameSettings && recoveryMatchParts(base)[5] === base.dontAskAgain && clean === 'turn' && dirty === 'earlier') || json({ got, clean, dirty });
+  });
+  check('v99mr_x02_choices_wait_for_the_turn', "A side-panel choice (the State Capacity delivery approach) is made on the player's turn: it waits while a rival moves in a match the player plays, and never in a match the player only watches or outside a match", () => {
+    const got = [matchChoiceWaitsForTurn('game', 'ai', false), matchChoiceWaitsForTurn('game', 'ai', true), matchChoiceWaitsForTurn('game', 'team_human_ai_vs_ai_ai', false), matchChoiceWaitsForTurn('game', 'team_ai_vs_ai', false), matchChoiceWaitsForTurn('menu', 'ai', false), matchChoiceWaitsForTurn('end', 'ai', false), matchChoiceWaitsForTurn('game', 'single', true)];
+    return got.join() === 'true,false,true,false,false,false,false' || got.join();
+  });
+  // ---- W4A (final review) ----------------------------------------------------------------------------------------------
+  check('v99mr_z01_no_line_while_off', 'f2-02: with autosave off the Save / Load dialog has no autosave line; waiting, saved and paused show it', () => {
+    const got = [autosaveLineShown({ state: 'off' }), autosaveLineShown(null), autosaveLineShown({ state: 'waiting' }), autosaveLineShown({ state: 'saved' }), autosaveLineShown({ state: 'paused' })];
+    return got.join() === 'false,false,true,true,true' || got.join();
+  });
   return results;
 }
+
+// ---- Package W4B1 (leftover 3) -----------------------------------------------------------------------------------------
+/**
+ * The match state a save holds besides the game state and the player, for V99MatchRecoveryHost.matchParts. The settings
+ * and the "Don't ask me again" choices are part of it: a choice that changed only them (the guided-help level, a
+ * confirmation switched off) moved nothing the autosave watched, so it was missing from the copy while the game said
+ * the turn was covered.
+ */
+export function recoveryMatchParts(i: { aiPlayer: unknown; actorsById: unknown; teamsById: unknown; humanAutomations: unknown; gameSettings: unknown; dontAskAgain: unknown }): readonly unknown[] {
+  return [i.aiPlayer, i.actorsById, i.teamsById, i.humanAutomations, i.gameSettings, i.dontAskAgain];
+}
+
+/**
+ * True while a choice in a side panel has to wait for the player's turn: a live match the player plays in, and somebody
+ * else is moving. (A choice made then would change the match during the rival's turn and would not be in the autosave
+ * until the turn is back.) Never in a match the player only watches — there is no turn to wait for.
+ */
+export function matchChoiceWaitsForTurn(gameMode: unknown, selectedMode: unknown, humanTurn: boolean): boolean {
+  return gameMode === 'game' && !isSpectatorMatch(selectedMode) && !humanTurn;
+}
+
 
 
 
@@ -202737,7 +204396,8 @@ export function writeMatchJournal(storage: V99StorageLike | null, record: MatchJ
 /** Removes the journal from this device (the player asked for it). False when storage is blocked. */
 export function clearMatchJournal(storage: V99StorageLike | null): boolean {
   if (!storage) return false;
-  try { storage.removeItem(MATCH_JOURNAL_STORAGE_KEY); return true; } catch { return false; }
+  // W4A (final review, f2-05): the scenario ticks are part of the journal and go with it.
+  try { storage.removeItem(MATCH_JOURNAL_STORAGE_KEY); storage.removeItem(SCENARIO_RECORD_STORAGE_KEY); return true; } catch { return false; }
 }
 
 // ---- Bests, the cap, filing an entry --------------------------------------------------------------------------------------
@@ -203089,7 +204749,7 @@ export function buildMatchJournalMenuView(record: MatchJournalRecord, input: { t
     outcome: e.outcome,
     outcomeLabel: matchJournalOutcomeLabel(e.outcome),
     title: [e.mode === 'scenario' && (e.scenarioTitle || e.scenarioId) ? `${matchJournalModeLabel(e.mode)}: ${e.scenarioTitle || e.scenarioId}` : matchJournalModeLabel(e.mode), e.mode === 'single' || !e.difficulty ? '' : matchJournalDifficultyLabel(e.difficulty), e.character, e.dailyKey ? `daily ${e.dailyKey}` : '', e.campaign ? 'campaign chapter' : ''].filter(Boolean).join(' · '),
-    scoreLine: matchJournalScoreLine(e),
+    scoreLine: matchJournalRowScoreLine(e), // W4A (f3-07): a scenario row says whether its objectives were met
     detail: [`${e.daysPlayed} day${e.daysPlayed === 1 ? '' : 's'}`, matchJournalEndCauseLabel(e.endCause), matchJournalEntryDateLabel(e, input.todayKey), e.seed !== null ? `seed #${e.seed}` : ''].filter(Boolean).join(' · '),
     seed: e.seed
   }));
@@ -203146,7 +204806,7 @@ export const V99MatchJournalMenuCardView: React.FC<MatchJournalMenuCardViewProps
   const panel = isDark ? 'bg-gray-800/80 border border-gray-700 text-gray-200' : 'bg-white/90 border border-gray-200 text-gray-700';
   const field = isDark ? 'bg-gray-900 border border-gray-600 text-gray-100' : 'bg-white border border-gray-300 text-gray-800';
   const startButton = 'w-full text-left rounded-lg px-3 py-2 font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed';
-  const chip: Record<MatchJournalOutcome, string> = { win: 'bg-emerald-500/20 text-emerald-400', loss: 'bg-rose-500/20 text-rose-400', completed: 'bg-sky-500/20 text-sky-400', watched: 'bg-gray-500/20 text-gray-400' };
+  const chip = matchJournalChipClasses(isDark); // W4A (f1-11): pills that read on Light too
   const bests = showAllBests ? view.bests : view.bests.slice(0, 3);
   return (
     <div data-testid="v99-journal-card" className={`mt-6 rounded-xl p-4 text-left text-sm space-y-3 ${panel}`}>
@@ -203193,8 +204853,10 @@ export const V99MatchJournalMenuCardView: React.FC<MatchJournalMenuCardViewProps
         <button type="button" disabled={!view.replay} onClick={() => { if (view.replay) onStart(view.replay.start); }} className={`${startButton} bg-emerald-600 hover:bg-emerald-500`} data-testid="v99-journal-replay-last"
           title="The same mode, rival, character and seed as your last match. Your current settings apply.">
           🔁 Play again with the last seed
-          <span className="block text-[11px] font-normal opacity-90">{view.replay ? view.replay.label : 'No finished match with a seed yet.'}</span>
+          {view.replay && <span className="block text-[11px] font-normal opacity-90">{view.replay.label}</span>}
         </button>
+        {/* W4A (f1-11): why it is disabled, outside the dimmed button (it was white at 45% on green) */}
+        {!view.replay && <div className="text-[11px] opacity-80" data-testid="v99-journal-replay-none">No finished match with a seed yet.</div>}
         <button type="button" disabled={!view.daily} onClick={() => { if (view.daily) onStart(view.daily.start); }} className={`${startButton} bg-sky-700 hover:bg-sky-600`} data-testid="v99-journal-daily"
           title="One match per day, the same for everyone who plays that day. Played with the character selected above and your current settings.">
           📅 Daily seed{view.daily ? ` — ${view.daily.dateKey}` : ''}
@@ -203349,6 +205011,31 @@ export function matchJournalEndViewFor(enabled: boolean, journal: MatchJournalRe
   return { view: mark ? buildMatchJournalEndView(journal, mark.id) : null, saved: mark ? mark.saved : true };
 }
 
+// ---- W4A (final review, f2-05): scenario ticks are part of the journal -------------------------------------------------------
+// V9.9 first wrote a completion record for every scenario victory, journal or not. They now belong to this feature:
+// nothing is written, read or badged unless matchJournalEnabled === true, and the journal's Clear removes them too.
+/** The scenario records the scenario list and the scenario end screen may show: none while the journal is off. */
+export function scenarioRecordsForJournal(storage: V99StorageLike | null, settings: { matchJournalEnabled?: unknown } | null | undefined): Record<string, ScenarioRecordEntry> {
+  return settings?.matchJournalEnabled === true ? readScenarioRecords(storage).scenarios : {};
+}
+/** Records a scenario victory — only with the journal on (null = nothing was written or read). */
+export function recordScenarioCompletionForJournal(storage: V99StorageLike | null, settings: { matchJournalEnabled?: unknown } | null | undefined, scenarioId: string, day: number): ReturnType<typeof recordScenarioCompletion> | null {
+  return settings?.matchJournalEnabled === true ? recordScenarioCompletion(storage, scenarioId, day) : null;
+}
+
+// ---- W4A (final review, f3-07 / f1-11): the journal row of a scenario, and colours that read -----------------------------------
+/** The bold part of a journal row. A scenario is decided by its objectives, not by the money scores ("Lost $17,251 vs $1,948" read like an error). */
+export function matchJournalRowScoreLine(entry: Pick<MatchJournalEntry, 'winMetric' | 'playerScore' | 'rivalScore' | 'scenarioId' | 'outcome' | 'daysPlayed'>): string {
+  if (!entry.scenarioId) return matchJournalScoreLine(entry);
+  return entry.outcome === 'win' ? `Objectives met on day ${entry.daysPlayed}` : `Objectives not met (${entry.daysPlayed} day${entry.daysPlayed === 1 ? '' : 's'})`;
+}
+/** The outcome pills of the journal card: the pale-on-tint pills on the dark themes, solid tints with dark text on Light (the Light "Lost" pill was 2.1:1). */
+export function matchJournalChipClasses(isDark: boolean): Record<MatchJournalOutcome, string> {
+  return isDark
+    ? { win: 'bg-emerald-500/20 text-emerald-400', loss: 'bg-rose-500/20 text-rose-400', completed: 'bg-sky-500/20 text-sky-400', watched: 'bg-gray-500/20 text-gray-400' }
+    : { win: 'bg-emerald-100 text-emerald-800', loss: 'bg-rose-100 text-rose-800', completed: 'bg-sky-100 text-sky-800', watched: 'bg-gray-200 text-gray-700' };
+}
+
 export function runV99MatchJournalSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
   const check = (id: string, name: string, fn: () => true | string) => {
@@ -203481,12 +205168,12 @@ export function runV99MatchJournalSelfTests(): V9SelfTestResult[] {
     const clean = sanitizeMatchJournal({ version: 1, nextId: 2, extra: { a: 1 }, entries: [{ ...draft(), id: 1, at: 9, weatherAtStart: 'storm', rivals: ['a', 'b'] }] });
     return (clean.entries.length === 1 && json(clean.entries[0]) === json({ ...draft(), id: 1, at: 9 })) || json(clean);
   });
-  check('v99mj_11_clear', 'Clearing removes the journal from the device and nothing else', () => {
+  check('v99mj_11_clear', 'Clearing removes the journal (with its scenario ticks — W4A, f2-05) from the device and nothing else', () => {
     const store = createV99MemoryStorage({ 'aussie-adventure.v99.profile-settings': '{"x":1}', [SCENARIO_RECORD_STORAGE_KEY]: '{"version":1,"scenarios":{}}' });
     recordMatchInJournal(store, draft(), 1, null);
     const had = Object.keys(store.data).length;
     const cleared = clearMatchJournal(store);
-    return (had === 3 && cleared && Object.keys(store.data).sort().join() === ['aussie-adventure.v99.profile-settings', SCENARIO_RECORD_STORAGE_KEY].sort().join() && readMatchJournal(store).entries.length === 0) || json(store.data);
+    return (had === 3 && cleared && Object.keys(store.data).join() === 'aussie-adventure.v99.profile-settings' && readMatchJournal(store).entries.length === 0) || json(store.data);
   });
   check('v99mj_12_storage_key', 'The journal has its own namespaced key, apart from every other thing the game stores', () => {
     const others = [MATCH_SERIAL_STORAGE_KEY, SCENARIO_RECORD_STORAGE_KEY, PROFILE_SETTINGS_STORAGE_KEY];
@@ -203862,6 +205549,27 @@ export function runV99MatchJournalSelfTests(): V9SelfTestResult[] {
     const journalKeys = bundles.flatMap(b => [...Object.keys(b), ...Object.keys(b.gameState || {}), ...Object.keys(b.player || {})]).filter(k => /journal/i.test(k));
     return (journalKeys.length === 0 && bundles.every(b => !JSON.stringify(b).includes(MATCH_JOURNAL_STORAGE_KEY))) || json(journalKeys);
   });
+  // ---- W4A (final review) ----------------------------------------------------------------------------------------------
+  check('v99mj_z01_scenario_records_belong_to_the_journal', 'f2-05: scenario ticks are written, read and shown only with the journal on, and Clear removes them with the journal', () => {
+    const store = createV99MemoryStorage({});
+    const skipped = recordScenarioCompletionForJournal(store, { matchJournalEnabled: false }, 'outback_siege', 12);
+    const emptyAfterOff = Object.keys(store.data).length === 0;
+    const written = recordScenarioCompletionForJournal(store, { matchJournalEnabled: true }, 'outback_siege', 12);
+    const seenOn = Object.keys(scenarioRecordsForJournal(store, { matchJournalEnabled: true })), seenOff = Object.keys(scenarioRecordsForJournal(store, {})), seenBad = Object.keys(scenarioRecordsForJournal(store, { matchJournalEnabled: 'yes' }));
+    recordMatchInJournal(store, draft(), 1, null);
+    const cleared = clearMatchJournal(store);
+    return (skipped === null && emptyAfterOff && written !== null && written.firstCompletion && seenOn.join() === 'outback_siege' && seenOff.length === 0 && seenBad.length === 0
+      && cleared && Object.keys(store.data).length === 0 && Object.keys(readScenarioRecords(store).scenarios).length === 0) || json({ skipped, written, seenOn, seenOff, data: store.data });
+  });
+  check('v99mj_z02_scenario_row_and_pills', 'f3-07 / f1-11: a scenario\'s journal row says whether its objectives were met (no money scores); other rows keep "$X vs $Y"; Light pills use dark text', () => {
+    const lostScenario = matchJournalRowScoreLine({ winMetric: 'money', playerScore: 17251, rivalScore: 1948, scenarioId: 'outback_siege', outcome: 'loss', daysPlayed: 9 });
+    const wonScenario = matchJournalRowScoreLine({ winMetric: 'money', playerScore: 20000, rivalScore: 1948, scenarioId: 'outback_siege', outcome: 'win', daysPlayed: 15 });
+    const plain = matchJournalRowScoreLine({ winMetric: 'money', playerScore: 5200, rivalScore: 3100, scenarioId: null, outcome: 'win', daysPlayed: 9 });
+    const journal = upsertMatchJournalEntry(emptyMatchJournal(), draft({ mode: 'scenario', scenarioId: 'outback_siege', scenarioTitle: 'Outback Siege', outcome: 'loss', playerScore: 17251, rivalScore: 1948, daysPlayed: 9 }), 5, null).record;
+    const row = buildMatchJournalMenuView(journal, { todayKey: null, winMetric: 'money', scenarioCompletions: 0 }).rows[0];
+    return (lostScenario === 'Objectives not met (9 days)' && wonScenario === 'Objectives met on day 15' && plain === '$5,200 vs $3,100' && row !== undefined && row.scoreLine === 'Objectives not met (9 days)' && !row.scoreLine.includes('$')
+      && matchJournalChipClasses(false).loss === 'bg-rose-100 text-rose-800' && matchJournalChipClasses(true).loss === 'bg-rose-500/20 text-rose-400') || json({ lostScenario, wonScenario, plain, row });
+  });
   return results;
 }
 
@@ -204046,6 +205754,10 @@ export function v99ParseDigestOutcome(rest: string | null | undefined): V99Diges
   if ((m = r.match(/^received \$([\d,]+)/i))) return { kind: 'other', amount: v99DigestAmount(m[1]), text: `received ${fmtMoney(v99DigestAmount(m[1]))}` };
   if ((m = r.match(/^(?:grabbed|took) an emergency (?:\$([\d,]+) loan|loan \(\$([\d,]+)\))/i))) return { kind: 'other', amount: v99DigestAmount(m[1] || m[2]), text: `took a ${fmtMoney(v99DigestAmount(m[1] || m[2]))} emergency loan` };
   if ((m = r.match(/^traveled to (.+?)(?: and found (.+?))?(?: \((.*?)\))?[.!]?$/i))) return { kind: 'moved', amount: 0, text: `moved to ${m[1]}${m[2] ? ` (found ${m[2]})` : ''}` };
+  // V9.9 (SECTION 20AX, W4B): the rival's region moves and its paid-for actions state an amount too (it stakes regions in every regions match started on V9.9).
+  if ((m = r.match(/^deposited \$([\d,]+) in ([^.(]+?)\.?(?:\s*\(.*\))?$/i))) return { kind: 'other', amount: -v99DigestAmount(m[1]), text: `staked ${fmtMoney(v99DigestAmount(m[1]))} in ${m[2]}` };
+  if ((m = r.match(/^cashed out (.+?) for \$([\d,]+)/i))) return { kind: 'other', amount: v99DigestAmount(m[2]), text: `cashed out ${m[1]} for ${fmtMoney(v99DigestAmount(m[2]))}` };
+  if ((m = r.match(/^paid \$([\d,]+) for extra actions/i))) return { kind: 'other', amount: -v99DigestAmount(m[1]), text: `paid ${fmtMoney(v99DigestAmount(m[1]))} for extra actions` };
   if (/^(can't|cannot|couldn't) afford\b|^doesn't have\b|^has no\b|^is thinking\b|^performed action instantly\b|^'s turn begins\b|^ended their turn\b/i.test(r)) return null;
   if (/^couldn't travel\b/i.test(r)) return { kind: 'other', amount: 0, text: 'could not travel (sabotaged)' };
   if (/^'s crafting failed\b/i.test(r)) return { kind: 'other', amount: 0, text: 'lost materials in a failed craft' };
@@ -204197,6 +205909,11 @@ export function buildTurnDigest(input: V99TurnDigestInput | null | undefined): V
 
   // ---- the world: only what changed a number the player can act on today, most important first
   const candidates: Array<{ text: string; ids: string[] }> = [];
+  // W4A (f3-05): what must stay on screen but asks nothing (a crisis event, a countdown, mercy-rule progress) leads the
+  // world lines as a heads-up — it used to be listed under "Waiting on you". Its toast is not folded (ids: []).
+  const headsUp: string[] = [];
+  classed.filter(c => c.cls.kind === 'attention' && c.cls.text && !v99DigestNeedsAnswer(c.note)).forEach(c => { const text = v99DigestClipAtSentence(c.cls.text); if (text && !headsUp.includes(text)) headsUp.push(text); });
+  const headsUpShown = headsUp.slice(0, V99_DIGEST_MAX_HEADS_UP_LINES);
   classed.filter(c => c.cls.kind === 'event').forEach(c => candidates.push({ text: v99DigestClip(c.cls.text), ids: [c.note.id] }));
   const weatherNotes = classed.filter(c => c.cls.kind === 'weather');
   const trendNotes = classed.filter(c => c.cls.kind === 'trend');
@@ -204224,19 +205941,19 @@ export function buildTurnDigest(input: V99TurnDigestInput | null | undefined): V
   // ---- waiting on the player: the game's open decisions first, then what was raised for their attention
   const waitingAll: string[] = [];
   const addWaiting = (line: string) => {
-    const text = v99DigestClip(v99DigestPlainText(line));
+    const text = v99DigestClipAtSentence(v99DigestPlainText(line)); // W4A (f3-05): never cut mid-sentence
     const key = v99DigestKey(text);
     if (!text || !key) return;
     if (waitingAll.some(w => { const k = v99DigestKey(w); return k === key || k.includes(key) || key.includes(k); })) return;
     waitingAll.push(text);
   };
   (input.waiting || []).forEach(addWaiting);
-  classed.filter(c => c.cls.kind === 'attention').forEach(c => addWaiting(c.cls.text));
+  classed.filter(c => c.cls.kind === 'attention' && v99DigestNeedsAnswer(c.note)).forEach(c => addWaiting(c.cls.text)); // W4A (f3-05): only what can be answered waits on the player
   const waiting = waitingAll.slice(0, V99_DIGEST_MAX_WAITING_LINES);
   const moreWaiting = Math.max(0, waitingAll.length - V99_DIGEST_MAX_WAITING_LINES);
 
   const dayChanged = after.day !== before.day;
-  const nothing = notes.length === 0 && !dayChanged && actorLines.every(a => a.idle) && (score === null || score.trend === 'same') && self === null && shown.length === 0 && waitingAll.length === 0;
+  const nothing = notes.length === 0 && !dayChanged && actorLines.every(a => a.idle) && (score === null || score.trend === 'same') && self === null && shown.length === 0 && waitingAll.length === 0 && headsUpShown.length === 0;
   if (nothing) return null;
 
   const foldedIds = notes.map(n => n.id).filter(id => folded.includes(id));   // each once, in the order they were raised
@@ -204245,13 +205962,14 @@ export function buildTurnDigest(input: V99TurnDigestInput | null | undefined): V
   else if (actors.length > 1) headlineParts.push(`${actors.map(a => `${a.name} ${a.cashDelta === null ? fmtMoney(a.cashAfter) : v99DigestSigned(a.cashDelta)}`).join(', ')}${moreActors > 0 ? ` +${moreActors} more` : ''}`);
   if (score) headlineParts.push(score.text.replace(/ \(.*\)$/, ''));
   if (waitingAll.length) headlineParts.push(waitingAll.length === 1 ? `Waiting on you: ${waitingAll[0]}` : `${waitingAll.length} waiting on you`);
-  if (shown.length) headlineParts.push(shown.length === 1 ? shown[0].text : `${shown[0].text} (+${shown.length - 1} more)`);
+  const worldLines = [...headsUpShown, ...shown.map(c => c.text)];
+  if (worldLines.length) headlineParts.push(worldLines.length === 1 ? worldLines[0] : `${worldLines[0]} (+${worldLines.length - 1} more)`);
   if (!headlineParts.length) headlineParts.push(self ? self.text : 'Nothing changed that affects today');
 
   return {
     dayFrom: before.day, dayTo: after.day,
     actors, moreActors, score, self,
-    world: shown.map(c => c.text),
+    world: worldLines,
     steady: steadyParts.length ? `No change: ${steadyParts.join(', ')}` : null,
     waiting, moreWaiting,
     noteIds: notes.map(n => n.id), noteCount: notes.length,
@@ -204723,12 +206441,14 @@ export function V99TurnDigestCard(props: V99TurnDigestCardProps) {
   useEffect(() => {
     const sync = () => { if (ref.current && v99DigestTurnRow()) v99SyncToastLaneTop(ref.current); };
     window.addEventListener('resize', sync);
+    window.addEventListener(V99_END_TURN_LAYOUT_EVENT, sync); // the row re-drew by itself (its End Turn came or went)
     // The row re-measures for itself whenever it draws (its tools open, it wraps); a size change of either is answered here.
     const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(sync) : null;
     const row = v99DigestTurnRow();
     if (observer && ref.current) { observer.observe(ref.current); if (row) observer.observe(row); }
     return () => {
       window.removeEventListener('resize', sync);
+      window.removeEventListener(V99_END_TURN_LAYOUT_EVENT, sync);
       if (observer) observer.disconnect();
       v99SyncToastLaneTop(v99DigestTurnRow());
     };
@@ -204743,6 +206463,23 @@ function v99DigestTurnRow(): HTMLElement | null {
 }
 
 // ---- Self-tests (v99td) ----------------------------------------------------------------------------------------------------
+// ---- W4A (final review, f3-05): "Waiting on you" is for what can be answered -----------------------------------------------------
+/** True for a notice the player can answer (an open decision, a request waiting for approval). A crisis event, a countdown or mercy-rule progress is a heads-up, not something waiting. */
+export function v99DigestNeedsAnswer(note: V99DigestNote | null | undefined): boolean {
+  if (!note) return false;
+  const text = v99DigestPlainText(note.message);
+  return /^decision\b/i.test(text) || v9NotificationClass(note) === 'decision_required' || /\b(awaiting your|waiting for your|needs your|your approval)\b/i.test(text);
+}
+/** At most this many heads-up lines lead the world lines (their toasts stay on screen anyway). */
+export const V99_DIGEST_MAX_HEADS_UP_LINES = 2;
+/** Clips a line at the end of a sentence when it has one inside the limit (never mid-sentence: "…the match ends as a win in…"); otherwise as v99DigestClip. */
+export function v99DigestClipAtSentence(text: string, max: number = V99_DIGEST_LINE_MAX_CHARS): string {
+  if (text.length <= max) return text;
+  const head = text.slice(0, max);
+  const end = Math.max(head.lastIndexOf('. '), head.lastIndexOf('! '), head.lastIndexOf('? '));
+  return end >= 30 ? head.slice(0, end + 1) : v99DigestClip(text, max);
+}
+
 export function runV99TurnDigestSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
   const check = (id: string, name: string, fn: () => true | string) => {
@@ -204867,7 +206604,7 @@ export function runV99TurnDigestSelfTests(): V9SelfTestResult[] {
     return (d.noteCount === 12 && d.foldedCount === 10 && json(d.foldedIds) === json(['n1', 'n2', 'n3', 'n4', 'n5', 'n6', 'n7', 'n8', 'n10', 'n11'])
       && d.foldedIds.every(id => d.noteIds.includes(id)) && new Set(d.foldedIds).size === d.foldedIds.length) || json({ folded: d.foldedIds, n: d.noteCount });
   });
-  check('v99td_10_critical_never_folded', 'Critical and decision items are never folded: they stay toasts and are listed as waiting on the player', () => {
+  check('v99td_10_critical_never_folded', 'Critical and decision items are never folded: they stay toasts; what can be answered is listed as waiting on the player, the rest leads the world lines (W4A, f3-05)', () => {
     const must: V99DigestNote[] = [
       note('g', 'High risk action detected', 'warning', true, { guardianRiskId: 'risk_1' }),
       note('e', 'Could not complete the trade', 'error'),
@@ -204885,8 +206622,8 @@ export function runV99TurnDigestSelfTests(): V9SelfTestResult[] {
     if (!d) return 'no digest';
     const leaked = must.filter(n => d.foldedIds.includes(n.id)).map(n => n.id);
     const classes = must.filter(n => v99ClassifyDigestNote(n, [RIVAL]).kind !== 'attention' || !v99DigestNeverFolds(n)).map(n => n.id);
-    return (leaked.length === 0 && classes.length === 0 && d.waiting.length === V99_DIGEST_MAX_WAITING_LINES && d.moreWaiting === must.length - V99_DIGEST_MAX_WAITING_LINES
-      && d.waiting[0] === 'High risk action detected' && d.foldedCount === 10 && d.headline.includes(`${must.length} waiting on you`)) || json({ leaked, classes, waiting: d.waiting, more: d.moreWaiting });
+    return (leaked.length === 0 && classes.length === 0 && json(d.waiting) === json(['Decision: Conservation or Growth', 'Trade offer is waiting for your answer']) && d.moreWaiting === 0
+      && d.world[0] === 'High risk action detected' && d.world.slice(0, V99_DIGEST_MAX_HEADS_UP_LINES).every(line => !d.waiting.includes(line)) && d.foldedCount === 10 && d.headline.includes('2 waiting on you')) || json({ leaked, classes, waiting: d.waiting, world: d.world, more: d.moreWaiting, folded: d.foldedCount });
   });
   check('v99td_11_classification', 'Each notification is one of: turn bookkeeping, an actor\'s result, a world line, attention, or not the digest\'s business', () => {
     const names = ['Scientist AI', 'Scientist AI Prime', 'Businessman Ally'];
@@ -204977,7 +206714,7 @@ export function runV99TurnDigestSelfTests(): V9SelfTestResult[] {
     const d = buildTurnDigest({ before: snap(), after: snap({ day: 4 }), notes: [note('d', '⚖️ Decision: Conservation or Growth', 'event', true), note('s', 'Market Crash is active on you.', 'warning', true)], waiting: lines });
     if (!d) return 'no digest';
     return (json(lines) === json(['Decision waiting: Conservation or Growth', 'Trade pact with Scientist AI — expires this turn', 'Wilderness Trust: protect the coast — due next turn'])
-      && json(d.waiting) === json(lines) && d.moreWaiting === 1 && d.foldedCount === 0 && v99DigestWaitingLines(null) === V99_DIGEST_NO_LINES && v99DigestWaitingLines({ decision: null, upcoming: [] }) === V99_DIGEST_NO_LINES) || json({ lines, d });
+      && json(d.waiting) === json(lines) && d.moreWaiting === 0 && d.world[0] === 'Market Crash is active on you.' /* W4A (f3-05): a heads-up, nothing to answer */ && d.foldedCount === 0 && v99DigestWaitingLines(null) === V99_DIGEST_NO_LINES && v99DigestWaitingLines({ decision: null, upcoming: [] }) === V99_DIGEST_NO_LINES) || json({ lines, d });
   });
   check('v99td_18_own_cash_overnight', 'The player\'s own cash is reported when it moved since they ended their turn (interest, upkeep, income)', () => {
     const d = buildTurnDigest({ before: snap(), after: snap({ day: 4, cash: 950 }), notes: [], waiting: [] });
@@ -205249,6 +206986,40 @@ export function runV99TurnDigestSelfTests(): V9SelfTestResult[] {
     const ids = nodeTestIds(open);
     return (ids.includes('v99-turn-digest-quiet') && !ids.includes('v99-turn-digest-actor') && !ids.includes('v99-turn-digest-score') && nodeText(open).includes('2 routine notices folded in here')) || json(ids);
   });
+
+  // ---- Package W4B1 (leftover 4) ---------------------------------------------------------------------------------------
+  check('v99td_x01_amounts_with_and_without_separators', 'Every result sentence that states an amount is read the same whether the amount is written "$1144" (the rival-turn lines) or "$1,144" (the lines that go through fmtMoney) — up to millions', () => {
+    const kinds: Array<[(amount: string) => string, V99DigestOutcomeKind, 1 | -1]> = [
+      [a => `completed Visit Uluru and won $${a}!`, 'won', 1], [a => `completed Visit Uluru and won $${a}.`, 'won', 1], [a => `failed Surf at Gold Coast and lost $${a}`, 'lost', -1], [a => `failed Surf at Gold Coast and lost $${a}.`, 'lost', -1],
+      [a => `sold Research Funds for $${a}`, 'sold', 1], [a => `sold Research Funds for $${a}.`, 'sold', 1], [a => `used the Resource Market: 2x Gold for $${a}. Stocking up.`, 'bought', -1],
+      [a => `earned $${a} from investments`, 'other', 1], [a => `liquidated inventory for $${a} to stay afloat.`, 'sold', 1], [a => `received $${a} to catch up.`, 'other', 1],
+      [a => `grabbed an emergency $${a} loan.`, 'other', 1], [a => `took an emergency loan ($${a}).`, 'other', 1],
+      [a => `deposited $${a} in Queensland. (to take control)`, 'other', -1], [a => `deposited $${a} in New South Wales.`, 'other', -1], [a => `cashed out Queensland for $${a} (50% of $2,288).`, 'other', 1], [a => `paid $${a} for extra actions`, 'other', -1]
+    ];
+    const amounts: Array<[string, string, number]> = [['85', '85', 85], ['1144', '1,144', 1144], ['25000', '25,000', 25000], ['1234567', '1,234,567', 1234567]];
+    const wrong: string[] = [];
+    kinds.forEach(([sentence, kind, sign]) => amounts.forEach(([plain, grouped, value]) => {
+      const a = v99ParseDigestOutcome(sentence(plain)), b = v99ParseDigestOutcome(sentence(grouped));
+      if (!a || !b || a.kind !== kind || b.kind !== kind || a.amount !== sign * value || b.amount !== sign * value || a.text !== b.text || !a.text.includes(fmtMoney(value))) wrong.push(`${sentence(grouped)} → ${json(a)} / ${json(b)}`);
+    }));
+    const stake = v99ParseDigestOutcome('deposited $300 in Queensland. (to take control)'), out = v99ParseDigestOutcome('cashed out Western Australia for $1,150 (50% of $2,300).');
+    return (wrong.length === 0 && stake !== null && stake.text === 'staked $300 in Queensland' && out !== null && out.text === 'cashed out Western Australia for $1,150') || wrong.slice(0, 3).join(' | ') || json({ stake, out });
+  });
+  // ---- W4A (final review) ----------------------------------------------------------------------------------------------
+  check('v99td_z01_waiting_is_for_decisions', 'f3-05: a crisis event, a countdown and mercy-rule progress are heads-up lines, not "Waiting on you"; an open decision still is; a long line ends at a sentence', () => {
+    const mk = (id: string, message: string, type: string): V99DigestNote => ({ id, type, message, persistent: true });
+    const crisis = mk('a', 'Event: Energy Crisis in South Australia!', 'warning');
+    const countdown = mk('b', 'Three days to play, today included: the match ends when day 9 ends.', 'warning');
+    const mercy = mk('c', 'Mercy rule: your team have led Rose Team 5-to-1 on most money for 1 of 5 days. If it holds, the match ends as a win in 4 more days.', 'info');
+    const decision = mk('d', 'Decision: Open Tasmania for development? Waiting for your decision.', 'info');
+    const got = [crisis, countdown, mercy, decision].map(n => v99DigestNeedsAnswer(n));
+    const never = [crisis, countdown, mercy, decision].map(n => v99DigestNeverFolds(n));
+    const clipped = v99DigestClipAtSentence(v99DigestPlainText(mercy.message));
+    const short = v99DigestClipAtSentence('Short line.');
+    const run = v99DigestClipAtSentence('x'.repeat(200));
+    return (got.join() === 'false,false,false,true' && never.every(Boolean) && clipped === 'Mercy rule: your team have led Rose Team 5-to-1 on most money for 1 of 5 days.' && short === 'Short line.' && run.length === V99_DIGEST_LINE_MAX_CHARS && run.endsWith('…')
+      && !v99DigestNeedsAnswer(null)) || json({ got, never, clipped });
+  });
   return results;
 }
 
@@ -205302,6 +207073,9 @@ function AustraliaGame() {
   const v99LiveRulesRef = useRef<{ settings: GameSettingsState | null; preScenario: GameSettingsState | null }>({ settings: null, preScenario: null });
   const [v99PendingScenarioRestart, setV99PendingScenarioRestart] = useState<GameScenario | null>(null);
   const v99CleanedEpochRef = useRef(0);
+  // V9.9 (SECTION 20AT, W4B): the menu's own name and character while a loaded match is on, and the two fields as last rendered.
+  const v99IdentityBeforeLoadRef = useRef<IdentityBeforeLoad | null>(null);
+  const v99LiveIdentityRef = useRef<MenuIdentity>({ playerName: '', selectedCharacter: 0 });
   const v99CarriedCampaignRef = useRef<CarriedCampaign | null>(null);
   // V9.9 (SECTION 20AV): the autosave's "keep this position now" — installed by useV99MatchRecovery further down, declared
   // here so the leave-site warning can ask it. With the setting off it writes nothing and answers false.
@@ -205645,6 +207419,7 @@ function AustraliaGame() {
   const savedPreScenarioSettings = wp7Slice3.savedPreScenarioSettings; const setSavedPreScenarioSettings = wp7Slice3Set.savedPreScenarioSettings;
   const uiState = wp7Slice3.uiState; const setUiState = wp7Slice3Set.uiState;
   v99LiveRulesRef.current = { settings: gameSettings, preScenario: savedPreScenarioSettings }; // V9.9 (SECTION 20AT, W3S)
+  v99LiveIdentityRef.current = { playerName: String(uiState.playerName || ''), selectedCharacter: Number(uiState.selectedCharacter) || 0 }; // V9.9 (SECTION 20AT, W4B)
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -206256,11 +208031,13 @@ function AustraliaGame() {
   const v99NotificationDayCarryRef = useRef<{ carry: V99NotificationDayCarry; epoch: number } | null>(null);
   v99ClassicStickyToastsRef.current = gameSettings.classicStickyToasts === true;
   const v99PointerFocusRef = useRef<EventTarget | null>(null);
+  // V9.9 (SECTION 20AU, W4A — f1-01): the confirmation dialog focuses its answer, traps Tab and gives the focus back.
+  const v99ConfirmCardRef = useRef<HTMLDivElement | null>(null);
   // V9.9 (SECTION 20AU): another screen or another match starts at the top of the page (a match used to open ~1,700 px
   // down, where the menu had been scrolled to). Runs after every render but only compares two values.
   const v99ScrollKeyRef = useRef<V99ScrollKey | null>(null);
   useLayoutEffect(() => {
-    const next: V99ScrollKey = { mode: String(gameState.gameMode || ''), epoch: v95MatchEpochRef.current };
+    const next: V99ScrollKey = { mode: v99ScrollScreenKey(gameState.gameMode, uiState.showCampaignSelect === true) /* W4A (f1-09): the scenario / difficulty picker is a screen of its own */, epoch: v95MatchEpochRef.current };
     const prev = v99ScrollKeyRef.current;
     v99ScrollKeyRef.current = next;
     if (shouldResetScrollOnTransition(prev, next)) v99ScrollWindowToTop();
@@ -207777,7 +209554,9 @@ function dispatchGameSettingsChange(
   const v99DoItHandlersRef = useRef<V99HumanDoItHandlers | null>(null);
   /** V9.9 (SECTION 20AR): recommendations that could not be completed this turn (not offered again until the turn changes; never saved). */
   const [v99FailedDoIt, setV99FailedDoIt] = useState<V99FailedDoItMemory>(V99_NO_FAILED_DO_IT);
-  const coPilotRuntimeContext = useMemo(() => ({ ...createCoPilotRuntimeContext(player, gameState, gameSettings, takeoverSession, actorsById, aiPlayer, teamsById), humanRules: v99DoItHandlersRef }), [player, gameState, gameSettings, takeoverSession, actorsById, aiPlayer, teamsById]);
+  // V9.9 (SECTION 20AR, W4A — f3-01): the Tourist's free retry is part of what the advice sees (the offer behind the retry button).
+  const v99RetryOffer = useMemo(() => v99TouristRetryOffer(failedChallengeData, player), [failedChallengeData, player]);
+  const coPilotRuntimeContext = useMemo(() => ({ ...createCoPilotRuntimeContext(player, gameState, gameSettings, takeoverSession, actorsById, aiPlayer, teamsById), humanRules: v99DoItHandlersRef, touristRetry: v99RetryOffer }), [player, gameState, gameSettings, takeoverSession, actorsById, aiPlayer, teamsById, v99RetryOffer]);
   const isLiveIntentMatch = gameState?.gameMode === 'game' && !gameState?.gameOver;
   const intentCandidateCacheRef = useRef<{ fingerprint: string; candidates: any[] }>({ fingerprint: '', candidates: [] });
   const [intentRecCandidates, setIntentRecCandidates] = useState<any[]>([]);
@@ -207790,7 +209569,7 @@ function dispatchGameSettingsChange(
       return;
     }
     const actor = resolveIntentActor(gameState, player);
-    const fingerprint = buildIntentFingerprint(gameState, actor, gameState.playerTrackedObjective) + v99AdviceSettingsKey(gameSettings, actor); // V9.9 (SECTION 20AR): a system switched on or off, or a challenge just won, changes what is offered
+    const fingerprint = buildIntentFingerprint(gameState, actor, gameState.playerTrackedObjective) + v99AdviceSettingsKey(gameSettings, actor) + v99TouristRetryKey(v99RetryOffer); // W4A (f3-01): + the retry offer. V9.9 (SECTION 20AR): a system switched on or off, or a challenge just won, changes what is offered
     if (fingerprint === intentCandidateCacheRef.current.fingerprint) return;
     let candidates: any[] = [];
     try {
@@ -214257,7 +216036,7 @@ function dispatchGameSettingsChange(
     const reason = await runSoloAiTurnLoop({
       runtime: rt,
       // V9.9 (SECTION 20AS): paidSlot = this action was bought with an override (R2: it is never spent "thinking").
-      decide: (isRejected) => resolveSoloAiDecisionViaEngineRef.current(aiPlayerRef.current, gameStateLiveRef.current, playerRef.current, { isRejected: candidate => isRejected(candidate) || v99RetryGuard.blocks(candidate), paidSlot: rt.successfulActions >= rt.baseBudget }),
+      decide: (isRejected) => resolveSoloAiDecisionViaEngineRef.current(aiPlayerRef.current, gameStateLiveRef.current, playerRef.current, { isRejected: candidate => isRejected(candidate) || rivalRetryBlocks(v99RetryGuard, gameStateLiveRef.current, candidate) /* W4A (F4-01): matches started on V9.9 only */, paidSlot: rt.successfulActions >= rt.baseBudget }),
       execute: async (action) => {
         v96Flow('AI_ACTION_ATTEMPT', String(action?.type));
         let ok = false;
@@ -214270,7 +216049,7 @@ function dispatchGameSettingsChange(
       isStale: isSessionStale,
       ownsTurn: () => gameStateLiveRef.current.currentTurn === 'ai',
       isGameOver: () => gameStateLiveRef.current.gameMode !== 'game',
-      tryOverride: () => soloAiOverrideRef.current(candidate => soloAiIsRejected(rt, candidate) || v99RetryGuard.blocks(candidate)),
+      tryOverride: () => soloAiOverrideRef.current(candidate => soloAiIsRejected(rt, candidate) || rivalRetryBlocks(v99RetryGuard, gameStateLiveRef.current, candidate)),
       think: async () => {
         // V9.9 (SECTION 20AS): the draw is made at every pace (the rival's random sequence never depends on the pace); only the wait is paced.
         const thinkingTime = rivalThinkTimeMs(profile, aiRandom);
@@ -214990,6 +216769,9 @@ function dispatchGameSettingsChange(
 
   // V9.9 (SECTION 20AS): the last match serial this session used — keeps matches different when storage is blocked.
   const wpMfSessionSerialRef = useRef(0);
+  // V9.9 (SECTION 20AS, W4A — F4-04): the seed of the last match seen in this session (started, loaded or resumed); a new match never repeats it.
+  const wpMfLastSeenSeedRef = useRef<number | null>(null);
+  { const wpMfSeedNow = readMatchSeed(gameState); if (wpMfSeedNow !== null) wpMfLastSeenSeedRef.current = wpMfSeedNow; }
   // V9.9 (SECTION 20AS): the debrief's tab is kept here — the debrief is rendered by a function declared inside this
   // component, so state held in it was thrown away on every re-render ("View Full Stats" kept resetting itself).
   const [wpMfDebriefTab, setWpMfDebriefTab] = useState<'grid' | 'fullStats'>('grid');
@@ -215057,7 +216839,7 @@ function dispatchGameSettingsChange(
     // "Random" (the default) gives every match a new seed; "Deterministic" keeps the configured one; an explicit seed wins.
     const wpMfSettings: GameSettingsState = wpMfOverrides?.settings ?? gameSettings;
     setWpMfDebriefTab('grid');
-    const wpMfSeedPlan = planMatchSeed({ settings: wpMfSettings, explicitSeed: wpMfOverrides?.seed, fixed: wp8Start?.firstRun === true, storage: v99BrowserStorage(), sessionSerial: wpMfSessionSerialRef.current, persist: !isolatedReplayRuntime });
+    const wpMfSeedPlan = planMatchSeed({ settings: wpMfSettings, explicitSeed: wpMfOverrides?.seed, fixed: wp8Start?.firstRun === true, storage: v99BrowserStorage(), sessionSerial: wpMfSessionSerialRef.current, persist: !isolatedReplayRuntime, avoidSeed: wpMfLastSeenSeedRef.current });
     if (wpMfSeedPlan.serial !== null) wpMfSessionSerialRef.current = wpMfSeedPlan.serial;
     const wpMfMatchSeed = wpMfSeedPlan.seed;
     setRngMasterSeed(wpMfMatchSeed, true);
@@ -215391,6 +217173,8 @@ function dispatchGameSettingsChange(
     const scenarioSettings: GameSettingsState = {
       ...gameSettings,
       ...((scenario as FlexibleScenarioConfig).customSettings || {}), ...(scenario.forcedSettings || {}),
+      // V9.9 (SECTION 20AS, W4A — f3-02): a "survive N days" objective needs day N to be played (the player's own length comes back on leaving the scenario).
+      totalDays: scenarioTotalDays(scenario, (scenario.forcedSettings || {}).totalDays ?? ((scenario as FlexibleScenarioConfig).customSettings || {}).totalDays ?? gameSettings.totalDays),
       scenarioModeEnabled: true,
       selectedScenarioId: scenario.id,
       worldRngMode: 'deterministic',
@@ -215642,6 +217426,10 @@ function dispatchGameSettingsChange(
     const v99Before = v99RulesBeforeLoadRef.current;
     v99RulesBeforeLoadRef.current = null;
     if (v99Before) setGameSettings(prev => rulesAfterLoadedMatch(prev, v99Before));
+    // W4B: … and the player's own name and character (identityAfterLoadedMatch) — the file's stayed in the menu's fields.
+    const v99Identity = v99IdentityBeforeLoadRef.current;
+    v99IdentityBeforeLoadRef.current = null;
+    if (v99Identity) setUiState(prev => { const next = identityAfterLoadedMatch({ playerName: String(prev.playerName || ''), selectedCharacter: Number(prev.selectedCharacter) || 0 }, v99Identity); return next.playerName === prev.playerName && next.selectedCharacter === prev.selectedCharacter ? prev : { ...prev, playerName: next.playerName, selectedCharacter: next.selectedCharacter }; });
     dispatchGameState({ type: 'SET_GAME_MODE', payload: 'menu' });
   }, [handleRestartGame]); // eslint-disable-line react-hooks/exhaustive-deps
   // V9.9 (SECTION 20AT, W3S — finding q3-07): "Restart Scenario" resets first and starts once the reset has rendered,
@@ -215726,13 +217514,15 @@ function dispatchGameSettingsChange(
   // Finding b1-01 (in-place half): the browser asks before a reload or a closed tab throws away what was played
   // since the last save. Registered only while that is the case (a permanent handler would disable the page cache).
   useEffect(() => {
-    if (!v99UnsavedProgress || typeof window === 'undefined') return undefined;
+    // V9.9 (SECTION 20AT, W4A — f2-04): the question is a setting (warnBeforeUnloadEnabled, off by default = V9.8: no question).
+    const v99UnloadPlan = unloadGuardPlan(v99UnsavedProgress, gameSettings);
+    if (v99UnloadPlan === 'none' || typeof window === 'undefined') return undefined;
     // V9.9 (SECTION 20AV): with autosave on, this moment is stored first (on the player's turn, always); when the stored
     // copy then holds everything the player did there is nothing to warn about (otherwise the browser still asks).
-    const onBeforeUnload = (event: BeforeUnloadEvent) => { if (v99mrFlushRef.current('unload')) return; event.preventDefault(); event.returnValue = ''; };
+    const onBeforeUnload = (event: BeforeUnloadEvent) => { if (v99mrFlushRef.current('unload') || v99UnloadPlan !== 'flush_then_warn') return; event.preventDefault(); event.returnValue = ''; };
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
-  }, [v99UnsavedProgress]);
+  }, [v99UnsavedProgress, gameSettings.warnBeforeUnloadEnabled, gameSettings.matchRecoveryEnabled]);
   // A save that was asked for during the rival's turn is made once the turn is back with the player (or the match is
   // over) and the start-of-turn effects have settled. A match that was replaced in the meantime drops it.
   const v99HandleSaveGameRef = useRef(handleSaveGame);
@@ -215756,6 +217546,7 @@ function dispatchGameSettingsChange(
   }, [gameState.currentTurn, gameState.isAiThinking, gameState.gameMode, gameState.turnCounter, gameState.day]); // eslint-disable-line react-hooks/exhaustive-deps
   // A confirmation belongs to the screen that raised it (the menu's "Start a new campaign?" used to surface over the
   // next match). The mode in which the dialog opened is remembered; when the mode changes under it, it is closed.
+  useV99ConfirmDialogFocus(confirmationDialog.isOpen, confirmationDialog.type, v99ConfirmCardRef, v99PointerFocusRef, () => { if (!confirmationNeedsAnAnswer(confirmationDialog.type)) closeConfirmation(); }); // V9.9 (SECTION 20AU, W4A — f1-01)
   const v99ConfirmOpenedInModeRef = useRef<string | null>(null);
   useEffect(() => {
     v99ConfirmOpenedInModeRef.current = confirmationDialog.isOpen ? String(gameState.gameMode) : null;
@@ -216078,6 +217869,8 @@ function dispatchGameSettingsChange(
 	      playerName: data.player.name,
 	      selectedCharacter: selectedCharacterIndex >= 0 ? selectedCharacterIndex : uiState.selectedCharacter
 	    });
+	    // V9.9 (SECTION 20AT, W4B): what the menu showed before this load is remembered, so the main menu can hand it back.
+	    v99IdentityBeforeLoadRef.current = rememberIdentityBeforeLoad(v99IdentityBeforeLoadRef.current, v99LiveIdentityRef.current, { playerName: String(data.player.name || ''), selectedCharacter: selectedCharacterIndex >= 0 ? selectedCharacterIndex : v99LiveIdentityRef.current.selectedCharacter });
 	    // V9.9 (SECTION 20AT): the description names one save. Restoring it made "Manual Save Day 1" (or whatever the loaded
 	    // file was called) the label of every later save.
 	    setSaveDescription('');
@@ -216300,9 +218093,11 @@ function dispatchGameSettingsChange(
     v99LastGameModeRef.current = gameState.gameMode;
     if (previous !== gameState.gameMode && gameState.gameMode !== 'game' && uiState.showSettings) updateUiState({ showSettings: false });
   }, [gameState.gameMode]); // eslint-disable-line react-hooks/exhaustive-deps
-  useV99EscapeToClose(gameState.gameMode !== 'game' && Boolean(confirmationDialog.isOpen || uiState.showHelp || uiState.showSettings || uiState.showDependencyAutoFixModal), () => {
+  useV99EscapeToClose(gameState.gameMode !== 'game' && Boolean(confirmationDialog.isOpen || uiState.showHelp || uiState.showSettings || uiState.showDependencyAutoFixModal || uiState.showSaveLoadModal), () => {
     // Outside a match the confirmation dialog and the shortcuts help are mounted too: Escape closes the topmost one.
     if (confirmationDialog.isOpen) { closeConfirmation(); return; }
+    // V9.9 (SECTION 20AT, W4A — f1-10): Save / Load opened from the menu or the end screen closes on Escape as it does in a match.
+    if (uiState.showSaveLoadModal && !uiState.showHelp && !uiState.showDependencyAutoFixModal && !uiState.showSettings) { updateUiState({ showSaveLoadModal: false }); return; }
     updateUiState(uiState.showHelp ? { showHelp: false } : uiState.showDependencyAutoFixModal ? { showDependencyAutoFixModal: false } : { showSettings: false });
   });
   // The main menu has always said "Press ? for keyboard shortcuts"; now the key works there (and on the end screen).
@@ -216376,7 +218171,7 @@ function dispatchGameSettingsChange(
     enabled: gameSettings.matchRecoveryEnabled === true,
     gameState,
     player,
-    matchParts: [aiPlayer, actorsById, teamsById, humanAutomations],
+    matchParts: recoveryMatchParts({ aiPlayer, actorsById, teamsById, humanAutomations, gameSettings, dontAskAgain }), // W4B: the settings a save holds are watched too
     replayActive: Boolean(isolatedReplayRuntime),
     firstRunActive: Boolean(wp8State?.active),
     rematchPending: wpMfPendingRematch !== null,
@@ -218878,7 +220673,9 @@ function dispatchGameSettingsChange(
     const scenario = findActiveScenario(gameSettings.selectedScenarioId, gameState.customScenarioBuilder?.savedScenarios);
     if (!scenario?.id) return;
     wpMfScenarioRecordedEpochRef.current = epoch;
-    const written = recordScenarioCompletion(v99BrowserStorage(), String(scenario.id), Number(scenarioResult.completedOnDay) || Number(gameState.day) || 1);
+    // V9.9 (SECTION 20AW, W4A — f2-05): scenario ticks belong to the Match Journal — off = nothing is written.
+    const written = recordScenarioCompletionForJournal(v99BrowserStorage(), gameSettings, String(scenario.id), Number(scenarioResult.completedOnDay) || Number(gameState.day) || 1);
+    if (!written) return;
     setWpMfScenarioAck({ epoch, scenarioId: String(scenario.id), entry: written.entry, firstCompletion: written.firstCompletion, newBest: written.newBest });
   }, [gameState.gameMode, gameState.scenarioOutcome, isolatedReplayRuntime]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -218951,8 +220748,9 @@ function dispatchGameSettingsChange(
     initializeGameMode(wpMjPendingStart.mode, wpMjPendingStart.difficulty, undefined, { seed: wpMjPendingStart.seed });
   }, [wpMjPendingStart]); // eslint-disable-line react-hooks/exhaustive-deps
   const wpMjClear = useCallback(() => {
-    showConfirmation('clearAiMemory', 'Clear the Match Journal?', 'This removes every recorded result, personal best and daily result from this device. It cannot be undone. Your saves and settings are not affected.', 'Clear journal', () => {
+    showConfirmation('clearAiMemory', 'Clear the Match Journal?', 'This removes every recorded result, personal best, daily result and scenario tick from this device. It cannot be undone. Your saves and settings are not affected.', 'Clear journal', () => {
       const removed = clearMatchJournal(v99BrowserStorage());
+      setWpMjScenarioCount(0); // V9.9 (SECTION 20AW, W4A — f2-05): the scenario ticks go with the journal
       wpMjFiledRef.current = null;
       setWpMjFiled(null);
       setWpMjJournal(emptyMatchJournal());
@@ -224107,7 +225905,11 @@ function dispatchGameSettingsChange(
     },
     // W3F1: the loan buttons of Quick Actions themselves (defined further down; read when "Do It" is pressed).
     emergencyLoan: () => { if (v99PressQuickAction(getQuickActions, 'emergency_loan') !== 'pressed') addNotification('An emergency loan is not available right now. Nothing was borrowed.', 'warning'); },
-    repayLoan: () => { if (v99PressQuickAction(getQuickActions, 'repay_emergency_loan') !== 'pressed') addNotification('That loan cannot be repaid right now. Nothing was spent.', 'warning'); }
+    repayLoan: () => { if (v99PressQuickAction(getQuickActions, 'repay_emergency_loan') !== 'pressed') addNotification('That loan cannot be repaid right now. Nothing was spent.', 'warning'); },
+    // W4B: the Region Control panel's own deposit (the same minimum, action cost, notices, control history and ledger).
+    stakeRegion: (region, amount) => { if (region === player.currentRegion) depositInRegion(region, 'player', amount, { consumeAction: true }); else addNotification('A stake can only be made in the region you are in. Nothing was spent.', 'warning'); },
+    // W4A (f3-01): the retry button's own handler (defined further down; read when "Do It" is pressed).
+    touristRetry: () => retryFailedChallenge()
   };
 
   // Crafting System Functions
@@ -224305,6 +226107,7 @@ function dispatchGameSettingsChange(
       setActiveSpecialAbility(null);
       setFailedChallengeData(null);
       setUsedFreeChallengeThisTurn(false);
+      setUiState(prev => (prev.intentTeaching ? { ...prev, intentTeaching: null } : prev)); // V9.9 (SECTION 20AR, W4A — f3-04): the card about this turn's last move ends with the turn
       dispatchPlayer({ type: 'MERGE_STATE', payload: { debuffs: tickDebuffs(player.debuffs || []) } });
       
       // Reset Co-Pilot deduplication set and compact panel dismissal for new turn
@@ -233794,7 +235597,10 @@ function dispatchGameSettingsChange(
           }
         }
 
-        const approvalAutoResolution = resolveAutomaticApprovalRules(actor, decision, getEffectiveGameSettingsForTeam(actor.teamId), gameState.day, {
+        // V9.9 (SECTION 20AS, W4B): the player approves — and the player's automatic rules judge — only the AI on the
+        // player's own team. The rival team's AI used to wait for the human's approval too.
+        const v99PlayerApproves = approvalIsAskedOfThePlayer(isTeamMode, actor.teamId);
+        const approvalAutoResolution = !v99PlayerApproves ? { outcome: 'none' as const, reason: 'Not an AI on the player\'s team.' } : resolveAutomaticApprovalRules(actor, decision, getEffectiveGameSettingsForTeam(actor.teamId), gameState.day, {
           wager: decision.data?.wager,
           cost: decision.type === 'buy_market' ? decision.data?.purchases?.[0]?.cost : undefined
         });
@@ -233808,7 +235614,7 @@ function dispatchGameSettingsChange(
           if (decisionAttemptCount >= MAX_DECISION_ATTEMPTS) break;
           continue;
         }
-        if (approvalAutoResolution.outcome === 'none' && alwaysRejectSimilarRef.current[actor.id]?.has(decision.type as TeamModeActionCategory)) {
+        if (v99PlayerApproves && approvalAutoResolution.outcome === 'none' && alwaysRejectSimilarRef.current[actor.id]?.has(decision.type as TeamModeActionCategory)) {
           lastFailureStage = 'approval';
           rejectedDecisionSignatures.add(getDecisionSignature(decision));
           decisionAttemptCount += 1;
@@ -233823,7 +235629,7 @@ function dispatchGameSettingsChange(
           teammateOverrides: gameSettings.aiActionApprovalTeammateOverrides
         };
         const isSequenceSourcedDecision = Boolean(sequenceStepMatch && decision === sequenceStepMatch.decision);
-        const needsPlayerApproval = approvalAutoResolution.outcome === 'none'
+        const needsPlayerApproval = v99PlayerApproves && approvalAutoResolution.outcome === 'none'
           && needsApproval(actor, decision, approvalPolicy, gameSettings, { wager: decision.data?.wager, cost: decision.type === 'buy_market' ? decision.data?.purchases?.[0]?.cost : undefined, isSequenceSourced: isSequenceSourcedDecision })
           && !alwaysApproveSimilarRef.current[actor.id]?.has(decision.type as TeamModeActionCategory);
         if (needsPlayerApproval) {
@@ -239239,10 +241045,13 @@ function dispatchGameSettingsChange(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sc11Hash, sc11Enabled, gameState.gameMode]);
   const sc11SetDeliveryApproach = useCallback((programId: string, approach: NationalDeliveryApproach) => {
+    // V9.9 (SECTION 20AV, W4B): like the strategic-decision card, this choice is made on the player's turn. Made while a
+    // rival moved it changed the match out of turn and was missing from the autosave until the turn came back.
+    if (matchChoiceWaitsForTurn(gameState.gameMode, gameState.selectedMode, isHumanPlayerTurn(gameState, player))) { addNotification('A delivery approach can be chosen on your turn.', 'info'); return; }
     const next = setProgramDeliveryApproach(sc11PersistedRef.current, programId, approach, lrInputs.turn);
     sc11PersistedRef.current = next;
     dispatchGameState({ type: 'LOAD_STATE', payload: { stateCapacity: next } as any });
-  }, [lrInputs.turn]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lrInputs.turn, gameState, player]); // eslint-disable-line react-hooks/exhaustive-deps
   const sc11View = useMemo<StateCapacityWorldView | null>(() => {
     if (!sc11State || !sc11Inputs) return null;
     return { state: sc11State, persisted: sc11Persisted, inputs: sc11Inputs };
@@ -239463,7 +241272,7 @@ function dispatchGameSettingsChange(
       } : { requests: [], commitments: [], dilemma: null, regionNotes: {} },
       contracts: (lrInputs.contracts || []).filter(c => c.assignedActorId === pid && c.status !== 'completed' && c.status !== 'failed').map(c => ({ id: c.id, title: c.title, regionId: c.regionId, turnsLeft: null, reward: c.rewardMoney, active: true })).slice(0, 4),
       crises: (lrInputs.crises || []).filter(c => c.status === 'active').map(c => ({ id: c.id, name: c.name, regions: c.affectedRegions, stage: c.stageIndex })),
-      team: isTeamMode && tc ? { mission: tc.mission.label, you: (() => { const a = tc.assignments.find(x => x.actorId === 'player' || x.actorId === pid); const r = tc.roles.find(x => x.actorId === 'player' || x.actorId === pid); return a ? `${a.focus}${a.regionId ? ` · ${a.regionId}` : ''}` : r ? r.responsibility || String(r.primaryRole) : null; })(), mates: (tc.assignments.some(x => x.actorId !== 'player' && x.actorId !== pid) ? tc.assignments.filter(x => x.actorId !== 'player' && x.actorId !== pid).map(x => ({ name: getActorDisplayName(x.actorId), focus: `${x.focus}${x.regionId ? ` · ${x.regionId}` : ''}` })) : tc.roles.filter(x => x.actorId !== 'player' && x.actorId !== pid).map(x => ({ name: getActorDisplayName(x.actorId), focus: x.responsibility || String(x.primaryRole) }))), issue: ['blocked', 'needs_decision', 'recovering'].includes(String(teamOsView?.evaluation.health.health)) ? teamOsView!.evaluation.health.reason : null } : null,
+      team: isTeamMode && tc ? { youName: getActorDisplayName('player') /* V9.9 (SECTION 20AR, W4B) */, mission: tc.mission.label, you: (() => { const a = tc.assignments.find(x => x.actorId === 'player' || x.actorId === pid); const r = tc.roles.find(x => x.actorId === 'player' || x.actorId === pid); return a ? `${a.focus}${a.regionId ? ` · ${a.regionId}` : ''}` : r ? r.responsibility || String(r.primaryRole) : null; })(), mates: (tc.assignments.some(x => x.actorId !== 'player' && x.actorId !== pid) ? tc.assignments.filter(x => x.actorId !== 'player' && x.actorId !== pid).map(x => ({ name: getActorDisplayName(x.actorId), focus: `${x.focus}${x.regionId ? ` · ${x.regionId}` : ''}` })) : tc.roles.filter(x => x.actorId !== 'player' && x.actorId !== pid).map(x => ({ name: getActorDisplayName(x.actorId), focus: x.responsibility || String(x.primaryRole) }))), issue: ['blocked', 'needs_decision', 'recovering'].includes(String(teamOsView?.evaluation.health.health)) ? teamOsView!.evaluation.health.reason : null } : null,
       regions, focusRegion: lrFocusRegion || (player?.currentRegion ? String(player.currentRegion) : null),
       pendingApprovals: uiState.activeCoPilotProposal && !uiState.showCoPilotProposalModal ? 1 : 0,
       lastBriefTurn: v9BriefSeenTurn
@@ -239856,7 +241665,7 @@ function dispatchGameSettingsChange(
   const wp8SimpleSettingChange = useCallback((key: string, value: boolean | string | number) => {
     if (key === 'experienceMode') { if (value === 'explorer' || value === 'nation' || value === 'full') requestExperienceModeChange(value); return; }
     if (key === 'guidedFirstRunEnabled') { wp8SetGuidedFirstRun(value === true); return; }
-    if (!SIMPLE_SETTINGS_KEYS.includes(key) && !isSimpleCompanionSettingKey(key)) return; // V9.9 (SECTION 20AS): + the rival's actions per day
+    if (!SIMPLE_SETTINGS_KEYS.includes(key) && !isSimpleCompanionSettingKey(key) && !isV99SettingKeyName(key)) return; // V9.9 (SECTION 20AS): + the rival's actions per day; W4A (f1-03): + the "New in V9.9" card
     trackedSetGameSettings('direct_player_change', '⚙️ Simple settings', prev => ({ ...prev, ...({ [key]: value } as unknown as Partial<GameSettingsState>) }));
   }, [requestExperienceModeChange, trackedSetGameSettings, wp8SetGuidedFirstRun]);
   const glCtx = useMemo<LearningContext>(() => {
@@ -239980,9 +241789,15 @@ function dispatchGameSettingsChange(
     loans: (player?.loans || []).length, strategy: Boolean(v9CohesionInputs.strategy), copilot: playerControlState.copilotHoldsControl, lostRegions: []
   }), [dnRound, isPlayerTurnForCoPilot, player, gameState, glPlayerKey, playerControlledRegions, v9CohesionInputs.strategy, playerControlState.copilotHoldsControl]);
   const glPrevSnapRef = useRef<LearningSnapshot | null>(null);
+  const v99GlPrevKeyRef = useRef<string | null>(null); // V9.9 (SECTION 20AT, W4B): the match the previous snapshot was taken in
   useEffect(() => {
     const prev = glPrevSnapRef.current; glPrevSnapRef.current = glSnapshot;
-    if (!isLiveIntentMatch) return;
+    // V9.9 (SECTION 20AT, W4B): the first snapshot of a match (a start, a load, a resume) is where the match begins, not
+    // something the player did — "You arrived in New South Wales" used to greet a match that began elsewhere.
+    const v99GlKey = learningSnapshotKey(isLiveIntentMatch, v95MatchEpochRef.current);
+    const v99GlSameMatch = learningSnapshotsComparable(v99GlPrevKeyRef.current, v99GlKey);
+    v99GlPrevKeyRef.current = v99GlKey;
+    if (!isLiveIntentMatch || !v99GlSameMatch) return;
     const uses = deriveLearningUses(prev, glSnapshot);
     if (!uses.length) return;
     glDispatch(uses.map(u => ({ kind: 'used' as const, conceptId: u.conceptId, turn: glTurn, detail: u.detail })));
@@ -243908,6 +245723,19 @@ function dispatchGameSettingsChange(
                 </div>
               </SettingsSection>
 
+              {/* V9.9 (SECTION 20AQ): the new features (off by default), the rival turn pace and the two "classic" presentation switches. W4A (f1-03): first on the Gameplay tab. */}
+              <SettingsSection id="gameplay.v99" tab="gameplay" title="✨ New in V9.9" chips={['Off by default']} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.v99')!.fieldKeys}>
+                <V99SettingsHubBody
+                  settings={gameSettings}
+                  onToggle={key => trackedSetGameSettings("direct_player_change", "✨ New in V9.9", prev => ({ ...prev, [key]: prev[key] !== true }))}
+                  onPaceChange={pace => trackedSetGameSettings("direct_player_change", "✨ New in V9.9", prev => ({ ...prev, rivalTurnPace: pace }))}
+                  onClassName={`${themeStyles.success} text-white`}
+                  offClassName={themeStyles.buttonSecondary}
+                  selectClassName={themeStyles.select}
+                />
+                {/* V9.9 (SECTION 20AU): "Don't ask me again" can be taken back (a button, not a setting). */}
+                <V99AskAgainRow prefs={dontAskAgain} onReset={() => { setDontAskAgain({ ...DEFAULT_DONT_ASK }); addNotification('Confirmation questions are back on.', 'success', true, 'system'); }} buttonClassName={themeStyles.buttonSecondary} disabledClassName={themeStyles.buttonDisabled} />
+              </SettingsSection>
               <SettingsSection id="gameplay.core" tab="gameplay" title="🎮 Core Gameplay" onReset={settingsResetHandlers.gameplay.fn} resetLabel={settingsResetHandlers.gameplay.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.core')!.fieldKeys}>
                 <div className="space-y-4">
                   <div>
@@ -244676,19 +246504,6 @@ function dispatchGameSettingsChange(
                     {gameSettings.rivalryCampaignEnabled ? 'ON' : 'OFF'}
                   </button>
                 </div>
-              </SettingsSection>
-              {/* V9.9 (SECTION 20AQ): three new features (off by default), the rival turn pace and the two "classic" presentation switches. */}
-              <SettingsSection id="gameplay.v99" tab="gameplay" title="✨ New in V9.9" chips={['Off by default']} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.v99')!.fieldKeys}>
-                <V99SettingsHubBody
-                  settings={gameSettings}
-                  onToggle={key => trackedSetGameSettings("direct_player_change", "✨ New in V9.9", prev => ({ ...prev, [key]: prev[key] !== true }))}
-                  onPaceChange={pace => trackedSetGameSettings("direct_player_change", "✨ New in V9.9", prev => ({ ...prev, rivalTurnPace: pace }))}
-                  onClassName={`${themeStyles.success} text-white`}
-                  offClassName={themeStyles.buttonSecondary}
-                  selectClassName={themeStyles.select}
-                />
-                {/* V9.9 (SECTION 20AU): "Don't ask me again" can be taken back (a button, not a setting). */}
-                <V99AskAgainRow prefs={dontAskAgain} onReset={() => { setDontAskAgain({ ...DEFAULT_DONT_ASK }); addNotification('Confirmation questions are back on.', 'success', true, 'system'); }} buttonClassName={themeStyles.buttonSecondary} disabledClassName={themeStyles.buttonDisabled} />
               </SettingsSection>
               <SettingsSection id="ai.settings" tab="aiTeams" title="AI Difficulty" onReset={settingsResetHandlers.ai.fn} resetLabel={settingsResetHandlers.ai.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'ai.settings')!.fieldKeys}>
                 <div className="space-y-4">
@@ -252159,7 +253974,7 @@ function dispatchGameSettingsChange(
               )}
 
               {/* V9.9 (SECTION 20AV): one line about autosave — off: "turn it on"; on: where the copy stands. */}
-              <V99AutosaveLine view={describeAutosaveLine(v99mr.status, gameState.gameMode === 'game', Date.now())} onEnable={() => trackedSetGameSettings("direct_player_change", "✨ New in V9.9", prev => ({ ...prev, matchRecoveryEnabled: true }))} />
+              {autosaveLineShown(v99mr.status) /* W4A (f2-02): nothing while the feature is off */ && <V99AutosaveLine view={describeAutosaveLine(v99mr.status, gameState.gameMode === 'game', Date.now())} onEnable={() => trackedSetGameSettings("direct_player_change", "✨ New in V9.9", prev => ({ ...prev, matchRecoveryEnabled: true }))} />}
 
               {/* Quick Tip */}
               <div className={`text-xs opacity-75 text-center pt-2 border-t ${themeStyles.border}`}>
@@ -253201,10 +255016,12 @@ function dispatchGameSettingsChange(
 
     // V9.9 (SECTION 20AU): in PLAY the top-* positions start below the match header row, so toasts never sit on End Turn.
     // D2: with the turn row under the header the lane starts one step lower; below 640 px it sits above the bottom edge.
-    const v99LaneClass = v99ToastLaneClass(settings.position, experienceLayer === 'play' && isLiveIntentMatch, isBlockingModalOpen, classicSticky, gameSettings.classicPlayScreenLayout === true);
+    // W4B: with the Replay Studio open the lane takes the place it has over any other window (a toast sat on the studio's Close button).
+    const v99LaneWindowOpen = v99ToastLaneWindowOpen(isBlockingModalOpen, showReplayViewer);
+    const v99LaneClass = v99ToastLaneClass(settings.position, experienceLayer === 'play' && isLiveIntentMatch, v99LaneWindowOpen, classicSticky, gameSettings.classicPlayScreenLayout === true);
     const v99PhoneLane = Boolean(v99LaneClass) && gameSettings.classicPlayScreenLayout !== true;   // one toast at a time below 640 px
     const v99PhoneHeld = v99PhoneLane ? v99ToastPhoneOverflow(visibleNotifications.length, classicSticky) : 0;
-    let positionClass = v99LaneClass ? v99LaneClass : isBlockingModalOpen
+    let positionClass = v99LaneClass ? v99LaneClass : v99LaneWindowOpen
       ? 'bottom-8 right-8 flex-col items-end z-[1000]'
       : ({
           'top-left': 'top-16 left-4 z-[600]',
@@ -253391,8 +255208,8 @@ function dispatchGameSettingsChange(
               <div className="font-bold mb-2">Player Snapshot</div>
               <p>Character: {data?.player?.character?.name || "Player"}</p>
               <p>Level: {data.player.level}</p>
-              <p>Money: ${data.player.money.toLocaleString('en-AU')}</p>
-              <p>Net Worth: ${netWorth.toLocaleString('en-AU')}</p>
+              <p>Money: {fmtMoney(Number(data.player.money))}</p>{/* V9.9 (SECTION 20AT, W4A — F4-06): a negative amount reads "-$5,000" (it read "$-5,000") */}
+              <p>Net Worth: {fmtMoney(Number(netWorth))}</p>
             </div>
 
             <div className={`${themeStyles.border} border rounded-lg p-4`}>
@@ -253409,7 +255226,7 @@ function dispatchGameSettingsChange(
               {(isAiMode || isTeamSave) && (
                 <p>AI Difficulty: {difficultyLabel}</p>
               )}
-              <p>Challenges Won: {Object.keys(data.player.challengeMastery || {}).length || data.player.challengesCompleted.length}</p>
+              <p>{savePreviewChallengeLine(data) /* V9.9 (SECTION 20AS, W4B): wins, with the different challenges in brackets — as on the end screen */}</p>
               <p>Regions Visited: {data.player.visitedRegions.length}/8</p>
             </div>
             </div>
@@ -253501,25 +255318,27 @@ function dispatchGameSettingsChange(
         : restrictionLabel || activeActor?.aiPlan?.summary || currentAiAction?.description || 'Planning next move')
       : (isTeamMode ? `${activeActor?.displayName || activeActor?.name}'s turn` : 'Awaiting your action');
     const v99Pill = v99TurnPillClasses(v99Docked, gameSettings.classicPlayScreenLayout === true, isPlayerTurn);   // V9.9 (SECTION 20AU)
+    // V9.9 (SECTION 20AU, W4A — F4-05): while the Co-Pilot plays the player's turn the default layout's pill says so.
+    const v99CoPilotPill = isTeamMode ? null : v99CoPilotPillText(Boolean(playerControlState.copilotHoldsControl), gameSettings.classicPlayScreenLayout === true, isPlayerTurn);
     
     return (
       <div className={v99Pill.wrapper} style={v99Docked ? undefined : { marginTop: 'env(safe-area-inset-top, 0px)' }} data-testid="v96-turn-indicator" data-v99-placement={v99Docked ? 'docked' : v99OverBoard ? 'over-board' : 'floating'} aria-hidden={v99OverBoard ? true : undefined}>
         {!isSoloRival && !v99OverBoard && <GuardianInlineWarning actionType="end_turn" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'end_turn', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} compact className={v99Pill.guardian} />}
-        <div role="status" aria-live="polite" data-testid="v96-turn-pill" data-turn-owner={isPlayerTurn ? 'human' : 'ai'} data-ai-phase={isAiTurn ? soloAiPhase : 'idle'} className={`${isPlayerTurn ? themeStyles.success : themeStyles.ai} ${themeStyles.shadow} ${v99Pill.pill} ${isSoloRival ? 'v96-turn-owner-pulse' : 'animate-pulse'}`}>
+        <div role="status" aria-live="polite" data-testid="v96-turn-pill" data-turn-owner={isPlayerTurn ? 'human' : 'ai'} data-ai-phase={isAiTurn ? soloAiPhase : 'idle'} className={`${isPlayerTurn ? v99YourTurnPillTone(themeStyles.success, v99Docked, resolveIsDarkSurface(uiState.theme, systemPrefersDark)) /* W4A (f1-04) */ : themeStyles.ai} ${themeStyles.shadow} ${v99Pill.pill} ${isSoloRival ? 'v96-turn-owner-pulse' : 'animate-pulse'}`}>
           <span className={v99Pill.icon}>{isPlayerTurn ? '👤' : '🤖'}</span>
           <div className={v99Pill.text || undefined}>
             <div className="font-bold text-white">
               {isPlayerTurn
-                ? (isTeamMode ? `${activeActor?.displayName || activeActor?.name} • ${activeTeam?.name || 'Your Team'}` : 'YOUR TURN')
+                ? (isTeamMode ? `${activeActor?.displayName || activeActor?.name} • ${activeTeam?.name || 'Your Team'}` : v99CoPilotPill ? v99CoPilotPill.title : 'YOUR TURN')
                 : (isTeamMode ? `${activeActor?.displayName || activeActor?.name} • ${activeTeam?.name || 'AI Team'}` : "AI'S TURN")}
             </div>
             <div className={v99Pill.status} data-testid="v96-turn-status">
-              {turnSummary}
+              {v99CoPilotPill ? v99CoPilotPill.status : turnSummary}
             </div>
           </div>
         </div>
         {/* V9.9 (SECTION 20AS): "Rival speed: Normal / Fast / Instant" — while the rival plays, and on the player's turn once another pace than Normal is chosen. */}
-        {rivalPaceControlShown({ soloRival: isSoloRival, isPlayerTurn, overBoard: v99OverBoard, pace: v99RivalPace }) && v99PaceControl(isPlayerTurn)}
+        {rivalPaceControlShown({ soloRival: isSoloRival, isPlayerTurn, overBoard: v99OverBoard, pace: v99RivalPace, classicLayout: gameSettings.classicPlayScreenLayout === true }) && v99PaceControl(isPlayerTurn)}
         {isSoloRival && isPlayerTurn && <GuardianInlineWarning actionType="end_turn" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'end_turn', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} compact className={v99Pill.guardian} />}
       </div>
     );
@@ -253637,7 +255456,7 @@ function dispatchGameSettingsChange(
                 </div>
                 <div>
                   <div className="opacity-75">Challenges Won</div>
-                  <div className="font-bold">{Object.keys(aiPlayer?.challengeMastery || {}).length || (aiPlayer?.challengesCompleted?.length ?? 0)}</div>
+                  <div className="font-bold">{challengeStatRow(challengeStatFigures(gameState, aiPlayer, [String(aiPlayer?.id || 'ai')]), null, '').value /* V9.9 (SECTION 20AS, W4B): the rival's wins, not its different challenges */}</div>
                 </div>
                 <div>
                   <div className="opacity-75">Regions Visited</div>
@@ -254628,7 +256447,7 @@ function dispatchGameSettingsChange(
               placeholder="Enter your adventurer name..."
               value={uiState.playerName}
               onChange={(e) => updateUiState({ playerName: e.target.value })}
-              className={`${themeStyles.input} rounded-xl px-4 py-3 w-full text-center font-medium`}
+              className={`${themeStyles.input} ${isDark ? '' : 'border'} rounded-xl px-4 py-3 w-full text-center font-medium`} /* V9.9 (SECTION 20AU, W4A — f1-04): on Light the white field had no outline on its white card */
             />
           </div>
 
@@ -254910,7 +256729,7 @@ function dispatchGameSettingsChange(
     const pendingMode = uiState.pendingMode || 'ai';
 
     if (pendingMode === 'scenario') {
-      const v99ScenarioRecords = readScenarioRecords(v99BrowserStorage()).scenarios; // V9.9 (SECTION 20AT, W3S): completion ticks
+      const v99ScenarioRecords = scenarioRecordsForJournal(v99BrowserStorage(), gameSettings); // V9.9 (SECTION 20AT, W3S): completion ticks — W4A (f2-05): only with the Match Journal on
       return (
         <div className={`min-h-screen ${themeStyles.menuBackground} ${themeStyles.text} flex items-start justify-center p-6 py-10 relative overflow-x-hidden overflow-y-auto`}>
           <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -255609,6 +257428,7 @@ function dispatchGameSettingsChange(
             title={reason || descriptor.title || v99IconButtonLabel(descriptor.id, descriptor.label)}
             aria-label={v99IconButtonLabel(descriptor.id, descriptor.label)}
             className={descriptor.className || actionButtonClass}
+            data-action-id={descriptor.id /* V9.9 (SECTION 20AU, W4B): V99EndTurnInView looks for the bar's End Turn */}
           >
             <span>{descriptor.icon}</span>
             {descriptor.label && <span>{descriptor.label}</span>}
@@ -255922,8 +257742,7 @@ function dispatchGameSettingsChange(
 
           {uiState.intentTeaching && (
             <div className={`${themeStyles.border} border rounded-lg px-3 py-2 text-sm`}>
-              <div className="font-semibold">What happened</div>
-              <div>{uiState.intentTeaching.whatHappened}</div>
+              <V99TeachingLines teaching={uiState.intentTeaching} notes={notifications} day={Number(gameState.day) || 1} />{/* V9.9 (SECTION 20AR, W4A — f1-12): the result first */}
               <div className="mt-1 text-xs opacity-80">Why: {uiState.intentTeaching.why}</div>
               <div className="flex gap-2 mt-2">
                 <button type="button" className="text-xs underline" onClick={() => updateUiState({ intentTeaching: null })}>Got it</button>
@@ -256271,7 +258090,7 @@ function dispatchGameSettingsChange(
             /* V9.9 (SECTION 20AR, W3F1): default layout — "YOUR TURN" is on the docked pill below, "YOU'RE PLAYING" on the control strip above; each is drawn once. */
             quietTurnLabel={v99HeaderDeclutter({ classicLayout: v99ClassicLayout, pillDocked: v99PillSaysYourTurn(v99TurnPill, isCompetitiveMode, isTeamMode), header: v9Cohesion.header }).turnLabel}
             quietControl={v99HeaderDeclutter({ classicLayout: v99ClassicLayout, pillDocked: v99PillSaysYourTurn(v99TurnPill, isCompetitiveMode, isTeamMode), header: v9Cohesion.header }).controlChip}
-            endTurnHint={v99ClassicLayout || v99DockedBar ? null : 'Space'}
+            endTurnHint={v99ClassicLayout ? null : 'Space'} /* W4A (f1-13): while the header's End Turn is on screen it is the one End Turn at the top, so it carries the key */
           />
           {/* V9.9 (SECTION 20AU): the turn row — the turn pill and the Quick Actions, docked (nothing floats over the header or the advice). */}
           {!v99ClassicLayout && (
@@ -256296,7 +258115,7 @@ function dispatchGameSettingsChange(
           )}
           {/* V9.9 (SECTION 20AX): "Since your last turn" — one card for what happened while the player waited (Turn Digest; off = not drawn). */}
           {v99td.digest && <OptionalSurfaceBoundary surface="Turn digest"><V99TurnDigestCard digest={v99td.digest} theme={themeStyles} collapsed={v99td.collapsed} historyCount={v99DigestHistoryCount(v99td.digest, notifications)} onToggle={v99td.onToggle} onDismiss={v99td.onDismiss} onShowAll={() => updateUiState({ showNotifications: true })} laneSide={v99DigestLaneSide(gameSettings.notificationSettings?.position, v99ClassicLayout, gameSettings.classicStickyToasts === true)} /></OptionalSurfaceBoundary>}
-          {wp8State?.active && <OptionalSurfaceBoundary surface="Guided first run"><FirstRunPanel view={buildFirstRunView(wp8State, wp8Signals, v99FirstRunAvailability(gameSettings))} onSkip={wp7Kit.fn('firstRunSkip', () => wp8Finish('skipped'))} theme={themeStyles} /></OptionalSurfaceBoundary>}
+          {wp8State?.active && <V99ToastLaneBelow active={!v99ClassicLayout}>{/* V9.9 (SECTION 20AU, W4A — f1-06): no toast over the goal counters or "Skip tutorial" */}<OptionalSurfaceBoundary surface="Guided first run"><FirstRunPanel view={buildFirstRunView(wp8State, wp8Signals, v99FirstRunAvailability(gameSettings))} onSkip={wp7Kit.fn('firstRunSkip', () => wp8Finish('skipped'))} theme={themeStyles} /></OptionalSurfaceBoundary></V99ToastLaneBelow>}
           {wp6HudView && <OptionalSurfaceBoundary surface="Match shape"><MatchShapeHud view={wp6HudView} theme={themeStyles} /></OptionalSurfaceBoundary>}
 
           <FeedbackStrip theme={themeStyles} major={v94Visible.major} minor={v94Visible.minor} onDismiss={dismissV94} onWhy={wp7Kit.fn('feedbackWhy', (e: UiFeedbackEvent) => void submitIntelligenceQuery(e.kind === 'region_control_changed' ? `Why did control of ${REGIONS[e.subject]?.name || e.subject} change?` : e.kind === 'crisis_resolved' ? 'What changed after the crisis?' : 'What should I focus on next?'))} />
@@ -256328,8 +258147,7 @@ function dispatchGameSettingsChange(
 
           {uiState.intentTeaching && (
             <div className={`${themeStyles.card} ${themeStyles.border} border rounded-lg px-3 py-2 text-sm`}>
-              <div className="font-semibold">What happened</div>
-              <div>{uiState.intentTeaching.whatHappened}</div>
+              <V99TeachingLines teaching={uiState.intentTeaching} notes={notifications} day={Number(gameState.day) || 1} />{/* V9.9 (SECTION 20AR, W4A — f1-12): the result first */}
               <div className="mt-1 text-xs opacity-80">Why: {uiState.intentTeaching.why}</div>
               <button type="button" className="text-xs underline mt-1" onClick={() => updateUiState({ intentTeaching: null })}>Got it</button>
             </div>
@@ -256893,6 +258711,9 @@ function dispatchGameSettingsChange(
             (Replaces the separate CoPilotLiveTurnIndicator banner; same Take Control / Resume / Start paths.) */}
         {renderV9Header()}
         {experienceLayer === 'play' && renderV9PlayHud()}
+        {/* V9.9 (SECTION 20AU, W4B): End Turn stays in reach — a small chip in the corner while no End Turn button is on screen (the classic layout keeps its floating bar).
+            Mounted here, beside the play panel and not inside it: the panel's fade animation makes it a stacking context, and page content painted over a chip inside it. */}
+        {experienceLayer === 'play' && <V99EndTurnInView classicLayout={v99ClassicLayout} canEndTurn={Boolean(v9HumanCanAct)} theme={themeStyles} label={v99EndTurnChipLabel(v9Cohesion.header.finalDay === true, Boolean(v9HumanCanAct && feelSnapshot?.ap === 0))} status={v9Cohesion.header.apLabel || null} emphasised={Boolean(v9HumanCanAct && feelSnapshot?.ap === 0)} onEndTurn={v9EndTurn} />}
         {experienceLayer === 'intelligence' && renderV9Intelligence()}
         {experienceLayer === 'lab' && renderV9Lab()}
 
@@ -257044,12 +258865,12 @@ function dispatchGameSettingsChange(
 	              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm w-full md:w-auto">
 	                <div className={`${themeStyles.border} border rounded px-3 py-2`}>
 	                  <div className="opacity-75">{playerPrimaryMetricLabel}</div>
-	                  <div className="font-bold text-blue-400">{formatWinMetricValue(gameSettings.winCondition, playerPrimaryMetricValue)}</div>
+	                  <div className={`font-bold ${v99ThemeAccent(themeStyles, 'infoText', 'text-blue-400')}`}>{formatWinMetricValue(gameSettings.winCondition, playerPrimaryMetricValue)}</div>
 	                  <div className="text-xs opacity-75">Cash ${((playerTeamScore?.money) || 0).toLocaleString('en-AU')} • Net Worth ${((playerTeamScore?.netWorth) || 0).toLocaleString('en-AU')} • {playerControlledRegions} regions</div>
 	                </div>
 	                <div className={`${themeStyles.border} border rounded px-3 py-2`}>
 	                  <div className="opacity-75">{opponentPrimaryMetricLabel}</div>
-	                  <div className="font-bold text-pink-400">{formatWinMetricValue(gameSettings.winCondition, opponentPrimaryMetricValue)}</div>
+	                  <div className={`font-bold ${v99RivalFigureClass(themeStyles)}`}>{formatWinMetricValue(gameSettings.winCondition, opponentPrimaryMetricValue)}</div>
 	                  <div className="text-xs opacity-75">Cash ${((opponentTeamScore?.money) || 0).toLocaleString('en-AU')} • Net Worth ${((opponentTeamScore?.netWorth) || 0).toLocaleString('en-AU')} • {aiControlledRegions} regions</div>
 	                </div>
 	                <div className={`${themeStyles.border} border rounded px-3 py-2`}>
@@ -257064,11 +258885,11 @@ function dispatchGameSettingsChange(
 	                <div className="grid grid-cols-2 gap-3 text-sm">
 	                  <div className={`${themeStyles.border} border rounded px-3 py-2`}>
 	                    <div className="opacity-75">{playerPrimaryMetricLabel}</div>
-	                    <div className="font-bold text-green-400">{formatWinMetricValue(gameSettings.winCondition, playerPrimaryMetricValue)}</div>
+	                    <div className={`font-bold ${v99ThemeAccent(themeStyles, 'moneyPositive', 'text-green-400')}`}>{formatWinMetricValue(gameSettings.winCondition, playerPrimaryMetricValue)}</div>
 	                  </div>
 	                  <div className={`${themeStyles.border} border rounded px-3 py-2`}>
 	                    <div className="opacity-75">{opponentPrimaryMetricLabel}</div>
-	                    <div className="font-bold text-pink-400">{formatWinMetricValue(gameSettings.winCondition, opponentPrimaryMetricValue)}</div>
+	                    <div className={`font-bold ${v99RivalFigureClass(themeStyles)}`}>{formatWinMetricValue(gameSettings.winCondition, opponentPrimaryMetricValue)}</div>
 	                  </div>
 	                </div>
 	                <div className={`${themeStyles.border} border rounded px-3 py-2`}>
@@ -257080,7 +258901,7 @@ function dispatchGameSettingsChange(
 	                        : `Ranking: ${(aiPlayer?.name || "AI Opponent")} leads by ${formatWinMetricValue(gameSettings.winCondition, opponentPrimaryMetricValue - playerPrimaryMetricValue)}`}
 	                  </div>
                       <div className="text-[11px] opacity-70 text-center mt-1">
-                        Cash ${player.money.toLocaleString('en-AU')} • Net Worth ${getNetWorth.toLocaleString('en-AU')} | ${(aiPlayer?.name || "AI Opponent")} Cash ${(aiPlayer?.money ?? 0).toLocaleString('en-AU')} • Net Worth ${getAiNetWorth.toLocaleString('en-AU')}
+                        {v99StandingDetailLine({ cash: player.money, netWorth: getNetWorth, rivalName: aiPlayer?.name || 'AI Opponent', rivalCash: aiPlayer?.money ?? 0, rivalNetWorth: getAiNetWorth }) /* V9.9 (SECTION 20AU, W4B): no "$" before the rival's name */}
                       </div>
 	                </div>
 	              </div>
@@ -260655,8 +262476,8 @@ function dispatchGameSettingsChange(
     
     return (
       <div className={`fixed inset-0 ${(!surfaceState.backdropOwner || surfaceState.backdropOwner === "approval_dialog") ? "bg-black bg-opacity-70" : "bg-transparent"} flex items-center justify-center p-4`} style={{ zIndex: globalUISurfaceManager.getZIndex("approval_dialog") }} onClick={() => { if (confirmationNeedsAnAnswer(confirmationDialog.type)) return; /* V9.9 (SECTION 20AT, W3S — q3-03) */ if (confirmationDialog.type === 'teamAiOverrideRequest' && typeof confirmationDialog.data?.onDeny === 'function') { confirmationDialog.data.onDeny(); } closeConfirmation(); }}>
-        <div className={`${themeStyles.card} ${themeStyles.border} ${themeStyles.text} border rounded-xl p-6 max-w-md w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden ${themeStyles.shadow}`} onClick={(e) => e.stopPropagation()}>
-          <h3 className="text-xl font-bold mb-3">{confirmationDialog.title}</h3>
+        <div ref={v99ConfirmCardRef} tabIndex={-1} role="alertdialog" aria-modal="true" aria-labelledby={V99_CONFIRM_TITLE_ID} className={`${themeStyles.card} ${themeStyles.border} ${themeStyles.text} border rounded-xl p-6 max-w-md w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden focus:outline-none ${themeStyles.shadow}`} onClick={(e) => e.stopPropagation()}>{/* V9.9 (SECTION 20AU, W4A — f1-01): a named alertdialog that takes the focus (useV99ConfirmDialogFocus) */}
+          <h3 id={V99_CONFIRM_TITLE_ID} className="text-xl font-bold mb-3">{confirmationDialog.title}</h3>
           <p className={`mb-6 ${confirmationDialog.type === 'enablePersistentMemory' || confirmationDialog.type === 'disablePersistentMemory' || confirmationDialog.type === 'deletePersistentMemory' || confirmationDialog.type === 'importPersistentMemory' ? 'whitespace-pre-wrap text-sm' : ''}`}>{confirmationDialog.message}</p>
           {confirmationNeedsAnAnswer(confirmationDialog.type) && <p className="text-xs opacity-75 -mt-4 mb-4" data-testid="v99-approval-needs-answer">{APPROVAL_NEEDS_ANSWER_NOTE}</p> /* V9.9 (SECTION 20AT, W3S — q3-03) */}
           
@@ -261095,6 +262916,7 @@ function dispatchGameSettingsChange(
           <div className="flex space-x-3">
             <button
               onClick={handleConfirm}
+              data-v99-confirm="confirm"
               className={`${themeStyles.button} text-white px-6 py-2 rounded-lg flex-1 font-bold`}
             >
               {confirmationDialog.confirmText}
@@ -261109,6 +262931,7 @@ function dispatchGameSettingsChange(
                 }
                 closeConfirmation();
               }}
+              data-v99-confirm="cancel"
               className={`${themeStyles.buttonSecondary} px-6 py-2 rounded-lg flex-1`}
             >
               {confirmationDialog.type === 'teamAiOverrideRequest' ? 'Deny' : confirmationDialog.type === 'persistentAbandon' ? "Don't save" : 'Cancel'}
@@ -267050,6 +268873,8 @@ function dispatchGameSettingsChange(
 	    solo: boolean;
 	  }) => {
 	    // V9.9 (SECTION 20AS): which cards rest on recorded data; a card without data says so instead of showing numbers.
+	    const v99DebriefCard = v99DebriefCardClass(resolveIsDarkSurface(uiState.theme, systemPrefersDark)); // V9.9 (SECTION 20AU, W4A — f1-04): readable on Light
+	    const v99DebriefStrip = v99DebriefStripClass(resolveIsDarkSurface(uiState.theme, systemPrefersDark));
 	    const facts = debrief.facts || null;
 	    const hasData = (key: keyof DebriefDataAvailability): boolean => (facts ? facts.data[key] : true);
 	    const noDataNote = (key: keyof DebriefDataAvailability, fallback: string) => (
@@ -267110,63 +268935,63 @@ function dispatchGameSettingsChange(
 	          </div>
 
 	          {/* Executive Summary */}
-	          <div className="p-4 rounded-xl bg-black/20 border border-gray-700/50 text-sm leading-relaxed opacity-90">
+	          <div className={`p-4 rounded-xl ${v99DebriefStrip} border border-gray-700/50 text-sm leading-relaxed opacity-90`}>
 	            <span className="font-bold text-blue-400">What happened: </span>
 	            {facts
 	              ? <ul className="mt-1 space-y-0.5 list-disc list-inside" data-testid="v99-debrief-facts">{facts.lines.map(line => <li key={line}>{line}</li>)}</ul>
 	              : debrief.summary}
 	          </div>
 	          {(dnStateRef.current?.events.length || 0) > 0 && (
-	            <div className="p-3 rounded-xl bg-black/20 border border-violet-700/40 text-xs leading-relaxed" data-testid="dn-debrief">
+	            <div className={`p-3 rounded-xl ${v99DebriefStrip} border border-violet-700/40 text-xs leading-relaxed`} data-testid="dn-debrief">
 	              <span className="font-bold text-violet-300">Diplomacy: </span>
 	              {buildDiplomacyDebrief(dnStateRef.current || createEmptyDiplomacyState(), dnNames).join(' · ')}
 	            </div>
 	          )}
 	          {(swrStateRef.current?.events.length || 0) > 0 && buildWorldReactionDebrief(sanitizeWorldReactionState(swrStateRef.current), swrViewerId).length > 0 && (
-	            <div className="p-3 rounded-xl bg-black/20 border border-amber-700/40 text-xs leading-relaxed" data-testid="swr-debrief">
+	            <div className={`p-3 rounded-xl ${v99DebriefStrip} border border-amber-700/40 text-xs leading-relaxed`} data-testid="swr-debrief">
 	              <span className="font-bold text-amber-300">Turning points: </span>
 	              {buildWorldReactionDebrief(sanitizeWorldReactionState(swrStateRef.current), swrViewerId).join(' · ')}
 	            </div>
 	          )}
 	          {buildFactionDebrief(rfStateRef.current, rfPlayerId).length > 0 && (
-	            <div className="p-3 rounded-xl bg-black/20 border border-indigo-700/40 text-xs leading-relaxed" data-testid="rf-debrief">
+	            <div className={`p-3 rounded-xl ${v99DebriefStrip} border border-indigo-700/40 text-xs leading-relaxed`} data-testid="rf-debrief">
 	              <span className="font-bold text-indigo-300">Stakeholders: </span>
 	              {buildFactionDebrief(rfStateRef.current, rfPlayerId).join(' · ')}
 	            </div>
 	          )}
 	          {buildNationalDebrief(nsPersistedRef.current).length > 0 && (
-	            <div className="p-3 rounded-xl bg-black/20 border border-sky-700/40 text-xs leading-relaxed" data-testid="ns-debrief">
+	            <div className={`p-3 rounded-xl ${v99DebriefStrip} border border-sky-700/40 text-xs leading-relaxed`} data-testid="ns-debrief">
 	              <span className="font-bold text-sky-300">National turning points: </span>
 	              {buildNationalDebrief(nsPersistedRef.current).join(' · ')}
 	            </div>
 	          )}
 	          {npEnabled && (() => { const db = buildNationalPriorityDebrief(npStateRef.current, npPersistedRef.current, npViewerId, Object.fromEntries(npActors.map(a => [a.id, a.name]))); return db.timeline.length || db.story.length > 2 ? (
-	            <div className="p-3 rounded-xl bg-black/20 border border-sky-700/40 text-xs leading-relaxed" data-testid="np-debrief">
+	            <div className={`p-3 rounded-xl ${v99DebriefStrip} border border-sky-700/40 text-xs leading-relaxed`} data-testid="np-debrief">
 	              <div className="font-bold text-sky-300 tracking-wide">NATIONAL PRIORITIES</div>
 	              {db.timeline.map(l => <div key={l}>{l}</div>)}
 	              {db.story.map(l => <div key={l} className="opacity-90">{l}</div>)}
 	              <div className="opacity-60">National priorities never decide the winner — the canonical win condition does.</div>
 	            </div>) : null; })()}
 	          {egEnabled && (() => { const db = buildEconomicGeographyDebrief(egStateRef.current, egPersistedRef.current); return db.timeline.length || db.story.length ? (
-	            <div className="p-3 rounded-xl bg-black/20 border border-emerald-700/40 text-xs leading-relaxed" data-testid="eg-debrief">
+	            <div className={`p-3 rounded-xl ${v99DebriefStrip} border border-emerald-700/40 text-xs leading-relaxed`} data-testid="eg-debrief">
 	              <div className="font-bold text-emerald-300 tracking-wide">ECONOMIC GEOGRAPHY & REGIONAL ROLES</div>
 	              {db.timeline.map(l => <div key={l}>{l}</div>)}
 	              {db.story.map(l => <div key={l} className="opacity-90">{l}</div>)}
 	            </div>) : null; })()}
 	          {sc11Enabled && (() => { const db = buildStateCapacityDebrief(sc11StateRef.current, sc11PersistedRef.current); return db.timeline.length || db.story.length ? (
-	            <div className="p-3 rounded-xl bg-black/20 border border-indigo-700/40 text-xs leading-relaxed" data-testid="sc11-debrief">
+	            <div className={`p-3 rounded-xl ${v99DebriefStrip} border border-indigo-700/40 text-xs leading-relaxed`} data-testid="sc11-debrief">
 	              <div className="font-bold text-indigo-300 tracking-wide">ADAPTIVE GOVERNANCE & STATE CAPACITY</div>
 	              {db.timeline.map(l => <div key={l}>{l}</div>)}
 	              {db.story.map(l => <div key={l} className="opacity-90">{l}</div>)}
 	            </div>) : null; })()}
 	          {pf12Enabled && (() => { const db = buildPublicFinanceDebrief(pf12StateRef.current); return db ? (
-	            <div className="p-3 rounded-xl bg-black/20 border border-cyan-700/40 text-xs leading-relaxed" data-testid="pf12-debrief">
+	            <div className={`p-3 rounded-xl ${v99DebriefStrip} border border-cyan-700/40 text-xs leading-relaxed`} data-testid="pf12-debrief">
 	              <div className="font-bold text-cyan-300 tracking-wide">PUBLIC FINANCE & FISCAL CAPACITY</div>
 	              <div>{db.narrativeSummary}</div>
 	              {db.keyLessons.map(l => <div key={l} className="opacity-90">{l}</div>)}
 	            </div>) : null; })()}
 	          {hh13Enabled && (() => { const db = buildHouseholdEconomyDebrief(hh13StateRef.current); return db ? (
-	            <div className="p-3 rounded-xl bg-black/20 border border-sky-700/40 text-xs leading-relaxed" data-testid="hh13-debrief">
+	            <div className={`p-3 rounded-xl ${v99DebriefStrip} border border-sky-700/40 text-xs leading-relaxed`} data-testid="hh13-debrief">
 	              <div className="font-bold text-sky-300 tracking-wide">HOUSEHOLDS, LIVING STANDARDS & DOMESTIC DEMAND</div>
 	              <div>{db.nationalProsperityTrajectory}</div>
 	              <div className="opacity-90">{db.affordabilityStrengthsAndFailures}</div>
@@ -267174,43 +268999,43 @@ function dispatchGameSettingsChange(
 	              <div className="opacity-90">{db.growthTranslationSummary}</div>
 	            </div>) : null; })()}
 	          {srEnabled && buildSystemicDebrief(srStateRef.current, srPersistedRef.current).length > 0 && (
-	            <div className="p-3 rounded-xl bg-black/20 border border-orange-700/40 text-xs leading-relaxed" data-testid="sr-debrief">
+	            <div className={`p-3 rounded-xl ${v99DebriefStrip} border border-orange-700/40 text-xs leading-relaxed`} data-testid="sr-debrief">
 	              <div className="font-bold text-orange-300 tracking-wide">RESILIENCE STORY</div>
 	              {buildSystemicDebrief(srStateRef.current, srPersistedRef.current).map(l => <div key={l}>{l}</div>)}
 	            </div>
 	          )}
 	          {icEnabled && buildInnovationDebrief(icStateRef.current, icPersistedRef.current).length > 0 && (
-	            <div className="p-3 rounded-xl bg-black/20 border border-teal-700/40 text-xs leading-relaxed" data-testid="ic-debrief">
+	            <div className={`p-3 rounded-xl ${v99DebriefStrip} border border-teal-700/40 text-xs leading-relaxed`} data-testid="ic-debrief">
 	              <div className="font-bold text-teal-300 tracking-wide">CAPABILITIES BUILT</div>
 	              {buildInnovationDebrief(icStateRef.current, icPersistedRef.current).map(l => <div key={l}>{l}</div>)}
 	            </div>
 	          )}
 	          {ndEnabled && ndProfileRef.current && (
-	            <div className="p-3 rounded-xl bg-black/20 border border-indigo-700/40 text-xs leading-relaxed" data-testid="nd-debrief">
+	            <div className={`p-3 rounded-xl ${v99DebriefStrip} border border-indigo-700/40 text-xs leading-relaxed`} data-testid="nd-debrief">
 	              <div className="font-bold text-indigo-300 tracking-wide">THE AUSTRALIA YOU BUILT</div>
 	              {buildNationalDevelopmentDebrief(ndProfileRef.current, ndPersistedRef.current, mpPersistedRef.current, ndViewRef.current ? { you: ndViewRef.current.you, rival: ndViewRef.current.rival, rivalName: ndViewRef.current.rivalName } : null).map(l => <div key={l}>{l}</div>)}
 	            </div>
 	          )}
 	          {nationalLayerShown(gameSettings) && buildMegaprojectDebrief(mpPersistedRef.current).length > 0 && (
-	            <div className="p-3 rounded-xl bg-black/20 border border-amber-700/40 text-xs leading-relaxed" data-testid="mp-debrief">
+	            <div className={`p-3 rounded-xl ${v99DebriefStrip} border border-amber-700/40 text-xs leading-relaxed`} data-testid="mp-debrief">
 	              <span className="font-bold text-amber-300">National programs: </span>
 	              {buildMegaprojectDebrief(mpPersistedRef.current).join(' · ')}
 	            </div>
 	          )}
 	          {buildInfraNetworkDebrief(inPersistedRef.current).length > 0 && (
-	            <div className="p-3 rounded-xl bg-black/20 border border-sky-700/40 text-xs leading-relaxed" data-testid="in-debrief">
+	            <div className={`p-3 rounded-xl ${v99DebriefStrip} border border-sky-700/40 text-xs leading-relaxed`} data-testid="in-debrief">
 	              <span className="font-bold text-sky-300">Infrastructure network milestones: </span>
 	              {buildInfraNetworkDebrief(inPersistedRef.current).join(' · ')}
 	            </div>
 	          )}
 	          {buildIndustryDebrief(scPersistedRef.current).length > 0 && (
-	            <div className="p-3 rounded-xl bg-black/20 border border-violet-700/40 text-xs leading-relaxed" data-testid="sc-debrief">
+	            <div className={`p-3 rounded-xl ${v99DebriefStrip} border border-violet-700/40 text-xs leading-relaxed`} data-testid="sc-debrief">
 	              <span className="font-bold text-violet-300">Supply-chain turning points: </span>
 	              {buildIndustryDebrief(scPersistedRef.current).join(' · ')}
 	            </div>
 	          )}
 	          {buildLivingRegionsDebrief(lrStateRef.current).length > 0 && (
-	            <div className="p-3 rounded-xl bg-black/20 border border-teal-700/40 text-xs leading-relaxed" data-testid="lr-debrief">
+	            <div className={`p-3 rounded-xl ${v99DebriefStrip} border border-teal-700/40 text-xs leading-relaxed`} data-testid="lr-debrief">
 	              <span className="font-bold text-teal-300">How the map changed: </span>
 	              {buildLivingRegionsDebrief(lrStateRef.current).join(' · ')}
 	            </div>
@@ -267235,7 +269060,7 @@ function dispatchGameSettingsChange(
 	            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
 	              
 	              {/* Card 1: Swing Point Analytics */}
-	              <div className="p-5 rounded-xl bg-slate-900/60 border border-blue-500/30 flex flex-col justify-between space-y-3">
+	              <div className={`p-5 rounded-xl ${v99DebriefCard} border border-blue-500/30 flex flex-col justify-between space-y-3`}>
 	                <div>
 	                  <div className="flex items-center justify-between border-b border-gray-700/50 pb-2 mb-3">
 	                    <span className="font-bold text-blue-300 flex items-center gap-2 text-base">📈 Biggest Swings</span>
@@ -267268,7 +269093,7 @@ function dispatchGameSettingsChange(
 	              </div>
 
 	              {/* Card 2: Blunders & Tactical Review */}
-	              <div className="p-5 rounded-xl bg-slate-900/60 border border-rose-500/30 flex flex-col justify-between space-y-3">
+	              <div className={`p-5 rounded-xl ${v99DebriefCard} border border-rose-500/30 flex flex-col justify-between space-y-3`}>
 	                <div>
 	                  <div className="flex items-center justify-between border-b border-gray-700/50 pb-2 mb-3">
 	                    <span className="font-bold text-rose-300 flex items-center gap-2 text-base">⚠️ Setbacks & Daily Growth</span>
@@ -267333,7 +269158,7 @@ function dispatchGameSettingsChange(
 	              </div>
 
 	              {/* Card 3: Opponent Dossier */}
-	              <div className="p-5 rounded-xl bg-slate-900/60 border border-purple-500/30 flex flex-col justify-between space-y-3">
+	              <div className={`p-5 rounded-xl ${v99DebriefCard} border border-purple-500/30 flex flex-col justify-between space-y-3`}>
 	                <div>
 	                  <div className="flex items-center justify-between border-b border-gray-700/50 pb-2 mb-3">
 	                    <span className="font-bold text-purple-300 flex items-center gap-2 text-base">🕵️ Opponent Dossier</span>
@@ -267378,7 +269203,7 @@ function dispatchGameSettingsChange(
 	              </div>
 
 	              {/* Card 4: Governance Compliance */}
-	              <div className="p-5 rounded-xl bg-slate-900/60 border border-amber-500/30 flex flex-col justify-between space-y-3">
+	              <div className={`p-5 rounded-xl ${v99DebriefCard} border border-amber-500/30 flex flex-col justify-between space-y-3`}>
 	                <div>
 	                  <div className="flex items-center justify-between border-b border-gray-700/50 pb-2 mb-3">
 	                    <span className="font-bold text-amber-300 flex items-center gap-2 text-base">🏛️ Governance Compliance</span>
@@ -267421,7 +269246,7 @@ function dispatchGameSettingsChange(
 	              </div>
 
 	              {/* Card 5: Regional Standing */}
-	              <div className="p-5 rounded-xl bg-slate-900/60 border border-emerald-500/30 flex flex-col justify-between space-y-3 lg:col-span-2">
+	              <div className={`p-5 rounded-xl ${v99DebriefCard} border border-emerald-500/30 flex flex-col justify-between space-y-3 lg:col-span-2`}>
 	                <div>
 	                  <div className="flex items-center justify-between border-b border-gray-700/50 pb-2 mb-3">
 	                    <span className="font-bold text-emerald-300 flex items-center gap-2 text-base">🗺️ Regional Standing & Reputation</span>
@@ -267463,7 +269288,7 @@ function dispatchGameSettingsChange(
 	                          <div className="text-[10px] text-blue-300 font-semibold">Friendly</div>
 	                          <div className="font-bold text-blue-200">{debrief.regionalStanding.tierDistribution.Friendly || 0}</div>
 	                        </div>
-	                        <div className="p-1.5 rounded bg-slate-900/60 border border-gray-700">
+	                        <div className={`p-1.5 rounded ${v99DebriefCard} border border-gray-700`}>
 	                          <div className="text-[10px] text-gray-400 font-semibold">Neutral</div>
 	                          <div className="font-bold text-gray-200">{debrief.regionalStanding.tierDistribution.Neutral || 0}</div>
 	                        </div>
@@ -267518,7 +269343,7 @@ function dispatchGameSettingsChange(
         const outcome = gameState.scenarioOutcome || evaluateScenarioOutcome(activeScenario, { player, aiPlayer, gameState, gameSettings, teamsById });
         // V9.9 (SECTION 20AS): what this device remembers about the scenario, and whether there is a replay to watch.
         const wpMfAck = wpMfScenarioAck && wpMfScenarioAck.epoch === v95MatchEpochRef.current && wpMfScenarioAck.scenarioId === String(activeScenario.id) ? wpMfScenarioAck : null;
-        const wpMfScenarioEntry = wpMfAck ? wpMfAck.entry : (readScenarioRecords(v99BrowserStorage()).scenarios[String(activeScenario.id)] || null);
+        const wpMfScenarioEntry = wpMfAck ? wpMfAck.entry : (scenarioRecordsForJournal(v99BrowserStorage(), gameSettings)[String(activeScenario.id)] || null); // W4A (f2-05): journal on only
         const wpMfScenarioLine = describeScenarioRecord(wpMfScenarioEntry, Boolean(outcome.isVictory), Number(outcome.completedOnDay) || Number(gameState.day) || 1, wpMfAck);
         const wpMfScenarioHasReplay = Boolean(replayRecordingRef.current); // this match's recording (null when it was not recorded)
         return (
@@ -267638,7 +269463,8 @@ function dispatchGameSettingsChange(
         recordingEnabled: gameSettings.aiReplayRecordingEnabled === true,
         // Decided by the match, not by the campaign slot: only the match the campaign launched is a chapter.
         campaignChapter: gameSettings.rivalryCampaignEnabled === true && wpMfCampaignEpochRef.current === v95MatchEpochRef.current,
-        scenario: false
+        scenario: false,
+        journalEnabled: gameSettings.matchJournalEnabled === true // V9.9 (SECTION 20AS, W4A — f2-03): Rematch and "Record my next match" come with the Match Journal
       });
       const wpMfRematch = () => {
         const mode = gameState.selectedMode as GameModeSelection;
