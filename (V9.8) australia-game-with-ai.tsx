@@ -186347,7 +186347,7 @@ const KeyboardShortcutsHelpModalView: React.FC<KeyboardShortcutsHelpModalProps> 
                     <div className="font-bold truncate">{shortcut.label}</div>
                     <div className="text-sm opacity-75 line-clamp-2">{shortcut.description}</div>
                   </div>
-                  <kbd className="shrink-0 px-3 py-1 bg-gray-700 rounded text-sm font-mono font-bold">
+                  <kbd className="shrink-0 px-3 py-1 bg-gray-700 text-white rounded text-sm font-mono font-bold">
                     {key === ' ' ? 'Space' : key.toUpperCase()}
                   </kbd>
                 </div>
@@ -186358,7 +186358,7 @@ const KeyboardShortcutsHelpModalView: React.FC<KeyboardShortcutsHelpModalProps> 
                   <div className="font-bold truncate">Clear Notifications</div>
                   <div className="text-sm opacity-75">Clear all notifications</div>
                 </div>
-                <kbd className="shrink-0 px-3 py-1 bg-gray-700 rounded text-sm font-mono font-bold">
+                <kbd className="shrink-0 px-3 py-1 bg-gray-700 text-white rounded text-sm font-mono font-bold">
                   {gameSettings.notificationClearShortcut.toUpperCase()}
                 </kbd>
               </div>
@@ -255815,11 +255815,11 @@ function dispatchGameSettingsChange(
                         {netWorthChartPoints.map((point: any) => (
                           <g key={`net-worth-point-${point.day}-${point.x}`}>
                             <circle cx={point.x} cy={point.playerY} r="1.2" fill="#22c55e">
-                              <title>{`Day ${point.day}: ${isTeamMode ? (teamsById[TEAM_PLAYER_ID]?.name || 'Your Team') : 'You'} $${point.playerWorth.toLocaleString('en-AU')}`}</title>
+                              <title>{`Day ${point.day}: ${isTeamMode ? (teamsById[TEAM_PLAYER_ID]?.name || 'Your Team') : 'You'} ${fmtMoney(point.playerWorth)}`}</title>
                             </circle>
                             {isCompetitiveMode && (
                               <circle cx={point.x} cy={point.aiY} r="1.2" fill="#ec4899">
-                                <title>{`Day ${point.day}: ${isTeamMode ? (teamsById[TEAM_OPPONENT_ID]?.name || 'AI Team') : (aiPlayer?.name || "AI Opponent")} $${point.aiWorth.toLocaleString('en-AU')}`}</title>
+                                <title>{`Day ${point.day}: ${isTeamMode ? (teamsById[TEAM_OPPONENT_ID]?.name || 'AI Team') : (aiPlayer?.name || "AI Opponent")} ${fmtMoney(point.aiWorth)}`}</title>
                               </circle>
                             )}
                           </g>
