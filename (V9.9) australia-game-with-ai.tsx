@@ -212775,7 +212775,7 @@ export function V101MorePopover(props: V101MorePopoverProps): React.ReactElement
         <span>More</span>
       </button>
       {open && (
-        <div ref={panelRef} className={`absolute ${placement?.vertical === 'above' ? 'bottom-full mb-2' : 'mt-2'} ${placement ? '' : 'right-0'} ${props.panelClassName}`} style={panelStyle} data-testid="v101-more-panel" data-side={placement?.side || 'right'}>
+        <div ref={panelRef} className={`absolute ${placement?.vertical === 'above' ? 'bottom-full mb-2' : 'mt-2'} ${placement ? '' : 'right-0'} ${props.panelClassName}`} style={panelStyle} data-testid="v101-more-panel" data-side={placement?.side || 'right'} onClick={(e) => { const hit = e.target as { closest?: (selector: string) => unknown } | null; if (hit && typeof hit.closest === 'function' && hit.closest('button')) onToggle(); /* a choice made: the menu gets out of the way of the window it opened */ }}>
           {props.children}
         </div>
       )}
@@ -266833,7 +266833,7 @@ function dispatchGameSettingsChange(
                 {/* Top Recommended Move */}
                 <div className="bg-slate-800/60 border border-slate-700/60 rounded-lg p-2.5">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[11px] font-semibold text-emerald-300 uppercase tracking-wider flex items-center gap-1">
+                    <span className={`text-[11px] font-semibold ${v99ThemeAccent(themeStyles, 'successText', 'text-emerald-300')} uppercase tracking-wider flex items-center gap-1`}>
                       <span>🎯</span> Recommended Action
                     </span>
                     {topMove && topMove.confidencePercent !== null && (
@@ -267769,7 +267769,7 @@ function dispatchGameSettingsChange(
                       >
                         <span>{action.icon}</span>
                         <span className={quickActionCompact ? 'text-xs' : 'text-sm'}>{action.label}</span>
-                        {isPinned && <span className="text-[10px] text-blue-300 font-bold" title="Pinned action">📌</span>}
+                        {isPinned && <span className={`text-[10px] ${v99ThemeAccent(themeStyles, 'infoText', 'text-blue-300')} font-bold`} title="Pinned action">📌</span>}
                         {v101AdvertisedHotkey(action.hotkey) && (
                           <kbd className={quickActionKbdClass}>
                             {v101AdvertisedHotkey(action.hotkey)}
@@ -268095,7 +268095,7 @@ function dispatchGameSettingsChange(
 	                  </div>
 	                  <div>
 	                    <div className="text-sm opacity-75">Teammates</div>
-	                    <div className="font-bold text-cyan-300">{playerTeamActors.length}</div>
+	                    <div className={`font-bold ${v99ThemeAccent(themeStyles, 'infoText', 'text-cyan-300')}`}>{playerTeamActors.length}</div>
 	                  </div>
 	                </>
 	              ) : gameState.selectedMode === 'ai' && (
@@ -268248,7 +268248,7 @@ function dispatchGameSettingsChange(
               {(gameSettings.equipmentShopEnabled || playerEquipmentNames.length > 0) && (
                 <div className="relative group">
                   <div className="text-sm opacity-75">Equipment</div>
-                  <div className="font-bold text-blue-400">{playerEquipmentNames.length}</div>
+                  <div className={`font-bold ${v99ThemeAccent(themeStyles, 'infoText', 'text-blue-400')}`}>{playerEquipmentNames.length}</div>
                   {playerEquipmentNames.length > 0 && (
                     <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block z-50">
                       <div className={`${themeStyles.card} border ${themeStyles.border} rounded-lg p-2 text-xs whitespace-nowrap shadow-lg`}>
@@ -268852,7 +268852,7 @@ function dispatchGameSettingsChange(
 	                  )}
 	                </div>
 	                {currentRegionControlInfo.controllerId && currentRegionControlInfo.controllerId !== 'player' && !gameSettings.negotiationMode && isFirstRunVisible(wp8State, 'advanced') /* V10.1 (SECTION 20BE): no "deposit to take control" while the controls are hidden */ && (
-	                  <div className="text-xs text-yellow-300">
+	                  <div className={`text-xs ${v99ThemeAccent(themeStyles, 'highlightText', 'text-yellow-300')}`}>
 	                    Deposit at least {fmtMoney(currentRegionControlInfo.minimumPlayerDeposit)} to take control.
 	                  </div>
 	                )}
@@ -270032,10 +270032,10 @@ function dispatchGameSettingsChange(
                           {/* Scout Ahead - Show resources for adjacent regions */}
                           {activeSpecialAbility === 'Scout Ahead' && isAdjacent && REGIONAL_RESOURCES[code] && (
                             <div className="mt-2 text-xs">
-                              <div className="text-blue-400 font-bold">🔍 Scout Ahead - Resources:</div>
+                              <div className={`${v99ThemeAccent(themeStyles, 'infoText', 'text-blue-400')} font-bold`}>🔍 Scout Ahead - Resources:</div>
                               <div className="flex flex-wrap gap-1 mt-1">
                                 {REGIONAL_RESOURCES[code].map((resource: string) => (
-                                  <span key={resource} className="bg-blue-500 bg-opacity-20 text-blue-300 px-2 py-0.5 rounded">
+                                  <span key={resource} className={`bg-blue-500 bg-opacity-20 ${v99ThemeAccent(themeStyles, 'infoText', 'text-blue-300')} px-2 py-0.5 rounded`}>
                                     {resource}
                                   </span>
                                 ))}
@@ -270080,7 +270080,7 @@ function dispatchGameSettingsChange(
                             <div className="flex justify-between items-start">
                               <div className="flex-1">
                                 <div className="flex items-center gap-2">
-                                  <span className="font-bold text-cyan-300">{terr.name}</span>
+                                  <span className={`font-bold ${v99ThemeAccent(themeStyles, 'infoText', 'text-cyan-300')}`}>{terr.name}</span>
                                   <span className="text-xxs px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">{code}</span>
                                   <span className="text-xs opacity-75">{terr.category}</span>
                                 </div>
@@ -270092,11 +270092,11 @@ function dispatchGameSettingsChange(
                                 )}
 
                                 {currentObjective?.sourceId === code && (
-                                  <div className="text-[11px] text-sky-300 mt-1">Tracked destination for your current goal.</div>
+                                  <div className={`text-[11px] ${v99ThemeAccent(themeStyles, 'infoText', 'text-sky-300')} mt-1`}>Tracked destination for your current goal.</div>
                                 )}
                                 {isLocked ? (
                                   <div className="mt-2 space-y-1 bg-red-950 bg-opacity-30 p-2 rounded border border-red-900/40 text-xs">
-                                    <div className="font-semibold text-red-400 text-xxs uppercase tracking-wider">Lock Requisites:</div>
+                                    <div className={`font-semibold ${v99ThemeAccent(themeStyles, 'moneyNegative', 'text-red-400')} text-xxs uppercase tracking-wider`}>Lock Requisites:</div>
                                     {checks.map((c: any) => (
                                       <div key={c.key} className={`flex items-center gap-1.5 ${c.passed ? 'text-emerald-400' : 'text-red-400'}`}>
                                         <span>{c.passed ? '✓' : '✗'}</span>
@@ -270108,9 +270108,9 @@ function dispatchGameSettingsChange(
                                       return (
                                         <div className="pt-1 space-y-1">
                                           <div>{travelBlocker.whyUnavailable}</div>
-                                          <button type="button" className="underline text-sky-300" onClick={() => trackIntentGoal({ id: `travel_${code}`, sourceType: 'travel', sourceId: code, title: `Reach ${terr.name}` })}>Track as Goal</button>
+                                          <button type="button" className={`underline ${v99ThemeAccent(themeStyles, 'infoText', 'text-sky-300')}`} onClick={() => trackIntentGoal({ id: `travel_${code}`, sourceType: 'travel', sourceId: code, title: `Reach ${terr.name}` })}>Track as Goal</button>
                                           {travelBlocker.nextAction && (
-                                            <button type="button" className="underline text-sky-300 ml-2" onClick={() => openIntentNav(travelBlocker.nextAction)}>{travelBlocker.nextAction.label}</button>
+                                            <button type="button" className={`underline ${v99ThemeAccent(themeStyles, 'infoText', 'text-sky-300')} ml-2`} onClick={() => openIntentNav(travelBlocker.nextAction)}>{travelBlocker.nextAction.label}</button>
                                           )}
                                         </div>
                                       );
@@ -270410,17 +270410,17 @@ function dispatchGameSettingsChange(
                   {/* Market Insight - Price Predictions */}
                   {activeSpecialAbility === 'Market Insight' && (
                     <div className="mt-3 pt-3 border-t border-blue-500 border-opacity-30">
-                      <div className="text-xs text-blue-400 font-bold mb-2">🔮 Market Insight Active - Next Turn Predictions:</div>
+                      <div className={`text-xs ${v99ThemeAccent(themeStyles, 'infoText', 'text-blue-400')} font-bold mb-2`}>🔮 Market Insight Active - Next Turn Predictions:</div>
                       <div className="text-xs space-y-1">
                         {gameState.marketTrend === 'rising' && <div className={`${v99ThemeAccent(themeStyles, 'successText', 'text-green-400')}`}>↗ Prices likely to increase by 10-20%</div>}
-                        {gameState.marketTrend === 'falling' && <div className="text-red-400">↘ Prices likely to decrease by 10-20%</div>}
+                        {gameState.marketTrend === 'falling' && <div className={`${v99ThemeAccent(themeStyles, 'moneyNegative', 'text-red-400')}`}>↘ Prices likely to decrease by 10-20%</div>}
                         {gameState.marketTrend === 'volatile' && <div className={`${v99ThemeAccent(themeStyles, 'highlightText', 'text-yellow-400')}`}>⚡ Prices may swing +/- 30%</div>}
-                        {gameState.marketTrend === 'stable' && <div className="text-blue-400">➡ Prices will remain relatively stable (+/- 5%)</div>}
+                        {gameState.marketTrend === 'stable' && <div className={`${v99ThemeAccent(themeStyles, 'infoText', 'text-blue-400')}`}>➡ Prices will remain relatively stable (+/- 5%)</div>}
                       </div>
                       {/* Price History */}
                       {gameState.priceHistory.length > 0 && (
                         <div className="mt-2 pt-2 border-t border-blue-500 border-opacity-20">
-                          <div className="text-blue-400 font-bold mb-1">Price History (Last 5 days):</div>
+                          <div className={`${v99ThemeAccent(themeStyles, 'infoText', 'text-blue-400')} font-bold mb-1`}>Price History (Last 5 days):</div>
                           <div className="flex space-x-2 overflow-x-auto text-xs">
                             {gameState.priceHistory.slice(-5).map((history: any,idx: any) => (
                               <div key={idx} className="bg-blue-500 bg-opacity-10 rounded p-1 min-w-max">
@@ -270600,7 +270600,7 @@ function dispatchGameSettingsChange(
                                   <span className={`${v99ThemeAccent(themeStyles, 'successText', 'text-green-400')}`}>+{Math.round((regionalBonus - 1) * 100)}% regional</span>
                                 )}
                                 {supplyMod < 1 && (
-                                  <span className="text-red-400">-{Math.round((1 - supplyMod) * 100)}% supply</span>
+                                  <span className={`${v99ThemeAccent(themeStyles, 'moneyNegative', 'text-red-400')}`}>-{Math.round((1 - supplyMod) * 100)}% supply</span>
                                 )}
                               </div>
                             </div>
@@ -270833,19 +270833,19 @@ function dispatchGameSettingsChange(
                       <div key={item.id} className={`${themeStyles.border} border rounded-lg p-4 ${objectiveMentionsItem(currentObjective, item.name) ? 'ring-1 ring-sky-400' : ''}`}>
                         <div className="flex justify-between items-start">
                           <div>
-                            {objectiveMentionsItem(currentObjective, item.name) && <div className="text-[11px] text-sky-300 mb-1">Needed for your tracked goal.</div>}
+                            {objectiveMentionsItem(currentObjective, item.name) && <div className={`text-[11px] ${v99ThemeAccent(themeStyles, 'infoText', 'text-sky-300')} mb-1`}>Needed for your tracked goal.</div>}
                             {breaksGoal && <div className={`text-[11px] ${v99ThemeAccent(themeStyles, 'warningText', 'text-amber-300')} mb-1`}>Warning: this purchase would make your tracked objective unaffordable.</div>}
                             {shopBlocker && (
                               <div className="text-[11px] mb-2">
                                 {shopBlocker.whyUnavailable}
-                                {shopBlocker.nextAction && <button type="button" className="underline text-sky-300 ml-2" onClick={() => openIntentNav(shopBlocker.nextAction)}>{shopBlocker.nextAction.label}</button>}
+                                {shopBlocker.nextAction && <button type="button" className={`underline ${v99ThemeAccent(themeStyles, 'infoText', 'text-sky-300')} ml-2`} onClick={() => openIntentNav(shopBlocker.nextAction)}>{shopBlocker.nextAction.label}</button>}
                               </div>
                             )}
                             <div className="font-bold">{item.name}</div>
                             <div className="text-sm opacity-75">{item.description}</div>
                             {owned && <div className={`text-xs ${v99ThemeAccent(themeStyles, 'successText', 'text-green-400')} mt-1`}>Owned</div>}
                             {!recruitmentAvail.available && (
-                              <div className="text-xs text-red-400 mt-1">{recruitmentAvail.reason || 'Recruitment restricted in region'}</div>
+                              <div className={`text-xs ${v99ThemeAccent(themeStyles, 'moneyNegative', 'text-red-400')} mt-1`}>{recruitmentAvail.reason || 'Recruitment restricted in region'}</div>
                             )}
                           </div>
                           <div className="text-right ml-4">
@@ -270952,16 +270952,16 @@ function dispatchGameSettingsChange(
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
                             {objectiveMentionsItem(currentObjective, recipe.output || recipe.name) && (
-                              <div className="text-[11px] text-sky-300 mb-1">Required by your tracked goal.</div>
+                              <div className={`text-[11px] ${v99ThemeAccent(themeStyles, 'infoText', 'text-sky-300')} mb-1`}>Required by your tracked goal.</div>
                             )}
                             {craftBlocker && (
                               <div className="text-[11px] bg-slate-950/70 border border-amber-700/40 rounded p-2 mb-2 space-y-1">
                                 <div className={`font-semibold ${v99ThemeAccent(themeStyles, 'warningText', 'text-amber-300')}`}>{craftBlocker.title}</div>
                                 <div>Missing: {craftBlocker.missing.map(m => m.label).join(', ') || craftBlocker.whyUnavailable}</div>
-                                {craftBlocker.satisfied.length > 0 && <div className="text-emerald-300">Already satisfied: {craftBlocker.satisfied.map(s => s.label).join(' • ')}</div>}
+                                {craftBlocker.satisfied.length > 0 && <div className={`${v99ThemeAccent(themeStyles, 'successText', 'text-emerald-300')}`}>Already satisfied: {craftBlocker.satisfied.map(s => s.label).join(' • ')}</div>}
                                 <div className="flex flex-wrap gap-2">
-                                  {craftBlocker.nextAction && <button type="button" className="underline text-sky-300" onClick={() => openIntentNav(craftBlocker.nextAction)}>{craftBlocker.nextAction.label}</button>}
-                                  <button type="button" className="underline text-sky-300" onClick={() => trackIntentGoal({ id: `craft_${recipe.id}`, sourceType: 'crafting', sourceId: recipe.output || recipe.name, title: `Craft ${recipe.output || recipe.name}` })}>Track as Goal</button>
+                                  {craftBlocker.nextAction && <button type="button" className={`underline ${v99ThemeAccent(themeStyles, 'infoText', 'text-sky-300')}`} onClick={() => openIntentNav(craftBlocker.nextAction)}>{craftBlocker.nextAction.label}</button>}
+                                  <button type="button" className={`underline ${v99ThemeAccent(themeStyles, 'infoText', 'text-sky-300')}`} onClick={() => trackIntentGoal({ id: `craft_${recipe.id}`, sourceType: 'crafting', sourceId: recipe.output || recipe.name, title: `Craft ${recipe.output || recipe.name}` })}>Track as Goal</button>
                                 </div>
                               </div>
                             )}
@@ -271082,7 +271082,7 @@ function dispatchGameSettingsChange(
                               <div className="text-[11px] bg-slate-950/70 border border-amber-700/40 rounded p-2 mt-2 space-y-1">
                                 <div className={`font-semibold ${v99ThemeAccent(themeStyles, 'warningText', 'text-amber-300')}`}>{investBlocker.title}</div>
                                 <div>{investBlocker.whyUnavailable}</div>
-                                {investBlocker.nextAction && <button type="button" className="underline text-sky-300" onClick={() => openIntentNav(investBlocker.nextAction)}>{investBlocker.nextAction.label}</button>}
+                                {investBlocker.nextAction && <button type="button" className={`underline ${v99ThemeAccent(themeStyles, 'infoText', 'text-sky-300')}`} onClick={() => openIntentNav(investBlocker.nextAction)}>{investBlocker.nextAction.label}</button>}
                               </div>
                             )}
                             {(() => {
@@ -271205,7 +271205,7 @@ function dispatchGameSettingsChange(
                               <div className="text-[11px] bg-slate-950/70 border border-amber-700/40 rounded p-2 mt-2 space-y-1">
                                 <div className={`font-semibold ${v99ThemeAccent(themeStyles, 'warningText', 'text-amber-300')}`}>{sabotageBlocker.title}</div>
                                 <div>{sabotageBlocker.whyUnavailable}</div>
-                                {sabotageBlocker.nextAction && <button type="button" className="underline text-sky-300" onClick={() => openIntentNav(sabotageBlocker.nextAction)}>{sabotageBlocker.nextAction.label}</button>}
+                                {sabotageBlocker.nextAction && <button type="button" className={`underline ${v99ThemeAccent(themeStyles, 'infoText', 'text-sky-300')}`} onClick={() => openIntentNav(sabotageBlocker.nextAction)}>{sabotageBlocker.nextAction.label}</button>}
                               </div>
                             )}
                           </div>
@@ -271374,8 +271374,8 @@ function dispatchGameSettingsChange(
                                 <div>{loanBlocker.whyUnavailable}</div>
                                 {loanBlocker.missing.length > 0 && <div>Missing: {loanBlocker.missing.map(m => m.label).join(', ')}</div>}
                                 <div className="flex flex-wrap gap-2">
-                                  {loanBlocker.nextAction && <button type="button" className="underline text-sky-300" onClick={() => openIntentNav(loanBlocker.nextAction)}>{loanBlocker.nextAction.label}</button>}
-                                  <button type="button" className="underline text-sky-300" onClick={() => trackIntentGoal({ id: `loan_${tier.id}`, sourceType: 'economy', sourceId: 'reserve', title: 'Stabilize cash reserve' })}>Track as Goal</button>
+                                  {loanBlocker.nextAction && <button type="button" className={`underline ${v99ThemeAccent(themeStyles, 'infoText', 'text-sky-300')}`} onClick={() => openIntentNav(loanBlocker.nextAction)}>{loanBlocker.nextAction.label}</button>}
+                                  <button type="button" className={`underline ${v99ThemeAccent(themeStyles, 'infoText', 'text-sky-300')}`} onClick={() => trackIntentGoal({ id: `loan_${tier.id}`, sourceType: 'economy', sourceId: 'reserve', title: 'Stabilize cash reserve' })}>Track as Goal</button>
                                 </div>
                               </div>
                             )}
