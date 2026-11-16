@@ -137221,7 +137221,7 @@ export function computeSoloAiTurnKey(gs: { turnCounter?: number; day?: number } 
 
 export function soloAiMaxAttempts(rt: SoloAiTurnRuntime): number {
   return Math.min(V96_SOLO_AI_LIMITS.MAX_DECISION_ATTEMPTS_PER_TURN,
-    Math.max(1, rt.effectiveBudget) * V96_SOLO_AI_LIMITS.RETRY_MULTIPLIER + V96_SOLO_AI_LIMITS.ATTEMPT_MARGIN);
+    (Math.max(1, rt.effectiveBudget) + (rt.freeCommits || 0)) * V96_SOLO_AI_LIMITS.RETRY_MULTIPLIER + V96_SOLO_AI_LIMITS.ATTEMPT_MARGIN); // V10.1 (SECTION 20BC): every free commit (a sale) earns its own retries; no free commits = V10.0's number
 }
 
 /** The decision signature used to suppress retry storms (type + target + important parameters). */
@@ -207337,7 +207337,8 @@ export function runV99TurnDigestSelfTests(): V9SelfTestResult[] {
 //    five seconds, so History showed "turn begins / ended their turn" and nothing between. They now leave the toast
 //    lane exactly as before but stay in History.
 // Nothing here draws from a gameplay RNG stream or reads a clock, except pickV100RivalDecision, which draws from the
-// rng the rival chooser hands it (its own seeded stream), the same number of times on every path.
+// rng the rival chooser hands it (its own seeded stream); one value, or on Easy's lesser move two (V10.1 matches: two on
+// every path, SECTION 20BC).
 // Suite v100fx (runV100FoundationsSelfTests).
 // ============================================================================
 
@@ -207388,7 +207389,10 @@ export function v100RivalPolicyActive(gameState: unknown, settings: { classicRiv
 /**
  * The V10.0 pick from a list ranked best first. One draw decides best vs runner-up (Easy draws once more to choose
  * among its next three); a mistake that hit means a lesser move — the runner-up, or for Easy one of the next three —
- * never an action spent on "thinking". Always draws the same number of values for a given list and difficulty.
+ * never an action spent on "thinking". V10.0 matches: Easy draws one value for its best move and two for a lesser one
+ * (Medium, Hard and Expert one), as they always did. V10.1 (SECTION 20BC): with the `v101` argument it draws exactly
+ * two values on every path (the contract this comment used to claim) and the best-move rate is the one the difficulty
+ * screen prints (v101RivalBestMoveRate: the mistake share is taken out of it, not multiplied into it).
  */
 export function pickV100RivalDecision<T>(ranked: readonly T[], rng: { next: () => number }, difficultyKey: unknown, mistake: boolean, v101?: { mistakeChance: number }): T | null {
   if (!ranked.length) return null;
@@ -209478,6 +209482,8 @@ export interface V101ParityMatchConfig {
   recap?: boolean;
   /** Weather / season changes every day (default true); false = calm autumn throughout. */
   weatherVaries?: boolean;
+  /** Lab switch for the balance report: on V10.1 rules, still charge the rival an action for every sale (isolates what free sales are worth). */
+  chargeSales?: boolean;
 }
 export interface V101ParityMatchResult {
   rivalMoney: number; rivalNetWorth: number; playerMoney: number; playerNetWorth: number;
@@ -209564,7 +209570,7 @@ export function runV101RivalParityMatch(cfg: V101ParityMatchConfig): V101ParityM
         if (at < 0) { ok = false; break; }
         inv.splice(at, 1);
         set({ money: money + Math.floor(priceOf(gs, r)), inventory: inv });
-        costsAction = side === 'ai' ? (v101 ? v101RivalApCost('sell', actor, settings) > 0 : true) : false; // the player's sale is free; the V10.0 rival's costs an action
+        costsAction = side === 'ai' ? (v101 && cfg.chargeSales !== true ? v101RivalApCost('sell', actor, settings) > 0 : true) : false; // the player's sale is free; the V10.0 rival's costs an action
         break;
       }
       case 'craft': {
