@@ -200866,9 +200866,9 @@ export const V99TurnRow: React.FC<V99TurnRowProps> = ({ theme, pill, actions, pi
   const main = split.main, endTurn = v99RowEndTurnShown(headerEndTurnInView) ? split.endTurn : null;
   const filterOn = Boolean(searchQuery) || !v99QuickDomainTabActive('all', domainFilter);
   const toolsShown = toolsOpen || filterOn;
-  const buttonClass = `${theme.button} text-white rounded-lg flex items-center ${compact ? 'px-3 py-1.5 text-xs gap-1.5' : 'px-4 py-2 text-sm gap-2'} min-h-[36px] sm:min-h-0 disabled:opacity-50`;
+  const buttonClass = `${theme.button} text-white rounded-lg flex items-center ${compact ? 'px-3 py-1.5 text-xs gap-1.5' : 'px-4 py-2 text-sm gap-2'} min-h-[44px] sm:min-h-0 disabled:opacity-50`; // V10.1 (SECTION 20BF): was min-h-[36px] on a phone (a 44 px touch target is the minimum)
   const kbdClass = `${compact ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-0.5 text-xs'} bg-black bg-opacity-30 rounded hidden sm:inline`;
-  const smallClass = `${theme.buttonSecondary} ${compact ? 'px-2 py-1' : 'px-2 py-2'} rounded min-w-[36px] min-h-[36px] sm:min-w-0 sm:min-h-0 text-xs font-bold`;
+  const smallClass = `${theme.buttonSecondary} ${compact ? 'px-2 py-1' : 'px-2 py-2'} rounded min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 text-xs font-bold`; // V10.1 (SECTION 20BF): was 36 px on a phone
   const renderAction = (action: V99QuickActionView, index: number, extraClass: string) => {
     const pinned = pinnedIds.includes(String(action.id || ''));
     return (
@@ -203220,7 +203220,7 @@ export function V99EndTurnChip(props: V99EndTurnChipProps): React.ReactElement {
   return (
     <div className={`${V99_END_TURN_CHIP_CLASS} ${theme.card} ${theme.border} ${theme.shadow}`} data-testid="v99-end-turn-chip" role="group" aria-label="End your turn">
       {props.status && <span className="hidden sm:inline text-xs font-semibold opacity-80 pl-1" data-testid="v99-end-turn-chip-status">Your turn · {props.status}</span>}
-      <button type="button" onClick={props.onEndTurn} className={`${props.emphasised ? `${theme.button} text-white` : theme.buttonSecondary} rounded-lg px-3 py-1.5 text-sm font-bold min-h-[36px]`} data-testid="v99-end-turn-chip-button">{props.label}</button>
+      <button type="button" onClick={props.onEndTurn} className={`${props.emphasised ? `${theme.button} text-white` : theme.buttonSecondary} rounded-lg px-3 py-1.5 text-sm font-bold min-h-[44px]`} data-testid="v99-end-turn-chip-button">{props.label}</button>
     </div>
   );
 }
@@ -212704,6 +212704,22 @@ export function v101PlannerView<T extends object>(gameState: T, session: Strateg
   return session ? { ...gameState, strategyPlannerState: session } : gameState;
 }
 
+// ---- U3b: pre-action notices (diplomacy, strategy divergence, Background AI) ---------------------------------------------------------------------------------
+export const V101_NOTICE_CONTINUE_KINDS: readonly string[] = ['gi3_continue_action', 'bg_continue_action', 'dn_continue_break'];
+/** The Intelligence feed without the notice whose Continue button was just pressed (a copy; a plain "Do It" press removes nothing). A stale copy of the notice could otherwise be pressed again and run an action its label no longer names. */
+export function v101FeedWithoutNotice<T extends { buttons?: ReadonlyArray<{ kind: string; candidateId?: string | null }> }>(feed: readonly T[], pressed: { kind: string; candidateId?: string | null }): T[] {
+  if (!V101_NOTICE_CONTINUE_KINDS.includes(pressed.kind)) return [...feed];
+  return feed.filter(answer => !(answer.buttons || []).some(b => b.kind === pressed.kind && b.candidateId === pressed.candidateId));
+}
+
+// ---- U2b: map markers on a phone ---------------------------------------------------------------------------------------------------------------------------
+/** Extra classes for a region's map marker: on a phone ACT (5% from NSW on a ~310 px map) sat on top of NSW, so tapping NSW often chose ACT: it is nudged left; the classic look's TAS is centred on the bottom edge of a clipped box, so it is lifted. Pure presentation. */
+export function v101MapMarkerNudge(code: string, enhanced: boolean): string {
+  if (code === 'ACT') return enhanced ? 'max-sm:-ml-8' : 'max-sm:-ml-12';
+  if (code === 'TAS' && !enhanced) return '-mt-8';
+  return '';
+}
+
 // ---- U2: a popover that stays on screen ---------------------------------------------------------------------------------------------------------------
 export interface V101PopoverInput { anchorLeft: number; anchorRight: number; anchorTop: number; anchorBottom: number; panelWidth: number; panelHeight: number; viewportWidth: number; viewportHeight: number; margin?: number }
 export interface V101PopoverPlacement {
@@ -213362,6 +213378,40 @@ export function runV101PlayScreenSelfTests(): V9SelfTestResult[] {
       if (v101TextScaleRootStyle(state.textScaleMultiplier) !== undefined) return 'no setting must mean no style';
     }
     if (json(resolveThemeStyles('dark', true)) !== json(resolveThemeStyles('system', true))) return 'Dark and System-on-dark differ';
+    return true;
+  });
+
+  check('v101ui_21_map_markers_on_a_phone', 'On a phone ACT is nudged off NSW (enhanced and classic), the classic TAS is lifted off the clipped bottom edge, and no other marker moves', () => {
+    if (v101MapMarkerNudge('ACT', true) !== 'max-sm:-ml-8' || v101MapMarkerNudge('ACT', false) !== 'max-sm:-ml-12') return 'ACT is not nudged';
+    if (v101MapMarkerNudge('TAS', false) !== '-mt-8' || v101MapMarkerNudge('TAS', true) !== '') return 'TAS nudge wrong';
+    for (const code of ['QLD', 'NSW', 'VIC', 'SA', 'WA', 'NT', 'LORD_HOWE']) for (const enhanced of [true, false]) if (v101MapMarkerNudge(code, enhanced) !== '') return `${code} moved`;
+    // the nudge is enough: a 44 px marker pair 5% / 5% apart on a 310 x 384 map is ~25 px apart, and 32 px further left it is more than a marker apart
+    const nsw = AUSTRALIA_MAP_REGIONS.NSW.anchor, act = AUSTRALIA_MAP_REGIONS.ACT.anchor;
+    const dx = (nsw.x - act.x) / 100 * 310 + 32, dy = (act.y - nsw.y) / 100 * 384;
+    if (Math.hypot(dx, dy) < 44) return `NSW and ACT markers are still ${Math.round(Math.hypot(dx, dy))} px apart`;
+    return true;
+  });
+
+  check('v101ui_22_slash_is_text_only_in_text_fields', 'A "/" typed in a text field is text (the Settings search shortcut leaves it alone), while a slider, checkbox, dropdown or button still lets "/" jump to the search box as before', () => {
+    const el = (tagName: string, type?: string) => ({ tagName, type });
+    const table: Array<[string, unknown, boolean]> = [
+      ['text input', el('INPUT', 'text'), true], ['search input', el('INPUT', 'search'), true], ['input with no type', el('INPUT'), true], ['number input', el('INPUT', 'number'), true], ['textarea', el('TEXTAREA'), true],
+      ['range slider', el('INPUT', 'range'), false], ['checkbox', el('INPUT', 'checkbox'), false], ['dropdown', el('SELECT'), false], ['button', el('BUTTON'), false], ['nothing focused', null, false],
+      ['contenteditable', { tagName: 'DIV', isContentEditable: true }, true], ['role=textbox', { tagName: 'DIV', getAttribute: (n: string) => (n === 'role' ? 'textbox' : null) }, true],
+    ];
+    for (const [label, target, expected] of table) if (v101IsTextEntry(target) !== expected) return `${label}: ${String(v101IsTextEntry(target))}, expected ${expected}`;
+    return true;
+  });
+
+  check('v101ui_23_continue_removes_its_notice', 'Pressing Continue on a pre-action notice removes that notice from the feed (and only that one) so a stale copy cannot be pressed again; a plain Do It removes nothing', () => {
+    type Entry = { id: string; buttons?: Array<{ kind: string; candidateId: string }> };
+    const notice = (id: string, kind: string, candidateId: string): Entry => ({ id, buttons: [{ kind, candidateId }, { kind: 'gi3_cancel', candidateId }] });
+    const feed: Entry[] = [notice('a1', 'bg_continue_action', 'trade'), notice('a2', 'gi3_continue_action', 'trade'), notice('a3', 'bg_continue_action', 'travel'), { id: 'a4' }];
+    const after = v101FeedWithoutNotice(feed, { kind: 'bg_continue_action', candidateId: 'trade' });
+    if (after.map(a => a.id).join() !== 'a2,a3,a4') return `removed the wrong notices: ${after.map(a => a.id).join()}`;
+    if (v101FeedWithoutNotice(feed, { kind: 'do', candidateId: 'trade' }).length !== 4) return 'a plain Do It removed a notice';
+    if (feed.length !== 4) return 'the feed was changed in place';
+    if (v101FeedWithoutNotice(feed, { kind: 'dn_continue_break', candidateId: 'trade' }).length !== 4) return 'a Continue with no matching notice removed something';
     return true;
   });
 
@@ -225183,7 +225233,7 @@ function dispatchGameSettingsChange(
     if (!uiState.showSettings) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f')) {
-        if (e.key === '/' && !e.ctrlKey && !e.metaKey && isInputFocused(e.target)) return; // V10.1 (SECTION 20BF): a "/" typed in any text field ("A/B") is text, not a jump to the search box
+        if (e.key === '/' && !e.ctrlKey && !e.metaKey && v101IsTextEntry(e.target)) return; // V10.1 (SECTION 20BF): a "/" typed in any text field ("A/B") is text, not a jump to the search box
         const searchInput = document.querySelector('input[data-settings-search="true"]') as HTMLInputElement;
         if (searchInput && document.activeElement !== searchInput) {
           e.preventDefault();
@@ -250756,6 +250806,14 @@ function dispatchGameSettingsChange(
   // existing canonical path; none of them bypass legality, approvals or Co-Pilot authority.
   const handleV9Button = useCallback((button: GameIntelligenceButton) => {
     const candidate = findContextualCandidate(v9ActionSet, button.candidateId);
+    // V10.1 (SECTION 20BF): a pre-action notice (diplomacy, strategy divergence, Background AI) used to throw the player onto the Intelligence tab, and its Continue button ran the action from there and left them
+    // there. The notice now shows inline in the guided first match (as answers do), and a Continue returns to PLAY and removes the notice (a stale copy could otherwise be pressed again for another action).
+    const v101ShowNotice = () => { if (!v101RouteLayerRequest('intelligence', wp8State).inline) setExperienceLayer('intelligence'); };
+    const v101ContinueToPlay = () => {
+      if (button.kind === 'do') return;
+      setV9IntelFeed(prev => v101FeedWithoutNotice(prev, button));
+      setExperienceLayer('play');
+    };
     switch (button.kind) {
       case 'do':
       case 'gi3_continue_action':
@@ -250773,9 +250831,9 @@ function dispatchGameSettingsChange(
           const violations = st && dnViewRef.current?.enabled ? checkDiplomaticActionCompliance(st, probe, dnControllersRef.current, dnTurn, dnViewRef.current?.names || {}) : [];
           if (violations.length) {
             if (button.kind === 'dn_continue_break') dnConfirmedRef.current = diplomaticProbeKey(probe, dnTurn);
-            else { pushIntelAnswer(buildDiplomaticBreachAnswer(violations, candidate, dnViewRef.current?.names || {})); setExperienceLayer('intelligence'); return; }
+            else { pushIntelAnswer(buildDiplomaticBreachAnswer(violations, candidate, dnViewRef.current?.names || {})); v101ShowNotice(); return; }
           }
-          if (button.kind === 'dn_continue_break') { requestManualAction(() => executeIntentRecommendation(exec.candidate)); return; }
+          if (button.kind === 'dn_continue_break') { v101ContinueToPlay(); requestManualAction(() => executeIntentRecommendation(exec.candidate)); return; }
         }
         // GI3 divergence: a material conflict with the active strategy shows a notice first. The player
         // is never blocked — Continue runs the same canonical action and records a player override.
@@ -250785,7 +250843,7 @@ function dispatchGameSettingsChange(
           const check = checkGI3Divergence(gi3, { actionType: candidate.actionType, cost: Number(candidate.costEstimate || 0), regionId: ec.regionId || ec.targetId || null, label: candidate.label }, Number(player?.money || 0));
           if (check.conflict && button.kind === 'do') {
             pushIntelAnswer(buildGI3DivergenceAnswer(check, candidate, gi3));
-            setExperienceLayer('intelligence');
+            v101ShowNotice();
             return;
           }
           if (check.conflict) {
@@ -250806,7 +250864,7 @@ function dispatchGameSettingsChange(
             const check = evaluateBackgroundPreAction(bg, giWorldBuilderRef.current(), { id: candidate.id, label: candidate.label, actionType: candidate.actionType, costEstimate: candidate.costEstimate, targetId });
             if (check.warn) {
               pushIntelAnswer(buildBackgroundPreActionAnswer(check, candidate));
-              setExperienceLayer('intelligence');
+              v101ShowNotice();
               return;
             }
             if (bg.recommendedNextMove?.actionId === candidate.id) persistBackgroundAI(noteBackgroundAdviceFollowed(sanitizeBackgroundAIState(bg)), null, 'player');
@@ -250815,6 +250873,7 @@ function dispatchGameSettingsChange(
             persistBackgroundAI(recordBackgroundOverride(sanitizeBackgroundAIState(bg), { turn: Number(gameState.turnCounter || 0), recommended: bg.recommendedNextMove?.label || 'the prepared plan', chosen: candidate.label, chosenRegion: targetId && (REGIONS as any)[targetId] ? targetId : null }), null, 'player');
           }
         }
+        v101ContinueToPlay();
         requestManualAction(() => executeIntentRecommendation(exec.candidate));
         return;
       }
@@ -250958,7 +251017,7 @@ function dispatchGameSettingsChange(
       default:
         return;
     }
-  }, [v9ActionSet, requestManualAction, executeIntentRecommendation, handleEndTurn, openIntentNav, pushIntelAnswer, playerControlState, setExperienceLayer, setPlayerControlMode, requestCoPilotStart, handleTakeControl, handleResumeCoPilot, submitIntelligenceQuery, askAI, addNotification, applyTeamOsCommand, resolveTeamOsProposal, activateGI3Draft, controlGI3, dismissGI3Notice, persistGI3State, appendGameActivityLedgerEvent, gameState.turnCounter, player?.money, persistBackgroundAI, dismissBackgroundNotice, setBackgroundMode, updateUiState]);
+  }, [v9ActionSet, requestManualAction, executeIntentRecommendation, handleEndTurn, openIntentNav, pushIntelAnswer, playerControlState, setExperienceLayer, setPlayerControlMode, requestCoPilotStart, handleTakeControl, handleResumeCoPilot, submitIntelligenceQuery, askAI, addNotification, applyTeamOsCommand, resolveTeamOsProposal, activateGI3Draft, controlGI3, dismissGI3Notice, persistGI3State, appendGameActivityLedgerEvent, gameState.turnCounter, player?.money, persistBackgroundAI, dismissBackgroundNotice, setBackgroundMode, updateUiState, wp8State, setV9IntelFeed]);
 
   const handleV9ControlStart = useCallback(() => {
     requestCoPilotStart(playerControlState.mode === 'rescue' ? 'rescue' : 'autonomous');
@@ -265922,8 +265981,9 @@ function dispatchGameSettingsChange(
     const actionButtonCompact = gameSettings.investmentsEnabled || gameSettings.equipmentShopEnabled || gameSettings.sabotageEnabled;
     const actionButtonSize = actionButtonCompact ? 'px-3 py-1.5 text-sm' : 'px-4 py-2';
     const actionButtonGap = actionButtonCompact ? 'gap-1.5' : 'gap-2';
-    const actionButtonClass = `${themeStyles.button} text-white rounded-lg flex items-center ${actionButtonSize} ${actionButtonGap} disabled:opacity-50`;
-    const actionButtonSecondaryClass = `${themeStyles.buttonSecondary} rounded-lg flex items-center ${actionButtonSize} ${actionButtonGap}`;
+    // V10.1 (SECTION 20BF): the action bar's buttons are at least 44 px tall on a phone (they were ~34 px); from sm up they are as before.
+    const actionButtonClass = `${themeStyles.button} text-white rounded-lg flex items-center ${actionButtonSize} ${actionButtonGap} min-h-[44px] sm:min-h-0 disabled:opacity-50`;
+    const actionButtonSecondaryClass = `${themeStyles.buttonSecondary} rounded-lg flex items-center ${actionButtonSize} ${actionButtonGap} min-h-[44px] sm:min-h-0`;
     // V10.0 (SECTION 20AY): key caps are for keyboards — hidden on phone-width screens, as the docked bar's already were (`hidden sm:inline`).
     const actionButtonKbdClass = `${actionButtonCompact ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-0.5 text-xs'} bg-black bg-opacity-30 rounded hidden sm:inline`;
     const quickActionCompact = uiState.quickActionCompactView ?? (actionButtonCompact || getQuickActions.length > 6);
@@ -269034,7 +269094,7 @@ function dispatchGameSettingsChange(
                       data-testid={`map-region-${code}`}
                       data-selected={isSelectedPreview ? 'true' : undefined}
                       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); v94Activate(); } }}
-                      className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-transform duration-150 hover:scale-105 focus-visible:scale-105 group ${
+                      className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-transform duration-150 hover:scale-105 focus-visible:scale-105 group ${v101MapMarkerNudge(code, wp4Enhanced)} ${
                         isPlayerTeamHere || isAiHere || isSelectedPreview ? 'z-20' : 'z-10'
                       } ${isAdjacent && !isPlayerHere ? 'hover:z-30' : ''}`}
                       style={{
