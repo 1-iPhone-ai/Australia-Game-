@@ -910,6 +910,8 @@ export interface AiCommunicationResponse {
   suggestedActions?: AiSuggestedAction[];
   followUps?: string[];
   proactiveKey?: string;
+  /** V10.1 (SECTION 20BH): true = the answer is the stock "nothing to report" line, not something the memory or snapshot said (callers do not repeat it as evidence). */
+  fallback?: boolean;
 }
 
 export interface AiCommunicationState {
@@ -1081,6 +1083,7 @@ export function answerMemoryAwareQuery(params: {
   const lines: string[] = [];
   const suggestedActions: AiSuggestedAction[] = [];
   let kind: AiCommunicationResponse['kind'] = 'answer';
+  let fallback = false;
   const stance: AiCommunicationResponse['stance'] = !rel ? 'neutral' : rel.grievance + rel.rivalry > 60 ? 'hostile' : rel.grievance > 20 || rel.trust < 35 ? 'wary' : rel.trust > 65 || rel.gratitude > 20 ? 'supportive' : 'neutral';
   const plan = params.plan && params.plan.status !== 'cancelled' ? params.plan : null;
   if (intent === 'CURRENT_PLAN' || intent === 'PLAN_STATUS' || intent === 'TEAM_PLAN_UPDATE') {
@@ -1114,18 +1117,25 @@ export function answerMemoryAwareQuery(params: {
   } else {
     const threatened = params.snapshot.threatenedRegions;
     if (threatened.length) {
-      lines.push(`${threatened.slice(0, 2).join(' and ')} ${threatened.length > 1 ? 'are' : 'is'} contested — protecting ${threatened[0]} matters most.`);
+      // V10.1 (SECTION 20BH): only a teammate says "protecting X matters most"; against a rival the line is a plain statement of fact
+      lines.push(`${threatened.slice(0, 2).join(' and ')} ${threatened.length > 1 ? 'are' : 'is'} contested${ally ? ` — protecting ${threatened[0]} matters most.` : '.'}`);
       evidence.push({ type: 'region', summary: `contested: ${threatened.join(', ')}` });
       if (ally) suggestedActions.push({ id: commId('sa', params.turn, threatened[0], params.speakerActorId), type: 'reserve_region', label: `Reserve ${threatened[0]} for the team`, regionId: threatened[0], estimatedCost: 0, status: 'proposed' });
     }
-    if (params.snapshot.rivalVictoryProgress !== null && params.snapshot.rivalVictoryProgress >= params.snapshot.victoryThreshold * 0.75) lines.push(`The rival is at ${Math.round(params.snapshot.rivalVictoryProgress * 100)}% of the victory threshold — we need to slow them down.`);
+    // V10.1 (SECTION 20BH): rivalVictoryProgress is the rival's share of the five-day mercy count, so it is worded as days, not as "% of the victory threshold" (4 days read as 80%)
+    if (params.snapshot.rivalVictoryProgress !== null && params.snapshot.rivalVictoryProgress >= params.snapshot.victoryThreshold * 0.75) lines.push(`${v101RivalLeadWords(params.snapshot.rivalVictoryProgress)}${ally ? ' — we need to slow them down.' : '; at five the match ends early.'}`);
     if (plan) lines.push(`Stick to our plan: ${plan.primaryObjective}.`);
-    if (!lines.length) lines.push(ally ? 'Nothing urgent from my side. Keep building cash and hold what we have.' : 'I have nothing to tell you.');
+    if (!lines.length) {
+      // V10.1 (SECTION 20BH): a rival no longer says "I have nothing to tell you" (and the line is marked so Game Intelligence does not file it as memory)
+      fallback = true;
+      lines.push(ally ? 'Nothing urgent from my side. Keep building cash and hold what we have.' : 'Nothing urgent to report right now.');
+    }
   }
   return {
     id: commId('msg', params.turn, params.speakerActorId, params.query), turn: params.turn, speakerActorId: params.speakerActorId, recipientActorId: params.recipientActorId,
     text: lines.join(' '), kind, stance, confidence: evidence.length ? 0.75 : 0.45, evidence, suggestedActions: suggestedActions.length ? suggestedActions : undefined,
-    followUps: ['What is our current plan?', 'What will the rival do next?', 'What do you remember about me?']
+    followUps: ['What is our current plan?', 'What will the rival do next?', 'What do you remember about me?'],
+    ...(fallback ? { fallback: true } : {})
   };
 }
 
@@ -1161,11 +1171,18 @@ export function evaluateProactiveIntelligence(params: {
     });
   };
   const s = params.snapshot;
-  if (s.rivalVictoryProgress !== null && s.rivalVictoryProgress >= s.victoryThreshold * 0.85) emit('rival_near_victory', `Warning: the rival is at ${Math.round(s.rivalVictoryProgress * 100)}% of the victory threshold.`, 'warning', [{ type: 'dominance', summary: `rival share ${Math.round(s.rivalVictoryProgress * 100)}%` }]);
-  s.threatenedRegions.slice(0, 1).forEach(r => emit(`threat_${r}`, `${r} is contested — want me to cover it?`, 'team_request', [{ type: 'region', summary: `${r} contested` }], r));
-  if (s.teammateCash !== null && s.teammateCash < 300) emit('teammate_low_cash', 'I am almost out of cash — I will focus on income for a while.', 'team_request', [{ type: 'cash', summary: `teammate cash ${s.teammateCash}` }]);
+  // V10.1 (SECTION 20BH): only a teammate offers to "cover" a region or talks about running out of cash; against a rival these lines are plain notices.
+  const speakerActor = s.actors.find(a => a.id === params.speakerActorId);
+  const recipientActor = s.actors.find(a => a.id === params.recipientActorId);
+  const ally = Boolean(speakerActor?.teamId && recipientActor?.teamId && speakerActor.teamId === recipientActor.teamId);
+  if (s.rivalVictoryProgress !== null && s.rivalVictoryProgress >= s.victoryThreshold * 0.85) emit('rival_near_victory', `Warning: ${v101RivalLeadWords(s.rivalVictoryProgress)}.`, 'warning', [{ type: 'dominance', summary: `rival share ${Math.round(s.rivalVictoryProgress * 100)}%` }]);
+  s.threatenedRegions.slice(0, 1).forEach(r => ally
+    ? emit(`threat_${r}`, `${r} is contested — want me to cover it?`, 'team_request', [{ type: 'region', summary: `${r} contested` }], r)
+    : emit(`threat_${r}`, `${r} is contested: the rival's stake there is close to yours.`, 'warning', [{ type: 'region', summary: `${r} contested` }]));
+  if (ally && s.teammateCash !== null && s.teammateCash < 300) emit('teammate_low_cash', 'I am almost out of cash — I will focus on income for a while.', 'team_request', [{ type: 'cash', summary: `teammate cash ${s.teammateCash}` }]);
   const grudge = Object.values(params.memory?.relationships || {}).find(r => r.grievance >= 40);
-  if (grudge) emit(`grudge_${grudge.actorId}`, `I have not forgotten what ${grudge.actorId} did — expect me to push back.`, 'warning', [{ type: 'relationship', summary: `grievance ${grudge.grievance}` }]);
+  // V10.1 (SECTION 20BH): "what player did" printed the raw actor id; it is now "you" (or the actor's name)
+  if (grudge) emit(`grudge_${grudge.actorId}`, `I have not forgotten what ${v101ActorWords(grudge.actorId, params.recipientActorId, s.actors)} did — expect me to push back.`, 'warning', [{ type: 'relationship', summary: `grievance ${grudge.grievance}` }]);
   return out;
 }
 
@@ -13510,7 +13527,7 @@ export const SETTINGS_HUB_FIELD_META: Record<string, SettingsHubFieldMeta> = {
   aiPersistentAskOnAbandon: { key: 'aiPersistentAskOnAbandon', tab: 'aiTeams', label: 'Ask Before Saving Abandoned Matches', description: 'If you start a new match while one is still in progress, ask whether to save that match to persistent AI memory. No silent writes.', tags: ['AI', 'Advanced'], chips: ['On by default'] },
   aiPersistentAivsAiEnabled: { key: 'aiPersistentAivsAiEnabled', tab: 'aiTeams', label: 'Persist AI-vs-AI Matches', description: 'Allow AI-vs-AI simulation matches to read and write persistent profiles. Off by default.', tags: ['AI', 'Advanced'], chips: ['Off by default'] },
   aiCommunicationEnabled: { key: 'aiCommunicationEnabled', tab: 'aiTeams', label: 'AI Communication', description: 'Deterministic, evidence-backed answers and team-plan collaboration through Ask-the-Game. No LLM. On by default.', tags: ['AI', 'Advanced'], chips: ['On by default'] },
-  aiCommunicationProactiveEnabled: { key: 'aiCommunicationProactiveEnabled', tab: 'aiTeams', label: 'Proactive Intelligence', description: 'Allow grounded warnings at day boundaries when a rival nears victory, a region is threatened, or a plan is blocked.', tags: ['AI', 'Advanced'], chips: ['On by default'] },
+  aiCommunicationProactiveEnabled: { key: 'aiCommunicationProactiveEnabled', tab: 'aiTeams', label: 'Proactive Intelligence', description: 'Allow grounded warnings, checked after each action you commit, when a rival nears victory or a region is contested.' /* V10.1 (SECTION 20BH): it runs after every committed action, not at day boundaries; the plan-blocked warning does not exist */, tags: ['AI', 'Advanced'], chips: ['On by default'] },
   aiCommunicationProactiveFrequency: { key: 'aiCommunicationProactiveFrequency', tab: 'aiTeams', label: 'Proactive Frequency', description: 'How often a speaker may emit a consolidated warning. Default is at most one warning per speaker every two turns.', tags: ['AI', 'Advanced'] },
   aiCommunicationAutonomyLevel: { key: 'aiCommunicationAutonomyLevel', tab: 'aiTeams', label: 'Communication Autonomy', description: 'Advisory recommends only. Assisted requires approval. Delegated still requires an executing Co-Pilot mode and never widens spending, hostile, loan, treasury, or end-turn permissions.', tags: ['AI', 'Advanced', 'Co-Pilot'] },
   planSwitchingCost: { key: 'planSwitchingCost', tab: 'aiTeams', label: 'Plan Switching Cost', description: 'Utility penalty for changing active multi-turn plans prematurely.', tags: ['AI', 'Advanced'] },
@@ -39730,7 +39747,7 @@ export const ASK_GAME_INTENT_REGISTRY: Record<AskGameIntent, AskGameIntentMetada
     requiredEntityTypes: [],
     promptChips: ['What is the best move right now?', 'Recommend an action', 'Suggested turn move'],
     toolDependencies: ['getRecommendedAction'],
-    keywords: ['best action', 'what should i do', 'recommend move', 'suggest action', 'optimal turn action', 'advice', 'recommended move']
+    keywords: ['best action', 'best actions', 'best moves', 'what should i do', 'recommend move', 'suggest action', 'optimal turn action', 'advice', 'recommended move'] // V10.1 (SECTION 20BH): the plural phrasing ("best actions") fell through to GENERAL_HELP
   },
   SEQUENCE_RECOMMEND: {
     intent: 'SEQUENCE_RECOMMEND',
@@ -40404,6 +40421,8 @@ export interface DiagnoseEconomyResult {
 export interface RankedActionItem {
   rank: number;
   actionId: string;
+  /** V10.1 (SECTION 20BH): the words a player uses for the action ("Sell your stock"), so the answer never prints an engine id. */
+  label?: string;
   utilityScore: number;
   apCost: number;
   rationale: string;
@@ -40437,7 +40456,8 @@ export interface ExplainAiDecisionResult {
   strategyFocus: 'challenges' | 'trading' | 'travel' | 'balanced';
   adaptivePhase: string;
   recentTravel: string[];
-  utilityWeights: {
+  /** V10.1 (SECTION 20BH): the match records no utility weights, so none are made up (was always 0.35/0.20/0.15/0.15/0.15). */
+  utilityWeights?: {
     moneyWeight: number;
     riskWeight: number;
     expansionWeight: number;
@@ -40445,6 +40465,8 @@ export interface ExplainAiDecisionResult {
     teamSupportWeight: number;
   };
   activeDirectives: string[];
+  /** V10.1 (SECTION 20BH): false = the match has logged nothing about the rival's choices yet. */
+  hasRecord?: boolean;
   decisionExplanation: string;
 }
 
@@ -40465,6 +40487,8 @@ export interface StateDeltaPreview {
   apCost: number;
   creditScoreChange: number;
   inventoryDeltas: Record<string, number>;
+  /** V10.1 (SECTION 20BH): false = the preview cannot put a cash figure on this action, so none should be shown. */
+  priced?: boolean;
   summary: string;
 }
 
@@ -40498,6 +40522,9 @@ export interface CheckAffordabilityResult {
     apDeficit: number;
   };
   recommendation?: string;
+  /** V10.1 (SECTION 20BH): false = the game cannot price this target from here, so no cost is claimed. */
+  costKnown?: boolean;
+  note?: string;
 }
 
 export interface SupportRequestInfo {
@@ -40576,24 +40603,24 @@ export const ASK_GAME_TOOL_DEPENDENCY_ROUTES: Record<string, string | null> = {
   validateactionrules: 'validate_action',
   getgamesettings: 'inspect_settings',
   searchsettingsregistry: 'search_settings',
-  getplayerstatus: null,
+  getplayerstatus: null, // answered from the live state snapshot in the evidence bundle, not from a tool
   getregioninfo: null,
   getmarketprices: null,
   getcontractdetails: null,
   getinfrastructurestatus: null,
   getexpeditionstatus: null,
-  getaibehaviorlog: null,
+  getaibehaviorlog: 'explain_ai_decision', // V10.1 (SECTION 20BH): these seven reach the grounded tools that already existed (they were all null: the drawer printed filler)
   getaistrategycontext: null,
-  geteconomydiagnostics: null,
-  getrecommendedaction: null,
-  getrecommendedsequence: null,
-  rundryrunsimulation: null,
-  checkaffordability: null,
-  getteammatediagnostics: null,
+  geteconomydiagnostics: 'diagnose_economy',
+  getrecommendedaction: 'rank_next_actions',
+  getrecommendedsequence: 'rank_turn_sequences',
+  rundryrunsimulation: 'simulate_action',
+  checkaffordability: 'check_affordability',
+  getteammatediagnostics: 'diagnose_teammate',
   getgovernancestatus: null,
   getactivityledger: null,
   getreplaybranchdata: null,
-  getcreditloanstatus: null,
+  getcreditloanstatus: 'diagnose_economy', // V10.1 (SECTION 20BH): cash, debt, interest and credit are what the economy tool already reports
   getdominancetracker: null,
   getcrisisstabilitystatus: null,
   getgeneralhelpcontext: null,
@@ -40698,7 +40725,7 @@ export function askGameToolDiagnoseEconomy(state: any, actorId: string): Diagnos
   const recommendations: string[] = [];
   if (insolvencyRiskLevel === 'critical' || insolvencyRiskLevel === 'high') {
     recommendations.push('Reduce loan interest burden by early repayment or refinancing.');
-    recommendations.push('Cut non-essential travel and focus on high-yield gathering.');
+    recommendations.push('Cut non-essential travel and focus on selling stock and the challenges you can win.'); // V10.1 (SECTION 20BH): there is no "gather" action in the game to focus on
   }
   if (supplyConsumption * 10 > cashReserve) {
     recommendations.push('Supply reserves low relative to consumption rate; secure regional supplies.');
@@ -40729,32 +40756,36 @@ export const askToolDiagnoseEconomy = askGameToolDiagnoseEconomy;
  */
 export function askGameToolRankNextActions(state: any, actorId: string, topN: number = 3): RankNextActionsResult {
   const actor = state?.players?.find((p: any) => p.id === actorId) || state?.humanPlayer || state?.player || state?.actor;
-  const candidateActionIds = [
-    'gather', 'explore', 'challenges', 'travel', 'sell_resources',
-    'buy_resources', 'investments', 'equipment_purchase', 'contract_accept'
-  ];
+  // V10.1 (SECTION 20BH): only actions the engine can really run (gather and explore are not in the game), and a sale
+  // is only on the list when there is something in the bag to sell.
+  const candidateActionIds = v101DrawerActionCandidates();
+  const carrying = Array.isArray(actor?.inventory) ? actor.inventory.length : 0;
 
   const scored: RankedActionItem[] = [];
 
   for (const actionId of candidateActionIds) {
     const legalCheck = askGameToolValidateAction(state, actorId, actionId);
     if (!legalCheck.valid) continue;
+    if (actionId === 'sell_resources' && carrying === 0) continue;
 
     let baseUtility = 50;
     let rationale = '';
 
-    if (actionId === 'gather') {
-      baseUtility = 75 + ((actor?.money ?? 0) < 1000 ? 20 : 0);
-      rationale = 'Provides steady resource influx with zero capital risk.';
+    if (actionId === 'sell_resources') {
+      baseUtility = 85;
+      rationale = 'Turns what you are carrying into cash at the local Sell Market (selling costs no action).';
     } else if (actionId === 'challenges') {
       baseUtility = 80;
       rationale = 'High reward potential aligned with regional objectives.';
     } else if (actionId === 'travel') {
-      baseUtility = (actor?.currentLocation || actor?.region) !== 'QLD' ? 65 : 40;
-      rationale = 'Repositioning to high-yield or strategic market regions.';
+      baseUtility = 60; // V10.1 (SECTION 20BH): was 65 unless the player stood in QLD (read from a field the player does not have)
+      rationale = 'Travelling collects a resource on arrival and repositions you.';
     } else if (actionId === 'contract_accept') {
       baseUtility = 70;
       rationale = 'Secures fixed payout upon milestone completion.';
+    } else if (actionId === 'work') {
+      baseUtility = 45;
+      rationale = 'A safe $50 wage: dependable, but small next to a sale or a challenge.';
     } else {
       baseUtility = 55;
       rationale = 'Standard tactical action.';
@@ -40766,6 +40797,7 @@ export function askGameToolRankNextActions(state: any, actorId: string, topN: nu
     scored.push({
       rank: 0,
       actionId,
+      label: v101DrawerActionLabel(actionId),
       utilityScore: finalUtilityScore,
       apCost,
       rationale
@@ -40777,6 +40809,13 @@ export function askGameToolRankNextActions(state: any, actorId: string, topN: nu
     ...item,
     rank: index + 1
   }));
+  // V10.1 (SECTION 20BH): when the play screen handed over its own Recommended action, that exact move leads the list, so
+  // the drawer, the Co-Pilot panel and the Play card name the same move.
+  const play = state?.v101PlayRecommendation;
+  if (play && typeof play.title === 'string' && play.title) {
+    const lead: RankedActionItem = { rank: 1, actionId: String(play.actionType || 'recommended'), label: play.title, utilityScore: Number(play.score) || 0, apCost: Number(play.apCost) || 0, rationale: String(play.reason || 'The Recommended action on the Play screen.') };
+    return { actorId, topN, rankedActions: [lead, ...rankedActions.filter(r => r.label !== lead.label).slice(0, Math.max(0, topN - 1)).map((r, i) => ({ ...r, rank: i + 2 }))] };
+  }
 
   return {
     actorId,
@@ -40794,12 +40833,13 @@ export function askGameToolRankTurnSequences(state: any, actorId: string, sequen
   const actor = state?.players?.find((p: any) => p.id === actorId) || state?.humanPlayer || state?.player || state?.actor;
   const availableAp = getRemainingActionPoints(actor, state?.gameSettings);
 
+  // V10.1 (SECTION 20BH): every step is an action the engine can run (the old list leaned on gather and explore, which the game does not have).
   const candidateSequences = [
-    { sequence: ['travel', 'gather'], synergy: 20, rationale: 'Relocate to rich region then gather resources.' },
-    { sequence: ['gather', 'sell_resources'], synergy: 25, rationale: 'Harvest immediate resources and liquidate at local market.' },
-    { sequence: ['contract_accept', 'explore'], synergy: 15, rationale: 'Lock in contract then explore relevant target zones.' },
-    { sequence: ['travel', 'gather', 'sell_resources'], synergy: 35, rationale: 'Full regional arbitrage and resource harvest turn loop.' }
-  ].filter(s => s.sequence.length === Math.min(3, Math.max(2, sequenceLength)));
+    { sequence: ['travel', 'sell_resources'], synergy: 25, rationale: 'Travel (arriving collects a resource), then sell what you carry.' },
+    { sequence: ['sell_resources', 'challenges'], synergy: 20, rationale: 'Sell what you carry, then use the cash to take a challenge.' },
+    { sequence: ['contract_accept', 'challenges'], synergy: 15, rationale: 'Lock in a contract, then take a challenge.' },
+    { sequence: ['travel', 'sell_resources', 'challenges'], synergy: 35, rationale: 'Travel to collect a resource, sell it, then take a challenge.' }
+  ].filter(s => s.sequence.every(v101IsEngineBackedActionType)).filter(s => s.sequence.length === Math.min(3, Math.max(2, sequenceLength)));
 
   const rankedSequences: RankedSequenceItem[] = candidateSequences.map((seqObj, idx) => {
     let totalAp = 0;
@@ -40840,30 +40880,29 @@ export const askToolRankTurnSequences = askGameToolRankTurnSequences;
  * Explores AI pattern data, AI strategy focus, adaptive phase, recent travel, and utility weights.
  */
 export function askGameToolExplainAiDecision(state: any, actorId: string): ExplainAiDecisionResult {
-  const actor = state?.players?.find((p: any) => p.id === actorId) || state?.actor;
-  const strategyFocus: ExplainAiDecisionResult['strategyFocus'] = actor?.aiProfile?.focus || 'balanced';
-  const adaptivePhase = state?.aiState?.phase || 'mid_game_consolidation';
-  const recentTravel = actor?.travelHistory || ['NSW', 'VIC'];
+  // V10.1 (SECTION 20BH): read what the match really records (aiStrategyFocus, adaptiveAiPhase, aiPatternData.recentTravel) and
+  // invent nothing: no made-up directives, travel history or weights. With no record yet it says so.
+  const focusRaw = state?.aiStrategyFocus;
+  const focusKnown = focusRaw === 'challenges' || focusRaw === 'trading' || focusRaw === 'travel' || focusRaw === 'balanced';
+  const strategyFocus: ExplainAiDecisionResult['strategyFocus'] = focusKnown ? focusRaw : 'balanced';
+  const adaptivePhase = typeof state?.adaptiveAiPhase === 'string' && state.adaptiveAiPhase ? state.adaptiveAiPhase : 'normal';
+  const rawTravel = state?.aiPatternData?.recentTravel;
+  const recentTravel: string[] = Array.isArray(rawTravel) ? rawTravel.filter((r: unknown): r is string => typeof r === 'string') : [];
+  const rawDirectives = state?.gameSettings?.activeDirectives;
+  const activeDirectives: string[] = Array.isArray(rawDirectives) ? rawDirectives.filter((d: unknown): d is string => typeof d === 'string') : [];
+  const hasRecord = recentTravel.length > 0 || (focusKnown && focusRaw !== 'balanced') || adaptivePhase !== 'normal' || activeDirectives.length > 0;
 
-  const utilityWeights = {
-    moneyWeight: actor?.aiWeights?.money ?? 0.35,
-    riskWeight: actor?.aiWeights?.risk ?? 0.20,
-    expansionWeight: actor?.aiWeights?.expansion ?? 0.15,
-    contractWeight: actor?.aiWeights?.contract ?? 0.15,
-    teamSupportWeight: actor?.aiWeights?.teamSupport ?? 0.15
-  };
-
-  const activeDirectives = state?.gameSettings?.activeDirectives || ['Consolidate Eastern Coast', 'Maintain Cash Floor > $1,000'];
-
-  const decisionExplanation = `AI Actor '${actorId}' is operating under '${strategyFocus}' focus in the '${adaptivePhase}' phase. Key decisions prioritize money weight (${Math.round(utilityWeights.moneyWeight * 100)}%) and risk containment (${Math.round(utilityWeights.riskWeight * 100)}%).`;
+  const decisionExplanation = hasRecord
+    ? `The rival's strategy focus is '${strategyFocus}' and its adaptive phase is '${adaptivePhase}'.${recentTravel.length ? ` Regions it has recently travelled to: ${recentTravel.slice(-4).join(', ')}.` : ''}`
+    : 'No decision record yet: the rival has not made a move this match that the game has logged, so there is nothing to explain.';
 
   return {
     actorId,
     strategyFocus,
     adaptivePhase,
     recentTravel,
-    utilityWeights,
     activeDirectives,
+    hasRecord,
     decisionExplanation
   };
 }
@@ -40898,9 +40937,9 @@ export function askGameToolSimulateAction(state: any, actorId: string, action: a
     }
   }
 
-  const actor = clonedState.players?.find((p: any) => p.id === actorId) || clonedState.humanPlayer || clonedState.player || clonedState.actor;
+  const foundActor = clonedState.players?.find((p: any) => p.id === actorId) || clonedState.humanPlayer || clonedState.player || clonedState.actor;
 
-  if (!actor) {
+  if (!foundActor) {
     return {
       valid: false,
       actorId,
@@ -40911,18 +40950,36 @@ export function askGameToolSimulateAction(state: any, actorId: string, action: a
       error: `Actor '${actorId}' not found.`
     };
   }
-
+  // V10.1 (SECTION 20BH): the preview changes a copy of the actor. With skipDeepClone the actor is the caller's live object
+  // (the planner passes its working state), and the old code wrote the invented gather income into it.
+  const actor: any = { ...foundActor };
+  // V10.1 (SECTION 20BH): the live fields (currentRegion, actions used today) instead of fields the player does not have, and
+  // no made-up "NSW" / "3 AP" / "700 credit" when a value is missing.
+  const simRegion = (): string => String(actor.currentRegion || actor.currentLocation || actor.region || '');
+  const simActionsLeft = (): number => { const left = getRemainingActionPoints(actor, clonedState.gameSettings); return Number.isFinite(left) ? left : 0; };
   const preSnapshot: StateSnapshot = {
     actorId,
     money: actor.money ?? 0,
     supplies: actor.supplies ?? 0,
-    region: actor.currentLocation || actor.region || 'NSW',
-    actionPoints: actor.actionPoints ?? 3,
-    creditScore: actor.creditScore ?? 700,
+    region: simRegion(),
+    actionPoints: simActionsLeft(),
+    creditScore: actor.creditScore ?? 0,
     inventory: { ...(actor.inventory || {}) }
   };
 
   const actionObj = typeof action === 'string' ? { type: action, actionId: action } : (action || {});
+  // V10.1 (SECTION 20BH): "gather" and "explore" are not actions this game has; saying a preview works would be a lie.
+  if (v101IsGhostActionType(actionObj.type || actionObj.actionId)) {
+    return {
+      valid: false,
+      actorId,
+      action: actionObj,
+      preStateSnapshot: preSnapshot,
+      postStateSnapshot: preSnapshot,
+      delta: { moneyChange: 0, supplyChange: 0, regionChange: { from: preSnapshot.region, to: preSnapshot.region }, apCost: 0, creditScoreChange: 0, inventoryDeltas: {}, summary: `'${String(actionObj.type || actionObj.actionId)}' is not an action this game has, so there is nothing to preview.` },
+      error: `'${String(actionObj.type || actionObj.actionId)}' is not an action this game has.`
+    };
+  }
   const legalCheck = validateActionPointAction(clonedState, actorId, actionObj, clonedState.gameSettings);
   if (!legalCheck.valid) {
     return {
@@ -40944,26 +41001,27 @@ export function askGameToolSimulateAction(state: any, actorId: string, action: a
     };
   }
 
-  // Apply simulated state mutations to clone
-  const apCost = legalCheck.actionCost || 1;
-  actor.actionPoints = Math.max(0, (actor.actionPoints ?? 3) - apCost);
+  // Apply simulated state mutations to the copy
+  const apCost = typeof legalCheck.actionCost === 'number' ? legalCheck.actionCost : 1; // V10.1 (SECTION 20BH): a free action (a sale) previews as free, not as 1 action
+  actor.actionPoints = Math.max(0, simActionsLeft() - apCost);
 
   const actionType = actionObj.type || actionObj.actionId || 'action';
   if (actionType === 'travel' && actionObj.destination) {
-    actor.currentLocation = actionObj.destination;
-    actor.money = Math.max(0, (actor.money ?? 0) - 50); // Travel expense
-  } else if (actionType === 'gather') {
-    actor.money = (actor.money ?? 0) + 150;
-    actor.supplies = (actor.supplies ?? 0) + 10;
+    actor.currentRegion = actionObj.destination;
+    // V10.1 (SECTION 20BH): the real fare for this trip (was a flat invented $50)
+    const fare = computeTravelCostCore({ from: preSnapshot.region, to: String(actionObj.destination), characterName: actor.character?.name, mastery: Array.isArray(actor.masteryUnlocks) ? actor.masteryUnlocks : [] });
+    actor.money = Math.max(0, (actor.money ?? 0) - fare);
+  } else if (actionType === 'work') {
+    actor.money = (actor.money ?? 0) + 50; // what the engine's "work" action pays (reduceGameAction: wage 50 unless one is given)
   }
 
   const postSnapshot: StateSnapshot = {
     actorId,
     money: actor.money ?? 0,
     supplies: actor.supplies ?? 0,
-    region: actor.currentLocation || actor.region || 'NSW',
+    region: simRegion(),
     actionPoints: actor.actionPoints ?? 0,
-    creditScore: actor.creditScore ?? 700,
+    creditScore: actor.creditScore ?? 0,
     inventory: { ...(actor.inventory || {}) }
   };
 
@@ -40974,7 +41032,10 @@ export function askGameToolSimulateAction(state: any, actorId: string, action: a
     apCost,
     creditScoreChange: postSnapshot.creditScore - preSnapshot.creditScore,
     inventoryDeltas: {},
-    summary: `Action '${actionType}' preview: Money change: $${postSnapshot.money - preSnapshot.money}, AP cost: ${apCost}.`
+    priced: actionType === 'travel' || actionType === 'work',
+    summary: (actionType === 'travel' || actionType === 'work')
+      ? `Action '${actionType}' preview: Money change: $${postSnapshot.money - preSnapshot.money}, AP cost: ${apCost}.`
+      : `Action '${actionType}' would cost ${apCost} action${apCost === 1 ? '' : 's'}. I can only price travel and work from here, so no cash change is shown.` // V10.1 (SECTION 20BH): a flat "$0" for a sale or a challenge was a made-up result
   };
 
   return {
@@ -41004,21 +41065,35 @@ export function askGameToolCheckAffordability(
 
   const targetName = typeof targetItemOrAction === 'string' ? targetItemOrAction : targetItemOrAction?.item || targetItemOrAction?.actionId || 'target';
 
-  // Cost estimates based on target type
-  let moneyCost = 500;
+  // V10.1 (SECTION 20BH): a price is only stated when the game can work it out. Travel uses the real fare table; the rest used
+  // to be a flat invented $500 / $750 / $2,500 (plus 10 steel). Those targets now say "I can't price this from here".
+  let moneyCost = 0;
   let apCost = 1;
+  let costKnown = false;
+  let note: string | undefined;
   const resourceCosts: Record<string, number> = {};
+  const lowerTarget = String(targetName).toLowerCase();
+  const fromRegion = String(actor?.currentRegion || actor?.currentLocation || '');
+  const destination = typeof targetItemOrAction === 'object' && typeof targetItemOrAction?.region === 'string' ? String(targetItemOrAction.region).toUpperCase() : '';
 
-  if (targetName.toLowerCase().includes('travel')) {
-    moneyCost = 100;
+  if (lowerTarget.includes('travel')) {
+    costKnown = true;
+    apCost = getActionPointCost('travel', actor, state?.gameSettings);
+    if (destination && fromRegion) {
+      moneyCost = computeTravelCostCore({ from: fromRegion, to: destination, characterName: actor?.character?.name, mastery: Array.isArray(actor?.masteryUnlocks) ? actor.masteryUnlocks : [] });
+      note = `The base fare from ${fromRegion} to ${destination}; weather, season and standing can move it.`;
+    } else {
+      moneyCost = computeTravelCostCore({ from: '', to: '', characterName: actor?.character?.name, mastery: Array.isArray(actor?.masteryUnlocks) ? actor.masteryUnlocks : [] });
+      note = 'The base fare to a region that is not next door; name the region for its exact fare.';
+    }
+  } else if (/\b(ap|actions?)\b/.test(lowerTarget)) {
+    costKnown = true;
     apCost = 1;
-  } else if (targetName.toLowerCase().includes('infrastructure')) {
-    moneyCost = 2500;
-    resourceCosts['steel'] = 10;
-    apCost = 2;
-  } else if (targetName.toLowerCase().includes('equipment')) {
-    moneyCost = 750;
-    apCost = 1;
+    note = 'One action.';
+  } else if (lowerTarget === 'target') {
+    note = 'I cannot tell what you want to afford. Name it, for example "Can I afford to travel to VIC?".';
+  } else {
+    note = `I cannot price "${targetName}" from here. Its price is on its own screen (Shop, Infrastructure or Contracts).`;
   }
 
   const moneyDeficit = Math.max(0, moneyCost - currentMoney);
@@ -41037,9 +41112,9 @@ export function askGameToolCheckAffordability(
   let recommendation = undefined;
   if (!isAffordable) {
     if (moneyDeficit > 0) {
-      recommendation = `Sell surplus inventory or secure a $${moneyDeficit} emergency loan to afford ${targetName}.`;
+      recommendation = `Sell what you are carrying to cover the $${moneyDeficit} gap for ${targetName}.`;
     } else if (apDeficit > 0) {
-      recommendation = `End turn or draw from Team Shared Action Bank to cover ${apDeficit} AP deficit.`;
+      recommendation = `You are out of actions for today; end the turn and try again tomorrow.`;
     }
   }
 
@@ -41050,7 +41125,9 @@ export function askGameToolCheckAffordability(
     costBreakdown: { moneyCost, resourceCosts, apCost },
     currentAssets: { money: currentMoney, resources: currentResources, ap: currentAp },
     deficit: { moneyDeficit, resourceDeficits, apDeficit },
-    recommendation
+    recommendation,
+    costKnown,
+    note
   };
 }
 export const askToolCheckAffordability = askGameToolCheckAffordability;
@@ -41118,15 +41195,13 @@ export const askToolDiagnoseTeammate = askGameToolDiagnoseTeammate;
 export function askGameToolInspectSettings(state: any, gameSettings?: any): InspectSettingsResult {
   const effectiveSettings = { ...(state?.gameSettings || {}), ...(gameSettings || {}) };
 
-  const directiveStrength = effectiveSettings.directiveStrength || 'flexible';
-  const coPilotMode = effectiveSettings.coPilotSettings?.authorityMode || 'recommendations';
-  const apCosts = effectiveSettings.actionPointConsumptionSettings || {
-    travel: 1,
-    gather: 1,
-    challenges: 2,
-    explore: 2,
-    attack: 3
-  };
+  // V10.1 (SECTION 20BH): the registry's own defaults (the old text said 'flexible' / 'recommendations' / a canned AP table), and
+  // Co-Pilot reads as 'off' while its master switch is off, whatever mode is stored beside it.
+  const directiveStrength = effectiveSettings.directiveStrength || v101AskSettingDefault('directiveStrength');
+  const coPilotMode = v101AskSettingCurrent(effectiveSettings, 'coPilotEnabled') === true
+    ? String(effectiveSettings.coPilotSettings?.authorityMode || 'off')
+    : 'off';
+  const apCosts: Record<string, number> = { ...DEFAULT_ACTION_POINT_COSTS, ...(effectiveSettings.actionPointConsumptionSettings?.actionCosts || {}) };
 
   const settingsSummary = `Active Co-Pilot Mode: '${coPilotMode}'. AI Directive Strength: '${directiveStrength}'. AP limits enabled: ${effectiveSettings.actionLimitsEnabled ?? true}.`;
 
@@ -41148,11 +41223,13 @@ export function askGameToolSearchSettings(gameSettings: any, query: string): Sea
   const cleanedQuery = (query || '').toLowerCase().trim();
   const matches: MatchedSettingItem[] = [];
 
+  // V10.1 (SECTION 20BH): the defaults and current values come from the game's own registry (v101AskSettingDefault / Current), not
+  // typed in here (three of the four were wrong, and Co-Pilot's switch was read from a key it does not live under).
   const knownSettingsCatalog = [
-    { key: 'directiveStrength', title: 'AI Directive Strength', category: 'AI', defaultVal: 'flexible', desc: 'Enforcement strictness for strategic team directives.' },
-    { key: 'coPilotEnabled', title: 'Co-Pilot Master Switch', category: 'Automation', defaultVal: true, desc: 'Enables co-pilot AI decision suggestions and takeover mode.' },
-    { key: 'creditScoreEnabled', title: 'Credit Score Engine', category: 'Economy', defaultVal: true, desc: 'Enables credit score rating affecting loan interest rates.' },
-    { key: 'actionLimitsEnabled', title: 'Action Point Consumption Limits', category: 'Gameplay', defaultVal: true, desc: 'Enforces Action Point budget caps per turn.' }
+    { key: 'directiveStrength', title: 'AI Directive Strength', category: 'AI', defaultVal: v101AskSettingDefault('directiveStrength'), desc: 'Enforcement strictness for strategic team directives.' },
+    { key: 'coPilotEnabled', title: 'Co-Pilot Master Switch', category: 'Automation', defaultVal: v101AskSettingDefault('coPilotEnabled'), desc: 'Enables co-pilot AI decision suggestions and takeover mode.' },
+    { key: 'creditScoreEnabled', title: 'Credit Score Engine', category: 'Economy', defaultVal: v101AskSettingDefault('creditScoreEnabled'), desc: 'Enables credit score rating affecting loan interest rates.' },
+    { key: 'actionLimitsEnabled', title: 'Action Point Consumption Limits', category: 'Gameplay', defaultVal: v101AskSettingDefault('actionLimitsEnabled'), desc: 'Enforces Action Point budget caps per turn.' }
   ];
 
   for (const item of knownSettingsCatalog) {
@@ -41166,7 +41243,7 @@ export function askGameToolSearchSettings(gameSettings: any, query: string): Sea
       matches.push({
         settingKey: item.key,
         title: item.title,
-        currentValue: gameSettings ? gameSettings[item.key] : item.defaultVal,
+        currentValue: v101AskSettingCurrent(gameSettings, item.key),
         defaultValue: item.defaultVal,
         description: item.desc,
         category: item.category,
@@ -41330,6 +41407,8 @@ export function executeAskGameTool(
       case 'validate_action':
       case 'askgametoolvalidateaction':
       case 'asktoolvalidateaction':
+        // V10.1 (SECTION 20BH): with no action named there is nothing to check (it used to answer "Action 'undefined' is VALID")
+        if (!args.actionId) return { success: false, unavailable: true, toolName, timestamp, result: null, error: 'No action was named, so there is nothing to check.' };
         result = askGameToolValidateAction(gameState, actorId, args.actionId, args.params);
         break;
 
@@ -41360,6 +41439,7 @@ export function executeAskGameTool(
       case 'simulate_action':
       case 'askgametoolsimulateaction':
       case 'asktoolsimulateaction':
+        if (!args.action) return { success: false, unavailable: true, toolName, timestamp, result: null, error: 'No action was named, so there is nothing to preview.' }; // V10.1 (SECTION 20BH)
         result = askGameToolSimulateAction(gameState, actorId, args.action);
         break;
 
@@ -41530,14 +41610,11 @@ export function buildAskGameEvidenceBundle(
   const items: AskGameEvidenceItem[] = [];
 
   // Extract raw state snapshot summary
-  const player = gameState?.players?.find((p: any) => p.isHuman) || gameState?.humanPlayer || gameState?.player || {};
+  // V10.1 (SECTION 20BH): the snapshot holds only what the live match really says. It used to fall back to Turn 1, NSW, 3 AP and
+  // a 700 credit score whenever a field was missing (and read gameState.currentTurn, which is the string "player"), and the
+  // answer printed them as fact. A value the match does not have is now left out, never defaulted.
   const rawStateSnapshots: Record<string, any> = {
-    turn: gameState?.currentTurn ?? gameState?.turn ?? 1,
-    activeRegion: gameState?.activeRegion || player.currentLocation || 'NSW',
-    money: player.money ?? 0,
-    actionPoints: player.actionPoints ?? 3,
-    inventory: player.inventory || {},
-    creditScore: player.creditScore ?? 700,
+    ...v101AskLiveFacts(gameState),
     gameSettings: gameState?.gameSettings || {}
   };
 
@@ -41545,7 +41622,7 @@ export function buildAskGameEvidenceBundle(
   items.push({
     id: `ev_state_${timestamp}`,
     type: 'state_snapshot',
-    label: `Live Game State (Turn ${rawStateSnapshots.turn})`,
+    label: rawStateSnapshots.day !== undefined ? `Live Game State (Day ${rawStateSnapshots.day})` : 'Live Game State',
     data: rawStateSnapshots,
     source: 'GameState',
     confidence: 1.0
@@ -41641,12 +41718,17 @@ export function composeAskGameResponse(
     };
   }
 
-  const intentLayerAnswer = answerIntentLayerQuestion(
-    evidenceBundle.normalizedQuery || evidenceBundle.queryId || '',
-    gameState,
-    gameState?.gameSettings,
-    gameState?.player
-  );
+  // V10.1 (SECTION 20BH): the goal explainer only answers goal questions that arrive as GAME_RULES / GENERAL_HELP / ACTION_RECOMMEND
+  // and are about the goal itself (anchored phrases). "How do I get a loan?" and "Am I losing money to loan interest?" used to be
+  // answered with the tracked-goal text because they contained "how do i get" / "losing".
+  const intentLayerAnswer = v101AskIntentLayerApplies(intent, evidenceBundle.normalizedQuery, evidenceBundle.resolvedEntities)
+    ? answerIntentLayerQuestion(
+        evidenceBundle.normalizedQuery || evidenceBundle.queryId || '',
+        gameState,
+        gameState?.gameSettings,
+        gameState?.player
+      )
+    : null;
   if (intentLayerAnswer) {
     return {
       responseId,
@@ -41673,16 +41755,17 @@ export function composeAskGameResponse(
       break;
 
     case 'PLAYER_STATUS':
-      mainAnswer = `**Player Status Overview**:\n- **Location**: ${evidenceBundle.rawStateSnapshots?.activeRegion}\n- **Cash Balance**: $${evidenceBundle.rawStateSnapshots?.money?.toLocaleString('en-AU')}\n- **Action Points**: ${evidenceBundle.rawStateSnapshots?.actionPoints} AP\n- **Credit Score**: ${evidenceBundle.rawStateSnapshots?.creditScore}`;
+      mainAnswer = v101AskPlayerStatusText(evidenceBundle.rawStateSnapshots); // V10.1 (SECTION 20BH): only the lines the live match can fill in
       break;
 
     case 'ACTION_VALIDATE':
       if (primaryToolResult && typeof primaryToolResult.valid === 'boolean') {
+        // V10.1 (SECTION 20BH): the action by its player-facing name, the cost and what is left in actions
         mainAnswer = primaryToolResult.valid
-          ? `Action '${primaryToolResult.actionId}' is **VALID** and legal to execute (AP Cost: ${primaryToolResult.actionCost}, AP Remaining: ${primaryToolResult.apRemaining}).`
-          : `Action '${primaryToolResult.actionId}' is **INVALID**: ${primaryToolResult.reason}`;
+          ? `'${v101DrawerActionLabel(String(primaryToolResult.actionId))}' is **VALID** and legal to do (it costs ${primaryToolResult.actionCost} action${primaryToolResult.actionCost === 1 ? '' : 's'}; you have ${Number.isFinite(primaryToolResult.apRemaining) ? primaryToolResult.apRemaining : 'unlimited'} left today).`
+          : `'${v101DrawerActionLabel(String(primaryToolResult.actionId))}' is **INVALID** right now: ${primaryToolResult.reason}`;
       } else {
-        mainAnswer = `Action validation complete for turn ${evidenceBundle.rawStateSnapshots?.turn ?? 1}.`;
+        mainAnswer = v101AskNoToolAnswer(evidenceBundle, 'I could not check that action: say what you want to do (for example "Can I travel to VIC?").');
       }
       break;
 
@@ -41690,7 +41773,7 @@ export function composeAskGameResponse(
       if (primaryToolResult) {
         const cashReserve = primaryToolResult.cashReserve ?? 0;
         const insolvencyRiskLevel = primaryToolResult.insolvencyRiskLevel || 'stable';
-        mainAnswer = `**Economy Health Diagnosis**:\n- **Financial Score**: ${primaryToolResult.financialScore ?? 0}/100\n- **Cash Reserve**: $${cashReserve.toLocaleString('en-AU')}\n- **Monthly Net Income**: $${(primaryToolResult.monthlyNetIncome ?? 0).toLocaleString('en-AU')}\n- **Insolvency Risk**: ${insolvencyRiskLevel.toUpperCase()}\n\n**Recommendations**:\n${(primaryToolResult.recommendations || []).map((r: string) => `- ${r}`).join('\n')}`;
+        mainAnswer = `**Economy Health Diagnosis**:\n- **Financial Score**: ${primaryToolResult.financialScore ?? 0}/100\n- **Cash Reserve**: $${cashReserve.toLocaleString('en-AU')}\n- **Rough income estimate (a rule of thumb, not a forecast)**: $${(primaryToolResult.monthlyNetIncome ?? 0).toLocaleString('en-AU')}\n- **Insolvency Risk**: ${insolvencyRiskLevel.toUpperCase()}\n\n**Recommendations**:\n${(primaryToolResult.recommendations || []).map((r: string) => `- ${r}`).join('\n')}`;
 
         previewCards.push({
           title: 'Economic Diagnostics Summary',
@@ -41704,7 +41787,7 @@ export function composeAskGameResponse(
           impactRating: (primaryToolResult.financialScore ?? 0) >= 60 ? 'positive' : (primaryToolResult.financialScore ?? 0) >= 40 ? 'neutral' : 'negative'
         });
       } else {
-        mainAnswer = `Economy diagnostic scan complete. Current liquidity reserve: $${evidenceBundle.rawStateSnapshots?.money ?? 0}.`;
+        mainAnswer = v101AskNoToolAnswer(evidenceBundle, 'I could not run the economy check just now.'); // V10.1 (SECTION 20BH): never "scan complete" when nothing ran
       }
       break;
 
@@ -41717,15 +41800,16 @@ export function composeAskGameResponse(
           type: 'simulation',
           beforeState: primaryToolResult.preStateSnapshot || {},
           afterState: primaryToolResult.postStateSnapshot || {},
-          diffSummary: [
-            `Money Delta: $${primaryToolResult.delta.moneyChange}`,
-            `Supply Delta: ${primaryToolResult.delta.supplyChange}`,
-            `AP Cost: ${primaryToolResult.delta.apCost}`
-          ],
-          impactRating: primaryToolResult.delta.moneyChange >= 0 ? 'positive' : 'mixed'
+          diffSummary: primaryToolResult.delta.priced === false
+            ? [`Actions: ${primaryToolResult.delta.apCost}`]
+            : [
+              `Money Delta: $${primaryToolResult.delta.moneyChange}`,
+              `Actions: ${primaryToolResult.delta.apCost}`
+            ],
+          impactRating: primaryToolResult.delta.priced === false ? 'neutral' : primaryToolResult.delta.moneyChange >= 0 ? 'positive' : 'mixed'
         });
       } else {
-        mainAnswer = `Dry run simulation completed with zero permanent mutations.`;
+        mainAnswer = v101AskNoToolAnswer(evidenceBundle, 'Tell me which action to test, for example "What if I travel to VIC?" or "What if I do some work?".'); // V10.1 (SECTION 20BH): was "Dry run completed" with nothing run
       }
       break;
 
@@ -41738,9 +41822,12 @@ export function composeAskGameResponse(
         const moneyCost = primaryToolResult.costBreakdown?.moneyCost ?? 0;
         const apCost = primaryToolResult.costBreakdown?.apCost ?? 0;
 
-        mainAnswer = primaryToolResult.isAffordable
-          ? `**AFFORDABLE**: You have sufficient cash ($${currentMoney}) and AP (${currentAp}) to execute '${primaryToolResult.target || 'target'}'.`
-          : `**NOT AFFORDABLE**: Deficit detected for '${primaryToolResult.target || 'target'}'. Money deficit: $${moneyDeficit}, AP deficit: ${apDeficit}.\n\n*Suggestion*: ${primaryToolResult.recommendation || 'Gather resources or request credit loan.'}`;
+        const apWords = Number.isFinite(currentAp) ? `${currentAp} action${currentAp === 1 ? '' : 's'}` : 'unlimited actions';
+        mainAnswer = primaryToolResult.costKnown === false
+          ? `**I cannot price that from here.** ${primaryToolResult.note || ''}\n\nWhat I can see: you have $${Number(currentMoney).toLocaleString('en-AU')} and ${apWords} left today.` // V10.1 (SECTION 20BH): no invented price
+          : primaryToolResult.isAffordable
+            ? `**AFFORDABLE**: You have enough cash ($${currentMoney}) and ${apWords} to do '${primaryToolResult.target || 'that'}' (it costs $${moneyCost} and ${apCost} action${apCost === 1 ? '' : 's'}). ${primaryToolResult.note || ''}`.trim()
+            : `**NOT AFFORDABLE**: '${primaryToolResult.target || 'that'}' costs $${moneyCost} and ${apCost} action${apCost === 1 ? '' : 's'}; you are short $${moneyDeficit} and ${apDeficit} action${apDeficit === 1 ? '' : 's'}.\n\n*Suggestion*: ${primaryToolResult.recommendation || 'Sell what you are carrying, then try again.'}`;
 
         previewCards.push({
           title: `Affordability: ${primaryToolResult.target || 'Action'}`,
@@ -41754,7 +41841,7 @@ export function composeAskGameResponse(
           impactRating: primaryToolResult.isAffordable ? 'positive' : 'negative'
         });
       } else {
-        mainAnswer = `Affordability check executed against target item.`;
+        mainAnswer = v101AskNoToolAnswer(evidenceBundle, 'I could not work out that cost just now.'); // V10.1 (SECTION 20BH)
       }
       break;
 
@@ -41762,17 +41849,38 @@ export function composeAskGameResponse(
     case 'SEQUENCE_RECOMMEND':
       if (primaryToolResult?.rankedActions) {
         const topAction = primaryToolResult.rankedActions[0];
-        mainAnswer = `**Recommended Move**: Execute **${topAction?.actionId}** (Utility: ${topAction?.utilityScore}, AP Cost: ${topAction?.apCost}).\n*Rationale*: ${topAction?.rationale}`;
+        // V10.1 (SECTION 20BH): the action by its player-facing name, and the cost in actions
+        mainAnswer = `**Recommended Move**: ${topAction?.label || v101DrawerActionLabel(String(topAction?.actionId || ''))} (costs ${topAction?.apCost ?? 0} action${topAction?.apCost === 1 ? '' : 's'}).\n*Why*: ${topAction?.rationale}${(evidenceBundle.rawStateSnapshots as Record<string, unknown>)?.playRecommended ? '\n(This is the same move the Recommended card on the Play screen shows.)' : ''}`;
       } else if (primaryToolResult?.rankedSequences) {
         const topSeq = primaryToolResult.rankedSequences[0];
-        mainAnswer = `**Recommended Sequence**: ${topSeq?.sequence?.join(' ➔ ')} (Total Utility: ${topSeq?.totalUtility}, Total AP Cost: ${topSeq?.totalApCost}).\n*Rationale*: ${topSeq?.rationale}`;
+        mainAnswer = `**Recommended Sequence**: ${(topSeq?.sequence || []).map((a: string) => v101DrawerActionLabel(a)).join(' ➔ ')} (costs ${topSeq?.totalApCost} actions in all).\n*Why*: ${topSeq?.rationale}`; // V10.1 (SECTION 20BH): names, not engine ids
       } else {
-        mainAnswer = `Recommendation engine calculated optimal tactical moves for turn ${evidenceBundle.rawStateSnapshots?.turn ?? 1}.`;
+        mainAnswer = v101AskNoToolAnswer(evidenceBundle, 'I have no move to suggest right now. The Recommended action on the Play screen is the best place to look.'); // V10.1 (SECTION 20BH)
       }
       break;
 
+    // V10.1 (SECTION 20BH): intents whose grounded tool now reaches the composer.
+    case 'SETTINGS_INSPECT':
+    case 'SETTINGS_SEARCH':
+      mainAnswer = v101AskSettingsAnswer(primaryToolResult) || v101AskNoToolAnswer(evidenceBundle, 'I could not read the settings just now.');
+      break;
+
+    case 'AI_BEHAVIOR_EXPLAIN':
+      mainAnswer = primaryToolResult && typeof primaryToolResult.decisionExplanation === 'string'
+        ? `**The rival**: ${primaryToolResult.decisionExplanation}`
+        : v101AskNoToolAnswer(evidenceBundle, 'The game has not logged an AI decision I can explain yet.');
+      break;
+
+    case 'CREDIT_LOAN_STATUS':
+      mainAnswer = primaryToolResult && typeof primaryToolResult.cashReserve === 'number'
+        ? v101AskLoanText(primaryToolResult, (evidenceBundle.rawStateSnapshots as Record<string, unknown>)?.creditScore)
+        : v101AskNoToolAnswer(evidenceBundle, 'I could not read your loans just now. Open Loans from the menu to see them.');
+      break;
+
     default:
-      mainAnswer = `Answer synthesized for **${intent}** using ${evidenceBundle.items?.length ?? 0} grounded evidence items.\nNormalized Query: "${evidenceBundle.normalizedQuery}"`;
+      // V10.1 (SECTION 20BH): "Answer synthesized for X using N evidence items" said nothing. If a tool answered, say what it
+      // reported; otherwise say plainly that this drawer cannot answer and where the answer lives.
+      mainAnswer = v101AskGenericAnswer(evidenceBundle, primaryToolResult);
       break;
   }
 
@@ -41797,7 +41905,8 @@ export function composeAskGameResponse(
     rules: { type: 'tab', tab: 'help' }
   };
   const category = ASK_GAME_INTENT_REGISTRY[intent]?.category || 'system';
-  const deepLink = categoryDeepLinkMap[category] || { type: 'tab', tab: 'overview' };
+  // V10.1 (SECTION 20BH): an answer that points at the Intelligence tab opens the drawer's own Intelligence view (the old default 'overview' went nowhere)
+  const deepLink = mainAnswer.includes(V101_ASK_INTELLIGENCE_POINTER) ? { type: 'tab', tab: 'intelligence' } : (categoryDeepLinkMap[category] || { type: 'tab', tab: 'overview' });
 
   const response: AskGameResponse = {
     responseId,
@@ -41999,6 +42108,9 @@ export async function processAskGameQuery(
     const toolResults: GroundedToolResult[] = [];
     if (intentMeta && intentMeta.toolDependencies.length > 0) {
       for (const toolName of intentMeta.toolDependencies) {
+        // V10.1 (SECTION 20BH): the dry-run, validate and affordability tools need to know WHICH action; it is read from the question
+        // (a travel to a named region, a sale, some work ...). With none named they report that instead of guessing.
+        const askedAction = v101AskActionFromQuery(normalized.normalizedQuery, resolvedEntities.regions);
         const params: Record<string, any> = {
           region: resolvedEntities.regions[0],
           resource: resolvedEntities.resources[0],
@@ -42007,7 +42119,11 @@ export async function processAskGameQuery(
           infrastructureType: resolvedEntities.infrastructureTypes[0],
           settingKey: resolvedEntities.settingKeys[0],
           rawQuery: rawQuery,
-          normalizedQuery: normalized.normalizedQuery
+          normalizedQuery: normalized.normalizedQuery,
+          query: normalized.normalizedQuery,
+          actionId: askedAction?.actionType,
+          action: askedAction ? { type: askedAction.actionType, actionId: askedAction.actionType, ...(askedAction.region ? { destination: askedAction.region } : {}) } : undefined,
+          target: v101AskAffordabilityTarget(normalized.normalizedQuery, askedAction)
         };
         const toolRes = executeAskGameTool(toolName, params, gameState, resolvedEntities.actors[0] || 'player');
         toolResults.push(toolRes);
@@ -42062,10 +42178,11 @@ export async function processAskGameQuery(
           playerCash: gameState?.player?.money,
           teammateCash: gameState?.actorsById?.ally_ai?.money,
           treasuryCash: gameState?.teamsById?.[viewerTeamId]?.treasuryCash ?? gameState?.teamsById?.[viewerTeamId]?.treasury,
-          playerRegions: gameState?.authorizedPlayerRegions,
-          rivalRegions: gameState?.authorizedRivalRegions,
-          rivalVictoryProgress: gameState?.authorizedRivalVictoryProgress,
-          threatenedRegions: gameState?.authorizedThreatenedRegions,
+          // V10.1 (SECTION 20BH): read from the live deposits and the five-day count; these used to be five fields nothing writes ("authorized*"), so every one was empty
+          playerRegions: v101LiveRegionPicture(gameState).playerRegions,
+          rivalRegions: v101LiveRegionPicture(gameState).rivalRegions,
+          rivalVictoryProgress: rivalMercyProgress(gameState?.dominanceTracker || { player: 0, ai: 0 }, gameState?.selectedMode),
+          threatenedRegions: v101LiveRegionPicture(gameState).threatenedRegions,
           lastDecision: gameState?.authorizedLastDecision,
           actors: [
             { id: 'player', teamId: viewerTeamId, kind: 'human', money: gameState?.player?.money },
@@ -42126,7 +42243,7 @@ export async function processAskGameQuery(
       normalizedQuery: rawQuery,
       resolvedEntities: [],
       toolResults: [],
-      rawStateSnapshots: { turn: gameState?.currentTurn ?? 1 },
+      rawStateSnapshots: { ...v101AskLiveFacts(gameState) }, // V10.1 (SECTION 20BH): was { turn: gameState.currentTurn ?? 1 }, which is the string "player" or an invented 1
       confidence: 0.3,
       fallbackUsed: true,
       items: [{
@@ -42164,9 +42281,11 @@ export interface UseAskGameAIStateOptions {
   player?: any;
   isolatedReplayRuntime?: boolean;
   onDeepLinkNavigate?: (deepLink: any) => void;
+  /** V10.1 (SECTION 20BH): the play screen's own Recommended action (kept current by the screen), so "what should I do" names the same move the card shows. */
+  playRecommendationRef?: { current: unknown };
 }
 
-export function useAskGameAIState({ gameState, setGameState, gameSettings, player, isolatedReplayRuntime, onDeepLinkNavigate }: UseAskGameAIStateOptions) {
+export function useAskGameAIState({ gameState, setGameState, gameSettings, player, isolatedReplayRuntime, onDeepLinkNavigate, playRecommendationRef }: UseAskGameAIStateOptions) {
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [queryInput, setQueryInput] = useState<string>('');
   const [conversationHistory, setConversationHistory] = useState<AskGameMessage[]>([]);
@@ -42235,7 +42354,9 @@ export function useAskGameAIState({ gameState, setGameState, gameSettings, playe
         ...gameState,
         gameSettings: gameSettings || gameState?.gameSettings,
         player: player || gameState?.player,
-        isolatedReplayRuntime: Boolean(isolatedReplayRuntime)
+        isolatedReplayRuntime: Boolean(isolatedReplayRuntime),
+        // V10.1 (SECTION 20BH): read-only, for this question only (not part of the match state)
+        v101PlayRecommendation: playRecommendationRef?.current ?? undefined
       };
       const response = await processAskGameQuery(trimmed, queryState, userPermissions);
       if (shouldEmitLiveCommunication({
@@ -42429,11 +42550,13 @@ export interface AskGamePromptChipsProps {
   cashBalance?: number;
 }
 
+// V10.1 (SECTION 20BH): no default region / turn. They used to default to "NSW" and "Turn 1", so a drawer opened without
+// them (or in any other region) still told the player they were in NSW on turn 1. Unknown now simply shows nothing.
 export const AskGamePromptChips: React.FC<AskGamePromptChipsProps> = ({
   onSelectChip,
-  currentRegion = 'NSW',
-  currentTurn = 1,
-  cashBalance = 1000
+  currentRegion,
+  currentTurn,
+  cashBalance
 }) => {
   const categories = [
     {
@@ -42476,7 +42599,7 @@ export const AskGamePromptChips: React.FC<AskGamePromptChipsProps> = ({
       name: 'Region & Rules',
       icon: '🗺️',
       chips: [
-        `Tell me about ${currentRegion} region`,
+        currentRegion ? `Tell me about ${currentRegion} region` : 'Tell me about my current region',
         'How do AP points work?',
         'Explain rival AI moves',
         'Check active disaster risk'
@@ -42488,9 +42611,9 @@ export const AskGamePromptChips: React.FC<AskGamePromptChipsProps> = ({
     <div className="space-y-3.5 p-3.5 bg-gray-950/60 rounded-xl border border-gray-800/80">
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-          <span>💡</span> Suggested Contextual Queries (Turn {currentTurn})
+          <span>💡</span> Suggested Contextual Queries{currentTurn !== undefined ? ` (Day ${currentTurn})` : ''}
         </span>
-        <span className="text-[11px] text-indigo-400 font-mono">Location: {currentRegion}</span>
+        {currentRegion && <span className="text-[11px] text-indigo-400 font-mono">Location: {currentRegion}</span>}
       </div>
 
       {categories.map((cat, idx) => (
@@ -44728,6 +44851,8 @@ export const AskGameDrawer: React.FC<AskGameDrawerProps> = ({
   setActiveTab,
   gameState,
   gameSettings,
+  currentRegion,
+  currentDay,
   speakerOptions,
   selectedSpeakerId,
   onSelectSpeaker,
@@ -44855,8 +44980,8 @@ export const AskGameDrawer: React.FC<AskGameDrawerProps> = ({
                   </div>
                   <AskGamePromptChips
                     onSelectChip={(chip) => submitQuery(chip)}
-                    currentRegion={gameState?.activeRegion || 'NSW'}
-                    currentTurn={gameState?.currentTurn || 1}
+                    currentRegion={currentRegion}
+                    currentTurn={currentDay}
                   />
                 </div>
               ) : (
@@ -44924,8 +45049,8 @@ export const AskGameDrawer: React.FC<AskGameDrawerProps> = ({
                 setActiveTab('chat');
                 submitQuery(chip);
               }}
-              currentRegion={gameState?.activeRegion || 'NSW'}
-              currentTurn={gameState?.currentTurn || 1}
+              currentRegion={currentRegion}
+              currentTurn={currentDay}
             />
           )}
 
@@ -45690,7 +45815,9 @@ export function evaluateGuardianRiskPipeline(
 
   // LRU CACHE CHECK (<0.01ms)
   const payloadHash = hashNormalizedPayload(context.actionPayload);
-  const cacheKey = `${context.actorId}:${context.turn}:${context.actionType}:${payloadHash}:${stateHashBefore}:${context.settings.protectionLevel}`;
+  // V10.1 (SECTION 20BH): the key also carries what the verdict depends on (region, bag, loans, contracts, expeditions, plans, the actions used). It was day, turn,
+  // actor, cash and action tokens only, so after a free action that left cash alone (accepting a contract, a sale at the same cash) the old verdict stayed on screen.
+  const cacheKey = `${context.actorId}:${context.turn}:${context.actionType}:${payloadHash}:${stateHashBefore}:${v101GuardianStateKey(context)}:${context.settings.protectionLevel}`;
 
   const cachedEntry = GUARDIAN_EVALUATION_CACHE.get(cacheKey);
   if (cachedEntry && cachedEntry.turn === context.turn) {
@@ -66896,8 +67023,15 @@ export function rankContextualRecommendations(
     const blob = `${c.title || ''} ${c.description || ''} ${c.actionType || ''} ${c.targetId || ''}`.toLowerCase();
     let alignment = 0;
     if (objText && blob) {
-      for (const token of objText.split(/[^a-z0-9]+/).filter(t => t.length > 3)) {
-        if (blob.includes(token)) alignment += 8;
+      if (isV101Match(options?.state)) {
+        // V10.1 (SECTION 20BH): whole words only, each counted once, filler words ignored, at most 16 points. Every token longer than 3
+        // characters used to add 8 when it appeared anywhere in the card (inside another word too), so "travel" twice plus "local" reached 24
+        // and the card said it "advances your current goal: Explore and grow your position".
+        alignment += v101ObjectiveTokenAlignment(objText, blob);
+      } else {
+        for (const token of objText.split(/[^a-z0-9]+/).filter(t => t.length > 3)) {
+          if (blob.includes(token)) alignment += 8;
+        }
       }
     }
     if (objective?.sourceType === 'contract' && String(c.category || '').includes('contract')) alignment += 20;
@@ -67195,9 +67329,13 @@ export function mapGedOutcomesToProfilePatch(outcomes: {
 export function answerIntentLayerQuestion(rawQuery: string, state: any, settings: any, actorHint?: any): GameExplanation | null {
   const q = String(rawQuery || '').toLowerCase();
   if (!q) return null;
+  // V10.1 (SECTION 20BH): the phrases are anchored (the whole question has to be the goal question). They were plain substring
+  // tests, so "how do i get a loan" and "am i losing money to loan interest" were answered with the tracked-goal text.
+  const kind = v101AskIntentLayerKind(q);
+  if (!kind) return null;
   const actor = resolveIntentActor(state, actorHint);
   const objective = resolveCurrentObjective(state, settings, actor, state?.playerTrackedObjective);
-  if (q.includes('losing') || q.includes('why am i behind') || q.includes('why are we losing')) {
+  if (kind === 'losing') {
     const events = (state?.gameActivityLedger?.events || state?.eventLogs || []).slice(0, 12);
     const recent = events.map((e: any) => e.summary || e.title || e.eventType).filter(Boolean).slice(0, 4).join(' ');
     const cash = actor?.money || 0;
@@ -67210,7 +67348,7 @@ export function answerIntentLayerQuestion(rawQuery: string, state: any, settings
       sourceSystem: 'Ask the Game'
     });
   }
-  if (q.includes('my goal') || q.includes('current objective') || q.includes('what should i do') || q.includes('what am i supposed')) {
+  if (kind === 'goal') {
     return createGameExplanation({
       whatHappened: `Current goal: ${objective.title}`,
       why: objective.description,
@@ -67220,7 +67358,7 @@ export function answerIntentLayerQuestion(rawQuery: string, state: any, settings
       sourceSystem: 'Ask the Game'
     });
   }
-  if (q.includes('how do i get') || q.includes('show me the path') || q.includes('how do i unlock') || q.includes('how do i reach')) {
+  if (kind === 'path') {
     const path = deriveGoalPath({
       sourceType: objective.sourceType,
       sourceId: objective.sourceId,
@@ -67237,7 +67375,7 @@ export function answerIntentLayerQuestion(rawQuery: string, state: any, settings
       sourceSystem: 'Ask the Game'
     });
   }
-  if (q.includes('tracked goal requires') || q.includes('your tracked')) {
+  if (kind === 'tracked') {
     return createGameExplanation({
       whatHappened: `Your tracked goal requires ${objective.requirements.filter(r => !r.satisfied).map(r => r.label).join(', ') || 'no remaining items'}.`,
       why: objective.description,
@@ -81656,13 +81794,10 @@ export function generateCandidatePlans(
 
   const plans: StrategyPlan[] = [];
 
-  const styleActionPools: Record<string, string[]> = {
-    balanced: ['gather', 'explore', 'contract_accept', 'sell_resources'],
-    safest: ['gather', 'sell_resources', 'explore'],
-    fastest: ['challenges', 'contract_accept', 'gather'],
-    highest_profit: ['sell_resources', 'challenges', 'investments', 'contract_accept'],
-    no_loans: ['gather', 'sell_resources', 'explore', 'contract_accept'],
-  };
+  // V10.1 (SECTION 20BH): the pools hold only actions the engine can run (V101_ENGINE_PLAN_ACTIONS). "gather" and "explore" were the first
+  // entries of three of them, and the engine ran them as no-ops that spent the action; "work" (Work for Wages) and the sale
+  // and contract steps take their place. A sale is only planned when the player is carrying something to sell.
+  const styleActionPools: Record<string, string[]> = v101PlannerPools(actor);
 
   let candidatePlanSeq = 1;
 
@@ -81749,8 +81884,7 @@ export function generateCandidatePlans(
           }
           apCost = simResult.delta.apCost || apCost;
         } else {
-          if (actType === 'gather') { estRev = 150; riskLevel = 0.1; }
-          else if (actType === 'explore') { estCost = 50; estRev = 100; riskLevel = 0.2; }
+          if (actType === 'work') { estRev = V101_WORK_WAGE; riskLevel = 0.05; } // V10.1 (SECTION 20BH): replaces the gather (+$150) and explore (-$50/+$100) guesses
           else if (actType === 'challenges') { estCost = 100; estRev = 400; riskLevel = 0.4; }
           else if (actType === 'sell_resources') { estRev = 250; riskLevel = 0.05; }
           else if (actType === 'investments') { estCost = 500; estRev = 800; riskLevel = 0.3; }
@@ -81807,21 +81941,21 @@ export function generateCandidatePlans(
           id: `act_${style}_fallback`,
           turnNumber: currentTurn,
           stepIndex: 1,
-          actionType: 'gather',
+          actionType: V101_PLAN_FALLBACK_ACTION, // V10.1 (SECTION 20BH): was 'gather', which the game has no action for
           estimatedCost: 0,
-          estimatedRevenue: 100,
+          estimatedRevenue: V101_WORK_WAGE,
           estimatedAPCost: 1,
           riskLevel: 0.1,
           status: 'pending',
-          notes: 'Safe default action',
+          notes: 'Safe default action: Work for Wages pays a steady $50',
         }],
         expectedCashStart: currentCash,
-        expectedCashEnd: currentCash + 100,
-        expectedNetWorthEnd: currentCash + 100,
+        expectedCashEnd: currentCash + V101_WORK_WAGE,
+        expectedNetWorthEnd: currentCash + V101_WORK_WAGE,
         expectedRiskLevel: 0.1,
-        turnSummary: `Turn ${currentTurn}: Safe gather action.`,
+        turnSummary: `Turn ${currentTurn}: Safe default - work for wages, or sell stock or take the best challenge if you have one.`,
       });
-      totalProfit += 100;
+      totalProfit += V101_WORK_WAGE;
       totalAP += 1;
     }
 
@@ -82654,16 +82788,16 @@ export function attemptMinorPlanRepair(
     const activeAct = allActions[activeIdx];
     if (activeAct) {
       const insertedAction: StrategyPlanAction = {
-        id: `act_prep_inserted_${Date.now()}`,
+        id: `act_prep_inserted_v${repairedPlan.version || 1}_${activeAct.id}`, // V10.1 (SECTION 20BH): from the plan, not the clock
         turnNumber: activeAct.turnNumber,
         stepIndex: activeAct.stepIndex,
-        actionType: 'gather',
+        actionType: V101_PLAN_FALLBACK_ACTION, // V10.1 (SECTION 20BH): was 'gather' (an action the game does not have)
         estimatedCost: 0,
-        estimatedRevenue: 150,
+        estimatedRevenue: V101_WORK_WAGE,
         estimatedAPCost: 1,
         riskLevel: 0.1,
         status: 'pending',
-        notes: 'Minor repair inserted resource preparation step',
+        notes: 'Minor repair inserted a Work for Wages step to build cash first',
       };
 
       activeAct.stepIndex += 1;
@@ -83494,8 +83628,28 @@ export function executeStrategyPlannerCoPilotStep(
     };
   }
 
+  // V10.1 (SECTION 20BH): a "gather" or "explore" step (an old saved plan can carry one) is refused up front: the game has no such action, and the
+  // engine used to run it as a no-op that spent the player's action. Nothing is spent; the step is marked failed so the plan can be repaired.
+  if (v101IsGhostActionType(currentAction.actionType)) {
+    currentAction.status = 'failed';
+    plannerState.currentProgress = progress;
+    newState.strategyPlannerState = plannerState;
+    if (newState.gameSettings) {
+      newState.gameSettings.strategyPlannerState = plannerState;
+    }
+    return {
+      executed: false,
+      pausedAtCheckpoint: false,
+      checkpointReason: `'${currentAction.actionType}' is not an action this game has, so the step was skipped and no action was spent.`,
+      action: currentAction,
+      newState
+    };
+  }
   // Route step execution through canonical gameplay dispatcher with postcondition verification
   const actionObj = currentAction as any;
+  // V10.1 (SECTION 20BH): a plan step uses the action-point names (sell_resources, challenges ...); the engine runs its own (sell, challenge ...), and
+  // needs the item or contract to act on. Both come from v101PlanStepIntent (the Co-Pilot's own legal candidates), so the step does what it says.
+  const stepIntent = v101PlanStepIntent(newState, currentAction);
   const stepCoPilotSettings: CoPilotSettings = {
     ...createDefaultCoPilotSettings(),
     ...(newState.coPilotSettings || newState.gameSettings?.coPilotSettings || {}),
@@ -83505,10 +83659,10 @@ export function executeStrategyPlannerCoPilotStep(
   const { updatedState: postState, executionResult } = executeCoPilotActionIntent(
     newState,
     {
-      actionType: currentAction.actionType,
+      actionType: stepIntent.actionType,
       actorId: actionObj.actorId || 'player',
-      parameters: actionObj.parameters || actionObj.payload || {},
-      targetId: actionObj.targetId || currentAction.targetLocation,
+      parameters: stepIntent.parameters,
+      targetId: stepIntent.targetId,
       costEstimate: currentAction.estimatedCost || actionObj.costEstimate,
       planId: activePlan.id
     },
@@ -100734,6 +100888,9 @@ export interface AskGameDrawerProps {
   setActiveTab: (tab: 'chat' | 'prompt_chips' | 'history' | 'settings' | 'intelligence') => void;
   gameState?: any;
   gameSettings?: any;
+  /** V10.1 (SECTION 20BH): where the player is and what day it is (the match state has no "active region"), for the prompt chips. */
+  currentRegion?: string;
+  currentDay?: number;
   speakerOptions?: Array<{ id: string; label: string }>;
   selectedSpeakerId?: string;
   onSelectSpeaker?: (actorId: string) => void;
@@ -109722,6 +109879,7 @@ export async function runGameIntelligence(input: {
       try { response = await input.askEngine(result.understanding.effectiveQuery || input.query); } catch { response = null; }
       const text = response?.permissionRequired
         ? 'Details of what the rival AI has learned need permission (full memory inspection), so they are left out.'
+        : response?.communication?.fallback === true ? '' // V10.1 (SECTION 20BH): the stock "nothing to report" line is not memory evidence
         : String(response?.mainAnswer || '').split(/(?<=[.!?])\s+/).slice(0, 2).join(' ').slice(0, 280);
       if (text) {
         const memClaim = claim(text, response?.permissionRequired ? 'caveat' : 'inference', 'moderate', [], { derived: giNumbersIn(text).map(n => n.value) });
@@ -116321,15 +116479,23 @@ export function buildBackgroundShadowPlan(world: GIWorld, prevPlan: BackgroundSh
   const mitigations = evals.filter(e => focusRegion && e.targetId === focusRegion && /deposit|defend|reinforce|secure|claim|control|travel/.test(`${e.actionType} ${e.label}`.toLowerCase()));
   let next: BackgroundMoveRef | null = null;
   let adaptation: string | null = null;
+  // V10.1 (SECTION 20BH): the Next move is the Play card's Recommended action unless a threat rule puts something else first, and when it does the
+  // reason says so. (It used to be Background AI's own re-sort of the top few cards, so Play, Co-Pilot and this panel could name three moves.)
+  const v101PlayTop = world.actionSet?.recommended || null;
+  const v101ThreatNote = (moveId: string): string => (v101PlayTop && v101PlayTop.id !== moveId ? ` - a threat rule puts this ahead of "${v101PlayTop.label}", the Recommended action on Play` : '');
   if (lastOverride && focusRegion && lastOverride.chosenRegion !== focusRegion) {
     const cheapest = [...mitigations].sort((a, b) => -a.dimensions.resourceCost - -b.dimensions.resourceCost || b.total - a.total)[0];
-    if (cheapest) next = { actionId: cheapest.actionId, label: cheapest.label, actionType: cheapest.actionType, targetId: cheapest.targetId, reason: `cheapest way to stabilize ${focusRegion}` };
+    if (cheapest) next = { actionId: cheapest.actionId, label: cheapest.label, actionType: cheapest.actionType, targetId: cheapest.targetId, reason: `cheapest way to stabilize ${focusRegion}${v101ThreatNote(cheapest.actionId)}` };
     adaptation = `Since you prioritized ${lastOverride.chosenRegion ? bgRegionName(world, lastOverride.chosenRegion) : lastOverride.chosen}, I'm now looking for the cheapest way to stabilize ${bgRegionName(world, focusRegion)} without abandoning it.`;
     if (lastOverride.chosenRegion && !goals.some(g => g.includes(bgRegionName(world, lastOverride.chosenRegion)))) goals.splice(1, 0, `Keep the ${bgRegionName(world, lastOverride.chosenRegion)} expansion going`);
   } else if (lastOverride) {
     adaptation = `Plan adjusted to your choice (${lastOverride.chosen}).`;
   }
-  if (!next && mitigations[0] && regionThreat && (regionThreat.severity === 'critical' || regionThreat.severity === 'high')) next = { actionId: mitigations[0].actionId, label: mitigations[0].label, actionType: mitigations[0].actionType, targetId: mitigations[0].targetId, reason: mitigations[0].reason };
+  if (!next && mitigations[0] && regionThreat && (regionThreat.severity === 'critical' || regionThreat.severity === 'high')) next = { actionId: mitigations[0].actionId, label: mitigations[0].label, actionType: mitigations[0].actionType, targetId: mitigations[0].targetId, reason: `${mitigations[0].reason}${v101ThreatNote(mitigations[0].actionId)}` };
+  if (!next && v101PlayTop && v101PlayTop.legal && v101PlayTop.execution?.kind === 'copilot_candidate') {
+    const playEval = evals.find(e => e.actionId === v101PlayTop.id);
+    if (playEval) next = { actionId: playEval.actionId, label: playEval.label, actionType: playEval.actionType, targetId: playEval.targetId, reason: `${playEval.reason} (the same move as the Recommended action on Play)` };
+  }
   if (!next) { const top = moves.find(m => m.moveClass === 'best_immediate') || moves.find(m => m.moveClass === 'best_waiting') || null; next = top ? { actionId: top.actionId, label: top.label, actionType: top.actionType, targetId: top.targetId, reason: top.reason } : null; }
   const conditions: Array<{ when: string; then: string }> = [];
   if (focusRegion) conditions.push({ when: `${rival?.name || 'The rival'} increases pressure on ${focusRegion}`, then: `delay expansion and reinforce ${focusRegion}` });
@@ -209041,11 +209207,424 @@ export function runV101SettingsSelfTests(): V9SelfTestResult[] {
 // SECTION 20BH: V10.1 ADVICE YOU CAN TRUST — ASK THE GAME, THE PLANNER AND THE THREE "BEST MOVES"
 // ============================================================================
 // <<V101-SLOT AI begin>>
-// (work package AI: replace everything between the two markers; keep the markers and the exported suite function below.)
+// ----------------------------------------------------------------------------
+// What this section fixes (V10.1 work package "Advice you can trust"). The advice the game gives is grounded, consistent and does
+// not make things up. Nothing here changes how a match plays and nothing here is saved: every fix is to what the game SAYS, or to
+// which actions its planner proposes, so it applies to every match (older saves included).
+//
+// 1. Ask-the-Game drawer. 22 of the 25 tool dependencies were routed to nothing, so "best actions", "diagnose economy", "dry run" and
+//    "can I afford" printed placeholder lines. The seven that have a grounded tool are routed to it (ASK_GAME_TOOL_DEPENDENCY_ROUTES),
+//    the rest answer "I cannot answer that here" and point at the Intelligence tab. The evidence bundle no longer prints invented
+//    state (Turn 1, NSW, 3 AP, credit 700): v101AskLiveFacts reads the live fields and leaves a line out when the match lacks it.
+//    The goal explainer no longer hijacks "how do I get a loan" (anchored phrases + the classified intent). "search settings" quotes
+//    the registry's own defaults and reads Co-Pilot from where it lives.
+// 2. The three "best moves". The Co-Pilot panel's Accept Top Move and Background AI's Next move read the same annotated action set the
+//    Play card renders (v9ActionSetView.recommended) and run it through the Play path, so all three name one move. The panel's
+//    analysis is memoised instead of being recomputed on every keystroke.
+// 3. Strategy Planner. Plans were built from "gather" and "explore" steps the game has no action for (the engine ran them as no-ops
+//    that spent the action). V101_ENGINE_PLAN_ACTIONS is the one set of plan actions the engine can really run; the planner pools,
+//    the fallback plan, the repair step, the Ask tools and the simulator all go through it.
+// 4. Proactive Intelligence reads regions and the rival's progress from live state (it read fields nothing writes), says "the rival"
+//    instead of speaking as one, and shows names, not actor ids. The Guardian verdict cache key includes the state the verdict
+//    depends on. Goal alignment (V10.1 matches) ignores filler words and counts whole words once.
+// Suite v101ai (runV101AdviceSelfTests).
+// ----------------------------------------------------------------------------
+
+// ---- The engine-backed action set (planner, Ask tools, simulator) ----------------------------------------------------------
+/**
+ * Every action name the Strategy Planner and the Ask tools may use, mapped to the case reduceGameAction really has for it. The
+ * names on the left are the action-point vocabulary (what the settings screens call them); the engine runs the name on the right.
+ * "gather" and "explore" are not here on purpose: the live game has no such action, and the engine's default branch ran them as
+ * no-ops that spent the action. (They stay in the action-point table so saved settings that mention them still load.)
+ */
+export const V101_ENGINE_PLAN_ACTIONS: Readonly<Record<string, string>> = {
+  work: 'work',
+  travel: 'travel',
+  sell_resources: 'sell',
+  sell: 'sell',
+  buy_resources: 'buy_market',
+  buy_market: 'buy_market',
+  challenges: 'challenge',
+  challenge: 'challenge',
+  contract_accept: 'accept_regional_contract',
+  accept_regional_contract: 'accept_regional_contract',
+  investments: 'invest',
+  invest: 'invest',
+  regional_deposit: 'region_deposit',
+  region_deposit: 'region_deposit',
+  equipment_purchase: 'buy_equipment',
+  buy_equipment: 'buy_equipment',
+  end_turn: 'end_turn'
+};
+
+/** Names the old planner and tools used for actions this game does not have. */
+export const V101_GHOST_ACTION_TYPES: readonly string[] = ['gather', 'explore', 'collect_resources', 'discover'];
+
+/** True when the name is an action the engine can really run. */
+export function v101IsEngineBackedActionType(actionType: unknown): boolean {
+  return typeof actionType === 'string' && Object.prototype.hasOwnProperty.call(V101_ENGINE_PLAN_ACTIONS, actionType.trim().toLowerCase());
+}
+
+/** True for "gather" / "explore" (and their aliases): names with no action behind them. */
+export function v101IsGhostActionType(actionType: unknown): boolean {
+  return typeof actionType === 'string' && V101_GHOST_ACTION_TYPES.includes(actionType.trim().toLowerCase());
+}
+
+/** The reducer case behind a plan action name, or null when the engine has none. */
+export function v101EngineActionFor(actionType: unknown): string | null {
+  return v101IsEngineBackedActionType(actionType) ? V101_ENGINE_PLAN_ACTIONS[String(actionType).trim().toLowerCase()] : null;
+}
+
+/** What the Ask drawer ranks (the old list began with gather and explore). */
+export function v101DrawerActionCandidates(): string[] {
+  return ['challenges', 'travel', 'sell_resources', 'buy_resources', 'work', 'contract_accept', 'investments', 'equipment_purchase'].filter(v101IsEngineBackedActionType);
+}
+
+/** An action by the words a player uses, never the engine's id. */
+export function v101DrawerActionLabel(actionId: string): string {
+  const names: Record<string, string> = {
+    travel: 'Travel', challenges: 'Take a challenge', challenge: 'Take a challenge', sell_resources: 'Sell what you are carrying', sell: 'Sell what you are carrying',
+    buy_resources: 'Buy at the Resource Market', buy_market: 'Buy at the Resource Market', work: 'Work for wages', contract_accept: 'Accept a contract',
+    accept_regional_contract: 'Accept a contract', investments: 'Make an investment', invest: 'Make an investment', equipment_purchase: 'Buy equipment',
+    buy_equipment: 'Buy equipment', regional_deposit: 'Deposit into a region', region_deposit: 'Deposit into a region', end_turn: 'End your turn'
+  };
+  const key = String(actionId || '').trim().toLowerCase();
+  if (names[key]) return names[key];
+  const words = key.replace(/_/g, ' ').trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : 'An action';
+}
+
+// ---- Ask the Game: what the match really says --------------------------------------------------------------------------------
+/** The line that points a player at the answer when the drawer cannot give one. */
+export const V101_ASK_INTELLIGENCE_POINTER = 'The Intelligence tab on the play screen answers this from your live match.';
+
+function v101AskRec(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+function v101AskFinite(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+/**
+ * The live facts the drawer may quote, and only those. A field the match does not have is LEFT OUT (never defaulted to Turn 1, NSW,
+ * 3 AP or a 700 credit score). day / turn: the match's day and turn counter (gameState.currentTurn is the string "player", so it is not read);
+ * region: where the player stands (player.currentRegion); actionsLeft: the actions left today (a number, or "unlimited");
+ * creditScore: only while the credit score setting is on.
+ */
+export function v101AskLiveFacts(gameState: unknown): Record<string, unknown> {
+  const gs = v101AskRec(gameState);
+  const players = Array.isArray(gs.players) ? gs.players : [];
+  const human = players.find(p => v101AskRec(p).isHuman === true) ?? gs.humanPlayer ?? gs.player;
+  const player = v101AskRec(human);
+  const settings = v101AskRec(gs.gameSettings);
+  const out: Record<string, unknown> = {};
+  if (v101AskFinite(gs.day) && gs.day > 0) out.day = gs.day;
+  if (v101AskFinite(gs.turnCounter) && gs.turnCounter >= 0) out.turn = gs.turnCounter;
+  const region = typeof player.currentRegion === 'string' && player.currentRegion ? player.currentRegion : (typeof player.currentLocation === 'string' && player.currentLocation ? player.currentLocation : '');
+  if (region) out.activeRegion = region;
+  if (v101AskFinite(player.money)) out.money = player.money;
+  if (v101AskFinite(player.money) && (v101AskFinite(settings.playerActionsPerDay) || settings.actionLimitsEnabled === false)) {
+    const left = getRemainingActionPoints(player, settings);
+    out.actionsLeft = Number.isFinite(left) ? left : 'unlimited';
+  }
+  if (Array.isArray(player.inventory)) out.inventory = player.inventory;
+  if (typeof v101AskRec(gs.v101PlayRecommendation).title === 'string') out.playRecommended = true;
+  if (settings.creditScoreEnabled === true && v101AskFinite(player.creditScore)) out.creditScore = player.creditScore;
+  return out;
+}
+
+/** "Player Status Overview": only the lines the live match can fill in. */
+export function v101AskPlayerStatusText(facts: Record<string, unknown> | undefined): string {
+  const f = facts || {};
+  const lines: string[] = [];
+  if (typeof f.activeRegion === 'string') lines.push(`- **Location**: ${f.activeRegion}`);
+  if (v101AskFinite(f.money)) lines.push(`- **Cash Balance**: $${f.money.toLocaleString('en-AU')}`);
+  if (v101AskFinite(f.actionsLeft)) lines.push(`- **Actions left today**: ${f.actionsLeft}`);
+  else if (f.actionsLeft === 'unlimited') lines.push('- **Actions left today**: unlimited');
+  if (v101AskFinite(f.creditScore)) lines.push(`- **Credit Score**: ${f.creditScore}`);
+  if (v101AskFinite(f.day)) lines.push(`- **Day**: ${f.day}`);
+  return lines.length ? `**Player Status Overview**:\n${lines.join('\n')}` : `I cannot read your status from here. ${V101_ASK_INTELLIGENCE_POINTER}`;
+}
+
+/** The honest line for a question no tool answered ("scan complete" and "dry run completed" claimed work that never ran). */
+export function v101AskNoToolAnswer(bundle: { toolResults?: Array<{ unavailable?: boolean; error?: string }> } | null | undefined, why: string): string {
+  const results = bundle?.toolResults || [];
+  // a tool that only needs the player to name an action says what to name; a tool the drawer does not have says so
+  const needsInput = results.some(t => t && /was named/.test(String(t.error || '')));
+  const unavailable = results.length > 0 && results.every(t => t && t.unavailable === true) && !needsInput;
+  return unavailable ? `I cannot answer that from this drawer. ${V101_ASK_INTELLIGENCE_POINTER}` : `${why} ${V101_ASK_INTELLIGENCE_POINTER}`;
+}
+
+/** Generic answer for an intent with no dedicated wording: what its tool reported, or an honest "not here". */
+export function v101AskGenericAnswer(bundle: { toolResults?: Array<{ unavailable?: boolean; error?: string }> } | null | undefined, toolResult: unknown): string {
+  const r = v101AskRec(toolResult);
+  for (const key of ['explanation', 'summary', 'message', 'decisionExplanation']) {
+    if (typeof r[key] === 'string' && r[key]) return String(r[key]);
+  }
+  return v101AskNoToolAnswer(bundle, 'I cannot answer that from this drawer yet.');
+}
+
+/** A setting's registry default (the game's own tables, never a value typed into a tool). */
+export function v101AskSettingDefault(key: string): unknown {
+  if (key === 'coPilotEnabled') return createDefaultCoPilotSettings().coPilotEnabled;
+  return (DEFAULT_GAME_SETTINGS as unknown as Record<string, unknown>)[key];
+}
+
+/** A setting's current value: Co-Pilot's master switch lives under coPilotSettings, everything else at the top; absent = the default. */
+export function v101AskSettingCurrent(settings: unknown, key: string): unknown {
+  const s = v101AskRec(settings);
+  const value = key === 'coPilotEnabled' ? v101AskRec(s.coPilotSettings).coPilotEnabled : s[key];
+  return value === undefined ? v101AskSettingDefault(key) : value;
+}
+
+function v101AskSettingWords(value: unknown): string {
+  return value === true ? 'on' : value === false ? 'off' : value === undefined || value === null ? 'not set' : String(value);
+}
+
+/** The drawer's words for what inspect_settings / search_settings found. */
+export function v101AskSettingsAnswer(result: unknown): string {
+  const r = v101AskRec(result);
+  if (Array.isArray(r.matches)) {
+    if (!r.matches.length) return `No setting matched "${String(r.query || '')}".`;
+    const lines = r.matches.map(m => {
+      const item = v101AskRec(m);
+      return `- **${String(item.title)}** (${String(item.settingKey)}): now ${v101AskSettingWords(item.currentValue)}, default ${v101AskSettingWords(item.defaultValue)}. ${String(item.description || '')}`.trim();
+    });
+    return `**Settings I found**:\n${lines.join('\n')}`;
+  }
+  if (typeof r.settingsSummary === 'string') {
+    return `**Your settings**: Co-Pilot is ${r.coPilotMode === 'off' ? 'off' : `on (${String(r.coPilotMode)})`}. Directive strength: ${String(r.directiveStrength)}.`;
+  }
+  return '';
+}
+
+/** What the economy tool knows about debt, for "how do I get a loan" style questions. */
+export function v101AskLoanText(result: unknown, creditScore: unknown): string {
+  const r = v101AskRec(result);
+  const cash = v101AskFinite(r.cashReserve) ? r.cashReserve : 0;
+  const debt = v101AskFinite(r.totalDebt) ? r.totalDebt : 0;
+  const lines = [`- **Cash**: $${cash.toLocaleString('en-AU')}`, `- **What you owe**: $${debt.toLocaleString('en-AU')}`];
+  if (v101AskFinite(creditScore)) lines.push(`- **Credit score**: ${creditScore}`);
+  return `**Loans and credit**:\n${lines.join('\n')}\nTerms and the Borrow button are on the Loans screen (menu).`;
+}
+
+// ---- Ask the Game: which questions the goal explainer may answer ---------------------------------------------------------------
+/** The only intents whose questions the goal explainer (answerIntentLayerQuestion) may answer. */
+export const V101_ASK_INTENT_LAYER_INTENTS: readonly string[] = ['GAME_RULES', 'GENERAL_HELP', 'ACTION_RECOMMEND'];
+export type V101AskIntentLayerKind = 'losing' | 'goal' | 'path' | 'tracked';
+
+const V101_ASK_LAYER_LOSING = /^(?:why )?(?:am i|are we|is my team|is our team) (?:losing|behind|falling behind|slipping)(?: the game| this game| right now| now| at the moment)?$/;
+const V101_ASK_LAYER_GOAL = /^(?:(?:what is|whats|what s|show me|show|tell me|remind me of)\s+)?(?:(?:my|the|our)\s+)?(?:(?:current|tracked)\s+)?(?:goal|objective)(?:\s+(?:right now|now|again|please))?$/;
+const V101_ASK_LAYER_GOAL_2 = /^what am i (?:supposed to|meant to) (?:do|be doing)(?: now| next| this turn)?$/;
+const V101_ASK_LAYER_PATH = /^how (?:do|can|would) i (?:get|unlock|reach|achieve|complete|finish) (?:(?:to|toward|towards|the|my|our|this|that)\s+)*(?:(?:current|tracked)\s+)?(?:goal|objective|there|it)$/;
+const V101_ASK_LAYER_PATH_2 = /^show me the path(?: (?:to|toward|towards) (?:(?:the|my|our)\s+)?(?:goal|objective))?$/;
+const V101_ASK_LAYER_TRACKED = /^(?:what (?:does )?)?(?:my |your |the )?tracked goal (?:requires?|needs?)\b/;
+const V101_ASK_LAYER_TRACKED_2 = /^your tracked goal\b/;
+
+/**
+ * Which goal question this is, or null. The WHOLE question must be the goal question (anchored at both ends): "why am i losing" is,
+ * "am i losing money to loan interest" and "how do i get a loan" are not. ("what should i do" is an ACTION_RECOMMEND question and now
+ * reaches the recommendation, not the goal text.)
+ */
+export function v101AskIntentLayerKind(rawQuery: string): V101AskIntentLayerKind | null {
+  const q = String(rawQuery || '').toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!q) return null;
+  if (V101_ASK_LAYER_LOSING.test(q)) return 'losing';
+  if (V101_ASK_LAYER_TRACKED.test(q) || V101_ASK_LAYER_TRACKED_2.test(q)) return 'tracked';
+  if (V101_ASK_LAYER_PATH.test(q) || V101_ASK_LAYER_PATH_2.test(q)) return 'path';
+  if (V101_ASK_LAYER_GOAL.test(q) || V101_ASK_LAYER_GOAL_2.test(q)) return 'goal';
+  return null;
+}
+
+/** May the goal explainer answer this question? Only the three intents, a goal question, and no concrete entity (a region, a resource ...) in it. */
+export function v101AskIntentLayerApplies(intent: string, normalizedQuery: string, entities?: ReadonlyArray<{ entityType?: string }>): boolean {
+  if (!V101_ASK_INTENT_LAYER_INTENTS.includes(intent)) return false;
+  if ((entities || []).some(e => e && ['region', 'resource', 'contract', 'infrastructure', 'relic', 'setting'].includes(String(e.entityType)))) return false;
+  return v101AskIntentLayerKind(normalizedQuery) !== null;
+}
+
+// ---- Ask the Game: which action a dry-run / affordability question is about -------------------------------------------------------
+export interface V101AskAction { actionType: string; region?: string }
+
+/** The action a question names ("what if I travel to VIC", "can I afford to work"), or null when it names none. */
+export function v101AskActionFromQuery(normalizedQuery: string, regions?: ReadonlyArray<string>): V101AskAction | null {
+  const q = String(normalizedQuery || '').toLowerCase();
+  const region = regions && regions.length ? String(regions[0]).toUpperCase() : undefined;
+  if (/\bend (?:my |the |this )?(?:turn|day)\b/.test(q)) return { actionType: 'end_turn' };
+  if (/\bsell(?:ing)?\b/.test(q)) return { actionType: 'sell_resources' };
+  if (/\b(?:buy|purchase)\b/.test(q)) return { actionType: 'buy_resources' };
+  if (/\b(?:work|wage|wages)\b/.test(q)) return { actionType: 'work' };
+  if (/\bchallenges?\b/.test(q)) return { actionType: 'challenges' };
+  if (/\bcontracts?\b/.test(q)) return { actionType: 'contract_accept' };
+  if (/\b(?:travel|travelling|traveling|trip|go to|move to|head to|fly to)\b/.test(q)) return region ? { actionType: 'travel', region } : { actionType: 'travel' };
+  return null;
+}
+
+/** The target handed to check_affordability: the named action, else the thing after "afford", else "actions". */
+export function v101AskAffordabilityTarget(normalizedQuery: string, action: V101AskAction | null): { actionId?: string; item?: string; region?: string } {
+  if (action) return { actionId: action.actionType === 'travel' ? 'travel' : action.actionType, ...(action.region ? { region: action.region } : {}) };
+  const q = String(normalizedQuery || '').toLowerCase();
+  if (/\b(?:ap|actions?)\b/.test(q)) return { actionId: 'actions' };
+  const afford = /\bafford (?:to |a |an |the )?(.+)$/.exec(q);
+  if (afford && afford[1]) return { item: afford[1].trim() };
+  return {};
+}
+
+// ---- Strategy Planner: plans made of real actions ----------------------------------------------------------------------------------
+/** What the engine's "work" action pays (reduceGameAction: a wage of 50 unless one is given). The one honest number in the planner's fallback. */
+export const V101_WORK_WAGE = 50;
+/** The step a plan falls back on (and repair inserts) when nothing else is possible: it always works and always pays. */
+export const V101_PLAN_FALLBACK_ACTION = 'work';
+
+/**
+ * The action pools the planner draws each style's steps from. Every entry is an action the engine can run. A sale is left out while the player is
+ * carrying nothing (inventory known and empty). Replaces the old pools, which led with "gather" and "explore".
+ */
+export function v101PlannerPools(actor: unknown): Record<string, string[]> {
+  const a = v101AskRec(actor);
+  const carrying = Array.isArray(a.inventory) ? a.inventory.length : null;
+  const raw: Record<string, string[]> = {
+    balanced: ['sell_resources', 'contract_accept', 'challenges', 'work'],
+    safest: ['sell_resources', 'work', 'contract_accept'],
+    fastest: ['challenges', 'contract_accept', 'sell_resources'],
+    highest_profit: ['sell_resources', 'challenges', 'investments', 'contract_accept'],
+    no_loans: ['sell_resources', 'work', 'contract_accept', 'challenges']
+  };
+  const out: Record<string, string[]> = {};
+  Object.keys(raw).forEach(style => {
+    out[style] = raw[style].filter(t => v101IsEngineBackedActionType(t) && !(t === 'sell_resources' && carrying === 0));
+  });
+  return out;
+}
+
+export interface V101PlanStepIntent { actionType: string; parameters: Record<string, unknown>; targetId?: string }
+
+/**
+ * What the executor is handed for one plan step: the engine's own name for the action (sell_resources runs as "sell") and, when the step carries
+ * no parameters of its own, the parameters of the Co-Pilot's legal candidate of that type (the item to sell, the contract to accept ...). A step
+ * of a type the map does not know (take_loan, start_expedition ...) goes through exactly as it always did.
+ */
+export function v101PlanStepIntent(state: unknown, step: { actionType: string; targetLocation?: string }): V101PlanStepIntent {
+  const loose = step as unknown as Record<string, unknown>;
+  const own = v101AskRec(loose.parameters ?? loose.payload);
+  const engine = v101EngineActionFor(step.actionType);
+  const targetId = typeof loose.targetId === 'string' ? loose.targetId : step.targetLocation;
+  if (!engine) return { actionType: step.actionType, parameters: own, targetId };
+  if (Object.keys(own).length > 0 || engine === 'work' || engine === 'end_turn') return { actionType: engine, parameters: own, targetId };
+  try {
+    const gs = v101AskRec(state);
+    const context = createCoPilotRuntimeContext(gs.player, gs, gs.gameSettings, null, gs.actorsById as Record<string, unknown> | undefined, gs.aiPlayer, gs.teamsById as Record<string, unknown> | undefined);
+    const candidate = (generateCoPilotPlayerActionCandidates(context).candidates || []).find(c => c.actionType === engine && c.isValid);
+    if (candidate) return { actionType: engine, parameters: { ...(candidate.parameters || {}) }, targetId: candidate.targetId || targetId };
+  } catch {
+    // no candidate list for this state: the step runs as the engine receives it
+  }
+  return { actionType: engine, parameters: own, targetId };
+}
+
+// ---- One "best move": the Play card, the Co-Pilot panel, Background AI and the Ask drawer ---------------------------------------------
+export interface V101PlayRecommendationView { actionType: string; title: string; reason: string; apCost: number; score: number }
+
+/**
+ * The Play card's Recommended action in the few fields the Ask drawer needs. The Co-Pilot panel and Background AI read the same
+ * action set (v9ActionSetView.recommended / world.actionSet.recommended) directly; this is the plain-data copy for the drawer.
+ */
+export function v101PlayRecommendationView(set: { recommended: ContextualActionCandidate | null } | null | undefined): V101PlayRecommendationView | null {
+  const r = set?.recommended;
+  if (!r || !r.legal) return null;
+  return { actionType: r.actionType, title: r.label, reason: (r.reasons && r.reasons[0]) || r.benefit || r.description || '', apCost: Number(r.apCost) || 0, score: Math.round(Number(r.relevance) || 0) };
+}
+
+/** The one line under the Co-Pilot panel's top move: why it can differ from nothing, and what it filters. */
+export const V101_COPILOT_PANEL_SAME_MOVE_NOTE = 'Same move as the Recommended card on Play. Moves the rules or your Guardian setting block are never offered.';
+
+// ---- Regions: what the match really says (Proactive Intelligence and Ask) ------------------------------------------------------------------
+/**
+ * Who holds what, read from the live region deposits (the same source the region HUD uses). threatenedRegions: a region the player holds where
+ * the rival's stake is at least 70% of the player's (a thin hold), or one neither side holds although both have staked it, the rival's strongest
+ * first. Replaces five fields nothing ever wrote (contestedRegions, authorizedThreatenedRegions ...), which kept every region warning silent.
+ */
+export function v101LiveRegionPicture(gameState: unknown): { playerRegions: string[]; rivalRegions: string[]; threatenedRegions: string[] } {
+  const gs = v101AskRec(gameState);
+  const team = isTeamModeSelection(typeof gs.selectedMode === 'string' ? gs.selectedMode : null);
+  const playerKey = team ? TEAM_PLAYER_ID : 'player';
+  const rivalKey = team ? TEAM_OPPONENT_ID : 'ai';
+  const deposits = sanitizeRegionDeposits(gs.regionDeposits);
+  const playerRegions: string[] = [];
+  const rivalRegions: string[] = [];
+  const threatened: Array<{ code: string; rivalStake: number }> = [];
+  Object.keys(REGIONS).forEach(code => {
+    const entry = deposits[code];
+    if (!entry) return;
+    const controller = getRegionControlSnapshot(entry).controllerId;
+    const mine = Number(entry[playerKey]) || 0;
+    const theirs = Number(entry[rivalKey]) || 0;
+    if (controller === playerKey) playerRegions.push(code);
+    if (controller === rivalKey) rivalRegions.push(code);
+    if (mine > 0 && theirs > 0 && ((controller === playerKey && theirs >= mine * 0.7) || controller === null)) threatened.push({ code, rivalStake: theirs });
+  });
+  threatened.sort((a, b) => b.rivalStake - a.rivalStake || a.code.localeCompare(b.code));
+  return { playerRegions, rivalRegions, threatenedRegions: threatened.map(t => t.code) };
+}
+
+/** "The rival has led for 4 of 5 days in a row" (the share is of the five-day mercy count; it is not a percentage of a victory threshold). */
+export function v101RivalLeadWords(share: number): string {
+  const days = Math.max(0, Math.min(MERCY_STREAK_DAYS, Math.round(share * MERCY_STREAK_DAYS)));
+  return `the rival has led for ${days} of ${MERCY_STREAK_DAYS} days in a row`.replace(/^t/, 'T');
+}
+
+/** An actor in words: "you" for the one being spoken to, the actor's own name when the snapshot has it, never the raw id ("player", "ai"). */
+export function v101ActorWords(actorId: string, recipientId: string, actors?: ReadonlyArray<{ id: string; name?: string }>): string {
+  if (actorId === recipientId || actorId === 'player') return 'you';
+  const named = (actors || []).find(a => a && a.id === actorId && typeof a.name === 'string' && a.name);
+  if (named) return String(named.name);
+  if (actorId === 'ai') return 'the rival';
+  if (actorId === ALLY_AI_ID) return 'your teammate';
+  return String(actorId).replace(/_/g, ' ');
+}
+
+// ---- Goal alignment (V10.1 matches) ------------------------------------------------------------------------------------------------------------------
+/** Filler and generic game words that say nothing about a goal. */
+export const V101_ALIGNMENT_STOP_WORDS: ReadonlySet<string> = new Set([
+  'about', 'after', 'again', 'also', 'action', 'actions', 'attempt', 'before', 'between', 'could', 'every', 'first', 'from', 'goal', 'grow', 'have', 'into', 'just', 'local', 'make',
+  'more', 'most', 'much', 'next', 'objective', 'over', 'position', 'region', 'regional', 'resource', 'resources', 'than', 'that', 'their', 'them', 'then', 'there', 'these', 'they',
+  'this', 'those', 'through', 'turn', 'what', 'when', 'where', 'which', 'while', 'will', 'with', 'would', 'your', 'gather', 'explore'
+]);
+
+/** Points one card earns for matching the goal's words: whole words, each once, filler ignored, at most 16 (two matches). */
+export function v101ObjectiveTokenAlignment(objectiveText: string, cardText: string): number {
+  const goalWords = new Set(String(objectiveText || '').toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length > 3 && !V101_ALIGNMENT_STOP_WORDS.has(t)));
+  const cardWords = new Set(String(cardText || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+  let matches = 0;
+  goalWords.forEach(w => { if (cardWords.has(w)) matches += 1; });
+  return Math.min(16, matches * 8);
+}
+
+// ---- Guardian: what a cached verdict depends on -------------------------------------------------------------------------------------------------------
+/**
+ * The state a Guardian verdict depends on beyond day, turn, cash and action tokens: where the actor is, how much it carries and owes, the actions it
+ * has used, and its contracts, expeditions, plans and regions held. Part of the verdict cache key, so a verdict is never replayed after one of these changed.
+ */
+export function v101GuardianStateKey(context: { gameState?: unknown; actorId: string; activeContracts?: readonly string[]; activeExpeditions?: readonly string[]; activePlans?: readonly string[]; currentCash?: number; currentActionTokens?: number }): string {
+  const gs = v101AskRec(context.gameState);
+  const byId = v101AskRec(gs.actorsById)[context.actorId];
+  const fromPlayers = Array.isArray(gs.players) ? gs.players.find(p => v101AskRec(p).id === context.actorId) : undefined;
+  const live = v101AskRec(gs.player);
+  const actor = v101AskRec(byId ?? fromPlayers ?? (live.id === context.actorId ? live : undefined));
+  const count = (v: unknown): number => (Array.isArray(v) ? v.length : v && typeof v === 'object' ? Object.keys(v as object).length : 0);
+  const held = v101AskRec(v101AskRec(gs.regionControlStats).totalControlled)[context.actorId];
+  const parts = [
+    String(actor.currentRegion || ''), count(actor.inventory), count(actor.loans) + count(actor.advancedLoans), Number(actor.actionsUsedThisTurn) || 0, Math.floor(Number(actor.money) || 0),
+    count(context.activeContracts), count(context.activeExpeditions), count(context.activePlans), Number(held) || 0, Number(context.currentCash) || 0, Number(context.currentActionTokens) || 0
+  ];
+  return computeDeterministicHash(parts.join('|'));
+}
+
 export function runV101AdviceSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
   return results;
 }
+
 // <<V101-SLOT AI end>>
 
 // ============================================================================
@@ -210718,9 +211297,10 @@ function AustraliaGame() {
       treasuryCash: Number(teamsById[teamId]?.treasury || 0),
       rivalVictoryProgress: rivalShare,
       victoryThreshold: 0.8,
-      threatenedRegions: Array.isArray((gameState.regionControlStats as { contestedRegions?: string[] } | undefined)?.contestedRegions)
-        ? (gameState.regionControlStats as { contestedRegions?: string[] }).contestedRegions
-        : [],
+      // V10.1 (SECTION 20BH): contested regions from the live deposits (regionControlStats.contestedRegions is written by nothing, so no region warning could fire)
+      playerRegions: v101LiveRegionPicture(gameState).playerRegions,
+      rivalRegions: v101LiveRegionPicture(gameState).rivalRegions,
+      threatenedRegions: v101LiveRegionPicture(gameState).threatenedRegions,
       actors: Object.values(actorsById).map(actor => ({
         id: actor.id,
         teamId: actor.teamId,
@@ -210746,8 +211326,10 @@ function AustraliaGame() {
     if (!messages.length) return;
     const nextComms = applyProactiveResults(comms, messages, gameState.turnCounter || gameState.day || 1);
     dispatchGameState({ type: 'LOAD_STATE', payload: { aiCommunication: nextComms } });
-    messages.forEach(message => addNotification(`🧠 ${message.text}`, 'warning', true, 'system'));
-  }, [actorsById, addNotification, gameSettings, gameState.aiCommunication, gameState.aiMemoriesByActor, gameState.day, gameState.dominanceTracker, gameState.gameMode, gameState.regionControlStats, gameState.selectedMode, gameState.teamStrategicPlansByTeam, gameState.turnCounter, isolatedReplayRuntime, player?.money, player?.teamId, teamsById]);
+    // V10.1 (SECTION 20BH): a line from a rival carries its name (it used to appear as an unattributed 🧠 note, in a rival's voice, in a one-on-one match)
+    const v101SpeakerIsAlly = Boolean(speaker.teamId && player?.teamId && speaker.teamId === player.teamId);
+    messages.forEach(message => addNotification(`🧠 ${v101SpeakerIsAlly ? '' : `${speaker.name || 'The rival'}: `}${message.text}`, 'warning', true, 'system'));
+  }, [actorsById, addNotification, gameSettings, gameState.aiCommunication, gameState.aiMemoriesByActor, gameState.day, gameState.dominanceTracker, gameState.gameMode, gameState.regionControlStats, gameState.regionDeposits, gameState.selectedMode, gameState.teamStrategicPlansByTeam, gameState.turnCounter, isolatedReplayRuntime, player?.money, player?.teamId, teamsById]);
   runPhase5ProactiveRef.current = runPhase5ProactiveIntelligence;
 
   const handleRunCoPilotSelfTests = useCallback(() => {
@@ -218623,12 +219205,14 @@ function dispatchGameSettingsChange(
   }, [uiState.pendingMode]);
 
   // Ask Game AI Hook Initialization (Milestone 4)
+  const v101AskPlayRecRef = useRef<V101PlayRecommendationView | null>(null); // V10.1 (SECTION 20BH): filled in below, once the Play card's action set exists
   const askAI = useAskGameAIState({
     gameState,
     setGameState: dispatchGameState,
     gameSettings,
     player,
     isolatedReplayRuntime: Boolean(isolatedReplayRuntime),
+    playRecommendationRef: v101AskPlayRecRef,
     onDeepLinkNavigate: (deepLink) => {
       if (!deepLink || !deepLink.tab) return;
       if (deepLink.tab === 'economy') updateUiState({ showResourceMarket: true });
@@ -241493,6 +242077,21 @@ function dispatchGameSettingsChange(
   }, [persistBackgroundAI]);
   /** Contextual Actions shown to the player carry Background AI metadata; the canonical set is unchanged. */
   const v9ActionSetView = useMemo(() => filterActionSetForFirstRun(annotateContextualActionsWithFactions(annotateContextualActionsWithRegions(annotateContextualActionsWithWorld(annotateContextualActionsWithBackground(v9ActionSet, bgLive), gameState.worldReaction, String(player?.id || 'player')), gameState.livingRegions), rfStateRef.current, rfViewRef.current?.inputs || null), wp8State), [v9ActionSet, bgLive, gameState.livingRegions, gameState.regionalFactions, gameState.worldReaction, player?.id, wp8State]);
+  v101AskPlayRecRef.current = v101PlayRecommendationView(v9ActionSetView); // V10.1 (SECTION 20BH): the Ask drawer names the move this card shows
+  // V10.1 (SECTION 20BH): the compact Co-Pilot panel's condition grade and primary risk are worked out once per game state (and Co-Pilot setting), here, not
+  // inside the panel's render function, which ran all of it again on every keystroke in the Ask box. Only while the panel can be on screen.
+  const v101CoPilotPanelWanted = Boolean(gameSettings?.coPilotSettings?.coPilotEnabled) && experienceLayer === 'intelligence';
+  const v101CoPilotPanelAnalysis = useMemo(() => {
+    if (!v101CoPilotPanelWanted) return null;
+    try {
+      const condition = evaluateHumanStrategicCondition(coPilotViewState, 'player');
+      const problems = detectCoPilotProblems(coPilotViewState, condition);
+      return { humanCondition: condition, primaryProblem: problems.length > 0 ? problems[0] : null };
+    } catch (err) {
+      console.error('[Compact Co-Pilot Panel] diagnostic failed', err);
+      return null;
+    }
+  }, [v101CoPilotPanelWanted, coPilotViewState, gameSettings?.coPilotSettings]);
 
   // ---- Settings Intelligence 2.0: live wiring --------------------------------------------------------
   // Reads settings + read-only gameplay evidence; every change it proposes becomes a SmartSettingsPlan the
@@ -253698,7 +254297,7 @@ function dispatchGameSettingsChange(
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="font-semibold">Proactive Intelligence</div>
-                      <div className="text-sm opacity-75">Grounded warnings at day boundaries. Never fires in replay or what-if.</div>
+                      <div className="text-sm opacity-75">Grounded warnings after each action you commit. Never fires in replay or what-if.</div>
                     </div>
                     <button
                       onClick={() => trackedSetGameSettings("direct_player_change", "🧠 AI Communication", prev => ({ ...prev, aiCommunicationProactiveEnabled: !prev.aiCommunicationProactiveEnabled }))}
@@ -259977,32 +260576,12 @@ function dispatchGameSettingsChange(
             return null;
           }
 
-          let humanCondition: any = null;
-          let problems: any[] = [];
-          let primaryProblem: any = null;
-          let recommendations: any[] = [];
-          let topRecommendation: any = null;
-          try {
-            humanCondition = evaluateHumanStrategicCondition(coPilotViewState, 'player');
-            problems = detectCoPilotProblems(coPilotViewState, humanCondition);
-            primaryProblem = problems.length > 0 ? problems[0] : null;
-            const intent = evaluateCoPilotIntentContext(coPilotViewState, problems);
-            recommendations = generateCoPilotRecommendations(coPilotViewState, humanCondition, problems, intent);
-            const evaluation = typeof generateCoPilotPlayerActionCandidates === 'function'
-              ? generateCoPilotPlayerActionCandidates(coPilotRuntimeContext)
-              : null;
-            const legal = listLegalCoPilotCandidates(evaluation, getRemainingActionPoints(player, gameSettings));
-            const rawTop = recommendations.length > 0 ? recommendations[0] : null;
-            topRecommendation = alignCoPilotRecommendationToLegalCandidate(
-              rawTop,
-              legal,
-              player?.id || 'player',
-              gameState.turnCounter || gameState.day || 1
-            );
-          } catch (err) {
-            console.error('[Compact Co-Pilot Panel] diagnostic render failed', err);
-            return null;
-          }
+          // V10.1 (SECTION 20BH): the condition and risk come from the memo above; the top move is the Play card's own Recommended action
+          // (v9ActionSetView.recommended, with its background, world and region notes), not a third ranking built here from raw utility.
+          const humanCondition: any = v101CoPilotPanelAnalysis?.humanCondition ?? null;
+          const primaryProblem: any = v101CoPilotPanelAnalysis?.primaryProblem ?? null;
+          if (!humanCondition) return null;
+          const topMove = v9ActionSetView?.recommended || null;
 
           const getConditionGradeBadgeClass = (statusGrade?: string) => {
             switch (statusGrade) {
@@ -260026,8 +260605,9 @@ function dispatchGameSettingsChange(
 
           const handleAcceptTopMove = () => {
             setCoPilotManualOverride(false);
-            if (!topRecommendation) return;
-            executeCoPilotRecommendationAsHuman(topRecommendation);
+            if (!topMove) return;
+            // V10.1 (SECTION 20BH): the Play card's "Do It" path, so "Accept Top Move" and "Do It" are the same move.
+            v9PlayHandlers.onDo(topMove.id);
           };
 
           return (
@@ -260070,7 +260650,7 @@ function dispatchGameSettingsChange(
                     <span>📋</span> View Recommendations
                   </button>
 
-                  {topRecommendation && (
+                  {topMove && (
                     <button
                       type="button"
                       onClick={handleAcceptTopMove}
@@ -260116,18 +260696,19 @@ function dispatchGameSettingsChange(
                     <span className="text-[11px] font-semibold text-emerald-300 uppercase tracking-wider flex items-center gap-1">
                       <span>🎯</span> Recommended Action
                     </span>
-                    {topRecommendation && (
+                    {topMove && typeof topMove.confidence === 'number' && (
                       <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/30">
-                        {Math.round(topRecommendation.confidenceScore)}% Confidence
+                        {Math.round(topMove.confidence * 100)}% Confidence
                       </span>
                     )}
                   </div>
                   <div className="text-gray-200 font-medium">
-                    {topRecommendation ? topRecommendation.title : 'Maintain standard regional progression plan.'}
+                    {topMove ? topMove.label : 'Maintain standard regional progression plan.'}
                   </div>
                   <div className="text-gray-400 text-[11px] mt-0.5 line-clamp-1">
-                    {topRecommendation ? topRecommendation.reasoningSummary : 'No action required.'}
+                    {topMove ? (topMove.reasons[0] || topMove.description || 'The top move on your Play screen.') : 'No action required.'}
                   </div>
+                  {topMove && <div className="text-gray-500 text-[10px] mt-0.5" data-testid="copilot-panel-same-move">{V101_COPILOT_PANEL_SAME_MOVE_NOTE}</div>}
                 </div>
               </div>
             </div>
@@ -272374,6 +272955,8 @@ function dispatchGameSettingsChange(
         setActiveTab={askAI.setActiveTab}
         gameState={gameState}
         gameSettings={gameSettings}
+        currentRegion={typeof player?.currentRegion === 'string' ? player.currentRegion : undefined}
+        currentDay={Number.isFinite(Number(gameState.day)) ? Number(gameState.day) : undefined}
         speakerOptions={Object.values(actorsById).filter(actor => actor && isAiActor(actor)).map(actor => ({
           id: String(actor.id),
           label: `${actor.name || actor.id}${actor.teamId === (player?.teamId || TEAM_PLAYER_ID) ? ' (teammate)' : ' (rival)'}`
