@@ -4520,7 +4520,7 @@ export const PRESET_GAME_SCENARIOS: PresetScenario[] = [
   {
     id: 'hyper_inflation_survival',
     title: 'Hyper-Inflation Survival',
-    description: 'Severe economic turbulence grips Victoria. Outsmart market volatility and retain wealth amidst chaos.',
+    description: 'Severe economic turbulence grips Victoria: shop and investment prices run 25% higher for you and the rival. Outsmart market volatility and retain wealth amidst chaos.', // V10.1 (SECTION 20BD): the rule is real now (a Classic-rules match plays without it)
     category: 'expert',
     difficulty: 'Expert',
     forcedSeed: 99105,
@@ -4579,7 +4579,7 @@ export const PRESET_GAME_SCENARIOS: PresetScenario[] = [
   {
     id: 'red_dust_harvest',
     title: 'Red Dust Harvest',
-    description: 'Prospecting in harsh red dust country requires settling massive debt while securing remote mineral deposits.',
+    description: 'Prospecting in harsh red dust country: you start owing two loans, and settling that debt is an objective while you secure remote mineral deposits.', // V10.1 (SECTION 20BD): the loans are real now (a Classic-rules match starts without them)
     category: 'challenge',
     difficulty: 'Hard',
     forcedSeed: 55412,
@@ -10042,7 +10042,7 @@ export function evaluateScenarioObjective(
       break;
 
     case 'debt_cleared':
-      currentValue = (player?.loans || []).length === 0 ? 1 : 0;
+      currentValue = v101DebtIsCleared(gameState, player) ? 1 : 0; // V10.1 (SECTION 20BD): a V10.1 match counts advanced loans as debt too (Red Dust's objective was met on day 1)
       break;
 
     case 'investments_count':
@@ -13488,7 +13488,7 @@ export const SETTINGS_HUB_FIELD_META: Record<string, SettingsHubFieldMeta> = {
     description: 'Enables semantic win metric profile scoring and dynamic risk posture modulations for AI decision making.',
     tags: ['AI', 'Advanced']
   },
-  totalDays: { key: 'totalDays', tab: 'quickSetup', label: 'Game Length', description: 'Total number of days in the match.', tags: ['Economy'] },
+  totalDays: { key: 'totalDays', tab: 'quickSetup', label: 'Game Length', description: 'The match calendar. A Game Length of N gives N-1 played days: the match ends when day N would begin (30 = 29 days played; the header shows FINAL DAY on the last one).' /* V10.1 (SECTION 20BD): says what happens */, tags: ['Economy'] },
   winCondition: { key: 'winCondition', tab: 'quickSetup', label: 'Win Condition', description: 'The metric used to decide the winner.', tags: ['Economy'] },
   actionLimitsEnabled: { key: 'actionLimitsEnabled', tab: 'quickSetup', label: 'Action Limits', description: 'Restrict how many actions each side can take per turn.', tags: ['Advanced'] },
   uxAssistPackEnabled: { key: 'uxAssistPackEnabled', tab: 'quickSetup', label: 'UX Assist Pack', description: 'Master switch for optional usability helpers.', tags: ['UX'] },
@@ -28108,6 +28108,7 @@ export function gameStateReducer(state: any, action: any) {
     case 'SET_AI_THINKING':
       return { ...state, isAiThinking: action.payload };
     case 'SET_AI_DIFFICULTY':
+      if (v101MatchRuleLocked(state, 'aiDifficulty')) return state; // V10.1 (SECTION 20BD): the difficulty a V10.1 match started with is the one it ends with (menu, end screen, V10.0 and Classic matches stay free to change it)
       return { ...state, aiDifficulty: action.payload };
     case 'INCREMENT_ACTIONS':
       return { ...state, actionsThisTurn: state.actionsThisTurn + 1 };
@@ -99589,7 +99590,7 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
 
         {/* V9.9 (SECTION 20AT): what "saving" means here — said once, for all three views. */}
         <div className={`px-4 py-1.5 text-[11px] leading-snug border-b shrink-0 ${v99Shell.note}`} data-testid="v99-settings-saved-note">
-          💾 {SETTINGS_SAVED_NOTE}{isLiveMatch ? null : <span className="hidden sm:inline"> {SETTINGS_MENU_NOTE}</span>}
+          💾 {SETTINGS_SAVED_NOTE}{isLiveMatch ? null : <span className="hidden sm:inline"> {SETTINGS_MENU_NOTE}</span>}{v101LiveRuleLockActive() && <span data-testid="v101-rule-lock-note"> 🔒 Victory Goal, Game Length and Difficulty: {V101_RULE_LOCK_REASON}</span>}{/* V10.1 (SECTION 20BD) */}
         </div>
 
         {/* Content Body */}
@@ -99874,6 +99875,7 @@ export const SettingsSearchResultCard: React.FC<SettingsSearchResultCardProps> =
             <select
               value={String(curVal)}
               onChange={(e) => onUpdateSetting(keyStr, e.target.value)}
+              disabled={v101LiveRuleLockReason(keyStr as string) !== null} title={v101LiveRuleLockReason(keyStr as string) ?? undefined} /* V10.1 (SECTION 20BD): locked while a V10.1 match runs */
               className="rounded px-1.5 py-0.5 text-[11px] font-semibold bg-slate-800 border border-slate-600 text-white max-w-[130px]"
             >
               {(keyStr as string) === 'winCondition' && WIN_METRIC_OPTIONS.map(opt => (
@@ -99899,6 +99901,7 @@ export const SettingsSearchResultCard: React.FC<SettingsSearchResultCardProps> =
               type="number"
               value={curVal ?? 0}
               onChange={(e) => onUpdateSetting(keyStr, Number(e.target.value))}
+              disabled={v101LiveRuleLockReason(keyStr as string) !== null} title={v101LiveRuleLockReason(keyStr as string) ?? undefined} /* V10.1 (SECTION 20BD): locked while a V10.1 match runs */
               className="w-16 px-1.5 py-0.5 text-[11px] font-semibold bg-slate-800 border border-slate-600 rounded text-white"
             />
           )}
@@ -128127,7 +128130,7 @@ export interface V9CohesionInputs {
 export interface V9CohesionRecommendation { candidateId: string; label: string; icon: string; why: string; cost: string; helps: string | null; risk: string | null; strength: 'Strong recommendation' | 'Worth considering' | 'Uncertain'; provenance: string[]; alternativeNote: string | null; /** V9.9 (SECTION 20AR): what the main button says — "Do It" only when it carries out an action. */ doLabel?: string }
 export interface V9Cohesion {
   hash: string;
-  header: { dayLabel: string; turnLabel: string; whoseTurn: 'you' | 'other'; controlLabel: string; controlTone: 'you' | 'copilot' | 'rescue' | 'waiting'; apLabel: string; cashLabel: string; winLabel: string; transitLabel: string | null; critical: string | null; /** V9.9 (SECTION 20AS): the last day that is played. */ finalDay?: boolean; /** V9.9 (SECTION 20AR, W3F1): a quiet standing notice (the player's own mercy streak). */ notice?: { label: string; detail: string } | null };
+  header: { dayLabel: string; turnLabel: string; whoseTurn: 'you' | 'other'; controlLabel: string; controlTone: 'you' | 'copilot' | 'rescue' | 'waiting'; apLabel: string; cashLabel: string; winLabel: string; transitLabel: string | null; critical: string | null; /** V9.9 (SECTION 20AS): the last day that is played. */ finalDay?: boolean; /** V10.1 (SECTION 20BD): the number of the last day that is played (Game Length minus one). */ lastDay?: number; /** V9.9 (SECTION 20AR, W3F1): a quiet standing notice (the player's own mercy streak). */ notice?: { label: string; detail: string } | null };
   focus: { title: string; detail: string | null; progress: string | null; next: string | null; source: 'decision' | 'critical' | 'crisis' | 'strategy' | 'objective' | 'win'; temporary: boolean; returnTo: string | null; breadcrumb: Array<{ label: string; current: boolean }> };
   decision: { kind: 'diplomatic_response' | 'faction_dilemma' | 'governance'; title: string; detail: string; options: Array<{ id: string; label: string; summary: string }>; refId: string } | null;
   change: { text: string; why: string | null; eventId: string | null; extra: string[]; source: string } | null;
@@ -128239,7 +128242,8 @@ export function resolveV9GameplayCohesion(i: V9CohesionInputs): V9Cohesion {
     dayLabel: `Day ${i.day} / ${i.totalDays}${i.teamMode ? ` · Round ${i.turn}` : ''}`, turnLabel: you ? 'YOUR TURN' : `${i.currentActorName.toUpperCase()}'S TURN`, whoseTurn: you ? 'you' : 'other', controlLabel, controlTone,
     apLabel: !you ? '' : i.ap.finite ? `${i.ap.remaining ?? 0} action${i.ap.remaining === 1 ? '' : 's'}` : 'Unlimited actions', cashLabel: v9Money(i.cash),
     winLabel: i.win.target ? `${i.win.value} / ${i.win.target}` : `${i.win.label}: ${i.win.value}`, transitLabel: i.transit ? `🚢 En route to ${i.transit.destination} · Day ${i.transit.day}/${i.transit.total}` : null, critical: i.critical ? i.critical.label : null,
-    finalDay: isFinalPlayableDay(i.day, i.totalDays) // V9.9 (SECTION 20AS)
+    finalDay: isFinalPlayableDay(i.day, i.totalDays), // V9.9 (SECTION 20AS)
+    ...(Number(i.totalDays) >= 2 ? { lastDay: matchLengthInDays(i.totalDays) } : {}) // V10.1 (SECTION 20BD): the last day that is played (the label keeps the stored Game Length)
   };
   v99ApplyHeaderExtras(header, i); // V9.9 (SECTION 20AR, W3F1): the quiet notice chip; a watched all-AI match names the acting AI instead of "YOUR TURN — YOU'RE PLAYING"
   // ---- Decisions (mandatory) override ordinary recommendation surfaces ----
@@ -128393,6 +128397,7 @@ const V9MatchHeaderView: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() =>
     <header className={`${theme.card} ${theme.border} border rounded-xl px-3 py-2 ${theme.shadow}`} data-testid="v9-match-header" aria-label="Match status">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
         <span key={h.dayLabel} className="font-semibold v94-fade" data-testid="v94-day">{h.dayLabel}</span>
+        {typeof h.lastDay === 'number' && <span className="text-xs opacity-70" data-testid="v101-last-day" title="The match ends when this day ends: day 30 of a 30-day match is never played.">last day {h.lastDay}</span>}{/* V10.1 (SECTION 20BD): "Day 1 / 30" and "28 days left" now say which day is the last one played */}
         {/* V9.9 (SECTION 20AS): "Day 29 / 30" is the last day played — the chip and the End Turn label say so. */}
         <V99FinalDayChip show={h.finalDay === true} />
         <span key={h.turnLabel} className={`${quietTurnLabel ? 'sr-only' : 'font-extrabold v94-enter'}${quietControl ? ' [&+span]:sr-only' : ''}`} aria-hidden={quietTurnLabel ? true : undefined} data-testid="v9-turn-owner">{h.turnLabel}</span>
@@ -130263,7 +130268,7 @@ export interface MechanicsDirectoryEntry { id: string; icon: string; title: stri
 
 export const MECHANICS_DIRECTORY_ENTRIES: MechanicsDirectoryEntry[] = [
   // V9.9 (SECTION 20AS): the last two sentences of this entry say when a match really ends.
-  { id: 'win', icon: '🏁', title: 'Win Conditions', body: `The match ends after the configured number of days. The winner has the most cash (net of loans), the highest net worth, or the most controlled regions — whichever the match uses. Cash is money available now; net worth also counts resources, investments and equipment. The last day you play is one short of the Game Length (day 29 of 30): the header shows FINAL DAY on it. A match can also end early: by bankruptcy (cash under $50 at three day-ends in a row) or by the mercy rule (one side 5-to-1 ahead on the win condition for five days in a row; it is announced every day and does not apply in Single Player, Grand Tour or scenarios).`, settingsTab: 'economy', settingsLabel: 'Configure Win Condition' },
+  { id: 'win', icon: '🏁', title: 'Win Conditions', body: `The match ends after the configured number of days. The winner has the most cash (net of loans), the highest net worth, or the most controlled regions — whichever the match uses. Cash is money available now; net worth also counts resources, investments and equipment. If the main measure ties exactly, the tie-breakers you set decide it; if every one ties, the win goes to you (there is no overtime and no draw). The last day you play is one short of the Game Length (day 29 of 30): the header shows FINAL DAY on it. A match can also end early: by bankruptcy (cash under $50 at three day-ends in a row; a team match started before V10.1 counted team cash after loans) or by the mercy rule (one side 5-to-1 ahead on the win condition for five days in a row; it is announced every day and does not apply in Single Player, Grand Tour or scenarios).`, settingsTab: 'economy', settingsLabel: 'Configure Win Condition' },
   { id: 'focus', icon: '🎯', title: 'Current Focus, Strategy & Recommendations', body: 'Your Strategy is the larger multi-turn plan; Current Focus is the part you are working on now. The Recommended Action is one useful move for that focus — advice, never a requirement. Other Useful Options serve different priorities, and Why? / What If? explain and preview them without changing the match.' },
   { id: 'action_limits', icon: '⏱️', title: 'Turns, Actions & Overrides', body: 'Each turn you get a set number of Actions; most major moves use one, selling and loans use none. End Turn passes play on and your Actions refresh next turn. An Action Override buys one extra action for cash; each further override the same day costs 1.5× more.', settingsTab: 'gameplay', settingsLabel: 'Configure Action Limits' },
   { id: 'regions', icon: '🗺️', title: 'Regions, Travel, Standing & Control', body: `Travel uses an Action and cash (neighbouring regions are cheaper) and collects a local resource. Standing is your reputation in a region — it unlocks contracts and better terms. Control is separate: the largest regional stake (at least $${REGION_MIN_CONTROL_STAKE}) controls a region, and a rival must out-stake you to take it. Staked cash is tied up; cashing out (if enabled) returns 50%.` },
@@ -186832,18 +186837,19 @@ export const SimpleSettingsPanel = React.memo(function SimpleSettingsPanel({ set
           {SIMPLE_SETTINGS.filter(d => d.group === g).map(d => {
             const v = values[d.key];
             const id = `simple-setting-${d.key}`;
+            const v101Lock = v101LiveRuleLockReason(d.key); // V10.1 (SECTION 20BD): Game length and How to win are frozen while a V10.1 match runs
             return (
               <div key={d.key} className="flex flex-wrap items-center justify-between gap-2 text-sm" data-testid={id}>
-                <label htmlFor={id + '-input'} className="flex-1 min-w-[12rem]"><span className="font-medium">{d.label}</span><span className="block text-xs opacity-70">{d.help}</span></label>
+                <label htmlFor={id + '-input'} className="flex-1 min-w-[12rem]"><span className="font-medium">{d.label}</span><span className="block text-xs opacity-70">{d.help}</span>{v101Lock && <span className="block text-xs opacity-80" data-testid={`${id}-locked`}>🔒 {v101RuleLockHint(settings, d.key)}</span>}</label>
                 {d.kind === 'toggle' && <input id={id + '-input'} type="checkbox" checked={v === true} onChange={e => onChange(d.key, e.target.checked)} />}
                 {d.kind === 'select' && (
-                  <select id={id + '-input'} value={typeof v === 'string' ? v : String(d.options?.[0]?.value || '')} onChange={e => onChange(d.key, e.target.value)} className={`rounded px-2 py-1 text-sm ${v99Simple.select}`}>
+                  <select id={id + '-input'} value={typeof v === 'string' ? v : String(d.options?.[0]?.value || '')} onChange={e => onChange(d.key, e.target.value)} disabled={v101Lock !== null} className={`rounded px-2 py-1 text-sm ${v99Simple.select}`}>
                     {(d.options || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 )}
                 {d.kind === 'range' && (
                   <span className="flex items-center gap-2">
-                    <input id={id + '-input'} type="range" min={d.min} max={d.max} step={d.step} value={typeof v === 'number' ? v : Number(d.min || 0)} onChange={e => onChange(d.key, Number(e.target.value))} aria-valuetext={simpleValueText(d, typeof v === 'number' ? v : Number(d.min || 0))} />
+                    <input id={id + '-input'} type="range" min={d.min} max={d.max} step={d.step} value={typeof v === 'number' ? v : Number(d.min || 0)} onChange={e => onChange(d.key, Number(e.target.value))} disabled={v101Lock !== null} aria-valuetext={simpleValueText(d, typeof v === 'number' ? v : Number(d.min || 0))} />
                     <span className="w-16 text-right text-xs">{simpleValueText(d, typeof v === 'number' ? v : Number(d.min || 0))}</span>
                   </span>
                 )}
@@ -193791,6 +193797,8 @@ export function readMatchEnd(gameState: unknown): MatchEndRecord | null {
 /** Names the end sentence needs. `playerSide` / `rivalSide` are as the end screen shows them ("You", a team name, the rival's name). */
 export interface MatchEndNames {
   rivalSide: string; metricLabel: string; regionsGoal: boolean; teamMode: boolean;
+  /** V10.1 (SECTION 20BD): a team match that tests cash AFTER loans (started before V10.1) says so in the bankruptcy line. */
+  cashAfterLoans?: boolean;
   /** V9.9 (W3F1): set only where the human watches (the all-AI team match): the first team's name, used instead of "you" / "your team". */
   playerSide?: string | null;
 }
@@ -193810,7 +193818,7 @@ export function describeMatchEnd(record: MatchEndRecord, names: MatchEndNames): 
   const you = names.playerSide || (names.teamMode ? 'your team' : 'you'); // V9.9 (W3F1): the watched team's name for a spectator
   const rival = names.rivalSide || 'the rival';
   const metric = (names.metricLabel || 'the win condition').toLowerCase();
-  const broke = `cash under $${BANKRUPTCY_THRESHOLD} at ${BANKRUPTCY_STREAK_DAYS} day-ends in a row`;
+  const broke = `${names.cashAfterLoans === true ? 'cash after loans' : 'cash'} under $${BANKRUPTCY_THRESHOLD} at ${BANKRUPTCY_STREAK_DAYS} day-ends in a row`; // V10.1 (SECTION 20BD): older team matches count cash minus loans, and say so
   switch (record.cause) {
     case 'day_limit': return `The match ran its full length: ${record.day} days played.`;
     case 'player_bankrupt': return `Ended early on day ${record.day}: ${you} went bankrupt (${broke}).`;
@@ -194519,7 +194527,7 @@ export function buildMatchDebriefReport(params: DebriefAssemblyParams): DebriefA
   };
 
   // What happened, in plain statements.
-  const names: MatchEndNames = { rivalSide, metricLabel, regionsGoal: metricKey === 'regions' && !grandTour, teamMode, playerSide: watched };
+  const names: MatchEndNames = { rivalSide, metricLabel, regionsGoal: metricKey === 'regions' && !grandTour, teamMode, cashAfterLoans: v101BankruptcyCashAfterLoans(gs, teamMode), playerSide: watched }; // V10.1 (SECTION 20BD): an older team match says "cash after loans"
   const endLine = record ? describeMatchEnd(record, names) : null;
   const lines: string[] = [];
   if (endLine) lines.push(endLine);
@@ -204464,6 +204472,8 @@ export interface MatchJournalEntry {
   dailyKey: string | null;
   /** True for a chapter of The Long Rivalry. */
   campaign: boolean;
+  /** V10.1 (SECTION 20BD): the player's actions per day when the match was filed; absent in an entry filed before V10.1 (its own bucket for bests). */
+  actionsPerDay?: number;
 }
 /** An entry before it is filed: everything but the id and the display timestamp. */
 export type MatchJournalDraft = Omit<MatchJournalEntry, 'id' | 'at'>;
@@ -204570,6 +204580,7 @@ export function sanitizeMatchJournalEntry(raw: unknown): MatchJournalEntry | nul
   const at = matchJournalFinite(r.at);
   const daysPlayed = matchJournalFinite(r.daysPlayed);
   const matchLength = matchJournalFinite(r.matchLength);
+  const actionsPerDay = matchJournalFinite(r.actionsPerDay); // V10.1 (SECTION 20BD)
   const scenarioId = matchJournalText(r.scenarioId, 80);
   return {
     id,
@@ -204589,7 +204600,8 @@ export function sanitizeMatchJournalEntry(raw: unknown): MatchJournalEntry | nul
     scenarioId: scenarioId || null,
     scenarioTitle: (scenarioId && matchJournalText(r.scenarioTitle, 80)) || null,
     dailyKey: isMatchJournalDateKey(r.dailyKey) ? r.dailyKey : null,
-    campaign: r.campaign === true
+    campaign: r.campaign === true,
+    ...(actionsPerDay !== null && actionsPerDay >= 1 ? { actionsPerDay: Math.min(50, Math.floor(actionsPerDay)) } : {})
   };
 }
 
@@ -204637,9 +204649,11 @@ export function clearMatchJournal(storage: V99StorageLike | null): boolean {
  * results that hold no personal best: a simulation the player only watched, and scenarios (their records are the
  * scenario records of SECTION 20AS).
  */
-export function matchJournalBestKey(entry: Pick<MatchJournalEntry, 'mode' | 'difficulty' | 'character' | 'winMetric' | 'matchLength' | 'outcome'>): string | null {
+export function matchJournalBestKey(entry: Pick<MatchJournalEntry, 'mode' | 'difficulty' | 'character' | 'winMetric' | 'matchLength' | 'outcome'> & { actionsPerDay?: number }): string | null {
   if (entry.outcome === 'watched' || entry.mode === 'scenario' || entry.mode === 'team_ai_vs_ai') return null;
-  return [entry.mode, entry.mode === 'single' ? '' : entry.difficulty, entry.character, entry.winMetric, entry.matchLength].join('|');
+  // V10.1 (SECTION 20BD): a 2-action match and a 10-action match are not comparable; an entry filed before V10.1 has no figure and keeps its own bucket.
+  const actions = typeof entry.actionsPerDay === 'number' && entry.actionsPerDay >= 1 ? [`a${entry.actionsPerDay}`] : [];
+  return [entry.mode, entry.mode === 'single' ? '' : entry.difficulty, entry.character, entry.winMetric, entry.matchLength, ...actions].join('|');
 }
 
 export interface MatchJournalBest { key: string; best: MatchJournalEntry; plays: number; lastId: number }
@@ -204732,6 +204746,8 @@ export interface MatchJournalDraftInput {
   /** Today's date key and the days just before it (from the UI layer), newest first. */
   dailyCandidateKeys: readonly string[];
   campaignChapter: boolean;
+  /** V10.1 (SECTION 20BD): the player's actions per day (optional; the bests are kept apart by it). */
+  actionsPerDay?: number | null;
 }
 
 /** The journal entry of a finished match, without id and timestamp. Null when the mode is unknown. */
@@ -204761,7 +204777,8 @@ export function buildMatchJournalDraft(input: MatchJournalDraftInput): MatchJour
     scenarioId: scenarioId || null,
     scenarioTitle: (scenarioId && matchJournalText(input.scenarioTitle, 80)) || null,
     dailyKey: resolveMatchJournalDailyKey({ seed, mode, difficulty }, input.dailyCandidateKeys),
-    campaign: input.campaignChapter === true
+    campaign: input.campaignChapter === true,
+    ...(typeof input.actionsPerDay === 'number' && Number.isFinite(input.actionsPerDay) && input.actionsPerDay >= 1 ? { actionsPerDay: Math.min(50, Math.floor(input.actionsPerDay)) } : {})
   };
 }
 
@@ -208997,7 +209014,266 @@ export function runV101RivalSelfTests(): V9SelfTestResult[] {
 // SECTION 20BD: V10.1 MATCH RULES & ENDINGS — THE RULES A MATCH STARTS WITH ARE THE RULES IT ENDS WITH
 // ============================================================================
 // <<V101-SLOT RULES begin>>
-// (work package RULES: replace everything between the two markers; keep the markers and the exported suite function below.)
+// ---- Part 1: the rules a match starts with are the rules it ends with ----------------------------------------------------
+// V10.0 let the human change Victory Goal and Game Length (and Difficulty) in the middle of a match from five different
+// screens, while the rival could not: a player who led on Net Worth switched "How to win" to it on the last day. The
+// settings system already calls winCondition and totalDays "next_match" settings and has a deferral list for them
+// (deferredTransactions), but only the Smart Settings plan used it. In a V10.1 match, while it is running (gameMode "game"),
+// ONE predicate (v101MatchRuleLocked) says which keys are locked, ONE guard at the settings write
+// (dispatchGameSettingsChange -> v101GuardRuleEdits) holds an edit back and queues it as a next-match deferral, the
+// difficulty reducer action asks the same predicate, and every control shows the same one-line reason. Before the match
+// (menu), after it (end screen), in a V10.0-stamped or unstamped match and under the Classic rules everything stays editable.
+
+/** The match rules a live V10.1 match freezes. The settings keys; Difficulty lives in the match state (gameState.aiDifficulty). */
+export const V101_LOCKED_RULE_KEYS: readonly string[] = ['winCondition', 'totalDays', 'aiDifficulty'];
+/** Locked keys that live in the settings object (the guard at the settings write handles these). */
+export const V101_LOCKED_SETTING_KEYS: readonly string[] = ['winCondition', 'totalDays'];
+/** One line for every locked control, hint and notice. */
+export const V101_RULE_LOCK_REASON = 'Locked while a match is running. Changes apply to your next match.';
+/** Id prefix of the next-match deferrals this lock writes (so they are told apart from Smart Settings deferrals). */
+export const V101_RULE_DEFER_ID_PREFIX = 'v101_rule_';
+/** Sources that start or restore a match (a loaded save, a scenario, a replay) and so may write the rules. Everything else is a player edit. */
+export const V101_RULE_LOCK_EXEMPT_SOURCES: readonly string[] = ['save_loader', 'scenario_start', 'scenario_exit', 'save_file_migration', 'replay'];
+
+/** True while `key` is a rule the match in `gameState` has frozen: a V10.1 match that is running. A menu, the end screen, a V10.0 or unstamped match: false. */
+export function v101MatchRuleLocked(gameState: unknown, key: string): boolean {
+  if (!V101_LOCKED_RULE_KEYS.includes(key)) return false;
+  if (!gameState || typeof gameState !== 'object') return false;
+  return (gameState as { gameMode?: unknown }).gameMode === 'game' && isV101Match(gameState);
+}
+
+/** The one-line reason a locked control shows, or null when the key is editable. */
+export function v101RuleLockReason(gameState: unknown, key: string): string | null {
+  return v101MatchRuleLocked(gameState, key) ? V101_RULE_LOCK_REASON : null;
+}
+
+// The lock as the settings write sees it. The play screen sets it while rendering (derived only from the match state), so
+// the write guard and the deep controls (which hold no match state) agree with the predicate above.
+let v101LiveRuleLock = false;
+/** Set by the play screen from v101MatchRuleLocked; tests set it directly. */
+export function v101SetLiveRuleLock(active: boolean): void { v101LiveRuleLock = active === true; }
+/** True while a V10.1 match is running, as the play screen last saw it. */
+export function v101LiveRuleLockActive(): boolean { return v101LiveRuleLock; }
+/** The lock reason for a settings key while the lock is on (for controls that hold no match state), else null. */
+export function v101LiveRuleLockReason(key: string): string | null {
+  return v101LiveRuleLock && V101_LOCKED_SETTING_KEYS.includes(key) ? V101_RULE_LOCK_REASON : null;
+}
+
+/** The next-match deferrals this lock holds in `settings`. */
+export function v101PendingRuleEdits(settings: unknown): DeferredTransactionItem[] {
+  const list = settings && typeof settings === 'object' ? (settings as { deferredTransactions?: unknown }).deferredTransactions : null;
+  if (!Array.isArray(list)) return [];
+  return list.filter((item): item is DeferredTransactionItem => !!item && typeof item === 'object' && typeof (item as { id?: unknown }).id === 'string'
+    && ((item as { id: string }).id.startsWith(V101_RULE_DEFER_ID_PREFIX)) && V101_LOCKED_SETTING_KEYS.includes(String((item as { settingKey?: unknown }).settingKey)));
+}
+
+/** The value waiting for the next match for `key` (an edit made while the rules were locked), or undefined. */
+export function v101PendingRuleValue(settings: unknown, key: string): unknown {
+  const hit = v101PendingRuleEdits(settings).find(item => item.settingKey === key);
+  return hit ? hit.value : undefined;
+}
+
+function v101CleanRuleValue(key: string, value: unknown): unknown {
+  if (key === 'totalDays') return clampSettingNumber(value, DEFAULT_GAME_SETTINGS.totalDays, 10, 150);
+  return normalizeWinMetric(value);
+}
+
+/**
+ * The guard at the settings write. `prev` is the settings before an edit, `next` what the edit produced. Locked: the
+ * locked keys that changed are put back to `prev`'s value and the edit waits in the next-match list (one entry per key;
+ * putting the live value back drops it). Not locked: a waiting entry whose key the edit just changed is dropped (the
+ * player's newer choice wins). Returns `next` itself when there is nothing to do; never mutates either argument.
+ */
+export function v101GuardRuleEdits(prev: GameSettingsState, next: GameSettingsState, locked: boolean): GameSettingsState {
+  if (prev === next) return next;
+  const nextRec = next as unknown as Record<string, unknown>;
+  const prevRec = prev as unknown as Record<string, unknown>;
+  const pending = v101PendingRuleEdits(next);
+  const changed = V101_LOCKED_SETTING_KEYS.filter(key => !settingsValuesEqual(prevRec[key], nextRec[key]));
+  if (changed.length === 0) return next;
+  let list: unknown[] = Array.isArray(nextRec.deferredTransactions) ? (nextRec.deferredTransactions as unknown[]) : [];
+  const out: Record<string, unknown> = { ...nextRec };
+  for (const key of changed) {
+    const id = `${V101_RULE_DEFER_ID_PREFIX}${key}`;
+    list = list.filter(item => !(item && typeof item === 'object' && (item as { id?: unknown }).id === id));
+    if (locked) {
+      const wanted = v101CleanRuleValue(key, nextRec[key]);
+      out[key] = prevRec[key];
+      if (!settingsValuesEqual(wanted, prevRec[key])) {
+        list = [...list, { id, settingKey: key, value: wanted, deferralScope: 'next_match', reason: 'Applies next match', timestamp: 0 } as DeferredTransactionItem];
+      }
+    }
+  }
+  if (!locked && pending.length === 0) return next;
+  out.deferredTransactions = list;
+  return out as unknown as GameSettingsState;
+}
+
+/** Applies next-match deferrals (`edits`, default: the ones `settings` holds) to `settings` and removes them from its list. The same object when there are none. */
+export function v101ApplyRuleEdits(settings: GameSettingsState, edits?: readonly DeferredTransactionItem[]): GameSettingsState {
+  const todo = edits ?? v101PendingRuleEdits(settings);
+  const rec = settings as unknown as Record<string, unknown>;
+  const ids = new Set(v101PendingRuleEdits(settings).map(item => item.id));
+  if (todo.length === 0 && ids.size === 0) return settings;
+  const out: Record<string, unknown> = { ...rec };
+  for (const item of todo) {
+    if (V101_LOCKED_SETTING_KEYS.includes(item.settingKey)) { out[item.settingKey] = v101CleanRuleValue(item.settingKey, item.value); ids.add(item.id); }
+  }
+  const list = Array.isArray(rec.deferredTransactions) ? (rec.deferredTransactions as unknown[]) : [];
+  out.deferredTransactions = list.filter(item => !(item && typeof item === 'object' && ids.has(String((item as { id?: unknown }).id))));
+  return out as unknown as GameSettingsState;
+}
+
+/** Drops this lock's waiting edits without applying them (a match started with explicit rules, e.g. a scenario, wins over them). */
+export function v101DropRuleEdits(settings: GameSettingsState): GameSettingsState {
+  const pending = v101PendingRuleEdits(settings);
+  if (pending.length === 0) return settings;
+  const ids = new Set(pending.map(item => item.id));
+  const rec = settings as unknown as Record<string, unknown>;
+  return { ...rec, deferredTransactions: (rec.deferredTransactions as unknown[]).filter(item => !(item && typeof item === 'object' && ids.has(String((item as { id?: unknown }).id)))) } as unknown as GameSettingsState;
+}
+
+/** What a locked Quick Setup line says under the control: the reason, plus the choice waiting for the next match if there is one. */
+export function v101RuleLockHint(settings: unknown, key: string): string {
+  const waiting = v101PendingRuleValue(settings, key);
+  if (waiting === undefined) return V101_RULE_LOCK_REASON;
+  const text = key === 'totalDays' ? `${String(waiting)} days` : (WIN_METRIC_LABELS[normalizeWinMetric(waiting)] || String(waiting));
+  return `${V101_RULE_LOCK_REASON} Waiting for your next match: ${text}.`;
+}
+
+/** The small hint line under a locked control (renders nothing when the control is editable). */
+export function V101RuleLockNote({ ruleKey, settings }: { ruleKey: string; settings: unknown }): React.ReactElement | null {
+  if (!v101LiveRuleLockActive() || !V101_LOCKED_SETTING_KEYS.includes(ruleKey)) return null;
+  return <div className="text-xs opacity-80 mt-1" data-testid={`v101-rule-lock-${ruleKey}`} role="note">🔒 {v101RuleLockHint(settings, ruleKey)}</div>;
+}
+
+/** True when `edits` would change a frozen settings rule (Victory Goal or Game Length) away from what `settings` holds. */
+export function v101EditsTouchLockedRules(settings: unknown, edits: unknown): boolean {
+  if (!settings || typeof settings !== 'object' || !edits || typeof edits !== 'object') return false;
+  const live = settings as Record<string, unknown>;
+  const wanted = edits as Record<string, unknown>;
+  return V101_LOCKED_SETTING_KEYS.some(key => key in wanted && wanted[key] !== undefined && !settingsValuesEqual(live[key], v101CleanRuleValue(key, wanted[key])));
+}
+
+// ---- Part 2: the Game Length label says what happens ---------------------------------------------------------------------------
+// A match ends when day totalDays would begin, so "30 days" is 29 played days. The label says both, for every match (the
+// stored Game Length and the moment the match ends are unchanged, so old matches and saves play as before).
+/** Quick Setup's slider label: "Game Length: 30 days (you play 29)". */
+export function v101GameLengthLabel(totalDays: number): string {
+  const n = Math.floor(Number(totalDays));
+  return Number.isFinite(n) && n >= 2 ? `Game Length: ${n} days (you play ${matchLengthInDays(n)})` : `Game Length: ${String(totalDays)} days`;
+}
+/** The Core Gameplay slider's label: "Total Days: 30 (you play 29)". */
+export function v101TotalDaysLabel(totalDays: number): string {
+  const n = Math.floor(Number(totalDays));
+  return Number.isFinite(n) && n >= 2 ? `Total Days: ${n} (you play ${matchLengthInDays(n)})` : `Total Days: ${String(totalDays)}`;
+}
+
+// ---- Part 3: a debuff of N days costs its target N of its OWN turns -------------------------------------------------------------
+// One-on-one modes tick the human's debuffs once, at their End Turn, and the rival's once at the day rollover, so N days
+// is N turns for both. Team modes ticked the human at End Turn AND every actor again at the rollover: the human acts first,
+// so an opposing AI's sabotage (cast after the human moved) lost a day at the rollover before the human ever played under
+// it; Rumors, Market Panic and Customs Hold (1 day) never bit and a 2-day debuff lasted one. In a V10.1 team match the
+// rollover is the only tick, and a debuff cast on an actor that has ALREADY played this round (it sits earlier in the turn
+// order than the caster) gets one extra day to cover the rollover that comes before its next turn.
+/** Days a debuff cast on `targetId` by `casterId` is stored with. Unchanged outside a V10.1 team match. */
+export function v101SabotageDuration(gameState: unknown, casterId: string, targetId: string, duration: number): number {
+  const base = Number(duration);
+  if (!gameState || typeof gameState !== 'object' || !isV101Match(gameState)) return base;
+  const gs = gameState as { selectedMode?: unknown; turnOrder?: unknown };
+  if (!isTeamModeSelection(gs.selectedMode as GameModeSelection)) return base;
+  const order = Array.isArray(gs.turnOrder) ? gs.turnOrder : [];
+  const caster = order.indexOf(casterId);
+  const target = order.indexOf(targetId);
+  return caster >= 0 && target >= 0 && target < caster ? base + 1 : base;
+}
+
+/** Does the human's End Turn tick their debuffs? Yes everywhere except a V10.1 team match, where the day rollover does it. */
+export function v101HumanEndTurnTicksDebuffs(gameState: unknown, teamMode: boolean): boolean {
+  return !(teamMode && isV101Match(gameState));
+}
+
+// ---- Part 4: a Single Player run is "RUN COMPLETE" with its grade, not a VICTORY ------------------------------------------------
+// Single Player has no target and no rival, so its day-limit ending is always stored as playerWon: true (saves, the journal and
+// the campaign read it that way and keep doing so). A grade-D run under a VICTORY banner told the player they had won
+// something nobody defined. In a V10.1 match the banner says what happened and the grade sits right under it.
+const V101_SOLO_GRADE_WORDS: Readonly<Record<string, string>> = {
+  S: 'your starting cash grew tenfold or more',
+  A: 'your starting cash grew at least fivefold',
+  B: 'your starting cash at least doubled',
+  C: 'you finished level with, or a little ahead of, where you started',
+  D: 'you finished below where you started',
+  F: 'you went bankrupt'
+};
+
+/** The headline and result line of a finished Single Player run in a V10.1 match; null for any other match or ending (the banner stays as it was). */
+export function v101SoloRunResult(gameState: unknown, solo: boolean, endCause: string | null | undefined, grade: string | null | undefined): { headline: string; line: string } | null {
+  if (!solo || !isV101Match(gameState)) return null;
+  if (endCause && endCause !== 'day_limit') return null; // a bankruptcy keeps MATCH OVER
+  const g = typeof grade === 'string' && V101_SOLO_GRADE_WORDS[grade] ? grade : null;
+  return { headline: 'RUN COMPLETE', line: g ? `Run grade ${g}: ${V101_SOLO_GRADE_WORDS[g]}.` : 'Your run is finished. There is no rival and no target in Single Player: the grade below says how it went.' };
+}
+
+// ---- Part 5: the bankruptcy test counts what every message says -------------------------------------------------------------------
+// One-on-one matches test the player's cash against $50. Team modes tested team cash MINUS every member's loans, while the
+// warnings, the end line and the advice all said "cash under $50": a loan adds the same amount to cash and debt, so it could
+// never cure the streak, and a team that held $300 with one $500 loan lost the match three day-ends later. In a V10.1 match
+// the team streak counts the team's cash (the sum of what its members hold), like the one-on-one rule and every message.
+// The team's net-of-loans figure stays what it was for the cash win metric and the loan-exploit guard (V9.1 C8).
+// The safety net that sells a broke actor's stock reads the same cash (each actor's own money), so it raises exactly the number the test reads.
+/** The team cash the bankruptcy streak is tested on: the team's gross cash in a V10.1 match, cash after loans in an older one. */
+export function v101TeamBankruptcyCash(gameState: unknown, teamGrossCash: number, teamNetCash: number): number {
+  return isV101Match(gameState) ? teamGrossCash : teamNetCash;
+}
+
+/** The two warnings before a team bankruptcy (streak 1 and 2), for either side. Older matches say what they test: cash after loans. */
+export function v101TeamBankruptcyNotice(gameState: unknown, side: 'player' | 'rival', streak: 1 | 2, testedCash: number): string {
+  if (isV101Match(gameState)) {
+    if (side === 'player') return streak === 1 ? '⚠️ Team funds critically low. Three days under $50 triggers bankruptcy.' : '⚠️ One day until team bankruptcy! Improve cash above $50.';
+    return streak === 1 ? '🤖 The opposing team is broke. Three days under $50 will end the game.' : '🤖 The opposing team has one day to avoid bankruptcy!';
+  }
+  const figure = fmtMoney(testedCash);
+  if (side === 'player') return streak === 1 ? `⚠️ Team cash after loans is ${figure}. Three day-ends under $50 (cash minus loans) trigger bankruptcy.` : `⚠️ One day until team bankruptcy! Team cash after loans must be above $50 (it is ${figure}).`;
+  return streak === 1 ? '🤖 The opposing team is broke once its loans are counted. Three day-ends under $50 will end the game.' : '🤖 The opposing team has one day to avoid bankruptcy!';
+}
+
+/** Does the end line say "cash" or "cash after loans"? After loans for a team match that is not a V10.1 match. */
+export function v101BankruptcyCashAfterLoans(gameState: unknown, teamMode: boolean): boolean {
+  return teamMode && !isV101Match(gameState);
+}
+
+// ---- Part 6: the two flagship scenarios do what they promise -------------------------------------------------------------------------
+// Red Dust Harvest said "settling massive debt" and set the objective "Clear all starting debt obligations", but it defined no
+// starting loans, so the objective was complete on day 1; Hyper-Inflation Survival promised "severe economic turbulence" and had
+// no inflation rule at all. In a V10.1 match the first starts with two real loans (the same size as Cash Crisis's) and the
+// objective counts loans and advanced loans; the second makes shop and investment prices 25% dearer for BOTH sides (the
+// existing priceInflationPct every price already reads). Scenario records, ids and old saves are untouched.
+export const V101_RED_DUST_STARTING_LOANS: ReadonlyArray<{ id: string; amount: number; accrued: number }> = [
+  { id: 'v101_red_dust_loan_1', amount: LOAN_AMOUNT, accrued: 0 },
+  { id: 'v101_red_dust_loan_2', amount: LOAN_AMOUNT, accrued: 0 }
+];
+export const V101_HYPER_INFLATION_PCT = 0.25;
+
+/** Debts a scenario's player starts with on top of what the content layer deals: Red Dust's, in a V10.1 (not Classic) match. */
+export function v101ScenarioStartingLoans(scenarioId: string, settings: { classicRulesV100?: unknown } | null | undefined): Array<{ id: string; amount: number; accrued: number }> {
+  if (v101RulesVersionForNewMatch(settings) < V101_RULES_VERSION) return [];
+  return scenarioId === 'red_dust_harvest' ? V101_RED_DUST_STARTING_LOANS.map(loan => ({ ...loan })) : [];
+}
+
+/** The price inflation (a fraction added to the cost multiplier of both sides) a scenario runs with: Hyper-Inflation's, in a V10.1 (not Classic) match. */
+export function v101ScenarioInflationPct(scenarioId: string, settings: { classicRulesV100?: unknown } | null | undefined): number {
+  if (v101RulesVersionForNewMatch(settings) < V101_RULES_VERSION) return 0;
+  return scenarioId === 'hyper_inflation_survival' ? V101_HYPER_INFLATION_PCT : 0;
+}
+
+/** "Clear all debt": no simple loans, and, in a V10.1 match, no advanced loans either. */
+export function v101DebtIsCleared(gameState: unknown, actor: { loans?: unknown; advancedLoans?: unknown } | null | undefined): boolean {
+  const simple = Array.isArray(actor?.loans) ? (actor?.loans as unknown[]).length : 0;
+  const advanced = Array.isArray(actor?.advancedLoans) ? (actor?.advancedLoans as unknown[]).length : 0;
+  return simple === 0 && (!isV101Match(gameState) || advanced === 0);
+}
+
+// ---- Self-tests (v101ru) ----------------------------------------------------------------------------------------------------------
 export function runV101MatchRulesSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
   return results;
@@ -209135,6 +209411,10 @@ function AustraliaGame() {
   // here so the leave-site warning can ask it. With the setting off it writes nothing and answers false.
   const v99mrFlushRef = useRef<(reason: RecoveryFlushReason) => boolean>(matchRecoveryNoFlush);
   const [gameState, dispatchGameState] = useReducer(gameStateReducer, initialGameState);
+  // V10.1 (SECTION 20BD): is a V10.1 match running right now? Derived only from the match state, set while rendering so the settings
+  // write guard and every control below (rendered after this line) read the same answer as v101MatchRuleLocked.
+  const v101RulesLocked = v101MatchRuleLocked(gameState, 'winCondition');
+  v101SetLiveRuleLock(v101RulesLocked);
   const setGameState = (nextState: any) => dispatchGameState({ type: 'LOAD_STATE', payload: nextState });
 
   // AI opponent state
@@ -209197,6 +209477,11 @@ function AustraliaGame() {
   // (profile-scoped keys only — never a match rule); with nothing stored this is createDefaultGameSettings() itself.
   const [v99ProfileBoot] = useState<ProfileSettingsBoot>(() => bootProfileSettings(createDefaultGameSettings(), v99BrowserStorage(), readCampaignSlot(campaignStorage())));
   const [gameSettings, setGameSettings] = useState<GameSettingsState>(() => v99ProfileBoot.settings);
+  // V10.1 (SECTION 20BD): when the match ends (or the player leaves it), the Victory Goal / Game Length choices made while it was
+  // locked take effect, so the menu shows what the next match will use. Nothing to do (same object back) when none are waiting.
+  useEffect(() => {
+    if (!v101RulesLocked) setGameSettings(prev => v101ApplyRuleEdits(prev));
+  }, [v101RulesLocked]);
   const [tuningArchive, setTuningArchive] = useState<TuningArchive>(() => createEmptyTuningArchive());
   const tuningArchiveRef = useRef<TuningArchive>(tuningArchive);
   // V9.6 (SECTION 20AM): state slice 1 — AI tuning lab (12 fields in one reducer; setters keep useState semantics).
@@ -211147,8 +211432,13 @@ function dispatchGameSettingsChange(
   if (v99SettingsPreviewCapture(keyOrPatch, newValue)) return; // V9.9 (SECTION 20AU): a reset that is only being previewed is counted, never written or logged
   const timestamp = Date.now();
 
+  // V10.1 (SECTION 20BD): the ONE guard at the settings write. While a V10.1 match is running, Victory Goal and Game Length
+  // (every screen, a preset, an import, a reset) wait for the next match instead of changing the rules of the match being
+  // played; loading a save, starting a scenario and replays still write them. Off in a V10.0, an unstamped or a Classic match.
+  const v101RuleSource = V101_RULE_LOCK_EXEMPT_SOURCES.includes(source);
+  const computeNextState = (prev: GameSettingsState): GameSettingsState => v101RuleSource ? computeNextStateRaw(prev) : v101GuardRuleEdits(prev, computeNextStateRaw(prev), v101LiveRuleLockActive());
   // SH3: Unified state updater helper function to compute next state cleanly across all patch types
-  const computeNextState = (prev: GameSettingsState): GameSettingsState => {
+  const computeNextStateRaw = (prev: GameSettingsState): GameSettingsState => {
     if (typeof keyOrPatch === 'string') {
       const key = keyOrPatch as keyof GameSettingsState;
       if (settingsValuesEqual(prev[key], newValue)) return prev;
@@ -212530,6 +212820,8 @@ function dispatchGameSettingsChange(
           dispatchGameState({ type: 'SET_AI_DIFFICULTY', payload: preset.aiDifficulty });
         }
         addNotification(`Applied ${preset.label} preset.`, 'success', true, 'system');
+        // V10.1 (SECTION 20BD): a running V10.1 match keeps its Victory Goal, Game Length and Difficulty; the preset's choices wait for the next match.
+        if (v101RulesLocked && (v101EditsTouchLockedRules(gameSettings, preset.settings) || (preset.aiDifficulty && preset.aiDifficulty !== gameState.aiDifficulty))) addNotification(`The preset's Game Length, Victory Goal and Difficulty are not changed in a running match. ${V101_RULE_LOCK_REASON}`, 'info', true, 'system');
         // GL4: settings-change tracking — scoped to preset application only. There is no single
         // chokepoint for the hundreds of ad hoc `setGameSettings(prev => ({...}))` calls scattered
         // across this file (each settings toggle/slider calls the raw useState setter directly),
@@ -217064,8 +217356,10 @@ function dispatchGameSettingsChange(
       dispatchGameState({ type: 'UPDATE_GAME_STATE', payload: { matchEnd: buildMatchEndRecord('grand_tour_finale', actorId === 'player' ? 'player' : 'opponent', Number(gameState.day) || 1) } });
       dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
       addNotification(`${actorLabel} won the Grand Tour Rival Race by completing the National Champion finale.`, actorId === 'player' ? 'success' : 'ai', true, 'system');
+      // V10.1 (SECTION 20BD): the finale ends the match like a bankruptcy does, so a recording is finished like theirs (it was left open: no result, no checksum, but the end screen offered it).
+      finalizeReplayRecording({ winnerTeamId: null, winnerActorId: actorId === 'player' ? 'player' : 'ai', reason: `${actorLabel} completed the National Champion finale`, day: Number(gameState.day) || 1, turn: gameState.turnCounter });
     }
-  }, [addNotification, gameState.day, gameState.grandTourState, gameState.selectedMode, getActorDisplayName]);
+  }, [addNotification, finalizeReplayRecording, gameState.day, gameState.grandTourState, gameState.selectedMode, gameState.turnCounter, getActorDisplayName]);
 
   // CRITICAL FIX: Execute AI action with async/await for state consistency
   // Returns Promise<boolean> indicating success/failure
@@ -218912,9 +219206,18 @@ function dispatchGameSettingsChange(
       skipPersistentAbandonPromptRef.current = false;
       v95MatchEpochRef.current += 1;
       soloAiTurnSessionTokenRef.current = null; soloAiClaimsRef.current = createSoloAiClaimRegistry(); soloAiRuntimeRef.current = null; setSoloAiPhase('idle');
-      if (gameSettings && (gameSettings as any).deferredTransactions?.length) {
-        flushDeferredTransactionsOnBoundary(gameSettings, 'next_match', (newSet) => {
-          setGameSettings(newSet);
+      // V10.1 (SECTION 20BD): the Victory Goal / Game Length edits held back while the last match ran belong to THIS match. They are
+      // taken out of the list the old flush sees (it would write a stale copy of the settings over a scenario's), applied here on
+      // the latest settings, and the new match is built from them — unless the caller handed explicit rules (a scenario, a daily).
+      const v101Waiting = v101PendingRuleEdits(gameSettings);
+      const v101FlushSource: GameSettingsState = v101Waiting.length ? v101DropRuleEdits(gameSettings) : gameSettings;
+      if (v101Waiting.length) {
+        const v101Mine = wpMfOverrides?.settings ? [] : v101Waiting;
+        setGameSettings(prev => v101ApplyRuleEdits(v101DropRuleEdits(prev), v101Mine));
+      }
+      if (v101FlushSource && (v101FlushSource as any).deferredTransactions?.length) {
+        flushDeferredTransactionsOnBoundary(v101FlushSource, 'next_match', (newSet) => {
+          setGameSettings(v101Waiting.length && !wpMfOverrides?.settings ? v101ApplyRuleEdits(newSet, v101Waiting) : newSet);
         });
       }
     if (soloAiTurnTimeoutRef.current) {
@@ -218929,7 +219232,7 @@ function dispatchGameSettingsChange(
     // V9.9 (SECTION 20AS): the match is seeded HERE — once, after the prompt gate above and before anything is drawn
     // for it — so the rival, the secret-objective deal and every in-match stream come from this match's own seed.
     // "Random" (the default) gives every match a new seed; "Deterministic" keeps the configured one; an explicit seed wins.
-    const wpMfSettings: GameSettingsState = wpMfOverrides?.settings ?? gameSettings;
+    const wpMfSettings: GameSettingsState = wpMfOverrides?.settings ?? (v101Waiting.length ? v101ApplyRuleEdits(gameSettings) : gameSettings); // V10.1 (SECTION 20BD): the choices held back during the last match start this one
     setWpMfDebriefTab('grid');
     const wpMfSeedPlan = planMatchSeed({ settings: wpMfSettings, explicitSeed: wpMfOverrides?.seed, fixed: wp8Start?.firstRun === true, storage: v99BrowserStorage(), sessionSerial: wpMfSessionSerialRef.current, persist: !isolatedReplayRuntime, avoidSeed: wpMfLastSeenSeedRef.current });
     if (wpMfSeedPlan.serial !== null) wpMfSessionSerialRef.current = wpMfSeedPlan.serial;
@@ -219304,6 +219607,18 @@ function dispatchGameSettingsChange(
       type: 'UPDATE_MONEY',
       payload: scenario.startingMoney - (playerRef.current?.money || 1000)
     });
+    // V10.1 (SECTION 20BD): the scenarios' promises (Red Dust's debt, Hyper-Inflation's prices) become rules in a V10.1 match.
+    const v101StartLoans = v101ScenarioStartingLoans(scenario.id, scenarioSettings);
+    if (v101StartLoans.length) {
+      dispatchPlayer({ type: 'SET_LOANS', payload: v101StartLoans });
+      addNotification(`💸 ${scenario.title}: you start owing ${fmtMoney(v101StartLoans.reduce((sum, loan) => sum + loan.amount, 0))} in loans. Clear them to meet the Debt Settlement objective.`, 'warning', true, 'system');
+    }
+    const v101Inflation = v101ScenarioInflationPct(scenario.id, scenarioSettings);
+    if (v101Inflation > 0) {
+      dispatchPlayer({ type: 'MERGE_STATE', payload: { priceInflationPct: v101Inflation } });
+      updateAiPlayerState((prev: any) => ({ ...prev, priceInflationPct: v101Inflation }));
+      addNotification(`📈 ${scenario.title}: shop and investment prices run ${Math.round(v101Inflation * 100)}% higher for both sides.`, 'warning', true, 'system');
+    }
     if (scenario.startingRegions && scenario.startingRegions.length > 0) {
       scenario.startingRegions.forEach((reg: string) => {
         dispatchPlayer({
@@ -219318,7 +219633,7 @@ function dispatchGameSettingsChange(
     }
 
     addNotification(`📜 Scenario Started: ${scenario.title}!`, 'success', true);
-  }, [dispatchAuthoritativeGameActivityLedgerEvent, gameSettings, gameState?.day, gameState?.turnCounter, initializeGameMode, addNotification, savedPreScenarioSettings]);
+  }, [dispatchAuthoritativeGameActivityLedgerEvent, gameSettings, gameState?.day, gameState?.turnCounter, initializeGameMode, addNotification, savedPreScenarioSettings, updateAiPlayerState]);
 
   const checkScenarioWinCondition = useCallback(() => {
     if (gameState.selectedMode === 'scenario' || gameSettings.scenarioModeEnabled) {
@@ -222656,9 +222971,10 @@ function dispatchGameSettingsChange(
     metricLabel: WIN_METRIC_LABELS[gameSettings.winCondition] || 'Score',
     regionsGoal: WIN_METRIC_PROFILES[gameSettings.winCondition]?.goalKind === 'regions',
     teamMode: isTeamMode,
+    cashAfterLoans: v101BankruptcyCashAfterLoans(gameState, isTeamMode), // V10.1 (SECTION 20BD)
     playerSide: spectatorSideName(gameState.selectedMode, teamsById[TEAM_PLAYER_ID]?.name), // V9.9 (SECTION 20AS, W3F1)
     solo: gameState.selectedMode === 'single'
-  }), [aiPlayer?.name, gameSettings.winCondition, gameState.selectedMode, isTeamMode, teamsById, wpMfMatchEnd, wpMfMetricOutcome]);
+  }), [aiPlayer?.name, gameSettings.winCondition, gameState.selectedMode, gameState.rulesVersion, isTeamMode, teamsById, wpMfMatchEnd, wpMfMetricOutcome]); // V10.1 (SECTION 20BD): rulesVersion decides the bankruptcy wording
 
   const commitCurrentMatchPersistentMemory = useCallback((forcedOutcome?: 'win' | 'loss' | 'draw') => {
     if (isolatedReplayRuntime) return;
@@ -222817,7 +223133,8 @@ function dispatchGameSettingsChange(
     day: Number(gameState.day),
     totalDays: Number(gameSettings.totalDays),
     dailyCandidateKeys: recentMatchJournalDateKeys(matchJournalDateKeyOf(new Date())), // the clock is read here, in the UI layer, only
-    campaignChapter: gameSettings.rivalryCampaignEnabled === true && wpMfCampaignEpochRef.current === v95MatchEpochRef.current
+    campaignChapter: gameSettings.rivalryCampaignEnabled === true && wpMfCampaignEpochRef.current === v95MatchEpochRef.current,
+    actionsPerDay: Number(gameSettings.playerActionsPerDay) // V10.1 (SECTION 20BD): bests compare like with like
   }) : null;
   const wpMjDraftText = wpMjDraft ? JSON.stringify(wpMjDraft) : '';
   useEffect(() => {
@@ -228205,7 +228522,9 @@ function dispatchGameSettingsChange(
       setFailedChallengeData(null);
       setUsedFreeChallengeThisTurn(false);
       setUiState(prev => (prev.intentTeaching ? { ...prev, intentTeaching: null } : prev)); // V9.9 (SECTION 20AR, W4A — f3-04): the card about this turn's last move ends with the turn
-      dispatchPlayer({ type: 'MERGE_STATE', payload: { debuffs: tickDebuffs(player.debuffs || []) } });
+      // V10.1 (SECTION 20BD): in a V10.1 team match the day rollover is the ONE place every actor's debuffs tick (a debuff cast after this
+      // turn would otherwise lose a day here AND at the rollover); the cast adds the day back (v101SabotageDuration). Solo is unchanged.
+      if (v101HumanEndTurnTicksDebuffs(gameState, isTeamMode)) dispatchPlayer({ type: 'MERGE_STATE', payload: { debuffs: tickDebuffs(player.debuffs || []) } });
       
       // Reset Co-Pilot deduplication set and compact panel dismissal for new turn
       setCoPilotDeduplicationSet(new Set());
@@ -228465,6 +228784,7 @@ function dispatchGameSettingsChange(
       metricLabel: WIN_METRIC_LABELS[gameSettings.winCondition] || 'Score',
       regionsGoal: WIN_METRIC_PROFILES[gameSettings.winCondition]?.goalKind === 'regions',
       teamMode: wpMfTeamMatch,
+      cashAfterLoans: v101BankruptcyCashAfterLoans(gameState, wpMfTeamMatch), // V10.1 (SECTION 20BD): an older team match tested cash minus loans and says so
       playerSide: spectatorSideName(gameState.selectedMode, teamsById[TEAM_PLAYER_ID]?.name) // V9.9 (SECTION 20AS, W3F1): the all-AI match has no "you"
     };
     // V9.9 (SECTION 20AS, W3F1): the Game Over toast says what the end screen says — the same end sentence and names —
@@ -229022,14 +229342,18 @@ function dispatchGameSettingsChange(
       // V9.6 (SECTION 20AL): re-assess the underdog boost, open the Final Stretch, refresh both sides' reads.
       wp6DayRef.current?.(newDay, projectedTeamMetricValues, projectedActorList);
 
-      const playerStreak = projectedPlayerTeamCash < BANKRUPTCY_THRESHOLD ? gameState.bankruptcyTracker.player + 1 : 0;
-      const aiStreak = projectedOpponentTeamCash < BANKRUPTCY_THRESHOLD ? gameState.bankruptcyTracker.ai + 1 : 0;
+      // V10.1 (SECTION 20BD): a V10.1 team match tests the team's cash (the figure every message names), not cash minus loans; the net
+      // figure above stays for the cash win metric and the loan-exploit guard. Older matches keep the net test.
+      const wpRuPlayerTestCash = v101TeamBankruptcyCash(gameState, projectedActorList.filter(actor => actor.teamId === TEAM_PLAYER_ID).reduce((sum, actor) => sum + actor.money, 0), projectedPlayerTeamCash);
+      const wpRuOpponentTestCash = v101TeamBankruptcyCash(gameState, projectedActorList.filter(actor => actor.teamId === TEAM_OPPONENT_ID).reduce((sum, actor) => sum + actor.money, 0), projectedOpponentTeamCash);
+      const playerStreak = wpRuPlayerTestCash < BANKRUPTCY_THRESHOLD ? gameState.bankruptcyTracker.player + 1 : 0;
+      const aiStreak = wpRuOpponentTestCash < BANKRUPTCY_THRESHOLD ? gameState.bankruptcyTracker.ai + 1 : 0;
       dispatchGameState({ type: 'SET_BANKRUPTCY_TRACKER', payload: { player: playerStreak, ai: aiStreak } });
 
       if (playerStreak === 1) {
-        addNotification('⚠️ Team funds critically low. Three days under $50 triggers bankruptcy.', 'warning', true);
+        addNotification(v101TeamBankruptcyNotice(gameState, 'player', 1, wpRuPlayerTestCash), 'warning', true); // V10.1 (SECTION 20BD): says what the test counts
       } else if (playerStreak === 2) {
-        addNotification('⚠️ One day until team bankruptcy! Improve cash above $50.', 'warning', true);
+        addNotification(v101TeamBankruptcyNotice(gameState, 'player', 2, wpRuPlayerTestCash), 'warning', true);
       } else if (playerStreak >= BANKRUPTCY_STREAK_DAYS) {
         wpMfEndMatch('player_bankrupt', 'opponent'); // V9.9 (SECTION 20AS)
         wpMfAnnounceEnd('player_bankrupt', 'opponent'); // V9.9 (SECTION 20AS, W3F1): the end line, with the teams by name
@@ -229037,9 +229361,9 @@ function dispatchGameSettingsChange(
       }
 
       if (aiStreak === 1) {
-        addNotification('🤖 The opposing team is broke. Three days under $50 will end the game.', 'ai', true);
+        addNotification(v101TeamBankruptcyNotice(gameState, 'rival', 1, wpRuOpponentTestCash), 'ai', true); // V10.1 (SECTION 20BD)
       } else if (aiStreak === 2) {
-        addNotification('🤖 The opposing team has one day to avoid bankruptcy!', 'ai', true);
+        addNotification(v101TeamBankruptcyNotice(gameState, 'rival', 2, wpRuOpponentTestCash), 'ai', true);
       } else if (aiStreak >= BANKRUPTCY_STREAK_DAYS) {
         wpMfEndMatch('rival_bankrupt', 'player'); // V9.9 (SECTION 20AS)
         wpMfAnnounceEnd('rival_bankrupt', 'player'); // V9.9 (SECTION 20AS, W3F1): the end line, with the teams by name
@@ -230416,6 +230740,8 @@ function dispatchGameSettingsChange(
           const outcome = evaluateGrandTourOutcome(projectedPlayer as ActorState, projectedAi as ActorState, gameState.grandTourState);
           // V9.9 (SECTION 20AS, W3F1): the rival by name; stamped with the last day played.
           wpMfAnnounceEnd('day_limit', null, { playerWon: outcome.playerWon, metricLabel: GRAND_TOUR_METRIC_LABEL, tieBreak: true, playerValue: '', rivalValue: '' }, `${outcome.playerWon ? 'You win' : `${String(projectedAi?.name || 'The rival')} wins`} the Grand Tour tie-break. ${outcome.reason}`);
+          // V10.1 (SECTION 20BD): the day limit finishes the recording (the end screen offered a replay that had no result and no checksum).
+          finalizeReplayRecording({ winnerTeamId: null, winnerActorId: outcome.playerWon ? 'player' : 'ai', reason: `Grand Tour day limit: ${outcome.reason}`, day: newDay, turn: gameState.turnCounter });
 	      } else if (gameState.selectedMode === 'ai') {
           // V9.6 (SECTION 20AL): secret objectives and the finale event move the primary score (identity while off).
           const outcome = compareCompetitiveMetricValues(gameSettings.winCondition, wp6FinalizeRef.current?.(newDay, soloMetricValues, [projectedPlayer, projectedAi]) || soloMetricValues);
@@ -230434,6 +230760,8 @@ function dispatchGameSettingsChange(
           });
 	      } else {
 	        wpMfAnnounceEnd('day_limit', null); // V9.9 (SECTION 20AS, W3F1): "Match over. The match ran its full length: N days played." — stamped with day N
+	        // V10.1 (SECTION 20BD): a Single Player run's recording is finished at the day limit too (it was left open behind a "Watch Replay" button).
+	        finalizeReplayRecording({ winnerTeamId: null, winnerActorId: 'player', reason: describeMatchEnd(buildMatchEndRecord('day_limit', null, prevDay), wpMfEndNames), day: newDay, turn: gameState.turnCounter });
 	      }
 	    }
 	  }, [addNotification, aiRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, buildOverseerAdaptivePolicyApprovalRequest, buildOverseerDirectiveApprovalRequest, compareCompetitiveMetricValues, computeNetWorth, evaluateAdaptiveOverseerOverlay, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase, runAuditorDetectionPass, finalizeReplayRecording, appendReplayEvent, appendReplayCheckpoint, getCompetitiveMetricValue, runPhase5ProactiveIntelligence]);
@@ -231122,7 +231450,7 @@ function dispatchGameSettingsChange(
     }));
     updateActorState(targetActor.id, (prev: any) => ({
       ...prev,
-      debuffs: upsertDebuff(prev.debuffs || [], sabotage.id, sabotage.duration)
+      debuffs: upsertDebuff(prev.debuffs || [], sabotage.id, v101SabotageDuration(gameState, actorId, targetActor.id, sabotage.duration)) // V10.1 (SECTION 20BD): a debuff costs its target N of its OWN turns
     }));
     appendTeammatePerformanceSample(actor.teamId, actorId, {
       turn: gameState.turnCounter,
@@ -246477,7 +246805,7 @@ function dispatchGameSettingsChange(
                       </div>
                       <div className={`p-2 rounded ${themeStyles.border} border`}>
                         <div className="text-xs opacity-70">Game Length</div>
-                        <div className="font-semibold">{gameSettings.totalDays} Days</div>
+                        <div className="font-semibold">{gameSettings.totalDays} Days <span className="text-xs font-normal opacity-70">({matchLengthInDays(Number(gameSettings.totalDays))} played)</span></div>
                       </div>
                       <div className={`p-2 rounded ${themeStyles.border} border`}>
                         <div className="text-xs opacity-70">Win Condition</div>
@@ -246576,27 +246904,32 @@ function dispatchGameSettingsChange(
                   <select
                     value={gameState.aiDifficulty}
                     onChange={(e) => dispatchGameState({ type: 'SET_AI_DIFFICULTY', payload: e.target.value })}
+                    disabled={v101RulesLocked} /* V10.1 (SECTION 20BD): a running V10.1 match keeps the difficulty it started with */
                     className={`${themeStyles.select} rounded px-3 py-2 w-full`}
                   >
                     {Object.keys(AI_DIFFICULTY_PROFILES).map(key => (
                       <option key={key} value={key}>{AI_DIFFICULTY_PROFILES[key as keyof typeof AI_DIFFICULTY_PROFILES].name}</option>
                     ))}
                   </select>
+                  {v101RulesLocked && <div className="text-xs opacity-80 mt-1" data-testid="v101-rule-lock-aiDifficulty" role="note">🔒 {V101_RULE_LOCK_REASON}</div>}
                 </div>
                 <div id="settings-field-totalDays" data-setting-key="totalDays">
-                  <SettingsSlider label={(v) => <>Game Length: {v} days</>} labelClassName="block font-semibold mb-1" id="setting-slider-1-game-length-days-totaldays" min="10" max="100" value={gameSettings.totalDays} onChange={(val) => trackedSetGameSettings("direct_player_change", "Quick Setup", prev => ({ ...prev, totalDays: val }))} className="w-full" />
+                  <SettingsSlider label={(v) => <>{v101GameLengthLabel(v)}</>} labelClassName="block font-semibold mb-1" id="setting-slider-1-game-length-days-totaldays" min="10" max="100" value={gameSettings.totalDays} onChange={(val) => trackedSetGameSettings("direct_player_change", "Quick Setup", prev => ({ ...prev, totalDays: val }))} disabled={v101RulesLocked} className="w-full" />
+                  <V101RuleLockNote ruleKey="totalDays" settings={gameSettings} />
                 </div>
                 <div id="settings-field-winCondition" data-setting-key="winCondition">
                   <label className="block font-semibold mb-1">Victory Goal</label>
                   <select
                     value={gameSettings.winCondition}
                     onChange={(e) => trackedSetGameSettings("direct_player_change", "Quick Setup", prev => ({ ...prev, winCondition: normalizeWinMetric(e.target.value) }))}
+                    disabled={v101RulesLocked} /* V10.1 (SECTION 20BD): locked while a V10.1 match runs; the write guard holds any other route back too */
                     className={`${themeStyles.select} rounded px-3 py-2 w-full`}
                   >
                     {WIN_METRIC_OPTIONS.map(option => (
                       <option key={option} value={option}>{WIN_METRIC_LABELS[option]}</option>
                     ))}
                   </select>
+                  <V101RuleLockNote ruleKey="winCondition" settings={gameSettings} />
                 </div>
                 <div id="settings-field-actionLimitsEnabled" data-setting-key="actionLimitsEnabled" className="flex items-center justify-between">
                   <div className="font-semibold">Action Limits</div>
@@ -247937,8 +248270,9 @@ function dispatchGameSettingsChange(
               <SettingsSection id="gameplay.core" tab="gameplay" title="🎮 Core Gameplay" onReset={settingsResetHandlers.gameplay.fn} resetLabel={settingsResetHandlers.gameplay.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.core')!.fieldKeys}>
                 <div className="space-y-4">
                   <div>
-                    <SettingsSlider label={(v) => <>Total Days: {v}</>} id="setting-slider-2-total-days-totaldays" min="10" max="100" value={gameSettings.totalDays} onChange={(val) => trackedSetGameSettings("direct_player_change", "🎮 Core Gameplay", prev => ({ ...prev, totalDays: val }))} className="w-full" />
-                    <div className="text-xs opacity-75 mt-1">Currently: Day {gameState.day} of {gameSettings.totalDays}</div>
+                    <SettingsSlider label={(v) => <>{v101TotalDaysLabel(v)}</>} id="setting-slider-2-total-days-totaldays" min="10" max="100" value={gameSettings.totalDays} onChange={(val) => trackedSetGameSettings("direct_player_change", "🎮 Core Gameplay", prev => ({ ...prev, totalDays: val }))} disabled={v101RulesLocked} className="w-full" />
+                    <V101RuleLockNote ruleKey="totalDays" settings={gameSettings} />
+                    <div className="text-xs opacity-75 mt-1">Currently: Day {gameState.day} of {gameSettings.totalDays} (the last day you play is day {matchLengthInDays(Number(gameSettings.totalDays))})</div>
                   </div>
                   <div>
                     <SettingsSlider label={(v) => <>Player Actions Per Day: {v}</>} id="setting-slider-3-player-actions-per-day-playeractionsperd" min="1" max="10" value={gameSettings.playerActionsPerDay} onChange={(val) => trackedSetGameSettings("direct_player_change", "🎮 Core Gameplay", prev => ({ ...prev, playerActionsPerDay: val, maxActionsPerTurn: val }))} className="w-full" />
@@ -247968,12 +248302,14 @@ function dispatchGameSettingsChange(
 	                    <select
 	                      value={gameSettings.winCondition}
 	                      onChange={(e) => trackedSetGameSettings("direct_player_change", "🏁 Win Condition & Cash-Out", prev => ({ ...prev, winCondition: normalizeWinMetric(e.target.value) }))}
+	                      disabled={v101RulesLocked} /* V10.1 (SECTION 20BD): locked while a V10.1 match runs */
 	                      className={`${themeStyles.select} rounded px-3 py-2 w-full`}
 	                    >
 	                      {WIN_METRIC_OPTIONS.map(option => (
 	                        <option key={option} value={option}>{WIN_METRIC_LABELS[option]}</option>
 	                      ))}
 	                    </select>
+	                    <V101RuleLockNote ruleKey="winCondition" settings={gameSettings} />
 	                  </div>
 	                  <div className={`${themeStyles.border} border rounded-lg p-3 text-sm`}>
 	                    {WIN_METRIC_PROFILES[gameSettings.winCondition]?.description || 'Money mode: winner is based on raw cash only.'}
@@ -255625,12 +255961,14 @@ function dispatchGameSettingsChange(
                     <select
                       value={gameSettings.winCondition}
                       onChange={(e) => trackedSetGameSettings("direct_player_change", "🗺️ Region Control & Dominance", prev => ({ ...prev, winCondition: normalizeWinMetric(e.target.value) }))}
+                      disabled={v101RulesLocked} /* V10.1 (SECTION 20BD): locked while a V10.1 match runs */
                       className={`${themeStyles.select} rounded px-3 py-2 w-full`}
                     >
                       {WIN_METRIC_OPTIONS.map(option => (
                         <option key={option} value={option}>{WIN_METRIC_LABELS[option]}</option>
                       ))}
                     </select>
+                    <V101RuleLockNote ruleKey="winCondition" settings={gameSettings} />
                   </div>
                   <div className="flex items-center justify-between">
                     <div>
@@ -256032,6 +256370,7 @@ function dispatchGameSettingsChange(
                   ...importedSettings
                 }, loadPersistencePolicy())
               ));
+              if (v101RulesLocked && v101EditsTouchLockedRules(gameSettings, importedSettings)) addNotification(`Game Length and Victory Goal from the import wait for your next match. ${V101_RULE_LOCK_REASON}`, 'info', true, 'system'); // V10.1 (SECTION 20BD): say so instead of dropping them silently
               setShowImportExportModal(false);
             }}
             themeStyles={themeStyles}
@@ -257852,7 +258191,7 @@ function dispatchGameSettingsChange(
             <div className={`${themeStyles.border} border rounded-lg p-4`}>
               <div className="flex justify-between items-center mb-2">
                 <h4 className="font-bold">⏰ Time</h4>
-                <span className="text-sm">Day {gameState.day} / {gameSettings.totalDays}</span>
+                <span className="text-sm">Day {gameState.day} / {gameSettings.totalDays} <span className="text-xs opacity-70">(last day {matchLengthInDays(Number(gameSettings.totalDays))})</span></span>
               </div>
               <div className="w-full bg-gray-700 rounded-full h-4 mb-2">
                 <div
@@ -271091,6 +271430,7 @@ function dispatchGameSettingsChange(
 	      F: 'from-red-600 to-rose-900 border-red-500 text-red-100 shadow-red-500/50'
 	    };
 
+	    const v101SoloHero = v101SoloRunResult(gameState, solo, typeof outcome?.endCause === 'string' ? outcome.endCause : null, debrief.overallGrade);
 	    return (
 	      <div className={`min-h-screen ${themeStyles.background} ${themeStyles.text} p-6 flex flex-col items-center justify-center`}>
 	        <div className={`max-w-5xl w-full ${themeStyles.card} ${themeStyles.border} border rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6 v94-stagger`}>
@@ -271105,8 +271445,8 @@ function dispatchGameSettingsChange(
 	            rival={formatWinMetricValue((outcome?.decidingMetric || gameSettings.winCondition) as WinMetric, Number(outcome?.aiValue || 0))}
 	            rivalName={facts?.sides ? facts.sides.rival : String(aiPlayer?.name || 'Rival') /* V9.9 (SECTION 20AS, W3F1): the two SIDES — team names in a team mode */}
 	            youName={facts?.sides ? facts.sides.you : 'You'}
-	            headline={spectatorHeadline(facts?.sides, Boolean(debrief.playerWon))}
-	            reason={String(outcome?.reason || debrief.summary || '')}
+	            headline={spectatorHeadline(facts?.sides, Boolean(debrief.playerWon)) ?? v101SoloHero?.headline /* V10.1 (SECTION 20BD): a Single Player run is RUN COMPLETE, with its grade */}
+	            reason={v101SoloHero ? v101SoloHero.line : String(outcome?.reason || debrief.summary || '')}
 	            turningPoints={[...(debrief.swingPoints || []).slice(0, 2).map(sp => `Day ${sp.turn}: ${sp.description}`), ...((swrStateRef.current?.events.length || 0) > 0 ? buildWorldReactionDebrief(sanitizeWorldReactionState(swrStateRef.current), swrViewerId).slice(0, 1) : [])]}
 	            lesson={debrief.playerWon ? null : (facts ? (facts.nextTime || 'Protect your cash reserve before the final days and pick one win lever to push early.') : ((debrief.blunders?.blunderEvents || [])[0]?.recommendation || 'Protect your cash reserve before the final days and pick one win lever to push early.'))}
 	          />
@@ -271773,7 +272113,7 @@ function dispatchGameSettingsChange(
 	    return (
 	      <div className={`min-h-screen ${themeStyles.background} ${themeStyles.text} flex items-center justify-center p-6`}>
 	        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-8 max-w-md w-full text-center ${themeStyles.shadow} v94-stagger`}>
-	          <V94OutcomeHero won={won} winLabel={wpMfWording.winLabel} metricLabel={outcomeMetricLabel || String(outcome.decidingMetric)} you={formatWinMetricValue(outcome.decidingMetric as WinMetric, outcome.playerValue)} rival={formatWinMetricValue(outcome.decidingMetric as WinMetric, outcome.aiValue)} rivalName={opponentSideLabel} reason={outcome.reason} turningPoints={[]} lesson={won ? null : 'Protect your cash reserve before the final days and pick one win lever to push early.'} solo={wpMfIsSolo} endLine={outcome.endLine} endedEarly={outcome.endedEarly} youName={wpMfSides.you} headline={spectatorHeadline(wpMfSides, won)} />
+	          <V94OutcomeHero won={won} winLabel={wpMfWording.winLabel} metricLabel={outcomeMetricLabel || String(outcome.decidingMetric)} you={formatWinMetricValue(outcome.decidingMetric as WinMetric, outcome.playerValue)} rival={formatWinMetricValue(outcome.decidingMetric as WinMetric, outcome.aiValue)} rivalName={opponentSideLabel} reason={outcome.reason} turningPoints={[]} lesson={won ? null : 'Protect your cash reserve before the final days and pick one win lever to push early.'} solo={wpMfIsSolo} endLine={outcome.endLine} endedEarly={outcome.endedEarly} youName={wpMfSides.you} headline={spectatorHeadline(wpMfSides, won) ?? v101SoloRunResult(gameState, wpMfIsSolo, outcome.endCause, null)?.headline} />
 	          
 	          <div className="space-y-2 mb-6">
 	            <div className="text-sm opacity-75 mb-2">
