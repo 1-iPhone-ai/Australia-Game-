@@ -3970,7 +3970,8 @@ const KEYBOARD_SHORTCUTS = {
 export const VERSION_CONSTANTS = {
   // V9.9 (SECTION 20AQ): bumped from 9.6.0 (V9.6–V9.8 all stamped 9.6.0). The schema versions below are unchanged.
   // V10.0 (SECTION 20AY): bumped from 9.9.0. The schema versions stay; V10.0 adds only optional save fields.
-  GAME_VERSION: "10.0.0",
+  // V10.1 (SECTION 20BA): bumped from 10.0.0. The schema versions stay; V10.1 adds only optional save fields.
+  GAME_VERSION: "10.1.0",
   SCHEMA_VERSION: "7.1",
   SAVE_SCHEMA_VERSION: "7.1",
   SETTINGS_SCHEMA_VERSION: "7.1",
@@ -14080,6 +14081,12 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   rivalRacesEnabled: false,
   /** V10.0 (SECTION 20AY): on = the rival plays exactly as in V9.9 (match rule; off = the V10.0 rival in a V10.0 match). */
   classicRivalV99: false,
+  /** V10.1 (SECTION 20BA): Rival Recap — a card after the rival's turn saying what it did and why. New feature, off by default (profile). */
+  rivalRecapEnabled: false,
+  /** V10.1 (SECTION 20BA): Daily Challenge with fixed rules — a new feature, off by default (match rule). */
+  dailyFixedRulesEnabled: false,
+  /** V10.1 (SECTION 20BA): on = a new match plays by the V10.0 rules (match rule; off = the V10.1 rules in a V10.1 match). */
+  classicRulesV100: false,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -15213,6 +15220,10 @@ export function sanitizeGameSettings(input: unknown): GameSettingsState {
     // V10.0 (SECTIONS 20AY/20AZ): only a real boolean switches Rival Races or the classic rival on.
     rivalRacesEnabled: typeof src.rivalRacesEnabled === 'boolean' ? src.rivalRacesEnabled : defaults.rivalRacesEnabled,
     classicRivalV99: typeof src.classicRivalV99 === 'boolean' ? src.classicRivalV99 : defaults.classicRivalV99,
+    // V10.1 (SECTION 20BA): only a real boolean switches a V10.1 feature or the classic rules on.
+    rivalRecapEnabled: typeof src.rivalRecapEnabled === 'boolean' ? src.rivalRecapEnabled : defaults.rivalRecapEnabled,
+    dailyFixedRulesEnabled: typeof src.dailyFixedRulesEnabled === 'boolean' ? src.dailyFixedRulesEnabled : defaults.dailyFixedRulesEnabled,
+    classicRulesV100: typeof src.classicRulesV100 === 'boolean' ? src.classicRulesV100 : defaults.classicRulesV100,
     rememberCategoryNavigationState: typeof src.rememberCategoryNavigationState === 'boolean' ? src.rememberCategoryNavigationState : defaults.rememberCategoryNavigationState,
     rememberCategoryNavigationMode: typeof src.rememberCategoryNavigationMode === 'boolean' ? src.rememberCategoryNavigationMode : defaults.rememberCategoryNavigationMode,
     autoCollapseCategoriesOnNarrow: typeof src.autoCollapseCategoriesOnNarrow === 'boolean' ? src.autoCollapseCategoriesOnNarrow : defaults.autoCollapseCategoriesOnNarrow,
@@ -18408,6 +18419,41 @@ export const SMART_CONTROLLABLE_SETTINGS_REGISTRY: SmartControllableSettingDefin
     defaultValue: false,
     validate: (v: unknown) => typeof v === 'boolean',
     isLiveSafe: true,
+    affectsFairness: true,
+  },
+  // V10.1 (SECTION 20BA): Rival Recap and the fixed-rules Daily Challenge (new, off by default) and the classic-rules switch. Labels and
+  // descriptions are the ones the hub shows (V101_FEATURE_TOGGLE_ROWS / V101_CLASSIC_TOGGLE_ROWS; pinned by v101fx).
+  {
+    key: 'rivalRecapEnabled',
+    category: 'rival_ai',
+    label: 'Rival Recap',
+    description: "After the rival's turn a card lists what it did and why, in plain words, with the cash each move made or lost. Nothing about how the rival plays changes.",
+    valueType: 'boolean',
+    defaultValue: false,
+    validate: (v: unknown) => typeof v === 'boolean',
+    isLiveSafe: true,
+    affectsFairness: false,
+  },
+  {
+    key: 'dailyFixedRulesEnabled',
+    category: 'fairness',
+    label: 'Daily Challenge (fixed rules)',
+    description: "Today's Daily Seed match always runs on the same character, length, win goal and rival, so \"best today\" compares like with like. Needs the Match Journal.",
+    valueType: 'boolean',
+    defaultValue: false,
+    validate: (v: unknown) => typeof v === 'boolean',
+    isLiveSafe: false,
+    affectsFairness: true,
+  },
+  {
+    key: 'classicRulesV100',
+    category: 'fairness',
+    label: 'Classic rules (V10.0)',
+    description: "On = a new match plays by the V10.0 rules: the Resource Market, challenge payouts, the rival's costs and mid-match rule changes work as they did in V10.0. Matches started before V10.1 always keep their rules.",
+    valueType: 'boolean',
+    defaultValue: false,
+    validate: (v: unknown) => typeof v === 'boolean',
+    isLiveSafe: false,
     affectsFairness: true,
   },
   {
@@ -26874,6 +26920,13 @@ export type GameSettingsState = {
   /** V10.0 (SECTION 20AY): true = in a match started on V10.0 the rival plays exactly as V9.9's did (random lesser picks,
    *  wasted "thinking" actions, no win-streak bonus). Matches started before V10.0 always do. Match-scoped. */
   classicRivalV99?: boolean;
+  /** V10.1 Rival Recap (SECTION 20BC): true = a card after the rival's turn lists what it did and why. Off (default) = nothing is built or shown. Profile-scoped. */
+  rivalRecapEnabled?: boolean;
+  /** V10.1 Daily Challenge with fixed rules (SECTION 20BJ): true = the Daily Seed match runs on pinned rules. Off (default) = the Daily Seed is as in V9.9. Match-scoped. */
+  dailyFixedRulesEnabled?: boolean;
+  /** V10.1 (SECTION 20BA): true = a match started now plays by the V10.0 rules (no Resource Market spread, no V10.1 rival costs, rules editable mid-match, …).
+   *  Matches started before V10.1 always do. Match-scoped. */
+  classicRulesV100?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -64891,6 +64944,8 @@ export const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'gameplay.rivalryCampaign', tab: 'gameplay', title: '🗺️ The Long Rivalry (Campaign)', tags: ['Gameplay', 'Scenario'], chips: ['Off by default'], fieldKeys: ['rivalryCampaignEnabled'], keywords: 'campaign mode long rivalry chapters rival story eight chapters continue new' },
   // V9.9 (SECTION 20AQ): the three new features, the rival turn pace and the two "classic" presentation switches.
   // V10.0 (SECTIONS 20AY/20AZ): the V10.0 switches — Rival Races (new, off by default) and the classic rival.
+  // V10.1 (SECTION 20BA): the V10.1 switches — Rival Recap and the fixed-rules Daily (new, off by default) and the classic rules.
+  { id: 'gameplay.v101', tab: 'gameplay', title: '✨ New in V10.1', tags: ['Gameplay', 'AI'], chips: ['Off by default'], fieldKeys: ['rivalRecapEnabled', 'dailyFixedRulesEnabled', 'classicRulesV100'], keywords: 'new in v10.1 v101 rival recap what did the rival do why turn summary daily challenge fixed rules daily seed best today compare classic rules v10.0 old rules resource market spread arbitrage challenge payout balance' },
   { id: 'gameplay.v100', tab: 'gameplay', title: '✨ New in V10.0', tags: ['Gameplay', 'AI'], chips: ['Off by default'], fieldKeys: ['rivalRacesEnabled', 'classicRivalV99'], keywords: 'new in v10 v10.0 rival races race head to head prize bounty first to win challenge region control stake new ground visit regions sprint cash earn classic rival old rival v9.9 difficulty easier opponent ai plays better best move mistakes streak bonus' },
   { id: 'gameplay.v99', tab: 'gameplay', title: '✨ New in V9.9', tags: ['Gameplay', 'UX'], chips: ['Off by default'], fieldKeys: ['matchRecoveryEnabled', 'matchJournalEnabled', 'turnDigestEnabled', 'warnBeforeUnloadEnabled', 'rivalTurnPace', 'classicStickyToasts', 'classicPlayScreenLayout'], keywords: 'new in v9.9 warn before closing tab reload leave site unsaved scenario ticks completed autosave auto save auto-save resume recovery recover crash continue match backup journal history records results personal bests rematch replay seed daily seed digest recap summary since your last turn what happened speed pace fast faster instant skip rival turn opponent animation wait toasts notifications sticky popups dismiss layout classic old way turn pill quick actions bar floating' },
   // SH2: Added 4 uncovered keys to advancedSystems.replaySafety
@@ -133884,7 +133939,9 @@ export const V95_MATCH_SCOPED_SETTING_KEYS = [
   // V9.7 (SECTION 20AO): routing shapes the match's outcomes, so a save carries it.
   'canonicalActionRoutingV97',
   // V10.0 (SECTIONS 20AY/20AZ): both shape the match (the rival's play, the races), so a save carries them.
-  'rivalRacesEnabled', 'classicRivalV99'
+  'rivalRacesEnabled', 'classicRivalV99',
+  // V10.1 (SECTION 20BA): the fixed-rules Daily and the classic rules shape the match, so a save carries them (rivalRecapEnabled is a profile setting).
+  'dailyFixedRulesEnabled', 'classicRulesV100'
 ] as const;
 
 /**
@@ -133892,6 +133949,7 @@ export const V95_MATCH_SCOPED_SETTING_KEYS = [
  * the match; v93RecentRare is cross-match variety history). Loading keeps the current session's value.
  */
 export const V95_PROFILE_SCOPED_SETTING_KEYS: readonly string[] = [
+  'rivalRecapEnabled', // V10.1 (SECTION 20BA): a display preference, remembered between visits
   'allowSettingsCategoryCollapse',
   'startSettingsCategoryCollapsed',
   'settingsCategoryNavigationMode',
@@ -134276,6 +134334,16 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         ...(stateData.rulesVersion !== undefined ? { rulesVersion: sanitizeRulesVersion(stateData.rulesVersion) ?? undefined } : {}),
         // V10.0 (SECTION 20AZ): Rival Races (optional; absent when the feature never ran, and in saves made before V10.0).
         ...(stateData.rivalRaces !== undefined ? { rivalRaces: sanitizeRivalRacesState(stateData.rivalRaces) ?? undefined } : {}),
+        // V10.1 (SECTION 20BA): optional match state added by the V10.1 work packages — one marker each; a package adds its line right below its marker
+        // and its key to V101_ADDED_STATE_KEYS (absent in saves written before V10.1).
+        // <<V101-STATE ECON>>
+        //
+        // <<V101-STATE RIVAL>>
+        //
+        // <<V101-STATE CONTENT>>
+        //
+        // <<V101-STATE ENGINE>>
+        //
         persistentMemorySnapshot: sanitizePersistentSnapshot(stateData.persistentMemorySnapshot || raw.persistentMemorySnapshot || raw.gameState?.persistentMemorySnapshot),
         aiCommunication: migrateCommunicationState(stateData.aiCommunication || raw.aiCommunication || raw.gameState?.aiCommunication),
         teamStrategicPlansByTeam: sanitizeTeamStrategicPlansByTeam(stateData.teamStrategicPlansByTeam || raw.teamStrategicPlansByTeam || raw.gameState?.teamStrategicPlansByTeam),
@@ -136390,6 +136458,18 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   // V10.0 (SECTIONS 20AY–20AZ): one suite per V10.0 section.
   { id: 'v100fx', label: 'V10.0 Foundations & Fixes', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV100FoundationsSelfTests()) },
   { id: 'v100rr', label: 'V10.0 Rival Races', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV100RivalRacesSelfTests()) },
+  // V10.1 (SECTIONS 20BA–20BK): one suite per V10.1 work package (ids never plain 'v101': the V10.1 Industries suite owns it).
+  { id: 'v101fx', label: 'V10.1 Release: Foundations', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV101FoundationsSelfTests()) },
+  { id: 'v101ec', label: 'V10.1 Release: Economy & Challenge Balance', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV101EconomySelfTests()) },
+  { id: 'v101rv', label: 'V10.1 Release: Rival Parity & Recap', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV101RivalSelfTests()) },
+  { id: 'v101ru', label: 'V10.1 Release: Match Rules & Endings', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV101MatchRulesSelfTests()) },
+  { id: 'v101fr', label: 'V10.1 Release: First Run & Save Safety', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV101FirstRunSelfTests()) },
+  { id: 'v101ui', label: 'V10.1 Release: Play Screen & Accessibility', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV101PlayScreenSelfTests()) },
+  { id: 'v101st', label: 'V10.1 Release: Settings Truth', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV101SettingsSelfTests()) },
+  { id: 'v101ai', label: 'V10.1 Release: Advice You Can Trust', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV101AdviceSelfTests()) },
+  { id: 'v101wl', label: 'V10.1 Release: World Layer Honesty', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV101WorldSelfTests()) },
+  { id: 'v101ct', label: 'V10.1 Release: Content & Daily', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV101ContentSelfTests()) },
+  { id: 'v101en', label: 'V10.1 Release: Engine Integrity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => v95WithIsolatedGlobals(() => runV101EngineSelfTests()) },
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
@@ -136500,7 +136580,7 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number } =
   const fixture = () => JSON.parse(JSON.stringify(createV95SaveFixture()));
 
   // ---- Version consistency
-  check('v_game_version', 'GAME_VERSION reports the V10.0 build', () => GAME_VERSION === '10.0.0' || `GAME_VERSION=${GAME_VERSION}`); // V10.0 (SECTION 20AY): pin moved with the version bump (V9.9 moved it from 9.6.0)
+  check('v_game_version', 'GAME_VERSION reports the V10.1 build', () => GAME_VERSION === '10.1.0' || `GAME_VERSION=${GAME_VERSION}`); // V10.1 (SECTION 20BA): pin moved with the version bump (V10.0 moved it from 9.9.0)
   check('v_schema_labels', 'Save / replay schema labels agree with their numeric forms', () =>
     (VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1' && Number.parseInt(VERSION_CONSTANTS.REPLAY_SCHEMA_VERSION, 10) === REPLAY_SCHEMA_VERSION) || `${VERSION_CONSTANTS.SAVE_SCHEMA_VERSION}/${VERSION_CONSTANTS.REPLAY_SCHEMA_VERSION}/${REPLAY_SCHEMA_VERSION}`);
 
@@ -181427,8 +181507,8 @@ export function runV96ExperienceModesSelfTests(): V9SelfTestResult[] {
     return (m1.migrated && m1.sourceVersion === '9.5.0' && m1.data.gameSettings.experienceMode === 'full' && !m2.migrated && m1.data.metadata.gameVersion === VERSION_CONSTANTS.GAME_VERSION && !current.migrated) || `m1=${m1.migrated}/${String(m1.data.gameSettings.experienceMode)} m2=${m2.migrated} current=${current.migrated}`;
   });
   // V9.9 (SECTION 20AQ): pin moved with the version bump (was 9.6.0).
-  check('em34_version_bumped', 'GAME_VERSION is 10.0.0 and new saves stamp it', () => // V10.0 (SECTION 20AY): pin moved with the version bump
-    (GAME_VERSION === '10.0.0' && createV95SaveFixture().metadata.gameVersion === '10.0.0') || `GAME_VERSION=${GAME_VERSION}`);
+  check('em34_version_bumped', 'GAME_VERSION is 10.1.0 and new saves stamp it', () => // V10.1 (SECTION 20BA): pin moved with the version bump
+    (GAME_VERSION === '10.1.0' && createV95SaveFixture().metadata.gameVersion === '10.1.0') || `GAME_VERSION=${GAME_VERSION}`);
   check('em35_sanitize_game_settings', 'sanitizeGameSettings: valid kept, missing → full, invalid → full, DEFAULT → explorer', () =>
     (sanitizeGameSettings({ experienceMode: 'nation' }).experienceMode === 'nation' && sanitizeGameSettings({}).experienceMode === 'full' && sanitizeGameSettings({ experienceMode: 'x' }).experienceMode === 'full' && sanitizeGameSettings(DEFAULT_GAME_SETTINGS).experienceMode === 'explorer') || 'sanitize wrong');
   check('em36_confirmation_rule', 'Mode switch: same mode → noop; start screen / game over → apply at once; live match → confirm', () =>
@@ -186773,6 +186853,8 @@ export const SimpleSettingsPanel = React.memo(function SimpleSettingsPanel({ set
           })}
         </section>
       ))}
+      {/* V10.1 (SECTION 20BA): the V10.1 switches and release notes, ahead of V10.0's. */}
+      <V101SimpleNewCard settings={settings} onChange={onChange} boxClassName={box} />
       {/* V10.0 (SECTION 20AY): the V10.0 switches and release notes, ahead of V9.9's. */}
       <V100SimpleNewCard settings={settings} onChange={onChange} boxClassName={box} />
       {/* V9.9 (SECTION 20AT, W4A — f1-03): the V9.9 switches and release notes, findable from the view Settings opens on. */}
@@ -187470,8 +187552,8 @@ export function runV97CorrectnessSweepSelfTests(): V9SelfTestResult[] {
     return swing?.id === 'tp_swing_big' || JSON.stringify(swing);
   });
   // V9.9 (SECTION 20AQ): GAME_VERSION moved to 9.9.0 with the V9.9 bump; what WP-A pinned for the save schema still holds.
-  check('v97cs36_version_unchanged', 'GAME_VERSION is 10.0.0 (bumped in V10.0) and SAVE_SCHEMA_VERSION stays 7.1', () => // V10.0 (SECTION 20AY): pin moved with the version bump
-    (VERSION_CONSTANTS.GAME_VERSION === '10.0.0' && VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1') || `${VERSION_CONSTANTS.GAME_VERSION} / ${VERSION_CONSTANTS.SAVE_SCHEMA_VERSION}`);
+  check('v97cs36_version_unchanged', 'GAME_VERSION is 10.1.0 (bumped in V10.1) and SAVE_SCHEMA_VERSION stays 7.1', () => // V10.1 (SECTION 20BA): pin moved with the version bump
+    (VERSION_CONSTANTS.GAME_VERSION === '10.1.0' && VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1') || `${VERSION_CONSTANTS.GAME_VERSION} / ${VERSION_CONSTANTS.SAVE_SCHEMA_VERSION}`);
   check('v97cs37_crisis_slices', "Crisis slices: flag off keeps V9.6's default-80 working copy; flag on uses the live stability and chains", () => {
     const a: GameAction = { type: 'mitigateCrisis', actorId: 'player', price: 120, parameters: { cost: 120, crisisId: 'crisis_cyber_grid_blackout' } };
     const offRes = act(fixture(false), a), onRes = act(fixture(true), a);
@@ -188823,6 +188905,12 @@ export function runSaveMigrationLadder(data: SaveGameData, sourceVersion: string
     current = step.data;
     changed = changed || step.changed;
   }
+  // V10.1 (SECTION 20BA): a save written before V10.1 never carries V10.1 rules or state (migrateSaveTo1010).
+  if (compareSemVer(sourceVersion, '10.1.0') < 0) {
+    const step = migrateSaveTo1010(current);
+    current = step.data;
+    changed = changed || step.changed;
+  }
   return { data: current, changed };
 }
 
@@ -188886,8 +188974,8 @@ export function runV99FoundationsSelfTests(): V9SelfTestResult[] {
 
   // ---- Version ----------------------------------------------------------------------------------------------------------
   // V10.0 (SECTION 20AY): pin moved with the version bump — the label still derives from GAME_VERSION.
-  check('v99fx_01_version', 'GAME_VERSION is 10.0.0, the label reads V10.0 and a new save stamps it', () =>
-    (GAME_VERSION === '10.0.0' && VERSION_CONSTANTS.GAME_VERSION === '10.0.0' && GAME_VERSION_LABEL === 'V10.0' && createV95SaveFixture().metadata.gameVersion === '10.0.0') || `${GAME_VERSION} / ${GAME_VERSION_LABEL}`);
+  check('v99fx_01_version', 'GAME_VERSION is 10.1.0, the label reads V10.1 and a new save stamps it', () => // V10.1 (SECTION 20BA): pin moved with the version bump
+    (GAME_VERSION === '10.1.0' && VERSION_CONSTANTS.GAME_VERSION === '10.1.0' && GAME_VERSION_LABEL === 'V10.1' && createV95SaveFixture().metadata.gameVersion === '10.1.0') || `${GAME_VERSION} / ${GAME_VERSION_LABEL}`);
   check('v99fx_02_schemas_unchanged', 'The bump leaves every schema version where it was', () =>
     (VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1' && VERSION_CONSTANTS.SCHEMA_VERSION === '7.1' && VERSION_CONSTANTS.SETTINGS_SCHEMA_VERSION === '7.1' && VERSION_CONSTANTS.REPLAY_SCHEMA_VERSION === '4.0'
       && VERSION_CONSTANTS.RNG_SCHEMA_VERSION === '1.0' && VERSION_CONSTANTS.CHECKPOINT_SCHEMA_VERSION === '1.0') || json(VERSION_CONSTANTS));
@@ -207529,7 +207617,7 @@ export function V100SettingsHubBody({ settings, onToggle, onClassName, offClassN
 // ---- What's New ---------------------------------------------------------------------------------------------------------------
 // V10.0: the current release's entry; it leads the "What's New" list (Settings → Interface, and the Simple view's card).
 export const V100_CHANGELOG = [
-  `${GAME_VERSION_LABEL} - A rival worth beating, a world that moves`,
+  'V10.0 - A rival worth beating, a world that moves', // V10.1 (SECTION 20BA): written out — GAME_VERSION_LABEL now reads V10.1
   'The rival plays to win in matches started on V10.0: it makes its best move as often as the difficulty screen says, a slip is a weaker move instead of a wasted action, and it earns the win-streak bonus you do',
   'Living regions and stakeholders now change day by day in one-on-one matches started on V10.0 (AI Opponent, Grand Tour, Scenario, Single Player) - they stood still outside Team mode',
   'Opportunity windows show their real closing day, and AI diplomacy deals can expire again in one-on-one matches',
@@ -207549,7 +207637,7 @@ export function V100SimpleNewCard({ settings, onChange, boxClassName }: { settin
       <h4 className="font-semibold text-sm">{V100_SETTINGS_HUB_SECTION_TITLE}</h4>
       <V100SettingsHubBody settings={settings} onToggle={key => onChange(key, settings[key] !== true)} onClassName="bg-emerald-600 text-white" offClassName="bg-slate-500/30" />
       <details className="text-xs" data-testid="v100-simple-whats-new">
-        <summary className="cursor-pointer font-semibold">What's new in {GAME_VERSION_LABEL}</summary>
+        <summary className="cursor-pointer font-semibold">What's new in V10.0</summary>{/* V10.1 (SECTION 20BA): written out — GAME_VERSION_LABEL now reads V10.1 */}
         <ul className="list-disc pl-5 mt-1 space-y-0.5 opacity-90">{V100_CHANGELOG.slice(1).map(line => <li key={line}>{line}</li>)}</ul>
       </details>
     </section>
@@ -208089,8 +208177,8 @@ export function runV100FoundationsSelfTests(): V9SelfTestResult[] {
   const sig = (o: Partial<FirstRunSignals> = {}): FirstRunSignals => ({ day: 1, money: 1000, inventoryCount: 0, challengesWon: 0, rivalAhead: false, diplomacyOffer: false, inShopRegion: false, ...o });
 
   // ---- Version and release notes -----------------------------------------------------------------------------------------
-  check('v100fx_01_version', 'GAME_VERSION is 10.0.0, the label reads V10.0 and a new save stamps it', () =>
-    (GAME_VERSION === '10.0.0' && GAME_VERSION_LABEL === 'V10.0' && createV95SaveFixture().metadata.gameVersion === '10.0.0' && VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1') || `${GAME_VERSION} / ${GAME_VERSION_LABEL}`);
+  check('v100fx_01_version', 'GAME_VERSION is 10.1.0, the label reads V10.1 and a new save stamps it', () => // V10.1 (SECTION 20BA): pin moved with the version bump
+    (GAME_VERSION === '10.1.0' && GAME_VERSION_LABEL === 'V10.1' && createV95SaveFixture().metadata.gameVersion === '10.1.0' && VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1') || `${GAME_VERSION} / ${GAME_VERSION_LABEL}`);
   check('v100fx_02_whats_new', "What's New leads with V10.0, names the new switch as off by default, and keeps V9.9's entry written out", () =>
     (V100_CHANGELOG[0].startsWith('V10.0 - ') && V100_CHANGELOG.length >= 8 && V100_CHANGELOG.length <= 14 && new Set(V100_CHANGELOG).size === V100_CHANGELOG.length
       && V100_CHANGELOG.every(line => line.length >= 20 && line.length <= 240)
@@ -208643,6 +208731,355 @@ export function runV100RivalRacesSelfTests(): V9SelfTestResult[] {
   });
   return results;
 }
+
+// ============================================================================
+// SECTION 20BA: V10.1 FOUNDATIONS — VERSION, RULES STAMP, SWITCHES, SAVE RUNG, SUITE LIST
+// ----------------------------------------------------------------------------
+// What a V10.1 lead-developer review of V10.0 found and fixed; the findings are written up in V10.1_DIAGNOSIS.md. Every
+// rule change is tied to the MATCH, never to the build: a match started on V10.1 carries gameState.rulesVersion =
+// V101_RULES_VERSION (1010; V10.0 stamped 1000, a match older than that has no stamp). A match keeps the rules it started
+// with, move for move, in saves and replays. isV101Match(gameState) is the one gate every V10.1 rule change reads, and
+// the switch classicRulesV100 (match rule, default off) stamps a new match with the V10.0 rules instead.
+// New features: Rival Recap (SECTION 20BC) and the fixed-rules Daily Challenge (SECTION 20BJ) are OFF by default;
+// text size is the existing accessibilitySettings.textScaleMultiplier, now wired (SECTION 20BF), 100% by default.
+// Work-package sections follow in order: 20BB economy & challenge balance, 20BC rival parity & recap, 20BD match rules &
+// endings, 20BE first run & save safety, 20BF play screen & accessibility, 20BG settings truth, 20BH advice you can
+// trust, 20BI world layer honesty, 20BJ content & daily, 20BK engine integrity. Suite v101fx (runV101FoundationsSelfTests).
+// ============================================================================
+
+// ---- The match's rules stamp ------------------------------------------------------------------------------------------
+/** The rules a match started on V10.1 plays by. Recorded as gameState.rulesVersion when a match starts. */
+export const V101_RULES_VERSION = 1010;
+
+/** True for a match started on V10.1 or later (rules stamp 1010 or more). A V10.0 match (1000) and an older one are not. */
+export function isV101Match(gameState: unknown): boolean {
+  const version = readRulesVersion(gameState);
+  return version !== null && version >= V101_RULES_VERSION;
+}
+
+/** The stamp a new match gets: V10.1's, or V10.0's when the player chose the classic rules. */
+export function v101RulesVersionForNewMatch(settings: { classicRulesV100?: unknown } | null | undefined): number {
+  return settings?.classicRulesV100 === true ? V100_RULES_VERSION : V101_RULES_VERSION;
+}
+
+// ---- Save ladder rung ---------------------------------------------------------------------------------------------------
+/** Optional match-state keys the V10.1 work packages add to gameState. A save written before V10.1 cannot carry them. */
+export const V101_ADDED_STATE_KEYS: readonly string[] = [
+  // <<V101-KEYS ECON>>
+  //
+  // <<V101-KEYS RIVAL>>
+  //
+  // <<V101-KEYS CONTENT>>
+  //
+  // <<V101-KEYS ENGINE>>
+  //
+];
+
+/**
+ * Rung for saves stamped older than 10.1.0. V10.1 adds only optional fields (match-state keys listed in
+ * V101_ADDED_STATE_KEYS) and three switches the save sanitizer fills from the defaults (all off). A save written
+ * before V10.1 cannot carry a V10.1 rules stamp or V10.1 state, so this rung removes them if it finds them (a
+ * hand-edited or mixed file) and clamps a stamp of 1010 or more back to 1000: an old match never switches to V10.1
+ * rules part-way. With nothing to change the very same object comes back, changed: false.
+ */
+export function migrateSaveTo1010(data: SaveGameData): SaveMigrationStepResult {
+  const gs = data && data.gameState && typeof data.gameState === 'object' ? data.gameState as unknown as Record<string, unknown> : null;
+  if (!gs) return { data, changed: false };
+  const stamp = sanitizeRulesVersion(gs.rulesVersion);
+  const clampStamp = stamp !== null && stamp >= V101_RULES_VERSION;
+  const strays = V101_ADDED_STATE_KEYS.filter(key => Object.prototype.hasOwnProperty.call(gs, key));
+  if (!clampStamp && strays.length === 0) return { data, changed: false };
+  const rest: Record<string, unknown> = {};
+  Object.keys(gs).forEach(key => { if (!strays.includes(key)) rest[key] = gs[key]; });
+  if (clampStamp) rest.rulesVersion = V100_RULES_VERSION;
+  return { data: { ...data, gameState: rest as unknown as SaveGameData['gameState'] }, changed: true };
+}
+
+// ---- Settings ---------------------------------------------------------------------------------------------------------------
+//   rivalRecapEnabled       boolean, false  NEW feature (SECTION 20BC), profile setting: a card after the rival's turn
+//   dailyFixedRulesEnabled  boolean, false  NEW feature (SECTION 20BJ), match rule: the Daily Seed match on pinned rules
+//   classicRulesV100        boolean, false  match rule: a new match is stamped with the V10.0 rules
+export type V101BooleanSettingKey = 'rivalRecapEnabled' | 'dailyFixedRulesEnabled' | 'classicRulesV100';
+export const V101_SETTING_KEYS: readonly V101BooleanSettingKey[] = ['rivalRecapEnabled', 'dailyFixedRulesEnabled', 'classicRulesV100'];
+export const V101_SETTINGS_HUB_SECTION_ID = 'gameplay.v101';
+export const V101_SETTINGS_HUB_SECTION_TITLE = '✨ New in V10.1';
+
+export interface V101ToggleRow { key: V101BooleanSettingKey; label: string; description: string }
+
+/** The new features. Off by default. */
+export const V101_FEATURE_TOGGLE_ROWS: readonly V101ToggleRow[] = [
+  { key: 'rivalRecapEnabled', label: 'Rival Recap', description: "After the rival's turn a card lists what it did and why, in plain words, with the cash each move made or lost. Nothing about how the rival plays changes." },
+  { key: 'dailyFixedRulesEnabled', label: 'Daily Challenge (fixed rules)', description: "Today's Daily Seed match always runs on the same character, length, win goal and rival, so \"best today\" compares like with like. Needs the Match Journal." },
+];
+
+/** "Prefer the old way?" Off = the V10.1 rules; on = a new match plays by the V10.0 rules. */
+export const V101_CLASSIC_TOGGLE_ROWS: readonly V101ToggleRow[] = [
+  { key: 'classicRulesV100', label: 'Classic rules (V10.0)', description: "On = a new match plays by the V10.0 rules: the Resource Market, challenge payouts, the rival's costs and mid-match rule changes work as they did in V10.0. Matches started before V10.1 always keep their rules." },
+];
+
+/** True for the keys of the "New in V10.1" block (the Simple view's card may write exactly these). */
+export function isV101SettingKeyName(key: unknown): boolean {
+  return typeof key === 'string' && (V101_SETTING_KEYS as readonly string[]).includes(key);
+}
+
+/** What the hub body needs from the settings: the three keys, nothing else. GameSettingsState satisfies it. */
+export type V101SettingsView = { readonly [K in V101BooleanSettingKey]?: boolean };
+
+/** Body of the "✨ New in V10.1" settings section (hub and Simple view). Stateless; the caller writes through its tracked setter. */
+export function V101SettingsHubBody({ settings, onToggle, onClassName, offClassName }: { settings: V101SettingsView; onToggle: (key: V101BooleanSettingKey) => void; onClassName: string; offClassName: string }): React.ReactElement {
+  const toggleRow = (row: V101ToggleRow) => {
+    const on = settings[row.key] === true;
+    return (
+      <div key={row.key} className="flex items-center justify-between gap-3" data-testid={`v101-setting-row-${row.key}`}>
+        <div>
+          <div className="font-semibold">{row.label}</div>
+          <div className="text-sm opacity-75">{row.description}</div>
+        </div>
+        <button
+          type="button"
+          id={`v101-setting-${row.key}`}
+          data-testid={`v101-setting-${row.key}`}
+          aria-pressed={on}
+          aria-label={`${row.label}: ${on ? 'on' : 'off'}`}
+          onClick={() => onToggle(row.key)}
+          className={`px-4 py-2 rounded font-semibold shrink-0 ${on ? onClassName : offClassName}`}
+        >
+          {on ? 'ON' : 'OFF'}
+        </button>
+      </div>
+    );
+  };
+  return (
+    <div className="space-y-4" data-testid="v101-settings">
+      <div className="text-sm opacity-75">Rival Recap and the fixed-rules Daily are off until you switch them on. Matches started on V10.1 play by the V10.1 rules; the classic switch below brings back the V10.0 rules.</div>
+      {V101_FEATURE_TOGGLE_ROWS.map(toggleRow)}
+      <div className="pt-3 border-t border-current border-opacity-10 space-y-4">
+        <div className="text-xs font-semibold uppercase tracking-wide opacity-75">Prefer the old way?</div>
+        {V101_CLASSIC_TOGGLE_ROWS.map(toggleRow)}
+      </div>
+    </div>
+  );
+}
+
+// ---- What's New ---------------------------------------------------------------------------------------------------------------
+// V10.1: the current release's entry; it leads the "What's New" list (Settings → Interface, and the Simple view's card).
+export const V101_CHANGELOG = [
+  `${GAME_VERSION_LABEL} - A fairer fight, a safer match`,
+  'Placeholder entry: the release notes are written when the V10.1 work packages are merged',
+];
+
+/** "✨ New in V10.1" in the Simple settings view: the same switches as the hub's section and the release notes. */
+export function V101SimpleNewCard({ settings, onChange, boxClassName }: { settings: V101SettingsView; onChange: (key: string, value: boolean | string | number) => void; boxClassName: string }) {
+  return (
+    <section className={`border rounded-xl p-3 space-y-3 ${boxClassName}`} aria-label="New in V10.1" data-testid="v101-simple-new" tabIndex={-1}>
+      <h4 className="font-semibold text-sm">{V101_SETTINGS_HUB_SECTION_TITLE}</h4>
+      <V101SettingsHubBody settings={settings} onToggle={key => onChange(key, settings[key] !== true)} onClassName="bg-emerald-600 text-white" offClassName="bg-slate-500/30" />
+      <details className="text-xs" data-testid="v101-simple-whats-new">
+        <summary className="cursor-pointer font-semibold">What's new in {GAME_VERSION_LABEL}</summary>
+        <ul className="list-disc pl-5 mt-1 space-y-0.5 opacity-90">{V101_CHANGELOG.slice(1).map(line => <li key={line}>{line}</li>)}</ul>
+      </details>
+    </section>
+  );
+}
+
+// ---- Self-tests (v101fx: SECTION 20BA; the other ten suites live in their own sections) -----------------------------------------
+/** The eleven V10.1 suites, in section order. */
+export const V101_SUITE_IDS: readonly string[] = ['v101fx', 'v101ec', 'v101rv', 'v101ru', 'v101fr', 'v101ui', 'v101st', 'v101ai', 'v101wl', 'v101ct', 'v101en'];
+
+export function runV101FoundationsSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const json = (v: unknown) => JSON.stringify(v);
+  const clone = (v: SaveGameData): SaveGameData => JSON.parse(JSON.stringify(v));
+  const stamped = (gameVersion: string, extra: Record<string, unknown> = {}): SaveGameData => {
+    const f = clone(createV95SaveFixture());
+    f.metadata = { ...f.metadata, gameVersion };
+    f.gameState = { ...(f.gameState as unknown as Record<string, unknown>), ...extra } as unknown as SaveGameData['gameState'];
+    return f;
+  };
+  const gsOf = (d: SaveGameData): Record<string, unknown> => d.gameState as unknown as Record<string, unknown>;
+
+  check('v101fx_01_version', 'GAME_VERSION is 10.1.0, the label reads V10.1, a new save stamps it and the schemas stay put', () =>
+    (GAME_VERSION === '10.1.0' && GAME_VERSION_LABEL === 'V10.1' && createV95SaveFixture().metadata.gameVersion === '10.1.0'
+      && VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1' && VERSION_CONSTANTS.SETTINGS_SCHEMA_VERSION === '7.1') || `${GAME_VERSION} / ${GAME_VERSION_LABEL}`);
+  check('v101fx_02_whats_new', "What's New leads with V10.1 and keeps V10.0's and V9.9's entries written out", () =>
+    (V101_CHANGELOG[0].startsWith('V10.1 - ') && V100_CHANGELOG[0].startsWith('V10.0 - ') && V99_CHANGELOG[0].startsWith('V9.9 - ')
+      && new Set(V101_CHANGELOG).size === V101_CHANGELOG.length) || json([V101_CHANGELOG[0], V100_CHANGELOG[0], V99_CHANGELOG[0]]));
+  check('v101fx_03_rules_stamp', 'A V10.1 match is one stamped 1010 or later; V10.0 (1000), an older match and junk are not', () => {
+    const table: Array<[unknown, boolean]> = [[{ rulesVersion: 1010 }, true], [{ rulesVersion: 1200 }, true], [{ rulesVersion: 1000 }, false], [{ rulesVersion: 1009 }, false],
+      [{}, false], [null, false], [{ rulesVersion: '1010' }, false], [{ rulesVersion: 1010.5 }, false], [{ rulesVersion: -1010 }, false]];
+    const wrong = table.filter(([gs, want]) => isV101Match(gs) !== want);
+    return (wrong.length === 0 && V101_RULES_VERSION === 1010 && V101_RULES_VERSION > V100_RULES_VERSION) || json(wrong);
+  });
+  check('v101fx_04_new_match_stamp', 'A new match is stamped 1010 unless the classic rules are on (1000); anything but a real true is "off"', () => {
+    const got = [v101RulesVersionForNewMatch({}), v101RulesVersionForNewMatch(null), v101RulesVersionForNewMatch({ classicRulesV100: false }),
+      v101RulesVersionForNewMatch({ classicRulesV100: true }), v101RulesVersionForNewMatch({ classicRulesV100: 'true' }), v101RulesVersionForNewMatch({ classicRulesV100: 1 })];
+    return json(got) === json([1010, 1010, 1010, 1000, 1010, 1010]) || json(got);
+  });
+  check('v101fx_05_switch_defaults', 'The three V10.1 switches are off by default and only a real boolean changes them', () => {
+    const d = createDefaultGameSettings();
+    const junk = sanitizeGameSettings({ ...d, rivalRecapEnabled: 'yes', dailyFixedRulesEnabled: 1, classicRulesV100: {} } as unknown as Partial<GameSettingsState>);
+    const on = sanitizeGameSettings({ ...d, rivalRecapEnabled: true, dailyFixedRulesEnabled: true, classicRulesV100: true });
+    return (V101_SETTING_KEYS.every(k => DEFAULT_GAME_SETTINGS[k] === false && junk[k] === false && on[k] === true)) || json({ junk: V101_SETTING_KEYS.map(k => junk[k]), on: V101_SETTING_KEYS.map(k => on[k]) });
+  });
+  check('v101fx_06_scopes', 'Rival Recap is a profile setting; the Daily rules and the classic rules are match rules a save carries', () => {
+    const profile = V95_PROFILE_SCOPED_SETTING_KEYS as readonly string[];
+    const match = V95_MATCH_SCOPED_SETTING_KEYS as readonly string[];
+    return (profile.includes('rivalRecapEnabled') && !match.includes('rivalRecapEnabled') && match.includes('dailyFixedRulesEnabled') && match.includes('classicRulesV100')
+      && !profile.includes('classicRulesV100') && !profile.includes('dailyFixedRulesEnabled')) || json({ profile: V101_SETTING_KEYS.map(k => profile.includes(k)), match: V101_SETTING_KEYS.map(k => match.includes(k)) });
+  });
+  check('v101fx_07_hub_section', 'One settings-hub section carries exactly the three V10.1 keys, titled New in V10.1, and the catalog describes each', () => {
+    const section = SETTINGS_HUB_SECTION_INDEX.filter(s => s.id === V101_SETTINGS_HUB_SECTION_ID);
+    const catalog = V101_SETTING_KEYS.filter(k => !SMART_CONTROLLABLE_SETTINGS_REGISTRY.some(d => d.key === k));
+    return (section.length === 1 && json(section[0].fieldKeys) === json([...V101_SETTING_KEYS]) && section[0].title === V101_SETTINGS_HUB_SECTION_TITLE && catalog.length === 0
+      && V101_FEATURE_TOGGLE_ROWS.length + V101_CLASSIC_TOGGLE_ROWS.length === V101_SETTING_KEYS.length && isV101SettingKeyName('classicRulesV100') && !isV101SettingKeyName('classicRivalV99')) || json({ section: section.length, missing: catalog });
+  });
+  check('v101fx_08_rung_clamps_a_stray_stamp', 'A save older than V10.1 that carries a 1010 stamp or a V10.1 state key is brought back to V10.0 rules; a clean save comes back as the same object', () => {
+    const clean = stamped('10.0.0', { rulesVersion: 1000 });
+    const same = migrateSaveTo1010(clean);
+    const stray = stamped('10.0.0', { rulesVersion: 1010 });
+    const fixed = migrateSaveTo1010(stray);
+    const again = migrateSaveTo1010(fixed.data);
+    const ladder = runSaveMigrationLadder(stamped('9.8.0', { rulesVersion: 1010 }), '9.8.0');
+    return (same.data === clean && !same.changed && fixed.changed && gsOf(fixed.data).rulesVersion === 1000 && gsOf(stray).rulesVersion === 1010 && again.data === fixed.data && !again.changed
+      && gsOf(ladder.data).rulesVersion === undefined) || json({ same: same.changed, fixed: gsOf(fixed.data).rulesVersion, again: again.changed, ladder: gsOf(ladder.data).rulesVersion });
+  });
+  check('v101fx_09_v98_save_loads', 'A V9.8 save loads under V10.1: no rules stamp (it plays by the rules it started with), settings intact, none of the three switches on (a profile setting is not carried by a save)', () => {
+    const tx = prepareSaveLoadTransaction(json(stamped('9.8.0')));
+    if (!tx.ok) return 'the V9.8 save did not load';
+    const loaded = tx.data as SaveGameData;
+    const settings = loaded.gameSettings as unknown as Record<string, unknown>;
+    return (readRulesVersion(loaded.gameState) === null && !isV101Match(loaded.gameState) && V101_SETTING_KEYS.every(k => settings[k] !== true)
+      && Number(settings.totalDays) === Number((createV95SaveFixture().gameSettings as unknown as Record<string, unknown>).totalDays)) || json({ stamp: readRulesVersion(loaded.gameState) });
+  });
+  check('v101fx_10_v100_save_keeps_its_rules', 'A V10.0 save keeps its 1000 stamp through load: it is not a V10.1 match', () => {
+    const tx = prepareSaveLoadTransaction(json(stamped('10.0.0', { rulesVersion: 1000 })));
+    if (!tx.ok) return 'the V10.0 save did not load';
+    const loaded = tx.data as SaveGameData;
+    return (readRulesVersion(loaded.gameState) === 1000 && !isV101Match(loaded.gameState)) || json(readRulesVersion(loaded.gameState));
+  });
+  check('v101fx_11_suites_registered', 'All eleven V10.1 suites are registered once each in V95_EXISTING_SUITES, quick tier, in section order, after V10.0, with ids that never use the Industries suite id', () => {
+    const specs = V95_EXISTING_SUITES.filter(s => V101_SUITE_IDS.includes(s.id));
+    const ids = V95_EXISTING_SUITES.map(s => s.id);
+    const bad = specs.filter(s => s.tier !== 'quick' || s.section !== 'System Regression' || !s.label.startsWith('V10.1 Release: ')).map(s => s.id);
+    return (json(specs.map(s => s.id)) === json(V101_SUITE_IDS) && bad.length === 0 && V101_SUITE_IDS.length === 11 && ids.indexOf('v101fx') > ids.indexOf('v100rr')
+      && ids.filter(id => id === 'v101').length === 1 && !V101_SUITE_IDS.includes('v101')) || json({ registered: specs.map(s => s.id), bad });
+  });
+  return results;
+}
+
+// ============================================================================
+// SECTION 20BB: V10.1 ECONOMY & CHALLENGE BALANCE — NO ONE-BUTTON WINS, NO RISKLESS MARKET LOOP
+// ============================================================================
+// <<V101-SLOT ECON begin>>
+// (work package ECON: replace everything between the two markers; keep the markers and the exported suite function below.)
+export function runV101EconomySelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  return results;
+}
+// <<V101-SLOT ECON end>>
+
+// ============================================================================
+// SECTION 20BC: V10.1 RIVAL PARITY & RIVAL RECAP — THE SAME RULES FOR BOTH SIDES, AND A RIVAL YOU CAN READ (new feature, off by default)
+// ============================================================================
+// <<V101-SLOT RIVAL begin>>
+// (work package RIVAL: replace everything between the two markers; keep the markers and the exported suite function below.)
+export function runV101RivalSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  return results;
+}
+// <<V101-SLOT RIVAL end>>
+
+// ============================================================================
+// SECTION 20BD: V10.1 MATCH RULES & ENDINGS — THE RULES A MATCH STARTS WITH ARE THE RULES IT ENDS WITH
+// ============================================================================
+// <<V101-SLOT RULES begin>>
+// (work package RULES: replace everything between the two markers; keep the markers and the exported suite function below.)
+export function runV101MatchRulesSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  return results;
+}
+// <<V101-SLOT RULES end>>
+
+// ============================================================================
+// SECTION 20BE: V10.1 FIRST RUN & SAVE SAFETY — A FIRST MINUTE THAT TEACHES, A MATCH THAT IS NOT LOST SILENTLY
+// ============================================================================
+// <<V101-SLOT FIRST begin>>
+// (work package FIRST: replace everything between the two markers; keep the markers and the exported suite function below.)
+export function runV101FirstRunSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  return results;
+}
+// <<V101-SLOT FIRST end>>
+
+// ============================================================================
+// SECTION 20BF: V10.1 PLAY SCREEN & ACCESSIBILITY — BUTTONS THAT WORK, MENUS THAT FIT, TEXT YOU CAN READ
+// ============================================================================
+// <<V101-SLOT UI begin>>
+// (work package UI: replace everything between the two markers; keep the markers and the exported suite function below.)
+export function runV101PlayScreenSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  return results;
+}
+// <<V101-SLOT UI end>>
+
+// ============================================================================
+// SECTION 20BG: V10.1 SETTINGS TRUTH — EVERY SWITCH DOES WHAT IT SAYS
+// ============================================================================
+// <<V101-SLOT SETTINGS begin>>
+// (work package SETTINGS: replace everything between the two markers; keep the markers and the exported suite function below.)
+export function runV101SettingsSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  return results;
+}
+// <<V101-SLOT SETTINGS end>>
+
+// ============================================================================
+// SECTION 20BH: V10.1 ADVICE YOU CAN TRUST — ASK THE GAME, THE PLANNER AND THE THREE "BEST MOVES"
+// ============================================================================
+// <<V101-SLOT AI begin>>
+// (work package AI: replace everything between the two markers; keep the markers and the exported suite function below.)
+export function runV101AdviceSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  return results;
+}
+// <<V101-SLOT AI end>>
+
+// ============================================================================
+// SECTION 20BI: V10.1 WORLD LAYER HONESTY — ADVICE AND OFF-SWITCHES THAT AGREE WITH THE MATCH
+// ============================================================================
+// <<V101-SLOT WORLD begin>>
+// (work package WORLD: replace everything between the two markers; keep the markers and the exported suite function below.)
+export function runV101WorldSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  return results;
+}
+// <<V101-SLOT WORLD end>>
+
+// ============================================================================
+// SECTION 20BJ: V10.1 CONTENT & DAILY — CHALLENGES THAT CAN BE MET, OBJECTIVES THAT CAN BE WON, A DAILY THAT COMPARES (new feature, off by default)
+// ============================================================================
+// <<V101-SLOT CONTENT begin>>
+// (work package CONTENT: replace everything between the two markers; keep the markers and the exported suite function below.)
+export function runV101ContentSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  return results;
+}
+// <<V101-SLOT CONTENT end>>
+
+// ============================================================================
+// SECTION 20BK: V10.1 ENGINE INTEGRITY — DETERMINISM, ISOLATION AND A NET UNDER THE WHOLE GAME
+// ============================================================================
+// <<V101-SLOT ENGINE begin>>
+// (work package ENGINE: replace everything between the two markers; keep the markers and the exported suite function below.)
+export function runV101EngineSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  return results;
+}
+// <<V101-SLOT ENGINE end>>
 
 // ============================================================================
 // SECTION 21: MAIN COMPONENT
@@ -218669,7 +219106,7 @@ function dispatchGameSettingsChange(
         // V9.9 (SECTION 20AS): the seed this match runs on (optional field; a save without it is a pre-V9.9 match).
         matchSeed: sanitizeMatchSeed(wpMfMatchSeed) ?? undefined,
         matchEnd: undefined, // V9.9 (SECTION 20AS): a new match has not ended
-        rulesVersion: V100_RULES_VERSION, // V10.0 (SECTION 20AY): a match started now plays by the V10.0 rules
+        rulesVersion: v101RulesVersionForNewMatch(wpMfSettings), // V10.0 (SECTION 20AY): a match carries the rules it started with; V10.1 (SECTION 20BA): V10.1's unless the classic rules are on
         rivalRaces: undefined, // V10.0 (SECTION 20AZ): no race has run in a new match
         regionDeposits: {},
         standingPerActor: initializeRegionalStanding(nextTurnOrder),
@@ -246287,9 +246724,17 @@ function dispatchGameSettingsChange(
                 </div>
               </SettingsSection>
               <SettingsSection id="interface.changelog" tab="interfaceAcc" title="What's New" chips={['UX only']}>
-                {/* V10.0 (SECTION 20AY): the current release leads the list (its label derives from VERSION_CONSTANTS); V9.9 follows. */}
+                {/* V10.1 (SECTION 20BA): the current release leads the list (its label derives from VERSION_CONSTANTS); V10.0 and V9.9 follow. */}
+                <div className="mb-3 pb-3 border-b border-current border-opacity-10" data-testid="v101-whats-new">
+                  <div className="text-sm font-semibold mb-1">{V101_CHANGELOG[0]} <span className="text-xs font-normal opacity-60">· v{VERSION_CONSTANTS.GAME_VERSION}</span></div>
+                  <div className="text-xs opacity-80">
+                    {V101_CHANGELOG.slice(1).map(item => (
+                      <div key={item}>- {item}</div>
+                    ))}
+                  </div>
+                </div>
                 <div className="mb-3 pb-3 border-b border-current border-opacity-10" data-testid="v100-whats-new">
-                  <div className="text-sm font-semibold mb-1">{V100_CHANGELOG[0]} <span className="text-xs font-normal opacity-60">· v{VERSION_CONSTANTS.GAME_VERSION}</span></div>
+                  <div className="text-sm font-semibold mb-1">{V100_CHANGELOG[0]} <span className="text-xs font-normal opacity-60">· v10.0.0</span></div>
                   <div className="text-xs opacity-80">
                     {V100_CHANGELOG.slice(1).map(item => (
                       <div key={item}>- {item}</div>
@@ -247458,7 +247903,16 @@ function dispatchGameSettingsChange(
                 </div>
               </SettingsSection>
 
-              {/* V10.0 (SECTIONS 20AY/20AZ): Rival Races (new, off by default) and the classic-rival switch. First on the Gameplay tab. */}
+              {/* V10.1 (SECTION 20BA): Rival Recap and the fixed-rules Daily (new, off by default) and the classic-rules switch. First on the Gameplay tab. */}
+              <SettingsSection id={V101_SETTINGS_HUB_SECTION_ID} tab="gameplay" title={V101_SETTINGS_HUB_SECTION_TITLE} chips={['Off by default']} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === V101_SETTINGS_HUB_SECTION_ID)!.fieldKeys}>
+                <V101SettingsHubBody
+                  settings={gameSettings}
+                  onToggle={key => trackedSetGameSettings("direct_player_change", V101_SETTINGS_HUB_SECTION_TITLE, prev => ({ ...prev, [key]: prev[key] !== true }))}
+                  onClassName={`${themeStyles.success} text-white`}
+                  offClassName={themeStyles.buttonSecondary}
+                />
+              </SettingsSection>
+              {/* V10.0 (SECTIONS 20AY/20AZ): Rival Races (new, off by default) and the classic-rival switch. */}
               <SettingsSection id={V100_SETTINGS_HUB_SECTION_ID} tab="gameplay" title={V100_SETTINGS_HUB_SECTION_TITLE} chips={['Off by default']} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === V100_SETTINGS_HUB_SECTION_ID)!.fieldKeys}>
                 <V100SettingsHubBody
                   settings={gameSettings}
